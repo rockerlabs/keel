@@ -44,6 +44,9 @@ src="$here/secret-guard"
 # see _isg_rollback's own comment for why they must never collide.
 isg_bak_force="pre-keel.bak"
 isg_bak_upgrade="keel-upgrade.bak"
+# Every file install_into copies, named once: the copy loop and the symlink pre-flight (dir #659) read
+# the same list, so a newly shipped file can't be copied without also being guarded.
+isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources range-lib.sh next to itself
 
 # --force may sit anywhere on the line; strip it, keep the single subcommand/positional (busybox/bash-3.2
 # safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
@@ -110,12 +113,9 @@ _isg_rollback() {
 }
 
 # Ours carry an exact marker LINE: line 2 of the installed <hook> equals line 2 of the shipped <hook>
-# (args: the installed path, the hook's name). dir #659 (S3-1): this used to be a case-insensitive
-# substring grep for "Keel secret-guard" anywhere in the file, so a user's own hook that merely named
-# the tool — which the refusal below tells users to call from their own hook — read as ours and a plain
-# install overwrote it. Line 2 has been byte-identical in every shipped version of both hooks, so an
-# older Keel install still reads as ours; tests/test_secret_guard.sh pins those two lines, because
-# rewording one would turn every existing install foreign. Anything else is the user's own.
+# (args: the installed path, the hook's name) — never a substring, which let a user's hook that merely
+# names the tool read as ours (dir #659, S3-1). Line 2 is unchanged in every shipped version, so older
+# installs still match; tests/test_secret_guard.sh pins it, since rewording it orphans them all.
 _isg_is_keel_hook() {
   local marker
   marker="$(sed -n 2p "$src/$2")"
@@ -123,7 +123,24 @@ _isg_is_keel_hook() {
 }
 
 install_into() {
-  local hooks_dir="$1" h t
+  local hooks_dir="$1" h t f l
+  # Pre-flight (dir #659, S3-2): every `cp` below follows a symlink at its destination, so a linked hook
+  # path would have its TARGET rewritten — a dotfiles hook, or a hook file shared by other repos (the
+  # 0.11.0 F1 class: a per-repo install mutating a machine-shared file). Refuse — with or without
+  # --force, and before the selftest, so a refusal costs nothing — naming the target so the user can
+  # decide what owns it. The run-scoped .keel-upgrade.bak is a `cp` destination too; --force's
+  # .pre-keel.bak has its own check below (dir #625).
+  for f in $isg_files; do
+    for t in "$hooks_dir/$f" "$hooks_dir/$f.$isg_bak_upgrade"; do
+      if [ -L "$t" ]; then
+        l="$(readlink "$t" 2>/dev/null || echo '?')"
+        echo "secret-guard: $t is a symlink (→ $l) — refusing to write through it: that would" >&2
+        echo "  rewrite the file it points to. Replace the link with a regular file (or remove it), then" >&2
+        echo "  re-run. Nothing was changed." >&2
+        exit 3
+      fi
+    done
+  done
   # Verify the SOURCE before touching $hooks_dir at all (dir #250, "second defect" — see CHANGELOG.md
   # for the felt incident this closed): the selftest used to run LAST here, after the cp's, so a
   # failure left the destination half-wired (files present, but the caller's core.hooksPath write /
@@ -166,20 +183,6 @@ install_into() {
   # earlier hook silently gone. Refuse BEFORE the loop below touches anything, so neither hook gets a
   # backup and nothing is left half-done; name the saved file so the user can move it aside and re-run.
   # `-L` too: a dangling symlink at the backup path makes `-e` false, yet `cp` would write through it.
-  #
-  # Pre-flight (dir #659, S3-2): every `cp` below follows a symlink at its destination, so a linked hook
-  # path would have its TARGET rewritten — a dotfiles hook, or a hook file shared by other repos (the
-  # 0.11.0 F1 class: a per-repo install mutating a machine-shared file). Refuse — with or without
-  # --force — before anything is touched, and name the target so the user can decide what owns it.
-  for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
-    t="$hooks_dir/$f"
-    if [ -L "$t" ]; then
-      echo "secret-guard: $t is a symlink (→ $(readlink "$t" 2>/dev/null || echo '?')) — refusing to write" >&2
-      echo "  through it: that would rewrite the file it points to. Replace the link with a regular file" >&2
-      echo "  (or remove it), then re-run. Nothing was changed." >&2
-      exit 3
-    fi
-  done
   if [ "$force" = 1 ]; then
     for h in pre-commit pre-push; do
       t="$hooks_dir/$h"
@@ -243,7 +246,7 @@ install_into() {
   # leave a truncated file at the destination (the disk-full case named above), and that filename
   # has to be in the rollback's `rm -f` list even though ITS OWN copy never finished (code review
   # finding) — `rm -f` is a harmless no-op on a file that never got created at all.
-  for f in secret-scan.sh pre-commit pre-push range-lib.sh; do  # pre-push sources range-lib.sh next to itself
+  for f in $isg_files; do
     copied="$copied $f"
     cp "$src/$f" "$hooks_dir/$f" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to copy $f into $hooks_dir"
   done
@@ -314,7 +317,9 @@ case "${1:-}" in
     fi
     # Same rule for the machine-global slot: don't replace a hooksPath the user already set to something
     # of their own. (install.sh already guards this before delegating; this protects direct callers too.)
+    displaced=""
     if [ -n "$existing" ] && [ "$existing" != "$dir" ]; then
+      displaced="$existing"
       if [ "$force" != 1 ]; then
         echo "secret-guard: a global core.hooksPath is already set to '$existing' — not clobbering it." >&2
         echo "  Re-run with --force to replace it, or vendor per-repo: install-secret-guard.sh <repo>" >&2
@@ -330,9 +335,9 @@ case "${1:-}" in
       fi
     fi
     install_into "$dir"
-    if [ -n "$existing" ] && [ "$existing" != "$dir" ]; then
-      git config --global "$isg_displaced_key" "$existing"
-      echo "secret-guard: replaced the global core.hooksPath '$existing' (--force); the old value is"
+    if [ -n "$displaced" ]; then
+      git config --global "$isg_displaced_key" "$displaced"
+      echo "secret-guard: replaced the global core.hooksPath '$displaced' (--force); the old value is"
       echo "  recorded in git config --global $isg_displaced_key — install-secret-guard.sh --global --uninstall restores it"
     fi
     git config --global core.hooksPath "$dir"

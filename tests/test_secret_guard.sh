@@ -1001,6 +1001,17 @@ ln -s "$s2scan" "$s2srepo/.git/hooks/secret-scan.sh"
 run "$isg" "$s2srepo"
 check_status "dir #659 S3-2: a symlinked secret-scan.sh is refused → exit 3" 3 "$STATUS"
 check_contains "dir #659 S3-2: the shared scanner target is untouched" "$(cat "$s2scan")" "a scanner shared from elsewhere"
+# A re-install's run-scoped .keel-upgrade.bak is a `cp` destination too: a link there is refused.
+s2urepo="$(new_repo)"
+s2uh="$s2urepo/.git/hooks"
+mkdir -p "$s2uh"
+cp "$REPO_ROOT/tools/secret-guard/pre-commit" "$s2uh/pre-commit"
+s2utarget="$SANDBOX/s2-upgrade-bak-target"
+printf '# someone elses file\n' > "$s2utarget"
+ln -s "$s2utarget" "$s2uh/pre-commit.keel-upgrade.bak"
+run "$isg" "$s2urepo"
+check_status "dir #659 S3-2: a symlink at the .keel-upgrade.bak path is refused → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-2: the .keel-upgrade.bak link's target is untouched" "$(cat "$s2utarget")" "someone elses file"
 
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
