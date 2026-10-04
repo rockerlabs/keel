@@ -51,6 +51,74 @@ export HOME="$SANDBOX/home"
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 unset XDG_CONFIG_HOME 2>/dev/null || true
 mkdir -p "$HOME"
+
+# --- `git -C` path guard (dir #658) ----------------------------------------------------------------
+# git reads `-C ""` as "stay in the current directory", so a fixture helper handed an empty repo path
+# (`git -C "$d" remote add …` with `$d` unset) silently writes into whatever repository the caller
+# stands in — felt once: a `fork` remote landed in the real keel checkout's shared `.git/config`. This
+# `git` function shadows the binary for every call a test file (or a lib it sources) makes, and refuses
+# — before git runs — an empty `-C` and any `-C` that resolves outside `$SANDBOX` or `$REPO_ROOT` (the
+# allow-list: reading `$REPO_ROOT` stays legal; dir #318's ref guard and run.sh's config tripwire cover
+# writes there). A refusal returns 97 and is logged, so summary() fails the file even when the call's
+# own status was swallowed (`|| true`, `2>/dev/null`) — the same G2 shape as the ref guard's log.
+# Policy details, each measured: the scan stops at the subcommand (`git commit -C <rev>` reuses a
+# message, not a path); repeated `-C`s compose the way git composes them; the comparison is lexical
+# first and physical (`cd -P`) only on a miss or a `..`, so a `/var` vs `/private/var` spelling of the
+# same macOS temp dir passes; a path that does not exist passes through (git cannot enter it either).
+# One opt-in widening: a file whose code under test makes its OWN `mktemp -d` repo (outside $SANDBOX —
+# macOS's bare `mktemp -d` ignores $TMPDIR, so it cannot be redirected) sets GIT_C_GUARD_ALLOW_TMP=1,
+# which also admits any path below the temp root $SANDBOX came from (never the root itself). Each opt-in
+# site carries its own dir #658 comment — grep GIT_C_GUARD_ALLOW_TMP.
+# With a `git` function defined, `command -v git` prints `git`, not a path: a test that needs the
+# binary's path (a symlink farm, a shim's `exec`) uses `type -P git`. Pinned by test_lib_git_c_guard.sh.
+# Limits, named: `command git`, `"$GIT"`, `bash -c`/child scripts and product tools spawned as
+# processes do not see a shell function; a symlink under `$SANDBOX` pointing outside passes the lexical
+# check; `--git-dir`/`--work-tree` are not checked; and a helper body pasted into a plain shell never
+# loads this file at all.
+_GIT_C_SANDBOX_P="$(cd -P "$SANDBOX" 2>/dev/null && pwd -P)"; _GIT_C_SANDBOX_P="${_GIT_C_SANDBOX_P:-$SANDBOX}"
+_GIT_C_REPO_P="$(cd -P "$REPO_ROOT" 2>/dev/null && pwd -P)"; _GIT_C_REPO_P="${_GIT_C_REPO_P:-$REPO_ROOT}"
+_GIT_C_TMP_P="${_GIT_C_SANDBOX_P%/*}"; _GIT_C_TMP_P="${_GIT_C_TMP_P:-/no-temp-root}"
+git() {
+  local _gc_a _gc_take="" _gc_p="" _gc_seen="" _gc_bad="" _gc_phys=1
+  for _gc_a in "$@"; do
+    if [ -n "$_gc_take" ]; then
+      if [ "$_gc_take" = C ]; then
+        _gc_seen=1
+        [ -n "$_gc_a" ] || { _gc_bad="an empty -C (git would run in the caller's cwd)"; break; }
+        case "$_gc_a" in /*) _gc_p="$_gc_a" ;; *) _gc_p="${_gc_p:-$PWD}/$_gc_a" ;; esac
+      fi
+      _gc_take=""
+      continue
+    fi
+    case "$_gc_a" in
+      -C) _gc_take=C ;;
+      -c|--git-dir|--work-tree|--namespace|--config-env|--attr-source) _gc_take=skip ;;
+      -*) ;;
+      *) break ;;
+    esac
+  done
+  if [ -n "$_gc_seen" ] && [ -z "$_gc_bad" ]; then
+    case "$_gc_p" in
+      *..*) ;;
+      "$SANDBOX"|"$SANDBOX"/*|"$_GIT_C_SANDBOX_P"|"$_GIT_C_SANDBOX_P"/*|"$REPO_ROOT"|"$REPO_ROOT"/*|"$_GIT_C_REPO_P"|"$_GIT_C_REPO_P"/*) _gc_phys="" ;;
+    esac
+    if [ -n "$_gc_phys" ] && _gc_p="$(cd -P "$_gc_p" 2>/dev/null && pwd -P)"; then
+      case "$_gc_p" in
+        "$_GIT_C_SANDBOX_P"|"$_GIT_C_SANDBOX_P"/*|"$_GIT_C_REPO_P"|"$_GIT_C_REPO_P"/*) ;;
+        "$_GIT_C_TMP_P"/?*) [ "${GIT_C_GUARD_ALLOW_TMP:-}" = 1 ] || _gc_bad="-C resolves to $_gc_p, a temp dir outside \$SANDBOX (opt in: GIT_C_GUARD_ALLOW_TMP=1)" ;;
+        *) _gc_bad="-C resolves to $_gc_p, outside \$SANDBOX and \$REPO_ROOT" ;;
+      esac
+    fi
+  fi
+  if [ -n "$_gc_bad" ]; then
+    mkdir -p "$SANDBOX/git-c-guard" 2>/dev/null
+    printf 'git %s  [%s]\n' "$*" "$_gc_bad" >> "$SANDBOX/git-c-guard/refused"
+    printf 'dir #658: refused `git %s` — %s. A fixture names a repo under $SANDBOX; reading $REPO_ROOT is fine.\n' "$*" "$_gc_bad" >&2
+    return 97
+  fi
+  command git "$@"
+}
+
 git config --global user.email test@keel.invalid
 git config --global user.name "Keel Test"
 git config --global init.defaultBranch main
@@ -235,73 +303,6 @@ exit 0
 }
 
 ref_guard_arm "$REPO_ROOT"
-
-# --- `git -C` path guard (dir #658) ----------------------------------------------------------------
-# git reads `-C ""` as "stay in the current directory", so a fixture helper handed an empty repo path
-# (`git -C "$d" remote add …` with `$d` unset) silently writes into whatever repository the caller
-# stands in — felt once: a `fork` remote landed in the real keel checkout's shared `.git/config`. This
-# `git` function shadows the binary for every call a test file (or a lib it sources) makes, and refuses
-# — before git runs — an empty `-C` and any `-C` that resolves outside `$SANDBOX` or `$REPO_ROOT` (the
-# allow-list: reading `$REPO_ROOT` stays legal; dir #318's ref guard and run.sh's config tripwire cover
-# writes there). A refusal returns 97 and is logged, so summary() fails the file even when the call's
-# own status was swallowed (`|| true`, `2>/dev/null`) — the same G2 shape as the ref guard's log.
-# Policy details, each measured: the scan stops at the subcommand (`git commit -C <rev>` reuses a
-# message, not a path); repeated `-C`s compose the way git composes them; the comparison is lexical
-# first and physical (`cd -P`) only on a miss or a `..`, so a `/var` vs `/private/var` spelling of the
-# same macOS temp dir passes; a path that does not exist passes through (git cannot enter it either).
-# One opt-in widening: a file whose code under test makes its OWN `mktemp -d` repo (outside $SANDBOX —
-# macOS's bare `mktemp -d` ignores $TMPDIR, so it cannot be redirected) sets GIT_C_GUARD_ALLOW_TMP=1,
-# which also admits any path below the temp root $SANDBOX came from (never the root itself). Each opt-in
-# site carries its own dir #658 comment — grep GIT_C_GUARD_ALLOW_TMP.
-# With a `git` function defined, `command -v git` prints `git`, not a path: a test that needs the
-# binary's path (a symlink farm, a shim's `exec`) uses `type -P git`. Pinned by test_lib_git_c_guard.sh.
-# Limits, named: `command git`, `"$GIT"`, `bash -c`/child scripts and product tools spawned as
-# processes do not see a shell function; a symlink under `$SANDBOX` pointing outside passes the lexical
-# check; `--git-dir`/`--work-tree` are not checked; and a helper body pasted into a plain shell never
-# loads this file at all.
-_GIT_C_SANDBOX_P="$(cd -P "$SANDBOX" 2>/dev/null && pwd -P)"; _GIT_C_SANDBOX_P="${_GIT_C_SANDBOX_P:-$SANDBOX}"
-_GIT_C_REPO_P="$(cd -P "$REPO_ROOT" 2>/dev/null && pwd -P)"; _GIT_C_REPO_P="${_GIT_C_REPO_P:-$REPO_ROOT}"
-_GIT_C_TMP_P="${_GIT_C_SANDBOX_P%/*}"; _GIT_C_TMP_P="${_GIT_C_TMP_P:-/no-temp-root}"
-git() {
-  local _gc_a _gc_take="" _gc_p="" _gc_seen="" _gc_bad="" _gc_phys=1
-  for _gc_a in "$@"; do
-    if [ -n "$_gc_take" ]; then
-      if [ "$_gc_take" = C ]; then
-        _gc_seen=1
-        [ -n "$_gc_a" ] || { _gc_bad="an empty -C (git would run in the caller's cwd)"; break; }
-        case "$_gc_a" in /*) _gc_p="$_gc_a" ;; *) _gc_p="${_gc_p:-$PWD}/$_gc_a" ;; esac
-      fi
-      _gc_take=""
-      continue
-    fi
-    case "$_gc_a" in
-      -C) _gc_take=C ;;
-      -c|--git-dir|--work-tree|--namespace|--config-env|--attr-source) _gc_take=skip ;;
-      -*) ;;
-      *) break ;;
-    esac
-  done
-  if [ -n "$_gc_seen" ] && [ -z "$_gc_bad" ]; then
-    case "$_gc_p" in
-      *..*) ;;
-      "$SANDBOX"|"$SANDBOX"/*|"$_GIT_C_SANDBOX_P"|"$_GIT_C_SANDBOX_P"/*|"$REPO_ROOT"|"$REPO_ROOT"/*|"$_GIT_C_REPO_P"|"$_GIT_C_REPO_P"/*) _gc_phys="" ;;
-    esac
-    if [ -n "$_gc_phys" ] && _gc_p="$(cd -P "$_gc_p" 2>/dev/null && pwd -P)"; then
-      case "$_gc_p" in
-        "$_GIT_C_SANDBOX_P"|"$_GIT_C_SANDBOX_P"/*|"$_GIT_C_REPO_P"|"$_GIT_C_REPO_P"/*) ;;
-        "$_GIT_C_TMP_P"/?*) [ "${GIT_C_GUARD_ALLOW_TMP:-}" = 1 ] || _gc_bad="-C resolves to $_gc_p, a temp dir outside \$SANDBOX (opt in: GIT_C_GUARD_ALLOW_TMP=1)" ;;
-        *) _gc_bad="-C resolves to $_gc_p, outside \$SANDBOX and \$REPO_ROOT" ;;
-      esac
-    fi
-  fi
-  if [ -n "$_gc_bad" ]; then
-    mkdir -p "$SANDBOX/git-c-guard" 2>/dev/null
-    printf 'git %s  [%s]\n' "$*" "$_gc_bad" >> "$SANDBOX/git-c-guard/refused"
-    printf 'dir #658: refused `git %s` — %s. A fixture names a repo under $SANDBOX; reading $REPO_ROOT is fine.\n' "$*" "$_gc_bad" >&2
-    return 97
-  fi
-  command git "$@"
-}
 
 # dir #627, second fail-open: a test file calling an assertion this library does not define (e.g.
 # `check_eq` when only `check_ne` exists) loses that assertion SILENTLY — bash prints its own
