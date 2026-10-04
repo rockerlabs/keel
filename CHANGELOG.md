@@ -15,6 +15,27 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The personal-literals file has one parser, and the secret scanner no longer fails open on it.**
+  `tools/public-audit.sh` and the vendored `secret-scan.sh` each carried a hand-copied loop for the local
+  `secret-scan-personal` file. The parse now lives once in `tools/lib/personal-literals.sh`; the audit
+  sources it, and the scanner (which may source only what ships beside it) keeps a byte-identical inline
+  twin. A new section of `tests/test_secret_guard.sh` runs both on shared fixtures against a literal
+  expected output, asserts the two bodies are identical, and pushes each of the file's literals end to
+  end through both tools' joins, so a half-edited copy goes red. On macOS an existing-but-unreadable
+  personal file used to scan `clean` with exit 0 (the old loop's failed read did not abort there). The
+  scanner now says so and exits 2, and the audit raises a GAP that coverage is zero. A leading UTF-8 BOM
+  used to ride into the first literal and silently stop it matching; it is now stripped. A line ending in
+  a backslash used to join the next line into a pattern matching neither literal (`clean`, exit 0); the
+  scanner now exits 2 naming the problem, and the audit counts the line as invalid and still scans the
+  rest. dir #148, dir #680. **Upgrade:** a copy of `secret-scan.sh` vendored earlier keeps the old
+  parser until it is re-vendored (`tools/install-secret-guard.sh --force`, or your own re-vendor step);
+  `doctor.sh` warns about a stale copy.
+- **`secret-scan.sh` no longer exits 0 after a crash on macOS bash 3.2.** Its cleanup trap, a bare
+  `rm -rf` on EXIT, hid a top-level fatal error (sourcing a missing file, an unset variable under `set -u`)
+  behind exit 0: the commit hook let a key-shaped string through and `--selftest` reported success. `$?`
+  is already 0 when the trap runs for that kind of failure, so the trap now reads a completion marker set
+  only on the legitimate exit-0 paths. A test injects both crashes into a copy of the scanner and asserts a
+  non-zero exit; the same re-vendor note applies. dir #682.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
