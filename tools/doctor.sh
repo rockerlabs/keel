@@ -803,9 +803,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # linked (keel/CORE.md a symlink — dangling included — or a --no-git trim, the same test install.sh's
   # stickiness uses), else docs/. Checked in every mode, --codex included, and the advice carries the
   # mode flag (W-TIER-MISSING's shape — a bare re-run under --codex would build a second install).
-  if [ "$CODEX_MODE" = 1 ]; then docs_rel="docs"
-  elif keel_core_is_link "$ihome/keel/CORE.md" || keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then docs_rel="keel/docs"
-  else docs_rel="docs"
+  docs_rel="docs"
+  if [ "$CODEX_MODE" != 1 ] && { keel_core_is_link "$ihome/keel/CORE.md" || keel_core_is_nogit_trim "$ihome/keel/CORE.md"; }; then
+    docs_rel="keel/docs"
   fi
   dpresent=0; dtotal=0; missing_docs=""
   for dsrc in "$repo_root"/docs/*.md "$repo_root"/docs/drydock/*.md; do

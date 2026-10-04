@@ -89,14 +89,15 @@ nothing keel here" "$(cat "$h/CLAUDE.md")"
 
 # --- (e) the tty branch, answering y ------------------------------------------------------------------
 # A pty is needed: install.sh's offer is behind `[ -t 0 ]`. Hold stdin open past the prompt — a bare
-# `printf 'y\n' |` loses the answer at EOF. macOS `script -q /dev/null CMD…`; util-linux
+# `printf 'y\n' |` loses the answer at EOF; the hold is a process substitution nothing waits on, so a call
+# returns as soon as install.sh exits. macOS `script -q /dev/null CMD…`; util-linux
 # `script -qc "CMD" /dev/null`. Called directly, not through lib.sh's run() (it forces </dev/null).
 # SKIPPED, with a printed reason, when `script` is absent (the alpine leg has neither script nor python).
 tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed)
   local ans="$1"; shift
   case "$(uname -s)" in
-    Darwin) OUT="$({ printf '%s\n' "$ans"; sleep 5; } | script -q /dev/null "$@" 2>&1)"; STATUS=$? ;;
-    *)      OUT="$({ printf '%s\n' "$ans"; sleep 5; } | script -qc "$*" /dev/null 2>&1)"; STATUS=$? ;;
+    Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
+    *)      OUT="$(script -qc "$*" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
   esac
 }
 if ! command -v script >/dev/null 2>&1; then

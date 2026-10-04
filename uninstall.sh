@@ -357,12 +357,10 @@ home_has_keel_content() {
   # dir #650 D7: the docs install.sh ships beside FRAMEWORK.md (copy/--codex: <home>/docs; a linked
   # home's keel/docs is already covered by the keel/ test above) are Keel's too — the same two
   # install.sh globs, the same is_keel_owned test.
-  if [ -d "$root/docs" ] && [ -d "$home/docs" ]; then
-    for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
-      [ -f "$f" ] || continue
-      if is_keel_owned "$home/docs/${f#"$root"/docs/}" "$f"; then return 0; fi
-    done
-  fi
+  for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
+    [ -f "$f" ] || continue
+    if is_keel_owned "$home/docs/${f#"$root"/docs/}" "$f"; then return 0; fi
+  done
   return 1
 }
 
@@ -451,12 +449,10 @@ dry_run_heuristic_listing() {
   done
   # dir #650 D7: the shipped docs, listed the way commands/<name> is — the same two globs install.sh
   # uses. A linked home's keel/docs rides under its `would remove  keel` line above.
-  if [ -d "$root/docs" ]; then
-    for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
-      [ -f "$f" ] || continue
-      if is_keel_owned "$HOME_DIR/docs/${f#"$root"/docs/}" "$f"; then echo "  would remove  docs/${f#"$root"/docs/}"; fi
-    done
-  fi
+  for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
+    [ -f "$f" ] || continue
+    if is_keel_owned "$HOME_DIR/docs/${f#"$root"/docs/}" "$f"; then echo "  would remove  docs/${f#"$root"/docs/}"; fi
+  done
   if [ "$this_has_rails" = 1 ]; then
     echo "  would strip the Keel rails (import line / KEEL-CORE block) from $CONTEXT_FILE"
   fi

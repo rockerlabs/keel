@@ -641,8 +641,7 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # idiom as the `manifest_usable` line right above: exempt from `set -e` the same way.
 [ "${KEEL_TEST_DROP_PRIOR_MANIFEST:-}" = 1 ] && rm -f "$prior_manifest"
 
-# force_backup DEST [LABEL] — (LABEL, default "--force", is only the word in the success line's closing
-# parentheses: the block-refresh ladder, dir #650, passes "block refresh".) DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
+# force_backup DEST [LABEL] — DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
 # preserved is the content the adopter actually saw at that path). A fresh timestamp every call — never
 # a fixed name — so a LATER --force run can't clobber an EARLIER run's backup (dir #323's idempotence
 # requirement). The guarantee is second-granularity and nothing finer: `ts` is `%Y%m%dT%H%M%SZ` and the
@@ -686,6 +685,8 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
 # failure — which is exactly what the `cp` below now does.
+# LABEL (default "--force") is only the word in the success line's closing parentheses; the block-refresh
+# ladder (dir #650) passes "block refresh".
 force_backup() {
   local dest="$1" label="${2:---force}" ts
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
@@ -1126,16 +1127,16 @@ refresh_core_block() {
 #                             about to be reaped, the two-step curl form that keeps a terminal on stdin
 #                             (`sh FILE ARGS` passes the flags straight to install.sh).
 core_block_currency() {
-  local dest="$1" state trimmed=0 reply="" route
+  local dest="$1" state kind="" reply="" route
   state="$(keel_core_block_state "$dest" "$root/CORE.md")"
   case "$state" in
     current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
     current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
   esac
-  keel_core_block_is_trimmed "$dest" && trimmed=1
+  keel_core_block_is_trimmed "$dest" && kind=trimmed
   if [ -t 0 ]; then
     echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
-    if [ "$trimmed" = 1 ]; then
+    if [ -n "$kind" ]; then
       printf "       Refresh the block, keeping your git-rails trim? [y/N] "
     else
       printf "       Replace just the block with the current shipped rails? [y/N] "
@@ -1143,7 +1144,9 @@ core_block_currency() {
     read -r reply || reply=""
     case "$reply" in
       [yY]|[yY][eE][sS])
-        if force_backup "$dest" "block refresh" && { if [ "$trimmed" = 1 ]; then refresh_core_block "$dest" trimmed; else refresh_core_block "$dest"; fi; }; then
+        # $kind unquoted on purpose: empty → no argument (the full block), "trimmed" → the trimmed form.
+        # shellcheck disable=SC2086
+        if force_backup "$dest" "block refresh" && refresh_core_block "$dest" $kind; then
           echo "  +    $CONTEXT_FILE core block refreshed"
         else
           echo "  =    $CONTEXT_FILE left untouched (nothing was refreshed)"
