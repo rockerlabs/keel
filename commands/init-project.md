@@ -5,7 +5,8 @@ Scaffold a new project to the Keel baseline so it is born-compliant (no backfill
 ## What it does
 
 Runs `tools/init-project.sh` in the target directory, which idempotently ensures:
-1. **git** initialized.
+1. **git** initialized. A target inside another git repo is refused with nothing scaffolded — it would
+   otherwise attach to the parent — unless `--nested` asks for a separate repo there.
 2. **`.gitignore`** ignores the private AI context (`CLAUDE.md`, `AGENTS.md`, `.claude/`) + IDE/OS noise.
 3. **project `CLAUDE.md`** created from `templates/project-CLAUDE.md` (never overwrites an existing one),
    plus an **`AGENTS.md`** vendor sibling symlinked to it (dir #75).
@@ -23,6 +24,7 @@ present but missing a Projects table — it prints that as a manual follow-up to
 tools/init-project.sh [PROJECT_DIR]      # default: current directory
 tools/init-project.sh --no-register      # skip auto-registering in INSTANCE.md
 tools/init-project.sh --no-impact        # skip opting into impact tracking
+tools/init-project.sh --nested DIR       # DIR sits inside another repo: make it a repo of its own
 ```
 
 ## Notes
