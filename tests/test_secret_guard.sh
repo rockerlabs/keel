@@ -1929,4 +1929,67 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_contains "dir #680: once readable, the same file is the usual tree hit" "$OUT" "$PL_TREE_LABEL"
 fi
 
+# =================================================================================================
+# --- dir #682: on bash 3.2 (macOS /bin/bash), a bare `trap 'rm -rf "$SCRATCH"' EXIT` turned a top-level
+# FATAL shell error (a `.` of a missing file, a `set -u` unbound variable) into exit 0 — the commit hook
+# failed OPEN and --selftest reported success. `$?` is already 0 when the trap reads it for that failure
+# class, so capturing it is not enough: the scanner uses a completion marker (_scan_done, set only on a
+# legitimate exit-0 path). The probe: a COPY of the scanner with a fatal error injected right after its
+# trap lines, run on a staged AWS-key-shaped string. A fail-open exits 0 (and a key-shaped string passes);
+# a fixed scanner exits non-zero. alpine's bash 5 may not reproduce the original bug — the macOS leg is the
+# binding one — but the assertion (non-zero, never 'clean') holds on every bash.
+pl682_repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$pl682_repo/conf.txt"
+git -C "$pl682_repo" add conf.txt
+pl682_shells="bash"
+[ -x /bin/bash ] && [ "$(command -v bash)" != /bin/bash ] && pl682_shells="bash /bin/bash"
+pl682_n=0
+for pl682_inject in '. "$(dirname "$0")/pl682-missing-sibling.sh"' ': "$pl682_never_set_scalar"'; do
+  pl682_n=$((pl682_n + 1))
+  pl682_copy="$SANDBOX/pl682-scan-$pl682_n.sh"
+  pl682_injected=0
+  while IFS= read -r pl682_line || [ -n "$pl682_line" ]; do
+    printf '%s\n' "$pl682_line"
+    if [ "$pl682_injected" = 0 ] && [ "$pl682_line" = "trap 'exit 143' TERM" ]; then
+      printf '%s\n' "$pl682_inject"; pl682_injected=1
+    fi
+  done < "$scan" > "$pl682_copy"
+  chmod +x "$pl682_copy"
+  if [ "$pl682_injected" = 1 ]; then
+    pass "dir #682: fatal-error probe $pl682_n injected after the scanner's trap lines"
+  else
+    fail "dir #682: fatal-error probe $pl682_n injected after the scanner's trap lines" "anchor line \"trap 'exit 143' TERM\" not found in $scan"
+  fi
+  for pl682_sh in $pl682_shells; do
+    run_in "$pl682_repo" "$pl682_sh" "$pl682_copy" --staged
+    if [ "$STATUS" -ne 0 ]; then
+      pass "dir #682: probe $pl682_n under $pl682_sh — a top-level fatal error exits non-zero (status $STATUS)"
+    else
+      fail "dir #682: probe $pl682_n under $pl682_sh — a top-level fatal error exits non-zero" "exit 0 (fail-open): $OUT"
+    fi
+    check_absent "dir #682: probe $pl682_n under $pl682_sh — never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+    run_in "$pl682_repo" "$pl682_sh" "$pl682_copy" --selftest
+    if [ "$STATUS" -ne 0 ]; then
+      pass "dir #682: probe $pl682_n under $pl682_sh — --selftest does not report success after a fatal error"
+    else
+      fail "dir #682: probe $pl682_n under $pl682_sh — --selftest does not report success after a fatal error" "exit 0: $OUT"
+    fi
+  done
+done
+# The legitimate paths still exit 0 under the marker (an over-eager fix would make every clean run fail).
+for pl682_sh in $pl682_shells; do
+  pl682_clean="$(new_repo)"; printf 'nothing here\n' > "$pl682_clean/ok.txt"; git -C "$pl682_clean" add ok.txt
+  run_in "$pl682_clean" "$pl682_sh" "$scan" --staged
+  check_status "dir #682: a clean staged run still exits 0 under $pl682_sh" 0 "$STATUS"
+  check_contains "dir #682: ...and says clean ($pl682_sh)" "$OUT" "secret-scan: clean"
+  run_in "$pl682_clean" "$pl682_sh" "$scan" --selftest
+  check_status "dir #682: --selftest still exits 0 under $pl682_sh" 0 "$STATUS"
+done
+run_in "$pl682_repo" bash "$scan" --staged
+check_status "dir #682: a real block still exits 1" 1 "$STATUS"
+# The audit of every `trap … EXIT` in the VENDORED set (tools/secret-guard/): none may be a bare
+# quoted-command trap — only a named handler (the completion-marker shape) is allowed.
+pl682_bare="$(grep -rnE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/tools/secret-guard/" || true)"
+check_eq "dir #682: no bare quoted-command EXIT trap in the vendored secret-guard set" "" "$pl682_bare"
+
 summary

@@ -104,8 +104,25 @@ PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
 # a hook that runs on every commit must not litter $TMPDIR with orphans.
+#
+# dir #682 — a COMPLETION MARKER, not a bare `rm -rf` trap and not a bare `rc=$?` capture. On bash 3.2
+# (macOS /bin/bash) a top-level FATAL shell error — a `.` of a missing file, a `set -u` unbound variable —
+# leaves `$?` at 0 by the time an EXIT trap runs, so a bare trap turned that crash into exit 0 and the
+# commit hook failed OPEN (and --selftest reported success); capturing `$?` in the trap does not help,
+# because it is already 0. `_scan_done` is set to 1 only on the legitimate exit-0 paths below (the clean
+# early return, the end of the scan, a finished --selftest); any exit that reaches the trap with status 0
+# and no marker is a crash and becomes status 1. An explicit non-zero `exit N` keeps its own status.
+# Every legitimate `exit 0` MUST set `_scan_done=1` first — a new one that forgets fails closed (the hook
+# blocks), which is the safe direction.
+_scan_done=""
+_scan_exit() {
+  _scan_rc=$?
+  [ -n "$_scan_done" ] || [ "$_scan_rc" -ne 0 ] || _scan_rc=1
+  rm -rf "$SCRATCH"
+  exit "$_scan_rc"
+}
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH"' EXIT
+trap _scan_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -719,7 +736,8 @@ case "$mode" in
     done < <(git -C "$top" -c core.quotePath=false ls-files 2>/dev/null)
     ;;
   --selftest)
-    selftest; exit $?
+    _st_rc=0; selftest || _st_rc=$?
+    _scan_done=1; exit "$_st_rc"
     ;;
   -*)
     echo "secret-scan: unknown option '$mode'" >&2; exit 2
@@ -729,7 +747,7 @@ case "$mode" in
     ;;
 esac
 
-[ -n "$records" ] || { echo "secret-scan: clean"; exit 0; }
+[ -n "$records" ] || { echo "secret-scan: clean"; _scan_done=1; exit 0; }
 
 # dir #518: resolve the --range allowlist same-change-provenance baseline (dir #508 (a) extended to
 # --range too), but only now — AFTER we already know this push has something to check the allowlist
@@ -958,4 +976,5 @@ if [ "$found" = 1 ]; then
 fi
 
 echo "secret-scan: clean"
+_scan_done=1
 exit 0
