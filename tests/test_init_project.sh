@@ -180,4 +180,42 @@ check_status "B14: init-project on a lost-state repo still exits 0 (S12)" 0 "$ST
 check_contains "B14: init-project shows enable's own M-LOST refusal" "$OUT" "store entry is missing"
 check_file "B14: CLAUDE.md still exists (scaffolding completed despite the refusal)" "$b14/CLAUDE.md"
 
+# --- dir #611: a target that sits UNDER another repo must never silently attach to it. Without
+# --nested the run refuses before writing anything; with --nested the target becomes its own repo.
+# Felt: scaffolding a client repo inside a zone repo printed "git already initialized" and enabled
+# impact tracking for the zone root. ---------------------------------------------------------------
+zone="$SANDBOX/zone-parent"; mkdir -p "$zone"; git -C "$zone" init -q
+zone_real="$(cd "$zone" && pwd -P)"; zone_id="$(printf '%s' "$zone_real" | tr '/' '-')"
+site="$zone/repos/site"
+run "$init" --no-register "$site"
+check_status "dir #611: a target inside another repo → exit 2" 2 "$STATUS"
+check_contains "dir #611: the refusal names the parent repo" "$OUT" "inside the git repo at $zone_real"
+check_contains "dir #611: the refusal prints the working --nested command" "$OUT" "--nested \"$(cd "$site" && pwd -P)\""
+check_nofile "dir #611: refusal writes no CLAUDE.md" "$site/CLAUDE.md"
+check_nofile "dir #611: refusal writes no .gitignore" "$site/.gitignore"
+check_nodir "dir #611: refusal creates no repo in the target" "$site/.git"
+check_nodir "dir #611: the parent gained no impact-store entry" "$KEEL_IMPACT_STORE/$zone_id"
+check_nofile "dir #611: the parent gained no .gitignore" "$zone/.gitignore"
+
+run "$init" --no-register --nested "$site"
+check_status "dir #611: --nested → exit 0" 0 "$STATUS"
+check_dir "dir #611: --nested gives the target its own .git" "$site/.git"
+check_eq "dir #611: the target is its own toplevel" "" "$(git -C "$site" rev-parse --show-prefix)"
+site_id="$(cd "$site" && pwd -P | tr '/' '-')"
+check_dir "dir #611: impact tracking lands on the target" "$KEEL_IMPACT_STORE/$site_id"
+check_nodir "dir #611: --nested still gives the parent no store entry" "$KEEL_IMPACT_STORE/$zone_id"
+check_file "dir #611: --nested scaffolds CLAUDE.md in the target" "$site/CLAUDE.md"
+check_nofile "dir #611: --nested writes no .gitignore into the parent" "$zone/.gitignore"
+
+# a re-run on the now-separate repo needs no flag: the target is its own toplevel
+run "$init" --no-register "$site"
+check_status "dir #611: re-run on the nested repo, no flag → exit 0" 0 "$STATUS"
+check_contains "dir #611: re-run reports git already initialized" "$OUT" "git already initialized"
+
+# the default target (cwd) refuses the same way — the felt case ran from inside the directory
+sub="$zone/repos/other"; mkdir -p "$sub"
+run bash -c 'cd "$1" && "$2" --no-register' _ "$sub" "$init"
+check_status "dir #611: cwd default inside another repo → exit 2" 2 "$STATUS"
+check_nofile "dir #611: cwd-default refusal writes no CLAUDE.md" "$sub/CLAUDE.md"
+
 summary

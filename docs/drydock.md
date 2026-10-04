@@ -202,7 +202,7 @@ conclusions.** Two signals earn their keep, and both are one-liners from the fro
 
 ```bash
 # 1. anomalous line length — an unfinished edit shows up as one long line in a wrapped block
-git ls-files -z '*.md' | xargs -0 awk 'length($0) > 110 { printf "%s:%d (%d ch)\n", FILENAME, FNR, length($0) }'
+git ls-files -z '*.md' | xargs -0 env LC_ALL=C awk '{ s = $0; gsub(/[\200-\277]/, "", s) } length(s) > 110 { printf "%s:%d (%d ch)\n", FILENAME, FNR, length(s) }'
 # 2. dead relative links — a markdown target that no longer resolves on disk
 git ls-files -z '*.md' | while IFS= read -r -d '' f; do grep -oE '\]\([^)#]+' "$f" | cut -c3- | while IFS= read -r t; do
   case "$t" in http*|mailto:*|"") continue ;; esac
@@ -216,6 +216,12 @@ own contents would then go unswept, silently, which is the one outcome a sweep m
 sweep 2's character class excludes only `)` and `#`, deliberately not `:` — stopping at the colon
 would truncate `mailto:you@example.com` to `mailto`, which then fails the scheme test below it and
 gets reported as a dead relative link, once per mail link in your tree.
+
+Sweep 1 counts **characters, not bytes**. A bare `length($0)` counts bytes in most awks, so on
+Cyrillic prose the 110 threshold is really 55 — and the signal inverts: on a non-English adopter's
+tree, every hit checked was a line wrapped exactly at its file's own width. The `gsub` drops UTF-8
+continuation bytes, leaving one byte per character; `LC_ALL=C` is required, because without it
+busybox awk and gawk reject the byte-range pattern outright.
 
 Signal 1 is worth more than it sounds: run 1's single most diagnostic mechanical hit was a 131-char
 line inside a 103–106-char block — an edit that had been abandoned halfway. Signal 2 is the
@@ -619,10 +625,20 @@ where the shipped default takes *every* tracked shell file):
 | Findings | 45 confirmed — 44 fixed across 8 PRs, 1 `known` |
 | Wall-clock | ~1 operator-day, including quota waits |
 
-**Finding density: about 1 per 300 lines of doc prose and 1 per 320 lines of comment prose** — close
-enough that you can size a first run from your line counts alone. The useful outlier: zero findings in
-recently-reworked files and in mid-size test files, whose comments turn out to be load-bearing and
-therefore actively maintained.
+**Finding density: about 1 per 300 lines of doc prose and 1 per 320 lines of comment prose** — on an
+English tree, close enough that you can size a first run from your line counts alone. The useful
+outlier: zero findings in recently-reworked files and in mid-size test files, whose comments turn out
+to be load-bearing and therefore actively maintained.
+
+**These numbers do not transfer to a tree written in another language.** Every figure above is
+English-derived, and its unit is the file, not the line: keel's run cost ≈65.6K tokens per file. A
+non-English adopter sized its first run by straight proportion from this table and came in at
+**2.1–2.4× the estimate** — ≈119–138K tokens per file of comparable length, a gap a per-line
+comparison hides. Understating by half starts a run that cannot finish: that one stopped mid-flight on
+a budget bound. **On a non-English tree, size the run from your own pilot, never from this table.**
+A cheap template is that run's own fit: a fixed cost per audited file plus a cost per line, two
+unknowns that two pilot files of clearly different length pin down — then apply
+[the session-limit arithmetic](#session-limits--the-flow-that-survives-a-quota) to the result.
 
 ## The role prompts
 

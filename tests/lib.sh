@@ -529,6 +529,8 @@ all_release_tag_versions() {
 key() { printf '%s%s' "$1" "$2"; }
 # Repeat CHAR ($1) N ($2) times — e.g. a key body of the length the pattern requires.
 rep() { printf "%*s" "$2" '' | tr ' ' "$1"; }
+# N ($1) Cyrillic letters, 2 bytes each in UTF-8 (dir #486). Built from octal so this source stays ASCII.
+rep_cyr() { local s ch; ch="$(printf '\321\217')"; printf -v s '%*s' "$1" ''; printf '%s' "${s// /${ch}}"; }
 # ASCII string -> UTF-16LE bytes (NUL-interleaved), no iconv needed — for binary-fixture tests
 utf16le() { local s="$1" i; for ((i=0; i<${#s}; i++)); do printf '%s\000' "${s:i:1}"; done; }
 
