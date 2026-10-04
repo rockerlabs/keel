@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # test_lib_git_c_guard.sh (dir #658) — tests/lib.sh's `git` function refuses an empty `-C` and any `-C`
 # outside $SANDBOX/$REPO_ROOT before git runs, and summary() fails the file on a refusal whose own
-# status was swallowed. Every case runs in a CHILD process sourcing a lib.sh (the real one, or a mutant
-# with the guard deleted), observed from here: a deliberate refusal in THIS process would land in this
-# file's own refused log and fail it. The child's cwd is always a throwaway repo under this file's
-# $SANDBOX and its "outside" repo is too (outside the CHILD's sandbox, inside ours), so the mutant's
-# unguarded writes land in fixtures, never in a real checkout — that is what makes the mutation run safe.
+# status was swallowed. Every case runs in a CHILD process sourcing the real lib.sh (the mutation run
+# unsets the guard function there), observed from here: a deliberate refusal in THIS process would land
+# in this file's own refused log and fail it. The child's cwd is always a throwaway repo under this
+# file's $SANDBOX and its "outside" repo is too (outside the CHILD's sandbox, inside ours), so the
+# mutant's unguarded writes land in fixtures, never in a real checkout — that is what makes it safe.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 probe="$SANDBOX/git-c-probe.sh"
 cat > "$probe" <<'EOF'
 #!/usr/bin/env bash
-# $1 = the lib.sh to source, $2 = a repo outside this child's $SANDBOX. cwd = a throwaway repo.
+# $1 = the lib.sh to source, $2 = a repo outside this child's $SANDBOX, $3 = "unguarded" for the mutant.
+# cwd = a throwaway repo.
 . "$1" || exit 1
 outer="$2"
+[ "${3:-}" = unguarded ] && unset -f git
 git -C "" config probe.empty yes 2>/dev/null; echo "rc-empty=$?"
 git -C "$outer" config probe.outer yes 2>/dev/null; echo "rc-outer=$?"
 git -C "$SANDBOX/.." rev-parse --git-dir >/dev/null 2>&1; echo "rc-dotdot=$?"
@@ -37,14 +39,14 @@ git -C "$SANDBOX/../no-such-dir-658" status >/dev/null 2>&1; echo "rc-missing=$?
 summary >/dev/null; echo "summary-rc=$?"
 EOF
 
-# run_probe LIB — a fresh cwd repo and outside repo per run; leaves them in $CWD_REPO/$OUTER_REPO.
+# run_probe [unguarded] — a fresh cwd repo and outside repo per run; leaves them in $CWD_REPO/$OUTER_REPO.
 run_probe() {
   CWD_REPO="$(new_repo)"
   OUTER_REPO="$(new_repo)"
-  run_in "$CWD_REPO" bash "$probe" "$1" "$OUTER_REPO"
+  run_in "$CWD_REPO" bash "$probe" "$TESTS_DIR/lib.sh" "$OUTER_REPO" "${1:-}"
 }
 
-run_probe "$TESTS_DIR/lib.sh"
+run_probe
 check_contains "G1 an empty -C is refused before git runs" "$OUT" "rc-empty=97"
 check_eq "G1 nothing landed in the caller's cwd repo" "" "$(git -C "$CWD_REPO" config --get probe.empty)"
 check_contains "G2 a -C outside \$SANDBOX/\$REPO_ROOT is refused" "$OUT" "rc-outer=97"
@@ -67,14 +69,9 @@ check_contains "P6 the scan stops at the subcommand (commit -C <rev> is not a pa
 check_contains "P7 a bare git with zero arguments does not crash the wrapper (bash 3.2, set -u)" "$OUT" "rc-noargs=1"
 check_contains "P10 a -C that does not exist reaches git, which refuses it itself (128, not 97)" "$OUT" "rc-missing=128"
 
-# Mutation proof: the same probe against a lib.sh with the guard function deleted must turn G1/G2/G4/G5
-# red — the writes reach the fixtures and nothing fails the file. The copy's REPO_ROOT is its own
-# (non-repo) parent, so the ref guard arms nothing there; every write still lands under our $SANDBOX.
-mut="$SANDBOX/mutant/tests/lib.sh"
-mkdir -p "${mut%/*}"
-awk '/^git\(\) \{$/ { skip = 1 } !skip { print } skip && /^\}$/ { skip = 0 }' "$TESTS_DIR/lib.sh" > "$mut"
-check_count "M0 the mutant really lost the guard function" "$mut" '^git() {$' 0
-run_probe "$mut"
+# Mutation proof: the same probe with the guard function unset must turn G1/G2/G4/G5 red — the writes
+# reach the fixtures and nothing fails the file. Every write still lands under our $SANDBOX.
+run_probe unguarded
 check_eq "M1 without the guard, an empty -C writes into the caller's cwd repo" "yes" "$(git -C "$CWD_REPO" config --get probe.empty)"
 check_eq "M2 without the guard, an outside -C writes into the outside repo" "yes" "$(git -C "$OUTER_REPO" config --get probe.outer)"
 check_ne "M3 without the guard, the helper wires a remote into the cwd repo" "" "$(git -C "$CWD_REPO" config --get remote.origin.url)"

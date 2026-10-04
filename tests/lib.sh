@@ -251,9 +251,8 @@ ref_guard_arm "$REPO_ROOT"
 # same macOS temp dir passes; a path that does not exist passes through (git cannot enter it either).
 # One opt-in widening: a file whose code under test makes its OWN `mktemp -d` repo (outside $SANDBOX —
 # macOS's bare `mktemp -d` ignores $TMPDIR, so it cannot be redirected) sets GIT_C_GUARD_ALLOW_TMP=1,
-# which also admits any path below the temp root $SANDBOX came from (never the root itself). A full run
-# measured 18 such calls, all in test_pipeline_canary.sh and test_git_global_paths.sh; a third opt-in is
-# test_lib_ref_guard.sh's T13 child, whose own copied lib.sh writes into its parent's sandbox.
+# which also admits any path below the temp root $SANDBOX came from (never the root itself). Each opt-in
+# site carries its own dir #658 comment — grep GIT_C_GUARD_ALLOW_TMP.
 # With a `git` function defined, `command -v git` prints `git`, not a path: a test that needs the
 # binary's path (a symlink farm, a shim's `exec`) uses `type -P git`. Pinned by test_lib_git_c_guard.sh.
 # Limits, named: `command git`, `"$GIT"`, `bash -c`/child scripts and product tools spawned as
@@ -264,7 +263,7 @@ _GIT_C_SANDBOX_P="$(cd -P "$SANDBOX" 2>/dev/null && pwd -P)"; _GIT_C_SANDBOX_P="
 _GIT_C_REPO_P="$(cd -P "$REPO_ROOT" 2>/dev/null && pwd -P)"; _GIT_C_REPO_P="${_GIT_C_REPO_P:-$REPO_ROOT}"
 _GIT_C_TMP_P="${_GIT_C_SANDBOX_P%/*}"; _GIT_C_TMP_P="${_GIT_C_TMP_P:-/no-temp-root}"
 git() {
-  local _gc_a _gc_take="" _gc_p="" _gc_seen="" _gc_bad="" _gc_phys
+  local _gc_a _gc_take="" _gc_p="" _gc_seen="" _gc_bad="" _gc_phys=1
   for _gc_a in "$@"; do
     if [ -n "$_gc_take" ]; then
       if [ "$_gc_take" = C ]; then
@@ -284,9 +283,8 @@ git() {
   done
   if [ -n "$_gc_seen" ] && [ -z "$_gc_bad" ]; then
     case "$_gc_p" in
-      *..*) _gc_phys=1 ;;
+      *..*) ;;
       "$SANDBOX"|"$SANDBOX"/*|"$_GIT_C_SANDBOX_P"|"$_GIT_C_SANDBOX_P"/*|"$REPO_ROOT"|"$REPO_ROOT"/*|"$_GIT_C_REPO_P"|"$_GIT_C_REPO_P"/*) _gc_phys="" ;;
-      *) _gc_phys=1 ;;
     esac
     if [ -n "$_gc_phys" ] && _gc_p="$(cd -P "$_gc_p" 2>/dev/null && pwd -P)"; then
       case "$_gc_p" in

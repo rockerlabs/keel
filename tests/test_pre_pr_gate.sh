@@ -3029,9 +3029,11 @@ check_absent "dir #133: no origin remote → allowed" "$OUT" "deny"
 # cross-fork PR (dir #61's own `--head owner:branch` shape), routinely tracks a remote that isn't named
 # `origin`. Push $1's current branch to a FRESH remote named $2 WITH tracking (`git push -u`), so the
 # branch's own `@{upstream}` names it — the mechanism the fix now prefers over a hardcoded `origin`.
+# dir #658: the `${…:?}`s stop this body even when pasted into a plain shell that never loaded lib.sh
+# (its `git -C` guard included) — an empty `$d` there once wrote a `fork` remote into the cwd's repo.
 push_named_remote() {
-  local d="$1" remote="$2" bare
-  bare="$SANDBOX/$remote-$(basename "$d").git"
+  local d="${1:?push_named_remote: empty repo path}" remote="$2" bare
+  bare="${SANDBOX:?push_named_remote: SANDBOX is unset}/$remote-$(basename "$d").git"
   git init -q --bare "$bare"
   git -C "$d" remote add "$remote" "$bare"
   git -C "$d" push -q -u "$remote" "$(branch_raw_for "$d")" >/dev/null 2>&1
