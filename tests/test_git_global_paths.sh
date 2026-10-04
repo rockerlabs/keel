@@ -4,6 +4,9 @@
 # is unavailable (Apple's /usr/bin/git 2.39 answers rc 129). Every case runs in a throwaway HOME.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
+# dir #658: tools/lib/git-global-paths.sh, sourced below, runs `git -C` in its own `mktemp -d` probe dir
+# (outside $SANDBOX); tests/lib.sh's `git -C` guard admits such temp dirs only on this opt-in.
+GIT_C_GUARD_ALLOW_TMP=1
 
 lib="$REPO_ROOT/tools/lib/git-global-paths.sh"
 # shellcheck source=tools/lib/git-global-paths.sh

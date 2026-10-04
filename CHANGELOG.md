@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
+  current directory", which once let a fixture helper write a `fork` remote into the real checkout's
+  config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
+  refusal fails the file at `summary()` even when the call's own status was swallowed. A file whose code
+  under test makes its own temp repo opts in with `GIT_C_GUARD_ALLOW_TMP=1` (three today). With the
+  function defined, `command -v git` names the function, so tests that need git's path use `type -P git`.
+  Pinned, with a mutation proof, by `tests/test_lib_git_c_guard.sh`. dir #658.
 - **`tools/init-project.sh` no longer attaches a nested target to its parent repo.** A directory inside
   another git repo passed the old "inside a work tree" test, so no `git init` ran: the target got a
   `CLAUDE.md` but no repo of its own, and impact tracking was enabled for the parent's root. Such a

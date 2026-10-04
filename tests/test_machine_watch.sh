@@ -356,7 +356,7 @@ done
 # reachable on a macOS box (where the real /usr/bin/osascript would otherwise always win the probe).
 for _n in bash sh jq git awk find cksum stat mkdir mv rm touch cp cat sed tr uname dirname basename date id sleep \
   head cut grep sort wc ls readlink env dd rmdir xargs expr chmod ln tail cmp diff; do
-  _p="$(command -v "$_n" 2>/dev/null)" && [ -x "$_p" ] && ln -sf "$_p" "$MINBIN/$_n"
+  _p="$(type -P "$_n")" && ln -sf "$_p" "$MINBIN/$_n"
 done
 unset _n _p
 # delta-audit 0.13.0 S2-6: tools/lib/git-global-paths.sh probes with a bare `mktemp -d` and removes the probe

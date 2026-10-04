@@ -316,7 +316,7 @@ check_absent "no empty scope-A inventory is emitted" "$OUT" "scope A total"
 # incremental run would silently audit nothing.
 fakebin="$(mktemp -d "$SANDBOX/fakebin.XXXXXX")"
 printf '#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = diff ] && exit 9; done\nexec %s "$@"\n' \
-  "$(command -v git)" > "$fakebin/git"
+  "$(type -P git)" > "$fakebin/git"
 chmod +x "$fakebin/git"
 run_in "$r" env "PATH=$fakebin:$PATH" "$TOOL" --prev "$base"
 check_status "a failing git diff -> exit 3" 3 "$STATUS"
