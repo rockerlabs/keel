@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/triage` — a promote-or-drop command for the accumulator tiers.** `LEARNINGS.md` had no owner for
+  its "promote on recurrence, prune when stale" rule (one real file: 158 of 184 entries at `[1×]`, 26 at
+  `[2×]`+ already due), and the grooming doc's accumulator triage named only the standing list and the
+  ideas file. New `commands/triage.md` over `docs/triage.md` (T0–T6): one verdict per entry —
+  `PROMOTE-RULE`, `PROMOTE-TICKET`, `KEEP`, `DROP` — a 40-entry bound, a 60-day `[1×]` horizon, and the
+  rule that an entry never survives its own promotion. `/groom` G4 and `/global-review` now call it by
+  reference, `/wrap` keeps the counter bump and leaves the promote-due set to it, and `FRAMEWORK.md`'s
+  review signal 3 names it as its responder. Pinned by `tests/test_triage_doc.sh`; the install
+  change-detector counts 14 commands. dir #517.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
