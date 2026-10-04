@@ -126,7 +126,10 @@ failure is a missing *cause*, not a missing attempt.
 
 ## Shipped docs — situation, not summary
 
-Trigger conditions only — open the file once the situation matches, not before:
+Trigger conditions only — open the file once the situation matches, not before. A `docs/<x>.md`
+that any Keel file names (these rails, `FRAMEWORK.md`, a Keel command — a `../docs/<x>.md` link
+too) is Keel's own doc: it sits in the `docs/` folder beside your installed `FRAMEWORK.md`, not in
+your project's own `docs/`:
 
 - 2+ agent sessions against one repo (worktrees, terminals, a fleet) → `docs/parallel-sessions.md`
 - Spawning any subagent (via the Agent tool) → `docs/delegation.md`

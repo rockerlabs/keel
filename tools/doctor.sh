@@ -639,7 +639,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
   # RESOLVES but into a different checkout than this one looks healthy while running stale content —
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
-  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
+  # dir #650: a linked home's keel/docs/ (and keel/docs/drydock/) hold one symlink per shipped doc — the
+  # one-level "$ihome/keel"/* glob skips those dirs, so they are walked explicitly.
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
     # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
@@ -662,6 +664,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
         if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
       "$ihome/bin/keel")
         tgt="$repo_root/keel" ;;
+      # The docs arm MUST precede the generic keel/ arm: a `case` `*` matches `/`, so keel/docs/x.md would
+      # otherwise map to $repo_root/x.md, which never exists, and W-LINK-FOREIGN could never fire (dir #650).
+      "$ihome/keel/docs/"*)
+        tgt="$repo_root/docs/${l#"$ihome"/keel/docs/}" ;;
       "$ihome/keel/"*)
         tgt="$repo_root/$b" ;;
       *)
@@ -743,7 +749,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    say "  OK   core rails: embedded copy (copy mode; a re-run checks for drift)"
+    # dir #650 D10: compare the embedded block with this checkout's CORE.md (the shared, trim-aware
+    # comparator in tools/lib/core-ownership.sh) instead of claiming a drift check that never happened.
+    case "$(keel_core_block_state "$gclaude" "$repo_root/CORE.md")" in
+      current)         say "  OK   core rails: embedded copy (matches this checkout's CORE.md)" ;;
+      current-trimmed) say "  OK   core rails: embedded copy (matches this checkout's CORE.md, trimmed)" ;;
+      *)
+        warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$imode_flag$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
+    esac
   else
     warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$imode_flag$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
   fi
@@ -782,6 +795,30 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   commands: $wired of $total shipped are wired"
     else
       warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    fi
+  fi
+
+  # Docs (dir #650): X of Y shipped docs are present beside the installed FRAMEWORK.md. The docs dir
+  # follows the AUDIT's mode and layout, never -f: --codex → docs/; otherwise keel/docs/ when the home is
+  # linked (keel/CORE.md a symlink — dangling included — or a --no-git trim, the same test install.sh's
+  # stickiness uses), else docs/. Checked in every mode, --codex included, and the advice carries the
+  # mode flag (W-TIER-MISSING's shape — a bare re-run under --codex would build a second install).
+  if [ "$CODEX_MODE" = 1 ]; then docs_rel="docs"
+  elif keel_core_is_link "$ihome/keel/CORE.md" || keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then docs_rel="keel/docs"
+  else docs_rel="docs"
+  fi
+  dpresent=0; dtotal=0; missing_docs=""
+  for dsrc in "$repo_root"/docs/*.md "$repo_root"/docs/drydock/*.md; do
+    [ -f "$dsrc" ] || continue
+    drel="${dsrc#"$repo_root"/docs/}"
+    dtotal=$((dtotal + 1))
+    if [ -f "$ihome/$docs_rel/$drel" ]; then dpresent=$((dpresent + 1)); else missing_docs="$missing_docs $drel"; fi
+  done
+  if [ "$dtotal" -gt 0 ]; then
+    if [ "$dpresent" = "$dtotal" ]; then
+      say "  OK   docs: $dpresent of $dtotal shipped are present in $docs_rel/"
+    else
+      warn W-DOCS-MISSING "docs: only $dpresent of $dtotal shipped are present in $ihome/$docs_rel — missing:$missing_docs (a pull refreshes content, not composition: re-run install.sh$imode_flag$ihome_flag)"
     fi
   fi
 

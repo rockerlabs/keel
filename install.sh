@@ -2,8 +2,10 @@
 # install — one-command bootstrap for Keel into your harness home.
 #
 # Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md, LEARNINGS.md,
-# IDEAS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, the commands) is offered for
-# update on a re-run when the installed copy has drifted. A drifted copy whose BYTES are provably
+# IDEAS.md) are never clobbered — one exception: a terminal re-run OFFERS (default no) to refresh only
+# the rails block inside CLAUDE.md/AGENTS.md, backing the file up first. Keel's own core
+# (FRAMEWORK, PRINCIPLES, the docs, the commands) is offered for update on a re-run when the installed
+# copy has drifted. A drifted copy whose BYTES are provably
 # Keel's own older release — see keel_own_untouched below for what that does and does not establish;
 # it is a content check, not a "nobody touched it" one — is refreshed automatically, in every mode; a
 # copy that might be yours is offered interactively ([u]pdate for commands, y/N elsewhere; default no)
@@ -15,7 +17,7 @@
 # and verifies the result.
 #
 # Linked mode (--link): instead of copying, wire Keel-owned content BY REFERENCE — a `<home>/keel/`
-# consumption dir of symlinks into this checkout (CORE, FRAMEWORK, PRINCIPLES), one `@import` line in
+# consumption dir of symlinks into this checkout (CORE, FRAMEWORK, PRINCIPLES, docs/), one `@import` line in
 # the global CLAUDE.md, and command symlinks. `git pull` here then refreshes every consumer at once;
 # re-run `install.sh --link` after a pull to wire files a release ADDED (pull refreshes content, not
 # composition). Requires a checkout you keep (not bootstrap's temp clone). The `@import` line is a
@@ -50,8 +52,9 @@ usage() {
 install — one-command bootstrap for Keel into your harness home.
 
 Copies the durable core into the harness home. Your own files (CLAUDE.md, INSTANCE.md,
-LEARNINGS.md, IDEAS.md) are never clobbered; Keel's own core (FRAMEWORK, PRINCIPLES, commands) is
-offered for update on a re-run when it has drifted. A drifted copy that provably is Keel's own
+LEARNINGS.md, IDEAS.md) are never clobbered — one exception: a terminal re-run offers (default no)
+to refresh only the rails block inside CLAUDE.md/AGENTS.md, backing the file up first. Keel's own
+core (FRAMEWORK, PRINCIPLES, docs, commands) is offered for update on a re-run when it has drifted. A drifted copy that provably is Keel's own
 older release is refreshed automatically; a copy that might be yours is offered interactively
 ([u]pdate for commands, y/N elsewhere; default no) or flagged non-interactively — pass --force to
 take it over anyway (backed up first; never reaches your own files, hooks, or settings.json). If a
@@ -61,8 +64,8 @@ secret-guard git hook machine-global (never over an existing hooksPath), seeds a
 and verifies the result.
 
 Linked mode (--link, Claude Code): wires by reference instead of copying — <home>/keel/
-symlinks into this checkout + ONE @import line in your global CLAUDE.md + command
-symlinks. `git pull` here refreshes everything; re-run `install.sh --link` after a pull
+symlinks into this checkout (incl. docs/) + ONE @import line in your global CLAUDE.md +
+command symlinks. `git pull` here refreshes everything; re-run `install.sh --link` after a pull
 to wire newly shipped files. Keep this clone — it IS the installation. Removal is the
 mirror image: delete <home>/keel/, the import line, and the command symlinks.
 
@@ -190,6 +193,36 @@ else
   }
   keel_core_is_nogit_trim() {
     [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null
+  }
+  # dir #650: the block-currency comparator — byte-identical bodies to tools/lib/core-ownership.sh's
+  # keel_core_block_* (tools/self/doctor.sh's single-definition check compares them). core_block(), this
+  # file's former mirror of block_of() in tests/test_core_wrapper_sync.sh, is absorbed by
+  # keel_core_block_text.
+  keel_core_block_text() {
+    sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'
+  }
+  keel_core_block_is_trimmed() {
+    local block
+    block="$(keel_core_block_text "$1")"
+    case "$block" in
+      *'## Git — mandatory rails'*|*'## Before writing code — reconcile first'*) return 1 ;;
+    esac
+    return 0
+  }
+  keel_core_block_norm() {
+    awk '/KEEL-(NO)?GIT-(BEGIN|END)/ { next } NF { blank = 0; print; next } !blank { print; blank = 1 }'
+  }
+  keel_core_block_state() {
+    local inst ref
+    inst="$(keel_core_block_text "$1")"
+    ref="$(keel_core_block_text "$2")"
+    if ! keel_core_block_is_trimmed "$1"; then
+      if [ "$inst" = "$ref" ]; then echo current; else echo drift; fi
+      return 0
+    fi
+    inst="$(printf '%s\n' "$inst" | sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' | keel_core_block_norm)"
+    ref="$(printf '%s\n' "$ref" | awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' | keel_core_block_norm)"
+    if [ "$inst" = "$ref" ]; then echo current-trimmed; else echo drift; fi
   }
 fi
 
@@ -608,7 +641,8 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # idiom as the `manifest_usable` line right above: exempt from `set -e` the same way.
 [ "${KEEL_TEST_DROP_PRIOR_MANIFEST:-}" = 1 ] && rm -f "$prior_manifest"
 
-# force_backup DEST — DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
+# force_backup DEST [LABEL] — (LABEL, default "--force", is only the word in the success line's closing
+# parentheses: the block-refresh ladder, dir #650, passes "block refresh".) DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
 # preserved is the content the adopter actually saw at that path). A fresh timestamp every call — never
 # a fixed name — so a LATER --force run can't clobber an EARLIER run's backup (dir #323's idempotence
 # requirement). The guarantee is second-granularity and nothing finer: `ts` is `%Y%m%dT%H%M%SZ` and the
@@ -653,7 +687,7 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
 # failure — which is exactly what the `cp` below now does.
 force_backup() {
-  local dest="$1" ts
+  local dest="$1" label="${2:---force}" ts
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
     echo "  !    $(basename "$dest"): $NON_REGULAR_MSG"
     return 1
@@ -673,7 +707,7 @@ force_backup() {
     echo "  !    $(basename "$dest"): backup failed — left untouched" >&2
     return 1
   fi
-  echo "  ~    $(basename "$dest") backed up → $(basename "$dest").$ts.bak (--force)"
+  echo "  ~    $(basename "$dest") backed up → $(basename "$dest").$ts.bak ($label)"
 }
 
 # 1. Durable core.
@@ -1049,12 +1083,11 @@ replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
   local real; real="$(resolve_file "$1")"
   strip_core_block "$1" ${2+"$2"} > "$real.keeltmp.$$" && mv -f "$real.keeltmp.$$" "$real"
 }
-# core_block FILE → the lines strictly between the markers (markers excluded — their comment text
-# legitimately differs). Mirror of block_of() in tests/test_core_wrapper_sync.sh — keep in sync.
-core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
+# (core_block, the former "lines between the markers" helper here, is now keel_core_block_text in
+# tools/lib/core-ownership.sh — dir #650 absorbed it into the shared block comparator.)
 # refresh_core_block FILE — replace FILE's embedded KEEL-CORE block (markers included) with the
-# CURRENT shipped block from CORE.md — the same source the caller's own drift check (core_block
-# "$root/CORE.md") already compares against, so there is exactly one file this "is it stale"/"refresh
+# CURRENT shipped block from CORE.md — the same source the caller's own drift check (keel_core_block_state
+# against "$root/CORE.md") already compares against, so there is exactly one file this "is it stale"/"refresh
 # it" pair depends on, not two kept in sync only by test_core_wrapper_sync.sh's byte-equality pin.
 # The copy-mode analog of replace_core_block: that one migrates an embedded block to an @import line
 # (linked mode); this one keeps the block embedded, just refreshed (--codex currency — see header).
@@ -1063,15 +1096,70 @@ core_block() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 # the real target through the link.
 # ENVIRON, not -v: a -v value goes through awk's own escape processing, which would mangle a
 # multi-line block containing backslashes (same reason strip_git_blocks uses ENVIRON below).
+# Optional second argument "trimmed" (dir #650): write the git-rails-trimmed reference form instead —
+# the shipped block through strip_git_blocks (crumb included), so a later run recognizes the trim
+# mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
 refresh_core_block() {
   local file="$1" real fresh
   real="$(resolve_file "$file")"
   fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
+  if [ "${2-}" = trimmed ]; then
+    fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
+  fi
   KEEL_FRESH_BLOCK="$fresh" awk '
     /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
     /KEEL-CORE-END/   { skip=0; next }
     !skip
   ' "$file" | atomic_write "$real"
+}
+# core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
+# --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
+# (foreign_core=0). It touches ONLY the text between the KEEL-CORE markers, never anything outside.
+#   block current           → "=" line (a git-rails trim made by /keel-setup counts as current: the
+#                             comparison is trim-aware, keel_core_block_state)
+#   differs, on a terminal  → offer to refresh just the block (default NO); a yes backs FILE up first
+#                             (force_backup's caller contract: tested in an `if`), then writes the
+#                             reference form — the full block, or the trimmed one for a trimmed block
+#   differs, no terminal    → WARN, never a write; the route carries the mode and home flags (a bare
+#                             ./install.sh would build a second install elsewhere for a --codex or
+#                             --home adopter) and, from an ephemeral bootstrap run whose checkout is
+#                             about to be reaped, the two-step curl form that keeps a terminal on stdin
+#                             (`sh FILE ARGS` passes the flags straight to install.sh).
+core_block_currency() {
+  local dest="$1" state trimmed=0 reply="" route
+  state="$(keel_core_block_state "$dest" "$root/CORE.md")"
+  case "$state" in
+    current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
+    current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
+  esac
+  keel_core_block_is_trimmed "$dest" && trimmed=1
+  if [ -t 0 ]; then
+    echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
+    if [ "$trimmed" = 1 ]; then
+      printf "       Refresh the block, keeping your git-rails trim? [y/N] "
+    else
+      printf "       Replace just the block with the current shipped rails? [y/N] "
+    fi
+    read -r reply || reply=""
+    case "$reply" in
+      [yY]|[yY][eE][sS])
+        if force_backup "$dest" "block refresh" && { if [ "$trimmed" = 1 ]; then refresh_core_block "$dest" trimmed; else refresh_core_block "$dest"; fi; }; then
+          echo "  +    $CONTEXT_FILE core block refreshed"
+        else
+          echo "  =    $CONTEXT_FILE left untouched (nothing was refreshed)"
+        fi ;;
+      *) echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)" ;;
+    esac
+  else
+    if [ "$EPHEMERAL" = 1 ]; then
+      route="curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh -o keel-bootstrap.sh && sh keel-bootstrap.sh$mode_flag$home_flag"
+    else
+      route="$root/$advise_install"
+      [ "$CODEX" = 0 ] && route="$route   (or migrate to linked: $root/install.sh --link$home_flag)"
+    fi
+    echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+    echo "       Refresh just the block — from a terminal, run (it offers; default no):  $route"
+  fi
 }
 # strip_template_prose — stdin → stdout, with the copy-path-only header prose removed: the
 # " (TEMPLATE)" tag suffix and the "> Copy this to your harness" line. Shared by both wrapper
@@ -1286,6 +1374,40 @@ sync_product() {
   fi
 }
 
+# ship_docs DOCS_DIR — place Keel's procedure docs (dir #650): every `docs/*.md` and
+# `docs/drydock/*.md` of the source root, each at the same relative path under DOCS_DIR — the directory
+# beside the FRAMEWORK.md this run places (copy/--codex: <home>/docs; linked: <home>/keel/docs). The
+# docs are named by path in the rails, FRAMEWORK.md and the commands, and nothing else places them.
+# Two explicit globs, never `git ls-files` (a no-git tarball install must work too) and never `docs/**`
+# (the main checkout's gitignored docs/specs/ must not ship; non-.md assets are not docs).
+# Every file goes through sync_product with NO alias argument, so manifest records, never-clobber, the
+# drift prompt/WARN, --force backup and keel_own_untouched's auto-refresh are all inherited unchanged;
+# `place()` picks copy vs symlink by mode. Guarded like the commands loop: skipped whole when the source
+# has no docs/ (tests/test_stamp_release_bootstrap.sh builds such a fixture), and per glob result
+# (an unmatched glob must not reach sync_product's `source missing … return 1` under set -e).
+# A dest dir that exists but is not a directory (or cannot be made) prints one skip line and moves on:
+# a bare `mkdir -p` failure here would abort the run before the manifest is written.
+ship_docs() {
+  local docs_dir="$1" doc rel sub subdir
+  [ -d "$root/docs" ] || return 0
+  for sub in "" drydock; do
+    subdir="$docs_dir${sub:+/$sub}"
+    if { [ -e "$subdir" ] || [ -L "$subdir" ]; } && [ ! -d "$subdir" ]; then
+      echo "  !    $subdir exists and is not a directory — Keel's docs${sub:+/$sub} were not placed there"
+      continue
+    fi
+    mkdir -p "$subdir" 2>/dev/null || {
+      echo "  !    could not create $subdir — Keel's docs${sub:+/$sub} were not placed there"
+      continue
+    }
+    for doc in "$root/docs${sub:+/$sub}"/*.md; do
+      [ -f "$doc" ] || continue
+      rel="${doc#"$root"/docs/}"
+      sync_product "$doc" "$docs_dir/$rel"
+    done
+  done
+}
+
 # Detect a pre-existing context file that ISN'T Keel's core: we never clobber it, so the always-loaded
 # rails won't be merged in. Flag that in Verify instead of leaving it silent. Keel's core (and any file
 # derived from it) carries this heading; a foreign file won't.
@@ -1349,6 +1471,7 @@ if [ "$LINK" = 1 ]; then
   fi
   sync_product "$root/FRAMEWORK.md"  "$link_dir/FRAMEWORK.md"
   sync_product "$root/PRINCIPLES.md" "$link_dir/PRINCIPLES.md"
+  ship_docs "$link_dir/docs"
 
   # A short README so the dir explains itself later (written once; yours to edit after).
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
@@ -1365,6 +1488,8 @@ After a pull, re-run \`install.sh --link$home_flag\` once — a pull refreshes c
 - \`CORE.md\` — the always-on rails, @imported by the global \`CLAUDE.md\` one level up
   (a \`--no-git\` install generates a trimmed copy here instead of the symlink — re-runs refresh it)
 - \`FRAMEWORK.md\`, \`PRINCIPLES.md\` — read on demand via the map in that \`CLAUDE.md\`
+- \`docs/\` — Keel's procedure docs the rails and commands point at (\`docs/<name>.md\` means this folder, not
+  your project's own \`docs/\`), read on demand
 
 To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUDE.md\`, and any
 \`commands/\` symlinks (one level up) into the checkout. Health check: \`tools/doctor.sh --install$doctor_arg\`
@@ -1403,7 +1528,7 @@ EOF
     if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
-      if [ "$(core_block "$gclaude")" = "$(core_block "$root/CORE.md")" ]; then
+      if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
         replace_core_block "$gclaude" ""
         echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
       else
@@ -1414,7 +1539,7 @@ EOF
       echo "  =    CLAUDE.md already imports the linked core"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    if [ "$(core_block "$gclaude")" = "$(core_block "$root/CORE.md")" ]; then
+    if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       replace_core_block "$gclaude"
       echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
     elif [ -t 0 ]; then
@@ -1443,6 +1568,30 @@ EOF
       echo "       Point your CLAUDE.md map at keel/$stale, then remove the copy:  rm \"$HOME_DIR/$stale\""
     fi
   done
+  # Same stale-shadow class for the docs (dir #650 D6): a root docs/ left by an earlier copy install
+  # still sits where a map that names a bare FRAMEWORK.md (a migrated copy wrapper) makes the docs
+  # locator point. Keyed on files that are provably Keel's own — byte-identical to the shipped doc, or
+  # recorded as docs/<rel> in the copy-mode manifest this run read BEFORE rewriting it — never on a
+  # bare name match (an adopter's own docs/reference.md is not Keel's), and not on paths the --codex
+  # manifest records (a live codex install sharing this home). Nothing is deleted.
+  stale_docs=0
+  for doc in "$HOME_DIR"/docs/*.md "$HOME_DIR"/docs/drydock/*.md; do
+    [ -f "$doc" ] && [ ! -L "$doc" ] || continue
+    rel="${doc#"$HOME_DIR"/docs/}"
+    [ -f "$root/docs/$rel" ] || continue
+    if [ -f "$manifest_dir/install-manifest.codex" ] \
+       && awk -F'\t' -v r="docs/$rel" '$1 == "artifact=file" && $2 == r { found = 1 } END { exit !found }' "$manifest_dir/install-manifest.codex"; then
+      continue
+    fi
+    recorded="$(prior_file_cksum "docs/$rel")"
+    if cmp -s "$root/docs/$rel" "$doc" || { [ -n "$recorded" ] && [ "$recorded" != "$PRIOR_READ_FAILED" ]; }; then
+      stale_docs=$((stale_docs + 1))
+    fi
+  done
+  if [ "$stale_docs" -gt 0 ]; then
+    echo "  !    docs/ copies remain from a copy-mode install ($stale_docs of Keel's own files in $HOME_DIR/docs) — linked mode reads keel/docs/."
+    echo "       Point your CLAUDE.md map at keel/FRAMEWORK.md (the docs locator follows FRAMEWORK.md), then remove Keel's copies from $HOME_DIR/docs — the files identical to this checkout's docs/ (your own files there are not Keel's)."
+  fi
 else
   if [ "$CODEX" = 1 ]; then
     # --codex: generate an AGENTS.md wrapper instead of a plain copy_gap of templates/CLAUDE.md — the
@@ -1458,27 +1607,24 @@ else
       echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
     elif [ "$foreign_core" = 1 ]; then
       echo "  =    $CONTEXT_FILE exists (left untouched — predates Keel, see Verify below)"
-    elif [ "$(core_block "$dest")" = "$(core_block "$root/CORE.md")" ]; then
-      echo "  =    $CONTEXT_FILE (up to date)"
-    elif [ -t 0 ]; then
-      echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
-      printf "       Replace just the block with the current shipped rails? [y/N] "
-      read -r reply || reply=""
-      case "$reply" in
-        [yY]|[yY][eE][sS]) refresh_core_block "$dest"; echo "  +    $CONTEXT_FILE core block refreshed" ;;
-        *)                 echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)" ;;
-      esac
     else
-      echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
-      echo "       Refresh by hand: replace the KEEL-CORE block using $root/CORE.md as the source."
+      core_block_currency "$dest"
     fi
   else
-    # User-owned (never clobber) …
-    copy_gap "$root/templates/CLAUDE.md"  "$HOME_DIR/CLAUDE.md"
+    # User-owned (never clobber) …  except the rails block inside an existing Keel-written CLAUDE.md:
+    # core_block_currency checks it and, on a terminal, OFFERS (default no) a backed-up refresh of just
+    # that block (dir #650 — before this, copy mode never compared the block at all, so no CORE change
+    # ever reached an existing install). A foreign CLAUDE.md, or an absent one, takes copy_gap as ever.
+    if [ -f "$HOME_DIR/CLAUDE.md" ] && [ "$foreign_core" = 0 ]; then
+      core_block_currency "$HOME_DIR/CLAUDE.md"
+    else
+      copy_gap "$root/templates/CLAUDE.md"  "$HOME_DIR/CLAUDE.md"
+    fi
   fi
   # … Keel-owned (offered for update on a drifted re-run).
   sync_product "$root/FRAMEWORK.md"       "$HOME_DIR/FRAMEWORK.md"
   sync_product "$root/PRINCIPLES.md"      "$HOME_DIR/PRINCIPLES.md"
+  ship_docs "$HOME_DIR/docs"
 fi
 
 # User-owned seeds — identical in both modes (real files, never clobbered, never symlinks into a
@@ -2024,7 +2170,7 @@ elif [ "$EPHEMERAL" = 1 ]; then
     the keel repo and run  ./$advise_install  from it (re-runs never clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
-  - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, the
+  - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, docs/, the
     commands/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  $advise_uninstall .
 EOF
 else
