@@ -200,6 +200,38 @@ echo done
 run "$pd" "$d" --quiet
 check_contains "an extensionless shebang-only script is scanned like a .sh file" "$OUT" "commit:4"
 
+# --- signal 1, dir #486: line length is counted in CHARACTERS, not bytes ----------------------------
+# A byte count fails both ways on Cyrillic: a line wrapped at its ASCII neighbors' width reads as an
+# outlier, and a real outlier among Cyrillic neighbors goes unseen (no neighbor is under WRAP_MAX).
+y100="$(rep_cyr 100)"
+y140="$(rep_cyr 140)"
+d="$(mk_repo_with doc.md "# doc
+
+${a100}
+${b100}
+${y100}
+")"
+run "$pd" "$d" --quiet
+check_absent "a 100-char Cyrillic line (200 bytes) among 100-char ASCII neighbors is NOT an outlier" "$OUT" "doc.md:5"
+d="$(mk_repo_with doc.md "# doc
+
+${y100}
+${y100}
+${y140}
+")"
+run "$pd" "$d" --quiet
+check_contains "a 140-char Cyrillic line among 100-char Cyrillic neighbors IS flagged" "$OUT" "doc.md:5"
+check_contains "the printed length and baseline are characters" "$OUT" "(140 ch, block wrap ~100 ch)"
+# The sh comment path feeds the same counter; one case proves it is wired there too.
+d="$(mk_repo_with "$fake_sh" "#!/usr/bin/env bash
+# ${y100}
+# ${y100}
+# ${y140}
+echo done
+")"
+run "$pd" "$d" --quiet
+check_contains "a Cyrillic sh comment outlier is measured in characters" "$OUT" "t.sh:4 (142 ch, block wrap ~102 ch)"
+
 # --- signal 2: a dead relative link -> GAP, exit 1 --------------------------------------------------
 d="$(mk_repo_with doc.md "# doc
 

@@ -25,6 +25,15 @@ sections real content going forward — see that page for exactly when each one 
   opt-in to a parked file as a whole. G4: a pool reading compares only with readings of the same
   coverage, so after a split the plan states the parked count beside it and reads no growth across the
   change. A hand step for now; dir #655 removes it.
+- **Line-length sweeps count characters, and the drydock cost table warns a non-English tree off its
+  numbers.** `docs/drydock.md`'s sweep 1 and `tools/self/prose-drift.sh` both counted bytes, so on
+  Cyrillic prose every threshold was halved and the signal inverted: a non-English adopter's run found
+  every hit it checked was a line wrapped exactly at its file's own width. Both now strip UTF-8
+  continuation bytes under `LC_ALL=C` and count what is left, one byte per character, on BWK awk,
+  busybox, mawk and gawk alike; the `ch` they print is now true. On keel's own tree, em dashes alone had
+  produced five false leads and hidden one real one. The cost section now says its calibration is
+  per-file and English-derived — that run cost 2.1–2.4× its estimate — and that a non-English tree
+  sizes from its own pilot, with a two-point fit to start from. dir #486.
 
 ## [0.13.0] — 2026-10-03
 
