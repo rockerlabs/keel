@@ -698,9 +698,10 @@ esac
 # mechanism covers every pushed-ref shape without this scanner ever needing to know the remote's name
 # or reconstruct a remote-tracking ref path: for "A..B" the boundary is A itself (dir #518's first
 # fixture: an allowlist line predating the range is clean); for "<tip> --not --remotes" (a first push
-# of a new local ref — resolve_range_local in range-lib.sh only emits this shape when the pre-push
-# hook's own remote sha is zero) the boundary is the merge-base with whichever remote-tracking ref(s)
-# the tip forked from.
+# of a new local ref — resolve_range_local in range-lib.sh emits this shape when the pre-push hook's
+# own remote sha is zero, or (dir #546) a non-zero sha that is no commit in this repo) the boundary is
+# the merge-base with whichever remote-tracking ref(s) the tip forked from — none at all for the
+# second spelling in a repo with no remote (a filter-repo'd clone), so every entry reads as new-this-push.
 #
 # UNION every boundary commit found, never require exactly one (max-review correctness finding,
 # confirmed live: an earlier version of this fix required a single boundary commit and treated 2+ as

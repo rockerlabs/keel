@@ -47,6 +47,17 @@ sections real content going forward — see that page for exactly when each one 
   whether `git add -A` would pick anything up there, so a team that commits `.claude/settings.json` and
   ignores the rest stays clean. One behaviour change in the other direction: an ignored `.claude/` no
   longer covers an unignored `CLAUDE.md` beside it.
+- **The secret guard's pre-push hook no longer refuses a push whose remote tip it has never seen** (dir #546).
+  A force-push from a fresh `git filter-repo` clone — filter-repo drops `origin` and the old objects by
+  design — or any push from a clone that never fetched the old tip used to exit on "bad range … not
+  resolvable", with no way through but `--no-verify`. `resolve_range_local` now treats a `BEFORE` that is
+  no commit here like the zero sha and scans every commit not already on a remote (the range widens, it
+  is never dropped: a planted secret in it is still blocked), and the hook says so on stderr. The one
+  thing that does not widen is the allow-list baseline: with no remote the boundary set is empty, so a
+  `.secret-scan-allow` entry that exempts a match in the pushed history is still ignored as new in this
+  change; fetch the remote first to restore the baseline. CI's `resolve_range_ci` is unchanged.
+  **Re-vendor the guard copies in your repos** (`tools/install-secret-guard.sh <repo>`): `range-lib.sh`
+  and `pre-push` change together, so a vendored copy keeps the old refusal until both are refreshed.
 
 ## [0.13.0] — 2026-10-03
 

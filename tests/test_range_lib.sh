@@ -39,8 +39,38 @@ out="$(resolve_range_local "$zero64" "$sha64")"
 check_contains "resolve_range_local: 64-zero before -> the new-ref (--not --remotes) shape" "$out" "--not --remotes"
 check_contains "resolve_range_local: 64-zero before -> scans from the 64-char after sha" "$out" "$sha64"
 
-out="$(resolve_range_local "$sha64" "$sha64")"
-check_contains "resolve_range_local: non-zero 64-char before -> a before..after range" "$out" "$sha64..$sha64"
+# a non-zero BEFORE that IS a commit here resolves to a before..after range. The SHA-256 half needs a
+# real SHA-256 repo (dir #546: an unknown BEFORE no longer yields a range, so a made-up 64-char sha
+# cannot stand in for one); a git that cannot make one skips the half, loudly.
+r256="$(mktemp -d "$SANDBOX/r256.XXXXXX")"
+if git -C "$r256" init -q --object-format=sha256 2>/dev/null; then
+  git -C "$r256" commit -q --allow-empty -m one; git -C "$r256" commit -q --allow-empty -m two
+  b256="$(git -C "$r256" rev-parse HEAD~1)"; a256="$(git -C "$r256" rev-parse HEAD)"
+  out="$(cd "$r256" && resolve_range_local "$b256" "$a256")"
+  check_eq "resolve_range_local: a known 64-char before -> a before..after range" "$b256..$a256" "$out"
+  out="$(cd "$r256" && resolve_range_local "$sha64" "$a256")"
+  check_eq "resolve_range_local: an unknown 64-char before -> the new-ref shape (dir #546)" "$a256 --not --remotes" "$out"
+else
+  pass "SKIP (git cannot make a SHA-256 repo here): the 64-char known/unknown before pair"
+fi
+
+# --- dir #546: an unknown (non-zero) BEFORE falls back to the zero-sha shape -------------------------
+rk="$(new_repo)"
+git -C "$rk" commit -q --allow-empty -m one; git -C "$rk" commit -q --allow-empty -m two
+bk="$(git -C "$rk" rev-parse HEAD~1)"; ak="$(git -C "$rk" rev-parse HEAD)"
+out="$(cd "$rk" && resolve_range_local "$bk" "$ak")"
+check_eq "resolve_range_local: a known before commit -> before..after" "$bk..$ak" "$out"
+out="$(cd "$rk" && resolve_range_local "$sha40" "$ak")"
+check_eq "resolve_range_local: an unknown 40-char before -> the new-ref shape" "$ak --not --remotes" "$out"
+blob="$(printf 'x' | git -C "$rk" hash-object -w --stdin)"
+out="$(cd "$rk" && resolve_range_local "$blob" "$ak")"
+check_eq "resolve_range_local: a before that is a blob, not a commit -> the new-ref shape" "$ak --not --remotes" "$out"
+out="$(cd "$rk" && resolve_range_local "not-a-sha" "$ak")"
+check_eq "resolve_range_local: a before that is no sha at all -> the new-ref shape" "$ak --not --remotes" "$out"
+if (cd "$rk" && secret_guard_commit_known "$bk"); then pass "secret_guard_commit_known: a commit here -> true"
+else fail "secret_guard_commit_known: a commit here -> true" "returned false"; fi
+if (cd "$rk" && secret_guard_commit_known "$sha40"); then fail "secret_guard_commit_known: an unknown sha -> false" "returned true"
+else pass "secret_guard_commit_known: an unknown sha -> false"; fi
 
 # --- resolve_range_ci: same length-agnostic requirement, different first-push shape ----------------
 out="$(resolve_range_ci "$zero64" "$sha64")"
@@ -49,5 +79,10 @@ else fail "resolve_range_ci: 64-zero before -> scans full history from after" "g
 
 out="$(resolve_range_ci "$sha64" "$sha64")"
 check_contains "resolve_range_ci: non-zero 64-char before -> a before..after range" "$out" "$sha64..$sha64"
+
+# dir #546: resolve_range_ci is NOT given the unknown-BEFORE fallback — a CI checkout has the old tip (or
+# ci-scan.sh's own fetch/baseline degrade handles its absence), so an unknown BEFORE stays a plain range.
+out="$(cd "$rk" && resolve_range_ci "$sha40" "$ak")"
+check_eq "resolve_range_ci: an unknown before is left a before..after range (dir #546, unchanged)" "$sha40..$ak" "$out"
 
 summary
