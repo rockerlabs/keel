@@ -81,5 +81,9 @@ blocking a key. Most of the docs are indexed in the [README's Docs section](../R
 few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`, and the
 five [`docs/drydock/`](drydock/) role-prompt templates) aren't.
 
+[`docs/memory-layers.md`](memory-layers.md) answers "does Keel do memory?": the five memory layers mapped
+onto Keel's files, what Keel deliberately does not build, and the `doctor` checks that find stale or
+unreachable memory files.
+
 Setting Keel up for a tool other than Claude Code (installer flags, the by-hand copy) →
 [`docs/getting-started.md`](getting-started.md) and [`ADAPTING.md`](../ADAPTING.md).
