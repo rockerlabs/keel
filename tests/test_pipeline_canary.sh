@@ -6,6 +6,9 @@
 # suite never touches a real, in-progress canary session on the machine.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
+# dir #658: pipeline-canary.sh setup builds its toy repo under its own `mktemp -d` (outside $SANDBOX), which
+# this file hands to git; tests/lib.sh's `git -C` guard admits such temp dirs only on this opt-in.
+GIT_C_GUARD_ALLOW_TMP=1
 # shellcheck source=tools/lib/impact-store.sh
 . "$REPO_ROOT/tools/lib/impact-store.sh"
 

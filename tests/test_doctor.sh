@@ -12,6 +12,12 @@ unignored() {
   printf '# ctx\n' > "$d/CLAUDE.md"; printf '*.log\n' > "$d/.gitignore"
   printf '%s' "$d"
 }
+# a git repo whose .gitignore covers CLAUDE.md but NOT .claude/ (dir #473's real-project shape); prints its path
+ignored_ctx() {
+  local d; d="$(mkproj)"; git -C "$d" init -q
+  printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n' > "$d/.gitignore"
+  printf '%s' "$d"
+}
 # a deliberate public fork: the unignored CLAUDE.md is committed; prints its path
 pubfork() {
   local d; d="$(unignored)"
@@ -150,11 +156,85 @@ check_status "context ignored via info/exclude → exit 0" 0 "$STATUS"
 check_absent "no gitignore GAP when info/exclude carries the rule" "$OUT" "does not ignore the private AI context"
 check_absent "info/exclude-ignored context is not mistaken for tracked" "$OUT" "[W-CLAUDEMD-TRACKED]"
 
-# ...and only .claude/ in info/exclude (no CLAUDE.md rule anywhere) still counts, as it does for .gitignore
+# dir #473: CLAUDE.md and .claude/ are judged separately, and the GAP names which is exposed —
+# neither ignored, both present → one GAP naming both paths
 d="$(unignored)"
+mkdir "$d/.claude"; printf '{}\n' > "$d/.claude/settings.json"
+run "$doctor" "$d"
+check_contains "neither ignored → the GAP names both paths" "$OUT" "private AI context: CLAUDE.md, .claude/ —"
+# ...a .claude/ rule (here in info/exclude) covers .claude/ only: the unignored CLAUDE.md is still the GAP
 printf '.claude/\n' >> "$d/.git/info/exclude"
 run "$doctor" "$d"
-check_absent "a .claude/ rule in info/exclude satisfies the context check" "$OUT" "does not ignore the private AI context"
+check_status "only .claude/ ignored, CLAUDE.md present and unignored → GAP exit 1" 1 "$STATUS"
+check_contains "the GAP names CLAUDE.md alone as the exposed path" "$OUT" "private AI context: CLAUDE.md —"
+
+# ...and the converse, reproduced on a real project: .gitignore carried CLAUDE.md, not .claude/, and the
+# check reported clean over a .claude/ holding settings and worktree checkouts
+d="$(ignored_ctx)"
+mkdir "$d/.claude"; printf '{}\n' > "$d/.claude/settings.json"
+run "$doctor" "$d"
+check_status "CLAUDE.md ignored, present .claude/ not → GAP exit 1" 1 "$STATUS"
+check_contains "the GAP names .claude/ as the exposed path" "$OUT" "private AI context: .claude/ —"
+# ...the same repo with both lines is clean
+printf '.claude/\n' >> "$d/.gitignore"
+run "$doctor" "$d"
+check_status "both CLAUDE.md and .claude/ ignored → exit 0" 0 "$STATUS"
+check_absent "both ignored → no context GAP" "$OUT" "G-GITIGNORE-CONTEXT"
+
+# .claude/ is judged only when it exists: an absent .claude/ with no rule is not a GAP...
+d="$(ignored_ctx)"
+run "$doctor" "$d"
+check_absent "absent .claude/ → no context GAP" "$OUT" "G-GITIGNORE-CONTEXT"
+# ...but an EMPTY one with no rule is exposed — the first settings file would land unprotected
+mkdir "$d/.claude"
+run "$doctor" "$d"
+check_contains "empty unignored .claude/ → the GAP names .claude/" "$OUT" "private AI context: .claude/ —"
+
+# a team that commits .claude/settings.json and ignores the rest of .claude/ leaves nothing exposed:
+# what counts is what `git add -A` would pick up under .claude/, not whether one rule names the directory
+d="$(ignored_ctx)"
+printf '.claude/settings.local.json\n.claude/worktrees/\n' >> "$d/.gitignore"
+mkdir -p "$d/.claude/worktrees/wt1"; printf '{}\n' > "$d/.claude/settings.json"
+printf '{}\n' > "$d/.claude/settings.local.json"; printf 'x\n' > "$d/.claude/worktrees/wt1/f"
+git -C "$d" add .claude/settings.json
+run "$doctor" "$d"
+check_status "committed .claude/settings.json, rest ignored → exit 0" 0 "$STATUS"
+check_absent "partly-committed, rest-ignored .claude/ → no context GAP" "$OUT" "G-GITIGNORE-CONTEXT"
+# ...but one new untracked file there that no rule covers is exposed again
+printf 'x\n' > "$d/.claude/notes.md"
+run "$doctor" "$d"
+check_contains "a new uncovered file under .claude/ → GAP names .claude/" "$OUT" "private AI context: .claude/ —"
+
+# a .claude that is a SYMLINK is staged by `git add -A` like anything else — a `.claude/` pathspec
+# never matched it, which read as clean
+d="$(ignored_ctx)"
+mkdir "$SANDBOX/claude-target.$$"; ln -s "$SANDBOX/claude-target.$$" "$d/.claude"
+run "$doctor" "$d"
+check_contains "unignored .claude symlink → the GAP names .claude/" "$OUT" "private AI context: .claude/ —"
+
+# the .claude/ half fails CLOSED: a git error while asking what is untracked there is a GAP, never a pass
+d="$(ignored_ctx)"
+mkdir "$d/.claude"; printf '{}\n' > "$d/.claude/settings.json"
+printf '.claude/\n' >> "$d/.gitignore"
+printf 'garbage' > "$d/.git/index"
+run "$doctor" "$d"
+check_contains "git failing on the .claude/ question → GAP names .claude/" "$OUT" ".claude/ —"
+
+# the public-fork escape is per path: a tracked CLAUDE.md does not vouch for .claude/. A tracked
+# CLAUDE.md with an ignored .claude/ reports no GAP (exit 0, clean once the fork's WARN is accepted)...
+d="$(pubfork)"
+mkdir -p "$d/.keel"; printf 'W-CLAUDEMD-TRACKED  # deliberate public fork\n' > "$d/.keel/doctor-accept"
+mkdir "$d/.claude"; printf '{}\n' > "$d/.claude/settings.json"
+printf '.claude/\n.keel/\n' >> "$d/.gitignore"
+run "$doctor" "$d"
+check_status "tracked CLAUDE.md + ignored .claude/ → exit 0" 0 "$STATUS"
+check_absent "tracked CLAUDE.md + ignored .claude/ → no context GAP" "$OUT" "G-GITIGNORE-CONTEXT"
+check_contains "tracked CLAUDE.md (accepted) + ignored .claude/ → baseline OK" "$OUT" "baseline OK"
+# ...and the same fork with .claude/ NOT ignored is the GAP the old either-or never examined
+printf '*.log\n.keel/\n' > "$d/.gitignore"
+run "$doctor" "$d"
+check_status "tracked CLAUDE.md + exposed .claude/ → GAP exit 1" 1 "$STATUS"
+check_contains "tracked CLAUDE.md + exposed .claude/ → the GAP names .claude/" "$OUT" "private AI context: .claude/ —"
 
 # AGENTS.md (dir #75): the vendor sibling of CLAUDE.md for Codex/Cursor — absent, it stays silent
 d="$(mkproj)"; git -C "$d" init -q

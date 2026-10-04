@@ -635,7 +635,7 @@ shimbin="$(mktemp -d "$SANDBOX/gitshim.XXXXXX")"
   printf 'if [ "$1" = rev-parse ] && [ "$(pwd -P)" = %q ]; then\n' "$eng4_phys"
   printf '  echo "fatal: detected dubious ownership in repository (shim)" >&2; exit 128\n'
   printf 'fi\n'
-  printf 'exec %q "$@"\n' "$(command -v git)"
+  printf 'exec %q "$@"\n' "$(type -P git)"
 } > "$shimbin/git"
 chmod 755 "$shimbin/git"
 (cd "$eng4" && PATH="$shimbin:$PATH" git rev-parse --show-toplevel >/dev/null 2>&1)
@@ -732,7 +732,7 @@ shim2="$(mktemp -d "$SANDBOX/gitshim2.XXXXXX")"
   printf 'if [ "$1" = -C ] && [ "$3" = rev-parse ] && [ "$4" = --git-dir ] && [ "$(cd -P "$2" && pwd -P)" = %q ]; then\n' "$watched_phys"
   printf '  echo "fatal: unreadable (shim)" >&2; exit 128\n'
   printf 'fi\n'
-  printf 'exec %q "$@"\n' "$(command -v git)"
+  printf 'exec %q "$@"\n' "$(type -P git)"
 } > "$shim2/git"
 chmod 755 "$shim2/git"
 check_status "R2-2 fixture: the shim really fails rev-parse --git-dir for the watched checkout" 128 \

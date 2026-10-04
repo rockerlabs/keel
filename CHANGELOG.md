@@ -15,6 +15,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
+  current directory", which once let a fixture helper write a `fork` remote into the real checkout's
+  config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
+  refusal fails the file at `summary()` even when the call's own status was swallowed. A file whose code
+  under test makes its own temp repo opts in with `GIT_C_GUARD_ALLOW_TMP=1` (three today). With the
+  function defined, `command -v git` names the function, so tests that need git's path use `type -P git`.
+  Pinned, with a mutation proof, by `tests/test_lib_git_c_guard.sh`. dir #658.
+- **`tools/init-project.sh` no longer attaches a nested target to its parent repo.** A directory inside
+  another git repo passed the old "inside a work tree" test, so no `git init` ran: the target got a
+  `CLAUDE.md` but no repo of its own, and impact tracking was enabled for the parent's root. Such a
+  target is now refused (exit 2) before anything is scaffolded; `--nested` makes it a separate repo
+  instead (dir #611).
 - **`docs/delta-audit.md`: three procedure lessons from the 0.13.0 run.** §2: resolve the anchor's CI run
   by commit, never by branch (a branch listing once returned a run two weeks old). §8: the re-check pair's
   scope is an operator decision, put at the first NO-GO with three named exits, because pairs that read
@@ -25,6 +37,23 @@ sections real content going forward — see that page for exactly when each one 
   opt-in to a parked file as a whole. G4: a pool reading compares only with readings of the same
   coverage, so after a split the plan states the parked count beside it and reads no growth across the
   change. A hand step for now; dir #655 removes it.
+- **Line-length sweeps count characters, and the drydock cost table warns a non-English tree off its
+  numbers.** `docs/drydock.md`'s sweep 1 and `tools/self/prose-drift.sh` both counted bytes, so on
+  Cyrillic prose every threshold was halved and the signal inverted: a non-English adopter's run found
+  every hit it checked was a line wrapped exactly at its file's own width. Both now strip UTF-8
+  continuation bytes under `LC_ALL=C` and count what is left, one byte per character, on BWK awk,
+  busybox, mawk and gawk alike; the `ch` they print is now true. On keel's own tree, em dashes alone had
+  produced five false leads and hidden one real one. The cost section now says its calibration is
+  per-file and English-derived — that run cost 2.1–2.4× its estimate — and that a non-English tree
+  sizes from its own pilot, with a two-point fit to start from. dir #486.
+- **`doctor.sh` no longer passes an exposed `.claude/` because `CLAUDE.md` is ignored** (dir #473). The
+  private-context check judged the two paths as one: an ignore rule for either passed both, and a tracked
+  `CLAUDE.md` skipped `.claude/` altogether. A real project reported clean while its `.claude/` (hook
+  settings and thirteen worktree checkouts) sat one `git add -A` from a commit. Each path is now judged
+  on its own, only when it exists, and the GAP names which is exposed. For `.claude/` the question is
+  whether `git add -A` would pick anything up there, so a team that commits `.claude/settings.json` and
+  ignores the rest stays clean. One behaviour change in the other direction: an ignored `.claude/` no
+  longer covers an unignored `CLAUDE.md` beside it.
 - **The hook installers' settings writer keeps what it replaces, and stops wiring a hook twice.** All
   three installers (`install-read-trace.sh`, `install-pre-pr-gate.sh`, `install-machine-watch.sh`) share
   `tools/lib/hook-install.sh`, so each fix reaches all three. A symlinked `settings.json` is now written
