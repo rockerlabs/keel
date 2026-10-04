@@ -91,6 +91,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_pa_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_pa_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/personal-literals.sh
+. "$_pa_dir/lib/personal-literals.sh"
 unset _pa_dir
 
 # --- gather config -------------------------------------------------------------------------------
@@ -128,17 +130,21 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
-if [ -f "$PERSONAL_FILE" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    line="$(printf '%s' "$line" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
-    case "$line" in ''|\#*) continue ;; esac
+# dir #148: the parse (read, CRLF, comments, whitespace) is tools/lib/personal-literals.sh's; only the
+# per-line validation policy stays here. A plain top-level assignment — this file runs `set -uo pipefail`
+# with NO -e, so a read failure on an unreadable file does not abort here (unchanged behaviour).
+personal_lines="$(personal_literals_parse "$PERSONAL_FILE")"
+if [ -n "$personal_lines" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
     if valid_ere -iE "$line"; then
       personal_re="${personal_re:+$personal_re|}$line"
     else
       bad_personal=$((bad_personal + 1))
     fi
-  done < "$PERSONAL_FILE"
+  done <<EOF_PERSONAL
+$personal_lines
+EOF_PERSONAL
 fi
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined

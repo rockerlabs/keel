@@ -1662,4 +1662,191 @@ prepush_unknown "$repo"
 check_status "dir #546: an allow-list entry exempting a match, unknown remote tip and no remote → fail closed (no baseline)" 1 "$STATUS"
 check_contains "dir #546: ...with the same-change message" "$OUT" "ignoring an allowlist entry new in this change"
 
+# =================================================================================================
+# --- dir #148: ONE parser for the personal-literals file. tools/lib/personal-literals.sh is the
+# canonical copy (public-audit.sh sources it); secret-scan.sh is vendored and may source only what
+# ships beside it, so it carries an inline IN-SYNC twin, _personal_literals_parse_inline. This section
+# is the sync + golden test the twin's comment names: lib and twin run on shared fixtures, both must
+# match the expected output written LITERALLY below, and their bodies must be textually identical (a
+# branch no fixture reaches cannot drift either). ------------------------------------------------
+pl_lib="$REPO_ROOT/tools/lib/personal-literals.sh"
+pa="$REPO_ROOT/tools/public-audit.sh"
+
+# A1/A3/A4 structural pins (the spec's grep checks, kept as assertions).
+check_file "dir #148: tools/lib/personal-literals.sh exists" "$pl_lib"
+if [ -f "$pl_lib" ] && grep -q '^personal_literals_parse()' "$pl_lib" \
+   && grep -qF '[ -f "$1" ] || return 0' "$pl_lib"; then
+  pass "dir #148 A1: the lib defines personal_literals_parse and tests [ -f ] exactly"
+else
+  fail "dir #148 A1: the lib defines personal_literals_parse and tests [ -f ] exactly" "missing in $pl_lib"
+fi
+pl_sed='s/[[:space:]][[:space:]]*#.*$//'
+check_eq "dir #148 A3: public-audit.sh no longer carries the comment-strip sed" 0 "$(grep -cF "$pl_sed" "$pa")"
+check_eq "dir #148 A3: public-audit.sh sources the lib on a real line" 1 "$(grep -cE '^\. .*lib/personal-literals\.sh"' "$pa")"
+if [ "$(grep -cE '^[^#]*personal_literals_parse "\$PERSONAL_FILE"' "$pa")" -ge 1 ]; then
+  pass "dir #148 A3: public-audit.sh CALLS the parser on a non-comment line"
+else
+  fail "dir #148 A3: public-audit.sh CALLS the parser on a non-comment line" "no call line"
+fi
+check_eq "dir #148 A4: secret-scan.sh carries the one comment-strip sed (the twin's)" 1 "$(grep -cF "$pl_sed" "$scan")"
+check_eq "dir #148 A4: secret-scan.sh defines the inline twin once" 1 "$(grep -c '^_personal_literals_parse_inline() {' "$scan")"
+check_eq "dir #148 A4: secret-scan.sh sources nothing" 0 "$(grep -cE '^[[:space:]]*(\.|source)[[:space:]]' "$scan")"
+check_eq "dir #148 A4: the PERSONAL_FILE= default line is byte-identical (kb-secret-scan.sh sed-extracts it)" 1 \
+  "$(grep -cF 'PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"' "$scan")"
+check_eq "dir #148 A4: the twin is CALLED by a plain top-level capture of \$PERSONAL_FILE" 1 \
+  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)"$' "$scan")"
+
+# The fixture (v3): CRLF, inline comment, tabs, `a#b`, a backslash, internal spaces, a glob, non-ASCII
+# (octal bytes, so this file stays ASCII), a `-n` line (an echo-based emit would swallow it), and a last
+# line without a newline. The expected output is literal text — never produced by running either copy.
+pl_fixture="$SANDBOX/pl148-fixture"
+printf '# header comment\n\n   \nalpha\r\n  beta  \ngamma # trailing comment\n\tdelta\t\nep#silon\n   # indented comment\nzeta\\.eta\n  two  words  \nglob*[x]?\n\320\230\320\262\320\260\320\275\n-n\nlast-no-newline' > "$pl_fixture"
+pl_golden="$(printf 'alpha\nbeta\ngamma\ndelta\nep#silon\nzeta\\.eta\ntwo  words\nglob*[x]?\n\320\230\320\262\320\260\320\275\n-n\nlast-no-newline\n')"
+
+pl_twin_fn="$(sed -n '/^_personal_literals_parse_inline() {/,/^}/p' "$scan")"
+if [ -z "$pl_twin_fn" ]; then
+  fail "dir #148: secret-scan.sh's _personal_literals_parse_inline located" "no such function found in $scan"
+else
+  pass "dir #148: secret-scan.sh's _personal_literals_parse_inline located"
+fi
+pl_lib_fn="$(sed -n '/^personal_literals_parse() {/,/^}/p' "$pl_lib" 2>/dev/null)"
+if [ -z "$pl_lib_fn" ]; then
+  fail "dir #148: the lib's personal_literals_parse located" "no such function found in $pl_lib"
+else
+  pass "dir #148: the lib's personal_literals_parse located"
+fi
+
+# Run each copy on FILE; sets PL_LIB_OUT/ERR/RC and PL_TWIN_OUT/ERR/RC. The twin is the function
+# extracted from the scanner file (never the lib twice); both run under plain `bash`.
+pl_run_both() {
+  PL_LIB_OUT="$(bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$1" 2>"$SANDBOX/pl148-err")"; PL_LIB_RC=$?
+  PL_LIB_ERR="$(cat "$SANDBOX/pl148-err")"
+  PL_TWIN_OUT="$(bash -c "$pl_twin_fn"$'\n''_personal_literals_parse_inline "$1"' _ "$1" 2>"$SANDBOX/pl148-err")"; PL_TWIN_RC=$?
+  PL_TWIN_ERR="$(cat "$SANDBOX/pl148-err")"
+}
+pl_case() {  # desc file expected-output
+  pl_run_both "$2"
+  check_eq "dir #148 sync ($1): lib output = the literal expected output" "$3" "$PL_LIB_OUT"
+  check_eq "dir #148 sync ($1): twin output = the literal expected output" "$3" "$PL_TWIN_OUT"
+  check_eq "dir #148 sync ($1): lib and twin agree on the exit status" "$PL_LIB_RC" "$PL_TWIN_RC"
+  check_eq "dir #148 sync ($1): exit 0" 0 "$PL_LIB_RC"
+}
+pl_case "full fixture" "$pl_fixture" "$pl_golden"
+pl_case "absent file" "$SANDBOX/pl148-absent" ""
+: > "$SANDBOX/pl148-empty"
+pl_case "empty file" "$SANDBOX/pl148-empty" ""
+printf '# only a comment\n\n   \n\t# indented\n' > "$SANDBOX/pl148-comments"
+pl_case "comments and blanks only" "$SANDBOX/pl148-comments" ""
+printf 'dup\ndup\n' > "$SANDBOX/pl148-dup"
+pl_case "duplicates are kept" "$SANDBOX/pl148-dup" "$(printf 'dup\ndup')"
+# Not a regular file: nothing printed, NOTHING on stderr, rc 0 (a `[ -e ]` reads a directory with a read
+# error; /dev/null is what kb-secret-scan.sh's selftest sets).
+mkdir -p "$SANDBOX/pl148-dir"
+for pl_nf in "$SANDBOX/pl148-dir" /dev/null; do
+  pl_run_both "$pl_nf"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib prints nothing" "" "$PL_LIB_OUT"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin prints nothing" "" "$PL_TWIN_OUT"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib stderr empty" "" "$PL_LIB_ERR"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin stderr empty" "" "$PL_TWIN_ERR"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib rc 0" 0 "$PL_LIB_RC"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin rc 0" 0 "$PL_TWIN_RC"
+done
+# Textual body identity (B5): both extracted functions, declaration line dropped, byte-identical — so an
+# edit to a branch no fixture reaches in ONE copy still fails here.
+if [ -n "$pl_twin_fn" ] && [ -n "$pl_lib_fn" ]; then
+  if [ "$(printf '%s\n' "$pl_lib_fn" | sed 1d)" = "$(printf '%s\n' "$pl_twin_fn" | sed 1d)" ]; then
+    pass "dir #148 sync: lib and twin function bodies are byte-identical"
+  else
+    fail "dir #148 sync: lib and twin function bodies are byte-identical" "the two bodies differ — edit BOTH copies"
+  fi
+fi
+
+# --- end to end over the JOIN (parse-level cases cannot see it): both tools join the parsed lines.
+# `zetaXeta` must NOT match the correct regex `zeta\.eta`; a build that loses the backslash (a `read`
+# without -r) matches it. `two  words` (internal double space) must block.
+pl_scan_exit() {  # sample [personal-file]; sets STATUS/OUT from the staged scan of a file holding ONLY the sample
+  local r; r="$(new_repo)"
+  printf '%s\n' "$1" > "$r/sample.txt"
+  git -C "$r" add sample.txt
+  [ "$1" != glo ] || : > "$r/globxy"   # glob-expansion decoy: a real file, cwd = repo root
+  run_in "$r" env SECRET_SCAN_PERSONAL_FILE="${2:-$pl_fixture}" "$scan" --staged
+}
+PL_TREE_LABEL="personal literal (secret-scan-personal) in tracked tree"
+pl_audit_has_tree_label() {  # sample [personal-file]; sets OUT, returns 0 when the tree label is reported
+  local d; d="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"
+  git -C "$d" init -q
+  printf '%s\n' "$1" > "$d/sample.txt"
+  [ "$1" != glo ] || printf 'decoy\n' > "$d/globxy"
+  git -C "$d" add -A
+  git -C "$d" -c user.email=dev@example.com -c user.name=dev commit -qm init
+  run_in "$d" env SECRET_SCAN_PERSONAL_FILE="${2:-$pl_fixture}" bash "$pa" --no-history "$d"
+  case "$OUT" in *"$PL_TREE_LABEL"*) return 0 ;; *) return 1 ;; esac
+}
+pl_scan_exit zetaXeta
+check_status "dir #148 e2e: scanner, zetaXeta does not match zeta\\.eta → exit 0" 0 "$STATUS"
+pl_scan_exit "two  words"
+check_status "dir #148 e2e: scanner, internal double space blocks → exit 1" 1 "$STATUS"
+if pl_audit_has_tree_label zetaXeta; then
+  fail "dir #148 e2e: audit, zetaXeta reports no personal tree hit" "$OUT"
+else
+  pass "dir #148 e2e: audit, zetaXeta reports no personal tree hit"
+fi
+if pl_audit_has_tree_label "two  words"; then
+  pass "dir #148 e2e: audit, internal double space reports the tree label"
+else
+  fail "dir #148 e2e: audit, internal double space reports the tree label" "$OUT"
+fi
+
+# Per-literal e2e: EACH of the 11 golden literals, one sample its ERE matches, one separate run per tool.
+# Kills a tool that parses with a private loop (CRLF `alpha`, inline-comment `gamma` stop matching), a
+# dropped last-line guard (`last-no-newline`), and a join that glob-expands (`glo` is matched by
+# `glob*[x]?`; the repo holds a file NAMED globxy, and both tools run with the repo root as cwd).
+pl_cyr="$(printf '\320\230\320\262\320\260\320\275')"
+for pl_sample in alpha beta gamma delta 'ep#silon' 'zeta.eta' 'two  words' glo "$pl_cyr" 'x-n' 'last-no-newline'; do
+  pl_scan_exit "$pl_sample"
+  check_status "dir #148 e2e per-literal: scanner blocks '$pl_sample'" 1 "$STATUS"
+  if pl_audit_has_tree_label "$pl_sample"; then
+    pass "dir #148 e2e per-literal: audit reports the tree label for '$pl_sample'"
+  else
+    fail "dir #148 e2e per-literal: audit reports the tree label for '$pl_sample'" "$OUT"
+  fi
+done
+
+# Default path: SECRET_SCAN_PERSONAL_FILE UNSET (env -u), the fixture at $HOME/.claude/secret-scan-personal.
+mkdir -p "$HOME/.claude"
+cp "$pl_fixture" "$HOME/.claude/secret-scan-personal"
+pl_dr="$(new_repo)"; printf 'alpha\n' > "$pl_dr/sample.txt"; git -C "$pl_dr" add sample.txt
+run_in "$pl_dr" env -u SECRET_SCAN_PERSONAL_FILE "$scan" --staged
+check_status "dir #148 default path: scanner reads \$HOME/.claude/secret-scan-personal → blocks 'alpha'" 1 "$STATUS"
+pl_dd="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"; git -C "$pl_dd" init -q; printf 'alpha\n' > "$pl_dd/sample.txt"
+git -C "$pl_dd" add -A; git -C "$pl_dd" -c user.email=dev@example.com -c user.name=dev commit -qm init
+run_in "$pl_dd" env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$pl_dd"
+check_contains "dir #148 default path: audit reads the default file → tree label" "$OUT" "$PL_TREE_LABEL"
+rm -f "$HOME/.claude/secret-scan-personal"
+
+# B3 (no weakening) + the audit unchanged, on an existing-but-UNREADABLE file. chmod 000 is a no-op for
+# root (CLAUDE.md Linux-leg trap 2): the content assertions run only for a non-root uid.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  pl_unread="$SANDBOX/pl148-unreadable"; printf 'zebracorn\n' > "$pl_unread"; chmod 000 "$pl_unread"
+  pl_run_both "$pl_unread"
+  check_eq "dir #148 B3: lib and twin return the same status on an unreadable file" "$PL_LIB_RC" "$PL_TWIN_RC"
+  if [ "$PL_LIB_RC" -ne 0 ]; then pass "dir #148 B3: the parser returns non-zero on an unreadable file"
+  else fail "dir #148 B3: the parser returns non-zero on an unreadable file" "rc 0"; fi
+  check_eq "dir #148 B3: lib prints nothing on an unreadable file" "" "$PL_LIB_OUT"
+  check_eq "dir #148 B3: twin prints nothing on an unreadable file" "" "$PL_TWIN_OUT"
+  pl_scan_exit "hello zebracorn" "$pl_unread"
+  if [ "$STATUS" -ne 0 ]; then pass "dir #148 B3: the scanner exits non-zero on an unreadable personal file"
+  else fail "dir #148 B3: the scanner exits non-zero on an unreadable personal file" "exit 0: $OUT"; fi
+  check_absent "dir #148 B3: ...and never says 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+  # the audit half: same exit status as with an ABSENT file, and no personal tree hit (audit unchanged).
+  pl_ad="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"; git -C "$pl_ad" init -q; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
+  git -C "$pl_ad" add -A; git -C "$pl_ad" -c user.email=dev@example.com -c user.name=dev commit -qm init
+  run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
+  pl_audit_unread_rc="$STATUS"; pl_audit_unread_out="$OUT"
+  run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl148-absent" bash "$pa" --no-history "$pl_ad"
+  check_eq "dir #148 B4: audit on an unreadable file exits like the audit on an ABSENT file" "$STATUS" "$pl_audit_unread_rc"
+  check_absent "dir #148 B4: audit on an unreadable file reports no personal tree hit" "$pl_audit_unread_out" "personal literal (secret-scan-personal)"
+  chmod 600 "$pl_unread"
+fi
+
 summary

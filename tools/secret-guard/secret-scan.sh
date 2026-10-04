@@ -109,6 +109,25 @@ trap 'rm -rf "$SCRATCH"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# --- dir #148: the personal-literals parser, a small INLINE copy of tools/lib/personal-literals.sh --
+# This file is VENDORED and may only source files vendored beside it, so it cannot source the shared
+# lib; this twin's body is IDENTICAL to tools/lib/personal-literals.sh's personal_literals_parse, and
+# tests/test_secret_guard.sh (the `dir #148` section) runs both on shared fixtures and asserts the two
+# bodies are byte-identical — edit BOTH copies or that test goes red. Output contract and the
+# capture-form rule: see the lib's header.
+_personal_literals_parse_inline() {
+  [ -f "$1" ] || return 0
+  local _pl_t=""
+  while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
+    _pl_t="${_pl_t%$'\r'}"
+    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
+    case "$_pl_t" in
+      ''|\#*) ;;
+      *)      printf '%s\n' "$_pl_t" ;;
+    esac
+  done < "$1"
+}
+
 # Build a combined regex (class 1, case-sensitive).
 joined=""
 for p in "${PATTERNS[@]}"; do
@@ -117,16 +136,18 @@ done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
 personal=""
-if [ -f "$PERSONAL_FILE" ]; then
-  while IFS= read -r _t || [ -n "$_t" ]; do
-    _t="${_t%$'\r'}"                                              # tolerate CRLF
-    # BRE on purpose — the repo's sed usage stays POSIX-portable (busybox included), no -E
-    _t="$(printf '%s' "$_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
-    case "$_t" in
-      ''|\#*) ;;
-      *)      personal="${personal:+$personal|}$_t" ;;
-    esac
-  done < "$PERSONAL_FILE"
+# dir #148: the parse is _personal_literals_parse_inline (defined above). Captured by a PLAIN top-level
+# assignment — never `local x=$(…)`, never inside `if`/`||`/`&&`, never a process substitution: under
+# `set -e` a read failure on an unreadable personal file must abort here (fail closed), and those forms
+# would hide the status.
+_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")"
+if [ -n "$_personal_lines" ]; then
+  while IFS= read -r _t; do
+    [ -n "$_t" ] || continue
+    personal="${personal:+$personal|}$_t"
+  done <<EOF_PERSONAL
+$_personal_lines
+EOF_PERSONAL
 fi
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
