@@ -46,6 +46,12 @@ check_same_dir "plain repo: effective == own (git reads where the installer writ
 check_eq "plain repo: scope none" "none" "$(wkey scope)"
 check_eq "plain repo: no value= line" "" "$(wkey value)"
 
+# A relative repo argument (doctor's default is ".") must not leak a relative own/effective.
+run_in "$trepo" genv "$isg" --where .
+check_status "--where . from inside a repo → exit 0" 0 "$STATUS"
+case "$(wkey own)" in /*) pass "--where .: own is absolute" ;; *) fail "--where .: own is absolute" "got '$(wkey own)'" ;; esac
+case "$(wkey effective)" in /*) pass "--where .: effective is absolute" ;; *) fail "--where .: effective is absolute" "got '$(wkey effective)'" ;; esac
+
 twbase="$(mk_repo)"; git -C "$twbase" commit -qm seed --allow-empty
 twt="$SANDBOX/fx-topo-wt"
 git -C "$twbase" worktree add -q -b wt-643 "$twt"

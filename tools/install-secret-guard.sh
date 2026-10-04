@@ -464,6 +464,9 @@ _isg_where_states() {
 _isg_where_repo() {
   local repo="$1" own eff
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  # `own` and `effective` are documented as absolute: a relative $repo (doctor's default is ".") would
+  # otherwise print "./.git/hooks", which means something else to a consumer standing elsewhere.
+  repo="$(cd "$repo" && pwd)" || exit 2
   own="$(_isg_repo_own_dir "$repo")" || exit 2
   eff="$(git -C "$repo" rev-parse --git-path hooks 2>/dev/null)" || eff=""
   [ -n "$eff" ] || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-path hooks returned nothing" >&2; exit 2; }
