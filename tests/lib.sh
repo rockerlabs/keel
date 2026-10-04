@@ -156,6 +156,42 @@ export KEEL_MACHINE_WATCH_STORE="$SANDBOX/harness-machine-watch"
 # banner on the machine running it; test_machine_watch.sh W22+ switch it on, against a stub that only logs argv.
 export KEEL_MACHINE_WATCH_NOTIFY=0
 
+# dir #663 (a): the rest of the environment census. Every KEEL_* a shipped script reads from the caller's
+# environment (S2-1's class: the suite ran an operator's exported KEEL_MACHINE_WATCH_NOTIFIER) is
+# neutralized here — exported to a sandbox path above, or unset below. None has a harness default: a test
+# that needs one sets it itself, per case, after this file is sourced. tests/test_env_census.sh derives the
+# names from the shipped scripts and proves, in a child that sources this file with each one exported
+# poisoned, that none survives — a name added to a tool and forgotten here turns that file red.
+# One name per line on purpose: the gate's mutation proof deletes a single line.
+unset \
+  KEEL_ARCHIVE_SWEEP_THRESHOLD \
+  KEEL_AUDIT_BLOB_MAX \
+  KEEL_CANARY_STATE \
+  KEEL_CHECK_STATE_DIR \
+  KEEL_CHECK_THRESHOLD \
+  KEEL_CHECK_VETO \
+  KEEL_CITATION_ARCHIVE_FILE \
+  KEEL_CLEANUP_GLOBS \
+  KEEL_DIR \
+  KEEL_EPHEMERAL \
+  KEEL_GATE_PRUNE_DAYS \
+  KEEL_IMPACT_TEST_INJECT_BEFORE_REWRITE \
+  KEEL_INGEST_MAX_AGE_HOURS \
+  KEEL_INSTANCE \
+  KEEL_KEEP_WORKTREE \
+  KEEL_LINE_CITATIONS_ALLOW \
+  KEEL_PENDING_RELEASE_MAX_COMMITS \
+  KEEL_REF \
+  KEEL_REPO \
+  KEEL_STARTUP_WARN_TOKENS \
+  KEEL_TARBALL \
+  KEEL_TEST_CRASH_AFTER \
+  KEEL_TEST_DROP_PRIOR_MANIFEST \
+  KEEL_TEST_PAUSE_AFTER \
+  KEEL_TEST_PAUSE_MARKER \
+  KEEL_TOKENS_PROJECTS_DIR \
+  KEEL_TOKENS_WEIGHTS
+
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS
 # the real $REPO_ROOT — without this override every install.sh/install-pre-pr-gate.sh call across the
