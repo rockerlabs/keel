@@ -52,9 +52,10 @@ fi
 # test_drydock_doc.sh, test_polish_review_rails.sh) prove every copy matches the canonical block; these
 # pins prove the canonical block, the mutator-side fixer rails and the brief pointer carry the lines.
 for needle in 'One test device per concurrent session' 'goes through `git -C "<that clone'"'"'s path>"`, never after a `cd`'; do
-  pin "delegation.md rails block carries: ${needle%%\`*}" "$doc" "$needle" \
+  case "$needle" in One*) what="the one-test-device-per-session line" ;; *) what="the git -C line" ;; esac
+  pin "delegation.md rails block carries $what" "$doc" "$needle" \
     "expected the canonical Worker rails block to carry this line"
-  pin "fixer.md rails carry: ${needle%%\`*}" "$REPO_ROOT/docs/drydock/fixer.md" "$needle" \
+  pin "fixer.md rails carry $what" "$REPO_ROOT/docs/drydock/fixer.md" "$needle" \
     "expected the mutator-side rails to carry the same line"
 done
 pin "release-management.md worker-brief section carries the one-device rule" \
