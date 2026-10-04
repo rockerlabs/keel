@@ -39,7 +39,7 @@ allow_mode() {
   case "$1" in
     tools/secret-guard/ci-scan.sh) echo exempt ;;        # bare git in its cwd only, in CI: an inherited value is the caller's own choice of repo
     tools/secret-guard/pre-commit) echo exempt ;;        # a git hook stub; reaches no git today, listed so a future git line does not demand a guard
-    tools/secret-guard/pre-push) echo exempt ;;          # same
+    tools/secret-guard/pre-push) echo exempt ;;          # a git hook stub; reaches git only through range-lib's `git cat-file` (dir #546), and must keep git's own hook environment
     tools/secret-guard/secret-scan.sh) echo selftest-only ;; # hook modes run under git's own GIT_DIR/GIT_INDEX_FILE; selftest() writes into a real repo
     *) echo "" ;;
   esac
@@ -167,7 +167,7 @@ real_libs="$C_LIBS"
 
 # A1 — the non-vacuity floor, a hand-kept list on purpose (a census that silently finds nothing would be
 # green): every script known to reach git when this census was written, plus install-secret-guard.sh, is in
-# the git-reaching set; the derived lib set has the seven git-reaching libs and not range-lib.
+# the git-reaching set; the derived lib set has the seven git-reaching libs, and range-lib.sh since dir #546.
 t1="bootstrap.sh install.sh uninstall.sh keel tests/run.sh examples/tour.sh docs/demo/record-demo.sh
 docs/keel-ab/seed.sh docs/keel-ab/grade.sh
 tools/pre-pr-gate.sh tools/public-audit.sh tools/doctor.sh tools/keel-impact.sh tools/read-trace.sh
@@ -197,10 +197,12 @@ if [ -z "$libs_missing" ]; then
 else
   fail "A1: the derived git-reaching lib set contains the seven known libs" "missing:$libs_missing"
 fi
+# range-lib.sh joined the set with dir #546 (`git cat-file` in secret_guard_commit_known). It still carries
+# no guard line (B5 below): the pre-push hook sources it and must keep git's own hook environment.
 if has_line "$real_libs" range-lib.sh; then
-  fail "A1: range-lib.sh is not git-reaching" "the derived lib set contains range-lib.sh (it reaches no git)"
+  pass "A1: range-lib.sh is in the derived lib set (it reaches git since dir #546)"
 else
-  pass "A1: range-lib.sh is not in the derived lib set"
+  fail "A1: range-lib.sh is in the derived lib set (it reaches git since dir #546)" "the derived lib set lacks range-lib.sh (the detector regressed, or secret_guard_commit_known lost its git call)"
 fi
 # tests/test_*.sh are outside B1 because tests/lib.sh unsets the variables before any fixture runs; pin
 # that line (every test file sourcing lib.sh is tests/test_lib_source_guard.sh's job).

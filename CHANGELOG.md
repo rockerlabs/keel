@@ -71,6 +71,33 @@ sections real content going forward — see that page for exactly when each one 
   the same directory, it counts as Keel's (it used to read as a foreign hooksPath — refused, never
   refreshed, reported "NOT wired"). `uninstall.sh`'s hint for removing the global guard now points at
   `--global --uninstall`, with a `~/` path expanded. dir #659.
+- **The secret guard's pre-push hook no longer refuses a push whose remote tip it has never seen** (dir #546).
+  A force-push from a fresh `git filter-repo` clone — filter-repo drops `origin` and the old objects by
+  design — or any push from a clone that never fetched the old tip used to exit on "bad range … not
+  resolvable", with no way through but `--no-verify`. `resolve_range_local` now treats a `BEFORE` that is
+  no commit here like the zero sha and scans every commit not already on a remote (the range widens, it
+  is never dropped: a planted secret in it is still blocked), and the hook says so on stderr. The one
+  thing that does not widen is the allow-list baseline: with no remote the boundary set is empty, so a
+  `.secret-scan-allow` entry that exempts a match in the pushed history is still ignored as new in this
+  change; fetch the remote first to restore the baseline. CI's `resolve_range_ci` is unchanged.
+  **Re-vendor the guard copies in your repos** (`tools/install-secret-guard.sh <repo>`): `range-lib.sh`
+  and `pre-push` change together, so a vendored copy keeps the old refusal until both are refreshed.
+- **The hook installers' settings writer keeps what it replaces, and stops wiring a hook twice.** All
+  three installers (`install-read-trace.sh`, `install-pre-pr-gate.sh`, `install-machine-watch.sh`) share
+  `tools/lib/hook-install.sh`, so each fix reaches all three. A symlinked `settings.json` is now written
+  through to the file it points at and stays a link; it used to be replaced by a regular file. A 0600
+  file stays 0600 instead of taking the umask's 0644. A read-only `settings.json` is now refused with one
+  clean line instead of replaced, and one that is a directory is refused instead of reported wired
+  while the temp file landed inside it. Two backups in one second get two names
+  (`<file>.<ts>.bak`, then `<file>.<ts>.2.bak`) instead of the second overwriting the first, and a backup
+  is 0600. A malformed nested entry in one of the installer's events gets the clean "unexpected shape"
+  refusal instead of a raw jq error. Our hook already inside a match-all entry (no matcher, `""` or
+  `"*"`) now reads as wired: `--force` used to add a second entry, so the hook fired twice, and
+  `--uninstall` now takes it out of that entry. dir #660, dir #92.
+- **`--uninstall` prunes only the hook arrays it emptied.** The shared core used to delete every empty
+  array under one of the installer's event names, so an already-empty `SessionStart` (another tool's,
+  or a hand edit's) went too: `{"hooks":{"PreToolUse":[<ours>],"SessionStart":[]}}` came back as
+  `"hooks": {}`. Now an array goes only when this run took a hook out of it. dir #600.
 
 ## [0.13.0] — 2026-10-03
 

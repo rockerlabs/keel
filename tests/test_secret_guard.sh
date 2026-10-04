@@ -1610,4 +1610,56 @@ chmod +x "$h647/.git/hooks/secret-scan.sh"   # the helper rewrites through a tem
 run_in "$hw647" git commit -a -m "leak via -a, top-level unset"
 check_status "dir #647 A6 mutation: a top-level unset in the scanner lets the key commit through (the carve-out is load-bearing)" 0 "$STATUS"
 
+# --- dir #546: the pre-push hook must not refuse a push whose remote tip is UNKNOWN locally (a force-push
+# from a fresh `git filter-repo` clone — filter-repo drops `origin` and the old objects by design — or any
+# push from a clone that never fetched the old tip). BEFORE = a non-zero sha that is no object here, so
+# `BEFORE..AFTER` is unresolvable; the guard must scan what it CAN (everything not already on a remote,
+# the zero-sha shape) instead of exiting on "bad range". The fixtures have no remote at all — the
+# filter-repo'd shape — so the scan is the whole history.
+unknown_before="$(rep b 40)"
+prepush_unknown() {  # REPO — feed the hook one push: HEAD over a remote tip that is not an object here
+  local sha; sha="$(git -C "$1" rev-parse HEAD)"
+  OUT="$(cd "$1" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$unknown_before" | bash "$prepush" 2>&1)"; STATUS=$?
+}
+
+repo="$(new_repo)"
+printf 'nothing secret here\n' > "$repo/ok.txt"; git -C "$repo" add ok.txt; git -C "$repo" commit -qm base
+printf 'still nothing\n' > "$repo/ok2.txt"; git -C "$repo" add ok2.txt; git -C "$repo" commit -qm second
+prepush_unknown "$repo"
+check_status "dir #546: pre-push over an unknown remote tip, clean history → exit 0 (not 'bad range')" 0 "$STATUS"
+check_absent "dir #546: ...and never prints the unresolvable-range error" "$OUT" "not resolvable"
+check_contains "dir #546: ...but says the remote tip is unknown, so the operator knows the scan widened" "$OUT" "not known in this repo"
+
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/b.txt"
+git -C "$repo" add b.txt; git -C "$repo" commit -qm withkey
+printf 'more\n' > "$repo/c.txt"; git -C "$repo" add c.txt; git -C "$repo" commit -qm after
+prepush_unknown "$repo"
+check_status "dir #546: a planted secret behind an unknown remote tip is still BLOCKED (the fallback never scans nothing)" 1 "$STATUS"
+check_contains "dir #546: ...and reports BLOCKED" "$OUT" "BLOCKED"
+check_contains "dir #546: ...naming the planted file" "$OUT" "b.txt"
+
+# the allow-list arm (G6 finding 7): with no remote the boundary set is EMPTY. An allow-list file in the repo
+# that exempts nothing in this history costs nothing — a clean scan returns before the baseline is read.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+printf 'nothing secret here\n' > "$repo/ok.txt"
+git -C "$repo" add .secret-scan-allow ok.txt; git -C "$repo" commit -qm "base + allowlist"
+prepush_unknown "$repo"
+check_status "dir #546: an allow-list file in use that exempts nothing here, unknown remote tip → exit 0" 0 "$STATUS"
+
+# An entry that DOES exempt a match in the pushed history stays untrusted: no remote means no pre-push
+# baseline to prove the entry predates this push, and the same-change rule (dir #508 (a)) is the
+# security property — it fails closed, with the recipe naming the way through. Pinned so a later
+# "make it pass" cannot silently trust an entry the guard cannot date.
+repo="$(new_repo)"
+printf '%s\n' "$(key 'ghp_' 'A')" > "$repo/.secret-scan-allow"
+git -C "$repo" add .secret-scan-allow; git -C "$repo" commit -qm "add allowlist"
+printf '%s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/key.txt"
+git -C "$repo" add key.txt; git -C "$repo" commit -qm "add key the allowlist exempts"
+prepush_unknown "$repo"
+check_status "dir #546: an allow-list entry exempting a match, unknown remote tip and no remote → fail closed (no baseline)" 1 "$STATUS"
+check_contains "dir #546: ...with the same-change message" "$OUT" "ignoring an allowlist entry new in this change"
+
 summary

@@ -16,6 +16,12 @@ status=0
 while read -r _localref localsha _remoteref remotesha; do
   secret_guard_is_zero_sha "$localsha" && continue    # branch deletion — nothing to scan
   range="$(resolve_range_local "$remotesha" "$localsha")"
+  # dir #546: say so when the remote tip is a sha this repo has never seen (history rewrite, or a clone
+  # that never fetched it) — the scan was widened to everything not on a remote, and a `git fetch`
+  # of the remote narrows it and restores the allow-list baseline.
+  if ! secret_guard_is_zero_sha "$remotesha" && ! secret_guard_commit_known "$remotesha"; then
+    echo "secret-guard: remote tip ${remotesha} is not known in this repo (a history rewrite, or a clone that never fetched it) — scanning every commit not already on a remote; fetch the remote first to narrow the scan" >&2
+  fi
   # dir #518: SECRET_SCAN_LOCAL_PUSH tells secret-scan.sh's --range allowlist-baseline resolution it
   # is safe to ALSO exclude anything reachable via a remote-tracking ref when deciding what already-
   # known content to trust — safe ONLY here, because this hook runs BEFORE the push transfers, so the
