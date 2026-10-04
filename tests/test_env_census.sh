@@ -19,11 +19,6 @@
 
 echo "test-suite environment gate (dir #663 (a))"
 
-# inherited_reads ROOT... — the KEEL_* names the shipped scripts under the given files/dirs read from the
-# environment, one per line, sorted. A READ is `$KEEL_X`, `${KEEL_X…}` or `ENVIRON["KEEL_X"]` on a
-# non-comment line. A file that also ASSIGNS the name (`KEEL_X=…` at a word start — a script-owned
-# variable, or an inline `KEEL_X=… awk` hand-off) is not reading the caller's value; the verdict is per
-# file, so a read in one file is not excused by an assignment in another.
 # owns_name NAME — reads code on stdin; exit 0 when some line ASSIGNS NAME (`NAME=` at a word start, not
 # inside a quoted string: an even count of double and of single quotes before it — so `echo "… (KEEL_DIR=~/x)"`
 # is prose, while `( cd "$d" && KEEL_X=1 ./run )` is an assignment). \047 is the single quote, spelled so
@@ -45,6 +40,11 @@ owns_name() {
     END { exit found ? 0 : 1 }'
 }
 
+# inherited_reads ROOT... — the KEEL_* names the shipped scripts under the given files/dirs read from the
+# environment, one per line, sorted. A READ is `$KEEL_X`, `${KEEL_X…}` or `ENVIRON["KEEL_X"]` on a
+# non-comment line. A file that also ASSIGNS the name (`KEEL_X=…` at a word start — a script-owned
+# variable, or an inline `KEEL_X=… awk` hand-off) is not reading the caller's value; the verdict is per
+# file, so a read in one file is not excused by an assignment in another.
 inherited_reads() {
   local root f name
   local -a files=()
@@ -124,7 +124,7 @@ check_eq "a lib that unsets only one name leaves exactly the other one poisoned"
 printf '%s\n' 'export KEEL_PLANT_BARE=/somewhere/else' >> "$nolib/lib.sh"
 check_eq "a lib that exports a different value counts as neutralized" "" "$(unneutralized "$nolib/lib.sh" KEEL_PLANT_BRACE KEEL_PLANT_BARE)"
 printf '%s\n' 'return 7' > "$nolib/broken.sh"
-res="$(unneutralized "$nolib/broken.sh" KEEL_PLANT_BRACE)"; rc=$?
+unneutralized "$nolib/broken.sh" KEEL_PLANT_BRACE >/dev/null; rc=$?
 check_ne "a lib that fails to source is a hard failure, not a clean 'nothing poisoned'" "$rc" 0
 
 # --- the real tree --------------------------------------------------------------------------------------------
@@ -152,11 +152,11 @@ fi
 SCRATCH_COPY_PREFIX=envcensus
 victim=KEEL_CHECK_VETO
 check_contains "the mutation victim ($victim) is one of the derived names" "$names" "$victim"
-mut_dir="$(mktemp -d "$SANDBOX/mut.XXXXXX")"
-cp "$TESTS_DIR/lib.sh" "$mut_dir/lib.sh"
-delete_line_containing "$mut_dir/lib.sh" "$victim"
+mut_lib="$(scratch_copy "$TESTS_DIR/lib.sh" lib.sh)"
+delete_line_containing "$mut_lib" "$victim"
+check_ne "the edit changed the copy of lib.sh" "$(cksum < "$mut_lib")" "$(cksum < "$TESTS_DIR/lib.sh")"
 # shellcheck disable=SC2086
-res="$(unneutralized "$mut_dir/lib.sh" $names)"
+res="$(unneutralized "$mut_lib" $names)"
 check_eq "lib.sh minus its $victim line: the gate reports $victim, and only it" "$victim" "$res"
 
 summary

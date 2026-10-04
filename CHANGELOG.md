@@ -27,9 +27,9 @@ sections real content going forward — see that page for exactly when each one 
   this, because a concurrent suite's live sandboxes sit in it too; a path this run minted is its own. It sees
   what the grep census cannot (a cleared `EXIT` trap, a scratch file a tool keeps on purpose, a grandchild's
   call) and refuses to run, naming why, if it cannot arm itself.
-  `tests/test_residue_gate.sh` drives it per mechanism, with mutation proofs, and pins the two clauses of
-  `run.sh`'s log-directory guard that no test reached (a mint that returns `/`, and one that returns a
-  non-directory). `tests/test_no_bare_mktemp.sh` is rebuilt on a small shell lexer: it reads quotes,
+  `tests/test_residue_gate.sh` drives it per mechanism, with mutation proofs, and `tests/test_run_sh.sh` now
+  pins the two clauses of `run.sh`'s log-directory guard that no test reached (a mint that returns `/`, and
+  one that returns a non-directory). `tests/test_no_bare_mktemp.sh` is rebuilt on a small shell lexer: it reads quotes,
   substitutions, comments and here-documents across lines, so it now catches the backtick, `command mktemp`,
   absolute-path and bare-line shapes and no longer flags `"$SANDBOX"/name` or a fixture's own text; its
   allow-list is keyed by file, line and count, an entry that matches fewer lines than it claims is reported

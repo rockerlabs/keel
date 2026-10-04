@@ -9,8 +9,7 @@
 # call there. On macOS a bare `mktemp` ignores $TMPDIR, and a leak mutant here would otherwise strand real
 # entries in the machine's temp dir that this session cannot remove.
 #
-# Pinned here too (dir #663's fold, R3-6): the two clauses of run.sh's logdir guard that no test reached
-# (`/`, and a path that is not a directory). R2-4's empty and failing mint stay in test_run_sh.sh.
+# (The two logdir-guard clauses dir #663 also folds in, R3-6, are pinned in test_run_sh.sh beside R2-4's.)
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -44,6 +43,10 @@ fixture() { printf '#!/usr/bin/env bash\n%s\nexit 0\n' "$3" > "$1/test_$2.sh"; }
 # runfake DIR — run DIR/run.sh with the redirecting mktemp first on PATH
 runfake() { run env KEEL_TEST_JOBS=2 PATH="$redir:$PATH" bash "$1/run.sh"; }
 left_in_realtmp() { find "$realtmp" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' '; }
+clear_realtmp() { find "$realtmp" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null; }
+# assert_mutated LABEL FILE — the mutation really changed the copy of run.sh (a refactor of run.sh that
+# moves the anchor text would otherwise leave a no-op "mutant" that proves nothing)
+assert_mutated() { check_ne "$1: the edit changed the copy of run.sh" "$(cksum < "$2")" "$(cksum < "$runner")"; }
 
 # --- clean: scratch removed by every common shape -> green, the traced count is exact --------------------------
 d="$(mkfake clean)"
@@ -81,7 +84,7 @@ leak_case() {   # leak_case LABEL BODY
   check_contains "$label: the trace path is named" "$OUT" "mktemp.trace"
   n="$(left_in_realtmp)"
   check_ne "$label: the leaked entry is still on disk (the gate reports it, never deletes it)" "$n" 0
-  find "$realtmp" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+  clear_realtmp
 }
 leak_case "a bare mktemp -d never removed"        'x="$(mktemp -d)"'
 leak_case "a bare mktemp file never removed"      'f="$(mktemp)"'
@@ -98,71 +101,40 @@ check_status "a relative template: the leak is found, exit 1" 1 "$STATUS"
 check_contains "a relative template: recorded under its absolute directory" "$OUT" "  $SANDBOX/relcwd/./leak."
 
 # --- the gate fails closed: it never reports a clean run it could not watch -----------------------------------------
-mutant() {   # mutant NAME — a fake dir whose run.sh the caller then edits
-  mkfake "m-$1"
-}
-d="$(mutant nopath)"
+d="$(mkfake m-nopath)"
 fixture "$d" a 'echo should-not-run'
 delete_line_containing "$d/run.sh" 'PATH="$resid_dir:$PATH"'
+assert_mutated "no shim on PATH" "$d/run.sh"
 runfake "$d"
 check_status "no shim on PATH: run.sh refuses to run -> exit 1" 1 "$STATUS"
 check_contains "no shim on PATH: it says the gate could not be armed" "$OUT" "residue gate (dir #663) could not be armed: the shim is not first on PATH"
 check_absent "no shim on PATH: before any test file started" "$OUT" "=== test_a.sh ==="
 
-d="$(mutant noprobe)"
+d="$(mkfake m-noprobe)"
 fixture "$d" a 'echo should-not-run'
 replace_in_line_containing "$d/run.sh" '>> "$trace"' '>> "$trace"' '>> /dev/null'
+assert_mutated "a shim that records nothing" "$d/run.sh"
 runfake "$d"
 check_status "a shim that records nothing: the probe catches it -> exit 1" 1 "$STATUS"
 check_contains "a shim that records nothing: names the probe" "$OUT" "the shim did not record a probe path"
 check_absent "a shim that records nothing: before any test file started" "$OUT" "=== test_a.sh ==="
 
 # --- each clause binds: a mutated run.sh goes blind where the real one trips -----------------------------------------
-d="$(mutant noverdict)"
+d="$(mkfake m-noverdict)"
 fixture "$d" a 'x="$(mktemp -d)"'
 delete_line_containing "$d/run.sh" '# residue gate verdict'
+assert_mutated "no verdict increment" "$d/run.sh"
 runfake "$d"
 check_status "no verdict increment: the SAME leaking fixture now passes (so the increment is what turns it red)" 0 "$STATUS"
 check_contains "no verdict increment: the gate still printed its trip text, then passed" "$OUT" "RESIDUE GATE TRIPPED (dir #663)"
-find "$realtmp" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+clear_realtmp
 
-d="$(mutant notrace)"
+d="$(mkfake m-notrace)"
 fixture "$d" a 'x="$(mktemp -d)"'
 replace_in_line_containing "$d/run.sh" 'sort -u "$resid_trace"' 'sort -u "$resid_trace"' 'sort -u /dev/null'
+assert_mutated "verdict reads no trace" "$d/run.sh"
 runfake "$d"
 check_status "verdict reads no trace: the SAME leaking fixture now passes (so reading the trace is what finds it)" 0 "$STATUS"
-find "$realtmp" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
-
-# --- the logdir guard's two clauses with no test until now (R3-6) ---------------------------------------------------
-# A mktemp that hands back "/" (the shape a failing mint produced as root, per the delta audit's R2-4): the
-# `[ "$logdir" = / ]` clause refuses it. No mutant for this clause: with it removed run.sh would take "/" as
-# its log directory, and as root (the alpine leg) write into the filesystem root.
-slash_bin="$SANDBOX/slash-bin"; mkdir -p "$slash_bin"
-printf '#!/bin/sh\nprintf "/\\n"\n' > "$slash_bin/mktemp"; chmod 755 "$slash_bin/mktemp"
-d="$(mkfake slash)"
-fixture "$d" a 'echo should-not-run'
-run env KEEL_TEST_JOBS=1 PATH="$slash_bin:$PATH" bash "$d/run.sh"
-check_status "R3-6: a mint that returns / fails the run -> exit 1" 1 "$STATUS"
-check_contains "R3-6: loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
-check_absent "R3-6: before any test file started" "$OUT" "=== test_a.sh ==="
-check_nofile "R3-6: no log was written to the filesystem root" "/test_a.sh.log"
-
-# A mktemp that hands back a path that is not a directory: the `[ ! -d "$logdir" ]` clause.
-ghost="$SANDBOX/no-such-logdir-663"
-ghost_bin="$SANDBOX/ghost-bin"; mkdir -p "$ghost_bin"
-printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$ghost" > "$ghost_bin/mktemp"; chmod 755 "$ghost_bin/mktemp"
-d="$(mkfake ghost)"
-fixture "$d" a 'echo should-not-run'
-run env KEEL_TEST_JOBS=1 PATH="$ghost_bin:$PATH" bash "$d/run.sh"
-check_status "R3-6: a mint that returns a non-directory fails the run -> exit 1" 1 "$STATUS"
-check_contains "R3-6: loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
-check_absent "R3-6: before any test file started" "$OUT" "=== test_a.sh ==="
-# the mutant: the `! -d` clause dropped; the same shim then gets past the guard (it dies later, elsewhere)
-d="$(mkfake ghostm)"
-fixture "$d" a 'echo should-not-run'
-replace_in_line_containing "$d/run.sh" 'if [ -z "$logdir" ] || [ "$logdir" = / ]' ' || [ ! -d "$logdir" ]' ''
-run env KEEL_TEST_JOBS=1 PATH="$ghost_bin:$PATH" bash "$d/run.sh"
-check_absent "R3-6 mutant: without the ! -d clause the guard's own message is gone (so the clause is what produces it)" \
-  "$OUT" "mktemp -d did not return a usable log dir"
+clear_realtmp
 
 summary

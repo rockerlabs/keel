@@ -327,24 +327,17 @@ main() {
   resid_dir="$logdir/residue"
   resid_trace="$resid_dir/mktemp.trace"
   resid_real_mktemp="$(type -P mktemp 2>/dev/null || true)"
-  # resid_write_shim FILE REAL TRACE — a POSIX-sh wrapper around REAL that appends the path it prints to
-  # TRACE. -u / --dry-run create nothing and are not recorded; a relative result is recorded absolute.
+  # resid_write_shim FILE REAL TRACE — a POSIX-sh wrapper around REAL that appends the path it prints to TRACE
+  # when that path exists afterwards (a `-u` dry run prints a name and makes nothing, so it is never
+  # recorded; no option parsing to get wrong). A relative result is recorded absolute.
   resid_write_shim() {
     {
       printf '#!/bin/sh\n'
       printf 'real=%q\ntrace=%q\n' "$2" "$3"
       cat <<'SHIM'
-dry=0
-for a in "$@"; do
-  case "$a" in
-    -u|--dry-run) dry=1 ;;
-    --*) ;;
-    -*u*) dry=1 ;;
-  esac
-done
 out="$("$real" "$@")" || exit $?
 printf '%s\n' "$out"
-if [ "$dry" = 0 ] && [ -n "$out" ]; then
+if [ -n "$out" ] && [ -e "$out" ]; then
   case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
   printf '%s\n' "$out" >> "$trace" 2>/dev/null
 fi
@@ -360,9 +353,10 @@ SHIM
   [ -n "$resid_real_mktemp" ] || resid_fatal "no mktemp on PATH"
   mkdir "$resid_dir" 2>/dev/null && : > "$resid_trace" || resid_fatal "cannot create $resid_dir"
   resid_write_shim "$resid_dir/mktemp" "$resid_real_mktemp" "$resid_trace" || resid_fatal "cannot write the mktemp shim"
-  # Non-vacuity: drive a second shim, whose "real" mktemp is a stub that just echoes its last argument,
-  # and require the path to land in the trace. Proves the shim records without minting anything real.
-  printf '#!/bin/sh\nfor a in "$@"; do :; done\nprintf "%%s\\n" "$a"\n' > "$resid_dir/probe-real" && chmod 755 "$resid_dir/probe-real" \
+  # Non-vacuity: drive a second shim, whose "real" mktemp is a stub that makes its last argument a directory
+  # and echoes it, and require the path to land in the trace. Proves the shim records without calling the
+  # real mktemp (a test that watches the real one's calls must not see a probe).
+  printf '#!/bin/sh\nfor a in "$@"; do :; done\nmkdir "$a" && printf "%%s\\n" "$a"\n' > "$resid_dir/probe-real" && chmod 755 "$resid_dir/probe-real" \
     || resid_fatal "cannot write the probe stub"
   resid_write_shim "$resid_dir/probe-shim" "$resid_dir/probe-real" "$resid_trace" || resid_fatal "cannot write the probe shim"
   resid_probe="$resid_dir/probe-marker.$$"

@@ -137,18 +137,28 @@ FNR == 1 { finish(); curfile = FILENAME; sub(/^.*\//, "", curfile); stack = "B";
 END { finish() }
 '
 
-# census DIR ALLOWTABLE — flagged calls in DIR/test_*.sh, as `file:line: text`, then any stale allow-list
-# entry. Excludes this file (its own fixture text and allow-list are the shapes it hunts).
+# census_list DIR — the files the census reads: DIR/test_*.sh, minus this file (its own fixture text and
+# allow-list are the shapes it hunts). The one place that rule is written.
+census_list() {
+  local f
+  for f in "$1"/test_*.sh; do
+    [ -f "$f" ] || continue
+    [ "${f##*/}" = test_no_bare_mktemp.sh ] || printf '%s\n' "$f"
+  done
+}
+
+# census DIR ALLOWTABLE — flagged calls in the census_list files, as `file:line: text`, then any stale
+# allow-list entry.
 census() {
   local dir="$1" table="$2" f file ln text flagged i hit n=0 efile ecount etext
   local -a files=() keys=() left=()
-  for f in "$dir"/test_*.sh; do
-    [ -f "$f" ] || continue
-    [ "${f##*/}" = test_no_bare_mktemp.sh ] && continue
-    files+=("$f")
-  done
+  while IFS= read -r f; do [ -n "$f" ] && files+=("$f"); done < <(census_list "$dir")
   [ "${#files[@]}" -gt 0 ] || { printf 'VACUOUS: no test_*.sh files under %s\n' "$dir"; return 0; }
-  flagged="$(awk "$CENSUS_AWK" "${files[@]}")"
+  # lex only files that spell the word: quote state is per file, so a file without it cannot change the result
+  local -a lexed=()
+  while IFS= read -r f; do [ -n "$f" ] && lexed+=("$f"); done < <(grep -l mktemp "${files[@]}" 2>/dev/null)
+  flagged=""
+  [ "${#lexed[@]}" -eq 0 ] || flagged="$(awk "$CENSUS_AWK" "${lexed[@]}")"
   while IFS='|' read -r efile ecount etext; do
     [ -n "$efile" ] || continue
     keys[n]="$efile|$etext"; left[n]="$ecount"; n=$((n + 1))
@@ -168,16 +178,6 @@ census() {
     [ "${left[i]}" -eq 0 ] || printf 'STALE allow-list entry (matched fewer lines than it claims, %s short): %s\n' "${left[i]}" "${keys[i]}"
   done
   return 0
-}
-# census_files DIR — how many files the census reads (the vacuity guard compares it with an independent count)
-census_files() {
-  local n=0 f
-  for f in "$1"/test_*.sh; do
-    [ -f "$f" ] || continue
-    [ "${f##*/}" = test_no_bare_mktemp.sh ] && continue
-    n=$((n + 1))
-  done
-  printf '%s' "$n"
 }
 
 # --- non-vacuity: the lexer flags what it should, and only that, on a planted tree ---------------------------------
@@ -279,7 +279,7 @@ check_contains "zero files is reported, never a pass" "$out4" "VACUOUS"
 
 # --- the real census ------------------------------------------------------------------------------------------------
 out="$(census "$TESTS_DIR" "$ALLOW_REAL")"
-nfiles="$(census_files "$TESTS_DIR")"
+nfiles="$(census_list "$TESTS_DIR" | grep -c .)"
 indep="$(find "$TESTS_DIR" -maxdepth 1 -name 'test_*.sh' ! -name test_no_bare_mktemp.sh | wc -l | tr -d ' ')"
 check_ne "the census reads at least one test file" "$nfiles" 0
 check_eq "the census reads exactly the files an independent count finds" "$indep" "$nfiles"
