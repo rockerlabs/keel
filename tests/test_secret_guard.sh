@@ -873,7 +873,9 @@ run "$isg" --force "$frepo"
 check_status "--force replaces the foreign hook → exit 0" 0 "$STATUS"
 check_file "--force backs up the user's hook" "$frepo/.git/hooks/pre-commit.pre-keel.bak"
 check_contains "backup keeps the user's content" "$(cat "$frepo/.git/hooks/pre-commit.pre-keel.bak")" "my own pre-commit"
-check_contains "Keel guard now installed (marker present)" "$(cat "$frepo/.git/hooks/pre-commit")" "Keel secret-guard"
+if cmp -s "$REPO_ROOT/tools/secret-guard/pre-commit" "$frepo/.git/hooks/pre-commit"; then
+  pass "Keel guard now installed (the shipped pre-commit, byte for byte)"
+else fail "Keel guard now installed (the shipped pre-commit, byte for byte)" "installed pre-commit differs from the shipped one"; fi
 
 # re-vendor over OUR own hook is silent + idempotent — the marker recognizes it as ours, no false refusal
 run "$isg" "$frepo"
@@ -1001,7 +1003,9 @@ ln -s "$s2scan" "$s2srepo/.git/hooks/secret-scan.sh"
 run "$isg" "$s2srepo"
 check_status "dir #659 S3-2: a symlinked secret-scan.sh is refused → exit 3" 3 "$STATUS"
 check_contains "dir #659 S3-2: the shared scanner target is untouched" "$(cat "$s2scan")" "a scanner shared from elsewhere"
-# A re-install's run-scoped .keel-upgrade.bak is a `cp` destination too: a link there is refused.
+# A re-install's run-scoped .keel-upgrade.bak is a `cp` destination too. That name is Keel's own scratch
+# path, so a link left there is removed (never followed) rather than refused — a refusal would ask the
+# user to put a file at a path the next run overwrites and deletes. Its target is never written.
 s2urepo="$(new_repo)"
 s2uh="$s2urepo/.git/hooks"
 mkdir -p "$s2uh"
@@ -1010,8 +1014,28 @@ s2utarget="$SANDBOX/s2-upgrade-bak-target"
 printf '# someone elses file\n' > "$s2utarget"
 ln -s "$s2utarget" "$s2uh/pre-commit.keel-upgrade.bak"
 run "$isg" "$s2urepo"
-check_status "dir #659 S3-2: a symlink at the .keel-upgrade.bak path is refused → exit 3" 3 "$STATUS"
-check_contains "dir #659 S3-2: the .keel-upgrade.bak link's target is untouched" "$(cat "$s2utarget")" "someone elses file"
+check_status "dir #659 S3-2: a link at Keel's own .keel-upgrade.bak path does not block a re-install → exit 0" 0 "$STATUS"
+check_contains "dir #659 S3-2: the .keel-upgrade.bak link's target is never written" "$(cat "$s2utarget")" "someone elses file"
+check_nolink "dir #659 S3-2: the run-scoped .keel-upgrade.bak link is gone after the run" "$s2uh/pre-commit.keel-upgrade.bak"
+# A foreign pre-push after an already-Keel pre-commit: the refusal now happens before ANY write, so
+# "Nothing was changed" is true — no stray pre-commit.keel-upgrade.bak is left behind (it used to be).
+s2rrepo="$(new_repo)"
+s2rh="$s2rrepo/.git/hooks"
+mkdir -p "$s2rh"
+cp "$REPO_ROOT/tools/secret-guard/pre-commit" "$s2rh/pre-commit"
+printf '#!/bin/sh\n# my own pre-push\nexit 0\n' > "$s2rh/pre-push"
+run "$isg" "$s2rrepo"
+check_status "dir #659: Keel pre-commit + foreign pre-push → refused, exit 3" 3 "$STATUS"
+check_nofile "dir #659: that refusal leaves no stray pre-commit.keel-upgrade.bak" "$s2rh/pre-commit.keel-upgrade.bak"
+check_absent "dir #659: that refusal comes before the source selftest" "$OUT" "selftest"
+# The allowlist seed is a write too: a dangling link at .secret-scan-allow is not followed.
+s2arepo="$(new_repo)"
+s2atarget="$SANDBOX/s2-allow-target"
+rm -f "$s2atarget"
+ln -s "$s2atarget" "$s2arepo/.secret-scan-allow"
+run "$isg" "$s2arepo"
+check_status "dir #659: a vendor install with a dangling .secret-scan-allow link → exit 0" 0 "$STATUS"
+check_nofile "dir #659: the seed did not write through the dangling .secret-scan-allow link" "$s2atarget"
 
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
@@ -1044,8 +1068,9 @@ run in_gh_home "$isg" --global --force
 check_status "--global --force replaces the foreign hooksPath → exit 0" 0 "$STATUS"
 check_status "--global --force repoints core.hooksPath at Keel's dir" \
   "$gh_home/.config/git/keel-hooks" "$(in_gh_home git config --global core.hooksPath)"
-check_contains "--global --force installs Keel's own hook there" \
-  "$(cat "$gh_home/.config/git/keel-hooks/pre-commit")" "Keel secret-guard"
+if cmp -s "$REPO_ROOT/tools/secret-guard/pre-commit" "$gh_home/.config/git/keel-hooks/pre-commit"; then
+  pass "--global --force installs Keel's own hook there (the shipped pre-commit, byte for byte)"
+else fail "--global --force installs Keel's own hook there (the shipped pre-commit, byte for byte)" "installed pre-commit differs"; fi
 # --force repoints the SETTING; it never deletes the hooks dir the user pointed at before.
 check_contains "--global --force never touches the foreign hooks dir it displaced" \
   "$(cat "$foreign_hooks/pre-commit")" "someone elses global hook"
@@ -1086,21 +1111,98 @@ check_eq "dir #659 S3-3: that refusal leaves core.hooksPath alone" \
 check_eq "dir #659 S3-3: that refusal leaves the earlier record alone" \
   "$foreign_hooks" "$(in_gh_home git config --global keel.displacedHooksPath)"
 
-# No hooksPath before: install then --uninstall leaves it unset, as it was.
+# No hooksPath before: install then --uninstall leaves it unset, as it was. A record left behind while
+# Keel was NOT wired (an earlier --force, then a hand `--unset core.hooksPath`) is stale: this install
+# displaces nothing, so it drops that record — a later --uninstall must not resurrect a path the user
+# had already removed.
 gu_home="$SANDBOX/guninstall-home"; mkdir -p "$gu_home"
 fresh_home_env "$gu_home"; gu_env=("${FRESH_HOME_ENV[@]}")
 in_gu_home() { env "${gu_env[@]}" "$@"; }
+gu_keel="$gu_home/.config/git/keel-hooks"
+in_gu_home git config --global keel.displacedHooksPath "$SANDBOX/gu-stale-hooks"
 run in_gu_home "$isg" --global
 check_status "dir #659 S3-3: --global with no prior hooksPath → exit 0" 0 "$STATUS"
-check_eq "dir #659 S3-3: nothing displaced, nothing recorded" \
+check_eq "dir #659 S3-3: nothing displaced — the stale record is dropped, not kept" \
   "" "$(in_gu_home git config --global keel.displacedHooksPath || true)"
+check_contains "dir #659 S3-3: dropping the stale record names it" "$OUT" "$SANDBOX/gu-stale-hooks"
 run in_gu_home "$isg" --global --uninstall
 check_status "dir #659 S3-3: --uninstall with nothing recorded → exit 0" 0 "$STATUS"
 check_eq "dir #659 S3-3: --uninstall with nothing recorded unsets core.hooksPath" \
   "" "$(in_gu_home git config --global core.hooksPath || true)"
+# Unwired, but a record exists: --uninstall reports it and drops it rather than staying silent.
+in_gu_home git config --global keel.displacedHooksPath "$SANDBOX/gu-stale-hooks-2"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659 S3-3: --uninstall when unwired, with a stale record → exit 0" 0 "$STATUS"
+check_contains "dir #659 S3-3: that run names the stale record" "$OUT" "$SANDBOX/gu-stale-hooks-2"
+check_eq "dir #659 S3-3: that run drops the stale record" \
+  "" "$(in_gu_home git config --global keel.displacedHooksPath || true)"
+# Keel's own dir spelled with a literal ~/ (git expands it; a portable dotfiles gitconfig writes it) is
+# Keel's, not foreign: even --force records nothing (it used to record Keel's own dir as "displaced"),
+# keeps the user's spelling, and --uninstall unwires it.
+# shellcheck disable=SC2088  # the LITERAL ~ is the point: git stores it verbatim
+in_gu_home git config --global core.hooksPath '~/.config/git/keel-hooks'
+run in_gu_home "$isg" --global --force
+check_status "dir #659: a ~/-spelled Keel hooksPath is Keel's — --global --force → exit 0" 0 "$STATUS"
+check_eq "dir #659: the ~/-spelled Keel dir is never recorded as displaced" \
+  "" "$(in_gu_home git config --global keel.displacedHooksPath || true)"
+# shellcheck disable=SC2088  # the LITERAL ~ is the point
+check_eq "dir #659: the user's ~/ spelling of Keel's dir is kept, not rewritten" \
+  '~/.config/git/keel-hooks' "$(in_gu_home git config --global core.hooksPath)"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659: --uninstall unwires a ~/-spelled Keel hooksPath → exit 0" 0 "$STATUS"
+check_eq "dir #659: … leaving core.hooksPath unset" \
+  "" "$(in_gu_home git config --global core.hooksPath || true)"
+# Any other spelling of the same dir — a trailing slash — is Keel's too (compared as a path).
+in_gu_home git config --global core.hooksPath "$gu_keel/"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659: --uninstall unwires a trailing-slash Keel hooksPath → exit 0" 0 "$STATUS"
+check_eq "dir #659: … leaving core.hooksPath unset" \
+  "" "$(in_gu_home git config --global core.hooksPath || true)"
+# A RELATIVE hooksPath names a dir inside each repo, never Keel's: even run from the dir it would
+# resolve to here, --uninstall must not read it as Keel's and unset it (no cwd-dependent `-ef`).
+in_gu_home git config --global core.hooksPath ".config/git/keel-hooks"
+run env "${gu_env[@]}" bash -c 'cd "$0" && exec "$1" --global --uninstall' "$gu_home" "$isg"
+check_status "dir #659: a relative hooksPath is not Keel's, whatever the cwd → exit 3" 3 "$STATUS"
+check_eq "dir #659: … and it is left in place" \
+  ".config/git/keel-hooks" "$(in_gu_home git config --global core.hooksPath)"
+in_gu_home git config --global --unset core.hooksPath
+# A record that names Keel's own dir displaced nothing: --uninstall drops it and unsets, never
+# "restores" Keel's own wiring while reporting it unwired.
+in_gu_home git config --global core.hooksPath "$gu_keel"
+in_gu_home git config --global keel.displacedHooksPath "$gu_keel/"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659: --uninstall with a record naming Keel's own dir → exit 0" 0 "$STATUS"
+check_eq "dir #659: … core.hooksPath is unset, not 'restored' to Keel's dir" \
+  "" "$(in_gu_home git config --global core.hooksPath || true)"
+check_eq "dir #659: … and that record is dropped" \
+  "" "$(in_gu_home git config --global keel.displacedHooksPath || true)"
+# A record with several values is refused, never compared against just the last one and wiped. (Both
+# dirs exist, so it is the several-values rule that refuses, not the missing-dir one.)
+mkdir -p "$SANDBOX/gu-multi-a" "$SANDBOX/gu-multi-b"
+in_gu_home git config --global core.hooksPath "$gu_keel"
+in_gu_home git config --global --add keel.displacedHooksPath "$SANDBOX/gu-multi-a"
+in_gu_home git config --global --add keel.displacedHooksPath "$SANDBOX/gu-multi-b"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659: a multi-valued record → refused, exit 3" 3 "$STATUS"
+check_eq "dir #659: … both recorded values survive" \
+  "2" "$(in_gu_home git config --global --get-all keel.displacedHooksPath | wc -l | tr -d ' ')"
+in_gu_home git config --global --unset-all keel.displacedHooksPath
+# A recorded path that no longer exists is not restored: a global hooksPath naming a missing dir makes
+# git skip every repo's own hooks. Refuse and change nothing.
+in_gu_home git config --global core.hooksPath "$gu_keel"
+in_gu_home git config --global keel.displacedHooksPath "$SANDBOX/gu-deleted-hooks"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659 S3-3: --uninstall with a recorded dir that no longer exists → exit 3" 3 "$STATUS"
+check_eq "dir #659 S3-3: that refusal leaves Keel's hooksPath in place" \
+  "$gu_keel" "$(in_gu_home git config --global core.hooksPath)"
+check_eq "dir #659 S3-3: that refusal leaves the record in place" \
+  "$SANDBOX/gu-deleted-hooks" "$(in_gu_home git config --global keel.displacedHooksPath)"
+run in_gu_home "$isg" --global --uninstall --force
+check_status "dir #659: --uninstall and --force don't combine → exit 2 (as the sibling installers)" 2 "$STATUS"
 run "$isg" --uninstall "$frepo"
 check_status "dir #659 S3-3: --uninstall is --global only → exit 2 for a repo path" 2 "$STATUS"
 check_contains "dir #659 S3-3: the repo-path --uninstall refusal says why" "$OUT" "--uninstall works with --global only"
+check_contains "dir #659: the repo-path refusal names the --force backup to move back" "$OUT" ".pre-keel.bak"
 
 # --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
 # put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.

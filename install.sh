@@ -1571,6 +1571,22 @@ fi
 # producer's path" shape finding 4 of the same audit was fixing elsewhere. Empty when HOME is unset:
 # --no-hooks must never need $HOME, and Verify reports that as unknown state rather than guessing.
 keel_hooks="${HOME:+$HOME/.config/git/keel-hooks}"
+# Is a core.hooksPath value Keel's dir? Compared as a path, never as the raw string git stored — the
+# same rule as install-secret-guard.sh's _isg_same_dir (dir #659): a literal leading ~/ expanded (git
+# expands it itself; tools/lib/git-global-paths.sh's git_global_expand_tilde is the shared copy), one
+# trailing slash dropped, `-ef` when both exist. The raw compare read `~/.config/git/keel-hooks` as a
+# foreign hooksPath: never refreshed, and reported "NOT wired" while it guarded every commit.
+# shellcheck disable=SC2088  # matching a literal ~ on purpose
+keel_hooks_is() {
+  local p="$1"
+  [ -n "$keel_hooks" ] && [ -n "$p" ] || return 1
+  case "$p" in "~/"*) p="$HOME/${p#\~/}" ;; esac
+  [ "$p" = / ] || p="${p%/}"
+  [ "$p" = "$keel_hooks" ] && return 0
+  # `-ef` only for an absolute value: a relative hooksPath names a dir inside each repo, never this one.
+  case "$p" in /*) ;; *) return 1 ;; esac
+  [ -e "$p" ] && [ -e "$keel_hooks" ] && [ "$p" -ef "$keel_hooks" ]
+}
 if [ "$DO_HOOKS" = 1 ]; then
   # Plain-language heads-up first: felt (first fresh-adopter install, 2026-07-11) — when an AI tool
   # drives this install, its permission dialog for the git config change reads as "a bug" to a novice
@@ -1582,7 +1598,7 @@ if [ "$DO_HOOKS" = 1 ]; then
   # a bare "unbound variable" (or, worse, a hooks dir silently rooted at "/.config/git/keel-hooks").
   : "${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}"
   existing="$(git config --global core.hooksPath 2>/dev/null || true)"
-  if [ -z "$existing" ] || [ "$existing" = "$keel_hooks" ]; then
+  if [ -z "$existing" ] || keel_hooks_is "$existing"; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below
     # (which reports the hook state), not abort the whole bootstrap under `set -e`.
     if ! "$root/tools/install-secret-guard.sh" --global | sed 's/^/  /'; then
@@ -1647,27 +1663,51 @@ fi
 # still gated on DO_HOOKS, since "run install-secret-guard.sh" is not the right next step for someone
 # who just explicitly asked this run not to touch hooks. $keel_hooks is empty only when HOME is unset,
 # in which case there is nothing to compare against and the branches below say so instead of guessing.
+# "Keel's guard" is decided by the same exact marker line install-secret-guard.sh's _isg_is_keel_hook
+# uses — a hook's line 2 equal to the shipped hook's line 2 — not a substring (dir #659): a hook that
+# merely names the tool is refused by the installer, so Verify must not call it Keel's. Both hooks:
+# the installer refuses a foreign pre-push just the same. Paths below use $keel_hooks, not $hp — the
+# two name one dir (keel_hooks_is), but $hp may be spelled `~/…`, which a file test cannot open.
 guard_ok=0
 hp="$(git config --global core.hooksPath 2>/dev/null || true)"
-if [ -n "$keel_hooks" ] && [ "$hp" = "$keel_hooks" ] && [ -x "$hp/pre-commit" ] && grep -q 'Keel secret-guard' "$hp/pre-commit" 2>/dev/null; then
+hp_is_keel=0
+keel_hooks_is "$hp" && hp_is_keel=1
+# 0 = the hook is absent, 1 = it is Keel's (exact marker line), 2 = it is present and not Keel's.
+keel_hook_state() {
+  local want
+  [ -e "$keel_hooks/$1" ] || { echo 0; return; }
+  want="$(sed -n 2p "$root/tools/secret-guard/$1" 2>/dev/null || true)"
+  if [ -n "$want" ] && [ "$(sed -n 2p "$keel_hooks/$1" 2>/dev/null)" = "$want" ]; then echo 1; else echo 2; fi
+}
+pc_state=0 pp_state=0
+if [ "$hp_is_keel" = 1 ]; then pc_state="$(keel_hook_state pre-commit)"; pp_state="$(keel_hook_state pre-push)"; fi
+if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit" ] && [ "$pp_state" != 2 ]; then
   # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
   # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
-  if [ -x "$hp/secret-scan.sh" ] && "$hp/secret-scan.sh" --selftest >/dev/null 2>&1; then
+  if [ -x "$keel_hooks/secret-scan.sh" ] && "$keel_hooks/secret-scan.sh" --selftest >/dev/null 2>&1; then
     echo "  OK   secret-guard ($hp; selftest passed)"
     guard_ok=1
   else
     echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
-    echo "       Inspect:  $hp/secret-scan.sh --selftest"
+    echo "       Inspect:  $keel_hooks/secret-scan.sh --selftest"
   fi
-elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp" != "$keel_hooks" ]; then
+elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 2 ] || [ "$pp_state" = 2 ]; }; then
+  # Keel's hooks dir, but a hook in it is not Keel's: install-secret-guard.sh --global refuses to
+  # overwrite it on EVERY run, so say that — ahead of the --no-hooks arm (which would blame the flag)
+  # and of the generic arm (whose "run install-secret-guard.sh --global" would just be refused again).
+  echo "  WARN secret-guard NOT wired — a hook in $keel_hooks is not Keel's (its marker line differs);"
+  echo "       install-secret-guard.sh --global refuses to overwrite it. Move it aside, or re-run that with"
+  echo "       --force to back it up (.pre-keel.bak) and replace it."
+elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
   # Reported BEFORE the --no-hooks arm below, and regardless of DO_HOOKS: this is the reason the guard
   # is not wired on ANY run, including one that does try to wire it (install.sh refuses to clobber).
   # Ordered the other way round, a --no-hooks run blamed the flag and implied that re-running without
   # it would fix things — it would not, and the user paid a full re-install to find that out.
-  # The `!=` guard matters too: $hp EQUAL to $keel_hooks but failing the marker check above is a broken
-  # or half-installed Keel hooks dir, not someone else's — it belongs in the generic arm below, whose
-  # "run install-secret-guard.sh --global" is the actually-correct advice for it.
+  # The not-Keel's-dir guard matters too: $hp naming $keel_hooks with no foreign hook in it, yet not
+  # passing the checks above, is a broken or half-installed Keel hooks dir, not someone else's — it
+  # belongs in the generic arm below, whose "run install-secret-guard.sh --global" is the
+  # actually-correct advice for it (a foreign hook there has its own arm above).
   echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."
   echo "       Vendor per-repo instead: tools/install-secret-guard.sh <repo>"
 elif [ "$DO_HOOKS" = 0 ]; then

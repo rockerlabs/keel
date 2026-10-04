@@ -56,12 +56,21 @@ sections real content going forward — see that page for exactly when each one 
   longer covers an unignored `CLAUDE.md` beside it.
 - **`tools/install-secret-guard.sh`: three ways past its never-clobber rule are closed.** A hook counts
   as Keel's only when its second line is exactly the shipped hook's marker line, so a user's own hook
-  that merely names the tool is now refused instead of overwritten. A symlink at any path the install
-  writes is refused, with its target named, and is never written through. `--global --force` records
-  the `core.hooksPath` it replaces in `git config --global keel.displacedHooksPath`, refuses to replace
-  an earlier record of a different path, and the new `--global --uninstall` restores that value, or
-  unsets Keel's own when nothing was displaced. `uninstall.sh`'s hint for removing the global guard now
-  points at `--global --uninstall`. dir #659.
+  that merely names the tool is now refused instead of overwritten; `install.sh`'s Verify step uses the
+  same test on both hooks, so it no longer reports such a hook as Keel's guard, and names it as the
+  reason the guard is not wired. A symlink at a hook or scanner file
+  the install writes is refused, with its target named, and is never written through; neither is a
+  dangling `.secret-scan-allow` link. Every refusal now comes before the scanner selftest and before any
+  write, so "Nothing was changed" holds. `--global --force` records the `core.hooksPath` it replaces in
+  `git config --global keel.displacedHooksPath`, and refuses to replace an earlier record of a
+  different path. The new `--global --uninstall` restores that value, or unsets Keel's own when nothing
+  was displaced. It refuses to restore a recorded directory that no longer exists, or a record with
+  several values, and drops a record left over from a hand-unwired setup (or one naming Keel's own dir)
+  instead of resurrecting it. Keel's own hooks dir is now recognised as a path, in both the installer
+  and `install.sh`: written as `~/.config/git/keel-hooks`, with a trailing slash, or as another path to
+  the same directory, it counts as Keel's (it used to read as a foreign hooksPath — refused, never
+  refreshed, reported "NOT wired"). `uninstall.sh`'s hint for removing the global guard now points at
+  `--global --uninstall`, with a `~/` path expanded. dir #659.
 
 ## [0.13.0] — 2026-10-03
 

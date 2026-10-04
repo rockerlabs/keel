@@ -256,6 +256,27 @@ check_status "--no-hooks over an already-guarded home → exit 0" 0 "$STATUS"
 check_contains "--no-hooks still verifies the already-wired guard" "$OUT" "OK   secret-guard"
 check_absent "--no-hooks does not claim the guard is NOT wired" "$OUT" "secret-guard is NOT wired"
 check_contains "--no-hooks summary tells the protected user they are protected" "$OUT" "already guards your commits"
+# dir #659: Keel's hooks dir is recognised as a PATH, the same rule the installer uses — git config
+# spelling it `~/.config/git/keel-hooks` (git expands the ~ itself) is Keel's guard, not a foreign
+# hooksPath. The raw string compare used to report this guarded machine "NOT wired".
+# shellcheck disable=SC2088  # the LITERAL ~ is the point: git stores it verbatim
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath '~/.config/git/keel-hooks'
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$SANDBOX/alt-home-tilde" --no-hooks
+check_status "--no-hooks over a ~/-spelled Keel hooksPath → exit 0" 0 "$STATUS"
+check_contains "Verify recognises a ~/-spelled Keel hooksPath as Keel's guard" "$OUT" "OK   secret-guard"
+check_absent "…not as a foreign hooksPath" "$OUT" "foreign global core.hooksPath"
+# dir #659: Verify decides "this is Keel's guard" by the same exact marker line the installer uses, not
+# a substring. A user's own pre-commit at Keel's hooks dir that only NAMES the tool is refused by
+# install-secret-guard.sh (exit 3); Verify must not then call it Keel's guard ("OK") over a scanner
+# that pre-commit may never call — nor blame --no-hooks or advise the very command that refuses it.
+# --no-hooks keeps this run from touching the hooks it inspects.
+printf '#!/bin/sh\n# my wrapper: runs lint, then calls Keel secret-guard by hand\nexit 0\n' \
+  > "$guarded/.config/git/keel-hooks/pre-commit"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$SANDBOX/alt-home-wrapper" --no-hooks
+check_status "--no-hooks over a mentioning wrapper at Keel's hooks dir → exit 0" 0 "$STATUS"
+check_absent "Verify does not call a wrapper that merely names the tool Keel's guard" "$OUT" "OK   secret-guard"
+check_contains "Verify names the non-Keel hook in Keel's dir as the reason" "$OUT" "is not Keel's"
+check_absent "…instead of blaming --no-hooks for it" "$OUT" "this run did not touch git hooks"
 
 # A FOREIGN global hooksPath is the reason the guard isn't wired on ANY run — install.sh refuses to
 # clobber it — so Verify must say so even under --no-hooks, rather than blaming the flag and implying a
