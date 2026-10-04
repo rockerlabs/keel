@@ -193,8 +193,9 @@ reduce $specs[] as $s (.;
 # that also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves empty goes with it, and
 # every other command — the incumbent's, or a hook you later pointed somewhere else — stays. KEPT when
 # that exact event+matcher has entries but none holds ours; otherwise a slot that holds no ours gets no
-# report line. The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390):
-# another tool's empty hook array under `.hooks` is not ours to delete.
+# report line. An event array goes only when THIS run's removal empties it, pruned at that moment
+# (dir #600): an array that was already empty — another tool's, or a hand edit's, even under one of
+# our own event names — is not ours to delete.
 hook_install_remove() {
   local remove_prog='
 {obj: (.hooks //= {}), report: []} |
@@ -205,6 +206,7 @@ reduce $specs[] as $s (.;
   def holds_ours: covers($s.matcher) and ((.hooks // []) | any(. == $ours));
   if ($arr | any(holds_ours)) then
     .obj.hooks[$s.event] = [$arr[] | if holds_ours then (.hooks |= map(select(. != $ours))) | select(.hooks != []) else . end]
+    | if .obj.hooks[$s.event] == [] then del(.obj.hooks[$s.event]) else . end
     | .report += [["REMOVED", $s.event, $s.matcher]]
   elif ($mine | length) > 0 then
     .report += [["KEPT", $s.event, $s.matcher]]
@@ -212,8 +214,6 @@ reduce $specs[] as $s (.;
     .
   end
 ) |
-($specs | map(.event) | unique) as $our_events |
-.obj.hooks = (.obj.hooks | with_entries(. as $e | select(($e.value | length > 0) or ($our_events | index($e.key) | not)))) |
 {new: .obj, report: (.report | map(@tsv) | join("\n"))}
 '
   jq --argjson specs "$1" "$(hook_install_jq_defs)$remove_prog" <<<"$2"
