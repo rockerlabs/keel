@@ -21,7 +21,8 @@ sections real content going forward — see that page for exactly when each one 
   or writes a dated exception row (`| Expires (YYYY-MM-DD) | Ticket/note |` under a `## Footprint exceptions`
   section of the project's `CLAUDE.md`) before finishing. An expired row stops covering, and the step never reaches
   beyond its own project. The doctor does not read the row yet. Pinned, with mutation proofs, by
-  `tests/test_wrap_footprint_rule.sh`. dir #628.
+  `tests/test_wrap_footprint_rule.sh`. The command grew past the quoted size ceiling, so
+  `docs/loading-and-cost.md`'s row now reads `~250–3,000+`. dir #628.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
