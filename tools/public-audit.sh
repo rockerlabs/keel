@@ -130,11 +130,11 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
-# dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's; only the
-# per-line validation policy stays here. A plain top-level assignment — this file runs `set -uo pipefail`
-# with NO -e, so a failing parse does not abort here; its status is read right below (dir #680):
-# 2 = the file exists but is unreadable (coverage is ZERO), 3 = a line ends in a backslash (withheld by
-# the parser, counted as an invalid line; the other literals are still scanned).
+# dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's (capture
+# rules in its header); only the per-line validation policy stays here. This file runs without -e, so a
+# failing parse does not abort — its status is read right below (dir #680): 2 = the file exists but is
+# unreadable (coverage is ZERO), 3 = a line ends in a backslash (withheld by the parser, counted as an
+# invalid line; the other literals are still scanned).
 personal_rc=0
 personal_lines="$(personal_literals_parse "$PERSONAL_FILE")" || personal_rc=$?
 personal_unreadable=0
@@ -143,18 +143,16 @@ case "$personal_rc" in
   3) bad_personal=$((bad_personal + 1)) ;;
   *) personal_unreadable=1 ;;
 esac
-if [ -n "$personal_lines" ]; then
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    if valid_ere -iE "$line"; then
-      personal_re="${personal_re:+$personal_re|}$line"
-    else
-      bad_personal=$((bad_personal + 1))
-    fi
-  done <<EOF_PERSONAL
+while IFS= read -r line; do
+  [ -n "$line" ] || continue   # an empty capture still yields one empty line
+  if valid_ere -iE "$line"; then
+    personal_re="${personal_re:+$personal_re|}$line"
+  else
+    bad_personal=$((bad_personal + 1))
+  fi
+done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
-fi
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern

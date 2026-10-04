@@ -5,7 +5,7 @@
 # it) and carries an inline IN-SYNC twin, `_personal_literals_parse_inline`, whose body is identical to
 # the function below. tests/test_secret_guard.sh (the `dir #148` section) runs both on shared fixtures,
 # compares them with a literal expected output, and asserts the two bodies are byte-identical — edit
-# BOTH copies or that test goes red. dir #148: these were two hand-copied loops behind no pointer at all.
+# BOTH copies or that test goes red.
 #
 # Sourced, not executed — no shebang, no `set` (inherits the caller's).
 #

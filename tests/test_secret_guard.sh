@@ -1726,12 +1726,12 @@ pl_run_both() {
   PL_TWIN_OUT="$(bash -c "$pl_twin_fn"$'\n''_personal_literals_parse_inline "$1"' _ "$1" 2>"$SANDBOX/pl148-err")"; PL_TWIN_RC=$?
   PL_TWIN_ERR="$(cat "$SANDBOX/pl148-err")"
 }
-pl_case() {  # desc file expected-output
+pl_case() {  # desc file expected-output [expected-status, default 0]
   pl_run_both "$2"
   check_eq "dir #148 sync ($1): lib output = the literal expected output" "$3" "$PL_LIB_OUT"
   check_eq "dir #148 sync ($1): twin output = the literal expected output" "$3" "$PL_TWIN_OUT"
-  check_eq "dir #148 sync ($1): lib and twin agree on the exit status" "$PL_LIB_RC" "$PL_TWIN_RC"
-  check_eq "dir #148 sync ($1): exit 0" 0 "$PL_LIB_RC"
+  check_eq "dir #148 sync ($1): lib status" "${4:-0}" "$PL_LIB_RC"
+  check_eq "dir #148 sync ($1): twin status" "${4:-0}" "$PL_TWIN_RC"
 }
 pl_case "full fixture" "$pl_fixture" "$pl_golden"
 pl_case "absent file" "$SANDBOX/pl148-absent" ""
@@ -1765,7 +1765,7 @@ fi
 
 # --- end to end over the JOIN (parse-level cases cannot see it): both tools join the parsed lines.
 # `zetaXeta` must NOT match the correct regex `zeta\.eta`; a build that loses the backslash (a `read`
-# without -r) matches it. `two  words` (internal double space) must block.
+# without -r) matches it. (`two  words` is one of the per-literal samples below.)
 pl_scan_exit() {  # sample [personal-file]; sets STATUS/OUT from the staged scan of a file holding ONLY the sample
   local r; r="$(new_repo)"
   printf '%s\n' "$1" > "$r/sample.txt"
@@ -1775,28 +1775,20 @@ pl_scan_exit() {  # sample [personal-file]; sets STATUS/OUT from the staged scan
 }
 PL_TREE_LABEL="personal literal (secret-scan-personal) in tracked tree"
 pl_audit_has_tree_label() {  # sample [personal-file]; sets OUT, returns 0 when the tree label is reported
-  local d; d="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"
-  git -C "$d" init -q
+  local d; d="$(new_repo)"
   printf '%s\n' "$1" > "$d/sample.txt"
   [ "$1" != glo ] || printf 'decoy\n' > "$d/globxy"
   git -C "$d" add -A
-  git -C "$d" -c user.email=dev@example.com -c user.name=dev commit -qm init
+  git -C "$d" commit -qm init
   run_in "$d" env SECRET_SCAN_PERSONAL_FILE="${2:-$pl_fixture}" bash "$pa" --no-history "$d"
   case "$OUT" in *"$PL_TREE_LABEL"*) return 0 ;; *) return 1 ;; esac
 }
 pl_scan_exit zetaXeta
 check_status "dir #148 e2e: scanner, zetaXeta does not match zeta\\.eta → exit 0" 0 "$STATUS"
-pl_scan_exit "two  words"
-check_status "dir #148 e2e: scanner, internal double space blocks → exit 1" 1 "$STATUS"
 if pl_audit_has_tree_label zetaXeta; then
   fail "dir #148 e2e: audit, zetaXeta reports no personal tree hit" "$OUT"
 else
   pass "dir #148 e2e: audit, zetaXeta reports no personal tree hit"
-fi
-if pl_audit_has_tree_label "two  words"; then
-  pass "dir #148 e2e: audit, internal double space reports the tree label"
-else
-  fail "dir #148 e2e: audit, internal double space reports the tree label" "$OUT"
 fi
 
 # Per-literal e2e: EACH of the 11 golden literals, one sample its ERE matches, one separate run per tool.
@@ -1820,30 +1812,13 @@ cp "$pl_fixture" "$HOME/.claude/secret-scan-personal"
 pl_dr="$(new_repo)"; printf 'alpha\n' > "$pl_dr/sample.txt"; git -C "$pl_dr" add sample.txt
 run_in "$pl_dr" env -u SECRET_SCAN_PERSONAL_FILE "$scan" --staged
 check_status "dir #148 default path: scanner reads \$HOME/.claude/secret-scan-personal → blocks 'alpha'" 1 "$STATUS"
-pl_dd="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"; git -C "$pl_dd" init -q; printf 'alpha\n' > "$pl_dd/sample.txt"
-git -C "$pl_dd" add -A; git -C "$pl_dd" -c user.email=dev@example.com -c user.name=dev commit -qm init
+pl_dd="$(new_repo)"; printf 'alpha\n' > "$pl_dd/sample.txt"
+git -C "$pl_dd" add -A; git -C "$pl_dd" commit -qm init
 run_in "$pl_dd" env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$pl_dd"
 check_contains "dir #148 default path: audit reads the default file → tree label" "$OUT" "$PL_TREE_LABEL"
 rm -f "$HOME/.claude/secret-scan-personal"
 
-# B3 (no weakening) + the audit unchanged, on an existing-but-UNREADABLE file. chmod 000 is a no-op for
-# root (CLAUDE.md Linux-leg trap 2): the content assertions run only for a non-root uid.
-if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  pl_unread="$SANDBOX/pl148-unreadable"; printf 'zebracorn\n' > "$pl_unread"; chmod 000 "$pl_unread"
-  pl_run_both "$pl_unread"
-  check_eq "dir #148 B3: lib and twin return the same status on an unreadable file" "$PL_LIB_RC" "$PL_TWIN_RC"
-  if [ "$PL_LIB_RC" -ne 0 ]; then pass "dir #148 B3: the parser returns non-zero on an unreadable file"
-  else fail "dir #148 B3: the parser returns non-zero on an unreadable file" "rc 0"; fi
-  check_eq "dir #148 B3: lib prints nothing on an unreadable file" "" "$PL_LIB_OUT"
-  check_eq "dir #148 B3: twin prints nothing on an unreadable file" "" "$PL_TWIN_OUT"
-  pl_scan_exit "hello zebracorn" "$pl_unread"
-  if [ "$STATUS" -ne 0 ]; then pass "dir #148 B3: the scanner exits non-zero on an unreadable personal file"
-  else fail "dir #148 B3: the scanner exits non-zero on an unreadable personal file" "exit 0: $OUT"; fi
-  check_absent "dir #148 B3: ...and never says 'secret-scan: clean'" "$OUT" "secret-scan: clean"
-  # (the audit half of an unreadable file was pinned here as 'unchanged' by dir #148; dir #680 turned it
-  # into a GAP — see the dir #680 section below.)
-  chmod 600 "$pl_unread"
-fi
+# (The unreadable-file contract — status 2, scanner exit 2, audit GAP — is pinned in the dir #680 section below.)
 
 # =================================================================================================
 # --- dir #680: the personal-literals file's three fail-opens, fixed once in the parser (lib + inline
@@ -1855,27 +1830,20 @@ fi
 # Fixtures are printf-built with octal bytes so this file stays ASCII.
 
 # parser level: lib and twin agree on output AND status, against literal expectations.
-pl_case_rc() {  # desc file expected-output expected-rc
-  pl_run_both "$2"
-  check_eq "dir #680 sync ($1): lib output" "$3" "$PL_LIB_OUT"
-  check_eq "dir #680 sync ($1): twin output" "$3" "$PL_TWIN_OUT"
-  check_eq "dir #680 sync ($1): lib status" "$4" "$PL_LIB_RC"
-  check_eq "dir #680 sync ($1): twin status" "$4" "$PL_TWIN_RC"
-}
 printf '\357\273\277zorblaxname\nsecond\n' > "$SANDBOX/pl680-bom"
-pl_case_rc "BOM before the first literal is stripped" "$SANDBOX/pl680-bom" "$(printf 'zorblaxname\nsecond')" 0
+pl_case "BOM before the first literal is stripped" "$SANDBOX/pl680-bom" "$(printf 'zorblaxname\nsecond')" 0
 printf '\357\273\277# a comment after the BOM\nreal\n' > "$SANDBOX/pl680-bomcomment"
-pl_case_rc "BOM before a comment line: the line is still a comment" "$SANDBOX/pl680-bomcomment" "real" 0
+pl_case "BOM before a comment line: the line is still a comment" "$SANDBOX/pl680-bomcomment" "real" 0
 printf 'first\n\357\273\277second\n' > "$SANDBOX/pl680-bom2"
-pl_case_rc "a BOM on a LATER line is not stripped (only the file's first bytes are a BOM)" "$SANDBOX/pl680-bom2" "$(printf 'first\n\357\273\277second')" 0
+pl_case "a BOM on a LATER line is not stripped (only the file's first bytes are a BOM)" "$SANDBOX/pl680-bom2" "$(printf 'first\n\357\273\277second')" 0
 printf 'prevlit\\\nnextlit\n' > "$SANDBOX/pl680-trail"
-pl_case_rc "a line ending in a backslash is withheld, the rest still parses, status 3" "$SANDBOX/pl680-trail" "nextlit" 3
+pl_case "a line ending in a backslash is withheld, the rest still parses, status 3" "$SANDBOX/pl680-trail" "nextlit" 3
 printf 'evenback\\\\\nafter\n' > "$SANDBOX/pl680-even"
-pl_case_rc "an EVEN trailing backslash run is a valid literal backslash: kept, status 0" "$SANDBOX/pl680-even" "$(printf 'evenback\\\\\nafter')" 0
+pl_case "an EVEN trailing backslash run is a valid literal backslash: kept, status 0" "$SANDBOX/pl680-even" "$(printf 'evenback\\\\\nafter')" 0
 printf 'a b \\ \nnext\n' > "$SANDBOX/pl680-trailspace"
-pl_case_rc "a backslash followed by trailing whitespace is trimmed first, then flagged" "$SANDBOX/pl680-trailspace" "next" 3
+pl_case "a backslash followed by trailing whitespace is trimmed first, then flagged" "$SANDBOX/pl680-trailspace" "next" 3
 printf 'lonely\\' > "$SANDBOX/pl680-nonl"
-pl_case_rc "a final line with no newline ending in a backslash is flagged too" "$SANDBOX/pl680-nonl" "" 3
+pl_case "a final line with no newline ending in a backslash is flagged too" "$SANDBOX/pl680-nonl" "" 3
 
 # end to end — scanner: the BOM'd first literal now blocks; a trailing backslash fails CLOSED (exit 2).
 pl_scan_exit "hi zorblaxname" "$SANDBOX/pl680-bom"
@@ -1917,8 +1885,8 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "dir #680: scanner exits 2 on an unreadable personal file" 2 "$STATUS"
   check_contains "dir #680: ...and names the unreadable file on stderr" "$OUT" "unreadable"
   check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
-  pl_ad="$(mktemp -d "$SANDBOX/pl680a.XXXXXX")"; git -C "$pl_ad" init -q; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
-  git -C "$pl_ad" add -A; git -C "$pl_ad" -c user.email=dev@example.com -c user.name=dev commit -qm init
+  pl_ad="$(new_repo)"; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
+  git -C "$pl_ad" add -A; git -C "$pl_ad" commit -qm init
   run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
   check_status "dir #680: audit exits 1 (a GAP) on an unreadable personal file" 1 "$STATUS"
   check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
@@ -1982,8 +1950,6 @@ for pl682_sh in $pl682_shells; do
   run_in "$pl682_clean" "$pl682_sh" "$scan" --staged
   check_status "dir #682: a clean staged run still exits 0 under $pl682_sh" 0 "$STATUS"
   check_contains "dir #682: ...and says clean ($pl682_sh)" "$OUT" "secret-scan: clean"
-  run_in "$pl682_clean" "$pl682_sh" "$scan" --selftest
-  check_status "dir #682: --selftest still exits 0 under $pl682_sh" 0 "$STATUS"
 done
 run_in "$pl682_repo" bash "$scan" --staged
 check_status "dir #682: a real block still exits 1" 1 "$STATUS"

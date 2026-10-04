@@ -105,19 +105,20 @@ PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
 # a hook that runs on every commit must not litter $TMPDIR with orphans.
 #
-# dir #682 — a COMPLETION MARKER, not a bare `rm -rf` trap and not a bare `rc=$?` capture. On bash 3.2
-# (macOS /bin/bash) a top-level FATAL shell error — a `.` of a missing file, a `set -u` unbound variable —
-# leaves `$?` at 0 by the time an EXIT trap runs, so a bare trap turned that crash into exit 0 and the
-# commit hook failed OPEN (and --selftest reported success); capturing `$?` in the trap does not help,
-# because it is already 0. `_scan_done` is set to 1 only on the legitimate exit-0 paths below (the clean
-# early return, the end of the scan, a finished --selftest); any exit that reaches the trap with status 0
-# and no marker is a crash and becomes status 1. An explicit non-zero `exit N` keeps its own status.
-# Every legitimate `exit 0` MUST set `_scan_done=1` first — a new one that forgets fails closed (the hook
-# blocks), which is the safe direction.
+# dir #682 — a COMPLETION MARKER, not a bare `rm -rf` trap and not a `rc=$?` capture: on bash 3.2 (macOS
+# /bin/bash) a top-level FATAL shell error (a `.` of a missing file, a `set -u` unbound variable) leaves
+# `$?` at 0 by the time the EXIT trap runs, so a bare trap turned that crash into exit 0 and the hook
+# failed OPEN. `_scan_done` is set to 1 only on the legitimate exit-0 paths (the clean early return, the
+# end of the scan, a finished --selftest); an exit that reaches the trap with status 0 and no marker is
+# a crash and becomes 2 (this file's "cannot scan" status). An explicit non-zero `exit N` keeps its own.
+# Every legitimate `exit 0` MUST set `_scan_done=1` first; one that forgets fails closed (the hook blocks).
 _scan_done=""
 _scan_exit() {
   _scan_rc=$?
-  [ -n "$_scan_done" ] || [ "$_scan_rc" -ne 0 ] || _scan_rc=1
+  if [ -z "$_scan_done" ] && [ "$_scan_rc" -eq 0 ]; then
+    _scan_rc=2
+    echo "secret-scan: internal error — the scan did not complete; failing closed" >&2
+  fi
   rm -rf "$SCRATCH"
   exit "$_scan_rc"
 }
@@ -165,13 +166,12 @@ done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
 personal=""
-# dir #148: the parse is _personal_literals_parse_inline (defined above). Captured by a plain top-level
-# assignment (never `local x=$(…)`, never a process substitution — those hide the status), its status
-# kept in _pl_rc and acted on right here (dir #680): a personal file we cannot trust must fail CLOSED —
-# silently scanning with fewer (or no) literals is the fail-open this gate must never have.
-_pl_rc=0
-_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _pl_rc=$?
-case "$_pl_rc" in
+# dir #148: the parse is _personal_literals_parse_inline (defined above; capture rules in the lib's
+# header). Its status is acted on right here (dir #680): a personal file we cannot trust must fail
+# CLOSED — silently scanning with fewer (or no) literals is the fail-open this gate must never have.
+_personal_rc=0
+_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _personal_rc=$?
+case "$_personal_rc" in
   0) ;;
   3)
     echo "secret-scan: a line in $PERSONAL_FILE ends in a backslash — it would join the next line into a" >&2
@@ -182,14 +182,9 @@ case "$_pl_rc" in
     echo "would be silently disabled. Fix its permissions or remove it." >&2
     exit 2 ;;
 esac
-if [ -n "$_personal_lines" ]; then
-  while IFS= read -r _t; do
-    [ -n "$_t" ] || continue
-    personal="${personal:+$personal|}$_t"
-  done <<EOF_PERSONAL
-$_personal_lines
-EOF_PERSONAL
-fi
+# One literal per line, none empty (the parser's contract): join with `|` (an empty alternative would
+# match everything — an empty capture stays an empty string here).
+personal="${_personal_lines//$'\n'/|}"
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
 # must never fail open on its own config. grep exits >=2 only on a bad pattern; 1 (no match) is fine.
