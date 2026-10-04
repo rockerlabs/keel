@@ -54,6 +54,18 @@ sections real content going forward — see that page for exactly when each one 
   whether `git add -A` would pick anything up there, so a team that commits `.claude/settings.json` and
   ignores the rest stays clean. One behaviour change in the other direction: an ignored `.claude/` no
   longer covers an unignored `CLAUDE.md` beside it.
+- **The hook installers' settings writer keeps what it replaces, and stops wiring a hook twice.** All
+  three installers (`install-read-trace.sh`, `install-pre-pr-gate.sh`, `install-machine-watch.sh`) share
+  `tools/lib/hook-install.sh`, so each fix reaches all three. A symlinked `settings.json` is now written
+  through to the file it points at and stays a link; it used to be replaced by a regular file. A 0600
+  file stays 0600 instead of taking the umask's 0644. A read-only `settings.json` is now refused with one
+  clean line instead of replaced, and one that is a directory is refused instead of reported wired
+  while the temp file landed inside it. Two backups in one second get two names
+  (`<file>.<ts>.bak`, then `<file>.<ts>.2.bak`) instead of the second overwriting the first, and a backup
+  is 0600. A malformed nested entry in one of the installer's events gets the clean "unexpected shape"
+  refusal instead of a raw jq error. Our hook already inside a match-all entry (no matcher, `""` or
+  `"*"`) now reads as wired: `--force` used to add a second entry, so the hook fired twice, and
+  `--uninstall` now takes it out of that entry. dir #660, dir #92.
 
 ## [0.13.0] — 2026-10-03
 

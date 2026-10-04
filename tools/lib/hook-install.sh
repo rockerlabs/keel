@@ -27,31 +27,100 @@
 
 # hook_install_backup SETTINGS — a timestamped copy before any destructive edit; sets
 # $HOOK_INSTALL_BACKUP to the new file's path. Shared by the merge path's --force overwrite and the
-# --uninstall removal path.
+# --uninstall removal path. The name is `<file>.<UTC %Y%m%dT%H%M%SZ>.bak`; when that is taken (a
+# --force and an --uninstall in the same second used to share it, and the second cp overwrote the
+# first backup — dir #660), `<file>.<ts>.2.bak`, `.3.bak`, … The name is CLAIMED, not just checked:
+# a noclobber `>` is an exclusive create, so two runs racing on one second still get two names. The
+# claim is made under umask 077 and cp keeps an existing destination's mode, so a backup is 0600 —
+# never looser than a 0600 settings.json it copies (a settings file can carry `env` secrets).
+# Returns 1 (nothing claimed is left behind, one line on stderr) if no name can be claimed or the copy
+# fails; a claim that fails on a name nobody holds is an unwritable directory, not a collision.
 hook_install_backup() {
-  HOOK_INSTALL_BACKUP="$1.$(date -u +%Y%m%dT%H%M%SZ).bak"
-  cp "$1" "$HOOK_INSTALL_BACKUP"
+  local base n=1
+  base="$1.$(date -u +%Y%m%dT%H%M%SZ)"
+  HOOK_INSTALL_BACKUP="$base.bak"
+  until (set -C; umask 077; : > "$HOOK_INSTALL_BACKUP") 2>/dev/null; do
+    if [ ! -e "$HOOK_INSTALL_BACKUP" ] && [ ! -L "$HOOK_INSTALL_BACKUP" ]; then
+      echo "hook-install: cannot create a backup beside $1 (is its directory writable?) — nothing was written." >&2
+      return 1
+    fi
+    n=$((n + 1))
+    [ "$n" -le 99 ] || return 1
+    HOOK_INSTALL_BACKUP="$base.$n.bak"
+  done
+  cp "$1" "$HOOK_INSTALL_BACKUP" || { rm -f "$HOOK_INSTALL_BACKUP"; return 1; }
+}
+
+# hook_install_resolve PATH — prints PATH with every symlink hop followed (one `readlink` per hop,
+# the portable form: no `-f`, which BSD readlink lacks before macOS 12.3). Returns 1 on a loop.
+hook_install_resolve() {
+  local p="$1" l n=0
+  while [ -L "$p" ]; do
+    n=$((n + 1))
+    [ "$n" -le 40 ] || return 1
+    l="$(readlink "$p")" || return 1
+    case "$l" in
+      /*) p="$l" ;;
+      *) case "$p" in */*) p="${p%/*}/$l" ;; *) p="$l" ;; esac ;;
+    esac
+  done
+  printf '%s\n' "$p"
 }
 
 # hook_install_atomic_write FILE CONTENT — write CONTENT to FILE via a same-dir temp file + rename, so
-# a reader never observes a partially-written file.
+# a reader never observes a partially-written file. Two properties of the file it replaces survive
+# (dir #660):
+#   a symlink — the write goes THROUGH it, to the file it resolves to, and the link stays a link. The
+#     installers already READ settings through the link (`jq . "$settings"` follows it), so the merge
+#     was computed from the target's content; writing a fresh regular file at the link's path instead
+#     detached it from a dotfiles-managed target the adopter chose.
+#   the mode — the temp file starts as a `cp -p` of the target, and a `>` onto an existing file keeps
+#     its mode, so a 0600 settings.json stays 0600 (a bare `>` + `mv` took the umask's 0644).
+# A FILE that does not exist yet is created with the umask's mode, as before. Refused, with one line on
+# stderr and nothing written: a symlink loop; a target that exists but is not a regular file (a `mv`
+# onto a directory would nest the temp file inside it and report success); a write that fails — a
+# read-only target (its mode now carries to the temp file, where the old rename replaced it anyway), or
+# a dangling link into a directory that does not exist.
 hook_install_atomic_write() {
-  printf '%s\n' "$2" > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
+  local target="$1" tmp
+  if [ -L "$1" ] && ! target="$(hook_install_resolve "$1")"; then
+    echo "hook-install: $1 is a symlink loop — nothing was written." >&2
+    return 1
+  fi
+  if [ -e "$target" ] && [ ! -f "$target" ]; then
+    echo "hook-install: $target is not a regular file — nothing was written." >&2
+    return 1
+  fi
+  tmp="$target.keeltmp.$$"
+  if ! { { [ ! -f "$target" ] || cp -p "$target" "$tmp"; } &&
+         printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$target"; } 2>/dev/null; then
+    rm -f "$tmp"
+    echo "hook-install: could not write $target (read-only, or its directory is missing or not writable) — nothing was written." >&2
+    return 1
+  fi
 }
 
 # hook_install_check_shape PREFIX SETTINGS_PATH SPECS CURRENT — valid JSON is not the same as the
 # expected SHAPE: a hand-edited settings.json could have ".hooks" as an array, or ".hooks.<Event>" as a
 # string, and the merge would otherwise crash with a raw jq type error instead of the clean refusal every
-# other bad-input path gives. Returns 0 when fine; on a bad shape prints the refusal (stderr) under
-# PREFIX and returns 2 — the caller exits.
+# other bad-input path gives. The check goes as deep as the merge and remove programs read, on the
+# events the SPECS own (dir #660 — it used to stop at the event array, so `["str"]` or an entry whose
+# "hooks" was a string still died in raw jq, exit 5): the document is an object, each of our event
+# arrays holds objects, each entry's "hooks" is absent or an array, and that array holds objects.
+# Returns 0 when fine; on a bad shape prints the refusal (stderr) under PREFIX and returns 2 — the
+# caller exits.
 hook_install_check_shape() {
   local prefix="$1" settings="$2" specs="$3" current="$4" shape_ok
   shape_ok="$(jq -r --argjson specs "$specs" '
-    (.hooks // {}) as $h |
-    (($h | type) == "object") as $hooks_ok |
-    ($specs | map(.event) | unique | all(. as $e | (($h[$e] // []) | type) == "array")) as $events_ok |
-    ($hooks_ok and $events_ok)
-  ' <<<"$current")"
+    (type == "object") and (
+      (.hooks // {}) as $h |
+      (($h | type) == "object") and
+      ($specs | map(.event) | unique | all(. as $e | ($h[$e] // []) |
+        type == "array" and all(.[];
+          type == "object" and ((.hooks // []) |
+            type == "array" and all(.[]; type == "object")))))
+    )
+  ' <<<"$current" 2>/dev/null)"
   if [ "$shape_ok" != "true" ]; then
     echo "$prefix: $settings's \"hooks\" section has an unexpected shape (not the usual" >&2
     echo "  Claude Code hooks object) — fix it by hand. Nothing was changed." >&2
@@ -59,10 +128,22 @@ hook_install_check_shape() {
   fi
 }
 
+# hook_install_jq_defs — the jq definitions BOTH programs below share, prepended to each.
+# `covers($m)` (dir #92) — which existing entries can hold the spec's hook: the same matcher, OR a
+# match-all one (no "matcher" key, null, "" or "*"; Claude Code fires those on every value). Our command
+# inside a matcher-less entry already fires on our matcher's events, so reading it as MISSING added a
+# second entry and the hook ran twice (felt: a --force re-wire duplicated the gate's rollout-check beside
+# a hand-merged matcher-less SessionStart entry). A specific matcher never covers another, so a matcher
+# migration (old → new) still reads MISSING and leaves the old entry for the operator. Defined once so
+# the merge's SAME and the remove's REMOVED can never disagree about where our hook is.
+hook_install_jq_defs() {
+  printf '%s\n' 'def covers($m): .matcher == $m or .matcher == null or .matcher == "" or .matcher == "*";'
+}
+
 # hook_install_merge SPECS CURRENT — prints {new, report} as one JSON object. One pass computes BOTH the
 # merged settings AND each hook's classification, from the same walk, so there is exactly one place that
-# decides what "already wired" means. Per spec, over EVERY entry on that event whose matcher equals the
-# spec's (an adopter's settings can carry several; the first one is not special):
+# decides what "already wired" means. Per spec, over EVERY entry on that event that `covers` the spec's
+# matcher (an adopter's settings can carry several; the first one is not special):
 #   SAME      our exact command is already in one of them — idempotent, nothing written.
 #   STALE     the same hook at a DIFFERENT path is there — the same script basename + the same arguments,
 #             e.g. a moved keel checkout. Appending would fire it twice (old path and new), so this is the
@@ -72,6 +153,7 @@ hook_install_check_shape() {
 #             same matcher. The incumbent entry is never touched, so no adopter hook is lost to wire
 #             ours (dir #468).
 #   MISSING   no entry holds this event+matcher: a fresh one is added.
+# APPENDED vs MISSING, and where a new entry goes, key on the EXACT matcher, not on `covers`.
 # "Same hook" (STALE) is judged by `ident` below: the script basename plus the arguments of a
 # `bash '<path>/<script>.sh' args` command, i.e. the shape the installers build with tools/lib/sh-quote.sh's
 # quoting — change one and the other must follow, or STALE silently degrades to APPENDED. It matches on
@@ -89,11 +171,11 @@ reduce $specs[] as $s (.;
   .obj.hooks[$s.event] as $arr |
   ($s.command | ident) as $id |
   ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
-  ([$mine[] | (.hooks // [])[] | .command]) as $cmds |
+  ([$arr[] | select(covers($s.matcher)) | (.hooks // [])[] | .command]) as $cmds |
   if ($cmds | index($s.command)) != null then
     .report += [["SAME", $s.event, $s.matcher]]
   elif $id != null and ($cmds | map(select(ident == $id)) | length) > 0 then
-    .obj.hooks[$s.event] |= map(if .matcher == $s.matcher then .hooks = ((.hooks // []) | map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
+    .obj.hooks[$s.event] |= map(if covers($s.matcher) then .hooks = ((.hooks // []) | map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
     | .report += [["STALE", $s.event, $s.matcher]]
   else
     .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
@@ -102,16 +184,16 @@ reduce $specs[] as $s (.;
 ) |
 {new: .obj, report: (.report | map(@tsv) | join("\n"))}
 '
-  jq --argjson specs "$1" "$merge_prog" <<<"$2"
+  jq --argjson specs "$1" "$(hook_install_jq_defs)$merge_prog" <<<"$2"
 }
 
 # hook_install_remove SPECS CURRENT — the mirror image of the merge, same one-pass-tagged-report shape
-# (REMOVED/KEPT instead of the merge's statuses). Across EVERY entry on the spec's event+matcher (an
-# APPENDED sibling can sit after the incumbent, and a forced STALE swap leaves ours inside an entry that
-# also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves
-# empty goes with it, and every other command — the incumbent's, or a hook you later pointed somewhere
-# else — stays. KEPT when that event+matcher has entries but none holds ours; a slot with no entries
-# gets no report line. The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390):
+# (REMOVED/KEPT instead of the merge's statuses). Across EVERY entry that `covers` the spec's matcher
+# (an APPENDED sibling can sit after the incumbent, and a forced STALE swap leaves ours inside an entry
+# that also holds someone else's command), only our exact {type, command} hook comes out; an entry it leaves empty goes with it, and
+# every other command — the incumbent's, or a hook you later pointed somewhere else — stays. KEPT when
+# that exact event+matcher has entries but none holds ours; otherwise a slot that holds no ours gets no
+# report line. The empty-array prune is scoped to the events the SPECS own (dir #564, dir #390):
 # another tool's empty hook array under `.hooks` is not ours to delete.
 hook_install_remove() {
   local remove_prog='
@@ -120,18 +202,19 @@ reduce $specs[] as $s (.;
   (.obj.hooks[$s.event] // []) as $arr |
   ({type: "command", command: $s.command}) as $ours |
   ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
-  if ($mine | length) == 0 then
-    .
-  elif ($mine | any((.hooks // []) | any(. == $ours))) then
-    .obj.hooks[$s.event] = [$arr[] | if .matcher == $s.matcher and ((.hooks // []) | any(. == $ours)) then (.hooks |= map(select(. != $ours))) | select(.hooks != []) else . end]
+  def holds_ours: covers($s.matcher) and ((.hooks // []) | any(. == $ours));
+  if ($arr | any(holds_ours)) then
+    .obj.hooks[$s.event] = [$arr[] | if holds_ours then (.hooks |= map(select(. != $ours))) | select(.hooks != []) else . end]
     | .report += [["REMOVED", $s.event, $s.matcher]]
-  else
+  elif ($mine | length) > 0 then
     .report += [["KEPT", $s.event, $s.matcher]]
+  else
+    .
   end
 ) |
 ($specs | map(.event) | unique) as $our_events |
 .obj.hooks = (.obj.hooks | with_entries(. as $e | select(($e.value | length > 0) or ($our_events | index($e.key) | not)))) |
 {new: .obj, report: (.report | map(@tsv) | join("\n"))}
 '
-  jq --argjson specs "$1" "$remove_prog" <<<"$2"
+  jq --argjson specs "$1" "$(hook_install_jq_defs)$remove_prog" <<<"$2"
 }

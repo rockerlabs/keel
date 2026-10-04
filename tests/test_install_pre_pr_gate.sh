@@ -136,6 +136,26 @@ sj="$(cat "$crepo/.claude/settings.json")"
 check_absent "--uninstall removes ours from the shared entry" "$sj" "$gate"
 check_contains "--uninstall keeps the sibling command" "$sj" "echo not-the-gate"
 
+# --- (c2) dir #92: our rollout-check already inside a MATCHER-LESS SessionStart entry (the felt shape:
+# hand-merged beside the adopter's own hook) is SAME — --force used to add a second "startup" entry, and
+# the hook then fired twice on every session start.
+mrepo="$(new_repo)"
+mkdir -p "$mrepo/.claude"
+jq -n --arg c "bash '$gate' rollout-check" \
+  '{hooks: {SessionStart: [{hooks: [{type: "command", command: "bash wrap-baseline.sh"}, {type: "command", command: $c}]}]}}' \
+  > "$mrepo/.claude/settings.json"
+run "$installer" --force "$mrepo"
+check_status "--force over a matcher-less entry holding our rollout-check -> exit 0" 0 "$STATUS"
+check_contains "reports SessionStart already wired" "$OUT" "=    SessionStart/startup"
+check_status "rollout-check is wired exactly once (not duplicated)" 1 \
+  "$(jq '[.hooks.SessionStart[].hooks[] | select(.command | endswith("rollout-check"))] | length' "$mrepo/.claude/settings.json")"
+check_status "no second SessionStart entry was added" 1 "$(jq '.hooks.SessionStart | length' "$mrepo/.claude/settings.json")"
+run "$installer" --uninstall "$mrepo"
+check_status "--uninstall -> exit 0" 0 "$STATUS"
+check_status "--uninstall takes rollout-check out of the matcher-less entry, the adopter's hook stays" \
+  '[{"hooks":[{"type":"command","command":"bash wrap-baseline.sh"}]}]' \
+  "$(jq -c '.hooks.SessionStart' "$mrepo/.claude/settings.json")"
+
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
 farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"
