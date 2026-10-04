@@ -117,15 +117,27 @@ trap 'exit 143' TERM
 # capture-form rule: see the lib's header.
 _personal_literals_parse_inline() {
   [ -f "$1" ] || return 0
-  local _pl_t=""
+  [ -r "$1" ] || return 2
+  local _pl_t="" _pl_first=1 _pl_rc=0 _pl_run=""
   while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
+    if [ "$_pl_first" = 1 ]; then
+      _pl_t="${_pl_t#$'\357\273\277'}"
+      _pl_first=0
+    fi
     _pl_t="${_pl_t%$'\r'}"
     _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
     case "$_pl_t" in
       ''|\#*) ;;
-      *)      printf '%s\n' "$_pl_t" ;;
+      *)
+        _pl_run="${_pl_t##*[!\\]}"
+        if [ $(( ${#_pl_run} % 2 )) -eq 1 ]; then
+          _pl_rc=3
+        else
+          printf '%s\n' "$_pl_t"
+        fi ;;
     esac
-  done < "$1"
+  done < "$1" || return $?
+  return "$_pl_rc"
 }
 
 # Build a combined regex (class 1, case-sensitive).
@@ -136,11 +148,23 @@ done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
 personal=""
-# dir #148: the parse is _personal_literals_parse_inline (defined above). Captured by a PLAIN top-level
-# assignment — never `local x=$(…)`, never inside `if`/`||`/`&&`, never a process substitution: under
-# `set -e` a read failure on an unreadable personal file must abort here (fail closed), and those forms
-# would hide the status.
-_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")"
+# dir #148: the parse is _personal_literals_parse_inline (defined above). Captured by a plain top-level
+# assignment (never `local x=$(…)`, never a process substitution — those hide the status), its status
+# kept in _pl_rc and acted on right here (dir #680): a personal file we cannot trust must fail CLOSED —
+# silently scanning with fewer (or no) literals is the fail-open this gate must never have.
+_pl_rc=0
+_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _pl_rc=$?
+case "$_pl_rc" in
+  0) ;;
+  3)
+    echo "secret-scan: a line in $PERSONAL_FILE ends in a backslash — it would join the next line into a" >&2
+    echo "pattern matching neither literal, silently disabling personal-data detection. Fix the file." >&2
+    exit 2 ;;
+  *)
+    echo "secret-scan: cannot read $PERSONAL_FILE (it exists but is unreadable) — personal-data detection" >&2
+    echo "would be silently disabled. Fix its permissions or remove it." >&2
+    exit 2 ;;
+esac
 if [ -n "$_personal_lines" ]; then
   while IFS= read -r _t; do
     [ -n "$_t" ] || continue

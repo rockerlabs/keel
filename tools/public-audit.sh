@@ -130,10 +130,19 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
-# dir #148: the parse (read, CRLF, comments, whitespace) is tools/lib/personal-literals.sh's; only the
+# dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's; only the
 # per-line validation policy stays here. A plain top-level assignment — this file runs `set -uo pipefail`
-# with NO -e, so a read failure on an unreadable file does not abort here (unchanged behaviour).
-personal_lines="$(personal_literals_parse "$PERSONAL_FILE")"
+# with NO -e, so a failing parse does not abort here; its status is read right below (dir #680):
+# 2 = the file exists but is unreadable (coverage is ZERO), 3 = a line ends in a backslash (withheld by
+# the parser, counted as an invalid line; the other literals are still scanned).
+personal_rc=0
+personal_lines="$(personal_literals_parse "$PERSONAL_FILE")" || personal_rc=$?
+personal_unreadable=0
+case "$personal_rc" in
+  0) ;;
+  3) bad_personal=$((bad_personal + 1)) ;;
+  *) personal_unreadable=1 ;;
+esac
 if [ -n "$personal_lines" ]; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -311,6 +320,7 @@ fi
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
+[ "$personal_unreadable" -eq 1 ] && gap "$PERSONAL_FILE exists but is unreadable — personal-literal coverage is ZERO, fix its permissions and re-run"
 [ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
 [ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 

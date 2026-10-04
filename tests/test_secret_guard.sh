@@ -1693,8 +1693,10 @@ check_eq "dir #148 A4: secret-scan.sh defines the inline twin once" 1 "$(grep -c
 check_eq "dir #148 A4: secret-scan.sh sources nothing" 0 "$(grep -cE '^[[:space:]]*(\.|source)[[:space:]]' "$scan")"
 check_eq "dir #148 A4: the PERSONAL_FILE= default line is byte-identical (kb-secret-scan.sh sed-extracts it)" 1 \
   "$(grep -cF 'PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"' "$scan")"
-check_eq "dir #148 A4: the twin is CALLED by a plain top-level capture of \$PERSONAL_FILE" 1 \
-  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)"$' "$scan")"
+# dir #680 narrowed the capture's tail: `|| _pl_rc=$?` keeps the status for the explicit exit-2 handling
+# right below it (a bare `|| true` or a process substitution would still fail this pin).
+check_eq "dir #148 A4: the twin is CALLED by a plain top-level capture of \$PERSONAL_FILE (status kept)" 1 \
+  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)"( \|\| [A-Za-z_][A-Za-z0-9_]*=\$\?)?$' "$scan")"
 
 # The fixture (v3): CRLF, inline comment, tabs, `a#b`, a backslash, internal spaces, a glob, non-ASCII
 # (octal bytes, so this file stays ASCII), a `-n` line (an echo-based emit would swallow it), and a last
@@ -1838,15 +1840,93 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   if [ "$STATUS" -ne 0 ]; then pass "dir #148 B3: the scanner exits non-zero on an unreadable personal file"
   else fail "dir #148 B3: the scanner exits non-zero on an unreadable personal file" "exit 0: $OUT"; fi
   check_absent "dir #148 B3: ...and never says 'secret-scan: clean'" "$OUT" "secret-scan: clean"
-  # the audit half: same exit status as with an ABSENT file, and no personal tree hit (audit unchanged).
-  pl_ad="$(mktemp -d "$SANDBOX/pl148a.XXXXXX")"; git -C "$pl_ad" init -q; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
+  # (the audit half of an unreadable file was pinned here as 'unchanged' by dir #148; dir #680 turned it
+  # into a GAP — see the dir #680 section below.)
+  chmod 600 "$pl_unread"
+fi
+
+# =================================================================================================
+# --- dir #680: the personal-literals file's three fail-opens, fixed once in the parser (lib + inline
+# twin, kept in sync by the dir #148 section above) and acted on by each caller's own policy.
+#   unreadable file  → parser returns 2; scanner says so on stderr and exits 2, audit raises a GAP
+#   leading UTF-8 BOM → stripped from the first line (it used to ride into the first literal)
+#   a line ending in an ODD run of `\` → not emitted, parser returns 3 (it used to join the next line
+#       into `prev\|next`, a VALID ERE matching neither literal); scanner exits 2, audit counts it bad
+# Fixtures are printf-built with octal bytes so this file stays ASCII.
+
+# parser level: lib and twin agree on output AND status, against literal expectations.
+pl_case_rc() {  # desc file expected-output expected-rc
+  pl_run_both "$2"
+  check_eq "dir #680 sync ($1): lib output" "$3" "$PL_LIB_OUT"
+  check_eq "dir #680 sync ($1): twin output" "$3" "$PL_TWIN_OUT"
+  check_eq "dir #680 sync ($1): lib status" "$4" "$PL_LIB_RC"
+  check_eq "dir #680 sync ($1): twin status" "$4" "$PL_TWIN_RC"
+}
+printf '\357\273\277zorblaxname\nsecond\n' > "$SANDBOX/pl680-bom"
+pl_case_rc "BOM before the first literal is stripped" "$SANDBOX/pl680-bom" "$(printf 'zorblaxname\nsecond')" 0
+printf '\357\273\277# a comment after the BOM\nreal\n' > "$SANDBOX/pl680-bomcomment"
+pl_case_rc "BOM before a comment line: the line is still a comment" "$SANDBOX/pl680-bomcomment" "real" 0
+printf 'first\n\357\273\277second\n' > "$SANDBOX/pl680-bom2"
+pl_case_rc "a BOM on a LATER line is not stripped (only the file's first bytes are a BOM)" "$SANDBOX/pl680-bom2" "$(printf 'first\n\357\273\277second')" 0
+printf 'prevlit\\\nnextlit\n' > "$SANDBOX/pl680-trail"
+pl_case_rc "a line ending in a backslash is withheld, the rest still parses, status 3" "$SANDBOX/pl680-trail" "nextlit" 3
+printf 'evenback\\\\\nafter\n' > "$SANDBOX/pl680-even"
+pl_case_rc "an EVEN trailing backslash run is a valid literal backslash: kept, status 0" "$SANDBOX/pl680-even" "$(printf 'evenback\\\\\nafter')" 0
+printf 'a b \\ \nnext\n' > "$SANDBOX/pl680-trailspace"
+pl_case_rc "a backslash followed by trailing whitespace is trimmed first, then flagged" "$SANDBOX/pl680-trailspace" "next" 3
+printf 'lonely\\' > "$SANDBOX/pl680-nonl"
+pl_case_rc "a final line with no newline ending in a backslash is flagged too" "$SANDBOX/pl680-nonl" "" 3
+
+# end to end — scanner: the BOM'd first literal now blocks; a trailing backslash fails CLOSED (exit 2).
+pl_scan_exit "hi zorblaxname" "$SANDBOX/pl680-bom"
+check_status "dir #680 e2e: scanner blocks the BOM-prefixed first literal" 1 "$STATUS"
+pl_scan_exit "has nextlit here" "$SANDBOX/pl680-trail"
+check_status "dir #680 e2e: scanner exits 2 on a line ending in a backslash (not 'clean' rc 0)" 2 "$STATUS"
+check_contains "dir #680 e2e: ...and says why" "$OUT" "backslash"
+check_absent "dir #680 e2e: ...without printing the offending literal" "$OUT" "prevlit"
+check_absent "dir #680 e2e: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+pl_scan_exit "has evenback\\ here" "$SANDBOX/pl680-even"
+check_status "dir #680 e2e: scanner accepts an even trailing backslash run and blocks its literal" 1 "$STATUS"
+# end to end — audit: BOM'd literal → tree label; trailing backslash → GAP naming the invalid line, the
+# remaining literals still scanned.
+if pl_audit_has_tree_label "hi zorblaxname" "$SANDBOX/pl680-bom"; then
+  pass "dir #680 e2e: audit reports the BOM-prefixed first literal"
+else
+  fail "dir #680 e2e: audit reports the BOM-prefixed first literal" "$OUT"
+fi
+if pl_audit_has_tree_label "has nextlit here" "$SANDBOX/pl680-trail"; then
+  pass "dir #680 e2e: audit still scans the literals after a flagged line"
+else
+  fail "dir #680 e2e: audit still scans the literals after a flagged line" "$OUT"
+fi
+check_status "dir #680 e2e: audit exits 1 on a flagged line" 1 "$STATUS"
+check_contains "dir #680 e2e: audit says a line is invalid / coverage incomplete" "$OUT" "invalid regex line(s)"
+check_absent "dir #680 e2e: audit never echoes the flagged literal" "$OUT" "prevlit"
+
+# unreadable (non-root only: chmod 000 is a no-op for root — CLAUDE.md Linux-leg trap 2). The status 2 /
+# exit 2 contract holds for every platform's bash, so the whole block is guarded together.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  pl_unread="$SANDBOX/pl680-unreadable"; printf 'zebracorn\n' > "$pl_unread"; chmod 000 "$pl_unread"
+  pl_run_both "$pl_unread"
+  check_eq "dir #680: lib returns 2 on an existing-but-unreadable file" 2 "$PL_LIB_RC"
+  check_eq "dir #680: twin returns 2 on an existing-but-unreadable file" 2 "$PL_TWIN_RC"
+  check_eq "dir #680: lib prints nothing on stdout" "" "$PL_LIB_OUT"
+  check_eq "dir #680: lib prints nothing on stderr (the callers speak, in their own words)" "" "$PL_LIB_ERR"
+  check_eq "dir #680: twin prints nothing on stderr" "" "$PL_TWIN_ERR"
+  pl_scan_exit "hello zebracorn" "$pl_unread"
+  check_status "dir #680: scanner exits 2 on an unreadable personal file" 2 "$STATUS"
+  check_contains "dir #680: ...and names the unreadable file on stderr" "$OUT" "unreadable"
+  check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+  pl_ad="$(mktemp -d "$SANDBOX/pl680a.XXXXXX")"; git -C "$pl_ad" init -q; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
   git -C "$pl_ad" add -A; git -C "$pl_ad" -c user.email=dev@example.com -c user.name=dev commit -qm init
   run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
-  pl_audit_unread_rc="$STATUS"; pl_audit_unread_out="$OUT"
-  run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl148-absent" bash "$pa" --no-history "$pl_ad"
-  check_eq "dir #148 B4: audit on an unreadable file exits like the audit on an ABSENT file" "$STATUS" "$pl_audit_unread_rc"
-  check_absent "dir #148 B4: audit on an unreadable file reports no personal tree hit" "$pl_audit_unread_out" "personal literal (secret-scan-personal)"
+  check_status "dir #680: audit exits 1 (a GAP) on an unreadable personal file" 1 "$STATUS"
+  check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
+  check_absent "dir #680: ...and never echoes the file's content" "$OUT" "zebracorn"
+  # the other readable-file path is untouched: the same repo with a READABLE file is the usual tree hit.
   chmod 600 "$pl_unread"
+  run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
+  check_contains "dir #680: once readable, the same file is the usual tree hit" "$OUT" "$PL_TREE_LABEL"
 fi
 
 summary
