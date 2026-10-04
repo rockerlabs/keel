@@ -827,7 +827,7 @@ check_absent "and doesn't false-flag" "$OUT" "dir #22's heading cites"
 no_gh_bin="$SANDBOX/fakebin-nogh"
 mkdir -p "$no_gh_bin"
 for tool in awk basename bash cat chmod cut dirname git grep head printf sed sort tail tr wc env true false; do
-  t="$(command -v "$tool" 2>/dev/null)" && ln -sf "$t" "$no_gh_bin/$tool"
+  t="$(type -P "$tool" 2>/dev/null)" && ln -sf "$t" "$no_gh_bin/$tool"
 done
 d="$(mk_clean_repo)"
 printf '### dir #23 — some ticket — R2 — ⏳ IN REVIEW (PR #99)\n\nstill waiting on review.\n' > "$d/BACKLOG.md"

@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
+  current directory", which once let a fixture helper write a `fork` remote into the real checkout's
+  config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
+  refusal fails the file at `summary()` even when the call's own status was swallowed. A file whose code
+  under test makes its own temp repo opts in with `GIT_C_GUARD_ALLOW_TMP=1` (three today). With the
+  function defined, `command -v git` names the function, so tests that need git's path use `type -P git`.
+  Pinned, with a mutation proof, by `tests/test_lib_git_c_guard.sh`. dir #658.
 - **`docs/delta-audit.md`: three procedure lessons from the 0.13.0 run.** §2: resolve the anchor's CI run
   by commit, never by branch (a branch listing once returned a run two weeks old). §8: the re-check pair's
   scope is an operator decision, put at the first NO-GO with three named exits, because pairs that read
