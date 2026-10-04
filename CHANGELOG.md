@@ -98,6 +98,10 @@ sections real content going forward — see that page for exactly when each one 
   array under one of the installer's event names, so an already-empty `SessionStart` (another tool's,
   or a hand edit's) went too: `{"hooks":{"PreToolUse":[<ours>],"SessionStart":[]}}` came back as
   `"hooks": {}`. Now an array goes only when this run took a hook out of it. dir #600.
+- **Release docs: the un-set worker model, and the install step.** `docs/delegation.md` now says an
+  unset worker tier is the launcher's own, verified by the running-tier evidence before session metadata,
+  with a hello-then-hold launch; `docs/release-management.md` R3 inherits it. R9 and `commands/manage-release.md`
+  M8 add an install-where-the-operator-uses-it step. dir #455, dir #596.
 
 ## [0.13.0] — 2026-10-03
 

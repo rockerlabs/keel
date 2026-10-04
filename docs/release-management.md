@@ -99,7 +99,11 @@ to change anything.
 **Setting the model and effort is always the operator's own gesture on the freshly spawned session —
 the manager surfaces the recommendation, it cannot preset it.** [`docs/delegation.md`](delegation.md)
 states the launch-time verify rule that follows from it — check actual model/effort against the
-recommendation right after launch, flag a mismatch before the worker spends.
+recommendation right after launch, flag a mismatch before the worker spends. That doc also names
+which way the un-set default falls (the launcher's own tier — a top-tier manager makes every worker
+top-tier by doing nothing), the order to verify in (running-tier evidence before session metadata), and
+the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
+nothing. A release's worker brief therefore tells each worker to hello, then stop.
 **This is required, not advisory.** It binds any session that launches a real worker, not only a
 release manager; this section instantiates it for a release with two additions of its own: fold `actual vs. rec` into the same one health-line report the launch already produces, at zero extra messages;
 and **the requirement inherits wherever this R3 soft form is itself adopted by reference** — for
@@ -357,6 +361,15 @@ stay the operator's.
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
 over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the
 actual SHAs and versions substituted, re-derived live and never recited from a plan file.
+
+**Where the project has a daily-use location for its build** (an application bundle, a deployed service, a
+device install), **the close hands the operator one more paste-and-run block that installs the build from
+the verified GO SHA there, and the wrap records the build's own identity string as seen from that
+location** (an app: the version and SHA its menu or about box shows; a service: the version line its status endpoint reports). A tag
+without that step ships nothing to the person the release was for: one real release was tagged, published
+and wrapped while the operator kept running the previous version, the headline fix not actually running.
+Where the location is a device the session cannot reach (a tablet installed over a cable tool), the block
+is still composed, and the install is one of the operator touchpoints R7 counts.
 
 **The release notes are the manager's to write, the operator's to read.** The manager composes the
 notes file itself, from the `CHANGELOG.md` section **at the verified GO SHA** (read via the tagged

@@ -56,6 +56,23 @@ operator to confirm — and on a mismatch, flags the operator at once, before th
 anything. This is required, not advisory: a real run launched two workers straight onto a harness
 default it never checked, and the mismatch was caught only by the operator's own eye after real spend.
 
+**The un-set default is the launcher's own tier, and the silent direction is the expensive one.** A
+launched session that nobody re-tiers comes up on whatever its harness defaults to — in at least one
+harness, the *launcher's* model — and a manager sits on the top tier by design, so doing nothing makes
+every worker top-tier. Whatever your harness's default is, establish which way it falls once, before the
+first launch; an unset tier is a cost decision nobody made. Measured on one release: 13 of 13 workers
+launched from an Opus manager reported Opus in their first system prompt. Three rules follow.
+(1) **Verify the running tier, not the configured one.** In that release the picker showed no warning
+and the session metadata said Sonnet for all seven wave-1 workers, yet the session log's per-message
+`model` field showed six of the seven still on Opus. Read, in this order: the worker's *latest* in-context
+"You are powered by" line or the log's per-message model field (what is running); the commit trailer;
+session metadata last (it reports what is configured). (2) **A switch applies from the next turn on**, so
+one made after the work turn has started re-prices an already-large cached context, while one made during
+a hello-only first turn costs nothing. (3) **So the launch holds:** the worker's first turn is only to
+read its brief and send a hello line naming its running model, then end the turn; the launcher checks
+the tier, has it corrected while the context is still tiny, and only then releases the worker with an
+explicit go message.
+
 **A second launch-time requirement, same soft form: identity at first contact.** Nothing above says
 how a launched worker knows the session claiming to be its launcher IS its launcher, and a real run
 paid for that gap. The harness exposed two addressing namespaces that do not display each other's
