@@ -57,6 +57,8 @@ isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources 
 # restore. A global git config key, not a file in the hooks dir: it sits beside the setting it backs
 # up, survives the hooks dir being deleted, and `git config --global --list` shows it.
 isg_displaced_key="keel.displacedHooksPath"
+# Keel's machine-wide hooks dir, relative to $HOME — what --global writes and --where recognises.
+isg_keel_hooks_rel=".config/git/keel-hooks"
 
 # --force and --uninstall may sit anywhere on the line; strip them, keep the single subcommand/positional
 # (busybox/bash-3.2 safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
@@ -442,6 +444,15 @@ _isg_repo_own_dir() {
   printf '%s' "$hooks"
 }
 
+# The dir git reads this repo's hooks from, at ANY scope, absolute — what `--where` calls `effective`.
+# Returns 1 when git names none.
+_isg_repo_effective_dir() {
+  local eff
+  eff="$(git -C "$1" rev-parse --git-path hooks 2>/dev/null)" && [ -n "$eff" ] || return 1
+  eff="$(_isg_norm_path "$eff")"
+  case "$eff" in /*) printf '%s' "$eff" ;; *) printf '%s' "$1/$eff" ;; esac
+}
+
 # absent | keel | foreign, `-link` appended when $2 in dir $1 is a symlink. Same marker test as an
 # install (_isg_is_keel_hook), so no consumer carries its own, looser one.
 _isg_hook_state() {
@@ -455,7 +466,7 @@ _isg_hook_state() {
 # The state lines shared by both --where forms, for hooks dir $1.
 _isg_where_states() {
   local d="$1" keel_dir=""
-  [ -z "${HOME:-}" ] || keel_dir="$HOME/.config/git/keel-hooks"
+  [ -z "${HOME:-}" ] || keel_dir="$HOME/$isg_keel_hooks_rel"
   [ -z "$keel_dir" ] || ! _isg_same_dir "$d" "$keel_dir" || echo "keel-dir=1"
   echo "pre-commit=$(_isg_hook_state "$d" pre-commit)"
   echo "pre-push=$(_isg_hook_state "$d" pre-push)"
@@ -468,10 +479,8 @@ _isg_where_repo() {
   # otherwise print "./.git/hooks", which means something else to a consumer standing elsewhere.
   repo="$(cd "$repo" && pwd)" || exit 2
   own="$(_isg_repo_own_dir "$repo")" || exit 2
-  eff="$(git -C "$repo" rev-parse --git-path hooks 2>/dev/null)" || eff=""
-  [ -n "$eff" ] || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-path hooks returned nothing" >&2; exit 2; }
-  eff="$(_isg_norm_path "$eff")"
-  case "$eff" in /*) ;; *) eff="$repo/$eff" ;; esac
+  eff="$(_isg_repo_effective_dir "$repo")" \
+    || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-path hooks returned nothing" >&2; exit 2; }
   _isg_cfg_read "$repo"
   echo "own=$own"
   echo "effective=$eff"
@@ -512,7 +521,7 @@ fi
 
 case "${1:-}" in
   --global)
-    dir="${HOME:?install-secret-guard: --global needs HOME set}/.config/git/keel-hooks"
+    dir="${HOME:?install-secret-guard: --global needs HOME set}/$isg_keel_hooks_rel"
     # dir #643 (DT3): two reads, on purpose. existing_global is the file `git config --global` edits — what
     # --uninstall can unset and --force can replace. $existing is what git EFFECTIVELY resolves: it also
     # sees the XDG file behind an existing ~/.gitconfig, an [include], and SYSTEM scope, any of which
@@ -679,14 +688,9 @@ EOF
     install_into "$hooks"
     # A copy git does not read protects nothing: say so now, with the two ways out, rather than leave a
     # quiet success behind a guard that is not engaged.
-    eff="$(git -C "$repo" rev-parse --git-path hooks 2>/dev/null || true)"
-    if [ -n "$eff" ]; then
-      eff="$(_isg_norm_path "$eff")"
-      case "$eff" in /*) ;; *) eff="$repo/$eff" ;; esac
-      if ! _isg_same_dir "$eff" "$hooks"; then
-        _isg_cfg_read "$repo"
-        _isg_inert_note "$repo" "$hooks" "$eff" "${m_scope:-unknown}"
-      fi
+    if eff="$(_isg_repo_effective_dir "$repo")" && ! _isg_same_dir "$eff" "$hooks"; then
+      _isg_cfg_read "$repo"
+      _isg_inert_note "$repo" "$hooks" "$eff" "${m_scope:-unknown}"
     fi
     seed="$repo/.secret-scan-allow"
     # Seed only when nothing is there at all: `-L` too, so a dangling link (for which `-e` is false) is

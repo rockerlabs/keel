@@ -1185,14 +1185,13 @@ for d in "${DIRS[@]}"; do
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
   # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
-  guard_where="$("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)"
-  gw_get() { printf '%s\n' "$guard_where" | sed -n "s/^$1=//p" | tail -1; }
-  w_eff="$(gw_get effective)"; w_own="$(gw_get own)"; w_scope="$(gw_get scope)"
-  w_value="$(gw_get value)"; w_origin="$(gw_get origin)"; w_pc="$(gw_get pre-commit)"; w_keeldir="$(gw_get keel-dir)"
-  # Advice for a hooksPath set OUTSIDE the repo (global / system / XDG / include): a copy vendored into
-  # the repo's own hooks dir is never read while it stands, so "vendor into this repo" is the one remedy
-  # that cannot work. The two that can are the same two the installer prints (_isg_inert_note).
-  w_outside_advice="A vendored copy in $w_own would be ignored while that setting stands — replace it machine-wide (install-secret-guard.sh --global --force; the old value is recorded) or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_keeldir=""
+  while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
+    case "$w_k" in
+      effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
+      origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
+    esac
+  done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
   if [ -z "$w_eff" ]; then
     warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo$guard_home_note"
@@ -1258,7 +1257,10 @@ for d in "${DIRS[@]}"; do
         # #97 this was swallowed as "covered by global". A relative value is resolved per repo, the way git
         # does, so the path named here is the one commits actually use.
         w_note=""; [ "$w_eff" = "$w_value" ] || w_note=" (resolves to $w_eff for this repo)"
-        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $w_value$w_note ($w_scope scope$w_src) but that dir carries no executable pre-commit, so commits here are guarded by nothing. $w_outside_advice$guard_home_note"
+        # "Vendor into this repo" is the one remedy that cannot work here: a copy in the repo's own hooks
+        # dir is never read while a hooksPath from outside stands. The two that can are the two the
+        # installer prints (_isg_inert_note).
+        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $w_value$w_note ($w_scope scope$w_src) but that dir carries no executable pre-commit, so commits here are guarded by nothing. A vendored copy in $w_own would be ignored while that setting stands — replace it machine-wide (install-secret-guard.sh --global --force; the old value is recorded) or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)$guard_home_note"
         ;;
     esac
   fi
