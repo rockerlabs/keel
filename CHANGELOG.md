@@ -15,6 +15,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/init-project.sh` no longer attaches a nested target to its parent repo.** A directory inside
+  another git repo passed the old "inside a work tree" test, so no `git init` ran: the target got a
+  `CLAUDE.md` but no repo of its own, and impact tracking was enabled for the parent's root. Such a
+  target is now refused (exit 2) before anything is scaffolded; `--nested` makes it a separate repo
+  instead (dir #611).
 - **`docs/delta-audit.md`: three procedure lessons from the 0.13.0 run.** §2: resolve the anchor's CI run
   by commit, never by branch (a branch listing once returned a run two weeks old). §8: the re-check pair's
   scope is an operator decision, put at the first NO-GO with three named exits, because pairs that read
