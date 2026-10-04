@@ -7,11 +7,10 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doctor="$REPO_ROOT/tools/doctor.sh"
-GIT_ID=(-c user.email=t@keel.invalid -c user.name=t)
 
 # A clean, committed-nothing project (CLAUDE.md ignored, so no GAP): prints its path.
 cleanproj() {
-  local d; d="$(mktemp -d "$SANDBOX/proj.XXXXXX")"; git -C "$d" init -q
+  local d; d="$(new_repo)"
   printf '# ctx\n' > "$d/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$d/.gitignore"
   printf '%s' "$d"
 }
@@ -19,7 +18,7 @@ newmem() { mktemp -d "$SANDBOX/mem.XXXXXX"; }
 # commit FILE-in-project at a fixed committer date (deterministic %cs): commit_at DIR FILE YYYY-MM-DD
 commit_at() {
   git -C "$1" add "$2"
-  GIT_COMMITTER_DATE="$3T12:00:00" GIT_AUTHOR_DATE="$3T12:00:00" git -C "$1" "${GIT_ID[@]}" commit -qm "touch $2"
+  GIT_COMMITTER_DATE="$3T12:00:00" GIT_AUTHOR_DATE="$3T12:00:00" git -C "$1" commit -qm "touch $2"
 }
 # mrun MEMDIR PROJECT [flags…] — doctor with the memory dir forced (the test-isolation hatch)
 mrun() { local m="$1" p="$2"; shift 2; run env "KEEL_MEMORY_DIR=$m" "$doctor" "$@" "$p"; }
@@ -117,7 +116,6 @@ check_contains "...and prints the resolved dir" "$OUT" "memory dir: $kh/projects
 mkdir -p "$HOME/.claude/projects/$enc/memory"; printf '# z\n' > "$HOME/.claude/projects/$enc/memory/stray2.md"
 run env -u KEEL_MEMORY_DIR -u KEEL_HOME "$doctor" "$d"
 check_contains "no KEEL_HOME → \$HOME/.claude/projects/…" "$OUT" "[W-MEMORY-ORPHAN] stray2.md"
-rm -rf "$HOME/.claude/projects/$enc"
 
 # ---- H-MEMORY-DIR-UNRESOLVED: absent dir + a path char the encoder cannot vouch for → say so ----
 odd="$SANDBOX/my_project.$$"; mkdir -p "$odd"; git -C "$odd" init -q
@@ -175,7 +173,7 @@ printf -- '- [G](gitnote.md) — x\n' > "$kb/kb-memory/p/MEMORY.md"
 # frontmatter says 2999 (would be FRESH) — the git commit date must win the precedence and fire
 printf -- '---\nmetadata:\n  modified: 2999-01-01\n---\nSee `src/a.sh`.\n' > "$kb/kb-memory/p/gitnote.md"
 git -C "$kb" add -A
-GIT_COMMITTER_DATE="2024-01-10T12:00:00" GIT_AUTHOR_DATE="2024-01-10T12:00:00" git -C "$kb" "${GIT_ID[@]}" commit -qm notes
+GIT_COMMITTER_DATE="2024-01-10T12:00:00" GIT_AUTHOR_DATE="2024-01-10T12:00:00" git -C "$kb" commit -qm notes
 ln -s "$kb/kb-memory/p" "$SANDBOX/linked-memory.$$"
 mrun "$SANDBOX/linked-memory.$$" "$d" --memory-age
 check_contains "git-repo dir via a symlink → note date from git, token [git] (beats the frontmatter)" "$OUT" "[H-MEMORY-STALE] gitnote.md (2024-01-10[git] < 2024-06-01 for src/a.sh)"

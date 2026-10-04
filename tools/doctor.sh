@@ -998,6 +998,25 @@ fi
 # at the physical dir ($mem_real) — a different repo from the audited project's, so two `git -C` roots
 # are in play (the note's, and the code's).
 #
+# _backtick_tokens FILE [1] — the backtick-spanned tokens of FILE, one per line, first word only, fenced
+# blocks dropped (a fence is the author's "not a mention" marker); a 2nd arg 1 also drops a leading
+# `---` frontmatter block. Shared by H-MAP-DRIFT (CLAUDE.md) and the memory staleness sweep (notes).
+_backtick_tokens() {
+  awk -v skipfm="${2:-0}" 'skipfm==1&&NR==1&&$0=="---"{fm=1;next} fm&&$0=="---"{fm=0;next} fm{next} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$1" 2>/dev/null \
+    | grep -oE '`[^`[:space:]][^`]*`' \
+    | sed -e 's/^`//' -e 's/`$//' \
+    | awk '{print $1}' \
+    | sort -u
+}
+# _kv_get TABLE KEY — prints KEY's value from a newline-framed "\nkey\tvalue" table (bash 3.2 has no
+# associative arrays); fails when KEY is absent, so an empty stored value still counts as a hit.
+_kv_get() {
+  local v
+  case "$1" in
+    *$'\n'"$2"$'\t'*) v="${1#*$'\n'"$2"$'\t'}"; printf '%s' "${v%%$'\n'*}" ;;
+    *) return 1 ;;
+  esac
+}
 # _mem_path_token TOKEN PROJECT_DIR — prints the project-relative path a backtick token names, or nothing
 # (a placeholder, URL, glob, absolute or ~ path, a `..` escape, or a path that is not on disk).
 _mem_path_token() {
@@ -1020,9 +1039,7 @@ _mem_path_token() {
 # `git log` instead of one process per file — ~90 ms each on a 150-file dir).
 _mem_note_date() {
   local f="$1" gd="$2" nd="" e
-  case "$gd" in
-    *$'\n'"${f##*/}"$'\t'*) nd="${gd#*$'\n'"${f##*/}"$'\t'}"; nd="${nd%%$'\n'*}"; printf '%s git' "$nd"; return 0 ;;
-  esac
+  if nd="$(_kv_get "$gd" "${f##*/}")"; then printf '%s git' "$nd"; return 0; fi
   nd="$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} /^[[:space:]]*modified:/{sub(/^[[:space:]]*modified:[[:space:]]*/,""); gsub(/["'"'"']/,""); print substr($0,1,10); exit}' "$f" 2>/dev/null || true)"
   if [[ "$nd" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then printf '%s fm' "$nd"; return 0; fi
   e="$(stat_portable_mtime "$f")"
@@ -1034,16 +1051,18 @@ _mem_note_date() {
 memory_checks() {
   local d="$1" mem="" mem_real="" enc="" dabs="" dphys="" cand
   local index_text="" f base line t before after tgt
-  local link_re='\(([^()/:[:space:]]+\.md)\)(.*)$'
+  local link='[^()/:[:space:]]+\.md'        # one memory-link grammar for orphan, dangling and superseded
+  local link_re="\\(($link)\\)(.*)\$"
   if [ -n "${KEEL_MEMORY_DIR:-}" ]; then
     mem="$KEEL_MEMORY_DIR"
   else
     dabs="$(cd "$d" 2>/dev/null && pwd || true)"
     [ -n "$dabs" ] || return 0
     dphys="$(cd -P "$d" 2>/dev/null && pwd -P || true)"
+    [ "$dphys" != "$dabs" ] || dphys=""
     for cand in "$dabs" "$dphys"; do
       [ -n "$cand" ] || continue
-      enc="$(printf '%s' "$cand" | sed 's#[/.]#-#g')"
+      enc="${cand//[\/.]/-}"
       if [ -d "$ghome/projects/$enc/memory" ]; then mem="$ghome/projects/$enc/memory"; break; fi
     done
     if [ -z "$mem" ]; then
@@ -1074,12 +1093,11 @@ memory_checks() {
     [ -n "$t" ] || continue
     t="${t#(}"; t="${t%)}"
     [ -f "$mem_real/$t" ] || warn W-MEMORY-DANGLING "$t — MEMORY.md links a file that does not exist — remove the index line or restore the file"
-  done < <(printf '%s\n' "$index_text" | grep -oE '\([^()/:[:space:]]+\.md\)' || true)
+  done < <(printf '%s\n' "$index_text" | grep -oE "\\($link\\)" || true)
 
-  # A.4 — superseded: an uppercase marker anywhere on the line OUTSIDE its first (<file>.md) span — in the
-  # hook after it, or in the [title] before it (the live keel line carries it in the title: the spec said
-  # "after the span" only, which would have missed the one real instance). The span itself is excluded, so
-  # a file NAMED superseded-… never fires.
+  # A.4 — superseded: an uppercase marker on the line OUTSIDE its first (<file>.md) span — in the hook after
+  # it or the [title] before it (the live keel line carries it in the title). The span itself is excluded,
+  # so a file NAMED superseded-… never fires.
   while IFS= read -r line; do
     [[ "$line" =~ $link_re ]] || continue
     tgt="${BASH_REMATCH[1]}"; after="${BASH_REMATCH[2]}"
@@ -1087,15 +1105,11 @@ memory_checks() {
     if [[ "$before $after" =~ (^|[^A-Za-z])(SUPERSEDED|RETRACTED)([^A-Za-z]|$) ]]; then
       warn W-MEMORY-SUPERSEDED "$tgt — its MEMORY.md line is marked ${BASH_REMATCH[2]} but the record is still loaded every session — fold the correction into the surviving memory and delete this file + line (P2)"
     fi
-  done <<EOF_IDX
-$index_text
-EOF_IDX
+  done <<< "$index_text"
 
-  # A.5 — stale: the push side of FRAMEWORK.md's note-age vs code-age check. Opt-in (--memory-age): the
-  # measured fire-rate on the author's live dir was 58 %, past the 35 % line where a default HINT would
-  # train readers to skip it. Skipped on a non-git project
-  # (G-GIT-MISSING already reports that state). ONE finding per file, naming the NEWEST code path it
-  # backticks; a note naming no tracked path has no code date and never fires.
+  # A.5 — stale: the push side of FRAMEWORK.md's note-age vs code-age check; opt-in (see the header for why).
+  # Skipped on a non-git project (G-GIT-MISSING already reports that state). ONE finding per file, naming
+  # the NEWEST code path it backticks; a note naming no tracked path has no code date and never fires.
   [ "$MEMORY_AGE" = 1 ] || return 0
   git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   local nd_pair nd src p cdate newest newest_p tok code_cache=""
@@ -1115,18 +1129,13 @@ EOF_IDX
     while IFS= read -r tok; do
       p="$(_mem_path_token "$tok" "$d")"
       [ -n "$p" ] || continue
-      case "$code_cache" in
-        *$'\n'"$p"$'\t'*) cdate="${code_cache#*$'\n'"$p"$'\t'}"; cdate="${cdate%%$'\n'*}" ;;
-        *) cdate="$(git -C "$d" log -1 --format=%cs -- "$p" 2>/dev/null || true)"
-           code_cache="$code_cache"$'\n'"$p"$'\t'"$cdate" ;;
-      esac
+      if ! cdate="$(_kv_get "$code_cache" "$p")"; then
+        cdate="$(git -C "$d" log -1 --format=%cs -- "$p" 2>/dev/null || true)"
+        code_cache="$code_cache"$'\n'"$p"$'\t'"$cdate"
+      fi
       [ -n "$cdate" ] || continue
       if [ -z "$newest" ] || [[ "$newest" < "$cdate" ]]; then newest="$cdate"; newest_p="$p"; fi
-    done < <(awk 'NR==1&&$0=="---"{fm=1;next} fm&&$0=="---"{fm=0;next} fm{next} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$f" 2>/dev/null \
-               | grep -oE '`[^`[:space:]][^`]*`' \
-               | sed -e 's/^`//' -e 's/`$//' \
-               | awk '{print $1}' \
-               | sort -u)
+    done < <(_backtick_tokens "$f" 1)
     if [ -n "$newest" ] && [[ "$nd" < "$newest" ]]; then
       hint H-MEMORY-STALE "$base (${nd}[${src}] < $newest for $newest_p) — the note is older than the code it names: re-verify it, then refresh or delete it (FRAMEWORK.md \"Staleness check\")"
     fi
@@ -1340,11 +1349,7 @@ for d in "${DIRS[@]}"; do
       in_token_set "$baseline_set" "$tok" && continue
       drift_count=$((drift_count + 1))
       [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
-    done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$d/CLAUDE.md" 2>/dev/null \
-               | grep -oE '`[^`[:space:]][^`]*`' \
-               | sed -e 's/^`//' -e 's/`$//' \
-               | awk '{print $1}' \
-               | sort -u)
+    done < <(_backtick_tokens "$d/CLAUDE.md")
     if [ "$drift_count" -gt 0 ]; then
       more=""
       [ "$drift_count" -gt "$max_show" ] && more=" and $((drift_count - max_show)) more"
