@@ -39,6 +39,14 @@ sections real content going forward — see that page for exactly when each one 
   produced five false leads and hidden one real one. The cost section now says its calibration is
   per-file and English-derived — that run cost 2.1–2.4× its estimate — and that a non-English tree
   sizes from its own pilot, with a two-point fit to start from. dir #486.
+- **`doctor.sh` no longer passes an exposed `.claude/` because `CLAUDE.md` is ignored** (dir #473). The
+  private-context check judged the two paths as one: an ignore rule for either passed both, and a tracked
+  `CLAUDE.md` skipped `.claude/` altogether. A real project reported clean while its `.claude/` (hook
+  settings and thirteen worktree checkouts) sat one `git add -A` from a commit. Each path is now judged
+  on its own, only when it exists, and the GAP names which is exposed. For `.claude/` the question is
+  whether `git add -A` would pick anything up there, so a team that commits `.claude/settings.json` and
+  ignores the rest stays clean. One behaviour change in the other direction: an ignored `.claude/` no
+  longer covers an unignored `CLAUDE.md` beside it.
 
 ## [0.13.0] — 2026-10-03
 

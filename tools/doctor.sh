@@ -23,8 +23,8 @@
 #   GAP   G-DIR-MISSING        the project directory itself does not exist
 #   GAP   G-GIT-MISSING        not a git repo
 #   GAP   G-CLAUDEMD-MISSING   no project CLAUDE.md
-#   GAP   G-GITIGNORE-CONTEXT  the private AI context is untracked AND not ignored by any git ignore source
-#                             (.gitignore, .git/info/exclude, global excludes) — one `git add -A` from a leak
+#   GAP   G-GITIGNORE-CONTEXT  CLAUDE.md or .claude/ (each on its own; the message names which) is untracked AND
+#                             not ignored by any git ignore source — one `git add -A` from a leak
 #   GAP   G-AGENTSMD-CONTEXT  AGENTS.md exists but git does not ignore it (any source) — unless public fork
 #   GAP   G-AGENTSMD-INHERIT  AGENTS.md's tracked/ignored status does not match CLAUDE.md's (dir #75:
 #                             AGENTS.md always inherits CLAUDE.md's git status)
@@ -996,16 +996,31 @@ for d in "${DIRS[@]}"; do
   # git, don't grep .gitignore: a repo handed to a third party keeps the rule in info/exclude on purpose,
   # because .gitignore names the tooling and ships inside `git archive`. NEITHER: untracked and
   # unprotected, one `git add -A` from the first outcome — the GAP. A tracked file is never reported
-  # ignored by check-ignore, so the tracked question has to come first. AGENTS.md inherits this
-  # verdict (G-AGENTSMD-INHERIT below), so the WARN speaks for both files.
+  # ignored by check-ignore, so the tracked question has to come first. AGENTS.md inherits CLAUDE.md's
+  # half of this verdict (G-AGENTSMD-INHERIT below), so the WARN speaks for both files.
+  # The two paths are judged SEPARATELY (dir #473): CLAUDE.md is one document, .claude/ holds hook
+  # wiring and whole worktree checkouts — ignoring one must not buy a pass for the other, and the
+  # public-fork escape (a tracked CLAUDE.md) vouches for CLAUDE.md alone. Each is judged only when it
+  # exists. For .claude/ the question is what `git add -A` would pick up under it — untracked content no
+  # rule covers — so a team that commits .claude/settings.json and ignores the rest is not flagged. The
+  # pathspec has no trailing slash, so a .claude that is a symlink or a file counts too (`git add -A`
+  # stages those as well), and a failing git call counts as exposed: this half fails closed, as _ignored does.
   claude_tracked=0
   _tracked "$d" CLAUDE.md && claude_tracked=1
+  exposed=""
   if [ "$claude_tracked" = 1 ]; then
     warn W-CLAUDEMD-TRACKED "CLAUDE.md is tracked (private AI context in the index) — a deliberate public fork? accept this ID in .keel/doctor-accept and ensure no secrets/PII; otherwise git rm --cached CLAUDE.md and ignore it"
-  elif _ignored "$d" CLAUDE.md .claude/; then
-    :  # private AI context ignored — good
-  else
-    gap G-GITIGNORE-CONTEXT "git does not ignore the private AI context (.claude/ or CLAUDE.md) — no rule in .gitignore, .git/info/exclude or the global excludes"
+  elif { [ -e "$d/CLAUDE.md" ] || [ -L "$d/CLAUDE.md" ]; } && ! _ignored "$d" CLAUDE.md; then
+    exposed="CLAUDE.md"
+  fi
+  if [ -e "$d/.claude" ] || [ -L "$d/.claude" ]; then
+    claude_dir_open="$(git -C "$d" ls-files --others --exclude-standard --directory -- .claude 2>/dev/null)" || claude_dir_open="git-failed"
+    if [ -n "$claude_dir_open" ]; then
+      exposed="${exposed:+$exposed, }.claude/"
+    fi
+  fi
+  if [ -n "$exposed" ]; then
+    gap G-GITIGNORE-CONTEXT "git does not ignore the private AI context: $exposed — untracked, and no rule in .gitignore, .git/info/exclude or the global excludes covers it"
   fi
 
   # AGENTS.md — the vendor sibling of CLAUDE.md for Codex/Cursor (dir #75). It takes its CLAUDE.md's git
