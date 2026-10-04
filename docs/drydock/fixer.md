@@ -26,6 +26,13 @@ create>` → the PR.
 **Rails:**
 
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- One test device per concurrent session: a simulator or emulator you run tests on is yours alone — boot
+  your own (on iOS, `xcrun simctl list devices available` then `xcrun simctl boot <UDID>`), pass its
+  identifier to the test runner, and shut it down in your report; never use one another session has
+  booted. (dir #608.)
+- Every git call against a clone goes through `git -C "<that clone's path>"`, never after a `cd` — a `cd`
+  into a directory that no longer exists fails, and the git command chained after it with `;` then runs
+  in the real worktree. (dir #669.)
 - **Test-pinned prose moves its pins in the same commit.** If a figure, a step count, or a quoted
   phrase is asserted by a test, the fix is both edits or neither. Known pinned surfaces in this repo:
   <list them, or "none — grep the test suite for the phrase you are about to change">.

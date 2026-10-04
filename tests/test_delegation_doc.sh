@@ -48,6 +48,19 @@ else
     "found $marker_hits occurrence(s); expected >= 2"
 fi
 
+# --- dir #608 / dir #669 item 4: the two rails lines. The block-diff suites (test_delta_audit_doc.sh,
+# test_drydock_doc.sh, test_polish_review_rails.sh) prove every copy matches the canonical block; these
+# pins prove the canonical block, the mutator-side fixer rails and the brief pointer carry the lines.
+for needle in 'One test device per concurrent session' 'goes through `git -C "<that clone'"'"'s path>"`, never after a `cd`'; do
+  pin "delegation.md rails block carries: ${needle%%\`*}" "$doc" "$needle" \
+    "expected the canonical Worker rails block to carry this line"
+  pin "fixer.md rails carry: ${needle%%\`*}" "$REPO_ROOT/docs/drydock/fixer.md" "$needle" \
+    "expected the mutator-side rails to carry the same line"
+done
+pin "release-management.md worker-brief section carries the one-device rule" \
+  "$REPO_ROOT/docs/release-management.md" 'one test device per concurrent session' \
+  "expected the worker-brief rules item to point at the device rule"
+
 # --- prompt templates: worker / verifier / mutator skeletons, parameter slots marked <...> ---------
 pin "delegation.md ships a worker template" "$doc" 'You are a delegation WORKER' \
   "expected an inline worker prompt skeleton"
