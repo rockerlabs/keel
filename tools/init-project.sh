@@ -14,6 +14,7 @@ tpl_project="$root/templates/project-CLAUDE.md"
 
 REGISTER=1
 IMPACT=1
+NESTED=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help)
@@ -24,17 +25,20 @@ Usage:
   init-project.sh [PROJECT_DIR]   scaffold PROJECT_DIR (default: current dir)
   init-project.sh --no-register   skip adding it to the INSTANCE.md Projects registry
   init-project.sh --no-impact     skip opting the project into impact tracking
+  init-project.sh --nested        PROJECT_DIR is inside another git repo: make it a separate repo
   init-project.sh -h | --help
 
 Idempotent: fills gaps (git, a .gitignore that hides private context, a project
 CLAUDE.md, an AGENTS.md vendor sibling symlinked to it for Codex/Cursor), opts the
 project into impact tracking (an external store entry, dir #251 — nothing is written
 into the project's own tree), auto-registers the project in your INSTANCE.md, and
-reports — it never overwrites a file you have.
+reports — it never overwrites a file you have. A PROJECT_DIR inside another git
+repo is refused with nothing scaffolded, unless --nested makes it a repo of its own.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;
     --no-impact)   IMPACT=0 ;;
+    --nested)      NESTED=1 ;;
     -*) echo "init-project: unknown option '$1' (try --help)" >&2; exit 2 ;;
     *) break ;;
   esac
@@ -48,11 +52,25 @@ name="$(basename "$(pwd)")"
 echo "init-project: scaffolding $(pwd)"   # make the target explicit — the cwd default is never silent
 
 # 1. git
+# dir #611: `--is-inside-work-tree` is true for ANY path under a repo, so a target nested in another
+# repo used to attach to the parent — and impact tracking then enabled the PARENT's root. A non-empty
+# `--show-prefix` means the target is not its own toplevel (a linked worktree's root is): refuse before
+# scaffolding anything, unless --nested asks for a separate repo here.
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git init -q
   echo "  + git initialized"
-else
+elif [ -z "$(git rev-parse --show-prefix)" ]; then
   echo "  = git already initialized"
+else
+  top="$(git rev-parse --show-toplevel)"
+  if [ "$NESTED" = 1 ]; then
+    git init -q
+    echo "  + git initialized (--nested: a separate repo inside $top)"
+  else
+    echo "init-project: $(pwd -P) is inside the git repo at $top — refusing to attach to it." >&2
+    echo "  To make it a separate repo:  $0 --nested \"$(pwd -P)\"   (flags go before the directory)" >&2
+    exit 2
+  fi
 fi
 
 # 2. .gitignore — ensure the private AI context + common noise are ignored
@@ -81,8 +99,9 @@ ensure_ignore "/.keel/map-drift-baseline"
 # 2b. Impact tracking — opt this project into an external store entry (dir #251) so guardrail hooks
 # get recorded with no env needed. Delegated to keel-impact.sh enable: its resolver always targets the
 # MAIN checkout's top, so scaffolding a project FROM a linked worktree still resolves the same store
-# entry every other worktree does. Nothing is written into the project's own tree. Zero token cost;
-# --no-impact to skip.
+# entry every other worktree does. That resolver walks UP to a toplevel, so it is step 1's own-toplevel
+# guarantee (dir #611) that keeps this from enabling a parent repo. Nothing is written into the
+# project's own tree. Zero token cost; --no-impact to skip.
 if [ "$IMPACT" = 1 ]; then
   # dir #630 S12: `enable` now exits 2 on a `lost` store entry (a durable M-LOST refusal, not the old
   # silent restart) — under this file's own `set -euo pipefail`, an unguarded pipeline would abort
