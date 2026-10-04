@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/wrap` step 4 now obliges acting on an over-budget startup footprint.** It used to say only to look at the
+  numbers, so a project over the token budget was reported at every wrap and stayed over it. When the project's own
+  doctor reports it over budget and no live exception covers it, the wrap now either trims `CLAUDE.md`/`MEMORY.md`
+  or writes a dated exception row (`| Expires (YYYY-MM-DD) | Ticket/note |` under a `## Footprint exceptions`
+  section of the project's `CLAUDE.md`) before finishing. An expired row stops covering, and the step never reaches
+  beyond its own project. The doctor does not read the row yet. Pinned, with mutation proofs, by
+  `tests/test_wrap_footprint_rule.sh`. dir #628.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
