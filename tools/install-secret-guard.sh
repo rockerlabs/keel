@@ -5,13 +5,20 @@
 #                                            without a local override; the default, zero per-repo work)
 #   install-secret-guard.sh <repo-path>      vendor a self-contained copy into one repo (for a repo with
 #                                            its own hooksPath, or protection that must travel off-machine)
-#   install-secret-guard.sh --force …        overwrite a pre-existing NON-Keel hook / global hooksPath,
-#                                            backing it up first (default: refuse and leave your data alone)
+#   install-secret-guard.sh --force …        overwrite a pre-existing NON-Keel hook (backed up first) or
+#                                            global hooksPath (its old value recorded first)
+#                                            (default: refuse and leave your data alone)
+#   install-secret-guard.sh --global --uninstall
+#                                            unwire the global guard: restore the hooksPath --force
+#                                            displaced, or unset it (the hook files stay on disk)
 #
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
 # isn't Keel's own is treated as higher-precedence user data — the install refuses and says how to
 # proceed unless you pass --force (which backs up to <hook>.pre-keel.bak first, and refuses — naming the
-# saved file — if that backup already exists, so an earlier saved hook is never overwritten). Bypass a
+# saved file — if that backup already exists, so an earlier saved hook is never overwritten; for the
+# global hooksPath it records the old value in `git config --global keel.displacedHooksPath`, under the
+# same never-overwrite rule). A hook is Keel's only when its line 2 is exactly the shipped hook's
+# marker line; a symlink at any path the install writes is refused, never written through. Bypass a
 # single commit/push deliberately with `git ... --no-verify`.
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
@@ -41,10 +48,12 @@ isg_bak_upgrade="keel-upgrade.bak"
 # --force may sit anywhere on the line; strip it, keep the single subcommand/positional (busybox/bash-3.2
 # safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
 force=0
+uninstall=0
 rest=""
 for a in "$@"; do
   case "$a" in
     --force) force=1 ;;
+    --uninstall) uninstall=1 ;;
     *) if [ -n "$rest" ]; then
          echo "install-secret-guard.sh: unexpected extra argument '$a' — one repo path (or --global) per run" >&2
          exit 2
@@ -100,8 +109,18 @@ _isg_rollback() {
   exit 4
 }
 
-# Ours carry a "Keel secret-guard" marker; anything at a hook path without it is the user's own.
-_isg_is_keel_hook() { grep -qi 'Keel secret-guard' "$1" 2>/dev/null; }
+# Ours carry an exact marker LINE: line 2 of the installed <hook> equals line 2 of the shipped <hook>
+# (args: the installed path, the hook's name). dir #659 (S3-1): this used to be a case-insensitive
+# substring grep for "Keel secret-guard" anywhere in the file, so a user's own hook that merely named
+# the tool — which the refusal below tells users to call from their own hook — read as ours and a plain
+# install overwrote it. Line 2 has been byte-identical in every shipped version of both hooks, so an
+# older Keel install still reads as ours; tests/test_secret_guard.sh pins those two lines, because
+# rewording one would turn every existing install foreign. Anything else is the user's own.
+_isg_is_keel_hook() {
+  local marker
+  marker="$(sed -n 2p "$src/$2")"
+  [ -n "$marker" ] && [ "$(sed -n 2p "$1" 2>/dev/null)" = "$marker" ]
+}
 
 install_into() {
   local hooks_dir="$1" h t
@@ -137,8 +156,8 @@ install_into() {
   # permanent backup along with it. Distinct suffixes mean the two can never collide on one path.
   local copied="" backed_up="" upgraded=""
 
-  # Never silently clobber the user's own hook. Ours carry a "Keel secret-guard" marker; a pre-commit /
-  # pre-push without it is the user's data (higher precedence than our default), so refuse and explain.
+  # Never silently clobber the user's own hook. Ours carry the exact marker line (_isg_is_keel_hook); a
+  # pre-commit / pre-push without it is the user's data (higher precedence than our default), so refuse and explain.
   # --force backs it up to <hook>.pre-keel.bak, then replaces. (Closes SEC1's pre-commit clobber.)
   #
   # Pre-flight (dir #625): --force's backup at .pre-keel.bak is PERMANENT, so it must never be
@@ -147,10 +166,24 @@ install_into() {
   # earlier hook silently gone. Refuse BEFORE the loop below touches anything, so neither hook gets a
   # backup and nothing is left half-done; name the saved file so the user can move it aside and re-run.
   # `-L` too: a dangling symlink at the backup path makes `-e` false, yet `cp` would write through it.
+  #
+  # Pre-flight (dir #659, S3-2): every `cp` below follows a symlink at its destination, so a linked hook
+  # path would have its TARGET rewritten — a dotfiles hook, or a hook file shared by other repos (the
+  # 0.11.0 F1 class: a per-repo install mutating a machine-shared file). Refuse — with or without
+  # --force — before anything is touched, and name the target so the user can decide what owns it.
+  for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
+    t="$hooks_dir/$f"
+    if [ -L "$t" ]; then
+      echo "secret-guard: $t is a symlink (→ $(readlink "$t" 2>/dev/null || echo '?')) — refusing to write" >&2
+      echo "  through it: that would rewrite the file it points to. Replace the link with a regular file" >&2
+      echo "  (or remove it), then re-run. Nothing was changed." >&2
+      exit 3
+    fi
+  done
   if [ "$force" = 1 ]; then
     for h in pre-commit pre-push; do
       t="$hooks_dir/$h"
-      if [ -e "$t" ] && ! _isg_is_keel_hook "$t" \
+      if [ -e "$t" ] && ! _isg_is_keel_hook "$t" "$h" \
           && { [ -e "$t.$isg_bak_force" ] || [ -L "$t.$isg_bak_force" ]; }; then
         echo "secret-guard: $t is not a Keel hook, and a backup of an earlier one is already saved at" >&2
         echo "  $t.$isg_bak_force — --force would overwrite it. Move or delete that file, then re-run" >&2
@@ -162,7 +195,7 @@ install_into() {
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
     if [ -e "$t" ]; then
-      if _isg_is_keel_hook "$t"; then
+      if _isg_is_keel_hook "$t" "$h"; then
         # Already ours — re-vendoring over it needs no --force and no refuse-and-ask. But the cp
         # below is about to overwrite a WORKING hook, so it still needs a backup: without one, a
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back
@@ -240,18 +273,68 @@ install_into() {
   for h in $upgraded; do rm -f "$hooks_dir/$h.$isg_bak_upgrade"; done
 }
 
+# dir #659 (S3-3): where --global --force records the core.hooksPath it displaces, for --uninstall to
+# restore. A global git config key, not a file in the hooks dir: it sits beside the setting it backs
+# up, survives the hooks dir being deleted, and `git config --global --list` shows it.
+isg_displaced_key="keel.displacedHooksPath"
+
+if [ "$uninstall" = 1 ] && [ "${1:-}" != --global ]; then
+  echo "install-secret-guard.sh: --uninstall works with --global only — a vendored repo copy is removed by deleting its hook files" >&2
+  exit 2
+fi
+
 case "${1:-}" in
   --global)
     dir="${HOME:?install-secret-guard: --global needs HOME set}/.config/git/keel-hooks"
+    existing="$(git config --global core.hooksPath 2>/dev/null || true)"
+    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null || true)"
+    if [ "$uninstall" = 1 ]; then
+      # Unwire only what is Keel's: a hooksPath pointing anywhere else is the user's, left alone. The
+      # hook files stay in $dir — inert once nothing points at them; deleting them is the user's call.
+      if [ -z "$existing" ]; then
+        echo "secret-guard: no global core.hooksPath is set — nothing to unwire."
+        exit 0
+      fi
+      if [ "$existing" != "$dir" ]; then
+        echo "secret-guard: the global core.hooksPath is '$existing', not Keel's ($dir) — not touching it." >&2
+        [ -n "$recorded" ] && echo "  ($isg_displaced_key still records '$recorded'.)" >&2
+        echo "  Nothing was changed." >&2
+        exit 3
+      fi
+      if [ -n "$recorded" ]; then
+        git config --global core.hooksPath "$recorded"
+        git config --global --unset "$isg_displaced_key"
+        echo "secret-guard: unwired — global core.hooksPath restored to '$recorded'."
+      else
+        git config --global --unset core.hooksPath
+        echo "secret-guard: unwired — global core.hooksPath unset (none was set before Keel's)."
+      fi
+      echo "  Keel's hook files are left in $dir; delete that directory if you no longer want them."
+      exit 0
+    fi
     # Same rule for the machine-global slot: don't replace a hooksPath the user already set to something
     # of their own. (install.sh already guards this before delegating; this protects direct callers too.)
-    existing="$(git config --global core.hooksPath 2>/dev/null || true)"
-    if [ -n "$existing" ] && [ "$existing" != "$dir" ] && [ "$force" != 1 ]; then
-      echo "secret-guard: a global core.hooksPath is already set to '$existing' — not clobbering it." >&2
-      echo "  Re-run with --force to replace it, or vendor per-repo: install-secret-guard.sh <repo>" >&2
-      exit 3
+    if [ -n "$existing" ] && [ "$existing" != "$dir" ]; then
+      if [ "$force" != 1 ]; then
+        echo "secret-guard: a global core.hooksPath is already set to '$existing' — not clobbering it." >&2
+        echo "  Re-run with --force to replace it, or vendor per-repo: install-secret-guard.sh <repo>" >&2
+        exit 3
+      fi
+      # --force records what it displaces — and, like the hook backups (dir #625), never overwrites
+      # an earlier record of a DIFFERENT path: that one is the only trace of what was there first.
+      if [ -n "$recorded" ] && [ "$recorded" != "$existing" ]; then
+        echo "secret-guard: $isg_displaced_key already records an earlier displaced hooksPath, '$recorded';" >&2
+        echo "  --force would replace that record with '$existing'. Restore or clear it" >&2
+        echo "  (git config --global --unset $isg_displaced_key), then re-run with --force. Nothing was changed." >&2
+        exit 3
+      fi
     fi
     install_into "$dir"
+    if [ -n "$existing" ] && [ "$existing" != "$dir" ]; then
+      git config --global "$isg_displaced_key" "$existing"
+      echo "secret-guard: replaced the global core.hooksPath '$existing' (--force); the old value is"
+      echo "  recorded in git config --global $isg_displaced_key — install-secret-guard.sh --global --uninstall restores it"
+    fi
     git config --global core.hooksPath "$dir"
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"
     echo "Note: a repo with its own core.hooksPath overrides this — vendor into it directly."
@@ -265,7 +348,10 @@ install-secret-guard — wire the secret-guard hooks (block key-shaped secrets o
 Usage:
   install-secret-guard.sh --global       set a machine-global core.hooksPath (covers every repo)
   install-secret-guard.sh <repo-path>    vendor a self-contained copy into one repo
-  install-secret-guard.sh --force …      replace a pre-existing non-Keel hook/hooksPath (backs it up)
+  install-secret-guard.sh --force …      replace a pre-existing non-Keel hook (backs it up) or global
+                                         hooksPath (records the old value in keel.displacedHooksPath)
+  install-secret-guard.sh --global --uninstall
+                                         unwire the global guard: restore the displaced hooksPath, or unset it
   install-secret-guard.sh -h | --help
 EOF
     exit 0 ;;

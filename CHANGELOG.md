@@ -54,6 +54,14 @@ sections real content going forward — see that page for exactly when each one 
   whether `git add -A` would pick anything up there, so a team that commits `.claude/settings.json` and
   ignores the rest stays clean. One behaviour change in the other direction: an ignored `.claude/` no
   longer covers an unignored `CLAUDE.md` beside it.
+- **`tools/install-secret-guard.sh`: three ways past its never-clobber rule are closed.** A hook counts
+  as Keel's only when its second line is exactly the shipped hook's marker line, so a user's own hook
+  that merely names the tool is now refused instead of overwritten. A symlink at any path the install
+  writes is refused, with its target named, and is never written through. `--global --force` records
+  the `core.hooksPath` it replaces in `git config --global keel.displacedHooksPath`, refuses to replace
+  an earlier record of a different path, and the new `--global --uninstall` restores that value, or
+  unsets Keel's own when nothing was displaced. `uninstall.sh`'s hint for removing the global guard now
+  points at `--global --uninstall`. dir #659.
 
 ## [0.13.0] — 2026-10-03
 

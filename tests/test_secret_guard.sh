@@ -938,6 +938,70 @@ check_contains "dangling-symlink refusal names the backup path" "$OUT" "pre-comm
 check_nofile "the refusal did not write through the dangling link" "$f3target"
 check_contains "foreign hook D is left in place, untouched" "$(cat "$f3h/pre-commit")" "foreign hook D"
 
+# --- dir #659 (S3-1): ownership is an EXACT marker line, not a substring. A user's own hook that only
+# MENTIONS the tool by name (the refusal text itself tells users to call secret-scan.sh from their own
+# hook) used to read as Keel's: a plain install overwrote it, exit 0, and deleted the run-scoped backup.
+m1repo="$(new_repo)"
+m1h="$m1repo/.git/hooks"
+mkdir -p "$m1h"
+printf '#!/bin/sh\n# my wrapper: runs lint, then calls Keel secret-guard by hand\nexit 0\n' > "$m1h/pre-commit"
+chmod +x "$m1h/pre-commit"
+run "$isg" "$m1repo"
+check_status "dir #659 S3-1: a foreign hook that only MENTIONS the name is refused → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-1: the mentioning hook is left verbatim" "$(cat "$m1h/pre-commit")" "my wrapper: runs lint"
+check_nofile "dir #659 S3-1: nothing installed on refusal" "$m1h/secret-scan.sh"
+# The marker line is a compatibility contract: every installed copy since the hooks first shipped
+# carries exactly this line 2, so a plain re-install keeps recognizing an OLDER Keel hook as ours.
+# Rewording either line orphans every existing install (each re-install would refuse it as foreign).
+check_eq "dir #659: pre-commit's line 2 is the unchanged ownership marker" \
+  "# Keel secret-guard — pre-commit hook. Catches a key-shaped secret before it enters local history." \
+  "$(sed -n 2p "$REPO_ROOT/tools/secret-guard/pre-commit")"
+check_eq "dir #659: pre-push's line 2 is the unchanged ownership marker" \
+  "# Keel secret-guard — pre-push hook. The hard outward boundary: scan the commits being pushed." \
+  "$(sed -n 2p "$REPO_ROOT/tools/secret-guard/pre-push")"
+# A marker line in the WRONG hook does not count: pre-push's marker inside a pre-commit is not ours.
+m1brepo="$(new_repo)"
+mkdir -p "$m1brepo/.git/hooks"
+{ echo '#!/bin/sh'; sed -n 2p "$REPO_ROOT/tools/secret-guard/pre-push"; echo '# my own pre-commit'; } > "$m1brepo/.git/hooks/pre-commit"
+run "$isg" "$m1brepo"
+check_status "dir #659 S3-1: pre-push's marker inside a pre-commit is not ownership → exit 3" 3 "$STATUS"
+
+# --- dir #659 (S3-2): a symlinked hook path is refused, its target named — never written through. `cp`
+# onto a symlink follows it: --force used to rewrite a dotfiles target, and a plain install over a link to
+# a shared Keel-marked hook rewrote that shared file (its edits unrecoverable).
+s2repo="$(new_repo)"
+s2h="$s2repo/.git/hooks"
+mkdir -p "$s2h"
+s2shared="$SANDBOX/s2-shared-pre-commit"
+{ cat "$REPO_ROOT/tools/secret-guard/pre-commit"; echo '# EDITED-SHARED-MARKER'; } > "$s2shared"
+ln -s "$s2shared" "$s2h/pre-commit"
+run "$isg" "$s2repo"
+check_status "dir #659 S3-2: a symlinked (Keel-marked) hook is refused → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-2: the refusal names the link's target" "$OUT" "$s2shared"
+check_contains "dir #659 S3-2: the shared target keeps its edit" "$(cat "$s2shared")" "EDITED-SHARED-MARKER"
+check_link "dir #659 S3-2: the link itself is left in place" "$s2h/pre-commit"
+check_nofile "dir #659 S3-2: nothing installed on refusal" "$s2h/secret-scan.sh"
+s2frepo="$(new_repo)"
+s2fh="$s2frepo/.git/hooks"
+mkdir -p "$s2fh"
+s2dot="$SANDBOX/s2-dotfiles-pre-push"
+printf '#!/bin/sh\n# my dotfiles hook\nexit 0\n' > "$s2dot"
+ln -s "$s2dot" "$s2fh/pre-push"
+run "$isg" --force "$s2frepo"
+check_status "dir #659 S3-2: --force does not write through a symlinked foreign hook → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-2: the dotfiles target is untouched under --force" "$(cat "$s2dot")" "my dotfiles hook"
+check_nofile "dir #659 S3-2: --force refusal leaves no backup behind" "$s2fh/pre-push.pre-keel.bak"
+check_nofile "dir #659 S3-2: --force refusal installs no pre-commit either (nothing half-done)" "$s2fh/pre-commit"
+# The always-Keel files are copied with the same `cp`, so a link at their path is refused too.
+s2srepo="$(new_repo)"
+mkdir -p "$s2srepo/.git/hooks"
+s2scan="$SANDBOX/s2-shared-scanner"
+printf '# a scanner shared from elsewhere\n' > "$s2scan"
+ln -s "$s2scan" "$s2srepo/.git/hooks/secret-scan.sh"
+run "$isg" "$s2srepo"
+check_status "dir #659 S3-2: a symlinked secret-scan.sh is refused → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-2: the shared scanner target is untouched" "$(cat "$s2scan")" "a scanner shared from elsewhere"
+
 # --- dir #85 (code audit, finding 26): the --global --force branch ---------------------------------
 # The refuse-by-default half of the MACHINE-GLOBAL slot and the per-repo --force half were both covered;
 # replacing a FOREIGN global core.hooksPath via --force was not, even though it is the one path that
@@ -974,6 +1038,58 @@ check_contains "--global --force installs Keel's own hook there" \
 # --force repoints the SETTING; it never deletes the hooks dir the user pointed at before.
 check_contains "--global --force never touches the foreign hooks dir it displaced" \
   "$(cat "$foreign_hooks/pre-commit")" "someone elses global hook"
+
+# --- dir #659 (S3-3): --global --force RECORDS the hooksPath it displaces, and --global --uninstall
+# restores it. Before, the old value was printed nowhere and written nowhere — the pointer was lost.
+check_contains "dir #659 S3-3: --global --force names the displaced hooksPath" "$OUT" "$foreign_hooks"
+check_eq "dir #659 S3-3: the displaced hooksPath is recorded in global git config" \
+  "$foreign_hooks" "$(in_gh_home git config --global keel.displacedHooksPath)"
+# An ordinary re-install over Keel's own wiring keeps the record (it is still the value to restore).
+run in_gh_home "$isg" --global
+check_status "dir #659 S3-3: a plain --global re-install → exit 0" 0 "$STATUS"
+check_eq "dir #659 S3-3: the re-install keeps the record" \
+  "$foreign_hooks" "$(in_gh_home git config --global keel.displacedHooksPath)"
+run in_gh_home "$isg" --global --uninstall
+check_status "dir #659 S3-3: --global --uninstall → exit 0" 0 "$STATUS"
+check_eq "dir #659 S3-3: --uninstall restores the displaced hooksPath" \
+  "$foreign_hooks" "$(in_gh_home git config --global core.hooksPath)"
+check_eq "dir #659 S3-3: --uninstall clears the record once restored" \
+  "" "$(in_gh_home git config --global keel.displacedHooksPath || true)"
+check_file "dir #659 S3-3: --uninstall leaves Keel's hook files on disk (it unwires, never deletes)" \
+  "$gh_home/.config/git/keel-hooks/pre-commit"
+# A second --uninstall finds a hooksPath that is not Keel's: refuse, change nothing.
+run in_gh_home "$isg" --global --uninstall
+check_status "dir #659 S3-3: --uninstall over a foreign hooksPath → exit 3" 3 "$STATUS"
+check_eq "dir #659 S3-3: the refused --uninstall leaves the foreign hooksPath" \
+  "$foreign_hooks" "$(in_gh_home git config --global core.hooksPath)"
+# A record left from an earlier --force must never be overwritten by a second --force that would
+# displace a DIFFERENT path (dir #625's rule, applied to the setting): refuse before any change.
+other_hooks="$SANDBOX/gforce-other-hooks"; mkdir -p "$other_hooks"
+in_gh_home git config --global keel.displacedHooksPath "$foreign_hooks"
+in_gh_home git config --global core.hooksPath "$other_hooks"
+run in_gh_home "$isg" --global --force
+check_status "dir #659 S3-3: --force with a record of a DIFFERENT path → exit 3" 3 "$STATUS"
+check_contains "dir #659 S3-3: that refusal names the recorded path" "$OUT" "$foreign_hooks"
+check_eq "dir #659 S3-3: that refusal leaves core.hooksPath alone" \
+  "$other_hooks" "$(in_gh_home git config --global core.hooksPath)"
+check_eq "dir #659 S3-3: that refusal leaves the earlier record alone" \
+  "$foreign_hooks" "$(in_gh_home git config --global keel.displacedHooksPath)"
+
+# No hooksPath before: install then --uninstall leaves it unset, as it was.
+gu_home="$SANDBOX/guninstall-home"; mkdir -p "$gu_home"
+fresh_home_env "$gu_home"; gu_env=("${FRESH_HOME_ENV[@]}")
+in_gu_home() { env "${gu_env[@]}" "$@"; }
+run in_gu_home "$isg" --global
+check_status "dir #659 S3-3: --global with no prior hooksPath → exit 0" 0 "$STATUS"
+check_eq "dir #659 S3-3: nothing displaced, nothing recorded" \
+  "" "$(in_gu_home git config --global keel.displacedHooksPath || true)"
+run in_gu_home "$isg" --global --uninstall
+check_status "dir #659 S3-3: --uninstall with nothing recorded → exit 0" 0 "$STATUS"
+check_eq "dir #659 S3-3: --uninstall with nothing recorded unsets core.hooksPath" \
+  "" "$(in_gu_home git config --global core.hooksPath || true)"
+run "$isg" --uninstall "$frepo"
+check_status "dir #659 S3-3: --uninstall is --global only → exit 2 for a repo path" 2 "$STATUS"
+check_contains "dir #659 S3-3: the repo-path --uninstall refusal says why" "$OUT" "--uninstall works with --global only"
 
 # --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
 # put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.
