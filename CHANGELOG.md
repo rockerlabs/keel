@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
+  current directory", which once let a fixture helper write a `fork` remote into the real checkout's
+  config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
+  refusal fails the file at `summary()` even when the call's own status was swallowed. A file whose code
+  under test makes its own temp repo opts in with `GIT_C_GUARD_ALLOW_TMP=1` (three today). With the
+  function defined, `command -v git` names the function, so tests that need git's path use `type -P git`.
+  Pinned, with a mutation proof, by `tests/test_lib_git_c_guard.sh`. dir #658.
 - **`tools/init-project.sh` no longer attaches a nested target to its parent repo.** A directory inside
   another git repo passed the old "inside a work tree" test, so no `git init` ran: the target got a
   `CLAUDE.md` but no repo of its own, and impact tracking was enabled for the parent's root. Such a
@@ -58,6 +65,22 @@ sections real content going forward — see that page for exactly when each one 
   change; fetch the remote first to restore the baseline. CI's `resolve_range_ci` is unchanged.
   **Re-vendor the guard copies in your repos** (`tools/install-secret-guard.sh <repo>`): `range-lib.sh`
   and `pre-push` change together, so a vendored copy keeps the old refusal until both are refreshed.
+- **The hook installers' settings writer keeps what it replaces, and stops wiring a hook twice.** All
+  three installers (`install-read-trace.sh`, `install-pre-pr-gate.sh`, `install-machine-watch.sh`) share
+  `tools/lib/hook-install.sh`, so each fix reaches all three. A symlinked `settings.json` is now written
+  through to the file it points at and stays a link; it used to be replaced by a regular file. A 0600
+  file stays 0600 instead of taking the umask's 0644. A read-only `settings.json` is now refused with one
+  clean line instead of replaced, and one that is a directory is refused instead of reported wired
+  while the temp file landed inside it. Two backups in one second get two names
+  (`<file>.<ts>.bak`, then `<file>.<ts>.2.bak`) instead of the second overwriting the first, and a backup
+  is 0600. A malformed nested entry in one of the installer's events gets the clean "unexpected shape"
+  refusal instead of a raw jq error. Our hook already inside a match-all entry (no matcher, `""` or
+  `"*"`) now reads as wired: `--force` used to add a second entry, so the hook fired twice, and
+  `--uninstall` now takes it out of that entry. dir #660, dir #92.
+- **`--uninstall` prunes only the hook arrays it emptied.** The shared core used to delete every empty
+  array under one of the installer's event names, so an already-empty `SessionStart` (another tool's,
+  or a hand edit's) went too: `{"hooks":{"PreToolUse":[<ours>],"SessionStart":[]}}` came back as
+  `"hooks": {}`. Now an array goes only when this run took a hook out of it. dir #600.
 
 ## [0.13.0] — 2026-10-03
 

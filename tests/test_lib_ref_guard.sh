@@ -252,7 +252,7 @@ fi
 # git would never look at them at all) on PATH for the arm call only, the step 6 self-check prints
 # its NOTE — the guard never fails open silently.
 oldgit_dir="$(mktemp -d "$SANDBOX/T6-oldgit.XXXXXX")"
-real_git_bin="$(command -v git)"
+real_git_bin="$(type -P git)"
 oldgit_body='#!/bin/sh
 unset GIT_CONFIG_COUNT
 i=0
@@ -386,6 +386,8 @@ cat > "$g13/tests/test_leak_n8.sh" <<EOF
 #!/usr/bin/env bash
 set -uo pipefail
 . "\$(dirname "\$0")/lib.sh"
+# dir #658: other13 lives in the PARENT's sandbox, a temp dir outside this child's own \$SANDBOX.
+GIT_C_GUARD_ALLOW_TMP=1
 run git -C '$other13' branch t13-n8
 printf 'STATUS=%s\n' "\$STATUS"
 summary
