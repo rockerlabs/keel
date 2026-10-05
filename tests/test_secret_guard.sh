@@ -1662,4 +1662,355 @@ prepush_unknown "$repo"
 check_status "dir #546: an allow-list entry exempting a match, unknown remote tip and no remote → fail closed (no baseline)" 1 "$STATUS"
 check_contains "dir #546: ...with the same-change message" "$OUT" "ignoring an allowlist entry new in this change"
 
+# =================================================================================================
+# --- dir #148: ONE parser for the personal-literals file. tools/lib/personal-literals.sh is the
+# canonical copy (public-audit.sh sources it); secret-scan.sh is vendored and may source only what
+# ships beside it, so it carries an inline IN-SYNC twin, _personal_literals_parse_inline. This section
+# is the sync + golden test the twin's comment names: lib and twin run on shared fixtures, both must
+# match the expected output written LITERALLY below, and their bodies must be textually identical (a
+# branch no fixture reaches cannot drift either). ------------------------------------------------
+pl_lib="$REPO_ROOT/tools/lib/personal-literals.sh"
+pa="$REPO_ROOT/tools/public-audit.sh"
+
+# A1/A3/A4 structural pins (the spec's grep checks, kept as assertions).
+check_file "dir #148: tools/lib/personal-literals.sh exists" "$pl_lib"
+if [ -f "$pl_lib" ] && grep -q '^personal_literals_parse()' "$pl_lib" \
+   && grep -qF '[ -f "$1" ] || return 0' "$pl_lib"; then
+  pass "dir #148 A1: the lib defines personal_literals_parse and tests [ -f ] exactly"
+else
+  fail "dir #148 A1: the lib defines personal_literals_parse and tests [ -f ] exactly" "missing in $pl_lib"
+fi
+pl_sed='s/[[:space:]][[:space:]]*#.*$//'
+check_eq "dir #148 A3: public-audit.sh no longer carries the comment-strip sed" 0 "$(grep -cF "$pl_sed" "$pa")"
+check_eq "dir #148 A3: public-audit.sh sources the lib on a real line" 1 "$(grep -cE '^\. .*lib/personal-literals\.sh"' "$pa")"
+if [ "$(grep -cE '^[^#]*personal_literals_parse "\$PERSONAL_FILE"' "$pa")" -ge 1 ]; then
+  pass "dir #148 A3: public-audit.sh CALLS the parser on a non-comment line"
+else
+  fail "dir #148 A3: public-audit.sh CALLS the parser on a non-comment line" "no call line"
+fi
+check_eq "dir #148 A4: secret-scan.sh carries the one comment-strip sed (the twin's)" 1 "$(grep -cF "$pl_sed" "$scan")"
+check_eq "dir #148 A4: secret-scan.sh defines the inline twin once" 1 "$(grep -c '^_personal_literals_parse_inline() {' "$scan")"
+check_eq "dir #148 A4: secret-scan.sh sources nothing" 0 "$(grep -cE '^[[:space:]]*(\.|source)[[:space:]]' "$scan")"
+check_eq "dir #148 A4: the PERSONAL_FILE= default line is byte-identical (kb-secret-scan.sh sed-extracts it)" 1 \
+  "$(grep -cF 'PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"' "$scan")"
+# dir #680: the capture keeps its status (`|| _personal_rc=$?`) for the explicit exit-2 handling right
+# below it — a bare capture, a `|| true` or a process substitution fails this pin.
+check_eq "dir #148 A4: the twin is CALLED by a plain top-level capture of \$PERSONAL_FILE (status kept)" 1 \
+  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)" \|\| [A-Za-z_][A-Za-z0-9_]*=\$\?$' "$scan")"
+# the scanner joins with `tr`: ${var//$'\n'/|} is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2)
+check_eq "dir #148: the scanner's join is not the cubic-on-bash-3.2 expansion" 0 "$(grep -cF '${_personal_lines//' "$scan")"
+
+# The fixture (v3): CRLF, inline comment, tabs, `a#b`, a backslash, internal spaces, a glob, non-ASCII
+# (octal bytes, so this file stays ASCII), a `-n` line (an echo-based emit would swallow it), and a last
+# line without a newline. The expected output is literal text — never produced by running either copy.
+pl_fixture="$SANDBOX/pl148-fixture"
+printf '# header comment\n\n   \nalpha\r\n  beta  \ngamma # trailing comment\n\tdelta\t\nep#silon\n   # indented comment\nzeta\\.eta\n  two  words  \nglob*[x]?\n\320\230\320\262\320\260\320\275\n-n\nlast-no-newline' > "$pl_fixture"
+pl_golden="$(printf 'alpha\nbeta\ngamma\ndelta\nep#silon\nzeta\\.eta\ntwo  words\nglob*[x]?\n\320\230\320\262\320\260\320\275\n-n\nlast-no-newline\n')"
+
+pl_twin_fn="$(sed -n '/^_personal_literals_parse_inline() {/,/^}/p' "$scan")"
+if [ -z "$pl_twin_fn" ]; then
+  fail "dir #148: secret-scan.sh's _personal_literals_parse_inline located" "no such function found in $scan"
+else
+  pass "dir #148: secret-scan.sh's _personal_literals_parse_inline located"
+fi
+pl_lib_fn="$(sed -n '/^personal_literals_parse() {/,/^}/p' "$pl_lib" 2>/dev/null)"
+if [ -z "$pl_lib_fn" ]; then
+  fail "dir #148: the lib's personal_literals_parse located" "no such function found in $pl_lib"
+else
+  pass "dir #148: the lib's personal_literals_parse located"
+fi
+
+# Run each copy on FILE; sets PL_LIB_OUT/ERR/RC and PL_TWIN_OUT/ERR/RC. The twin is the function
+# extracted from the scanner file (never the lib twice); both run under plain `bash`.
+pl_run_both() {
+  PL_LIB_OUT="$(bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$1" 2>"$SANDBOX/pl148-err")"; PL_LIB_RC=$?
+  PL_LIB_ERR="$(cat "$SANDBOX/pl148-err")"
+  PL_TWIN_OUT="$(bash -c "$pl_twin_fn"$'\n''_personal_literals_parse_inline "$1"' _ "$1" 2>"$SANDBOX/pl148-err")"; PL_TWIN_RC=$?
+  PL_TWIN_ERR="$(cat "$SANDBOX/pl148-err")"
+}
+pl_case() {  # desc file expected-output [expected-status, default 0]
+  pl_run_both "$2"
+  check_eq "dir #148 sync ($1): lib output = the literal expected output" "$3" "$PL_LIB_OUT"
+  check_eq "dir #148 sync ($1): twin output = the literal expected output" "$3" "$PL_TWIN_OUT"
+  check_eq "dir #148 sync ($1): lib status" "${4:-0}" "$PL_LIB_RC"
+  check_eq "dir #148 sync ($1): twin status" "${4:-0}" "$PL_TWIN_RC"
+}
+pl_case "full fixture" "$pl_fixture" "$pl_golden"
+pl_case "absent file" "$SANDBOX/pl148-absent" ""
+: > "$SANDBOX/pl148-empty"
+pl_case "empty file" "$SANDBOX/pl148-empty" ""
+printf '# only a comment\n\n   \n\t# indented\n' > "$SANDBOX/pl148-comments"
+pl_case "comments and blanks only" "$SANDBOX/pl148-comments" ""
+printf 'dup\ndup\n' > "$SANDBOX/pl148-dup"
+pl_case "duplicates are kept" "$SANDBOX/pl148-dup" "$(printf 'dup\ndup')"
+# Not a regular file: nothing printed, NOTHING on stderr, rc 0 (a `[ -e ]` reads a directory with a read
+# error; /dev/null is what kb-secret-scan.sh's selftest sets).
+mkdir -p "$SANDBOX/pl148-dir"
+for pl_nf in "$SANDBOX/pl148-dir" /dev/null; do
+  pl_run_both "$pl_nf"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib prints nothing" "" "$PL_LIB_OUT"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin prints nothing" "" "$PL_TWIN_OUT"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib stderr empty" "" "$PL_LIB_ERR"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin stderr empty" "" "$PL_TWIN_ERR"
+  check_eq "dir #148 sync (non-regular $pl_nf): lib rc 0" 0 "$PL_LIB_RC"
+  check_eq "dir #148 sync (non-regular $pl_nf): twin rc 0" 0 "$PL_TWIN_RC"
+done
+# Textual body identity (B5): both extracted functions, declaration line dropped, byte-identical — so an
+# edit to a branch no fixture reaches in ONE copy still fails here.
+check_block_equal "dir #148 sync: lib and twin function bodies are byte-identical (edit BOTH copies)" \
+  "$(printf '%s\n' "$pl_lib_fn" | sed 1d)" "$(printf '%s\n' "$pl_twin_fn" | sed 1d)"
+
+# --- end to end over the JOIN (parse-level cases cannot see it): both tools join the parsed lines.
+# `zetaXeta` must NOT match the correct regex `zeta\.eta`; a build that loses the backslash (a `read`
+# without -r) matches it. (`two  words` is one of the per-literal samples below.)
+pl_scan_exit() {  # sample [personal-file]; sets STATUS/OUT from the staged scan of a file holding ONLY the sample
+  local r; r="$(new_repo)"
+  printf '%s\n' "$1" > "$r/sample.txt"
+  git -C "$r" add sample.txt
+  [ "$1" != glo ] || : > "$r/globxy"   # glob-expansion decoy: a real file, cwd = repo root
+  run_in "$r" env SECRET_SCAN_PERSONAL_FILE="${2:-$pl_fixture}" "$scan" --staged
+}
+PL_TREE_LABEL="personal literal (secret-scan-personal) in tracked tree"
+pl_audit_has_tree_label() {  # sample [personal-file]; sets OUT, returns 0 when the tree label is reported
+  local d; d="$(new_repo)"
+  printf '%s\n' "$1" > "$d/sample.txt"
+  [ "$1" != glo ] || printf 'decoy\n' > "$d/globxy"
+  git -C "$d" add -A
+  git -C "$d" commit -qm init
+  run_in "$d" env SECRET_SCAN_PERSONAL_FILE="${2:-$pl_fixture}" bash "$pa" --no-history "$d"
+  case "$OUT" in *"$PL_TREE_LABEL"*) return 0 ;; *) return 1 ;; esac
+}
+pl_scan_exit zetaXeta
+check_status "dir #148 e2e: scanner, zetaXeta does not match zeta\\.eta → exit 0" 0 "$STATUS"
+if pl_audit_has_tree_label zetaXeta; then
+  fail "dir #148 e2e: audit, zetaXeta reports no personal tree hit" "$OUT"
+else
+  pass "dir #148 e2e: audit, zetaXeta reports no personal tree hit"
+fi
+
+# Per-literal e2e: EACH of the 11 golden literals, one sample its ERE matches, one separate run per tool.
+# Kills a tool that parses with a private loop (CRLF `alpha`, inline-comment `gamma` stop matching), a
+# dropped last-line guard (`last-no-newline`), and a join that glob-expands (`glo` is matched by
+# `glob*[x]?`; the repo holds a file NAMED globxy, and both tools run with the repo root as cwd).
+pl_cyr="$(printf '\320\230\320\262\320\260\320\275')"
+for pl_sample in alpha beta gamma delta 'ep#silon' 'zeta.eta' 'two  words' glo "$pl_cyr" 'x-n' 'last-no-newline'; do
+  pl_scan_exit "$pl_sample"
+  check_status "dir #148 e2e per-literal: scanner blocks '$pl_sample'" 1 "$STATUS"
+  if pl_audit_has_tree_label "$pl_sample"; then
+    pass "dir #148 e2e per-literal: audit reports the tree label for '$pl_sample'"
+  else
+    fail "dir #148 e2e per-literal: audit reports the tree label for '$pl_sample'" "$OUT"
+  fi
+done
+
+# Default path: SECRET_SCAN_PERSONAL_FILE UNSET (env -u), the fixture at $HOME/.claude/secret-scan-personal.
+mkdir -p "$HOME/.claude"
+cp "$pl_fixture" "$HOME/.claude/secret-scan-personal"
+pl_dr="$(new_repo)"; printf 'alpha\n' > "$pl_dr/sample.txt"; git -C "$pl_dr" add sample.txt
+run_in "$pl_dr" env -u SECRET_SCAN_PERSONAL_FILE "$scan" --staged
+check_status "dir #148 default path: scanner reads \$HOME/.claude/secret-scan-personal → blocks 'alpha'" 1 "$STATUS"
+pl_dd="$(new_repo)"; printf 'alpha\n' > "$pl_dd/sample.txt"
+git -C "$pl_dd" add -A; git -C "$pl_dd" commit -qm init
+run_in "$pl_dd" env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$pl_dd"
+check_contains "dir #148 default path: audit reads the default file → tree label" "$OUT" "$PL_TREE_LABEL"
+rm -f "$HOME/.claude/secret-scan-personal"
+
+# (The unreadable-file contract — status 2, scanner exit 2, audit GAP — is pinned in the dir #680 section below.)
+
+# =================================================================================================
+# --- dir #680: the personal-literals file's three fail-opens, fixed once in the parser (lib + inline
+# twin, kept in sync by the dir #148 section above) and acted on by each caller's own policy.
+#   unreadable file, or a symlink to nothing → parser returns 2; scanner says so and exits 2, audit GAP
+#   the per-line sed failing → parser returns 4 (a locale-aware sed errors on an invalid byte; it used to
+#       be swallowed inside the $(...) capture, where errexit is off, and the literal silently dropped)
+#   a UTF-8 BOM at the start of any line → stripped (it used to ride into the literal)
+#   a line ending in an ODD run of `\` → not emitted, parser returns 3 (it used to join the next line
+#       into `prev\|next`, a VALID ERE matching neither literal); scanner exits 2, audit raises its own GAP
+# Fixtures are printf-built with octal bytes so this file stays ASCII.
+
+# parser level: lib and twin agree on output AND status, against literal expectations.
+printf '\357\273\277zorblaxname\nsecond\n' > "$SANDBOX/pl680-bom"
+pl_case "BOM before the first literal is stripped" "$SANDBOX/pl680-bom" "$(printf 'zorblaxname\nsecond')" 0
+printf '\357\273\277# a comment after the BOM\nreal\n' > "$SANDBOX/pl680-bomcomment"
+pl_case "BOM before a comment line: the line is still a comment" "$SANDBOX/pl680-bomcomment" "real" 0
+printf 'first\n\357\273\277second\n' > "$SANDBOX/pl680-bom2"
+pl_case "a BOM at the start of a LATER line (cat a b > file) is stripped too" "$SANDBOX/pl680-bom2" "$(printf 'first\nsecond')" 0
+printf 'prevlit\\\nnextlit\n' > "$SANDBOX/pl680-trail"
+pl_case "a line ending in a backslash is withheld, the rest still parses, status 3" "$SANDBOX/pl680-trail" "nextlit" 3
+printf 'evenback\\\\\nafter\n' > "$SANDBOX/pl680-even"
+pl_case "an EVEN trailing backslash run is a valid literal backslash: kept, status 0" "$SANDBOX/pl680-even" "$(printf 'evenback\\\\\nafter')" 0
+printf 'a b \\ \nnext\n' > "$SANDBOX/pl680-trailspace"
+pl_case "a backslash followed by trailing whitespace is trimmed first, then flagged" "$SANDBOX/pl680-trailspace" "next" 3
+printf 'lonely\\' > "$SANDBOX/pl680-nonl"
+pl_case "a final line with no newline ending in a backslash is flagged too" "$SANDBOX/pl680-nonl" "" 3
+
+# end to end — scanner: the BOM'd first literal now blocks; a trailing backslash fails CLOSED (exit 2).
+pl_scan_exit "hi zorblaxname" "$SANDBOX/pl680-bom"
+check_status "dir #680 e2e: scanner blocks the BOM-prefixed first literal" 1 "$STATUS"
+pl_scan_exit "has nextlit here" "$SANDBOX/pl680-trail"
+check_status "dir #680 e2e: scanner exits 2 on a line ending in a backslash (not 'clean' rc 0)" 2 "$STATUS"
+check_contains "dir #680 e2e: ...and says why" "$OUT" "backslash"
+check_absent "dir #680 e2e: ...without printing the offending literal" "$OUT" "prevlit"
+check_absent "dir #680 e2e: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+pl_scan_exit "has evenback\\ here" "$SANDBOX/pl680-even"
+check_status "dir #680 e2e: scanner accepts an even trailing backslash run and blocks its literal" 1 "$STATUS"
+# end to end — audit: BOM'd literal → tree label; trailing backslash → GAP naming the invalid line, the
+# remaining literals still scanned.
+if pl_audit_has_tree_label "hi zorblaxname" "$SANDBOX/pl680-bom"; then
+  pass "dir #680 e2e: audit reports the BOM-prefixed first literal"
+else
+  fail "dir #680 e2e: audit reports the BOM-prefixed first literal" "$OUT"
+fi
+if pl_audit_has_tree_label "has nextlit here" "$SANDBOX/pl680-trail"; then
+  pass "dir #680 e2e: audit still scans the literals after a flagged line"
+else
+  fail "dir #680 e2e: audit still scans the literals after a flagged line" "$OUT"
+fi
+check_status "dir #680 e2e: audit exits 1 on a flagged line" 1 "$STATUS"
+check_contains "dir #680 e2e: audit says a line ends in a backslash / coverage incomplete" "$OUT" "end in a backslash"
+check_absent "dir #680 e2e: audit never echoes the flagged literal" "$OUT" "prevlit"
+
+# a symlink to nothing is an existing-but-unusable file, not an absent one (the operator's default
+# ~/.claude/secret-scan-personal is a symlink into the KB: a moved KB must not silently turn the class off).
+# Works as root too, so it is not behind the uid guard.
+ln -s "$SANDBOX/pl680-no-such-target" "$SANDBOX/pl680-dangling"
+pl_case "a symlink to nothing is unusable, not absent: status 2, nothing printed" "$SANDBOX/pl680-dangling" "" 2
+ln -s "$pl_fixture" "$SANDBOX/pl680-link-ok"
+pl_case "a symlink to a real file still parses (the full fixture)" "$SANDBOX/pl680-link-ok" "$pl_golden"
+pl_scan_exit "hello zebracorn" "$SANDBOX/pl680-dangling"
+check_status "dir #680: scanner exits 2 on a symlink to nothing" 2 "$STATUS"
+check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
+check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+pl_ad="$(new_repo)"; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
+git -C "$pl_ad" add -A; git -C "$pl_ad" commit -qm init
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-dangling" bash "$pa" --no-history "$pl_ad"
+check_status "dir #680: audit exits 1 (a GAP) on a symlink to nothing" 1 "$STATUS"
+check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
+
+# the per-line sed failing (a sed that exits 1 first on PATH — deterministic stand-in for BSD sed's
+# 'illegal byte sequence' under a UTF-8 locale, which no ambient-C-locale test can reach): parser status 4,
+# scanner exit 2, audit GAP — never a silently dropped literal.
+pl_shim="$SANDBOX/pl680-sedshim"; mkdir -p "$pl_shim"
+printf '#!/bin/sh\nexit 1\n' > "$pl_shim/sed"; chmod +x "$pl_shim/sed"
+printf 'zebracorn\n' > "$SANDBOX/pl680-onelit"
+pl680_lib_rc=0; PATH="$pl_shim:$PATH" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-onelit" >/dev/null 2>&1 || pl680_lib_rc=$?
+pl680_twin_rc=0; PATH="$pl_shim:$PATH" bash -c "$pl_twin_fn"$'\n''_personal_literals_parse_inline "$1"' _ "$SANDBOX/pl680-onelit" >/dev/null 2>&1 || pl680_twin_rc=$?
+check_eq "dir #680: a failing per-line sed makes the lib return 4" 4 "$pl680_lib_rc"
+check_eq "dir #680: ...and the twin" 4 "$pl680_twin_rc"
+pl680_r="$(new_repo)"; printf 'hello zebracorn\n' > "$pl680_r/sample.txt"; git -C "$pl680_r" add sample.txt
+run_in "$pl680_r" env PATH="$pl_shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-onelit" "$scan" --staged
+check_status "dir #680: scanner exits 2 when the per-line sed fails (not 'clean')" 2 "$STATUS"
+check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
+run env PATH="$pl_shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-onelit" bash "$pa" --no-history "$pl_ad"
+check_contains "dir #680: the audit raises the coverage-ZERO GAP when the per-line sed fails" "$OUT" "coverage is ZERO"
+
+# The same two behaviours under a REAL UTF-8 locale, where this host's sed decides (every test above runs
+# in the ambient C locale — dir #250's blind spot). Each block runs only where the sed behaves that way:
+# BSD sed errors on an invalid byte (the parse must then fail loud: status 4 / scanner exit 2), and a
+# locale-aware sed that treats NBSP as whitespace trims it, as the pre-dir-#148 loop did (the parse must
+# not stop doing so just because the parser moved into a function).
+pl_u8="$(pick_utf8_locale)" || pl_u8=""
+if [ -n "$pl_u8" ] && ! printf 'a\351\n' | LC_ALL="$pl_u8" sed 's/a//' >/dev/null 2>&1; then
+  printf 'zebracorn  # caf\351\n' > "$SANDBOX/pl680-latin1"
+  pl680_lib_rc=0; LC_ALL="$pl_u8" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-latin1" >/dev/null 2>&1 || pl680_lib_rc=$?
+  check_eq "dir #680: under a UTF-8 locale an invalid byte makes this host's sed fail -> the lib returns 4" 4 "$pl680_lib_rc"
+  run_in "$pl680_r" env LC_ALL="$pl_u8" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-latin1" "$scan" --staged
+  check_status "dir #680: ...and the scanner exits 2 (not 'clean', not a bare tool error rc 1)" 2 "$STATUS"
+  check_contains "dir #680: ...with its own message" "$OUT" "cannot read or parse"
+else
+  pass "dir #680: (no UTF-8 locale where this host's sed rejects an invalid byte — the BSD-sed case is not applicable here)"
+fi
+if [ -n "$pl_u8" ] && [ -z "$(printf '\302\240' | LC_ALL="$pl_u8" sed 's/[[:space:]][[:space:]]*$//')" ]; then
+  printf 'zebracorn\302\240\n' > "$SANDBOX/pl680-nbsp"
+  pl680_nbsp="$(LC_ALL="$pl_u8" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-nbsp" 2>/dev/null)"
+  check_eq "dir #680: a trailing NBSP is still trimmed where this host's UTF-8 sed counts it as whitespace" "zebracorn" "$pl680_nbsp"
+else
+  pass "dir #680: (this host's sed does not treat NBSP as whitespace — the trim case is not applicable here)"
+fi
+
+# unreadable (non-root only: chmod 000 is a no-op for root — CLAUDE.md Linux-leg trap 2). The status 2 /
+# exit 2 contract holds for every platform's bash, so the whole block is guarded together.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  pl_unread="$SANDBOX/pl680-unreadable"; printf 'zebracorn\n' > "$pl_unread"; chmod 000 "$pl_unread"
+  pl_run_both "$pl_unread"
+  check_eq "dir #680: lib returns 2 on an existing-but-unreadable file" 2 "$PL_LIB_RC"
+  check_eq "dir #680: twin returns 2 on an existing-but-unreadable file" 2 "$PL_TWIN_RC"
+  check_eq "dir #680: lib prints nothing on stdout" "" "$PL_LIB_OUT"
+  check_eq "dir #680: lib prints nothing on stderr (the callers speak, in their own words)" "" "$PL_LIB_ERR"
+  check_eq "dir #680: twin prints nothing on stderr" "" "$PL_TWIN_ERR"
+  pl_scan_exit "hello zebracorn" "$pl_unread"
+  check_status "dir #680: scanner exits 2 on an unreadable personal file" 2 "$STATUS"
+  check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
+  check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+  run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
+  check_status "dir #680: audit exits 1 (a GAP) on an unreadable personal file" 1 "$STATUS"
+  check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
+  check_absent "dir #680: ...and never echoes the file's content" "$OUT" "zebracorn"
+  # the other readable-file path is untouched: the same repo with a READABLE file is the usual tree hit.
+  chmod 600 "$pl_unread"
+  run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
+  check_contains "dir #680: once readable, the same file is the usual tree hit" "$OUT" "$PL_TREE_LABEL"
+fi
+
+# =================================================================================================
+# --- dir #682: on bash 3.2 (macOS /bin/bash), a bare `trap 'rm -rf "$SCRATCH"' EXIT` turned a top-level
+# FATAL shell error (a `.` of a missing file, a `set -u` unbound variable) into exit 0 — the commit hook
+# failed OPEN and --selftest reported success. `$?` is already 0 when the trap reads it for that failure
+# class, so capturing it is not enough: the scanner uses a completion marker (_scan_done, set only on a
+# legitimate exit-0 path). The probe: a COPY of the scanner with a fatal error injected right after its
+# trap lines, run on a staged AWS-key-shaped string. A fail-open exits 0 (and a key-shaped string passes);
+# a fixed scanner exits non-zero. alpine's bash 5 may not reproduce the original bug — the macOS leg is the
+# binding one — but the assertion (non-zero, never 'clean') holds on every bash.
+pl682_repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$pl682_repo/conf.txt"
+git -C "$pl682_repo" add conf.txt
+pl682_shells="bash"
+[ -x /bin/bash ] && [ "$(command -v bash)" != /bin/bash ] && pl682_shells="bash /bin/bash"
+# The fault goes in right AFTER the EXIT trap is armed (just before the INT trap line): a probe injected
+# before the trap exists would pass vacuously. Both anchors are pinned exactly-once so a reorder fails here.
+pin_exact "dir #682: the EXIT-trap line is unique in the scanner" "$scan" "trap _scan_exit EXIT" "EXIT trap not found exactly once"
+pin_exact "dir #682: the INT-trap line (the injection anchor) is unique in the scanner" "$scan" "trap 'exit 130' INT" "anchor not found exactly once"
+pl682_n=0
+for pl682_inject in '. "$(dirname "$0")/pl682-missing-sibling.sh"' ': "$pl682_never_set_scalar"'; do
+  pl682_n=$((pl682_n + 1))
+  pl682_copy="$SANDBOX/pl682-scan-$pl682_n.sh"
+  cp "$scan" "$pl682_copy"
+  insert_before_line_containing "$pl682_copy" "trap 'exit 130' INT" "$pl682_inject"
+  chmod +x "$pl682_copy"   # the helper rewrites through mv; --selftest executes the script directly
+  pin_exact "dir #682: fatal-error probe $pl682_n injected" "$pl682_copy" "$pl682_inject" "injection missing"
+  for pl682_sh in $pl682_shells; do
+    run_in "$pl682_repo" "$pl682_sh" "$pl682_copy" --staged
+    if [ "$STATUS" -ne 0 ]; then
+      pass "dir #682: probe $pl682_n under $pl682_sh — a top-level fatal error exits non-zero (status $STATUS)"
+    else
+      fail "dir #682: probe $pl682_n under $pl682_sh — a top-level fatal error exits non-zero" "exit 0 (fail-open): $OUT"
+    fi
+    check_absent "dir #682: probe $pl682_n under $pl682_sh — never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+    run_in "$pl682_repo" "$pl682_sh" "$pl682_copy" --selftest
+    if [ "$STATUS" -ne 0 ]; then
+      pass "dir #682: probe $pl682_n under $pl682_sh — --selftest does not report success after a fatal error"
+    else
+      fail "dir #682: probe $pl682_n under $pl682_sh — --selftest does not report success after a fatal error" "exit 0: $OUT"
+    fi
+  done
+done
+# The legitimate paths still exit 0 under the marker (an over-eager fix would make every clean run fail).
+for pl682_sh in $pl682_shells; do
+  pl682_clean="$(new_repo)"; printf 'nothing here\n' > "$pl682_clean/ok.txt"; git -C "$pl682_clean" add ok.txt
+  run_in "$pl682_clean" "$pl682_sh" "$scan" --staged
+  check_status "dir #682: a clean staged run still exits 0 under $pl682_sh" 0 "$STATUS"
+  check_contains "dir #682: ...and says clean ($pl682_sh)" "$OUT" "secret-scan: clean"
+  # the legit --selftest success path under the marker, for a shell the rest of the file does not use
+  if [ "$pl682_sh" != bash ]; then
+    run_in "$pl682_clean" "$pl682_sh" "$scan" --selftest
+    check_status "dir #682: --selftest still exits 0 under $pl682_sh" 0 "$STATUS"
+  fi
+done
+run_in "$pl682_repo" bash "$scan" --staged
+check_status "dir #682: a real block still exits 1" 1 "$STATUS"
+# The audit of every `trap … EXIT` in the VENDORED set (tools/secret-guard/): none may be a bare
+# quoted-command trap — only a named handler (the completion-marker shape) is allowed.
+pl682_bare="$(grep -rnE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/tools/secret-guard/" || true)"
+check_eq "dir #682: no bare quoted-command EXIT trap in the vendored secret-guard set" "" "$pl682_bare"
+
 summary

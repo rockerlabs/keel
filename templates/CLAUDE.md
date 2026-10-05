@@ -16,9 +16,10 @@
 - **`PRINCIPLES.md`** — P0–P4, the durable foundation. Consult for foundational / expensive-to-reverse
   decisions.
 - **`LEARNINGS.md`** — staging tier for workflow insights not yet worth a committed rule. Append on a
-  reusable insight; promote on recurrence; prune when stale.
+  reusable insight; promote on recurrence; prune when stale — `/triage` owns that promote/prune pass.
 - **`IDEAS.md`** — staging tier for raw, not-yet-actionable ideas (Ideas != Backlog: no next step
-  required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it.
+  required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it —
+  `/triage` owns the promote/drop pass.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
 - **A design/planning session's ticket output, for a project `BACKLOG.md` with concurrent writers** — an
   unnumbered draft in that project's `BACKLOG.drafts/` (sibling of `BACKLOG.md`), folded at that session's

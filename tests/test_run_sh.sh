@@ -498,6 +498,66 @@ check_contains "T3: the new HEAD-unmoved hint names a concurrent own edit" "$OUT
 check_contains "T3: the hint says never edit during a live run and to reconcile by hand" "$OUT" \
   "edit a checkout while its own suite run is still alive). Reconcile by hand either way."
 
+# --- dir #664: the status compare cannot see a leak that rewrites a tracked file the operator ALREADY had
+# uncommitted edits in — ` M f.txt` before and ` M f.txt` after. The canary now also fingerprints the working-tree
+# bytes of every tracked file that differs from HEAD, and a changed fingerprint trips it. dir #656 half 2: the trip
+# block names the paths that differ (names only). The fixture's tracked f.txt holds an operator edit; g.txt is a
+# second dirty file the leak leaves alone (a bystander the names block must NOT list). The two secret-shaped
+# strings below stand for raw content: neither may ever be printed. Mutation proof (run manually, not committed):
+# dropping the fingerprint clause from the dir #318 trip condition in tests/run.sh turns the exit-status and
+# naming checks below RED; the no-content checks stay green on purpose (a trip that never fires prints nothing). --
+new_dirty_fixture() {
+  local d; d="$(new_run_sh_fixture)"
+  printf 'committed-f\n' > "$d/f.txt"
+  printf 'committed-g\n' > "$d/g.txt"
+  git -C "$d" add f.txt g.txt
+  git -C "$d" commit -q -m files
+  printf 'operator-edit-secret-f\n' > "$d/f.txt"
+  printf 'operator-edit-secret-g\n' > "$d/g.txt"
+  printf '%s' "$d"
+}
+dirty_root="$(new_dirty_fixture)"
+printf '#!/usr/bin/env bash\nprintf "leaked-content-marker\\n" > "$(dirname "$0")/../f.txt"\nexit 0\n' \
+  > "$dirty_root/tests/test_dirty_leak.sh"
+run bash "$dirty_root/tests/run.sh"
+check_status "dir #664: a leak that rewrites an already-dirty tracked file trips the canary -> exit 1" 1 "$STATUS"
+check_contains "dir #664: the trip block prints TRIPPED" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318)"
+check_contains "dir #664: the trip says the content of an already-dirty file changed" "$OUT" \
+  "content of a tracked file that already had uncommitted changes differs from before the run"
+check_contains "dir #656 half 2: the trip names the paths that differ, names only" "$OUT" \
+  "paths that differ between the before and after snapshots (names only, never content):"
+check_contains "dir #656 half 2: ... and names the rewritten file under an UNCHANGED status" "$OUT" "  f.txt"
+check_absent "dir #656 half 2: ... and not the dirty bystander the leak left alone" "$OUT" "g.txt"
+check_absent "dir #664: the trip never prints the leaked content" "$OUT" "leaked-content-marker"
+check_absent "dir #664: the trip never prints the operator's own uncommitted content" "$OUT" "operator-edit-secret"
+
+# the control: the SAME dirty tree, a test that leaves it alone -> the compare is quiet (a dirty tree is not a trip)
+rm -f "$dirty_root/tests/test_dirty_leak.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$dirty_root/tests/test_dirty_clean.sh"
+run bash "$dirty_root/tests/run.sh"
+check_status "dir #664: a dirty tree the run leaves alone does not trip -> exit 0" 0 "$STATUS"
+check_absent "dir #664: ... and prints no names block" "$OUT" "paths that differ between the before and after snapshots"
+
+# a leak that touches a CLEAN tracked file moves the status (` M` appears): the trip names that path, and only it
+rm -f "$dirty_root/tests/test_dirty_clean.sh"
+git -C "$dirty_root" checkout -q -- f.txt
+printf '#!/usr/bin/env bash\nprintf "leaked-content-marker\\n" > "$(dirname "$0")/../f.txt"\nexit 0\n' \
+  > "$dirty_root/tests/test_status_leak.sh"
+run bash "$dirty_root/tests/run.sh"
+check_status "dir #656 half 2: a leak into a clean tracked file trips -> exit 1" 1 "$STATUS"
+check_contains "dir #656 half 2: ... and the names block lists it" "$OUT" "  f.txt"
+check_absent "dir #656 half 2: ... but not the bystander" "$OUT" "g.txt"
+
+# dir #656 half 2 / R3-1: a TMPDIR INSIDE the watched checkout makes run.sh's own logdir an untracked path the
+# after-snapshot sees — the trip is the known self-trip (R3-1, not fixed here), and the names block now says WHICH
+# path moved: the `?? <dir>/` entry of the status compare, not a bare "status changed".
+tmpin_root="$(new_run_sh_fixture)"
+mkdir "$tmpin_root/scratch-tmp"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmpin_root/tests/test_clean.sh"
+run env TMPDIR="$tmpin_root/scratch-tmp" bash "$tmpin_root/tests/run.sh"
+check_status "R3-1: a TMPDIR inside the watched checkout self-trips (the standing line, unchanged) -> exit 1" 1 "$STATUS"
+check_contains "dir #656 half 2: the names block names the untracked directory the logdir created" "$OUT" "  scratch-tmp/"
+
 # --- dir #505 (b'): the HEAD-moved hint (dir #333's amendment) had no pin, and named its benign cause
 # without the one command that tells own-commit from leak. A fixture test that commits against the
 # watched repo moves HEAD forward on the same branch: the trip still fires (exit 1, never downgraded),
@@ -560,6 +620,20 @@ check_status "dir #653: a test dirtying a tracked file of the engine checkout tr
 check_contains "dir #653: the engine trip is named" "$OUT" "the engine checkout changed during the run"
 check_contains "dir #653: the engine trip names the touched file" "$OUT" "engine-file.txt"
 check_absent "dir #653: the engine trip does not print file content" "$OUT" "leaked"
+git -C "$eng" checkout -q -- engine-file.txt
+
+# dir #664, the engine half's twin: an engine file the operator already had dirty (` M` before and after) is
+# rewritten by the leak — only the content fingerprint sees it; the trip names the file, never its content
+printf 'operator-edit-secret-engine\n' > "$eng/engine-file.txt"
+printf '#!/usr/bin/env bash\nprintf "leaked-engine-marker\\n" > "%s/engine-file.txt"\nexit 0\n' "$eng" > "$watched/tests/test_engine_leak.sh"
+run env HOME="$enghome" bash "$watched/tests/run.sh"
+check_status "dir #664: a leak rewriting an already-dirty engine file trips the canary -> exit 1" 1 "$STATUS"
+check_contains "dir #664: the engine trip is named" "$OUT" "the engine checkout changed during the run"
+check_contains "dir #664: the engine trip says the content of an already-dirty file changed" "$OUT" \
+  "content of a tracked file that already had uncommitted changes differs from before the run"
+check_contains "dir #656 half 2: the engine trip names the file under an unchanged status" "$OUT" "  engine-file.txt"
+check_absent "dir #664: the engine trip prints neither the leaked content" "$OUT" "leaked-engine-marker"
+check_absent "dir #664: ... nor the operator's own uncommitted content" "$OUT" "operator-edit-secret-engine"
 git -C "$eng" checkout -q -- engine-file.txt
 
 printf '#!/usr/bin/env bash\nprintf "scratch\\n" > "%s/untracked-peer-file.txt"\nexit 0\n' "$eng" > "$watched/tests/test_engine_leak.sh"
@@ -691,6 +765,33 @@ printf '#!/bin/sh\necho "mktemp: failed to create directory (shim)" >&2\nexit 1\
 run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
 check_status "R2-4: a mktemp that exits nonzero fails the run -> exit 1" 1 "$STATUS"
 check_contains "R2-4: ... with the same loud message" "$OUT" "mktemp -d did not return a usable log dir"
+
+# --- R3-6 (dir #663 fold): the two guard clauses R2-4's shims never reached. A mktemp that hands back "/" (the
+# shape a failing mint produced as root): the `[ "$logdir" = / ]` clause refuses it. No mutant for that clause —
+# with it removed run.sh would take "/" as its log directory and, as root (the alpine leg), write into the
+# filesystem root.
+printf '#!/bin/sh\nprintf "/\\n"\n' > "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R3-6: a mint that returns / fails the run -> exit 1" 1 "$STATUS"
+check_contains "R3-6: ... loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
+check_absent "R3-6: ... before any test file started" "$OUT" "=== test_a.sh ==="
+check_nofile "R3-6: no log was written to the filesystem root" "/test_a.sh.log"
+
+# a mktemp that hands back a path that is not a directory: the `[ ! -d "$logdir" ]` clause
+ghost="$SANDBOX/no-such-logdir-663"
+printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$ghost" > "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R3-6: a mint that returns a non-directory fails the run -> exit 1" 1 "$STATUS"
+check_contains "R3-6: ... loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
+check_absent "R3-6: ... before any test file started" "$OUT" "=== test_a.sh ==="
+# the mutant: that clause dropped — the same shim then gets past the guard (and dies later, elsewhere)
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_a.sh"
+replace_in_line_containing "$d/run.sh" 'if [ -z "$logdir" ] || [ "$logdir" = / ]' ' || [ ! -d "$logdir" ]' ''
+check_ne "R3-6 mutant: the edit changed the copy of run.sh" "$(cksum < "$d/run.sh")" "$(cksum < "$runner")"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_absent "R3-6 mutant: without the ! -d clause the guard's own message is gone (so the clause is what produces it)" \
+  "$OUT" "mktemp -d did not return a usable log dir"
 
 # --- R2-2 (the 0.13.0 delta audit's re-check): the dir #318 half — the WATCHED checkout — was skipped
 # silently whenever `git rev-parse --git-dir` failed, including for a checkout that IS a repo git merely

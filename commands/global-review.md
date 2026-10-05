@@ -44,6 +44,7 @@ into the backlog, land a committed rule where a fork resolved, stage workflow in
 (promote on recurrence), stage a raw idea in `IDEAS.md`, or record an explicit drop — never leave them
 chat-only.
 
-Also **prune** `LEARNINGS.md`: drop candidates that neither promoted nor recurred in ~5 sessions.
+Also run `/triage` ([`docs/triage.md`](../docs/triage.md)) on the KB tiers (`LEARNINGS.md`,
+`IDEAS.md`): it owns the promote-or-drop verdicts, including the stale-entry drop.
 
 Ask only at a real fork that can't be resolved from the conventions, the backlog, or sensible defaults.

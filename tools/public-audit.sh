@@ -91,6 +91,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_pa_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_pa_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/personal-literals.sh
+. "$_pa_dir/lib/personal-literals.sh"
 unset _pa_dir
 
 # --- gather config -------------------------------------------------------------------------------
@@ -128,18 +130,22 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
-if [ -f "$PERSONAL_FILE" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    line="$(printf '%s' "$line" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
-    case "$line" in ''|\#*) continue ;; esac
-    if valid_ere -iE "$line"; then
-      personal_re="${personal_re:+$personal_re|}$line"
-    else
-      bad_personal=$((bad_personal + 1))
-    fi
-  done < "$PERSONAL_FILE"
-fi
+# dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's (capture
+# rules in its header); only the per-line validation policy stays here. Its status is read at the GAP
+# site below (dir #680): 3 = a line ends in a backslash (withheld by the parser; the other literals are
+# still scanned), anything else non-zero = the file could not be read or parsed (coverage is ZERO).
+personal_rc=0
+personal_lines="$(personal_literals_parse "$PERSONAL_FILE")" || personal_rc=$?
+while IFS= read -r line; do
+  [ -n "$line" ] || continue   # an empty capture still yields one empty line
+  if valid_ere -iE "$line"; then
+    personal_re="${personal_re:+$personal_re|}$line"
+  else
+    bad_personal=$((bad_personal + 1))
+  fi
+done <<EOF_PERSONAL
+$personal_lines
+EOF_PERSONAL
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
@@ -305,6 +311,11 @@ fi
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
+case "$personal_rc" in
+  0) ;;
+  3) gap "one or more lines in $PERSONAL_FILE end in a backslash and were ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run" ;;
+  *) gap "$PERSONAL_FILE could not be read or parsed (unreadable, a symlink to nothing, or a line sed could not process) — personal-literal coverage is ZERO or INCOMPLETE, fix it and re-run" ;;
+esac
 [ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
 [ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 

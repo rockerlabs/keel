@@ -1736,6 +1736,18 @@ keel_hooks_is() {
   case "$p" in /*) ;; *) return 1 ;; esac
   [ -e "$p" ] && [ -e "$keel_hooks" ] && [ "$p" -ef "$keel_hooks" ]
 }
+# The machine-wide core.hooksPath as git EFFECTIVELY resolves it — dir #643. `git config --global` is a
+# scope selector that collapses to ONE file: it cannot see a hooksPath set in the XDG file behind an
+# existing ~/.gitconfig, in an [include], or at SYSTEM scope, yet any of those governs every commit. The
+# answer comes from the installer itself (`--where --global`, the one resolver tools/doctor.sh reads too),
+# as key=value lines: value, scope, origin, dir, keel-dir, pre-commit, pre-push. Empty when the installer
+# cannot answer (HOME unset, a stripped checkout) — callers then fall through to the installer's own
+# check, which refuses a foreign hooksPath rather than overwrite it.
+keel_where_machine() { "$root/tools/install-secret-guard.sh" --where --global 2>/dev/null || true; }
+# wm_get KEY — one value out of $wm (empty when the key is absent).
+wm_get() { printf '%s\n' "$wm" | sed -n "s/^$1=//p" | tail -1; }
+# Where a hooksPath came from, for a message: "" for the common case of no origin to name.
+wm_origin_note() { local o; o="$(wm_get origin)"; [ -z "$o" ] || printf ' (%s scope, %s)' "$(wm_get scope)" "$o"; }
 if [ "$DO_HOOKS" = 1 ]; then
   # Plain-language heads-up first: felt (first fresh-adopter install, 2026-07-11) — when an AI tool
   # drives this install, its permission dialog for the git config change reads as "a bug" to a novice
@@ -1746,7 +1758,8 @@ if [ "$DO_HOOKS" = 1 ]; then
   # Now an ASSERTION, not the derivation: wiring genuinely needs HOME, and a clear message here beats
   # a bare "unbound variable" (or, worse, a hooks dir silently rooted at "/.config/git/keel-hooks").
   : "${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}"
-  existing="$(git config --global core.hooksPath 2>/dev/null || true)"
+  wm="$(keel_where_machine)"
+  existing="$(wm_get value)"
   if [ -z "$existing" ] || keel_hooks_is "$existing"; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below
     # (which reports the hook state), not abort the whole bootstrap under `set -e`.
@@ -1754,8 +1767,11 @@ if [ "$DO_HOOKS" = 1 ]; then
       echo "  !    secret-guard wiring failed — the verify step below will flag it" >&2
     fi
   else
-    echo "  !    global core.hooksPath already set to '$existing' — not clobbering it."
-    echo "       To protect a repo, vendor instead: tools/install-secret-guard.sh <repo>"
+    echo "  !    global core.hooksPath already set to '$existing'$(wm_origin_note) — not clobbering it."
+    echo "       A copy vendored into a repo would be ignored while it stands. To guard every repo, replace it:"
+    echo "         tools/install-secret-guard.sh --global --force   (the old value is recorded; --uninstall restores it)"
+    echo "       To guard one repo, give it its own hooks dir:"
+    echo "         git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then   tools/install-secret-guard.sh <repo>"
   fi
 else
   echo "  =    secret-guard skipped (--no-hooks)"
@@ -1818,15 +1834,27 @@ fi
 # the installer refuses a foreign pre-push just the same. Paths below use $keel_hooks, not $hp — the
 # two name one dir (keel_hooks_is), but $hp may be spelled `~/…`, which a file test cannot open.
 guard_ok=0
-hp="$(git config --global core.hooksPath 2>/dev/null || true)"
+wm="$(keel_where_machine)"
+hp="$(wm_get value)"
 hp_is_keel=0
 keel_hooks_is "$hp" && hp_is_keel=1
-# 0 = the hook is absent, 1 = it is Keel's (exact marker line), 2 = it is present and not Keel's.
+# 0 = the hook is absent, 1 = it is Keel's (exact marker line), 2 = it is present and not Keel's. The
+# verdict is the installer's (dir #643): the resolver reports it per hook, so Verify, tools/doctor.sh and
+# the installer's own refusal all read ONE marker test — Verify used to carry its own copy of it.
 keel_hook_state() {
-  local want
-  [ -e "$keel_hooks/$1" ] || { echo 0; return; }
-  want="$(sed -n 2p "$root/tools/secret-guard/$1" 2>/dev/null || true)"
-  if [ -n "$want" ] && [ "$(sed -n 2p "$keel_hooks/$1" 2>/dev/null)" = "$want" ]; then echo 1; else echo 2; fi
+  case "$(wm_get "$1")" in
+    keel|keel-link) echo 1 ;;
+    absent|"") echo 0 ;;
+    *) echo 2 ;;
+  esac
+}
+# A symlinked Keel hook runs, so the guard is wired — but the installer refuses to write through a link,
+# so it can never update that hook. Say so rather than print a bare OK (the installer's refusal is policy
+# this block does not settle; it only keeps Verify and the installer from disagreeing in silence).
+keel_hook_link_note() {
+  case "$(wm_get pre-commit)$(wm_get pre-push)" in
+    *-link*) echo "       (a hook there is a symlink: install-secret-guard.sh refuses to write through it, so it will not be updated)" ;;
+  esac
 }
 pc_state=0 pp_state=0
 if [ "$hp_is_keel" = 1 ]; then pc_state="$(keel_hook_state pre-commit)"; pp_state="$(keel_hook_state pre-push)"; fi
@@ -1835,6 +1863,7 @@ if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit"
   # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
   if [ -x "$keel_hooks/secret-scan.sh" ] && "$keel_hooks/secret-scan.sh" --selftest >/dev/null 2>&1; then
     echo "  OK   secret-guard ($hp; selftest passed)"
+    keel_hook_link_note
     guard_ok=1
   else
     echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
@@ -1858,7 +1887,10 @@ elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   # belongs in the generic arm below, whose "run install-secret-guard.sh --global" is the
   # actually-correct advice for it (a foreign hook there has its own arm above).
   echo "  WARN secret-guard NOT wired — a foreign global core.hooksPath ('$hp') is set."
-  echo "       Vendor per-repo instead: tools/install-secret-guard.sh <repo>"
+  [ -z "$(wm_get origin)" ] || echo "       (set at $(wm_get scope) scope, in $(wm_get origin))"
+  echo "       A copy vendored into a repo would be ignored while it stands. Replace it machine-wide with"
+  echo "       tools/install-secret-guard.sh --global --force, or give one repo its own hooks dir:"
+  echo "       git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then   tools/install-secret-guard.sh <repo>"
 elif [ "$DO_HOOKS" = 0 ]; then
   echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
 else

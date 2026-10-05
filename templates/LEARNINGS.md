@@ -15,6 +15,7 @@ the chat transcript, but stays OUT of the always-loaded surfaces until it earns 
   on first sight; the recurrence gate is for the uncertain middle.
 - **Prune:** drop any candidate neither promoted nor recurred in ~5 sessions. An unpruned list is noise
   (P2/P3), worse than no list.
+- **Reviewed by `/triage`** — the one pass that owns promote-or-drop for this file.
 
 ## Candidates
 
