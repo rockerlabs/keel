@@ -157,7 +157,21 @@ out_dir="$(cd "$out_dir" && pwd)"
 # leaks its file if anything between the two fails under `set -e` (tools/drydock/inventory.sh
 # established this exact pattern for the same reason; this script had drifted from it).
 scratch="$(mktemp -d)"
-trap 'rm -rf "$scratch"' EXIT
+# dir #692 — a COMPLETION MARKER, not a bare `trap 'rm -rf "$scratch"' EXIT`: on bash 3.2 (macOS /bin/bash)
+# a top-level FATAL shell error (a `set -u` unbound variable, a `.` of a missing file) leaves `$?` at 0 by
+# the time an EXIT trap runs, so a bare trap turned that crash into exit 0 — and an empty universe exit 0
+# reads as "nothing changed". `ok` is set on this script's own last line only; an exit that reaches the
+# trap with status 0 and no marker is a crash and becomes 1. An explicit non-zero `exit N` keeps its own.
+# Same idiom, same reason as tools/drydock/inventory.sh (dir #264), tools/self/line-citations.sh,
+# tools/audit-packet/export.sh and import.sh.
+ok=""
+on_exit() {
+  st=$?
+  [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+  rm -rf "$scratch"
+  exit "$st"
+}
+trap on_exit EXIT
 
 # --- delta-files.txt ----------------------------------------------------------------------------
 git diff --name-only "$prev..$head_sha" | LC_ALL=C sort > "$out_dir/delta-files.txt"
@@ -390,4 +404,5 @@ pr_count="$(cut -f3 "$out_dir/file-pr-map.tsv" | tr ' ' '\n' | LC_ALL=C sort -u 
 # something to inspect, not just a bare stderr message. tests/test_delta_audit_derive.sh's own
 # closure-failure fixture asserts this on purpose.
 [ "$closure_ok" -eq 1 ] || exit 3
+ok=1   # genuine completion — the EXIT trap above reads it (dir #692)
 exit 0

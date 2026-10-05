@@ -87,6 +87,16 @@ sections real content going forward — see that page for exactly when each one 
   Keel hook instead of passing it in silence. A hooksPath in a dir the user owns still counts on an
   executable pre-commit alone. Pinned by `tests/test_guard_hooks_dir.sh` over the repo, worktree,
   submodule, local, global, SYSTEM, XDG and include shapes. dir #643.
+- **Five more scripts no longer exit 0 after a crash on macOS bash 3.2.** `tools/delta-audit/derive.sh` (the
+  delta audit's universe producer, where an empty universe reads as "nothing changed"),
+  `tools/vendor-review/agy.sh` (whose header says its exit code is the proof of success),
+  `tools/changelog-section.sh`, `tools/keel-impact.sh` and `bootstrap.sh` each cleaned up through a bare
+  `trap 'rm -rf …' EXIT`, which hid a top-level fatal error (a `set -u` unbound variable, sourcing a
+  missing file) behind exit 0. Each now uses the completion-marker shape the audit-packet and drydock
+  tools already carry: a marker set only on the legitimate exit-0 path, so such a crash exits non-zero.
+  A new `tests/test_exit_trap_marker.sh` injects a fatal error into a copy of each script right after its
+  trap is armed and asserts a non-zero exit (all five exited 0 before), plus that a real run still exits
+  0. alpine's bash 5 does not reproduce the masking, so the macOS leg is the binding one. dir #692.
 - **The test suite now gates two things it only trusted: the operator's environment, and its own leftovers in the real
   temp dir** (dir #663; the 0.13.0 delta audit's S2-1 and R2-1 classes, with its R3-5, R3-6, R2-6 and the
   round-3 vendor leg's CV-1 folded in; tests only, no shipped tool changed). **Environment:** `tests/lib.sh`

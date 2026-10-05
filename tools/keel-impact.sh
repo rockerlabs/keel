@@ -613,6 +613,20 @@ _impact_merge_ledger() {
 # `&&`/`||` list, via _impact_atomic_write — where `set -e` is exempt for the call, so the pipeline's
 # non-zero status does not abort the script; it just needs to actually be read, which `${PIPESTATUS[0]}`
 # never did.
+# dir #692 — the scratch-pair trap's handler, a named function and not the bare quoted `trap 'rm -f …' EXIT`
+# it replaces: on bash 3.2 a top-level FATAL shell error (a `set -u` unbound variable) leaves `$?` at 0 by
+# the time an EXIT trap runs, so the bare trap turned that crash into exit 0. Here the completion marker IS
+# the disarm: `_impact_merge_ledger_produce` runs `trap - EXIT` on its normal path, so this handler firing at
+# all means the function did not complete — a status 0 on entry is therefore a crash and becomes 1; a real
+# non-zero status (a signal's 143, an explicit exit) keeps its own. It reads the producer's `local`
+# header_tmp/rows_tmp by dynamic scope, exactly as the bare trap did. The dir #264 idiom
+# (tools/drydock/inventory.sh), its function-scoped form.
+_impact_merge_scratch_exit() {
+  local rc=$?
+  [ "$rc" -ne 0 ] || rc=1
+  rm -f "$header_tmp" "$rows_tmp"
+  exit "$rc"
+}
 _impact_merge_ledger_produce() {
   local target="$1" date_col="$2"; shift 2
   local header_tmp="" rows_tmp=""
@@ -638,7 +652,7 @@ _impact_merge_ledger_produce() {
   # to empty" — verify any change here on bash >= 4.0, not merely >= 4.4: a maintainer who reads the
   # wrong boundary and tests only on 4.0–4.3 would wrongly conclude they are outside the hazard zone.
   header_tmp="$(mktemp)"
-  trap 'rm -f "$header_tmp" "$rows_tmp"' EXIT
+  trap _impact_merge_scratch_exit EXIT
   rows_tmp="$(mktemp)"
   local header_status rows_status
   awk -F'|' -v date_col="$date_col" '
