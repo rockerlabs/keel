@@ -29,6 +29,30 @@ sections real content going forward — see that page for exactly when each one 
   `TMPDIR` inside the watched checkout still trips the canary (it now names the directory), a `tests/` in a
   subdirectory of an unreadable repo still skips without a word, and a dotted branch name still defeats the
   per-branch config exclusion.
+- **The personal-literals file has one parser, and the secret scanner no longer fails open on it.**
+  `tools/public-audit.sh` and the vendored `secret-scan.sh` each carried a hand-copied loop for the local
+  `secret-scan-personal` file. The parse now lives once in `tools/lib/personal-literals.sh`; the audit
+  sources it, and the scanner (which may source only what ships beside it) keeps a byte-identical inline
+  twin. A new section of `tests/test_secret_guard.sh` runs both on shared fixtures against a literal
+  expected output, asserts the two bodies are identical, and pushes each of the file's literals end to
+  end through both tools' joins, so a half-edited copy goes red. The parser's silent failures are now
+  loud. On macOS an existing-but-unreadable personal file used to scan `clean` with exit 0, and a symlink
+  whose target had gone (the default path is one) read as "no file"; a failing per-line `sed` (BSD `sed`
+  errors on an invalid byte under a UTF-8 locale) dropped its literal without a word. The scanner now
+  says so and exits 2, and the audit raises a GAP that coverage is zero. A UTF-8 BOM at the start of a
+  line used to ride into the literal and silently stop it matching; it is now stripped. A line ending in
+  a backslash used to join the next line into a pattern matching neither literal (`clean`, exit 0); the
+  scanner now exits 2 naming the problem, and the audit flags it and still scans the rest. The scanner's
+  literal join is linear again on bash 3.2. dir #148, dir #680. **Upgrade:** a copy of `secret-scan.sh`
+  vendored earlier keeps the old parser until it is re-vendored (`tools/install-secret-guard.sh <repo>`,
+  or `--global` for the machine-wide guard); `doctor.sh` warns about a stale copy.
+- **`secret-scan.sh` no longer exits 0 after a crash on macOS bash 3.2.** Its cleanup trap, a bare
+  `rm -rf` on EXIT, hid a top-level fatal error (sourcing a missing file, an unset variable under `set -u`)
+  behind exit 0: the commit hook let a key-shaped string through and `--selftest` reported success. `$?`
+  is already 0 when the trap runs for that kind of failure, so the trap now reads a completion marker set
+  only on the legitimate exit-0 paths, and such a crash exits 2 with a message. A test injects both
+  crashes into a copy of the scanner and asserts a non-zero exit; the same re-vendor note applies.
+  dir #682.
 - **The secret-guard installers and `doctor.sh` now agree on which hooks dir a repo's guard lives in, and
   stop advising a vendor that git would never read.** Three places answered that three ways: the installer
   (the repo's own git dir, or a local `core.hooksPath`), `doctor.sh` (`rev-parse --git-path hooks`) and
@@ -177,6 +201,10 @@ sections real content going forward — see that page for exactly when each one 
   array under one of the installer's event names, so an already-empty `SessionStart` (another tool's,
   or a hand edit's) went too: `{"hooks":{"PreToolUse":[<ours>],"SessionStart":[]}}` came back as
   `"hooks": {}`. Now an array goes only when this run took a hook out of it. dir #600.
+- **Release docs: the un-set worker model, and the install step.** `docs/delegation.md` now says an
+  unset worker tier is the launcher's own, verified by the running-tier evidence before session metadata,
+  with a hello-then-hold launch; `docs/release-management.md` R3 inherits it. R9 and `commands/manage-release.md`
+  M8 add an install-where-the-operator-uses-it step. dir #455, dir #596.
 
 ## [0.13.0] — 2026-10-03
 

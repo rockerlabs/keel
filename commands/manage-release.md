@@ -56,8 +56,9 @@ Run your project's release-candidate delta audit — keel's own is `/delta-audit
 cutting the tag; fall back to reading the release-readiness doc directly where the entrypoint doesn't
 exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses. Compose the release
 notes yourself from the `CHANGELOG.md` section at the verified GO SHA, before the tag exists; hand the
-operator every remaining action (merge, tag, publish) as one copy-paste-ready command block, re-derived
-live. Append the run's cost line (R7) to your project's releases cross-run record.
+operator every remaining action (merge, tag, publish, and install where the build has a daily-use
+location) as one copy-paste-ready command block, re-derived live. Append the run's cost line (R7) to your project's releases cross-run
+record.
 
 **M9 — one wrap, at the end (R13).**
 Workers never run their own wrap; each checkpoint report carries its wrap-relevant material

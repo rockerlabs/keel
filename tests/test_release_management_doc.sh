@@ -188,4 +188,24 @@ pin "delegation.md states a worker's refusal on unverifiable identity is correct
   'refusal to proceed on an unverifiable identity' \
   "expected the rule to protect the worker's stop condition rather than train it away"
 
+# --- dir #455 / dir #596: the un-set default's direction and the install step ------------------------
+pin "delegation.md states which way the un-set worker tier falls" "$delegation" \
+  'the silent direction is the expensive one' \
+  "expected the launch-time rule to name the default's direction (dir #455)"
+pin "delegation.md orders the verify sources, running tier before metadata" "$delegation" \
+  'session metadata last (it reports what is configured)' \
+  "expected the verify-source order to put metadata last (dir #455)"
+pin "delegation.md states the hello-then-hold launch" "$delegation" \
+  'the launch holds' \
+  "expected the hello-then-wait-for-go hold (dir #455)"
+pin "R3 points at the default direction and the hold" "$doc" \
+  'which way the un-set default falls' \
+  "expected R3 to inherit the dir #455 clause by pointer"
+pin "R9 owes an install block where the build has a daily-use location" "$doc" \
+  'installs the build from' \
+  "expected R9 to carry the dir #596 install step"
+pin "M8 lists install next to merge, tag, publish" "$cmd" \
+  'merge, tag, publish, and install' \
+  "expected M8's hand-over sentence to name install (dir #596)"
+
 summary
