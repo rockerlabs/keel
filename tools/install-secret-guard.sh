@@ -11,6 +11,11 @@
 #   install-secret-guard.sh --global --uninstall
 #                                            unwire the global guard: restore the hooksPath --force
 #                                            displaced, or unset it (the hook files stay on disk)
+#   install-secret-guard.sh --where <repo>   read-only: print where a <repo> install writes (own), where git
+#                                            reads this repo's hooks (effective), and the core.hooksPath
+#                                            scope that decides it — the ONE resolver tools/doctor.sh and
+#                                            install.sh read (dir #643)
+#   install-secret-guard.sh --where --global read-only: the machine-wide core.hooksPath as git resolves it
 #
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
 # isn't Keel's own is treated as higher-precedence user data — the install refuses and says how to
@@ -52,16 +57,20 @@ isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources 
 # restore. A global git config key, not a file in the hooks dir: it sits beside the setting it backs
 # up, survives the hooks dir being deleted, and `git config --global --list` shows it.
 isg_displaced_key="keel.displacedHooksPath"
+# Keel's machine-wide hooks dir, relative to $HOME — what --global writes and --where recognises.
+isg_keel_hooks_rel=".config/git/keel-hooks"
 
 # --force and --uninstall may sit anywhere on the line; strip them, keep the single subcommand/positional
 # (busybox/bash-3.2 safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
 force=0
 uninstall=0
+where=0
 rest=""
 for a in "$@"; do
   case "$a" in
     --force) force=1 ;;
     --uninstall) uninstall=1 ;;
+    --where) where=1 ;;
     *) if [ -n "$rest" ]; then
          echo "install-secret-guard.sh: unexpected extra argument '$a' — one repo path (or --global) per run" >&2
          exit 2
@@ -70,6 +79,11 @@ for a in "$@"; do
   esac
 done
 set -- ${rest:+"$rest"}
+# --where is a read-only question; it never combines with the flags that write.
+if [ "$where" = 1 ] && { [ "$force" = 1 ] || [ "$uninstall" = 1 ]; }; then
+  echo "install-secret-guard.sh: --where only reads — it doesn't combine with --force or --uninstall" >&2
+  exit 2
+fi
 # --uninstall only unwires the GLOBAL guard and never overwrites anything, so --force has nothing to do
 # there — reject the pair rather than ignore one flag, as the sibling installers do.
 if [ "$uninstall" = 1 ]; then
@@ -344,10 +358,178 @@ _isg_same_dir() {
   [ -e "$a" ] && [ -e "$b" ] && [ "$a" -ef "$b" ]
 }
 
+# --- dir #643: ONE resolver for "which hooks dir, and does git read it" --------------------------------
+# Three places used to answer that question three ways: this installer (--git-common-dir / a LOCAL
+# hooksPath), tools/doctor.sh (`--git-path hooks`, which honours a hooksPath from ANY scope) and
+# install.sh (`git config --global`, a scope selector that collapses to ONE file). They disagreed
+# wherever a hooksPath arrived from somewhere the installer does not write: a copy vendored into the
+# repo's own dir was reported — and advised — as wiring while git read a different dir, and a hooksPath
+# in the XDG file behind an existing ~/.gitconfig, in an [include], or at SYSTEM scope was invisible to
+# the `--global` read, so the installer overwrote it or reported "nothing to unwire". This script is
+# the producer, so it is the definition; `--where` prints it for the two consumers (this file ships
+# standalone and cannot source a lib, so a lib could never be shared with it).
+#
+# `--where <repo>` prints key=value lines (a key is omitted when it has no value):
+#   own=        absolute dir a `<repo>` install writes (the LOCAL hooksPath, else the common dir's hooks)
+#   effective=  absolute dir git actually reads this repo's hooks from (any scope: `--git-path hooks`)
+#   scope=      none | local | worktree | global | system | command | unknown  — where core.hooksPath is set
+#   value=      the raw setting          origin=  the config file it was read from
+#   keel-dir=1  effective is Keel's machine-wide hooks dir
+#   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | foreign, `-link` suffixed
+#               when it is a symlink — "keel" means the exact marker line, the same test an install uses
+# `--where --global` prints the machine-wide view (value/scope/origin/dir/keel-dir/pre-commit/pre-push).
+# When own and effective differ, a copy written to own is inert: git never reads it.
+
+# One read of core.hooksPath as git sees it from directory $1: sets m_scope m_origin m_value (all empty
+# when unset). `--show-scope` needs git 2.26; an older git still yields the value, scope "unknown".
+_isg_cfg_read() {
+  local out rest
+  m_scope="" m_origin="" m_value=""
+  if out="$(git -C "$1" config --show-scope --show-origin --get core.hooksPath 2>/dev/null)" && [ -n "$out" ]; then
+    m_scope="${out%%$'\t'*}"; rest="${out#*$'\t'}"
+    m_origin="${rest%%$'\t'*}"; m_value="${rest#*$'\t'}"
+    m_origin="${m_origin#file:}"
+  elif out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" && [ -n "$out" ]; then
+    m_scope="unknown"; m_value="$out"
+  fi
+  [ -n "$m_value" ] || { m_scope=""; m_origin=""; }
+  return 0
+}
+
+# The machine-wide hooksPath as git EFFECTIVELY resolves it — read from a fresh non-repo scratch dir so
+# nothing at LOCAL scope can leak in, and with no --global restriction so the XDG file behind an
+# existing ~/.gitconfig, an [include] and SYSTEM scope all count. If the scratch dir turns out to sit
+# inside a repo (an odd TMPDIR) it falls back to the narrower `git config --global` read rather than
+# risk reading that repo's local scope.
+_isg_machine_read() {
+  local probe
+  probe="$(mktemp -d 2>/dev/null)" || probe=""
+  if [ -n "$probe" ] && ! git -C "$probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    _isg_cfg_read "$probe"
+  else
+    m_scope="" m_origin="" m_value="$(git config --global core.hooksPath 2>/dev/null || true)"
+    [ -z "$m_value" ] || m_scope="global"
+  fi
+  [ -z "$probe" ] || rmdir "$probe" 2>/dev/null || true
+}
+
+# Where a `<repo>` install writes — the single definition both the install and `--where` use. A LOCAL
+# hooksPath wins (absolute, or relative to the repo; a leading ~/ is git's to expand). Otherwise the
+# repo's OWN git dir: --git-common-dir names it, worktree/submodule-safe, and never consults
+# core.hooksPath at any scope (dir #617: `--git-path hooks` also honours GLOBAL/SYSTEM, so a repo with
+# no LOCAL override could resolve straight into a machine-wide dir). Considered instead: keep
+# --git-path hooks and refuse when its result lies outside $repo — rejected because a submodule's real
+# hooks dir legitimately lives under the SUPERPROJECT's .git/modules/, outside $repo's own tree.
+# Prints the dir; returns 1 (after saying why) when it cannot name one.
+_isg_repo_own_dir() {
+  local repo="$1" hp common_dir hooks
+  if hp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" && [ -n "$hp" ]; then
+    # hooksPath may be absolute — joining it under $repo would vendor into a junk dir while the real
+    # hooks dir stays empty (guard silently inactive).
+    hp="$(_isg_norm_path "$hp")"
+    case "$hp" in /*) printf '%s' "$hp" ;; *) printf '%s' "$repo/$hp" ;; esac
+    return 0
+  fi
+  common_dir="$(git -C "$repo" rev-parse --git-common-dir)" || return 1
+  # An exit-0-yet-empty result would otherwise concatenate straight into the literal "/hooks" below,
+  # which the very next case reads as already-absolute — vendoring at the filesystem ROOT instead of
+  # merely failing loud (code review finding, dir #617). Never observed live, but "never outside $repo"
+  # is the one property that ticket exists to hold.
+  [ -n "$common_dir" ] || {
+    echo "install-secret-guard.sh: git -C $repo rev-parse --git-common-dir returned nothing — refusing to guess a hooks dir" >&2
+    return 1
+  }
+  hooks="$common_dir/hooks"
+  case "$hooks" in /*) ;; *) hooks="$repo/$hooks" ;; esac
+  printf '%s' "$hooks"
+}
+
+# The dir git reads this repo's hooks from, at ANY scope, absolute — what `--where` calls `effective`.
+# Returns 1 when git names none.
+_isg_repo_effective_dir() {
+  local eff
+  eff="$(git -C "$1" rev-parse --git-path hooks 2>/dev/null)" && [ -n "$eff" ] || return 1
+  eff="$(_isg_norm_path "$eff")"
+  case "$eff" in /*) printf '%s' "$eff" ;; *) printf '%s' "$1/$eff" ;; esac
+}
+
+# absent | keel | foreign, `-link` appended when $2 in dir $1 is a symlink. Same marker test as an
+# install (_isg_is_keel_hook), so no consumer carries its own, looser one.
+_isg_hook_state() {
+  local t="$1/$2" s
+  if [ ! -e "$t" ] && [ ! -L "$t" ]; then echo absent; return 0; fi
+  if [ -e "$t" ] && _isg_is_keel_hook "$t"; then s=keel; else s=foreign; fi
+  [ -L "$t" ] && s="$s-link"
+  echo "$s"
+}
+
+# The state lines shared by both --where forms, for hooks dir $1.
+_isg_where_states() {
+  local d="$1" keel_dir=""
+  [ -z "${HOME:-}" ] || keel_dir="$HOME/$isg_keel_hooks_rel"
+  [ -z "$keel_dir" ] || ! _isg_same_dir "$d" "$keel_dir" || echo "keel-dir=1"
+  echo "pre-commit=$(_isg_hook_state "$d" pre-commit)"
+  echo "pre-push=$(_isg_hook_state "$d" pre-push)"
+}
+
+_isg_where_repo() {
+  local repo="$1" own eff
+  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  # `own` and `effective` are documented as absolute: a relative $repo (doctor's default is ".") would
+  # otherwise print "./.git/hooks", which means something else to a consumer standing elsewhere.
+  repo="$(cd "$repo" && pwd)" || exit 2
+  own="$(_isg_repo_own_dir "$repo")" || exit 2
+  eff="$(_isg_repo_effective_dir "$repo")" \
+    || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-path hooks returned nothing" >&2; exit 2; }
+  _isg_cfg_read "$repo"
+  echo "own=$own"
+  echo "effective=$eff"
+  echo "scope=${m_scope:-none}"
+  [ -z "$m_value" ] || echo "value=$m_value"
+  [ -z "$m_origin" ] || echo "origin=$m_origin"
+  _isg_where_states "$eff"
+}
+
+_isg_where_machine() {
+  local d
+  [ -n "${HOME:-}" ] || { echo "scope=none"; return 0; }
+  _isg_machine_read
+  echo "scope=${m_scope:-none}"
+  [ -z "$m_value" ] || echo "value=$m_value"
+  [ -z "$m_origin" ] || echo "origin=$m_origin"
+  d="$(_isg_norm_path "$m_value")"
+  case "$d" in /*) echo "dir=$d"; _isg_where_states "$d" ;; esac
+}
+
+# The advice a vendored copy needs when git does not read it (own != effective), one definition for the
+# install's own note. tools/doctor.sh words the same two remedies for its finding; tests pin both.
+_isg_inert_note() {  # repo own effective scope
+  echo "secret-guard: NOTE — this copy is inert: core.hooksPath ($4 scope) sends git to $3 for this repo, not $2."
+  echo "  Either replace the machine-wide setting (install-secret-guard.sh --global --force; the old value is"
+  echo "  recorded and --uninstall restores it), or give this repo its own hooks dir:"
+  echo "    git -C $1 config --local core.hooksPath $2   then re-run install-secret-guard.sh $1"
+}
+
+if [ "$where" = 1 ]; then
+  case "${1:-}" in
+    --global) _isg_where_machine ;;
+    ""|-h|--help) echo "usage: install-secret-guard.sh --where <repo-path> | --where --global" >&2; exit 2 ;;
+    *) _isg_where_repo "$1" ;;
+  esac
+  exit 0
+fi
+
 case "${1:-}" in
   --global)
-    dir="${HOME:?install-secret-guard: --global needs HOME set}/.config/git/keel-hooks"
-    existing="$(git config --global core.hooksPath 2>/dev/null || true)"
+    dir="${HOME:?install-secret-guard: --global needs HOME set}/$isg_keel_hooks_rel"
+    # dir #643 (DT3): two reads, on purpose. existing_global is the file `git config --global` edits — what
+    # --uninstall can unset and --force can replace. $existing is what git EFFECTIVELY resolves: it also
+    # sees the XDG file behind an existing ~/.gitconfig, an [include], and SYSTEM scope, any of which
+    # governs every commit while `--global` reports "unset" (so this used to overwrite it, or say
+    # "nothing to unwire"). m_scope/m_origin name where $existing came from.
+    existing_global="$(git config --global core.hooksPath 2>/dev/null || true)"
+    _isg_machine_read
+    existing="$m_value"
     recorded="$(git config --global "$isg_displaced_key" 2>/dev/null || true)"
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
@@ -358,10 +540,23 @@ case "${1:-}" in
     fi
     is_ours=0
     [ -n "$existing" ] && _isg_same_dir "$existing" "$dir" && is_ours=1
+    own_global=0
+    [ -n "$existing_global" ] && _isg_same_dir "$existing_global" "$dir" && own_global=1
+    # Where $existing was set, for a message: nothing for the file `--global` edits (the common case).
+    src_note=""
+    [ -z "$m_origin" ] || src_note=" ($m_scope scope, $m_origin)"
     if [ "$uninstall" = 1 ]; then
       # Unwire only what is Keel's: a hooksPath pointing anywhere else is the user's, left alone. The
       # hook files stay in $dir — inert once nothing points at them; deleting them is the user's call.
-      if [ -z "$existing" ]; then
+      if [ "$own_global" != 1 ] && [ "$is_ours" = 1 ]; then
+        # Keel's dir, but set where `git config --global` cannot unset it (the XDG file, an include,
+        # SYSTEM): unsetting would be a silent no-op reported as success.
+        echo "secret-guard: the global core.hooksPath names Keel's dir ($dir), but it is set in $m_origin —" >&2
+        echo "  not in the file \`git config --global\` edits, so --uninstall cannot unset it. Remove that line" >&2
+        echo "  there yourself. Nothing was changed." >&2
+        exit 3
+      fi
+      if [ "$own_global" != 1 ] && [ -z "$existing" ]; then
         echo "secret-guard: no global core.hooksPath is set — nothing to unwire."
         # A record with nothing wired describes a wiring that is already gone (hooksPath unset by
         # hand after a --force): name it, so the user can set it back, and drop it, so no later run
@@ -373,8 +568,8 @@ case "${1:-}" in
         fi
         exit 0
       fi
-      if [ "$is_ours" != 1 ]; then
-        echo "secret-guard: the global core.hooksPath is '$existing', not Keel's ($dir) — not touching it." >&2
+      if [ "$own_global" != 1 ]; then
+        echo "secret-guard: the global core.hooksPath is '$existing'$src_note, not Keel's ($dir) — not touching it." >&2
         [ -n "$recorded" ] && echo "  ($isg_displaced_key still records '$recorded'.)" >&2
         echo "  Nothing was changed." >&2
         exit 3
@@ -417,8 +612,10 @@ case "${1:-}" in
     if [ -n "$existing" ] && [ "$is_ours" != 1 ]; then
       displaced="$existing"
       if [ "$force" != 1 ]; then
-        echo "secret-guard: a global core.hooksPath is already set to '$existing' — not clobbering it." >&2
-        echo "  Re-run with --force to replace it, or vendor per-repo: install-secret-guard.sh <repo>." >&2
+        echo "secret-guard: a global core.hooksPath is already set to '$existing'$src_note — not clobbering it." >&2
+        echo "  A copy vendored into a repo would be ignored while it stands. Re-run with --force to replace it" >&2
+        echo "  (the old value is recorded; --uninstall restores it), or give one repo its own hooks dir:" >&2
+        echo "    git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then install-secret-guard.sh <repo>" >&2
         echo "  Nothing was changed." >&2
         exit 3
       fi
@@ -444,6 +641,17 @@ case "${1:-}" in
     fi
     # Already Keel's, however spelled: leave the user's own spelling of it alone.
     [ "$is_ours" = 1 ] || git config --global core.hooksPath "$dir"
+    # Wired is not the same as engaged: a setting git reads AFTER the global file's own key (an [include]
+    # placed below it) still wins, and the guard would sit there inert behind a success message.
+    if [ "$is_ours" != 1 ]; then
+      _isg_machine_read
+      if [ -z "$m_value" ] || ! _isg_same_dir "$m_value" "$dir"; then
+        echo "secret-guard: set the global core.hooksPath to $dir, but git still resolves it to '$m_value' ($m_scope scope, $m_origin)" >&2
+        echo "  — that setting wins, so the guard is NOT active. Remove or edit that line, then re-run. The old value" >&2
+        echo "  (if --force displaced one) stays recorded in git config --global $isg_displaced_key." >&2
+        exit 3
+      fi
+    fi
     if [ -n "$displaced" ]; then
       echo "secret-guard: replaced the global core.hooksPath '$displaced' (--force); the old value is"
       echo "  recorded in git config --global $isg_displaced_key — install-secret-guard.sh --global --uninstall restores it"
@@ -464,6 +672,8 @@ Usage:
                                          hooksPath (records the old value in keel.displacedHooksPath)
   install-secret-guard.sh --global --uninstall
                                          unwire the global guard: restore the displaced hooksPath, or unset it
+  install-secret-guard.sh --where <repo-path> | --where --global
+                                         read-only: which hooks dir an install writes, which one git reads
   install-secret-guard.sh -h | --help
 EOF
     exit 0 ;;
@@ -475,32 +685,14 @@ EOF
     # this validity gate, and every git -C "$repo" call below it, is trustworthy because of that, not
     # because of anything done here.
     git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
-    if hp="$(git -C "$repo" config --local core.hooksPath 2>/dev/null)" && [ -n "$hp" ]; then
-      # hooksPath may be absolute — joining it under $repo would vendor into a junk dir while the
-      # real hooks dir stays empty (guard silently inactive). Mirror doctor.sh's handling.
-      case "$hp" in /*) hpd="$hp" ;; *) hpd="$repo/$hp" ;; esac
-      install_into "$hpd"
-    else
-      # The real hooks dir — NOT $repo/.git/hooks: in a worktree/submodule .git is a file and hooks
-      # live in the common dir. dir #617: `--git-path hooks` (the old resolution here) also honors
-      # GLOBAL/SYSTEM core.hooksPath, so a repo with no LOCAL override could resolve straight into a
-      # machine-wide hooks dir instead of its own. --git-common-dir names the repo's own git
-      # directory and never consults core.hooksPath at any scope — still worktree/submodule-safe like
-      # the old call, just without the global-hooksPath leak. Considered instead: keep --git-path
-      # hooks and refuse when its result lies outside $repo — rejected because a submodule's real
-      # hooks dir legitimately lives under the SUPERPROJECT's .git/modules/, outside $repo's own
-      # tree, so an "under $repo" containment check would misfire there. (Full incident history:
-      # CHANGELOG.md and tests/test_secret_guard.sh's dir #617(a) block.)
-      common_dir="$(git -C "$repo" rev-parse --git-common-dir)"
-      # An exit-0-yet-empty result would otherwise concatenate straight into the literal "/hooks"
-      # below, which the very next case guard reads as already-absolute — vendoring at the
-      # filesystem ROOT instead of merely failing loud (code review finding, dir #617: the old
-      # call's own empty-output case degraded no worse than "$repo/", still contained). Never
-      # observed live, but "never outside $repo" is the one property this ticket exists to hold.
-      [ -n "$common_dir" ] || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-common-dir returned nothing — refusing to guess a hooks dir" >&2; exit 2; }
-      hooks="$common_dir/hooks"
-      case "$hooks" in /*) ;; *) hooks="$repo/$hooks" ;; esac
-      install_into "$hooks"
+    # dir #643: the target comes from the one resolver (_isg_repo_own_dir) that `--where` prints too.
+    hooks="$(_isg_repo_own_dir "$repo")" || exit 2
+    install_into "$hooks"
+    # A copy git does not read protects nothing: say so now, with the two ways out, rather than leave a
+    # quiet success behind a guard that is not engaged.
+    if eff="$(_isg_repo_effective_dir "$repo")" && ! _isg_same_dir "$eff" "$hooks"; then
+      _isg_cfg_read "$repo"
+      _isg_inert_note "$repo" "$hooks" "$eff" "${m_scope:-unknown}"
     fi
     seed="$repo/.secret-scan-allow"
     # Seed only when nothing is there at all: `-L` too, so a dangling link (for which `-e` is false) is
