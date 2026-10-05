@@ -77,6 +77,20 @@ sections real content going forward — see that page for exactly when each one 
   only on the legitimate exit-0 paths, and such a crash exits 2 with a message. A test injects both
   crashes into a copy of the scanner and asserts a non-zero exit; the same re-vendor note applies.
   dir #682.
+- **`secret-scan.sh` no longer reports `clean` over a staged file it could not read.** The `--staged` diff
+  parser ran under the caller's locale, and under a UTF-8 one macOS awk aborts on a single invalid byte (a
+  stray Latin-1 or CP1251 character in a text file); a trailing `|| true` swallowed the abort, so the commit
+  hook scanned nothing and exited 0 over a file that held a key. The parse now runs byte-wise (`LC_ALL=C`),
+  and a failure in any step of it exits 2 naming the file instead of being swallowed. The same stray byte
+  also hid a key on Linux, one stage later: under a UTF-8 locale bash 5 `read` returns 1 for a final line
+  that ends in an invalid byte, so the loops that collect matches dropped that very record; they now keep
+  it. Separately, the diff the scanner reads was the user's `git diff`, so a configured `diff.external`
+  program or `textconv` filter could replace the staged bytes and hide a key; it now passes `--no-ext-diff
+  --no-textconv`. Fixtures stage an invalid byte beside a key under a real UTF-8 locale, shim each parse
+  step to fail, and set each of the two git drivers. dir #693, dir #697. **Upgrade:** a copy of
+  `secret-scan.sh` vendored earlier keeps the old parser until it is re-vendored
+  (`tools/install-secret-guard.sh <repo>`, or `--global` for the machine-wide guard); `doctor.sh` warns
+  about a stale copy.
 - **The secret-guard installers and `doctor.sh` now agree on which hooks dir a repo's guard lives in, and
   stop advising a vendor that git would never read.** Three places answered that three ways: the installer
   (the repo's own git dir, or a local `core.hooksPath`), `doctor.sh` (`rev-parse --git-path hooks`) and
