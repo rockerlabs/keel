@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/wrap` step 4 now obliges acting on an over-budget startup footprint.** It used to say only to look at the
+  numbers, so a project over the token budget was reported at every wrap and stayed over it. When the project's own
+  doctor reports it over budget and no live exception covers it, the wrap now either trims `CLAUDE.md`/`MEMORY.md`
+  or writes a dated exception row (`| Expires (YYYY-MM-DD) | Ticket/note |` under a `## Footprint exceptions`
+  section of the project's `CLAUDE.md`) before finishing. An expired row stops covering, and the step never reaches
+  beyond its own project. The doctor does not read the row yet. Pinned, with mutation proofs, by
+  `tests/test_wrap_footprint_rule.sh`. The command grew past the quoted size ceiling, so
+  `docs/loading-and-cost.md`'s row now reads `~250–3,000+`. dir #628.
 - **The delegation rails block gains two lines: one test device per concurrent session, and every leg git
   call through `git -C`.** Parallel legs that shared one booted simulator overwrote each other's installed
   test host, and a verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout in the
