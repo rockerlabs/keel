@@ -57,7 +57,8 @@ left, which makes it the leftover-catcher, not the primary path.
 loose-end that surfaced but isn't persisted — **including incident signals**: a `git push --force`, a
 `git revert` / `reset --hard`, a history rewrite, or a command that failed and was redone differently are
 mechanical traces of a lesson — each becomes a backlog ticket, a promoted rule, a
-`LEARNINGS.md` candidate (bump its `[n×]`; promote on the 2nd hit), an `IDEAS.md` entry, or an explicit
+`LEARNINGS.md` candidate (bump its `[n×]`; at the 2nd hit promote in-session when it is a `PROMOTE-RULE`
+([`docs/triage.md`](../docs/triage.md) T2), else leave it at `[2×]` — `/triage` owns the promote-due set), an `IDEAS.md` entry, or an explicit
 recorded drop. Never end
 with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
 prominently rather than closing silently. **A `/code-review` report relayed after the PR already
@@ -72,7 +73,16 @@ file, don't spawn duplicates; the index carries a one-line hook, not a copy of t
 
 **4. Footprint & drift-guard** — estimate `CLAUDE.md` size (or run your checkout's
 `tools/doctor.sh <project>`); if it outgrew ~8–10K tokens, propose moving the on-demand tier out (the
-**demote** signal). Mirror half — the
+**demote** signal). **Act on it, don't just report it (dir #628):** when the project's own doctor
+(`tools/doctor.sh <project>`, H-FOOTPRINT) reports it over the startup-token budget and
+no live exception covers it, either trim its `CLAUDE.md`/`MEMORY.md` in this wrap, or
+write a DATED exception row before finishing — an alarm nobody is obliged to act on stays over budget
+forever. The exception is a row in a `## Footprint exceptions` section of the project's `CLAUDE.md`:
+`| Expires (YYYY-MM-DD) | Ticket/note |` — an expiry date and the ticket or decision that owns the
+overage, so "not now" stays visible. An expired row is not live: the next wrap trims or re-decides.
+The doctor still prints its hint while a live row exists; the wrap reads the row, the doctor does not.
+This step acts on its own project only — never a fleet-wide sweep from inside one project's wrap.
+Mirror half — the
 **promote** signal: did the session hit a *retrieval miss* (had to hunt for a fact that should have been
 always-loaded, or drowned in noise)? If so, lift that fact into the right tier. When placing always-loaded
 content, prefer cache-stability over raw minimality (P3): keep churning/mutable content behind an on-demand
