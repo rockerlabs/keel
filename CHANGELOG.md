@@ -15,6 +15,25 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The test suite now gates two things it only trusted: the operator's environment, and its own leftovers in the real
+  temp dir** (dir #663; the 0.13.0 delta audit's S2-1 and R2-1 classes, with its R3-5, R3-6, R2-6 and the
+  round-3 vendor leg's CV-1 folded in; tests only, no shipped tool changed). **Environment:** `tests/lib.sh`
+  now unsets the 27 further `KEEL_*` variables that shipped scripts read from the caller's environment, and
+  `tests/test_env_census.sh` derives that set from the scripts themselves and proves, in a child that sources
+  `lib.sh` with each one exported poisoned, that none survives; a variable added to a tool and forgotten there
+  turns it red, and dropping one name from `lib.sh` makes it report exactly that name. **Residue:**
+  `tests/run.sh` puts a recording `mktemp` shim ahead on `PATH` and, after the last test file, fails the run
+  if any path `mktemp` minted still exists. A before-and-after listing of the real temp dir cannot be used for
+  this, because a concurrent suite's live sandboxes sit in it too; a path this run minted is its own. It sees
+  what the grep census cannot (a cleared `EXIT` trap, a scratch file a tool keeps on purpose, a grandchild's
+  call) and refuses to run, naming why, if it cannot arm itself.
+  `tests/test_residue_gate.sh` drives it per mechanism, with mutation proofs, and `tests/test_run_sh.sh` now
+  pins the two clauses of `run.sh`'s log-directory guard that no test reached (a mint that returns `/`, and
+  one that returns a non-directory). `tests/test_no_bare_mktemp.sh` is rebuilt on a small shell lexer: it reads quotes,
+  substitutions, comments and here-documents across lines, so it now catches the backtick, `command mktemp`,
+  absolute-path and bare-line shapes and no longer flags `"$SANDBOX"/name` or a fixture's own text; its
+  allow-list is keyed by file, line and count, an entry that matches fewer lines than it claims is reported
+  stale, and it fails on zero files instead of passing.
 - **`/wrap` step 4 now obliges acting on an over-budget startup footprint.** It used to say only to look at the
   numbers, so a project over the token budget was reported at every wrap and stayed over it. When the project's own
   doctor reports it over budget and no live exception covers it, the wrap now either trims `CLAUDE.md`/`MEMORY.md`
