@@ -270,7 +270,15 @@ emit_blob() {  # $1 = record label (path)
            } | LC_ALL=C sort -u )"
   rm -f "$tmp" "$dec"
   [ -z "$hits" ] && return 0
-  while IFS= read -r hit; do
+  # dir #693 — every `read` loop below that consumes scan results carries `|| [ -n "$var" ]`: under a UTF-8
+  # locale bash 5.x `read -r` returns 1 for a FINAL line whose last byte is an invalid multibyte lead byte
+  # (the newline is swallowed into the incomplete sequence), though it did fill the variable — so a bare
+  # `while read` dropped exactly the record carrying the key and the scan ended `clean` (found by CI's
+  # ubuntu leg: bash 5.2 + a key line ending in a stray 0xE9). The tail test keeps that last record (the
+  # variable then ends in the swallowed newline, harmless for a content line — records are newline-split and
+  # blank lines skipped). The file-NAME loops are deliberately left bare: there the stray newline would reach
+  # git as part of a pathspec, so a tail alone would not rescue them.
+  while IFS= read -r hit || [ -n "$hit" ]; do
     [ -n "$hit" ] && records+="$label:(binary) $hit"$'\n'
   done <<< "$hits"
 }
@@ -285,7 +293,7 @@ emit_stream() {  # $1 = record label (path)
   if is_binary_file "$stmp"; then
     emit_blob "$label" < "$stmp"
   else
-    while IFS= read -r line; do
+    while IFS= read -r line || [ -n "$line" ]; do   # dir #693: see emit_blob's loop
       records+="$label:$line"$'\n'
     done < <(match_text -n "$stmp")
   fi
@@ -394,8 +402,12 @@ emit_diff() {
   # (2) a failed leg (git diff, awk or sed — `pipefail` folds all three into one status) is no longer
   # swallowed: it exits 2 (this file's "cannot scan" status) naming the path. This runs in the main shell
   # (a `done < <(...)` loop body, not a `$(...)`), so the `exit` reaches the EXIT trap, which keeps it.
+  # dir #697 — `--no-ext-diff --no-textconv`: `git diff` otherwise runs the USER'S configured drivers. A
+  # `diff.external` program replaces the patch with its own output (no `@@` header, so awk emits nothing)
+  # and a `textconv` filter replaces the file's content with the converter's output — either one hid a
+  # staged key (`clean`, exit 0). The scanner reads the staged bytes, whatever the git config says.
   local diff_rc=0
-  git --literal-pathspecs diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null | LC_ALL=C awk '
+  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>/dev/null | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
   ' | LC_ALL=C sed 's/^+//' > "$dtmp" || diff_rc=$?
@@ -403,7 +415,7 @@ emit_diff() {
     echo "secret-scan: could not parse the staged diff of '$path' (exit $diff_rc) — refusing to report it clean" >&2
     exit 2
   fi
-  while IFS= read -r hit; do
+  while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
     records+="$path:$hit"$'\n'
   done < <(match_text '' "$dtmp")
   rm -f "$dtmp"
@@ -640,7 +652,7 @@ case "$mode" in
       esac
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
-      while IFS=' ' read -r _otype osha opath; do
+      while IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693: see emit_blob's loop
         [ -n "$osha" ] || continue
         emit_stream "$opath" < <(git cat-file blob "$osha" 2>/dev/null)
       done <<< "$blobs"
@@ -661,7 +673,7 @@ case "$mode" in
         [ -n "$csha" ] || continue
         ctmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
         git log -1 --format=%B "$csha" > "$ctmp" 2>/dev/null || true
-        while IFS= read -r hit; do
+        while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
           [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
         done < <({ match_text '' "$ctmp"
                    grep -aE "$SESSION_META" "$ctmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
@@ -688,7 +700,7 @@ case "$mode" in
           [ -n "$tsha" ] || continue
           tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
           tag_body "$tsha" > "$tagtmp"
-          while IFS= read -r hit; do
+          while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
             [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
           done < <({ match_text '' "$tagtmp"
                      grep -aE "$SESSION_META" "$tagtmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
