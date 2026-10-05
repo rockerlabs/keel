@@ -152,7 +152,10 @@ conventions that happen to look similar, it's one convention applied at two poin
    session never reads this doc. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
    the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
    convention cannot see a rule that never made it into the brief (see R13's own text for the exact
-   line and the incident that named this requirement).
+   line and the incident that named this requirement). **A brief whose workers run simulator- or
+   device-backed tests also carries the "one test device per concurrent session" rule**, by pointer to
+   [`docs/delegation.md`](delegation.md)'s rails block — concurrent workers on one booted simulator
+   overwrite each other's installed test host (dir #608).
 5. **Handed to you.** The line below which every judgment is the worker's own — wave sizing, whether a
    lead is real, anything genuinely open. Everything *above* that line is decided; everything *below*
    it is not, and the line itself is what keeps R4's two-way critique from reading as ambiguity about

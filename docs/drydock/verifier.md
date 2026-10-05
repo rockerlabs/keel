@@ -46,6 +46,15 @@ rule, same felt incident: [`docs/drydock.md`](../drydock.md)'s phase 1 rail 5.
   finding overwrote real machine-global git hooks and broke `git push` machine-wide until they were
   restored; a worker's denied command, retyped shorter, lost its HOME= prefix and rewrote the real git
   identity.)
+- One test device per concurrent session: a simulator or emulator you run tests on is yours alone —
+  boot your own (on iOS, `xcrun simctl list devices available` then `xcrun simctl boot <UDID>`), pass its
+  identifier to the test runner, and shut it down in your report; never use one another session has
+  booted (`simctl clone` refuses a booted source). (Parallel legs sharing one booted simulator overwrote
+  each other's installed test host; dir #608.)
+- Every git call against a clone goes through `git -C "<that clone's path>"`, never after a `cd` — a
+  `cd` into a directory that no longer exists fails, and the git command chained after it with `;` then
+  runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
+  in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
 
 **The sandbox bullet above is scoped to what WRITES.** Its one exception matters as much as the rail
