@@ -692,6 +692,33 @@ run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
 check_status "R2-4: a mktemp that exits nonzero fails the run -> exit 1" 1 "$STATUS"
 check_contains "R2-4: ... with the same loud message" "$OUT" "mktemp -d did not return a usable log dir"
 
+# --- R3-6 (dir #663 fold): the two guard clauses R2-4's shims never reached. A mktemp that hands back "/" (the
+# shape a failing mint produced as root): the `[ "$logdir" = / ]` clause refuses it. No mutant for that clause —
+# with it removed run.sh would take "/" as its log directory and, as root (the alpine leg), write into the
+# filesystem root.
+printf '#!/bin/sh\nprintf "/\\n"\n' > "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R3-6: a mint that returns / fails the run -> exit 1" 1 "$STATUS"
+check_contains "R3-6: ... loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
+check_absent "R3-6: ... before any test file started" "$OUT" "=== test_a.sh ==="
+check_nofile "R3-6: no log was written to the filesystem root" "/test_a.sh.log"
+
+# a mktemp that hands back a path that is not a directory: the `[ ! -d "$logdir" ]` clause
+ghost="$SANDBOX/no-such-logdir-663"
+printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$ghost" > "$emptybin/mktemp"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_status "R3-6: a mint that returns a non-directory fails the run -> exit 1" 1 "$STATUS"
+check_contains "R3-6: ... loudly, naming what failed" "$OUT" "mktemp -d did not return a usable log dir"
+check_absent "R3-6: ... before any test file started" "$OUT" "=== test_a.sh ==="
+# the mutant: that clause dropped — the same shim then gets past the guard (and dies later, elsewhere)
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_a.sh"
+replace_in_line_containing "$d/run.sh" 'if [ -z "$logdir" ] || [ "$logdir" = / ]' ' || [ ! -d "$logdir" ]' ''
+check_ne "R3-6 mutant: the edit changed the copy of run.sh" "$(cksum < "$d/run.sh")" "$(cksum < "$runner")"
+run env PATH="$emptybin:$PATH" KEEL_TEST_JOBS=1 bash "$d/run.sh"
+check_absent "R3-6 mutant: without the ! -d clause the guard's own message is gone (so the clause is what produces it)" \
+  "$OUT" "mktemp -d did not return a usable log dir"
+
 # --- R2-2 (the 0.13.0 delta audit's re-check): the dir #318 half — the WATCHED checkout — was skipped
 # silently whenever `git rev-parse --git-dir` failed, including for a checkout that IS a repo git merely
 # cannot read (another uid's, "dubious ownership"). F1's twin on the primary half: it now prints a NOTE at

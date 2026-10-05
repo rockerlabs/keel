@@ -15,6 +15,71 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The secret-guard installers and `doctor.sh` now agree on which hooks dir a repo's guard lives in, and
+  stop advising a vendor that git would never read.** Three places answered that three ways: the installer
+  (the repo's own git dir, or a local `core.hooksPath`), `doctor.sh` (`rev-parse --git-path hooks`) and
+  `install.sh` (`git config --global`). A `core.hooksPath` from the global file, SYSTEM scope, the XDG file
+  behind an existing `~/.gitconfig` or an `[include]` makes git read a dir the installer never writes, so
+  "vendor into this repo" produced a copy nothing runs — and the advice, in all three, said to do exactly
+  that. The installer now answers for all of them: `install-secret-guard.sh --where <repo>` prints the dir
+  an install writes, the dir git reads, and the scope that decides it; `--where --global` does the
+  machine-wide read; `doctor.sh` and `install.sh` read it instead of resolving on their own. Advice is
+  per scope — a hooksPath from outside the repo is met with the two remedies that work (replace it with
+  `--global --force`, or give the repo its own hooks dir), never a vendor; a local one keeps "re-vendor".
+  Vendoring into a repo git does not read now says so, instead of ending in a quiet success. Two
+  findings from the dir #659 work close with it. Both installers read the machine-wide hooksPath the way
+  git resolves it, so one set only in the XDG file behind `~/.gitconfig`, in an `[include]`, or at SYSTEM
+  scope is no longer overwritten, nor reported as "nothing to unwire"; a `--global` write that a later
+  `[include]` still overrides now ends in an error, not "wired". And `doctor.sh` holds Keel's own hooks dir
+  to the same marker line Verify uses (a user's wrapper there is not Keel's guard), while naming a symlinked
+  Keel hook instead of passing it in silence. A hooksPath in a dir the user owns still counts on an
+  executable pre-commit alone. Pinned by `tests/test_guard_hooks_dir.sh` over the repo, worktree,
+  submodule, local, global, SYSTEM, XDG and include shapes. dir #643.
+- **The test suite now gates two things it only trusted: the operator's environment, and its own leftovers in the real
+  temp dir** (dir #663; the 0.13.0 delta audit's S2-1 and R2-1 classes, with its R3-5, R3-6, R2-6 and the
+  round-3 vendor leg's CV-1 folded in; tests only, no shipped tool changed). **Environment:** `tests/lib.sh`
+  now unsets the 27 further `KEEL_*` variables that shipped scripts read from the caller's environment, and
+  `tests/test_env_census.sh` derives that set from the scripts themselves and proves, in a child that sources
+  `lib.sh` with each one exported poisoned, that none survives; a variable added to a tool and forgotten there
+  turns it red, and dropping one name from `lib.sh` makes it report exactly that name. **Residue:**
+  `tests/run.sh` puts a recording `mktemp` shim ahead on `PATH` and, after the last test file, fails the run
+  if any path `mktemp` minted still exists. A before-and-after listing of the real temp dir cannot be used for
+  this, because a concurrent suite's live sandboxes sit in it too; a path this run minted is its own. It sees
+  what the grep census cannot (a cleared `EXIT` trap, a scratch file a tool keeps on purpose, a grandchild's
+  call) and refuses to run, naming why, if it cannot arm itself.
+  `tests/test_residue_gate.sh` drives it per mechanism, with mutation proofs, and `tests/test_run_sh.sh` now
+  pins the two clauses of `run.sh`'s log-directory guard that no test reached (a mint that returns `/`, and
+  one that returns a non-directory). `tests/test_no_bare_mktemp.sh` is rebuilt on a small shell lexer: it reads quotes,
+  substitutions, comments and here-documents across lines, so it now catches the backtick, `command mktemp`,
+  absolute-path and bare-line shapes and no longer flags `"$SANDBOX"/name` or a fixture's own text; its
+  allow-list is keyed by file, line and count, an entry that matches fewer lines than it claims is reported
+  stale, and it fails on zero files instead of passing.
+- **`/wrap` step 4 now obliges acting on an over-budget startup footprint.** It used to say only to look at the
+  numbers, so a project over the token budget was reported at every wrap and stayed over it. When the project's own
+  doctor reports it over budget and no live exception covers it, the wrap now either trims `CLAUDE.md`/`MEMORY.md`
+  or writes a dated exception row (`| Expires (YYYY-MM-DD) | Ticket/note |` under a `## Footprint exceptions`
+  section of the project's `CLAUDE.md`) before finishing. An expired row stops covering, and the step never reaches
+  beyond its own project. The doctor does not read the row yet. Pinned, with mutation proofs, by
+  `tests/test_wrap_footprint_rule.sh`. The command grew past the quoted size ceiling, so
+  `docs/loading-and-cost.md`'s row now reads `~250–3,000+`. dir #628.
+- **The delegation rails block gains two lines: one test device per concurrent session, and every leg git
+  call through `git -C`.** Parallel legs that shared one booted simulator overwrote each other's installed
+  test host, and a verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout in the
+  orchestrator's real worktree. The block in `docs/delegation.md` now tells a session to boot its own
+  simulator or emulator and shut it down in its report, and to address a clone only as `git -C "<path>"`,
+  never after a `cd`. All ten verbatim copies (five in `docs/delta-audit.md`, the three drydock role
+  prompts, `/polish`'s review subagent) carry both, the fixer rails carry them too, and the worker-brief
+  section of `docs/release-management.md` points at the device rule. Pinned by the existing block-diff
+  suites plus new line pins in `tests/test_delegation_doc.sh`. dir #608, closes dir #669 item 4.
+- **`/triage` — a promote-or-drop command for the accumulator tiers.** `LEARNINGS.md` had no owner for
+  its "promote on recurrence, prune when stale" rule (one real file: 158 of 184 entries at `[1×]`, 26 at
+  `[2×]`+ already due), and the grooming doc's accumulator triage named only the standing list and the
+  ideas file. New `commands/triage.md` over `docs/triage.md` (T0–T6): one verdict per entry —
+  `PROMOTE-RULE`, `PROMOTE-TICKET`, `KEEP`, `DROP` — a 40-entry bound, a 60-day `[1×]` horizon, and the
+  rule that an entry never survives its own promotion. `/groom` G4 and `/global-review` now call it by
+  reference, `/wrap` keeps the counter bump and leaves the promote-due set to it, and `FRAMEWORK.md`'s
+  review signal 3 names it as its responder. Pinned by `tests/test_triage_doc.sh`; the install
+  change-detector counts 14 commands. dir #517.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a

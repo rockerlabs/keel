@@ -1294,7 +1294,11 @@ check_absent   "...and not ALSO as the machine-wide finding: one drift, one repo
 # winning that race would leave the operator with advice that cannot fix the drift it names.
 run_in "$d" env "${FRESH_HOME_ENV[@]}" "$doctor"
 check_contains "cwd == the repo → still the per-repo finding" "$OUT" "[W-GUARD-STALE]"
-check_contains "...carrying the per-repo remediation, not the --global one" "$OUT" "re-vendor: install-secret-guard.sh"
+# dir #643: ...and the per-repo remediation is NOT "re-vendor" either — the installer writes the repo's
+# own hooks dir, never a hooksPath set at another scope, so a re-vendor here would refresh a copy git
+# does not read. The fix that works is the hand copy, or giving the repo its own hooks dir.
+check_contains "...carrying the by-hand remediation (the installer does not write this dir)" "$OUT" "copy the shipped hooks"
+check_absent   "...never 're-vendor', which would refresh a copy git is not reading" "$OUT" "re-vendor: install-secret-guard.sh"
 check_absent   "...and never advising --global, which refuses this shape" "$OUT" "install-secret-guard.sh --global"
 check_absent   "...and not the machine-wide one, whose fix exits 3 on this shape" "$OUT" "[W-GUARD-GLOBAL-STALE]"
 rm -f "$d/.githooks/secret-scan.sh"
