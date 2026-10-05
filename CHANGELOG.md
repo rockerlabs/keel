@@ -29,7 +29,26 @@ sections real content going forward — see that page for exactly when each one 
   `TMPDIR` inside the watched checkout still trips the canary (it now names the directory), a `tests/` in a
   subdirectory of an unreadable repo still skips without a word, and a dotted branch name still defeats the
   per-branch config exclusion.
-
+- **The secret-guard installers and `doctor.sh` now agree on which hooks dir a repo's guard lives in, and
+  stop advising a vendor that git would never read.** Three places answered that three ways: the installer
+  (the repo's own git dir, or a local `core.hooksPath`), `doctor.sh` (`rev-parse --git-path hooks`) and
+  `install.sh` (`git config --global`). A `core.hooksPath` from the global file, SYSTEM scope, the XDG file
+  behind an existing `~/.gitconfig` or an `[include]` makes git read a dir the installer never writes, so
+  "vendor into this repo" produced a copy nothing runs — and the advice, in all three, said to do exactly
+  that. The installer now answers for all of them: `install-secret-guard.sh --where <repo>` prints the dir
+  an install writes, the dir git reads, and the scope that decides it; `--where --global` does the
+  machine-wide read; `doctor.sh` and `install.sh` read it instead of resolving on their own. Advice is
+  per scope — a hooksPath from outside the repo is met with the two remedies that work (replace it with
+  `--global --force`, or give the repo its own hooks dir), never a vendor; a local one keeps "re-vendor".
+  Vendoring into a repo git does not read now says so, instead of ending in a quiet success. Two
+  findings from the dir #659 work close with it. Both installers read the machine-wide hooksPath the way
+  git resolves it, so one set only in the XDG file behind `~/.gitconfig`, in an `[include]`, or at SYSTEM
+  scope is no longer overwritten, nor reported as "nothing to unwire"; a `--global` write that a later
+  `[include]` still overrides now ends in an error, not "wired". And `doctor.sh` holds Keel's own hooks dir
+  to the same marker line Verify uses (a user's wrapper there is not Keel's guard), while naming a symlinked
+  Keel hook instead of passing it in silence. A hooksPath in a dir the user owns still counts on an
+  executable pre-commit alone. Pinned by `tests/test_guard_hooks_dir.sh` over the repo, worktree,
+  submodule, local, global, SYSTEM, XDG and include shapes. dir #643.
 - **The test suite now gates two things it only trusted: the operator's environment, and its own leftovers in the real
   temp dir** (dir #663; the 0.13.0 delta audit's S2-1 and R2-1 classes, with its R3-5, R3-6, R2-6 and the
   round-3 vendor leg's CV-1 folded in; tests only, no shipped tool changed). **Environment:** `tests/lib.sh`
