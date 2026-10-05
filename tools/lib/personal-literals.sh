@@ -24,9 +24,10 @@
 # GAP (it still uses the lines printed before a 3). Callers capture the output by a PLAIN assignment,
 # `x="$(…)" || rc=$?` — never `local x=$(…)`, never a process substitution (those hide the status).
 #
-# BRE `sed` on purpose (busybox-portable), under LC_ALL=C so an invalid byte in the file cannot make a
-# locale-aware sed (BSD, UTF-8) error out; the `[ -f ]` test is exact — a `[ -e ]` reads a directory
-# with an error and blocks forever on a FIFO.
+# BRE `sed` on purpose (busybox-portable), in the caller's locale as before (so a locale that treats NBSP
+# as whitespace still trims it); a sed that cannot process a line — BSD sed errors on an invalid byte
+# under a UTF-8 locale — makes the parse fail with 4 instead of silently dropping the literal. The
+# `[ -f ]` test is exact — a `[ -e ]` reads a directory with an error and blocks forever on a FIFO.
 personal_literals_parse() {
   [ -L "$1" ] && [ ! -e "$1" ] && return 2
   [ -f "$1" ] || return 0
@@ -35,7 +36,7 @@ personal_literals_parse() {
   while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
     _pl_t="${_pl_t#$'\357\273\277'}"
     _pl_t="${_pl_t%$'\r'}"
-    _pl_t="$(printf '%s' "$_pl_t" | LC_ALL=C sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
+    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
     case "$_pl_t" in
       ''|\#*) ;;
       *)

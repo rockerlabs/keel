@@ -1825,7 +1825,7 @@ rm -f "$HOME/.claude/secret-scan-personal"
 #       be swallowed inside the $(...) capture, where errexit is off, and the literal silently dropped)
 #   a UTF-8 BOM at the start of any line → stripped (it used to ride into the literal)
 #   a line ending in an ODD run of `\` → not emitted, parser returns 3 (it used to join the next line
-#       into `prev\|next`, a VALID ERE matching neither literal); scanner exits 2, audit counts it bad
+#       into `prev\|next`, a VALID ERE matching neither literal); scanner exits 2, audit raises its own GAP
 # Fixtures are printf-built with octal bytes so this file stays ASCII.
 
 # parser level: lib and twin agree on output AND status, against literal expectations.
@@ -1903,6 +1903,30 @@ check_status "dir #680: scanner exits 2 when the per-line sed fails (not 'clean'
 check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
 run env PATH="$pl_shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-onelit" bash "$pa" --no-history "$pl_ad"
 check_contains "dir #680: the audit raises the coverage-ZERO GAP when the per-line sed fails" "$OUT" "coverage is ZERO"
+
+# The same two behaviours under a REAL UTF-8 locale, where this host's sed decides (every test above runs
+# in the ambient C locale — dir #250's blind spot). Each block runs only where the sed behaves that way:
+# BSD sed errors on an invalid byte (the parse must then fail loud: status 4 / scanner exit 2), and a
+# locale-aware sed that treats NBSP as whitespace trims it, as the pre-dir-#148 loop did (the parse must
+# not stop doing so just because the parser moved into a function).
+pl_u8="$(pick_utf8_locale)" || pl_u8=""
+if [ -n "$pl_u8" ] && ! printf 'a\351\n' | LC_ALL="$pl_u8" sed 's/a//' >/dev/null 2>&1; then
+  printf 'zebracorn  # caf\351\n' > "$SANDBOX/pl680-latin1"
+  pl680_lib_rc=0; LC_ALL="$pl_u8" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-latin1" >/dev/null 2>&1 || pl680_lib_rc=$?
+  check_eq "dir #680: under a UTF-8 locale an invalid byte makes this host's sed fail -> the lib returns 4" 4 "$pl680_lib_rc"
+  run_in "$pl680_r" env LC_ALL="$pl_u8" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-latin1" "$scan" --staged
+  check_status "dir #680: ...and the scanner exits 2 (not 'clean', not a bare tool error rc 1)" 2 "$STATUS"
+  check_contains "dir #680: ...with its own message" "$OUT" "cannot read or parse"
+else
+  pass "dir #680: (no UTF-8 locale where this host's sed rejects an invalid byte — the BSD-sed case is not applicable here)"
+fi
+if [ -n "$pl_u8" ] && [ -z "$(printf '\302\240' | LC_ALL="$pl_u8" sed 's/[[:space:]][[:space:]]*$//')" ]; then
+  printf 'zebracorn\302\240\n' > "$SANDBOX/pl680-nbsp"
+  pl680_nbsp="$(LC_ALL="$pl_u8" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-nbsp" 2>/dev/null)"
+  check_eq "dir #680: a trailing NBSP is still trimmed where this host's UTF-8 sed counts it as whitespace" "zebracorn" "$pl680_nbsp"
+else
+  pass "dir #680: (this host's sed does not treat NBSP as whitespace — the trim case is not applicable here)"
+fi
 
 # unreadable (non-root only: chmod 000 is a no-op for root — CLAUDE.md Linux-leg trap 2). The status 2 /
 # exit 2 contract holds for every platform's bash, so the whole block is guarded together.

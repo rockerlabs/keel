@@ -314,7 +314,7 @@ done
 case "$personal_rc" in
   0) ;;
   3) gap "one or more lines in $PERSONAL_FILE end in a backslash and were ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run" ;;
-  *) gap "$PERSONAL_FILE could not be read or parsed (unreadable, a symlink to nothing, or a line sed could not process) — personal-literal coverage is ZERO, fix it and re-run" ;;
+  *) gap "$PERSONAL_FILE could not be read or parsed (unreadable, a symlink to nothing, or a line sed could not process) — personal-literal coverage is ZERO or INCOMPLETE, fix it and re-run" ;;
 esac
 [ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
 [ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"

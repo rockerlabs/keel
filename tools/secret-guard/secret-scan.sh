@@ -144,7 +144,7 @@ _personal_literals_parse_inline() {
   while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
     _pl_t="${_pl_t#$'\357\273\277'}"
     _pl_t="${_pl_t%$'\r'}"
-    _pl_t="$(printf '%s' "$_pl_t" | LC_ALL=C sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
+    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
     case "$_pl_t" in
       ''|\#*) ;;
       *)
@@ -184,10 +184,10 @@ case "$_personal_rc" in
     exit 2 ;;
 esac
 # One literal per line, none empty (the parser's contract): join with `|` (an empty alternative would
-# match everything, so an empty capture is skipped). `tr`, not ${var//$'\n'/|}: that expansion is
-# roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
+# match everything, so an empty capture is skipped). `tr` (byte-wise, LC_ALL=C), not ${var//$'\n'/|}: that
+# expansion is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
 if [ -n "$_personal_lines" ]; then
-  personal="$(printf '%s' "$_personal_lines" | tr '\n' '|')"
+  personal="$(printf '%s' "$_personal_lines" | LC_ALL=C tr '\n' '|')"
 fi
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
