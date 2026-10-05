@@ -22,8 +22,8 @@ sections real content going forward — see that page for exactly when each one 
   marked `SUPERSEDED`/`RETRACTED` whose delete is still owed) and `H-MEMORY-STALE` (a note older than the
   newest code file it names). The last is opt-in via `doctor --memory-age`: on Keel's own memory dir it
   fired on 58 % of the files, past the 35 % line where a default hint would be skipped. When the dir is
-  absent and the project path has a character the encoder cannot vouch for, `H-MEMORY-DIR-UNRESOLVED` says
-  the checks did not run. Report-only: `doctor` never edits a memory file. The new page maps the five memory
+  absent, Claude has a projects dir and the project path has a character the encoder cannot vouch for,
+  `H-MEMORY-DIR-UNRESOLVED` says the checks did not run. Report-only: `doctor` never edits a memory file. The new page maps the five memory
   layers onto Keel's files, names what Keel deliberately does not build (store, retrieval, TTL,
   auto-supersede, ontology schema) with the principle behind each, and gives four ten-minute memory tests;
   it is linked from the README and `docs/reference.md`. `H-FOOTPRINT` is unchanged and now discloses in its

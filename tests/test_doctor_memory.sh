@@ -121,6 +121,9 @@ check_contains "no KEEL_HOME → \$HOME/.claude/projects/…" "$OUT" "[W-MEMORY-
 odd="$SANDBOX/my_project.$$"; mkdir -p "$odd"; git -C "$odd" init -q
 printf '# ctx\n' > "$odd/CLAUDE.md"; printf 'CLAUDE.md\n.claude/\n' > "$odd/.gitignore"
 run env -u KEEL_MEMORY_DIR "KEEL_HOME=$SANDBOX/empty-kh" "$doctor" "$odd"
+check_absent "no Claude projects dir at all → silent (another harness)" "$OUT" "H-MEMORY-DIR-UNRESOLVED"
+mkdir -p "$SANDBOX/empty-kh/projects"
+run env -u KEEL_MEMORY_DIR "KEEL_HOME=$SANDBOX/empty-kh" "$doctor" "$odd"
 check_contains "an unencodable path + absent dir → H-MEMORY-DIR-UNRESOLVED" "$OUT" "HINT [H-MEMORY-DIR-UNRESOLVED]"
 check_contains "...naming the override" "$OUT" "KEEL_MEMORY_DIR"
 mrun "$SANDBOX/no-such-memory-dir" "$odd"
@@ -137,7 +140,9 @@ mkdir "$d/src"; printf 'a\n' > "$d/src/a.sh"; printf 'b\n' > "$d/src/b.sh"; prin
 commit_at "$d" src/a.sh 2024-03-01
 commit_at "$d" src/b.sh 2024-09-01
 commit_at "$d" src/c.sh 2024-06-01
-printf -- '- [S](stale-fm.md) — x\n- [F](fresh-fm.md) — x\n- [M](stale-mt.md) — x\n- [N](fresh-mt.md) — x\n- [Z](multi.md) — x\n- [Y](nopath.md) — x\n- [U](untracked.md) — x\n' > "$m/MEMORY.md"
+printf 'r\n' > "$d/src/[id].ts"; commit_at "$d" "src/[id].ts" 2024-09-01
+printf -- '---\nmetadata:\n  modified: 2024-06-15\n---\nRoute `src/[id].ts` (glob-looking, but a literal path).\n' > "$m/bracket.md"
+printf -- '- [S](stale-fm.md) — x\n- [F](fresh-fm.md) — x\n- [M](stale-mt.md) — x\n- [N](fresh-mt.md) — x\n- [Z](multi.md) — x\n- [Y](nopath.md) — x\n- [U](untracked.md) — x\n- [B](bracket.md) — x\n' > "$m/MEMORY.md"
 printf -- '---\nname: s\nmetadata:\n  type: project\n  modified: 2024-01-15T10:00:00Z\n---\nSee `src/c.sh` for it.\n' > "$m/stale-fm.md"
 printf -- '---\nname: f\nmetadata:\n  modified: 2024-12-31T10:00:00Z\n---\nSee `src/c.sh` for it.\n' > "$m/fresh-fm.md"
 printf 'No frontmatter, mentions `src/c.sh`.\n' > "$m/stale-mt.md";  touch -t 202301011200 "$m/stale-mt.md"
@@ -158,6 +163,7 @@ check_contains "stale via mtime → source token [mtime]" "$OUT" "[H-MEMORY-STAL
 check_absent   "fresh via mtime → no finding" "$OUT" "[H-MEMORY-STALE] fresh-mt.md"
 check_contains "multi-path: the NEWEST path wins" "$OUT" "[H-MEMORY-STALE] multi.md (2024-06-15[fm] < 2024-09-01 for src/b.sh)"
 check_eq       "multi-path: one finding per file" 1 "$(count_of '\] multi.md')"
+check_contains "a glob-looking path (src/[id].ts) is matched literally" "$OUT" "[H-MEMORY-STALE] bracket.md (2024-06-15[fm] < 2024-09-01 for src/[id].ts)"
 check_absent   "no matching path → no finding" "$OUT" "[H-MEMORY-STALE] nopath.md"
 check_absent   "an untracked path has no code date → no finding" "$OUT" "[H-MEMORY-STALE] untracked.md"
 check_status   "staleness is a HINT → exit 0" 0 "$STATUS"

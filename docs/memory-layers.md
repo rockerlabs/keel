@@ -78,9 +78,9 @@ keel doctor --memory-age    # also list notes older than the code they name
 
 - The checks read Claude Code's layout: `projects/<project path, every / and . written as ->/memory`
   under your Claude home (`KEEL_HOME`, else `~/.claude`). Set `KEEL_MEMORY_DIR` to point at any other
-  directory. `doctor` prints which directory it read. If it finds none **and** your path contains a
-  character it cannot encode (an underscore, a space), it says so (`H-MEMORY-DIR-UNRESOLVED`) rather
-  than quietly checking nothing. On a harness with its own store (Codex, for one) the checks stay silent
+  directory. `doctor` prints which directory it read. If it finds none, your Claude home does have a
+  projects directory, **and** your path contains a character it cannot encode (an underscore, a space),
+  it says so (`H-MEMORY-DIR-UNRESOLVED`) rather than quietly checking nothing. On a harness with its own store (Codex, for one) the checks stay silent
   by design — that is no claim that such a store needs no care.
 - Every ID can be accepted per project in `.keel/doctor-accept`, like any other `doctor` finding.
 - `H-MEMORY-STALE` compares a note's date (its last git commit if the memory directory is a repository,

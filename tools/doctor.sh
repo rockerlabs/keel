@@ -70,8 +70,9 @@
 #                              project). OPT-IN via --memory-age: measured on the author's live dir it
 #                              fired on 58 % of the files (dir #521's gate: > 35 % ships behind a flag)
 #   HINT  H-MEMORY-DIR-UNRESOLVED  the memory dir was not found AND the project path carries a character
-#                              the encoder cannot vouch for — the memory checks did not run (set
-#                              KEEL_MEMORY_DIR). The four memory checks read Claude Code's layout
+#                              the encoder cannot vouch for, on a machine that has a Claude projects dir
+#                              — the memory checks did not run (set KEEL_MEMORY_DIR, which names ONE dir
+#                              and so applies to every project of that run). The four memory checks read Claude Code's layout
 #                              (<home>/projects/<path with / and . as ->/memory) and stay silent on any
 #                              other harness by design — a different harness keeps its own store
 #                              (ADAPTING.md), which is no claim that it has no memory. Report-only:
@@ -1066,8 +1067,10 @@ memory_checks() {
       if [ -d "$ghome/projects/$enc/memory" ]; then mem="$ghome/projects/$enc/memory"; break; fi
     done
     if [ -z "$mem" ]; then
+      # Only where Claude Code has a projects dir at all: a machine without one (another harness) has no
+      # memory dir to find, and announcing "did not run" on every run there would be noise.
       case "$dabs$dphys" in
-        *[!A-Za-z0-9/.-]*) hint H-MEMORY-DIR-UNRESOLVED "memory dir not found for $dabs, and the path carries a character this check cannot encode — the memory checks did not run (set KEEL_MEMORY_DIR to the project's memory dir)" ;;
+        *[!A-Za-z0-9/.-]*) [ -d "$ghome/projects" ] && hint H-MEMORY-DIR-UNRESOLVED "memory dir not found for $dabs, and the path carries a character this check cannot encode — the memory checks did not run (set KEEL_MEMORY_DIR to the project's memory dir)" ;;
       esac
       return 0
     fi
