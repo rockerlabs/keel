@@ -294,6 +294,8 @@ once, open Script Editor, run `display notification "test" with title "keel"`, a
   manager session and gated worker sessions — the gap between the two docs on either side of it here.
 - [`docs/grooming.md`](docs/grooming.md) — assembling the next release from the backlog on a fixed
   cadence: retro first, pains supplied only by the operator, a mandatory fresh-reviewer round.
+- [`docs/triage.md`](docs/triage.md) — the promote-or-drop pass over the staging tiers (learnings,
+  ideas, the standing list): one verdict per entry, filed or deleted in the same pass.
 - [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
   repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
