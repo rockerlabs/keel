@@ -155,6 +155,7 @@ behaves — loaded text nudges it, but nothing forces it to follow.
 - **Runs by itself:** the tools — the **secret-guard** git hook, the **public-audit** go-public scan,
   **install / doctor / init-project**, and, once you opt in, the **`/polish` gate** (Claude Code). They
   fire whether or not anyone remembers them; what each does → [`docs/reference.md`](docs/reference.md).
+  `doctor` also reports a stale or unreachable memory file → [`docs/memory-layers.md`](docs/memory-layers.md).
 - **Up to you:** `PRINCIPLES.md`, `FRAMEWORK.md`, and the `CLAUDE.md` ground rules shape decisions
   *when read* — a lens you choose to look through, not an autopilot.
 

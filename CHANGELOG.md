@@ -15,6 +15,23 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`doctor` reports a forgetting layer for the harness memory dir, and `docs/memory-layers.md` explains
+  it.** Four new checks over Claude Code's per-project memory dir (found from the project path, or
+  `KEEL_MEMORY_DIR`; silent when absent): `W-MEMORY-ORPHAN` (a file no `MEMORY.md` line links, so no session
+  recalls it), `W-MEMORY-DANGLING` (a link to a file that is gone), `W-MEMORY-SUPERSEDED` (an index line
+  marked `SUPERSEDED`/`RETRACTED` whose delete is still owed) and `H-MEMORY-STALE` (a note older than the
+  newest code file it names). The last is opt-in via `doctor --memory-age`: on Keel's own memory dir it
+  fired on 58 % of the files, past the 35 % line where a default hint would be skipped. When the dir is
+  absent, Claude has a projects dir and the project path has a character the encoder cannot vouch for,
+  `H-MEMORY-DIR-UNRESOLVED` says the checks did not run. Report-only: `doctor` never edits a memory file. The new page maps the five memory
+  layers onto Keel's files, names what Keel deliberately does not build (store, retrieval, TTL,
+  auto-supersede, ontology schema) with the principle behind each, and gives four ten-minute memory tests;
+  it is linked from the README and `docs/reference.md`. `H-FOOTPRINT` is unchanged and now discloses in its
+  header that it undercounts `MEMORY.md`. Covered by `tests/test_doctor_memory.sh`. dir #521.
+- **`FRAMEWORK.md`'s "Staleness check" paragraph no longer says "no push triggers".** The read-time pull
+  check stays; `H-MEMORY-STALE` adds a push-side sweep of the same comparison, and a new paragraph right
+  after it names the three forgetting operations (expire, supersede, contradiction) and which `doctor` ID
+  watches which. dir #521.
 - **Installs now ship Keel's `docs/`, so the doc paths the rails and commands name resolve on an
   adopter's machine.** Every `docs/<x>.md` that `CORE.md`, `FRAMEWORK.md` or a command names (and the
   `../docs/<x>.md` links in commands) pointed at a folder no install ever created, in copy mode and in

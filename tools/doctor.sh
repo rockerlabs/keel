@@ -18,6 +18,7 @@
 #   doctor.sh --registry FILE       audit every project in an INSTANCE.md Projects table (the Path column)
 #   doctor.sh --quiet ...           print only GAP/WARN lines (+ the tail summary)
 #   doctor.sh --all ...             also show findings suppressed by .keel/doctor-accept
+#   doctor.sh --memory-age ...      also run H-MEMORY-STALE (off by default — measured fire-rate, dir #521)
 #
 # Checks per project:
 #   GAP   G-DIR-MISSING        the project directory itself does not exist
@@ -58,7 +59,27 @@
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
 #                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
 #   HINT  H-FOOTPRINT          session startup footprint (project CLAUDE.md + resolved global
-#                              CLAUDE.md/keel/CORE.md) over budget (KEEL_STARTUP_WARN_TOKENS, 10000)
+#                              CLAUDE.md/keel/CORE.md) over budget (KEEL_STARTUP_WARN_TOKENS, 10000).
+#                              A KNOWN UNDERCOUNT: the harness's MEMORY.md index loads every session
+#                              too and is NOT summed (a budget decision of its own, dir #686 — dir #521
+#                              left the figure and its message unchanged on purpose)
+#   WARN  W-MEMORY-ORPHAN      a top-level *.md in the harness memory dir that no MEMORY.md line
+#                              links — unreachable by recall, invisible to every session (dir #521)
+#   WARN  W-MEMORY-DANGLING    a MEMORY.md link whose target file does not exist
+#   WARN  W-MEMORY-SUPERSEDED  a MEMORY.md line marked SUPERSEDED / RETRACTED after its link — the
+#                              superseded record was never deleted and still loads every session
+#   HINT  H-MEMORY-STALE       a memory file older than the newest code file it names (the push side
+#                              of FRAMEWORK.md's note-age vs code-age check; skipped on a non-git
+#                              project). OPT-IN via --memory-age: measured on the author's live dir it
+#                              fired on 58 % of the files (dir #521's gate: > 35 % ships behind a flag)
+#   HINT  H-MEMORY-DIR-UNRESOLVED  the memory dir was not found AND the project path carries a character
+#                              the encoder cannot vouch for, on a machine that has a Claude projects dir
+#                              — the memory checks did not run (set KEEL_MEMORY_DIR, which names ONE dir
+#                              and so applies to every project of that run). The four memory checks read Claude Code's layout
+#                              (<home>/projects/<path with / and . as ->/memory) and stay silent on any
+#                              other harness by design — a different harness keeps its own store
+#                              (ADAPTING.md), which is no claim that it has no memory. Report-only:
+#                              doctor never edits or deletes a memory file.
 #   HINT  H-MAP-DRIFT          CLAUDE.md map may be stale — a backtick-spanned path no longer on disk
 #                              (path-granular accept stays .keel/map-drift-baseline)
 #   HINT  H-DEP-FLOATING       floating dependency version (image :latest / Action @vN)
@@ -76,6 +97,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/impact-store.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$_doctor_dir/lib/gate-paths.sh"
+# shellcheck source=tools/lib/stat-portable.sh
+. "$_doctor_dir/lib/stat-portable.sh"
 unset _doctor_dir
 
 QUIET=0
@@ -99,6 +122,8 @@ Usage:
                                rails carrier, commands/ is never wired — default HOME: ~/.codex)
   doctor.sh --quiet            print only GAP/WARN lines (+ the tail summary)
   doctor.sh --all              also show findings suppressed by .keel/doctor-accept
+  doctor.sh --memory-age       also flag memory notes older than the code they name (H-MEMORY-STALE);
+                               off by default — it fires on most notes of a busy project
   doctor.sh -h | --help
 
 Example:  doctor.sh ~/code/my-project
@@ -106,11 +131,13 @@ EOF
 }
 INSTALL_MODE=0
 SHOW_ALL=0
+MEMORY_AGE=0
 CODEX_MODE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
     --all) SHOW_ALL=1 ;;
+    --memory-age) MEMORY_AGE=1 ;;
     --registry) shift; REGISTRY="${1:?--registry needs a FILE}" ;;
     --install) INSTALL_MODE=1 ;;
     --codex) CODEX_MODE=1 ;;
@@ -999,6 +1026,165 @@ if [ "$INSTALL_MODE" = 1 ]; then
   finish
 fi
 
+# dir #521 — the memory-dir checks (the "forgetting layer"): report-only over Claude Code's per-project
+# memory dir. memory_checks PROJECT_DIR records W-MEMORY-ORPHAN / W-MEMORY-DANGLING / W-MEMORY-SUPERSEDED
+# / H-MEMORY-STALE / H-MEMORY-DIR-UNRESOLVED into the unit's NOTES and never touches a memory file.
+# The dir is $KEEL_MEMORY_DIR when set (the test-isolation hatch, dir #125's KEEL_<NAME>_FILE rule),
+# else <home>/projects/<project path with every / and . as ->/memory — the leading / maps too, so the
+# name starts with a dash (/Users/x/.keel/kb → -Users-x--keel-kb: `/` then `.`, two dashes). Both the
+# logical and the physical spelling of the project path are tried. Absent dir → silent skip, UNLESS the
+# path carries a character outside [A-Za-z0-9/.-] (the encoder is only verified on those): then the skip
+# is announced, because a check that silently does nothing claims coverage it lacks (P1).
+# `[ -d ]` follows symlinks, but a symlinked dir sits outside any repo: every git call about a NOTE runs
+# at the physical dir ($mem_real) — a different repo from the audited project's, so two `git -C` roots
+# are in play (the note's, and the code's).
+#
+# _backtick_tokens FILE [1] — the backtick-spanned tokens of FILE, one per line, first word only, fenced
+# blocks dropped (a fence is the author's "not a mention" marker); a 2nd arg 1 also drops a leading
+# `---` frontmatter block. Shared by H-MAP-DRIFT (CLAUDE.md) and the memory staleness sweep (notes).
+_backtick_tokens() {
+  awk -v skipfm="${2:-0}" 'skipfm==1&&NR==1&&$0=="---"{fm=1;next} fm&&$0=="---"{fm=0;next} fm{next} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$1" 2>/dev/null \
+    | grep -oE '`[^`[:space:]][^`]*`' \
+    | sed -e 's/^`//' -e 's/`$//' \
+    | awk '{print $1}' \
+    | sort -u
+}
+# _kv_get TABLE KEY — prints KEY's value from a newline-framed "\nkey\tvalue" table (bash 3.2 has no
+# associative arrays); fails when KEY is absent, so an empty stored value still counts as a hit.
+_kv_get() {
+  local v
+  case "$1" in
+    *$'\n'"$2"$'\t'*) v="${1#*$'\n'"$2"$'\t'}"; printf '%s' "${v%%$'\n'*}" ;;
+    *) return 1 ;;
+  esac
+}
+# _mem_path_token TOKEN PROJECT_DIR — prints the project-relative path a backtick token names, or nothing
+# (a placeholder, URL, glob, absolute or ~ path, a `..` escape, or a path that is not on disk).
+_mem_path_token() {
+  local tok="$1" d="$2" suffix
+  case "$tok" in
+    ''|*'://'*|*'<'*|*'>'*|*'$'*|*'*'*|*'?'*|'~'*|/*) return 0 ;;
+  esac
+  case "$tok" in
+    *:[0-9]*) suffix="${tok##*:}"; case "$suffix" in ''|*[!0-9]*) ;; *) tok="${tok%:*}" ;; esac ;;
+  esac
+  tok="${tok%/}"
+  case "$tok" in ''|.|..|../*|*/../*|*/..) return 0 ;; esac
+  if [ -e "$d/$tok" ]; then printf '%s' "$tok"; fi
+  return 0
+}
+# _mem_note_date FILE GIT_DATES — prints "<YYYY-MM-DD> <git|fm|mtime>", precedence git → frontmatter
+# `modified:` → file mtime; every source is normalized to one shape so the caller's compare is a plain
+# string compare (an epoch integer next to a 2026-… string compares backwards). GIT_DATES is the
+# newline-framed "\nfile\tdate" table of the memory dir's last-commit dates, built once per run (one
+# `git log` instead of one process per file — ~90 ms each on a 150-file dir).
+_mem_note_date() {
+  local f="$1" gd="$2" nd="" e
+  if nd="$(_kv_get "$gd" "${f##*/}")"; then printf '%s git' "$nd"; return 0; fi
+  nd="$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} /^[[:space:]]*modified:/{sub(/^[[:space:]]*modified:[[:space:]]*/,""); gsub(/["'"'"']/,""); print substr($0,1,10); exit}' "$f" 2>/dev/null || true)"
+  if [[ "$nd" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then printf '%s fm' "$nd"; return 0; fi
+  e="$(stat_portable_mtime "$f")"
+  [ -n "$e" ] || return 0
+  nd="$(date -d "@$e" +%Y-%m-%d 2>/dev/null || date -r "$e" +%Y-%m-%d 2>/dev/null || true)"
+  if [[ "$nd" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then printf '%s mtime' "$nd"; fi
+  return 0
+}
+memory_checks() {
+  local d="$1" mem="" mem_real="" enc="" dabs="" dphys="" cand
+  local index_text="" f base line t before after tgt
+  local link='[^()/:[:space:]]+\.md'        # one memory-link grammar for orphan, dangling and superseded
+  local link_re="\\(($link)\\)(.*)\$"
+  if [ -n "${KEEL_MEMORY_DIR:-}" ]; then
+    mem="$KEEL_MEMORY_DIR"
+  else
+    dabs="$(cd "$d" 2>/dev/null && pwd || true)"
+    [ -n "$dabs" ] || return 0
+    dphys="$(cd -P "$d" 2>/dev/null && pwd -P || true)"
+    [ "$dphys" != "$dabs" ] || dphys=""
+    for cand in "$dabs" "$dphys"; do
+      [ -n "$cand" ] || continue
+      enc="${cand//[\/.]/-}"
+      if [ -d "$ghome/projects/$enc/memory" ]; then mem="$ghome/projects/$enc/memory"; break; fi
+    done
+    if [ -z "$mem" ]; then
+      # Only where Claude Code has a projects dir at all: a machine without one (another harness) has no
+      # memory dir to find, and announcing "did not run" on every run there would be noise.
+      case "$dabs$dphys" in
+        *[!A-Za-z0-9/.-]*) [ -d "$ghome/projects" ] && hint H-MEMORY-DIR-UNRESOLVED "memory dir not found for $dabs, and the path carries a character this check cannot encode — the memory checks did not run (set KEEL_MEMORY_DIR to the project's memory dir)" ;;
+      esac
+      return 0
+    fi
+  fi
+  [ -d "$mem" ] || return 0
+  mem_real="$(cd -P "$mem" 2>/dev/null && pwd -P)" || return 0
+  say "  memory dir: $mem"
+
+  if [ -f "$mem_real/MEMORY.md" ]; then index_text="$(cat "$mem_real/MEMORY.md" 2>/dev/null || true)"; fi
+
+  # A.2 — orphan: the (<file>.md) span anywhere on any index line is the whole link grammar.
+  for f in "$mem_real"/*.md; do
+    [ -f "$f" ] || continue
+    base="${f##*/}"; [ "$base" = MEMORY.md ] && continue
+    case "$index_text" in
+      *"($base)"*) ;;
+      *) warn W-MEMORY-ORPHAN "$base — memory file no MEMORY.md line links: no session ever recalls it — add the index line or delete the file" ;;
+    esac
+  done
+
+  # A.3 — dangling: every (<target>.md) span, one finding per link (a URL or a path is not a memory link).
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    t="${t#(}"; t="${t%)}"
+    [ -f "$mem_real/$t" ] || warn W-MEMORY-DANGLING "$t — MEMORY.md links a file that does not exist — remove the index line or restore the file"
+  done < <(printf '%s\n' "$index_text" | grep -oE "\\($link\\)" || true)
+
+  # A.4 — superseded: an uppercase marker on the line OUTSIDE its first (<file>.md) span — in the hook after
+  # it or the [title] before it (the live keel line carries it in the title). The span itself is excluded,
+  # so a file NAMED superseded-… never fires.
+  while IFS= read -r line; do
+    [[ "$line" =~ $link_re ]] || continue
+    tgt="${BASH_REMATCH[1]}"; after="${BASH_REMATCH[2]}"
+    before="${line%%"($tgt)"*}"
+    if [[ "$before $after" =~ (^|[^A-Za-z])(SUPERSEDED|RETRACTED)([^A-Za-z]|$) ]]; then
+      warn W-MEMORY-SUPERSEDED "$tgt — its MEMORY.md line is marked ${BASH_REMATCH[2]} but the record is still loaded every session — fold the correction into the surviving memory and delete this file + line (P2)"
+    fi
+  done <<< "$index_text"
+
+  # A.5 — stale: the push side of FRAMEWORK.md's note-age vs code-age check; opt-in (see the header for why).
+  # Skipped on a non-git project (G-GIT-MISSING already reports that state). ONE finding per file, naming
+  # the NEWEST code path it backticks; a note naming no tracked path has no code date and never fires.
+  [ "$MEMORY_AGE" = 1 ] || return 0
+  git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  local nd_pair nd src p cdate newest newest_p tok code_cache=""
+  local git_dates=""
+  if git -C "$mem_real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # newest-first log: the first sighting of a name is its last commit; a file with no commit is absent.
+    git_dates="$(git -C "$mem_real" -c core.quotepath=off log --format=$'\001%cs' --name-only --relative -- . 2>/dev/null \
+      | awk '/^\001/{d=substr($0,2);next} NF&&!seen[$0]++{printf "\n%s\t%s", $0, d}' || true)"
+  fi
+  for f in "$mem_real"/*.md; do
+    [ -f "$f" ] || continue
+    base="${f##*/}"; [ "$base" = MEMORY.md ] && continue
+    nd_pair="$(_mem_note_date "$f" "$git_dates")"
+    [ -n "$nd_pair" ] || continue
+    nd="${nd_pair%% *}"; src="${nd_pair##* }"
+    newest=""; newest_p=""
+    while IFS= read -r tok; do
+      p="$(_mem_path_token "$tok" "$d")"
+      [ -n "$p" ] || continue
+      if ! cdate="$(_kv_get "$code_cache" "$p")"; then
+        cdate="$(git -C "$d" log -1 --format=%cs -- "$p" 2>/dev/null || true)"
+        code_cache="$code_cache"$'\n'"$p"$'\t'"$cdate"
+      fi
+      [ -n "$cdate" ] || continue
+      if [ -z "$newest" ] || [[ "$newest" < "$cdate" ]]; then newest="$cdate"; newest_p="$p"; fi
+    done < <(_backtick_tokens "$f" 1)
+    if [ -n "$newest" ] && [[ "$nd" < "$newest" ]]; then
+      hint H-MEMORY-STALE "$base (${nd}[${src}] < $newest for $newest_p) — the note is older than the code it names: re-verify it, then refresh or delete it (FRAMEWORK.md \"Staleness check\")"
+    fi
+  done
+}
+
 for d in "${DIRS[@]}"; do
   name="$(basename "$(cd "$d" 2>/dev/null && pwd || echo "$d")")"
   say "● $name ($d)"
@@ -1027,6 +1213,10 @@ for d in "${DIRS[@]}"; do
       hint H-FOOTPRINT "session startup footprint ~${est} tokens (project ~${proj_est} + global ~${global_est}) > budget ${WARN_TOKENS} — move project detail to the on-demand tier (P2/P3)"
     fi
   fi
+
+  # dir #521: the memory dir MEMORY.md loads from every session — report orphans, dangling/superseded
+  # index lines, stale notes. Silent when the dir is absent; never edits a memory file.
+  memory_checks "$d"
 
   # Private AI context (CLAUDE.md, .claude/) — three outcomes, told apart because each needs a different
   # response. TRACKED: already committed, which is the harm the ignore rule exists to prevent; an ignore
@@ -1202,11 +1392,7 @@ for d in "${DIRS[@]}"; do
       in_token_set "$baseline_set" "$tok" && continue
       drift_count=$((drift_count + 1))
       [ "$drift_count" -le "$max_show" ] && drift_list="${drift_list}${drift_list:+, }$tok"
-    done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$d/CLAUDE.md" 2>/dev/null \
-               | grep -oE '`[^`[:space:]][^`]*`' \
-               | sed -e 's/^`//' -e 's/`$//' \
-               | awk '{print $1}' \
-               | sort -u)
+    done < <(_backtick_tokens "$d/CLAUDE.md")
     if [ "$drift_count" -gt 0 ]; then
       more=""
       [ "$drift_count" -gt "$max_show" ] && more=" and $((drift_count - max_show)) more"

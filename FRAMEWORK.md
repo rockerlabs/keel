@@ -308,7 +308,18 @@ the last real change of the code it describes — `git log -1 --format=%cs -- <n
 change actually landed). A note older than the code's last change is suspect: re-verify before
 trusting it, then refresh the note or delete it. Honest limits, by design: the check is lazy (drift
 sits undetected between reads) and per-file — the one-file-one-topic rule above is what makes it
-land on something small enough to point at the suspect claim. No push triggers or dependency graphs.
+land on something small enough to point at the suspect claim. The read-time pull check stays as
+described; `doctor`'s `H-MEMORY-STALE` (opt-in, `--memory-age`) adds a push-side sweep of the same
+comparison over every file. Dependency graphs are still not built.
+
+**Forgetting has three operations.** *Expire* — a note nobody can reach or that outlived its subject:
+`doctor` reports an unindexed file (`W-MEMORY-ORPHAN`), an index line with no file
+(`W-MEMORY-DANGLING`) and a note older than the code it names (`H-MEMORY-STALE`); delete it or refresh it.
+*Supersede* — a correction replaces a record: rewrite the existing file in place and delete the old
+record, never a second file and never an appended "UPDATE:"; `W-MEMORY-SUPERSEDED` flags the
+`SUPERSEDED`/`RETRACTED` line whose delete is still owed. *Contradiction* — two notes disagree: put it
+in front of a person; nothing auto-resolves it. `doctor` only reports — it never edits a memory file.
+The long form is [`docs/memory-layers.md`](docs/memory-layers.md).
 
 **The cwd-silo trap:** memory keyed by the session's cwd will NOT load when you later work from a different
 path for the same project. So: **cross-project facts** (user/environment, cross-cutting feedback, tool
