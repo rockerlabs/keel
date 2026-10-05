@@ -92,7 +92,20 @@ else
   # (if/case/&&-conditions) are where the resume would still bite, and splitting the traps closes that
   # without depending on which position a future edit lands in. The EXIT trap still fires after these,
   # so the teardown itself stays written once.
-  trap 'rm -rf "$tmp"' EXIT
+  # dir #692 — a COMPLETION MARKER, not a bare quoted-command EXIT trap: on bash 3.2 (macOS /bin/sh is
+  # bash in POSIX mode) a top-level FATAL shell error (a `set -u` unbound variable) leaves `$?` at 0 by
+  # the time the trap runs, so a bare trap turned that crash into exit 0 — the one-line installer
+  # reporting success over an install that never happened. `ok` is set on this script's own last line
+  # only; a status-0 exit without it is a crash and becomes 1. An explicit non-zero exit (including the
+  # 130/143 signal traps below) keeps its own status. The dir #264 idiom, as in tools/drydock/inventory.sh.
+  ok=""
+  on_exit() {
+    st=$?
+    [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+    rm -rf "$tmp"
+    exit "$st"
+  }
+  trap on_exit EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   src="$tmp/keel"
@@ -141,4 +154,5 @@ else
   # must point into a KEPT checkout (the bin/keel symlink, the CLI/uninstall promises in the
   # summary). Otherwise the run would ship a symlink that dangles the moment this script exits.
   ( cd "$src" && KEEL_EPHEMERAL=1 ./install.sh "$@" )
+  ok=1   # genuine completion — the EXIT trap above reads it (dir #692)
 fi

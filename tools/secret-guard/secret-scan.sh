@@ -104,10 +104,60 @@ PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
 # a hook that runs on every commit must not litter $TMPDIR with orphans.
+#
+# dir #682 — a COMPLETION MARKER on top of the `$?` capture, not a bare `rm -rf` trap: on bash 3.2 (macOS
+# /bin/bash) a top-level FATAL shell error (a `.` of a missing file, a `set -u` unbound variable) leaves
+# `$?` at 0 by the time the EXIT trap runs, so a bare trap turned that crash into exit 0 and the hook
+# failed OPEN. `_scan_done` is set to 1 only on the legitimate exit-0 paths (the clean early return, the
+# end of the scan, the end of selftest()); an exit that reaches the trap with status 0 and no marker is
+# a crash and becomes 2 (this file's "cannot scan" status). An explicit non-zero `exit N` keeps its own.
+# Every legitimate `exit 0` MUST set `_scan_done=1` first; one that forgets fails closed (the hook blocks).
+_scan_done=""
+_scan_exit() {
+  _scan_rc=$?
+  if [ -z "$_scan_done" ] && [ "$_scan_rc" -eq 0 ]; then
+    _scan_rc=2
+    echo "secret-scan: internal error — the scan did not complete; failing closed" >&2
+  fi
+  rm -rf "$SCRATCH"
+  exit "$_scan_rc"
+}
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH"' EXIT
+trap _scan_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# --- dir #148: the personal-literals parser, a small INLINE copy of tools/lib/personal-literals.sh --
+# This file is VENDORED and may only source files vendored beside it, so it cannot source the shared
+# lib; this twin's body is IDENTICAL to tools/lib/personal-literals.sh's personal_literals_parse, and
+# tests/test_secret_guard.sh (the `dir #148` section) runs both on shared fixtures and asserts the two
+# bodies are byte-identical — edit BOTH copies or that test goes red. Statuses: 0 ok; 2 the file exists
+# but is unusable (unreadable, or a symlink to nothing); 3 a line ends in an odd run of backslashes
+# (withheld); 4 the per-line sed failed; other non-zero: a read failure. The caller below captures it by
+# a plain assignment and fails CLOSED on any non-zero (never `local x=$(…)`, never a process
+# substitution — those hide the status).
+_personal_literals_parse_inline() {
+  [ -L "$1" ] && [ ! -e "$1" ] && return 2
+  [ -f "$1" ] || return 0
+  [ -r "$1" ] || return 2
+  local _pl_t="" _pl_rc=0 _pl_run=""
+  while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
+    _pl_t="${_pl_t#$'\357\273\277'}"
+    _pl_t="${_pl_t%$'\r'}"
+    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
+    case "$_pl_t" in
+      ''|\#*) ;;
+      *)
+        _pl_run="${_pl_t##*[!\\]}"
+        if [ $(( ${#_pl_run} % 2 )) -eq 1 ]; then
+          _pl_rc=3
+        else
+          printf '%s\n' "$_pl_t"
+        fi ;;
+    esac
+  done < "$1" || return $?
+  return "$_pl_rc"
+}
 
 # Build a combined regex (class 1, case-sensitive).
 joined=""
@@ -117,16 +167,27 @@ done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
 personal=""
-if [ -f "$PERSONAL_FILE" ]; then
-  while IFS= read -r _t || [ -n "$_t" ]; do
-    _t="${_t%$'\r'}"                                              # tolerate CRLF
-    # BRE on purpose — the repo's sed usage stays POSIX-portable (busybox included), no -E
-    _t="$(printf '%s' "$_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
-    case "$_t" in
-      ''|\#*) ;;
-      *)      personal="${personal:+$personal|}$_t" ;;
-    esac
-  done < "$PERSONAL_FILE"
+# dir #148: the parse is _personal_literals_parse_inline (defined above). Its status is acted on right
+# here (dir #680): a personal file we cannot trust must fail CLOSED — silently scanning with fewer (or no)
+# literals is the fail-open this gate must never have.
+_personal_rc=0
+_personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _personal_rc=$?
+case "$_personal_rc" in
+  0) ;;
+  3)
+    echo "secret-scan: a line in $PERSONAL_FILE ends in a backslash — it would join the next line into a" >&2
+    echo "pattern matching neither literal, silently disabling personal-data detection. Fix the file." >&2
+    exit 2 ;;
+  *)
+    echo "secret-scan: cannot read or parse $PERSONAL_FILE (unreadable, a symlink to nothing, or a line" >&2
+    echo "sed could not process) — personal-data detection would be silently disabled. Fix the file." >&2
+    exit 2 ;;
+esac
+# One literal per line, none empty (the parser's contract): join with `|` (an empty alternative would
+# match everything, so an empty capture is skipped). `tr` (byte-wise, LC_ALL=C), not ${var//$'\n'/|}: that
+# expansion is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
+if [ -n "$_personal_lines" ]; then
+  personal="$(printf '%s' "$_personal_lines" | LC_ALL=C tr '\n' '|')"
 fi
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
@@ -209,7 +270,16 @@ emit_blob() {  # $1 = record label (path)
            } | LC_ALL=C sort -u )"
   rm -f "$tmp" "$dec"
   [ -z "$hits" ] && return 0
-  while IFS= read -r hit; do
+  # dir #693 — every `read` loop that collects match output carries `|| [ -n "$var" ]` (the record-filter
+  # loop at the bottom needs none: its here-string always adds one more newline): under a UTF-8
+  # locale bash 5.x `read -r` returns 1 for a FINAL line whose last byte is an invalid multibyte lead byte
+  # (the newline is swallowed into the incomplete sequence), though it did fill the variable — so a bare
+  # `while read` dropped exactly the record carrying the key and the scan ended `clean` (found by CI's
+  # ubuntu leg: bash 5.2 + a key line ending in a stray 0xE9). The tail test keeps that last record (the
+  # variable then ends in the swallowed newline, harmless for a content line — records are newline-split and
+  # blank lines skipped). The file-NAME loops are deliberately left bare: there the stray newline would reach
+  # git as part of a pathspec, so a tail alone would not rescue them.
+  while IFS= read -r hit || [ -n "$hit" ]; do
     [ -n "$hit" ] && records+="$label:(binary) $hit"$'\n'
   done <<< "$hits"
 }
@@ -224,7 +294,7 @@ emit_stream() {  # $1 = record label (path)
   if is_binary_file "$stmp"; then
     emit_blob "$label" < "$stmp"
   else
-    while IFS= read -r line; do
+    while IFS= read -r line || [ -n "$line" ]; do   # dir #693: see emit_blob's loop
       records+="$label:$line"$'\n'
     done < <(match_text -n "$stmp")
   fi
@@ -324,11 +394,29 @@ emit_diff() {
   # --literal-pathspecs: "$path" is a real filename, not a glob the caller intended — a file
   # literally named e.g. "*" would otherwise match every staged path, folding every OTHER staged
   # file's added lines into this one path's records (max-review sweep finding).
-  git --literal-pathspecs diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null | awk '
+  #
+  # dir #693 — the parse is BYTE-oriented and FAIL-CLOSED. (1) awk and sed run under LC_ALL=C: on macOS
+  # BWK awk (and BSD sed) under a UTF-8 locale ONE invalid byte in a staged text file (a stray Latin-1 /
+  # CP1251 byte) aborts the parser ("towc: multibyte conversion failure"), and the old trailing `|| true`
+  # swallowed that, so the scan ended `clean` over a diff it never read — the commit hook silently off for
+  # any such file. Bytes are what the scanner wants; `match_text` reads the spooled records with `grep -a`.
+  # (2) a failed leg (git diff, awk or sed — `pipefail` folds all three into one status) is no longer
+  # swallowed: it exits 2 (this file's "cannot scan" status) naming the path. This runs in the main shell
+  # (a `done < <(...)` loop body, not a `$(...)`), so the `exit` reaches the EXIT trap, which keeps it.
+  # dir #697 — `--no-ext-diff --no-textconv`: `git diff` otherwise runs the USER'S configured drivers. A
+  # `diff.external` program replaces the patch with its own output (no `@@` header, so awk emits nothing)
+  # and a `textconv` filter replaces the file's content with the converter's output — either one hid a
+  # staged key (`clean`, exit 0). The scanner reads the staged bytes, whatever the git config says.
+  local diff_rc=0
+  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>/dev/null | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
-  ' | sed 's/^+//' > "$dtmp" || true
-  while IFS= read -r hit; do
+  ' | LC_ALL=C sed 's/^+//' > "$dtmp" || diff_rc=$?
+  if [ "$diff_rc" -ne 0 ]; then
+    echo "secret-scan: could not parse the staged diff of '$path' (exit $diff_rc) — refusing to report it clean" >&2
+    exit 2
+  fi
+  while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
     records+="$path:$hit"$'\n'
   done < <(match_text '' "$dtmp")
   rm -f "$dtmp"
@@ -483,6 +571,7 @@ selftest() {
   else
     echo "selftest: WARN — could not create the range-allowlist probe repo; the --range baseline pass is unverified on this host" >&2
   fi
+  _scan_done=1
   return $rc
 }
 
@@ -564,7 +653,7 @@ case "$mode" in
       esac
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
-      while IFS=' ' read -r _otype osha opath; do
+      while IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693: see emit_blob's loop
         [ -n "$osha" ] || continue
         emit_stream "$opath" < <(git cat-file blob "$osha" 2>/dev/null)
       done <<< "$blobs"
@@ -585,7 +674,7 @@ case "$mode" in
         [ -n "$csha" ] || continue
         ctmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
         git log -1 --format=%B "$csha" > "$ctmp" 2>/dev/null || true
-        while IFS= read -r hit; do
+        while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
           [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
         done < <({ match_text '' "$ctmp"
                    grep -aE "$SESSION_META" "$ctmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
@@ -612,7 +701,7 @@ case "$mode" in
           [ -n "$tsha" ] || continue
           tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
           tag_body "$tsha" > "$tagtmp"
-          while IFS= read -r hit; do
+          while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
             [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
           done < <({ match_text '' "$tagtmp"
                      grep -aE "$SESSION_META" "$tagtmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
@@ -684,7 +773,7 @@ case "$mode" in
     ;;
 esac
 
-[ -n "$records" ] || { echo "secret-scan: clean"; exit 0; }
+[ -n "$records" ] || { echo "secret-scan: clean"; _scan_done=1; exit 0; }
 
 # dir #518: resolve the --range allowlist same-change-provenance baseline (dir #508 (a) extended to
 # --range too), but only now — AFTER we already know this push has something to check the allowlist
@@ -913,4 +1002,5 @@ if [ "$found" = 1 ]; then
 fi
 
 echo "secret-scan: clean"
+_scan_done=1
 exit 0

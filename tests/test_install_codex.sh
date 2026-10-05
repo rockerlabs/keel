@@ -39,7 +39,8 @@ sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/
 run "$install" --codex --home "$dhome" --no-hooks
 check_status "drifted block, non-interactive → exit 0 (no hang, no clobber)" 0 "$STATUS"
 check_contains "flags the drifted embedded rails" "$OUT" "AGENTS.md embeds rails that differ from the shipped core"
-check_contains "non-interactive path names the fix" "$OUT" "Refresh by hand"
+check_contains "non-interactive path names the fix" "$OUT" "Refresh just the block"
+check_contains "the fix route carries --codex (dir #650 D9: a bare re-run would build a second install)" "$OUT" "install.sh --codex"
 check_contains "the edited rail survives untouched" "$(cat "$dhome/AGENTS.md")" "MY EDITED RAIL"
 
 # --- a file carrying the heading but NO KEEL-CORE markers (hand-stripped, or coincidental reuse of

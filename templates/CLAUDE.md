@@ -16,9 +16,10 @@
 - **`PRINCIPLES.md`** — P0–P4, the durable foundation. Consult for foundational / expensive-to-reverse
   decisions.
 - **`LEARNINGS.md`** — staging tier for workflow insights not yet worth a committed rule. Append on a
-  reusable insight; promote on recurrence; prune when stale.
+  reusable insight; promote on recurrence; prune when stale — `/triage` owns that promote/prune pass.
 - **`IDEAS.md`** — staging tier for raw, not-yet-actionable ideas (Ideas != Backlog: no next step
-  required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it.
+  required). Append freely; promote to `BACKLOG.md`/`LEARNINGS.md` once it earns one, or drop it —
+  `/triage` owns the promote/drop pass.
 - **`<project>/CLAUDE.md`** — per-project context. Read before starting work in that project.
 - **A design/planning session's ticket output, for a project `BACKLOG.md` with concurrent writers** — an
   unnumbered draft in that project's `BACKLOG.drafts/` (sibling of `BACKLOG.md`), folded at that session's
@@ -126,7 +127,10 @@ failure is a missing *cause*, not a missing attempt.
 
 ## Shipped docs — situation, not summary
 
-Trigger conditions only — open the file once the situation matches, not before:
+Trigger conditions only — open the file once the situation matches, not before. A `docs/<x>.md`
+that any Keel file names (these rails, `FRAMEWORK.md`, a Keel command — a `../docs/<x>.md` link
+too) is Keel's own doc: it sits in the `docs/` folder beside your installed `FRAMEWORK.md`, not in
+your project's own `docs/`:
 
 - 2+ agent sessions against one repo (worktrees, terminals, a fleet) → `docs/parallel-sessions.md`
 - Spawning any subagent (via the Agent tool) → `docs/delegation.md`

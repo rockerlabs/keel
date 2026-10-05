@@ -43,8 +43,11 @@
 #                             record) but its directory is gone now — `keel-impact.sh restore FROM_DIR`
 #                             or `enable --restart`; checked at the main checkout only
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
-#                              carrying no executable pre-commit) and no local hook. Sensitive to a
-#                              redirected global git config, so it names its source (dir #97)
+#                              carrying no executable pre-commit) and no local hook; or Keel's own
+#                              machine hooks dir holding a pre-commit that is not Keel's (marker line,
+#                              the test install.sh Verify uses). The hooks dir is the one git reads, from
+#                              install-secret-guard.sh --where (dir #643), and the advice is per scope.
+#                              Sensitive to a redirected global git config, so it names its source (dir #97)
 #   WARN  W-GUARD-BYPASSED     a local core.hooksPath override carries no executable pre-commit — this
 #                              repo's commits run nothing, and any global guard is bypassed (dir #97)
 #   WARN  W-GUARD-STALE        a wired per-repo secret-guard copy differs from the engine this checkout
@@ -666,7 +669,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # FRAMEWORK/PRINCIPLES layout. ([ -L ] skips the literal glob when a dir is empty.) A link that
   # RESOLVES but into a different checkout than this one looks healthy while running stale content —
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
-  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/commands"/* "$ihome/bin"/*; do
+  # dir #650: a linked home's keel/docs/ (and keel/docs/drydock/) hold one symlink per shipped doc — the
+  # one-level "$ihome/keel"/* glob skips those dirs, so they are walked explicitly.
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
     # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
@@ -689,6 +694,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
         if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
       "$ihome/bin/keel")
         tgt="$repo_root/keel" ;;
+      # The docs arm MUST precede the generic keel/ arm: a `case` `*` matches `/`, so keel/docs/x.md would
+      # otherwise map to $repo_root/x.md, which never exists, and W-LINK-FOREIGN could never fire (dir #650).
+      "$ihome/keel/docs/"*)
+        tgt="$repo_root/docs/${l#"$ihome"/keel/docs/}" ;;
       "$ihome/keel/"*)
         tgt="$repo_root/$b" ;;
       *)
@@ -770,7 +779,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    say "  OK   core rails: embedded copy (copy mode; a re-run checks for drift)"
+    # dir #650 D10: compare the embedded block with this checkout's CORE.md (the shared, trim-aware
+    # comparator in tools/lib/core-ownership.sh) instead of claiming a drift check that never happened.
+    case "$(keel_core_block_state "$gclaude" "$repo_root/CORE.md")" in
+      current)         say "  OK   core rails: embedded copy (matches this checkout's CORE.md)" ;;
+      current-trimmed) say "  OK   core rails: embedded copy (matches this checkout's CORE.md, trimmed)" ;;
+      *)
+        warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$imode_flag$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
+    esac
   else
     warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$imode_flag$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
   fi
@@ -809,6 +825,30 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   commands: $wired of $total shipped are wired"
     else
       warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    fi
+  fi
+
+  # Docs (dir #650): X of Y shipped docs are present beside the installed FRAMEWORK.md. The docs dir
+  # follows the AUDIT's mode and layout, never -f: --codex → docs/; otherwise keel/docs/ when the home is
+  # linked (keel/CORE.md a symlink — dangling included — or a --no-git trim, the same test install.sh's
+  # stickiness uses), else docs/. Checked in every mode, --codex included, and the advice carries the
+  # mode flag (W-TIER-MISSING's shape — a bare re-run under --codex would build a second install).
+  docs_rel="docs"
+  if [ "$CODEX_MODE" != 1 ] && { keel_core_is_link "$ihome/keel/CORE.md" || keel_core_is_nogit_trim "$ihome/keel/CORE.md"; }; then
+    docs_rel="keel/docs"
+  fi
+  dpresent=0; dtotal=0; missing_docs=""
+  for dsrc in "$repo_root"/docs/*.md "$repo_root"/docs/drydock/*.md; do
+    [ -f "$dsrc" ] || continue
+    drel="${dsrc#"$repo_root"/docs/}"
+    dtotal=$((dtotal + 1))
+    if [ -f "$ihome/$docs_rel/$drel" ]; then dpresent=$((dpresent + 1)); else missing_docs="$missing_docs $drel"; fi
+  done
+  if [ "$dtotal" -gt 0 ]; then
+    if [ "$dpresent" = "$dtotal" ]; then
+      say "  OK   docs: $dpresent of $dtotal shipped are present in $docs_rel/"
+    else
+      warn W-DOCS-MISSING "docs: only $dpresent of $dtotal shipped are present in $ihome/$docs_rel — missing:$missing_docs (a pull refreshes content, not composition: re-run install.sh$imode_flag$ihome_flag)"
     fi
   fi
 
@@ -1360,74 +1400,94 @@ for d in "${DIRS[@]}"; do
     fi
   fi
 
-  # A machine-global core.hooksPath covers this repo — UNLESS the repo sets its own LOCAL core.hooksPath,
-  # which silently overrides the global one (git runs the local path, so the global guard never fires here).
-  # So when a local override exists, verify it actually carries the guard before trusting it.
-  local_hooks="$(git -C "$d" config --local core.hooksPath 2>/dev/null || true)"
-  if [ -n "$local_hooks" ]; then
-    case "$local_hooks" in /*) lhd="$local_hooks" ;; *) lhd="$d/$local_hooks" ;; esac
-    # An EXECUTABLE pre-commit is the whole test, same bar as the global branch below (dir #97). The
-    # older `secret-scan.sh OR pre-commit OR pre-push` reading counted an engine file, or a push-only
-    # hook, as cover: a dir holding just secret-scan.sh — a pre-commit deleted, or one that lost its +x
-    # bit — left every commit running nothing while doctor printed a clean 0/0/0 (reproduced: a planted
-    # key committed straight through). Presence of parts is not a wired guard.
-    if [ -x "$lhd/pre-commit" ]; then
-      # carries the guard — but a WIRED copy that drifted from the shipped engine runs old detection.
-      # dir #122: a LOCAL hooksPath pinned to the very same absolute dir the machine-global one names
-      # (-ef, same physical file) is one drifted file, not two — the machine-wide W-GUARD-GLOBAL-STALE
-      # check above already reports it, with the remediation that actually fixes both (this repo's
-      # override just points at the same shared dir; re-vendoring per-repo here would either write a
-      # second, unshared copy or clobber the shared one, neither of which is what "re-vendor: <this
-      # repo>" promises). Only the RELATIVE case is this branch's to own — an absolute local path that
-      # happens to differ from the global one is a genuine separate vendored copy, still reported here.
-      # Compared against $global_hooks_eff/_eff_abs, NOT the plain $global_hooks/_abs — the machine-wide
-      # check above (dir #121's hoist) fires on the EFFECTIVE value, so deduping against the narrower
-      # --global-only one would miss the dup on exactly the XDG-behind-~/.gitconfig machines dir #121
-      # exists for (found by an independent /code-review high pass, reproduced against a live sandbox).
-      local_is_global_dup=0
-      [ "$global_hooks_eff_abs" = 1 ] && [ -d "$lhd" ] && [ -d "$global_hooks_eff" ] && [ "$lhd" -ef "$global_hooks_eff" ] \
-        && local_is_global_dup=1
-      if [ "$local_is_global_dup" = 0 ] && [ -f "$lhd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
-         && ! cmp -s "$lhd/secret-scan.sh" "$shipped_scan"; then
-        warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$local_hooks') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
-      fi
-    else
-      warn W-GUARD-BYPASSED "local core.hooksPath ('$local_hooks') takes over this repo's hooks but carries no executable pre-commit, so commits here run nothing — and any machine-global guard is silently bypassed (vendor the guard into the override dir, or unset it)"
-    fi
-  elif [ -n "$global_hooks" ]; then
-    # A machine-global core.hooksPath is only cover if the dir it names actually carries an executable
-    # pre-commit — until dir #97 this branch trusted the setting alone and swallowed the hookless case
-    # as "covered by global": a hooksPath pointing at an empty dir left commits guarded by nothing while
-    # the audit printed a clean 0/0/0. Found by the operator's own /code-review pass on dir #97 and
-    # reproduced (a planted key committed through). The dir is resolved PER REPO, the same way the
-    # local_hooks branch above does it: a relative core.hooksPath (`.githooks`) is resolved by git
-    # against the repo, so testing it from doctor's own cwd would both miss real guards and invent
-    # absent ones — the `~/` form is already expanded where $global_hooks is read.
-    case "$global_hooks" in /*) ghd="$global_hooks" ;; *) ghd="$d/$global_hooks" ;; esac
-    if [ -x "$ghd/pre-commit" ]; then
-      # Covered. Engine drift for an ABSOLUTE hooksPath was checked once, machine-wide, above; a
-      # RELATIVE one is per-repo by construction, so that pass deliberately skips it and this branch
-      # owns it — with the remediation that actually works here (the machine one exits 3 rather than
-      # touch a hooksPath it didn't set). The two domains are disjoint, so one drift is reported once,
-      # by whichever check can fix it. Phrased like the local_hooks branch above.
-      if [ "$global_hooks_abs" = 0 ] && [ -f "$ghd/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
-         && ! cmp -s "$ghd/secret-scan.sh" "$shipped_scan"; then
-        warn W-GUARD-STALE "secret-guard at the global core.hooksPath '$global_hooks' ($ghd) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh $d"
-      fi
-    else
-      ghd_note=""
-      [ "$ghd" = "$global_hooks" ] || ghd_note=" (relative — resolves to $ghd for this repo)"
-      warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $global_hooks$ghd_note but that dir carries no executable pre-commit, so commits here are guarded by nothing (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
-    fi
-  elif ( cd "$d" 2>/dev/null && p="$(git rev-parse --git-path hooks/pre-commit 2>/dev/null)" && [ -x "$p" ] ); then
-    # vendored into the real hooks dir (a worktree/submodule isn't .git/hooks) — same drift check
-    vh="$(git -C "$d" rev-parse --git-path hooks 2>/dev/null)"
-    case "$vh" in /*) ;; *) vh="$d/$vh" ;; esac
-    if [ -f "$vh/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$vh/secret-scan.sh" "$shipped_scan"; then
-      warn W-GUARD-STALE "vendored secret-guard ($vh) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
-    fi
+  # dir #643: which hooks dir git reads for this repo, and what the installer would write, come from ONE
+  # resolver — `install-secret-guard.sh --where` — the same one install.sh's Verify reads. This block
+  # used to resolve three different ways (a LOCAL read, a `git config --global` read that cannot see the
+  # XDG file behind an existing ~/.gitconfig, an [include] or SYSTEM scope, and `rev-parse --git-path
+  # hooks`), so it could judge a dir the installer never wrote and advise vendoring into a repo whose own
+  # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
+  # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
+  # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir=""
+  while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
+    case "$w_k" in
+      effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
+      origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; pre-push) w_pp="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
+    esac
+  done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
+  w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
+  if [ -z "$w_eff" ]; then
+    warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo$guard_home_note"
+  elif [ -x "$w_eff/pre-commit" ]; then
+    # An executable pre-commit is the bar for ANY dir (dir #97) — except Keel's own machine hooks dir,
+    # where "wired" must mean what install.sh's Verify means: the pre-commit carries Keel's marker line
+    # (a user's wrapper that merely names the tool there is refused by the installer, so it is not Keel's
+    # guard). Anywhere else a foreign pre-commit is the user's own wiring and counts.
+    case "$w_keeldir:$w_pc:$w_pp" in
+      1:foreign*:*|1:*:foreign*)
+        # pre-push too: Verify (and the installer's own refusal) treat a foreign hook of EITHER name in
+        # Keel's dir as "not Keel's", so doctor must reach the same verdict.
+        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($w_value) is Keel's machine-wide hooks dir, but a hook in it (pre-commit or pre-push) is not Keel's (its marker line differs), so Keel's scan may not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_home_note"
+        ;;
+      *)
+        case "$w_pc" in
+          keel-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
+        esac
+        # A WIRED copy that drifted from the shipped engine runs old detection. Reported by whichever
+        # check can fix it: an absolute global/system hooksPath once, machine-wide, above (its remedy
+        # re-runs --global); everything else here, with the remedy that actually works for it.
+        if [ -f "$w_eff/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$w_eff/secret-scan.sh" "$shipped_scan"; then
+          case "$w_scope" in
+            none)
+              warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+              ;;
+            local)
+              # dir #122: a LOCAL hooksPath pinned to the very same absolute dir the machine-global one names
+              # (-ef, same physical file) is one drifted file, not two — the machine-wide W-GUARD-GLOBAL-STALE
+              # check above already reports it, with the remedy that fixes both (this override just points at
+              # the same shared dir; re-vendoring per-repo would write a second, unshared copy or clobber the
+              # shared one). Compared against the EFFECTIVE machine-wide value (dir #121), which is what that
+              # check fires on. Only a differing absolute path is a genuine separate vendored copy.
+              if ! { [ "$global_hooks_eff_abs" = 1 ] && [ -d "$w_eff" ] && [ -d "$global_hooks_eff" ] && [ "$w_eff" -ef "$global_hooks_eff" ]; }; then
+                warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+              fi
+              ;;
+            global|system)
+              case "$w_value" in
+                /*|\~/*) : ;;   # absolute (a leading ~/ counts): one machine-wide drift, reported once above
+                *) warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)" ;;
+              esac
+              ;;
+            *)
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
+              ;;
+          esac
+        fi
+        ;;
+    esac
   else
-    warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
+    case "$w_scope" in
+      none)
+        warn W-GUARD-UNWIRED "secret-guard not wired (install-secret-guard.sh --global, or vendor into this repo)$guard_home_note"
+        ;;
+      local)
+        # A LOCAL override silently displaces any machine-global guard (git runs the local path), and an
+        # executable pre-commit is the whole test, same bar as everywhere (dir #97): an engine file or a
+        # push-only hook is not cover — a pre-commit deleted, or one that lost its +x bit, left every
+        # commit running nothing while doctor printed a clean 0/0/0. Presence of parts is not a guard.
+        warn W-GUARD-BYPASSED "local core.hooksPath ('$w_value') takes over this repo's hooks but carries no executable pre-commit, so commits here run nothing — and any machine-global guard is silently bypassed (vendor the guard into the override dir, or unset it)"
+        ;;
+      *)
+        # A hooksPath git reads from OUTSIDE the repo, but the dir has no executable pre-commit — until dir
+        # #97 this was swallowed as "covered by global". A relative value is resolved per repo, the way git
+        # does, so the path named here is the one commits actually use.
+        w_note=""; [ "$w_eff" = "$w_value" ] || w_note=" (resolves to $w_eff for this repo)"
+        # "Vendor into this repo" is the one remedy that cannot work here: a copy in the repo's own hooks
+        # dir is never read while a hooksPath from outside stands. The two that can are the two the
+        # installer prints (_isg_inert_note).
+        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $w_value$w_note ($w_scope scope$w_src) but that dir carries no executable pre-commit, so commits here are guarded by nothing. A vendored copy in $w_own would be ignored while that setting stands — replace it machine-wide (install-secret-guard.sh --global --force; the old value is recorded) or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)$guard_home_note"
+        ;;
+    esac
   fi
 
   # dir #68 pairing check, project-scope half — mirrors the --install-mode check above, which only

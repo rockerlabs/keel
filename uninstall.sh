@@ -354,6 +354,13 @@ home_has_keel_content() {
       if is_keel_owned "$slot" "$f"; then return 0; fi
     done
   fi
+  # dir #650 D7: the docs install.sh ships beside FRAMEWORK.md (copy/--codex: <home>/docs; a linked
+  # home's keel/docs is already covered by the keel/ test above) are Keel's too — the same two
+  # install.sh globs, the same is_keel_owned test.
+  for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
+    [ -f "$f" ] || continue
+    if is_keel_owned "$home/docs/${f#"$root"/docs/}" "$f"; then return 0; fi
+  done
   return 1
 }
 
@@ -439,6 +446,12 @@ dry_run_heuristic_listing() {
   fi
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if is_keel_owned "$HOME_DIR/$f" "$root/$f"; then echo "  would remove  $f"; fi
+  done
+  # dir #650 D7: the shipped docs, listed the way commands/<name> is — the same two globs install.sh
+  # uses. A linked home's keel/docs rides under its `would remove  keel` line above.
+  for f in "$root"/docs/*.md "$root"/docs/drydock/*.md; do
+    [ -f "$f" ] || continue
+    if is_keel_owned "$HOME_DIR/docs/${f#"$root"/docs/}" "$f"; then echo "  would remove  docs/${f#"$root"/docs/}"; fi
   done
   if [ "$this_has_rails" = 1 ]; then
     echo "  would strip the Keel rails (import line / KEEL-CORE block) from $CONTEXT_FILE"
@@ -620,7 +633,7 @@ if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ] && [ "$this_has_rails" = 0 
     echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode."
     echo "        (dry run — nothing will be changed)"
     echo "  That looks like the other install mode. Removing it from HERE would take the shared half"
-    echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave the $other_mode_recorded rails sitting there."
+    echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES, the docs) and leave the $other_mode_recorded rails sitting there."
     echo "  Reverse it with:  $other_cmd --home \"$other_home_recorded\""
     other_mode_hint
     gate_hooks_hint
@@ -628,7 +641,7 @@ if [ "$other_usable" = 1 ] && [ "$this_usable" = 0 ] && [ "$this_has_rails" = 0 
   fi
   echo "uninstall: $HOME_DIR holds a Keel install, but its recorded manifest is $other_mode_recorded mode, not $manifest_mode." >&2
   echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
-  echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave the $other_mode_recorded rails sitting there." >&2
+  echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES, the docs) and leave the $other_mode_recorded rails sitting there." >&2
   echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$other_home_recorded\"" >&2
   exit 2
 elif [ "$this_usable" = 0 ]; then
@@ -643,7 +656,7 @@ elif [ "$this_usable" = 0 ]; then
   if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && [ -f "$HOME_DIR/$other_context" ] && [ "$this_has_content" = 1 ]; then
     echo "uninstall: $HOME_DIR holds a Keel install, but no $CONTEXT_FILE — it has $other_context instead." >&2
     echo "  That looks like the other install mode. Removing it from HERE would take the shared half" >&2
-    echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES) and leave $other_context sitting there." >&2
+    echo "  (commands, the CLI symlink, FRAMEWORK/PRINCIPLES, the docs) and leave $other_context sitting there." >&2
     echo "  Nothing was changed. Reverse it with:  $other_cmd --home \"$HOME_DIR\"" >&2
     echo "  (If that $other_context is your own file and not Keel's, this run is what you wanted —" >&2
     echo "   rename it, or point --home at the right home.)" >&2
@@ -927,7 +940,9 @@ if [ "$this_usable" = 1 ]; then
 
   # Empty-dir pruning: only ever removes a dir install itself may have created, and only once every
   # artifact that lived in it is gone (a symlink-mismatch or cksum-drift leftover keeps it non-empty).
-  for d in keel bin commands; do
+  # dir #650 D7: the docs dirs go first, deepest first (keel/docs/drydock before keel/docs before keel,
+  # docs/drydock before docs) — `rmdir` only, so a dir still holding an adopter file survives.
+  for d in keel/docs/drydock keel/docs docs/drydock docs keel bin commands; do
     [ -d "$HOME_DIR/$d" ] && [ "$DRY_RUN" = 0 ] && rmdir "$HOME_DIR/$d" 2>/dev/null || true
   done
 fi

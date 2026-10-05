@@ -43,7 +43,8 @@ scales with your model, constraint is mechanical — which is exactly the honest
 ## Install
 
 Two steps, and the installer **never overwrites a file you own** (linked mode's one edit: it appends
-the single import line to an existing `~/.claude/CLAUDE.md`).
+the single import line to an existing `~/.claude/CLAUDE.md`; the other: a re-run from a terminal *offers*,
+default no, to refresh only the Keel rails block inside a `CLAUDE.md` Keel wrote, backing the file up first).
 
 **1. Clone and install:**
 
@@ -244,7 +245,8 @@ once, open Script Editor, run `display notification "test" with title "keel"`, a
 > bit is the slash commands. See [`ADAPTING.md`](ADAPTING.md).
 
 > **Already have your own conventions?** Keel isn't all-or-nothing and won't fight your setup —
-> `install.sh` never overwrites a file you own. Lift single ideas from
+> `install.sh` never overwrites a file you own (bar the one consented, backed-up rails-block refresh
+> described under [Install](#install)). Lift single ideas from
 > [`PRINCIPLES.md`](PRINCIPLES.md)/[`FRAMEWORK.md`](FRAMEWORK.md) into your own `CLAUDE.md`, run the
 > [standalone tools](#just-want-the-git-hook) next to what you have, or grab one `commands/*.md` and
 > ignore the rest — a method to graft on, not a framework to adopt whole.
@@ -295,6 +297,8 @@ once, open Script Editor, run `display notification "test" with title "keel"`, a
   manager session and gated worker sessions — the gap between the two docs on either side of it here.
 - [`docs/grooming.md`](docs/grooming.md) — assembling the next release from the backlog on a fixed
   cadence: retro first, pains supplied only by the operator, a mandatory fresh-reviewer round.
+- [`docs/triage.md`](docs/triage.md) — the promote-or-drop pass over the staging tiers (learnings,
+  ideas, the standing list): one verdict per entry, filed or deleted in the same pass.
 - [`docs/parallel-sessions.md`](docs/parallel-sessions.md) — running 2+ agent sessions against one
   repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
 - [`ADAPTING.md`](ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.

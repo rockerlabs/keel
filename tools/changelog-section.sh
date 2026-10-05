@@ -145,7 +145,19 @@ if [ "$mode" = "--edit" ]; then
   # in both shells, then copy the draft to <notes-file> only if the editor exits 0.
   : "${EDITOR:?set the EDITOR environment variable first, no shell metacharacters}"
   scratch_file="$(mktemp)"
-  trap 'rm -f "$scratch_file"' EXIT
+  # dir #692 — a COMPLETION MARKER, not a bare `trap 'rm -f …' EXIT`: on bash 3.2 a top-level FATAL shell
+  # error (a `set -u` unbound variable) leaves `$?` at 0 by the time the trap runs, so a bare trap turned
+  # that crash into exit 0 with no notes file written. `ok` is set on the one legitimate exit-0 path below;
+  # a status-0 exit without it is a crash and becomes 1. The `trap - EXIT` cancels further down (an editor
+  # or `cp` failure that preserves the draft) are unaffected: no trap, no handler. The dir #264 idiom.
+  ok=""
+  on_exit() {
+    st=$?
+    [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+    rm -f "$scratch_file"
+    exit "$st"
+  }
+  trap on_exit EXIT
   printf '%s\n' "$section" > "$scratch_file"
   # A nonzero editor exit doesn't necessarily mean nothing was typed — a --wait wrapper's own
   # housekeeping failing, a window-close race, or a Ctrl-C can all leave real, curated content
@@ -180,6 +192,7 @@ if [ "$mode" = "--edit" ]; then
       warn "$notes_file is ${pct}% of the CHANGELOG section's size ($notes_bytes/$section_bytes bytes) — this looks like a copy, not a curated digest"
     fi
   fi
+  ok=1   # genuine completion — the EXIT trap above reads it (dir #692)
   exit 0
 fi
 
