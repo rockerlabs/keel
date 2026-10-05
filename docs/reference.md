@@ -68,6 +68,7 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 | `/go` | Implements one backlog ticket, after checking it is ready. |
 | `/polish` | Pre-PR pass — simplify, tests, a depth-matched review, then open the PR. Gated by `tools/pre-pr-gate.sh` once you've run `install-pre-pr-gate.sh` for the repo (optional; every step still runs without it). |
 | `/wrap` | Closes out a session: notes, changelog, backlog. |
+| `/triage` | Promote-or-drop pass over the staging tiers (`LEARNINGS.md`, `IDEAS.md`, the standing list) — one verdict per entry. |
 | `/global-review` | Reviews across all projects. |
 | `/backlog` | Shows the backlog. |
 | `/keel-score` | Scores how much Keel shaped a session — derived from cited events, not asserted. |

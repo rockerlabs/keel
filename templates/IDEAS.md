@@ -8,7 +8,7 @@ earns a next step.
 
 - **On demand** — NOT auto-loaded (pointer in the `CLAUDE.md` map).
 - **Format:** `- [date] idea — context (where it came from)`. Full freedom — write however helps you think.
-- **Review:** at `/wrap` or a periodic review — promote to `BACKLOG.md` (once actionable) or `LEARNINGS.md`
+- **Review:** at `/wrap` or a periodic review (`/triage` is the "periodic") — promote to `BACKLOG.md` (once actionable) or `LEARNINGS.md`
   (if it's actually a workflow insight), or leave it here, or explicitly drop it.
 - **Gate: Ideas != Backlog.** Backlog is actionable — a next step exists. Ideas are raw — a next step may
   never materialize, and that's fine; don't force a real idea into a premature ticket just to satisfy a
