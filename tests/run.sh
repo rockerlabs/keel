@@ -44,6 +44,72 @@ main() {
   guard_run_before="$(cksum < "$0" 2>/dev/null)"
   guard_lib_before="$(cksum < "$here/lib.sh" 2>/dev/null)"
 
+  # dir #664: `git status --porcelain` is a before/after compare of STATUS CODES, so a leak that rewrites a
+  # tracked file the operator already had uncommitted edits in (` M f` before, ` M f` after) moves nothing it
+  # can see (found by the 0.13.0 delta audit: a clean file's overwrite exits 1, the same overwrite over an
+  # uncommitted edit exits 0 and prints ALL TEST FILES PASSED). This is the second snapshot beside it: one
+  # line per tracked path that differs from HEAD (staged or not) — `path`, a TAB, the `cksum` of its
+  # working-tree bytes (`<crc> <bytes>`; `(unreadable)` for a deleted path or a directory). Like
+  # guard_config_snapshot, the raw bytes are never held past the `cksum` and never printed, so the
+  # dir #318 redaction rule holds by construction; a content change under an unchanged status changes the
+  # fingerprint, so the trip still fires. `--no-optional-locks` (a read-only canary must not take the index
+  # lock a peer's own git command may hold) and `--no-renames` (list both sides of a rename); `-z` keeps a
+  # path with a newline one record (shown with a literal \n). The git call's own failure (an unborn HEAD,
+  # an unreadable index) yields an empty snapshot, the same on both sides, so it can only under-report —
+  # the status compare it sits beside still runs. Axis, named: it sees tracked paths that differ from
+  # HEAD; an untracked file's overwrite is invisible here (its name is, via the status compare, when it
+  # first appears) — that is the unchanged `-uno` / untracked scope of the compares it sits beside.
+  # Defined up here, before the first snapshot of either half, so both take theirs through it.
+  guard_dirty_fingerprint() {
+    local repo="$1" path sum
+    while IFS= read -r -d '' path; do
+      sum="$(cksum < "$repo/$path" 2>/dev/null)" || sum="(unreadable)"
+      printf '%s\t%s\n' "${path//$'\n'/\\n}" "$sum"
+    done < <(git --no-optional-locks -C "$repo" diff --name-only --no-renames -z HEAD -- 2>/dev/null) | LC_ALL=C sort
+  }
+
+  # guard_unique_lines A B — the lines found in only one of two snapshots (`comm -3`: POSIX, present on
+  # alpine's busybox), its column-2 TAB indent and blank lines removed.
+  guard_unique_lines() {
+    local tab=$'\t'
+    LC_ALL=C comm -3 <(printf '%s\n' "$1" | LC_ALL=C sort) <(printf '%s\n' "$2" | LC_ALL=C sort) \
+      | sed -e "s/^${tab}*//" -e '/^$/d'
+  }
+
+  # guard_changed_paths STATUS_BEFORE STATUS_AFTER FP_BEFORE FP_AFTER — dir #656 half 2: the NAMES of the
+  # paths that differ between the two `git status --porcelain` snapshots (a porcelain line is `XY path`, so
+  # the name is everything from column 4; an untracked directory is its own `?? dir/` entry) and between the
+  # two guard_dirty_fingerprint snapshots (everything before the last TAB), sorted, one per line. Names only:
+  # a status line is already `XY name`, and a fingerprint line is cut at its TAB before it is printed, so no
+  # content and no checksum can reach the report.
+  guard_changed_paths() {
+    local tab=$'\t'
+    {
+      guard_unique_lines "$1" "$2" | cut -c4-
+      guard_unique_lines "$3" "$4" | sed "s/${tab}[^${tab}]*\$//"
+    } | LC_ALL=C sort -u
+  }
+
+  # guard_print_changed_paths NAMES — print guard_changed_paths' output as the trip block's names list, the
+  # first 25 only (a trip over a wide tree must not bury the verdict; the count says how many were cut).
+  guard_print_changed_paths() {
+    printf '  paths that differ between the before and after snapshots (names only, never content):\n'
+    printf '%s\n' "$1" | awk '
+      $0 == "" { next }
+      { n++ }
+      n <= 25 { print "    " $0 }
+      END {
+        if (n > 25) printf "    ... and %d more\n", n - 25
+        if (n == 0) print "    (none to name — the difference is not a path)"
+      }'
+  }
+
+  # guard_print_fp_note — the trip line both halves print when only a content fingerprint moved.
+  guard_print_fp_note() {
+    printf '  content of a tracked file that already had uncommitted changes differs from before the run\n'
+    printf '  (a working-tree fingerprint of every tracked file differing from HEAD; the content itself is never printed)\n'
+  }
+
   # dir #653 widening (0.13.0 groom G6): the dir #318 git canary watches guard_repo_root — in the
   # claude-kb shape the KB checkout, not the engine checkout a leaking test actually wrote into (4 of
   # the 6 files overwritten on 2026-09-22 were neither run.sh nor lib.sh). When $HOME/.keel/engine
@@ -60,7 +126,7 @@ main() {
   # beside the verdict. Neither fails the run: an unreadable checkout is an environment condition, not
   # evidence of a leak (dir #505 / dir #656: no existing trip changes meaning). Readable before the run
   # but not after IS a trip — see the compare below.
-  guard_engine_root="" guard_engine_before="" guard_engine_ran=0 guard_engine_skipped=0 guard_repo_skipped=0
+  guard_engine_root="" guard_engine_before="" guard_engine_fp_before="" guard_engine_ran=0 guard_engine_skipped=0 guard_repo_skipped=0
   guard_engine_skip() {
     printf 'NOTE: %s — the engine half of the corruption\n' "$1" >&2
     printf '      canary (dir #653) did NOT run this time; the suite is not watching that checkout.\n' >&2
@@ -77,6 +143,7 @@ main() {
   if [ -n "$guard_engine_root" ]; then
     if guard_engine_before="$(git --no-optional-locks -C "$guard_engine_root" status --porcelain -uno 2>/dev/null)"; then
       guard_engine_ran=1
+      guard_engine_fp_before="$(guard_dirty_fingerprint "$guard_engine_root")"   # dir #664
     else
       guard_engine_skip "\`git status\` of the engine checkout $guard_engine_root failed"
     fi
@@ -195,73 +262,6 @@ main() {
       esac
     done
   }
-
-  # dir #664: `git status --porcelain` is a before/after compare of STATUS CODES, so a leak that rewrites a
-  # tracked file the operator already had uncommitted edits in (` M f` before, ` M f` after) moves nothing it
-  # can see (found by the 0.13.0 delta audit: a clean file's overwrite exits 1, the same overwrite over an
-  # uncommitted edit exits 0 and prints ALL TEST FILES PASSED). This is the second snapshot beside it: one
-  # line per tracked path that differs from HEAD (staged or not) — `path`, a TAB, the `cksum` of its
-  # working-tree bytes (`<crc> <bytes>`; `(unreadable)` for a deleted path or a directory). Like
-  # guard_config_snapshot, the raw bytes are never held past the `cksum` and never printed, so the
-  # dir #318 redaction rule holds by construction; a content change under an unchanged status changes the
-  # fingerprint, so the trip still fires. `--no-optional-locks` (a read-only canary must not take the index
-  # lock a peer's own git command may hold) and `--no-renames` (list both sides of a rename); `-z` keeps a
-  # path with a newline one record (shown with a literal \n). The git call's own failure (an unborn HEAD,
-  # an unreadable index) yields an empty snapshot, the same on both sides, so it can only under-report —
-  # the status compare it sits beside still runs. Axis, named: it sees tracked paths that differ from
-  # HEAD; an untracked file's overwrite is invisible here (its name is, via the status compare, when it
-  # first appears) — that is the unchanged `-uno` / untracked scope of the compares it sits beside.
-  guard_dirty_fingerprint() {
-    local repo="$1" path sum lines=()
-    while IFS= read -r -d '' path; do
-      sum="$(cksum < "$repo/$path" 2>/dev/null)" || sum="(unreadable)"
-      lines+=("${path//$'\n'/\\n}"$'\t'"$sum")
-    done < <(git --no-optional-locks -C "$repo" diff --name-only --no-renames -z HEAD -- 2>/dev/null)
-    printf '%s\n' "${lines[@]+"${lines[@]}"}" | LC_ALL=C sort
-  }
-
-  # guard_changed_paths STATUS_BEFORE STATUS_AFTER FP_BEFORE FP_AFTER — dir #656 half 2: the NAMES of the
-  # paths that differ between the two `git status --porcelain` snapshots (a porcelain line is `XY path`, so
-  # the name is everything from column 4; an untracked directory is its own `?? dir/` entry) and between the
-  # two guard_dirty_fingerprint snapshots (everything before the last TAB), sorted, one per line. Names only:
-  # a status line is already `XY name`, and a fingerprint line is cut at its TAB before it is printed, so no
-  # content and no checksum can reach the report. `comm -3` (POSIX; present on alpine's busybox) keeps the
-  # lines unique to either side; its column-2 lines come TAB-indented, stripped here.
-  guard_changed_paths() {
-    local line
-    {
-      while IFS= read -r line; do
-        line="${line#"${line%%[!$'\t']*}"}"
-        [ -n "$line" ] && printf '%s\n' "${line:3}"
-      done < <(LC_ALL=C comm -3 <(printf '%s\n' "$1" | LC_ALL=C sort) <(printf '%s\n' "$2" | LC_ALL=C sort))
-      while IFS= read -r line; do
-        line="${line#"${line%%[!$'\t']*}"}"
-        [ -n "$line" ] && printf '%s\n' "${line%$'\t'*}"
-      done < <(LC_ALL=C comm -3 <(printf '%s\n' "$3" | LC_ALL=C sort) <(printf '%s\n' "$4" | LC_ALL=C sort))
-    } | LC_ALL=C sort -u
-  }
-
-  # guard_print_changed_paths NAMES — print guard_changed_paths' output as the trip block's names list, the
-  # first 25 only (a trip over a wide tree must not bury the verdict; the count says how many were cut).
-  guard_print_changed_paths() {
-    local n=0 name
-    printf '  paths that differ between the before and after snapshots (names only, never content):\n'
-    while IFS= read -r name; do
-      [ -n "$name" ] || continue
-      n=$((n + 1))
-      if [ "$n" -le 25 ]; then printf '    %s\n' "$name"; fi
-    done <<< "$1"
-    if [ "$n" -gt 25 ]; then printf '    ... and %d more\n' "$((n - 25))"; fi
-    if [ "$n" -eq 0 ]; then printf '    (none to name — the difference is not a path)\n'; fi
-  }
-
-  # dir #664, the engine half's fingerprint: taken HERE, not beside the engine status snapshot above, because
-  # the helper it needs is defined only now (a function must exist before its first call). Same checkout, same
-  # armed/not-armed decision as that snapshot.
-  guard_engine_fp_before=""
-  if [ "$guard_engine_ran" = 1 ]; then
-    guard_engine_fp_before="$(guard_dirty_fingerprint "$guard_engine_root")"
-  fi
 
   # delta-audit 0.13.0 R2-2: the engine half's skip-with-a-NOTE, applied to the PRIMARY half. The dir #318 canary below used to be
   # skipped without a word whenever `git rev-parse --git-dir` failed for any reason — including the ones
@@ -604,8 +604,7 @@ SHIM
       # dir #664: the status codes can be IDENTICAL while a tracked file the operator already had dirty was
       # rewritten — say so in its own words, and (below) name the file.
       if [ "$guard_after_fp" != "$guard_before_fp" ]; then
-        printf '  content of a tracked file that already had uncommitted changes differs from before the run\n'
-        printf '  (a working-tree fingerprint of every tracked file differing from HEAD; the content itself is never printed)\n'
+        guard_print_fp_note
       fi
       if [ "$guard_after_status" != "$guard_before_status" ] || [ "$guard_after_fp" != "$guard_before_fp" ]; then
         # dir #656 half 2: WHICH paths — names only, from the two snapshots already in hand.
@@ -679,8 +678,7 @@ SHIM
       printf '  of %s, before -> after):\n%s\n' "$guard_engine_root" \
         "$(diff <(printf '%s\n' "$guard_engine_before") <(printf '%s\n' "$guard_engine_after"))"
       if [ "$guard_engine_fp_after" != "$guard_engine_fp_before" ]; then
-        printf '  content of a tracked file that already had uncommitted changes differs from before the run\n'
-        printf '  (a working-tree fingerprint of every tracked file differing from HEAD; the content itself is never printed)\n'
+        guard_print_fp_note
       fi
       # dir #656 half 2: the names, from the snapshots in hand — unless `status` itself failed after the run (its
       # sentinel is not a porcelain line, so there is nothing to name; the diff above shows the failure).
