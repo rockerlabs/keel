@@ -270,7 +270,8 @@ emit_blob() {  # $1 = record label (path)
            } | LC_ALL=C sort -u )"
   rm -f "$tmp" "$dec"
   [ -z "$hits" ] && return 0
-  # dir #693 — every `read` loop below that consumes scan results carries `|| [ -n "$var" ]`: under a UTF-8
+  # dir #693 — every `read` loop that collects match output carries `|| [ -n "$var" ]` (the record-filter
+  # loop at the bottom needs none: its here-string always adds one more newline): under a UTF-8
   # locale bash 5.x `read -r` returns 1 for a FINAL line whose last byte is an invalid multibyte lead byte
   # (the newline is swallowed into the incomplete sequence), though it did fill the variable — so a bare
   # `while read` dropped exactly the record carrying the key and the scan ended `clean` (found by CI's
