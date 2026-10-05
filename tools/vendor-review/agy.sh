@@ -72,7 +72,20 @@ fi
 
 resp_json="$(mktemp)"
 err_file="$(mktemp)"
-trap 'rm -f "$resp_json" "$err_file"' EXIT
+# dir #692 — a COMPLETION MARKER, not a bare quoted-command trap: on bash 3.2 a top-level FATAL shell error
+# (a `set -u` unbound variable) leaves `$?` at 0 by the time an EXIT trap runs, so a bare trap reported
+# success with an empty verdict — and this script's own header says its exit code is the proof of success.
+# `ok` is set only on the last line (the one legitimate exit-0 path); a status-0 exit without it is a
+# crash and becomes 1. An explicit non-zero `exit N` keeps its own. The dir #264 idiom, as in
+# tools/drydock/inventory.sh.
+ok=""
+on_exit() {
+  st=$?
+  [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
+  rm -f "$resp_json" "$err_file"
+  exit "$st"
+}
+trap on_exit EXIT
 
 agy_status=0
 "$AGY_BIN" -p "$combined" --model "$MODEL" --output-format json --print-timeout "$TIMEOUT" \
@@ -105,3 +118,4 @@ if [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ]; then
 fi
 
 printf '%s' "$content"
+ok=1   # genuine completion — the EXIT trap above reads it (dir #692)
