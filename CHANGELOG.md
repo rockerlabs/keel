@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The delegation rails block gains two lines: one test device per concurrent session, and every leg git
+  call through `git -C`.** Parallel legs that shared one booted simulator overwrote each other's installed
+  test host, and a verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout in the
+  orchestrator's real worktree. The block in `docs/delegation.md` now tells a session to boot its own
+  simulator or emulator and shut it down in its report, and to address a clone only as `git -C "<path>"`,
+  never after a `cd`. All ten verbatim copies (five in `docs/delta-audit.md`, the three drydock role
+  prompts, `/polish`'s review subagent) carry both, the fixer rails carry them too, and the worker-brief
+  section of `docs/release-management.md` points at the device rule. Pinned by the existing block-diff
+  suites plus new line pins in `tests/test_delegation_doc.sh`. dir #608, closes dir #669 item 4.
 - **`/triage` — a promote-or-drop command for the accumulator tiers.** `LEARNINGS.md` had no owner for
   its "promote on recurrence, prune when stale" rule (one real file: 158 of 184 entries at `[1×]`, 26 at
   `[2×]`+ already due), and the grooming doc's accumulator triage named only the standing list and the
