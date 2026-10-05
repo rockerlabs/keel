@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+### Added
+
+- **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
+  by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —
+  delegated to the harness, with no template rail added) and the external channel (`secret-guard` plus
+  the CI re-scan). Documentation only; `README.md` links to it.
+
 - **`doctor` reports a forgetting layer for the harness memory dir, and `docs/memory-layers.md` explains
   it.** Four new checks over Claude Code's per-project memory dir (found from the project path, or
   `KEEL_MEMORY_DIR`; silent when absent): `W-MEMORY-ORPHAN` (a file no `MEMORY.md` line links, so no session
