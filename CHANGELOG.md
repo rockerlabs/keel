@@ -15,6 +15,20 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The suite's self-corruption canary now sees a leak that rewrites a file you were already editing, and says which
+  files moved** (dir #664, with the second half of dir #656; tests only, no shipped tool changed). The canary in
+  `tests/run.sh` compared only `git status --porcelain`, so a test that overwrote a tracked file you already had
+  uncommitted changes in looked identical before and after (` M` both times): a clean file's overwrite failed the run,
+  the same overwrite over your edit printed ALL TEST FILES PASSED (found by the 0.13.0 delta audit). It now also
+  fingerprints the working-tree bytes of every tracked file that differs from HEAD, for both the watched checkout
+  and the engine checkout, and a changed fingerprint trips with its own line. Only a checksum is ever held, so
+  neither your edit nor the leaked bytes can reach the output. Every trip of those two compares also lists the
+  NAMES of the paths that differ between the before and after snapshots (first 25, then a count), including a path
+  whose content changed under an unchanged status and the untracked directory a `TMPDIR` inside the checkout
+  creates. `tests/test_run_sh.sh` pins all of it, each pin with a mutation proof. Not changed, still open: a
+  `TMPDIR` inside the watched checkout still trips the canary (it now names the directory), a `tests/` in a
+  subdirectory of an unreadable repo still skips without a word, and a dotted branch name still defeats the
+  per-branch config exclusion.
 - **The personal-literals file has one parser, and the secret scanner no longer fails open on it.**
   `tools/public-audit.sh` and the vendored `secret-scan.sh` each carried a hand-copied loop for the local
   `secret-scan-personal` file. The parse now lives once in `tools/lib/personal-literals.sh`; the audit
