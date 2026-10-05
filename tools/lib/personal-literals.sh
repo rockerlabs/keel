@@ -10,31 +10,32 @@
 # Sourced, not executed — no shebang, no `set` (inherits the caller's).
 #
 # personal_literals_parse FILE — print the file's literals, one per line, in file order, duplicates kept.
-# Each printed line is non-empty, has no leading/trailing whitespace and no leading `#`; a leading UTF-8
-# BOM (first line only), a CR before the newline and an inline ` # comment` are stripped. A FILE that is
-# not a regular file (absent, a directory, /dev/null) prints nothing and returns 0. Status:
+# Each printed line is non-empty, has no leading/trailing whitespace and no leading `#`; a UTF-8 BOM
+# (at the start of any line), a CR before the newline and an inline ` # comment` are stripped. A FILE that
+# is not a regular file (absent, a directory, /dev/null) prints nothing and returns 0. Status:
 #   0  every line parsed
-#   2  FILE exists but is unreadable (dir #680) — nothing printed, nothing on stderr: the caller says so
+#   2  FILE exists but cannot be used (dir #680): unreadable, or a symlink to nothing — nothing is
+#      printed and nothing goes to stderr: the caller says so, in its own words
 #   3  a line ends in an ODD run of backslashes (dir #680) — that line is NOT printed (joined with the
 #      next line it would become `prev\|next`, a valid ERE matching neither literal), every other line is
-#   other non-zero: a read failure on an existing, readable file (the failed redirect's status)
-# Callers capture the output by `x="$(…)" || rc=$?` — a PLAIN assignment, never `local x=$(…)`, never a
-# process substitution (those hide the status) — and treat ANY non-zero status as "do not trust the
-# literals": secret-scan.sh exits 2, public-audit.sh raises a GAP (it still uses the lines printed on 3).
+#   4  the per-line `sed` failed (dir #680) — nothing further is printed; any other non-zero is a read
+#      failure on an existing, readable file (the failed redirect's status)
+# ANY non-zero status means "do not trust the literals": secret-scan.sh exits 2, public-audit.sh raises a
+# GAP (it still uses the lines printed before a 3). Callers capture the output by a PLAIN assignment,
+# `x="$(…)" || rc=$?` — never `local x=$(…)`, never a process substitution (those hide the status).
 #
-# BRE `sed` on purpose (busybox-portable); the `[ -f ]` test is exact — a `[ -e ]` reads a directory with
-# an error and blocks forever on a FIFO.
+# BRE `sed` on purpose (busybox-portable), under LC_ALL=C so an invalid byte in the file cannot make a
+# locale-aware sed (BSD, UTF-8) error out; the `[ -f ]` test is exact — a `[ -e ]` reads a directory
+# with an error and blocks forever on a FIFO.
 personal_literals_parse() {
+  [ -L "$1" ] && [ ! -e "$1" ] && return 2
   [ -f "$1" ] || return 0
   [ -r "$1" ] || return 2
-  local _pl_t="" _pl_first=1 _pl_rc=0 _pl_run=""
+  local _pl_t="" _pl_rc=0 _pl_run=""
   while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
-    if [ "$_pl_first" = 1 ]; then
-      _pl_t="${_pl_t#$'\357\273\277'}"
-      _pl_first=0
-    fi
+    _pl_t="${_pl_t#$'\357\273\277'}"
     _pl_t="${_pl_t%$'\r'}"
-    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
+    _pl_t="$(printf '%s' "$_pl_t" | LC_ALL=C sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
     case "$_pl_t" in
       ''|\#*) ;;
       *)

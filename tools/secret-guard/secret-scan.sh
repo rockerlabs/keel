@@ -105,11 +105,11 @@ PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 # All temp files live in one scratch dir, removed on ANY exit (set -e failures, Ctrl-C, TERM) —
 # a hook that runs on every commit must not litter $TMPDIR with orphans.
 #
-# dir #682 — a COMPLETION MARKER, not a bare `rm -rf` trap and not a `rc=$?` capture: on bash 3.2 (macOS
+# dir #682 — a COMPLETION MARKER on top of the `$?` capture, not a bare `rm -rf` trap: on bash 3.2 (macOS
 # /bin/bash) a top-level FATAL shell error (a `.` of a missing file, a `set -u` unbound variable) leaves
 # `$?` at 0 by the time the EXIT trap runs, so a bare trap turned that crash into exit 0 and the hook
 # failed OPEN. `_scan_done` is set to 1 only on the legitimate exit-0 paths (the clean early return, the
-# end of the scan, a finished --selftest); an exit that reaches the trap with status 0 and no marker is
+# end of the scan, the end of selftest()); an exit that reaches the trap with status 0 and no marker is
 # a crash and becomes 2 (this file's "cannot scan" status). An explicit non-zero `exit N` keeps its own.
 # Every legitimate `exit 0` MUST set `_scan_done=1` first; one that forgets fails closed (the hook blocks).
 _scan_done=""
@@ -131,19 +131,20 @@ trap 'exit 143' TERM
 # This file is VENDORED and may only source files vendored beside it, so it cannot source the shared
 # lib; this twin's body is IDENTICAL to tools/lib/personal-literals.sh's personal_literals_parse, and
 # tests/test_secret_guard.sh (the `dir #148` section) runs both on shared fixtures and asserts the two
-# bodies are byte-identical — edit BOTH copies or that test goes red. Output contract and the
-# capture-form rule: see the lib's header.
+# bodies are byte-identical — edit BOTH copies or that test goes red. Statuses: 0 ok; 2 the file exists
+# but is unusable (unreadable, or a symlink to nothing); 3 a line ends in an odd run of backslashes
+# (withheld); 4 the per-line sed failed; other non-zero: a read failure. The caller below captures it by
+# a plain assignment and fails CLOSED on any non-zero (never `local x=$(…)`, never a process
+# substitution — those hide the status).
 _personal_literals_parse_inline() {
+  [ -L "$1" ] && [ ! -e "$1" ] && return 2
   [ -f "$1" ] || return 0
   [ -r "$1" ] || return 2
-  local _pl_t="" _pl_first=1 _pl_rc=0 _pl_run=""
+  local _pl_t="" _pl_rc=0 _pl_run=""
   while IFS= read -r _pl_t || [ -n "$_pl_t" ]; do
-    if [ "$_pl_first" = 1 ]; then
-      _pl_t="${_pl_t#$'\357\273\277'}"
-      _pl_first=0
-    fi
+    _pl_t="${_pl_t#$'\357\273\277'}"
     _pl_t="${_pl_t%$'\r'}"
-    _pl_t="$(printf '%s' "$_pl_t" | sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')"
+    _pl_t="$(printf '%s' "$_pl_t" | LC_ALL=C sed 's/[[:space:]][[:space:]]*#.*$//; s/^[[:space:]][[:space:]]*//; s/[[:space:]][[:space:]]*$//')" || return 4
     case "$_pl_t" in
       ''|\#*) ;;
       *)
@@ -166,9 +167,9 @@ done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
 personal=""
-# dir #148: the parse is _personal_literals_parse_inline (defined above; capture rules in the lib's
-# header). Its status is acted on right here (dir #680): a personal file we cannot trust must fail
-# CLOSED — silently scanning with fewer (or no) literals is the fail-open this gate must never have.
+# dir #148: the parse is _personal_literals_parse_inline (defined above). Its status is acted on right
+# here (dir #680): a personal file we cannot trust must fail CLOSED — silently scanning with fewer (or no)
+# literals is the fail-open this gate must never have.
 _personal_rc=0
 _personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _personal_rc=$?
 case "$_personal_rc" in
@@ -178,13 +179,16 @@ case "$_personal_rc" in
     echo "pattern matching neither literal, silently disabling personal-data detection. Fix the file." >&2
     exit 2 ;;
   *)
-    echo "secret-scan: cannot read $PERSONAL_FILE (it exists but is unreadable) — personal-data detection" >&2
-    echo "would be silently disabled. Fix its permissions or remove it." >&2
+    echo "secret-scan: cannot read or parse $PERSONAL_FILE (unreadable, a symlink to nothing, or a line" >&2
+    echo "sed could not process) — personal-data detection would be silently disabled. Fix the file." >&2
     exit 2 ;;
 esac
 # One literal per line, none empty (the parser's contract): join with `|` (an empty alternative would
-# match everything — an empty capture stays an empty string here).
-personal="${_personal_lines//$'\n'/|}"
+# match everything, so an empty capture is skipped). `tr`, not ${var//$'\n'/|}: that expansion is
+# roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
+if [ -n "$_personal_lines" ]; then
+  personal="$(printf '%s' "$_personal_lines" | tr '\n' '|')"
+fi
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
 # must never fail open on its own config. grep exits >=2 only on a bad pattern; 1 (no match) is fine.
@@ -540,6 +544,7 @@ selftest() {
   else
     echo "selftest: WARN — could not create the range-allowlist probe repo; the --range baseline pass is unverified on this host" >&2
   fi
+  _scan_done=1
   return $rc
 }
 
@@ -731,8 +736,7 @@ case "$mode" in
     done < <(git -C "$top" -c core.quotePath=false ls-files 2>/dev/null)
     ;;
   --selftest)
-    _st_rc=0; selftest || _st_rc=$?
-    _scan_done=1; exit "$_st_rc"
+    selftest; exit $?
     ;;
   -*)
     echo "secret-scan: unknown option '$mode'" >&2; exit 2

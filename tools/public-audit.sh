@@ -131,18 +131,11 @@ PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
 personal_re=""
 bad_personal=0
 # dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's (capture
-# rules in its header); only the per-line validation policy stays here. This file runs without -e, so a
-# failing parse does not abort — its status is read right below (dir #680): 2 = the file exists but is
-# unreadable (coverage is ZERO), 3 = a line ends in a backslash (withheld by the parser, counted as an
-# invalid line; the other literals are still scanned).
+# rules in its header); only the per-line validation policy stays here. Its status is read at the GAP
+# site below (dir #680): 3 = a line ends in a backslash (withheld by the parser; the other literals are
+# still scanned), anything else non-zero = the file could not be read or parsed (coverage is ZERO).
 personal_rc=0
 personal_lines="$(personal_literals_parse "$PERSONAL_FILE")" || personal_rc=$?
-personal_unreadable=0
-case "$personal_rc" in
-  0) ;;
-  3) bad_personal=$((bad_personal + 1)) ;;
-  *) personal_unreadable=1 ;;
-esac
 while IFS= read -r line; do
   [ -n "$line" ] || continue   # an empty capture still yields one empty line
   if valid_ere -iE "$line"; then
@@ -318,7 +311,11 @@ fi
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
-[ "$personal_unreadable" -eq 1 ] && gap "$PERSONAL_FILE exists but is unreadable — personal-literal coverage is ZERO, fix its permissions and re-run"
+case "$personal_rc" in
+  0) ;;
+  3) gap "one or more lines in $PERSONAL_FILE end in a backslash and were ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run" ;;
+  *) gap "$PERSONAL_FILE could not be read or parsed (unreadable, a symlink to nothing, or a line sed could not process) — personal-literal coverage is ZERO, fix it and re-run" ;;
+esac
 [ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
 [ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 

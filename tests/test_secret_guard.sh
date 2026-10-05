@@ -1693,10 +1693,12 @@ check_eq "dir #148 A4: secret-scan.sh defines the inline twin once" 1 "$(grep -c
 check_eq "dir #148 A4: secret-scan.sh sources nothing" 0 "$(grep -cE '^[[:space:]]*(\.|source)[[:space:]]' "$scan")"
 check_eq "dir #148 A4: the PERSONAL_FILE= default line is byte-identical (kb-secret-scan.sh sed-extracts it)" 1 \
   "$(grep -cF 'PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"' "$scan")"
-# dir #680 narrowed the capture's tail: `|| _pl_rc=$?` keeps the status for the explicit exit-2 handling
-# right below it (a bare `|| true` or a process substitution would still fail this pin).
+# dir #680: the capture keeps its status (`|| _personal_rc=$?`) for the explicit exit-2 handling right
+# below it — a bare capture, a `|| true` or a process substitution fails this pin.
 check_eq "dir #148 A4: the twin is CALLED by a plain top-level capture of \$PERSONAL_FILE (status kept)" 1 \
-  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)"( \|\| [A-Za-z_][A-Za-z0-9_]*=\$\?)?$' "$scan")"
+  "$(grep -cE '^[A-Za-z_][A-Za-z0-9_]*="\$\(_personal_literals_parse_inline "\$PERSONAL_FILE"\)" \|\| [A-Za-z_][A-Za-z0-9_]*=\$\?$' "$scan")"
+# the scanner joins with `tr`: ${var//$'\n'/|} is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2)
+check_eq "dir #148: the scanner's join is not the cubic-on-bash-3.2 expansion" 0 "$(grep -cF '${_personal_lines//' "$scan")"
 
 # The fixture (v3): CRLF, inline comment, tabs, `a#b`, a backslash, internal spaces, a glob, non-ASCII
 # (octal bytes, so this file stays ASCII), a `-n` line (an echo-based emit would swallow it), and a last
@@ -1755,13 +1757,8 @@ for pl_nf in "$SANDBOX/pl148-dir" /dev/null; do
 done
 # Textual body identity (B5): both extracted functions, declaration line dropped, byte-identical — so an
 # edit to a branch no fixture reaches in ONE copy still fails here.
-if [ -n "$pl_twin_fn" ] && [ -n "$pl_lib_fn" ]; then
-  if [ "$(printf '%s\n' "$pl_lib_fn" | sed 1d)" = "$(printf '%s\n' "$pl_twin_fn" | sed 1d)" ]; then
-    pass "dir #148 sync: lib and twin function bodies are byte-identical"
-  else
-    fail "dir #148 sync: lib and twin function bodies are byte-identical" "the two bodies differ — edit BOTH copies"
-  fi
-fi
+check_block_equal "dir #148 sync: lib and twin function bodies are byte-identical (edit BOTH copies)" \
+  "$(printf '%s\n' "$pl_lib_fn" | sed 1d)" "$(printf '%s\n' "$pl_twin_fn" | sed 1d)"
 
 # --- end to end over the JOIN (parse-level cases cannot see it): both tools join the parsed lines.
 # `zetaXeta` must NOT match the correct regex `zeta\.eta`; a build that loses the backslash (a `read`
@@ -1823,8 +1820,10 @@ rm -f "$HOME/.claude/secret-scan-personal"
 # =================================================================================================
 # --- dir #680: the personal-literals file's three fail-opens, fixed once in the parser (lib + inline
 # twin, kept in sync by the dir #148 section above) and acted on by each caller's own policy.
-#   unreadable file  → parser returns 2; scanner says so on stderr and exits 2, audit raises a GAP
-#   leading UTF-8 BOM → stripped from the first line (it used to ride into the first literal)
+#   unreadable file, or a symlink to nothing → parser returns 2; scanner says so and exits 2, audit GAP
+#   the per-line sed failing → parser returns 4 (a locale-aware sed errors on an invalid byte; it used to
+#       be swallowed inside the $(...) capture, where errexit is off, and the literal silently dropped)
+#   a UTF-8 BOM at the start of any line → stripped (it used to ride into the literal)
 #   a line ending in an ODD run of `\` → not emitted, parser returns 3 (it used to join the next line
 #       into `prev\|next`, a VALID ERE matching neither literal); scanner exits 2, audit counts it bad
 # Fixtures are printf-built with octal bytes so this file stays ASCII.
@@ -1835,7 +1834,7 @@ pl_case "BOM before the first literal is stripped" "$SANDBOX/pl680-bom" "$(print
 printf '\357\273\277# a comment after the BOM\nreal\n' > "$SANDBOX/pl680-bomcomment"
 pl_case "BOM before a comment line: the line is still a comment" "$SANDBOX/pl680-bomcomment" "real" 0
 printf 'first\n\357\273\277second\n' > "$SANDBOX/pl680-bom2"
-pl_case "a BOM on a LATER line is not stripped (only the file's first bytes are a BOM)" "$SANDBOX/pl680-bom2" "$(printf 'first\n\357\273\277second')" 0
+pl_case "a BOM at the start of a LATER line (cat a b > file) is stripped too" "$SANDBOX/pl680-bom2" "$(printf 'first\nsecond')" 0
 printf 'prevlit\\\nnextlit\n' > "$SANDBOX/pl680-trail"
 pl_case "a line ending in a backslash is withheld, the rest still parses, status 3" "$SANDBOX/pl680-trail" "nextlit" 3
 printf 'evenback\\\\\nafter\n' > "$SANDBOX/pl680-even"
@@ -1868,8 +1867,42 @@ else
   fail "dir #680 e2e: audit still scans the literals after a flagged line" "$OUT"
 fi
 check_status "dir #680 e2e: audit exits 1 on a flagged line" 1 "$STATUS"
-check_contains "dir #680 e2e: audit says a line is invalid / coverage incomplete" "$OUT" "invalid regex line(s)"
+check_contains "dir #680 e2e: audit says a line ends in a backslash / coverage incomplete" "$OUT" "end in a backslash"
 check_absent "dir #680 e2e: audit never echoes the flagged literal" "$OUT" "prevlit"
+
+# a symlink to nothing is an existing-but-unusable file, not an absent one (the operator's default
+# ~/.claude/secret-scan-personal is a symlink into the KB: a moved KB must not silently turn the class off).
+# Works as root too, so it is not behind the uid guard.
+ln -s "$SANDBOX/pl680-no-such-target" "$SANDBOX/pl680-dangling"
+pl_case "a symlink to nothing is unusable, not absent: status 2, nothing printed" "$SANDBOX/pl680-dangling" "" 2
+ln -s "$pl_fixture" "$SANDBOX/pl680-link-ok"
+pl_case "a symlink to a real file still parses (the full fixture)" "$SANDBOX/pl680-link-ok" "$pl_golden"
+pl_scan_exit "hello zebracorn" "$SANDBOX/pl680-dangling"
+check_status "dir #680: scanner exits 2 on a symlink to nothing" 2 "$STATUS"
+check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
+check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
+pl_ad="$(new_repo)"; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
+git -C "$pl_ad" add -A; git -C "$pl_ad" commit -qm init
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-dangling" bash "$pa" --no-history "$pl_ad"
+check_status "dir #680: audit exits 1 (a GAP) on a symlink to nothing" 1 "$STATUS"
+check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
+
+# the per-line sed failing (a sed that exits 1 first on PATH — deterministic stand-in for BSD sed's
+# 'illegal byte sequence' under a UTF-8 locale, which no ambient-C-locale test can reach): parser status 4,
+# scanner exit 2, audit GAP — never a silently dropped literal.
+pl_shim="$SANDBOX/pl680-sedshim"; mkdir -p "$pl_shim"
+printf '#!/bin/sh\nexit 1\n' > "$pl_shim/sed"; chmod +x "$pl_shim/sed"
+printf 'zebracorn\n' > "$SANDBOX/pl680-onelit"
+pl680_lib_rc=0; PATH="$pl_shim:$PATH" bash -c '. "$1"; personal_literals_parse "$2"' _ "$pl_lib" "$SANDBOX/pl680-onelit" >/dev/null 2>&1 || pl680_lib_rc=$?
+pl680_twin_rc=0; PATH="$pl_shim:$PATH" bash -c "$pl_twin_fn"$'\n''_personal_literals_parse_inline "$1"' _ "$SANDBOX/pl680-onelit" >/dev/null 2>&1 || pl680_twin_rc=$?
+check_eq "dir #680: a failing per-line sed makes the lib return 4" 4 "$pl680_lib_rc"
+check_eq "dir #680: ...and the twin" 4 "$pl680_twin_rc"
+pl680_r="$(new_repo)"; printf 'hello zebracorn\n' > "$pl680_r/sample.txt"; git -C "$pl680_r" add sample.txt
+run_in "$pl680_r" env PATH="$pl_shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-onelit" "$scan" --staged
+check_status "dir #680: scanner exits 2 when the per-line sed fails (not 'clean')" 2 "$STATUS"
+check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
+run env PATH="$pl_shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pl680-onelit" bash "$pa" --no-history "$pl_ad"
+check_contains "dir #680: the audit raises the coverage-ZERO GAP when the per-line sed fails" "$OUT" "coverage is ZERO"
 
 # unreadable (non-root only: chmod 000 is a no-op for root — CLAUDE.md Linux-leg trap 2). The status 2 /
 # exit 2 contract holds for every platform's bash, so the whole block is guarded together.
@@ -1883,10 +1916,8 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_eq "dir #680: twin prints nothing on stderr" "" "$PL_TWIN_ERR"
   pl_scan_exit "hello zebracorn" "$pl_unread"
   check_status "dir #680: scanner exits 2 on an unreadable personal file" 2 "$STATUS"
-  check_contains "dir #680: ...and names the unreadable file on stderr" "$OUT" "unreadable"
+  check_contains "dir #680: ...and says it cannot read or parse the file" "$OUT" "cannot read or parse"
   check_absent "dir #680: ...and never 'secret-scan: clean'" "$OUT" "secret-scan: clean"
-  pl_ad="$(new_repo)"; printf 'hello zebracorn\n' > "$pl_ad/sample.txt"
-  git -C "$pl_ad" add -A; git -C "$pl_ad" commit -qm init
   run env SECRET_SCAN_PERSONAL_FILE="$pl_unread" bash "$pa" --no-history "$pl_ad"
   check_status "dir #680: audit exits 1 (a GAP) on an unreadable personal file" 1 "$STATUS"
   check_contains "dir #680: ...the GAP says coverage is ZERO" "$OUT" "coverage is ZERO"
@@ -1911,23 +1942,18 @@ printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$pl682_repo/conf.txt"
 git -C "$pl682_repo" add conf.txt
 pl682_shells="bash"
 [ -x /bin/bash ] && [ "$(command -v bash)" != /bin/bash ] && pl682_shells="bash /bin/bash"
+# The fault goes in right AFTER the EXIT trap is armed (just before the INT trap line): a probe injected
+# before the trap exists would pass vacuously. Both anchors are pinned exactly-once so a reorder fails here.
+pin_exact "dir #682: the EXIT-trap line is unique in the scanner" "$scan" "trap _scan_exit EXIT" "EXIT trap not found exactly once"
+pin_exact "dir #682: the INT-trap line (the injection anchor) is unique in the scanner" "$scan" "trap 'exit 130' INT" "anchor not found exactly once"
 pl682_n=0
 for pl682_inject in '. "$(dirname "$0")/pl682-missing-sibling.sh"' ': "$pl682_never_set_scalar"'; do
   pl682_n=$((pl682_n + 1))
   pl682_copy="$SANDBOX/pl682-scan-$pl682_n.sh"
-  pl682_injected=0
-  while IFS= read -r pl682_line || [ -n "$pl682_line" ]; do
-    printf '%s\n' "$pl682_line"
-    if [ "$pl682_injected" = 0 ] && [ "$pl682_line" = "trap 'exit 143' TERM" ]; then
-      printf '%s\n' "$pl682_inject"; pl682_injected=1
-    fi
-  done < "$scan" > "$pl682_copy"
-  chmod +x "$pl682_copy"
-  if [ "$pl682_injected" = 1 ]; then
-    pass "dir #682: fatal-error probe $pl682_n injected after the scanner's trap lines"
-  else
-    fail "dir #682: fatal-error probe $pl682_n injected after the scanner's trap lines" "anchor line \"trap 'exit 143' TERM\" not found in $scan"
-  fi
+  cp "$scan" "$pl682_copy"
+  insert_before_line_containing "$pl682_copy" "trap 'exit 130' INT" "$pl682_inject"
+  chmod +x "$pl682_copy"   # the helper rewrites through mv; --selftest executes the script directly
+  pin_exact "dir #682: fatal-error probe $pl682_n injected" "$pl682_copy" "$pl682_inject" "injection missing"
   for pl682_sh in $pl682_shells; do
     run_in "$pl682_repo" "$pl682_sh" "$pl682_copy" --staged
     if [ "$STATUS" -ne 0 ]; then
@@ -1950,6 +1976,11 @@ for pl682_sh in $pl682_shells; do
   run_in "$pl682_clean" "$pl682_sh" "$scan" --staged
   check_status "dir #682: a clean staged run still exits 0 under $pl682_sh" 0 "$STATUS"
   check_contains "dir #682: ...and says clean ($pl682_sh)" "$OUT" "secret-scan: clean"
+  # the legit --selftest success path under the marker, for a shell the rest of the file does not use
+  if [ "$pl682_sh" != bash ]; then
+    run_in "$pl682_clean" "$pl682_sh" "$scan" --selftest
+    check_status "dir #682: --selftest still exits 0 under $pl682_sh" 0 "$STATUS"
+  fi
 done
 run_in "$pl682_repo" bash "$scan" --staged
 check_status "dir #682: a real block still exits 1" 1 "$STATUS"
