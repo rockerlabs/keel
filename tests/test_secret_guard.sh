@@ -648,6 +648,73 @@ check_status "dir #524: literal '*' pathspec, secret in a sibling file → BLOCK
 check_contains "dir #524: secret attributed to its own path (real.txt)" "$OUT" "real.txt:$starsecret"
 check_absent  "dir #524: NOT mis-attributed to the literal '*' path via glob expansion" "$OUT" "*:$starsecret"
 
+# --- dir #693: emit_diff failed OPEN under a UTF-8 locale. macOS BWK awk aborts on ONE invalid UTF-8
+# byte ("towc: multibyte conversion failure"), the old `awk | sed || true` swallowed that, and the scan
+# ended `clean` with the key in the staged file never seen. The suite's ambient C locale hides it, so the
+# invalid-byte fixtures run under a REAL UTF-8 locale (the host's — none → skip). Linux gawk/mawk and
+# busybox awk tolerate the byte, so these pass there trivially; the RED run is the macOS leg.
+utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+sec693="$(key 'AKIA' "$(rep A 16)")"
+if [ -n "$utf8_locale" ]; then
+  # (a) a Latin-1 0xE9 after a key on the same added line → must still BLOCK
+  repo="$(new_repo)"
+  printf 'aws = %s and caf\351\n' "$sec693" > "$repo/latin1.txt"
+  git -C "$repo" add latin1.txt
+  run_in "$repo" env LC_ALL="$utf8_locale" "$scan" --staged
+  check_status "dir #693(a): a staged key beside an invalid UTF-8 byte is caught under $utf8_locale → BLOCKED" 1 "$STATUS"
+  check_contains "dir #693(a): the record names the file" "$OUT" "latin1.txt:"
+  check_absent "dir #693(a): no awk 'towc' abort leaks through" "$OUT" "multibyte conversion failure"
+  # (b) the invalid byte on a DIFFERENT added line than the key — one bad record must not poison the rest
+  repo="$(new_repo)"
+  printf 'caf\351 first\naws = %s\ncaf\351 last\n' "$sec693" > "$repo/mixed.txt"
+  git -C "$repo" add mixed.txt
+  run_in "$repo" env LC_ALL="$utf8_locale" "$scan" --staged
+  check_status "dir #693(b): an invalid byte on a neighbouring line doesn't hide the key → BLOCKED" 1 "$STATUS"
+  # (c) an invalid byte and NO secret → clean (the fix must not turn the byte into a false block)
+  repo="$(new_repo)"
+  printf 'caf\351 only\n' > "$repo/benign.txt"
+  git -C "$repo" add benign.txt
+  run_in "$repo" env LC_ALL="$utf8_locale" "$scan" --staged
+  check_status "dir #693(c): an invalid byte with no secret is clean → exit 0" 0 "$STATUS"
+  check_contains "dir #693(c): says clean" "$OUT" "secret-scan: clean"
+  # (d) differential: VALID non-ASCII text (a Cyrillic word, U+00A0, a CJK char) around a key behaves
+  # exactly as before — the C-locale parse is byte-transparent for it
+  repo="$(new_repo)"
+  printf '\320\277\321\200\320\270\320\262\320\265\321\202 \302\240 \344\270\255 aws = %s\n' "$sec693" > "$repo/utf8.txt"
+  git -C "$repo" add utf8.txt
+  run_in "$repo" env LC_ALL="$utf8_locale" "$scan" --staged
+  check_status "dir #693(d): valid UTF-8 text around a key still BLOCKS under $utf8_locale" 1 "$STATUS"
+  check_contains "dir #693(d): the non-ASCII prefix survives into the record" "$OUT" "utf8.txt:"
+  repo="$(new_repo)"
+  printf '\320\277\321\200\320\270\320\262\320\265\321\202 \302\240 \344\270\255 harmless\n' > "$repo/utf8ok.txt"
+  git -C "$repo" add utf8ok.txt
+  run_in "$repo" env LC_ALL="$utf8_locale" "$scan" --staged
+  check_status "dir #693(d): valid non-ASCII text with no secret is clean → exit 0" 0 "$STATUS"
+else
+  pass "dir #693 invalid-UTF-8 fixtures skipped (no UTF-8 locale on this host)"
+fi
+
+# (e) the parse pipeline's OWN failure must fail CLOSED, whatever the locale: a PATH shim makes each
+# leg (git diff, awk, sed) exit non-zero in turn → exit 2 with a named reason, never `clean`. Before the
+# fix every leg was swallowed by `|| true` and the scan reported clean over an unread diff.
+real_git693="$(type -P git)"
+repo="$(new_repo)"
+printf 'aws = %s\n' "$sec693" > "$repo/k.txt"
+git -C "$repo" add k.txt
+for leg693 in awk sed git; do
+  # one shim dir per leg, prepended to PATH; the git shim execs the real git for every call but the diff parse
+  mkdir -p "$SANDBOX/shim693-$leg693"
+  case "$leg693" in
+    git) printf '#!/bin/sh\ncase " $* " in *" --unified=0 "*) exit 1 ;; esac\nexec "%s" "$@"\n' "$real_git693" > "$SANDBOX/shim693-$leg693/git" ;;
+    *)   printf '#!/bin/sh\nexit 1\n' > "$SANDBOX/shim693-$leg693/$leg693" ;;
+  esac
+  chmod +x "$SANDBOX/shim693-$leg693/$leg693"
+  run_in "$repo" env PATH="$SANDBOX/shim693-$leg693:$PATH" "$scan" --staged
+  check_status "dir #693(e): a failing $leg693 leg of the diff parse fails CLOSED → exit 2" 2 "$STATUS"
+  check_absent "dir #693(e): a failing $leg693 leg never reports clean" "$OUT" "secret-scan: clean"
+  check_contains "dir #693(e): a failing $leg693 leg names the file it could not parse" "$OUT" "k.txt"
+done
+
 # --- --tracked detective audit: ALL tracked content, not just a diff (doctor / periodic review) --
 repo="$(new_repo)"
 printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$repo/old.txt"

@@ -385,10 +385,24 @@ emit_diff() {
   # --literal-pathspecs: "$path" is a real filename, not a glob the caller intended — a file
   # literally named e.g. "*" would otherwise match every staged path, folding every OTHER staged
   # file's added lines into this one path's records (max-review sweep finding).
-  git --literal-pathspecs diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null | awk '
+  #
+  # dir #693 — the parse is BYTE-oriented and FAIL-CLOSED. (1) awk and sed run under LC_ALL=C: on macOS
+  # BWK awk (and BSD sed) under a UTF-8 locale ONE invalid byte in a staged text file (a stray Latin-1 /
+  # CP1251 byte) aborts the parser ("towc: multibyte conversion failure"), and the old trailing `|| true`
+  # swallowed that, so the scan ended `clean` over a diff it never read — the commit hook silently off for
+  # any such file. Bytes are what the scanner wants; `match_text` reads the spooled records with `grep -a`.
+  # (2) a failed leg (git diff, awk or sed — `pipefail` folds all three into one status) is no longer
+  # swallowed: it exits 2 (this file's "cannot scan" status) naming the path. This runs in the main shell
+  # (a `done < <(...)` loop body, not a `$(...)`), so the `exit` reaches the EXIT trap, which keeps it.
+  local diff_rc=0
+  git --literal-pathspecs diff "$@" --unified=0 --no-color -- "$path" 2>/dev/null | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
-  ' | sed 's/^+//' > "$dtmp" || true
+  ' | LC_ALL=C sed 's/^+//' > "$dtmp" || diff_rc=$?
+  if [ "$diff_rc" -ne 0 ]; then
+    echo "secret-scan: could not parse the staged diff of '$path' (exit $diff_rc) — refusing to report it clean" >&2
+    exit 2
+  fi
   while IFS= read -r hit; do
     records+="$path:$hit"$'\n'
   done < <(match_text '' "$dtmp")
