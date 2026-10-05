@@ -1809,6 +1809,10 @@ single_def_check manifest_field          tools/lib/manifest.sh
 single_def_check manifest_usable         tools/lib/manifest.sh       install.sh   0
 single_def_check keel_core_is_link       tools/lib/core-ownership.sh install.sh   1
 single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh install.sh   1
+single_def_check keel_core_block_text       tools/lib/core-ownership.sh install.sh   1
+single_def_check keel_core_block_is_trimmed tools/lib/core-ownership.sh install.sh   1
+single_def_check keel_core_block_norm       tools/lib/core-ownership.sh install.sh   1
+single_def_check keel_core_block_state      tools/lib/core-ownership.sh install.sh   1
 
 # --- 11. stray $HOME/keel*alpine*-shaped clones (dir #397's doctor-advisory half, handed to
 # dir #399's design pass) ---------------------------------------------------------------------

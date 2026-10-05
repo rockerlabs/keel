@@ -89,7 +89,10 @@ delete it; park it anywhere out of the way (e.g. `~/keel`). It's Keel itself, no
 don't register it or point `/keel-setup` at it. To update later, run `git pull && ./install.sh` in the clone.
 
 `install.sh` is safe to re-run. It **never touches the files you own** (`CLAUDE.md`, `INSTANCE.md`,
-`LEARNINGS.md`, `IDEAS.md`); for Keel's own core (`FRAMEWORK`, `PRINCIPLES`, the commands) a re-run
+`LEARNINGS.md`, `IDEAS.md`) — with one consented exception: a re-run from a terminal *offers* (default
+*no*) to refresh only the Keel rails block inside a `CLAUDE.md`/`AGENTS.md` that Keel wrote, backing the
+file up first, and never touches anything outside the block; for Keel's own core (`FRAMEWORK`, `PRINCIPLES`,
+the commands, `docs/`) a re-run
 refreshes a copy that has **drifted** automatically when it provably is Keel's own older release, never
 touched since — otherwise it asks first (default *no*) when run from a terminal, or flags it
 non-interactively. Pass `--force` to take over a drifted or refused file anyway (backed up first; it
@@ -146,6 +149,7 @@ code/git rails from the always-on core on a machine with **no** git projects (st
 |---|---|---|
 | `CLAUDE.md` | the small **always-on file** — ground rules + a map of where the rest lives | **fill in its placeholders** (chat language, etc.) |
 | `FRAMEWORK.md`, `PRINCIPLES.md`, `LEARNINGS.md`, `IDEAS.md` | files loaded only when needed | leave as-is; they're pulled in when a task needs them. (On a **linked** install FRAMEWORK/PRINCIPLES live in `keel/` as symlinks, not at the top level.) |
+| `docs/` (linked: `keel/docs/`) | Keel's procedure docs the rails and commands point at | read on demand; leave as-is. A `docs/<name>.md` named by Keel's files means *this* folder, not your project's own `docs/` |
 | `INSTANCE.md` | your **private** layer — machine details + a list of your projects | fill in the **machine details**; the project list fills itself as you `init-project`/`register-project`. Keep it private (git-ignored). |
 | a global git check | `secret-guard` | nothing — it runs on its own |
 

@@ -15,6 +15,30 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Installs now ship Keel's `docs/`, so the doc paths the rails and commands name resolve on an
+  adopter's machine.** Every `docs/<x>.md` that `CORE.md`, `FRAMEWORK.md` or a command names (and the
+  `../docs/<x>.md` links in commands) pointed at a folder no install ever created, in copy mode and in
+  linked mode alike; a model is never told where a command file lives, so the link had no base to
+  resolve against. The installer now places every `docs/*.md` and `docs/drydock/*.md` beside the
+  installed `FRAMEWORK.md` (`<home>/docs/`, or `<home>/keel/docs/` for a linked home; never the
+  gitignored `docs/specs/`), through the same never-clobber, drift and manifest handling as the other
+  Keel-owned files; one sentence added to `CORE.md`'s "Shipped docs" section says that a named
+  `docs/<x>.md` is that folder, not the project's own. `uninstall.sh` removes the docs and prunes the
+  emptied dirs (a dir still holding your file stays), including in its manifest-less `--dry-run`
+  listing; a copy-to-linked re-run names the root `docs/` the copy install left, deleting nothing. A new
+  `W-DOCS-MISSING` doctor finding covers every mode, and linked doc links get the dangling/foreign
+  checks. A class guard (`tests/test_install_docs.sh`) fails when any installed `docs/…` reference does
+  not resolve. **Existing copy-mode installs now learn of CORE changes too:** an embedded rails block was
+  never compared on a re-run, so no change to `CORE.md` ever reached the default one-liner's adopters.
+  A re-run now checks the block (a `/keel-setup` no-git trim counts as current); on a terminal it
+  *offers*, default no, to refresh only the block inside `CLAUDE.md`/`AGENTS.md`, backing the file up
+  first; with no terminal it warns with a route that carries your mode and home flags. `doctor.sh
+  --install` reports the block as matching or as `W-CORE-DRIFT` instead of claiming a drift check that
+  never ran. **Upgrade note** — one re-run from a terminal brings an existing install the docs and the
+  locator sentence, then answer `y` at the block offer: copy mode with the default home, from a kept
+  checkout `./install.sh`, or `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh -o keel-bootstrap.sh && sh keel-bootstrap.sh`;
+  `--codex` adds `--codex` to either; a non-default home adds `--home DIR`; a linked home needs no
+  block step, just `git pull` and `./install.sh --link` once. dir #650.
 - **The suite's self-corruption canary now sees a leak that rewrites a file you were already editing, and says which
   files moved** (dir #664, with the second half of dir #656; tests only, no shipped tool changed). The canary in
   `tests/run.sh` compared only `git status --porcelain`, so a test that overwrote a tracked file you already had
