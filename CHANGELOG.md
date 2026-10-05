@@ -39,6 +39,15 @@ sections real content going forward — see that page for exactly when each one 
   checkout `./install.sh`, or `curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh -o keel-bootstrap.sh && sh keel-bootstrap.sh`;
   `--codex` adds `--codex` to either; a non-default home adds `--home DIR`; a linked home needs no
   block step, just `git pull` and `./install.sh --link` once. dir #650.
+- **The delegation rails block gains two lines: one test device per concurrent session, and every leg git
+  call through `git -C`.** Parallel legs that shared one booted simulator overwrote each other's installed
+  test host, and a verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout in the
+  orchestrator's real worktree. The block in `docs/delegation.md` now tells a session to boot its own
+  simulator or emulator and shut it down in its report, and to address a clone only as `git -C "<path>"`,
+  never after a `cd`. All ten verbatim copies (five in `docs/delta-audit.md`, the three drydock role
+  prompts, `/polish`'s review subagent) carry both, the fixer rails carry them too, and the worker-brief
+  section of `docs/release-management.md` points at the device rule. Pinned by the existing block-diff
+  suites plus new line pins in `tests/test_delegation_doc.sh`. dir #608, closes dir #669 item 4.
 - **`tests/lib.sh`: every test's `git -C` is checked before git runs.** git reads `-C ""` as "stay in the
   current directory", which once let a fixture helper write a `fork` remote into the real checkout's
   config. A `git` function now refuses an empty `-C` and any `-C` outside `$SANDBOX`/`$REPO_ROOT`, and a
