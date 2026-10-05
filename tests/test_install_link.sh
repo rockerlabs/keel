@@ -69,7 +69,8 @@ check_status "doctor --install on a complete install → exit 0" 0 "$STATUS"
 # dir #386: commands/groom.md ships, bumping the count 11 -> 12.
 # dir #642: commands/go-guide.md ships (the hidden implementer guide `/go` step 7 loads; it rides the
 # same commands/*.md install loop as every other command, P4), bumping the count 12 -> 13.
-check_contains "doctor reports full command coverage" "$OUT" "commands: 13 of 13 shipped are wired"
+# dir #517: commands/triage.md ships, bumping the count 13 -> 14.
+check_contains "doctor reports full command coverage" "$OUT" "commands: 14 of 14 shipped are wired"
 check_contains "doctor sees the linked core" "$OUT" "core rails: linked"
 # dir #68 pairing check: polish.md is wired but this install has no --no-hooks-skipped gate — WARN.
 check_contains "doctor flags the shipped-but-unwired gate" "$OUT" "no machine-global gate is wired"

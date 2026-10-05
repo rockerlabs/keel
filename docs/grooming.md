@@ -368,7 +368,9 @@ settled fact.
   carry-forward.
 
 **Plus the accumulator triage** — three places findings and ideas already pile up and, without a named
-owner, never become anything:
+owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`
+per [`triage.md`](triage.md) — called by reference, never restated here (its verdicts, bound and
+horizon live there); (c) is unchanged. What stays here is why each input is on the list:
 
 - **(a) The standing list.** Sub-bar `no-action` findings that name a real defect
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
@@ -379,10 +381,10 @@ owner, never become anything:
   different project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a
   papercuts ticket, whatever it already keeps and actually reads from. Re-read it each cycle: a line
   that recurs across cycles promotes to a ticket; a line a later change moots gets dropped with a
-  one-line reason rather than left standing.
+  one-line reason rather than left standing — the verdict for each is `/triage`'s.
 - **(b) The ideas file.** A project's own free-form ideas/brainstorm file (where one exists) gets a
   promote-or-drop pass each cycle — its own header may already promise a periodic review that nothing
-  currently owns; this procedure is the "periodically" that gets an owner.
+  currently owns; `/triage` is the "periodically" that gets an owner.
 - **(c) Closed audit-run directories.** Confirmed at G0 above, not repeated here as a separate step —
   see G0's own paragraph, which states it in full so a compressed read of this section cannot drop it.
 - **(d) A spec's own follow-up list** (dir #560, applied 2026-09-20). A design session's spec routinely

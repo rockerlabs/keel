@@ -57,7 +57,8 @@ left, which makes it the leftover-catcher, not the primary path.
 loose-end that surfaced but isn't persisted — **including incident signals**: a `git push --force`, a
 `git revert` / `reset --hard`, a history rewrite, or a command that failed and was redone differently are
 mechanical traces of a lesson — each becomes a backlog ticket, a promoted rule, a
-`LEARNINGS.md` candidate (bump its `[n×]`; promote on the 2nd hit), an `IDEAS.md` entry, or an explicit
+`LEARNINGS.md` candidate (bump its `[n×]`; at the 2nd hit promote in-session when it is a `PROMOTE-RULE`
+([`docs/triage.md`](../docs/triage.md) T2), else leave it at `[2×]` — `/triage` owns the promote-due set), an `IDEAS.md` entry, or an explicit
 recorded drop. Never end
 with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
 prominently rather than closing silently. **A `/code-review` report relayed after the PR already
