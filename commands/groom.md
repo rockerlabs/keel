@@ -48,8 +48,9 @@ one; archive re-sweep when the closed share crosses its threshold, carrying what
 mechanism has recorded against itself (keel: `dir #359`). Dedup/absorption with reproduced evidence,
 never a silent close. Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags.
 **Plus the accumulator triage:** (a) re-read the project's standing list (keel: `## Standing list` in
-`BACKLOG.md`) — promote a recurring line to a ticket, drop a mooted one with a reason; (b) a
-promote-or-drop pass over the project's ideas file; (c) confirmed at G0, not repeated here.
+`BACKLOG.md`), (b) the project's ideas file, and the project's learnings file — all three run under
+`/triage` ([`docs/triage.md`](../docs/triage.md)), called by reference: its verdicts decide each
+entry; (c) confirmed at G0, not repeated here.
 
 **G5 — every release row, five-plus-two fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named

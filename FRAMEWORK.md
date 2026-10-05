@@ -202,7 +202,8 @@ four qualitative signals:
    not moving; surface it explicitly instead of letting it age silently.
 3. **Prune-tier health.** The staging tier for not-yet-rules (promote on recurrence, prune when stale)
    only works if entries move. An entry that hit its promotion count but was not promoted — or nothing
-   promoted in roughly five sessions — means the tier is filling instead of draining.
+   promoted in roughly five sessions — means the tier is filling instead of draining. The responder is
+   `/triage` ([`docs/triage.md`](docs/triage.md)): run it when this signal fires.
 4. **Review-over-review improvement.** Are fewer gaps and warnings surfacing per review as conventions
    mature, or does each review find a similarly sized pile? The latter means the conventions are not
    sticking — only the review is.
@@ -273,7 +274,9 @@ So context files don't bloat and stay useful.
 - **A useful workflow insight not yet worth a committed rule → `LEARNINGS.md`** (the staging tier between
   "promote" and "drop"). Each entry carries a recurrence counter; on the 2nd occurrence promote it into the
   right surface and delete the entry — recurrence is the felt-friction promotion signal. Prune candidates
-  that neither promoted nor recurred in ~5 sessions; an unpruned list is noise (P2/P3).
+  that neither promoted nor recurred in ~5 sessions; an unpruned list is noise (P2/P3). The promote/prune
+  pass is owned by `/triage` ([`docs/triage.md`](docs/triage.md)) — `/wrap` only bumps the counter and
+  promotes in-session when the edit is a one-paragraph rule.
 
 **Decision capture — record the fork when it resolves.** The moment a significant fork settles
 in-session (a library pick, an approach, a convention agreed in chat), draft the record THEN: one

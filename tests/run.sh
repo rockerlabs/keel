@@ -311,6 +311,61 @@ main() {
   fi
   trap 'rm -rf "$logdir"' EXIT
 
+  # dir #663 (b): the residue gate. The grep census (tests/test_no_bare_mktemp.sh) sees one call shape in
+  # the test files; it did not see a bare logdir, a `trap - EXIT` that strands a sandbox, or a scratch
+  # directory a TOOL keeps on purpose — the three mechanisms the 0.13.0 delta audit found only by counting
+  # the real temp dir by hand around a run. This measures it. A `mktemp` shim ahead on PATH (every test
+  # file and every tool it spawns inherits it) records each path the real mktemp hands back; after the last
+  # file finishes, a recorded path that still exists is residue and fails the run. Why a trace and not a
+  # before/after listing of the temp dir: the real temp dir is noisy — a sibling suite's live sandboxes
+  # (`tmp.*`) and its own logdir (`keel-run.*`) sit there too, and a bare `mktemp` ignores $TMPDIR on macOS,
+  # so no directory of ours can be named in advance. A path this run minted is its own, by construction.
+  # The shim changes nothing a test sees: same output, same status, same stderr.
+  # Axis, named: this sees mktemp called by name through PATH. It does not see a path made by `mkdir`, an
+  # absolute /usr/bin/mktemp, or a process that resets PATH first. A test that clears the sandbox's removal
+  # trap is still caught (the path was minted, and it survives), which a trap-side check could not see.
+  resid_dir="$logdir/residue"
+  resid_trace="$resid_dir/mktemp.trace"
+  resid_real_mktemp="$(type -P mktemp 2>/dev/null || true)"
+  # resid_write_shim FILE REAL TRACE — a POSIX-sh wrapper around REAL that appends the path it prints to TRACE
+  # when that path exists afterwards (a `-u` dry run prints a name and makes nothing, so it is never
+  # recorded; no option parsing to get wrong). A relative result is recorded absolute.
+  resid_write_shim() {
+    {
+      printf '#!/bin/sh\n'
+      printf 'real=%q\ntrace=%q\n' "$2" "$3"
+      cat <<'SHIM'
+out="$("$real" "$@")" || exit $?
+printf '%s\n' "$out"
+if [ -n "$out" ] && [ -e "$out" ]; then
+  case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
+  printf '%s\n' "$out" >> "$trace" 2>/dev/null
+fi
+exit 0
+SHIM
+    } > "$1" && chmod 755 "$1"
+  }
+  # Fail closed, like the logdir mint above: a gate that cannot watch must not report a clean run.
+  resid_fatal() {
+    printf 'FATAL: the residue gate (dir #663) could not be armed: %s — refusing to run: a leak into the real temp dir would go unseen.\n' "$1" >&2
+    exit 1
+  }
+  [ -n "$resid_real_mktemp" ] || resid_fatal "no mktemp on PATH"
+  mkdir "$resid_dir" 2>/dev/null && : > "$resid_trace" || resid_fatal "cannot create $resid_dir"
+  resid_write_shim "$resid_dir/mktemp" "$resid_real_mktemp" "$resid_trace" || resid_fatal "cannot write the mktemp shim"
+  # Non-vacuity: drive a second shim, whose "real" mktemp is a stub that makes its last argument a directory
+  # and echoes it, and require the path to land in the trace. Proves the shim records without calling the
+  # real mktemp (a test that watches the real one's calls must not see a probe).
+  printf '#!/bin/sh\nfor a in "$@"; do :; done\nmkdir "$a" && printf "%%s\\n" "$a"\n' > "$resid_dir/probe-real" && chmod 755 "$resid_dir/probe-real" \
+    || resid_fatal "cannot write the probe stub"
+  resid_write_shim "$resid_dir/probe-shim" "$resid_dir/probe-real" "$resid_trace" || resid_fatal "cannot write the probe shim"
+  resid_probe="$resid_dir/probe-marker.$$"
+  "$resid_dir/probe-shim" -d "$resid_probe" >/dev/null 2>&1
+  grep -qxF -- "$resid_probe" "$resid_trace" 2>/dev/null || resid_fatal "the shim did not record a probe path"
+  PATH="$resid_dir:$PATH"
+  export PATH
+  [ "$(type -P mktemp 2>/dev/null)" = "$resid_dir/mktemp" ] || resid_fatal "the shim is not first on PATH"
+
   failed=0
   active_pids=()
   active_files=()
@@ -546,7 +601,29 @@ main() {
     failed=$((failed + 1))
   fi
 
+  # dir #663 (b): the residue verdict (arming and rationale above). Every path the shim recorded that still
+  # exists now is residue. The arming probe's own marker is the one recorded line that is not a test's.
+  resid_paths=0 resid_left="" resid_left_n=0
+  while IFS= read -r resid_p; do
+    [ -n "$resid_p" ] || continue
+    [ "$resid_p" != "$resid_probe" ] || continue
+    resid_paths=$((resid_paths + 1))
+    if [ -e "$resid_p" ] || [ -L "$resid_p" ]; then
+      resid_left_n=$((resid_left_n + 1))
+      [ "$resid_left_n" -gt 25 ] || resid_left="$resid_left  $resid_p"$'\n'
+    fi
+  done < <(LC_ALL=C sort -u "$resid_trace" 2>/dev/null)
+  if [ "$resid_left_n" -gt 0 ]; then
+    printf '\n!!! TEST-SUITE RESIDUE GATE TRIPPED (dir #663) !!!\n'
+    printf '%d path(s) that mktemp minted during this run still exist (first 25):\n%s' "$resid_left_n" "$resid_left"
+    printf 'a test, or a tool it ran, made scratch outside its sandbox, or cleared the trap that removes it\n'
+    printf '(a bare `mktemp`, a `trap - EXIT`, a scratch file a tool keeps on purpose). Mint it under $SANDBOX, or\n'
+    printf 'remove it where it is made. Trace of every path minted: %s\n' "$resid_trace"
+    failed=$((failed + 1))  # residue gate verdict
+  fi
+
   printf '\n========================================\n'
+  printf 'residue gate (dir #663): %d mktemp-minted path(s) traced, %d left behind\n' "$resid_paths" "$resid_left_n"
   # dir #333, review-caught: the NOTE above ran once, near the top, on stderr — easy to miss in a long
   # scrollback or a CI harness that only tails stdout. Repeat it once more, right next to the pass/fail
   # verdict a reader actually looks at, so a checkout missing tools/lib/ref-guard.sh doesn't read as
