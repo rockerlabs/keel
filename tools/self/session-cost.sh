@@ -283,7 +283,8 @@ cmd_table() {
 # timestamp falls inside the window (timestamps of one fixed ISO-8601 shape compare as strings). A new
 # /polish invocation while a window is open EXTENDS it (one PR's tail includes its rounds); one that
 # follows a window closed on the same branch is a re-run on an already-open PR — `gh pr create` fails
-# there by design — so its window never closes. A window still open at the end of the file is reported
+# there by design — so its window never closes (it ends, still `open`, at the first turn on a different
+# branch, so the next PR gets its own window). A window still open at the end of the file is reported
 # `open` and is never a closed window; a consumer's median takes the closed ones only.
 #
 # The review cost (B10, the Outcome's M2) is the subagent whose prompt's FIRST line is /polish step 5's
@@ -322,6 +323,9 @@ _sc_tail_windows() {
         {cur: null, wins: [], closed_on: [], prev: null};
         $turns[$i] as $t
         | $t.attributionSkill as $sk
+        | (if .cur != null and .cur.rerun and $t.gitBranch != null and $t.gitBranch != .cur.branch then
+             .wins += [.cur + {end: $t.timestamp, status: "open"}] | .cur = null
+           else . end)
         | (if .cur == null and $sk == "polish" and .prev != "polish" then
              .cur = {start: $t.timestamp, branch: $t.gitBranch, cost: 0, turns: 0,
                      rerun: ($t.gitBranch != null and ((.closed_on | index($t.gitBranch)) != null))}

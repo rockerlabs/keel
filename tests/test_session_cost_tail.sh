@@ -249,6 +249,24 @@ mk_session rerun2
 tail_json
 check_eq "(viii) a same-branch re-run never closes, even on a result that names a PR URL" "open" "$(field 2 .status)"
 
+# a never-closing re-run window must not swallow the NEXT PR's tail (a different branch, same session)
+mk_session rerun3
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R3 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R4 10:06:00 polish b1 300 "$(bash_use toolu_q 'gh pr create --title t')"
+  rec_result 10:06:05 toolu_q true "a pull request for branch b1 already exists"
+  rec_turn R5 10:10:00 go b2 5000 '[{"type":"text","text":"next ticket"}]'
+  rec_turn R6 10:11:00 polish b2 700 "$(bash_use toolu_r 'gh pr create --title t2')"
+  rec_result 10:11:05 toolu_r false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(viii) a re-run window then a different branch's PR: three windows" "3" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(viii) closed, open (the re-run), closed" "closed open closed" "$(field 1 .status) $(field 2 .status) $(field 3 .status)"
+check_eq "(viii) the next PR's window has its own cost (not folded into the re-run's)" "700" "$(field 3 .cost)"
+check_eq "(viii) the re-run window keeps only its own turns" "300" "$(field 2 .cost)"
+
 # --- (ix) review_cost: B2's fixed-first-line subagents plus every agent whose parent chain reaches one --
 mk_session review
 {
