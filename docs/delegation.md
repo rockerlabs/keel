@@ -328,7 +328,7 @@ subagent run as `keel-polish-reviewer`, a keel-shipped agent whose `tools:` allo
 it misreads a dirty tree. Step 5's first-attempt review subagent (dir #670's K2) is the
 one keel-owned spawn that is NOT floored: it must run the `/code-review` skill, which wants `git diff`, so
 a read-only tool set would degrade the review by default — it is contained by a clean-tree precondition
-and a stop on any HEAD or status change instead. For a fan-out a vendor tool composes, which keel cannot floor (`/code-review`'s finder
+and a stop on any HEAD or status change instead (dir #676 is its possible future floor). For a fan-out a vendor tool composes, which keel cannot floor (`/code-review`'s finder
 agents are the felt case — dir #375's fourth recurrence), an adopter has three answers:
 
 1. Before launching one, **commit before you launch it** — a clean tree has nothing for a stray `git checkout --` to destroy. Use a
@@ -356,7 +356,7 @@ agents are the felt case — dir #375's fourth recurrence), an adopter has three
    `git -C <dir> checkout`, a script that runs git, or a plain `rm` — the blind spots the recipe below states
    for itself.
 3. **Two options keel names and has not built:** dir #559's B1 (a `SubagentStart` hook that injects these
-   rails into every subagent type — prose delivery, so not a floor) and an `agent_id`-scoped deny of
+   rails into every subagent type — prose delivery, so not a floor) and dir #675's `agent_id`-scoped deny of
    git-mutating verbs inside the gate's own Bash hook (a floor for every subagent, vendor-composed ones
    included, with its own false-positive surface).
 
