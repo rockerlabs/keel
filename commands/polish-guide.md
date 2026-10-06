@@ -805,6 +805,14 @@ Steps, in order:
      `tools/pre-pr-gate.sh init` then `tools/pre-pr-gate.sh receipt --recover` to restore whatever was
      genuinely valid before, or start over from step 1 if `--recover` finds nothing to restore.
 
+   **"No receipt is on file" can be a visibility problem, not a missing one (dir #583).** A shell the harness
+   sandboxes can keep its own private view of the gate's state directory, so `init` and every `receipt`
+   written from it succeed and never reach the hook that evaluates `gh pr create` — the hook runs outside the
+   sandbox. The two files are keyed differently: the sentinel by repo AND branch, the review trace by repo only
+   (`tools/pre-pr-gate.sh -h` prints both paths for this checkout). `ls` the sentinel from an unsandboxed call:
+   absent → re-run `init` and EVERY `receipt` with the sandbox disabled, not just the final `gh pr create` (a
+   sandbox exemption applied only to the last command leaves the earlier writes where they were).
+
    Before either path, honestly check whether the named step's work actually happened and was simply not
    receipted, or was genuinely skipped — then log one verdict line: `tools/pre-pr-gate.sh log receipt-verdict
    "true-catch <step-id>"` (a real skip — the gate did its job) or `"false-fire <step-id>"` (the step ran,

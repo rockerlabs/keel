@@ -368,6 +368,13 @@ sections real content going forward — see that page for exactly when each one 
   unset worker tier is the launcher's own, verified by the running-tier evidence before session metadata,
   with a hello-then-hold launch; `docs/release-management.md` R3 inherits it. R9 and `commands/manage-release.md`
   M8 add an install-where-the-operator-uses-it step. dir #455, dir #596.
+- **A sandboxed shell's receipts no longer read as a key problem (dir #583).** The gate's "no receipt on file"
+  deny described only a wrong repo or branch; it now also names the other cause — `init` and every `receipt`
+  were written from a sandboxed shell that keeps a private view of the state directory the hook reads — and the
+  fix: re-run them all with the sandbox disabled, not only the final `gh pr create`. `pre-pr-gate.sh -h` (it
+  printed nothing before) now shows both key shapes side by side with this checkout's live sentinel and trace
+  paths, the sentinel keyed by repo and branch and the review trace by repo only; the script header and
+  `polish-guide` § Step 8 say the same, so a worker needs no personal notes to reach the fix.
 
 ## [0.13.0] — 2026-10-03
 

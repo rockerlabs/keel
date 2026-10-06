@@ -3707,4 +3707,30 @@ check_eq "dir #647 A3: the decoy's receipt file is byte-identical" "$b647_receip
 gate_env "gh pr create --fill" "$b647" "GIT_DIR=$a647/.git"
 check_absent "dir #647 A3: cwd=B (receipted) under GIT_DIR=A/.git is still allowed" "$OUT" "deny"
 
+# --- dir #583: a sandboxed shell's receipts are invisible to the hook — the deny, `-h` and the header say so ----
+# The deny for a missing receipt used to describe only a KEY problem (other repo/branch). A shell the
+# harness sandboxes can keep a private view of the gate's state directory, so `init`/`receipt` written
+# from it never reach the hook: the deny now names that cause and its fix in the same breath.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate "gh pr create --fill" "$d"
+check_contains "dir #583: the no-receipt deny names the sandboxed-shell possibility" "$OUT" "sandboxed shell"
+check_contains "dir #583: the no-receipt deny names the fix (every receipt, sandbox off)" "$OUT" 're-run `init` and every `receipt` with the sandbox disabled'
+check_contains "dir #583: the no-receipt deny points at -h for the exact paths" "$OUT" 'pre-pr-gate.sh -h'
+# `-h` prints both key shapes side by side, with this checkout's live paths.
+run_in "$d" bash "$gate" -h </dev/null
+check_status "dir #583: -h exits 0" 0 "$STATUS"
+check_contains "dir #583: -h prints this checkout's sentinel path" "$OUT" "$(sentinel_for "$d")"
+check_contains "dir #583: -h prints this checkout's trace path" "$OUT" "$(trace_for "$d")"
+check_contains "dir #583: -h says the sentinel is keyed by repo AND branch" "$OUT" "keyed by repo AND branch"
+check_contains "dir #583: -h says the review trace is keyed by repo only" "$OUT" "keyed by repo only"
+mkdir -p "$SANDBOX/nonrepo-583"
+run_in "$SANDBOX/nonrepo-583" bash "$gate" --help </dev/null
+check_status "dir #583: --help outside a repo still exits 0" 0 "$STATUS"
+check_contains "dir #583: --help outside a repo still shows the key shapes" "$OUT" "<receipt-key>"
+# The script header states the same pair, so a reader of the file needs no other source.
+gate_head="$(head -n 80 "$gate")"
+check_contains "dir #583: the header names the sentinel's repo+branch key beside the trace's repo-only key" "$gate_head" "keyed by repo AND branch; the review trace by repo only"
+check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "sandboxed shell"
+
 summary

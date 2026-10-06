@@ -229,4 +229,10 @@ pinfgn "guide: the retired 'bare — this IS the genuine in-session pass' wordin
 pinfgn "guide: the retired 'ordinary automated outcome' wording is gone" \
   'the ordinary automated outcome'
 
+# --- dir #583: guide § Step 8 says a missing-receipt deny can be a sandbox visibility problem ----------------
+pinfg "guide: § Step 8 names the sandbox visibility cause (dir #583)" '"No receipt is on file" can be a visibility problem, not a missing one (dir #583).'
+pinfg "guide: § Step 8 states both key shapes side by side" 'the sentinel by repo AND branch, the review trace by repo only'
+pinfg "guide: § Step 8 sends the worker to -h for the live paths" '`tools/pre-pr-gate.sh -h` prints both paths for this checkout'
+pinfg "guide: § Step 8 says every write is redone, not just the last command" 'not just the final `gh pr create`'
+
 summary
