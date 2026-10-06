@@ -112,6 +112,7 @@ tools/self/session-cost.sh session ~/.claude/projects/<slug>/<session-uuid>.json
 tools/self/session-cost.sh ticket R1 sonnet <session-file> [<session-file>...]
 tools/self/session-cost.sh table <manifest.tsv>
 tools/self/session-cost.sh selfcheck <session-file>...
+tools/self/session-cost.sh tail [--json] <session-file>...
 ```
 
 A manifest is a tab-separated file, one ticket per line: `TICKET<TAB>TIER<TAB>MODEL<TAB>FILE1[,FILE2,...]`.
@@ -120,6 +121,42 @@ every session belonging to a repo, including its worktrees; matching one to a ti
 lookup dir #313's own body already worked out — see that ticket for the mechanism). `selfcheck` is the
 visible guard against a transcript format that moves silently: it names any record type the reader has
 never seen before, rather than absorbing it into "known, ignorable" without comment.
+
+## `tail` — what the fixed per-PR tail of a `/go` session costs (dir #670)
+
+`tail` answers a narrower question than `ticket`: how many tokens does a session spend between its
+first `/polish` turn and the pull request opening? That tail is the cost `/polish`'s step 5 and its
+split into a core plus a guide (dir #670) are meant to lower, so the tool measures it positionally — by
+where the turns sit, not by which skill the harness attributed them to. Attribution alone would not do:
+a managed-release worker never runs `/wrap`, so dropping `wrap` from an attribution total looks like a
+cut when nothing changed, and a subagent's turns after its own `Skill` call carry no attribution at all,
+which would make a review run by a subagent read as free.
+
+- **A window** opens at the first primary turn attributed to `polish` that follows a turn attributed
+  otherwise, and closes at the primary turn whose `gh pr create` call has a *non-error* result naming a
+  `github.com/<owner>/<repo>/pull/<n>` URL. A gate-denied attempt and a `grep` that merely mentions
+  `gh pr create` leave it open. A turn is one `requestId`, and its tool calls are read across every
+  record carrying that id: the harness writes one record per content block, so a reader that keeps only
+  the first record per request misses the call and never closes the window (it closed 6 of 11 here).
+- **Its cost** is the cache-read tokens of its primary turns plus every turn of every subagent whose
+  first record falls inside it. `wrap` and `keel-score` turns are never in a window. A second `/polish`
+  invocation before the PR exists extends the window (one PR's tail includes its rounds); one on a branch
+  whose window already closed is a re-run on an open PR (`gh pr create` fails there by design), so its
+  window never closes — it ends, still `open`, at the first turn on a different branch.
+- **Not comparable with `ticket`/`table`.** Those report `cost_tokens` (cache-read plus output) for a
+  whole ticket's primary session; a `tail` window's `cost` is cache-read only, over the tail alone.
+- **An `open` window** (a session that never opened its PR, or a re-run) is listed with its cost and is
+  never a closed window: take a median over the `closed` ones only.
+- **`review_cost`** is the cost of the subagent whose prompt's first line is `/polish` step 5's fixed
+  line, plus every subagent in the window whose parent chain reaches one (the `code-review` skill's fork
+  and its children). It is zero where no review subagent ran.
+
+`--json` prints one object per window per line: `session`, `start`, `end`, `status`, `primary_turns`,
+`subagent_turns`, `cost`, `review_cost` and a `subagents` array (`agent_id`, `parent_agent_id`, `depth`,
+`first_line`, `turns`, `cost`, `review`). Over the ten sessions behind 0.13.0's slate PRs it finds 11
+closed windows with a median of 5,620,765 cache-read tokens (about 5.62M), the baseline dir #670's value
+test is measured against; take the median with
+`jq -s '[.[] | select(.status=="closed") | .cost] | sort'` over its output.
 
 ## Caveats, unchanged from the original investigation
 
