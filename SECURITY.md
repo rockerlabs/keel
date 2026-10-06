@@ -99,6 +99,28 @@ all-or-nothing bar. A public video treatment of the same threat model, in Russia
 split — defense outside the model, rules as instructions rather than guarantees:
 [Как взламывают вайбкодеров?](https://youtu.be/sl5rGSm3Wmk)
 
+## Secrets in the working tree
+
+The [threat model](#threat-model--the-lethal-trifecta) above names the gap this section narrows: a plaintext
+secrets file in the project tree is one `cat` from a permanent session transcript. Keel ships a recipe for
+it — [`docs/secrets-in-the-working-tree.md`](docs/secrets-in-the-working-tree.md) — and a short `doctor`
+floor, sized honestly.
+
+**Sizing.** Protection should match what the project can lose. The recipe keeps secrets as SOPS + age
+ciphertext (`secrets.enc.yaml`) in the tree and hands plaintext only to a child process through
+`sops exec-env` / `sops exec-file`; the agent never decrypts. That is a speed bump against an agent that
+errs honestly, not a barrier against a hijacked one.
+
+**Limits, in one line each** (the recipe states each in full): the key sits on the same disk, readable by the
+same user; environment dumps and verbose failures stay open; past transcripts are out of scope; `doctor`
+checks file names and git state, never content; a Claude Code `Read` deny covers the Read tool only, not
+Bash; and the secret guard passes SOPS ciphertext except by chance.
+
+**What `doctor` checks.** Advisories only — none changes its exit code: `W-SECRETS-EXPOSED` (an env-shaped
+file git tracks or would commit), `W-SECRETS-PLAINTEXT` (one resting gitignored), `W-SECRETS-IGNORE` (the
+recipe's ignore rules missing, once `.sops.yaml` exists) and, under `doctor --install` for Claude Code,
+`H-DENY-ENV` (the three `Read` deny globs for env files missing).
+
 ## Supported versions
 
 Only the latest `main` and the most recent tag receive fixes; there is no
