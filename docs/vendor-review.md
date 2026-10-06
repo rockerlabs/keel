@@ -14,8 +14,9 @@ vendor reachable only through a person's own account and UI, with no API and no 
 **Built for one use, and it generalizes.** This leg was built for a groom's G6 adjudication round
 ([`docs/grooming.md`](grooming.md)) — reading a release plan through a genuinely different model
 vendor, not just a fresh context window. It generalizes as *a reviewer over TEXT, not over the
-tree*: the model runs no commands and reads no files, so the bundle you hand it is the whole
-universe. That's a real limitation, not a footnote — don't expect it to run anything.
+tree*: the model is meant to run no commands and read no files — the worked client enforces what it
+can (rail 6) — so the bundle you hand it is the whole universe. That's a real limitation, not a
+footnote — don't expect it to run anything.
 
 ## Two proven bundle shapes
 
@@ -49,26 +50,35 @@ round-dir bookkeeping stay the same either way.
 ## Usage
 
 ```bash
-tools/vendor-review.sh --client tools/vendor-review/agy.sh \
-  --system system-prompt.md --bundle bundle.md --label my-review --out private/audit-harness/out
+round="$(tools/vendor-review.sh --client tools/vendor-review/agy.sh \
+  --system system-prompt.md --bundle bundle.md --label my-review)"
 ```
 
-Prints the round directory it wrote: `<out>/round-<UTC timestamp>-<label>/`, holding `raw.json`
-(the raw API response — read it for anything vendor-specific, like a token-usage figure) and
-`reply.md` (the model's reply, unwrapped). `tools/vendor-review/agy.sh` needs the `agy` CLI
-installed and authenticated on your own machine; the script itself holds no credentials.
+Prints the round directory it wrote — exactly one line on stdout, the path, so a script can capture it
+(the status sentence goes to stderr; on any failure stdout is empty): `<out>/round-<UTC timestamp>-<label>/`,
+holding `raw.json` (the raw API response — read it for anything vendor-specific, like a token-usage figure)
+and `reply.md` (the model's reply, unwrapped). `--out` defaults to `$HOME/.keel/vendor-review`
+(`<keel state root>/vendor-review`), outside every repo, so a default run leaves nothing in your tree; pass
+`--out DIR` (relative to your working directory) to put rounds elsewhere. Replies can quote material from
+your bundle, so that directory keeps private text — it is never inside a repo, and nothing prunes it.
+
+A round is refused, never run, when the bundle has no non-whitespace content (exit 2) or when the client
+exits 0 with an empty reply (exit 1, round dir kept). `tools/vendor-review/agy.sh` caps the combined prompt
+at 185 KiB, and at **131071 bytes on Linux** — the prompt travels as one argument, which Linux caps there
+(131072 fails with `E2BIG`); an over-cap prompt is exit 2 before `agy` runs, so chunk the bundle. It needs
+the `agy` CLI installed and authenticated on your own machine; the script itself holds no credentials.
 
 ## The rails (non-negotiable)
 
 1. **The leak gate is mandatory and has no bypass.** `vendor-review.sh` scans `--system` and
    `--bundle` with [`tools/secret-guard/secret-scan.sh`](../tools/secret-guard/secret-scan.sh)
    before anything is sent, and refuses — printing only the offending path, never the matched
-   content — on any hit. There is no `--force` and no `--skip-scan`. Known limitation, shared with
-   every other caller of the scanner's file-list mode (`tools/audit-packet/export.sh` included): an
-   `.secret-scan-allow` entry in the caller's working directory applies unconditionally here, with
-   none of the same-change-provenance baseline check `--range` mode applies — an allowlist entry
-   added for an unrelated fixture would silently exempt a real match too. Anonymize and review the
-   bundle yourself; don't rely on the gate as the only check.
+   content — on any hit. There is no `--force` and no `--skip-scan`, and no working-directory
+   bypass: the scanner runs from a fresh empty directory, so a `.secret-scan-allow` in your cwd or
+   your repo is never read, and the refusal text names no exemption mechanism. (`tools/audit-packet/export.sh`
+   still honours the audited repo's own root allow-list by design — it scans that repo's tracked
+   files, where the file is that repo's own human decision.) Anonymize and review the bundle
+   yourself; don't rely on the gate as the only check.
 2. **Anonymize before assembling the bundle.** Real machine paths, names, and other personal
    literals don't belong in a payload leaving the machine, gate or no gate — the gate is a
    backstop, not the first line of defense.
@@ -83,6 +93,17 @@ installed and authenticated on your own machine; the script itself holds no cred
    A vendor round has miscounted its own bundle's data and cited a version that doesn't exist; the
    same leg has also found real bugs same-family reviews missed. Treat every finding as a claim to
    check, not a verdict to accept.
+6. **No tool access is enforced, not assumed** (`agy.sh`). A `permissions.allow` rule in agy's own
+   settings (`$HOME/.gemini/antigravity-cli/settings.json`) reaches the headless call and lets the
+   model read files outside the bundle — measured, dir #662 — so `agy.sh` refuses (exit 1, agy never
+   invoked) while that file carries any rule, or cannot be read or parsed (an unreadable policy is not
+   a clean one). The message names the file and the number of rules, never the rules; they may belong to
+   other sessions or tools, so changing them is a human's decision. A machine that already has such a
+   rule (one added for another tool's file-read mode, say) gets `agy.sh` refusing until it is
+   removed; add such a rule per run instead, and take it out after. `agy` also runs from a fresh empty
+   directory, never your tree, so it loads no `AGENTS.md` / `GEMINI.md` from there. The guarantee is
+   exactly this: those allow-rules are the one grant source checked. agy's MCP servers and plugins are
+   not — "no tool access" is a prompt instruction plus these two checks, never an absolute.
 
 ## What this leg has actually found
 
