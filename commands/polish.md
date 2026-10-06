@@ -34,10 +34,9 @@ Steps, in order:
    (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, § Step 1; guide unreachable →
    stop and report.
 
-2. **Simplify.** Invoke the `/simplify` skill and wait for it. Establish availability by *attempting* the
-   call; genuinely unavailable → one inline cleanup pass over the diff, receipt
-   `tools/pre-pr-gate.sh receipt polish.2-simplify inline:no-simplify-skill`. Otherwise receipt
-   `tools/pre-pr-gate.sh receipt polish.2-simplify`.
+2. **Simplify.** Every changed file `*.md`, none a command, skill or runbook → load `polish-guide`, § Step 2.
+   Otherwise invoke `/simplify` and wait; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
+   Refused or unavailable → § Step 2. Guide unreachable → stop and report.
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) and show the real
    output; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh

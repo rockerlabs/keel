@@ -170,15 +170,23 @@ Steps, in order:
 ## Step 2 — simplify
 
 2. **Simplify.** *Skip entirely if step 1's convergence branch just recovered this step's receipt.*
+   **Size the step by the diff's content class first.** *Prose-only* means all three hold: (a) no changed
+   file is code; (b) no fenced block is added, removed or edited — read the file, not only the hunk, since
+   a fence marker can sit outside it; (c) no changed file is a procedure doc (a command, skill or runbook
+   that sessions execute step by step) — its prose is the product, and a measured full `/simplify` run over
+   such docs found real fixes. Prose-only → ONE inline reuse/duplication pass over the step-1 diff yourself —
+   does the prose restate what another file already says (replace it with a pointer), repeat itself, or
+   carry a dead cross-reference? — say what you tidied, and receipt it by name: `tools/pre-pr-gate.sh
+   receipt polish.2-simplify inline:prose-only`. That is a sanctioned outcome, not a degradation. Anything else, or any doubt, runs the full `/simplify`.
    Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff yourself, say what you
+   If it is genuinely unavailable, do the same ONE inline pass over the step-1 diff, say what you
    tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
-   inline:no-simplify-skill`).
+   inline:no-simplify-skill`, or the prose-only receipt above).
 
 ## Step 3 — tests
 
