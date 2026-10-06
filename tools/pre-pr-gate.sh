@@ -1460,8 +1460,9 @@ case "${1:-}" in
     # environment); key resolution is best-effort: a non-repo cwd or a detached HEAD (where
     # _require_receipt_key exits, inside this substitution only) leaves the placeholders.
     ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
+    ph_note='(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> stand for the keys `pre-pr-gate.sh keys` prints inside the checkout.)'
     if ph_keys="$(_require_receipt_key "$PWD" 2>/dev/null && printf '%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
-      ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"
+      ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"; ph_note=""
     fi
     ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
     ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
@@ -1473,6 +1474,7 @@ case "${1:-}" in
       '                           keyed by repo AND branch' \
       "  review trace             $ph_trace" \
       '                           keyed by repo only' \
+      ${ph_note:+"$ph_note"} \
       '' \
       'A "no receipt on file" deny can mean the receipts were written from a sandboxed shell (a private view of this state' \
       'directory). From an UNSANDBOXED call, `ls` the sentinel: if it is absent, re-run `init` and every `receipt` with the sandbox disabled.'
