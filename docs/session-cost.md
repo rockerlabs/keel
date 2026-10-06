@@ -143,6 +143,8 @@ which would make a review run by a subagent read as free.
   invocation before the PR exists extends the window (one PR's tail includes its rounds); one on a branch
   whose window already closed is a re-run on an open PR (`gh pr create` fails there by design), so its
   window never closes.
+- **Not comparable with `ticket`/`table`.** Those report `cost_tokens` (cache-read plus output) for a
+  whole ticket's primary session; a `tail` window's `cost` is cache-read only, over the tail alone.
 - **An `open` window** (a session that never opened its PR, or a re-run) is listed with its cost and is
   never a closed window: take a median over the `closed` ones only.
 - **`review_cost`** is the cost of the subagent whose prompt's first line is `/polish` step 5's fixed

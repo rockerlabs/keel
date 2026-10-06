@@ -247,8 +247,8 @@ tu_tool_calls() {
 tu_tool_results() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
-  jq -c -s --arg file "$file" --arg kind "$kind" '
-    .[] | select(.type == "user") as $rec
+  jq -c --arg file "$file" --arg kind "$kind" '
+    select(.type == "user") as $rec
     | (if (($rec.message.content | type) == "array") then $rec.message.content else [] end)[]
     | select(type == "object" and .type == "tool_result")
     | {
@@ -281,7 +281,7 @@ tu_subagent_meta() {
   id="$(basename "$file" .jsonl)"
   id="${id#agent-}"
   meta="${file%.jsonl}.meta.json"
-  if [ -f "$meta" ] && jq -e . "$meta" >/dev/null 2>&1; then meta_json="$(cat "$meta")"; fi
+  if [ -f "$meta" ] && jq -e . "$meta" >/dev/null 2>&1; then meta_json="$(jq -c . "$meta")"; fi
   jq -c -s --arg file "$file" --arg id "$id" --argjson meta "$meta_json" '
     (first(.[] | select(.type == "user") | .message.content
            | if (type == "string") then .

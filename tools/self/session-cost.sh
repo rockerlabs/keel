@@ -298,16 +298,23 @@ _sc_tail_agent_row() {
   jq -c -s --argjson meta "$1" '$meta + {turns: length, cost: (map(.cache_read_input_tokens) | add // 0)}'
 }
 
-# _sc_tail_windows SESSION_ID TURNS CALLS RESULTS AGENTS — the window walk (see the block comment above)
+# _sc_tail_pr_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per NON-error result whose
+# text names a github.com/<owner>/<repo>/pull/<n> URL. The window walk needs nothing else from a result,
+# and result bodies are the bulk of a transcript, so they are dropped here rather than carried along.
+_sc_tail_pr_results() {
+  jq -c 'select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+"))) | {tool_use_id}'
+}
+
+# _sc_tail_windows SESSION_ID TURNS CALLS PR_RESULTS AGENTS — the window walk (see the block comment above)
 # over the four derived streams cmd_tail wrote; one compact JSON object per window on stdout.
 _sc_tail_windows() {
   jq -n -c --arg session "$1" --arg fixed "$SC_REVIEW_FIRST_LINE" \
-    --slurpfile turns "$2" --slurpfile calls "$3" --slurpfile results "$4" --slurpfile agents "$5" '
+    --slurpfile turns "$2" --slurpfile calls "$3" --slurpfile prs "$4" --slurpfile agents "$5" '
     def closure($ag; $seed):
       ($seed | unique) as $s
       | ($s + [$ag[] | select(.parentAgentId != null and (.parentAgentId | IN($s[]))) | .agentId] | unique) as $n
       | if ($n | length) == ($s | length) then $s else closure($ag; $n) end;
-    ($results | map(select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+"))) | .tool_use_id)) as $okids
+    ($prs | map(.tool_use_id)) as $okids
     | (reduce ($calls[] | select(.name == "Bash" and ((.command // "") | contains("gh pr create"))
                                  and .requestId != null and (.id as $i | ($okids | index($i)) != null))) as $c
         ({}; .[$c.requestId] = true)) as $closers
@@ -340,7 +347,7 @@ _sc_tail_windows() {
        subagents: [$in[] | {agent_id: .agentId, parent_agent_id: .parentAgentId, depth: .spawnDepth,
                             first_line: .firstLine, turns: .turns, cost: .cost,
                             review: (.agentId | IN($rev[]))}]}
-  ' || return 1
+  '
 }
 
 # cmd_tail [--json] FILE... — one block of rows per window per file, in file order (see the block comment
@@ -362,37 +369,33 @@ cmd_tail() {
     [ -f "$f" ] || { printf 'session-cost.sh: no such file: %s\n' "$f" >&2; exit 2; }
   done
 
-  local sid s meta ok=0 t_turns t_calls t_results t_agents
-  t_turns="$(mktemp)" || exit 1
-  t_calls="$(mktemp)" || { rm -f "$t_turns"; exit 1; }
-  t_results="$(mktemp)" || { rm -f "$t_turns" "$t_calls"; exit 1; }
-  t_agents="$(mktemp)" || { rm -f "$t_turns" "$t_calls" "$t_results"; exit 1; }
+  local human='"\(.session[0:8]) \(.start) primary=\(.primary_turns) subagent=\(.subagent_turns) cost=\(.cost) review=\(.review_cost)"
+    + (if .status == "open" then " open" else "" end),
+    (.subagents[] | "  agent \(.agent_id) parent=\(.parent_agent_id // "-") depth=\(.depth // "-") turns=\(.turns) cost=\(.cost)"
+                    + (if .review then " review" else "" end) + " \(.first_line)")'
+  local sid s meta ok=0 d
+  d="$(mktemp -d)" || exit 1
   for f in "$@"; do
     sid="$(basename "$f" .jsonl)"
     # Everything about the transcript comes through the shared reader (dir #313's rule; dir #670 A1b).
-    tu_turns primary "$f" > "$t_turns" || ok=1
-    tu_tool_calls primary "$f" > "$t_calls" || ok=1
-    tu_tool_results primary "$f" > "$t_results" || ok=1
-    : > "$t_agents"
+    tu_turns primary "$f" > "$d/turns" || ok=1
+    tu_tool_calls primary "$f" > "$d/calls" || ok=1
+    tu_tool_results primary "$f" | _sc_tail_pr_results > "$d/prs" || ok=1
+    : > "$d/agents"
     while IFS= read -r s; do
       [ -n "$s" ] || continue
       meta="$(tu_subagent_meta "$s")" || { ok=1; continue; }
-      tu_turns subagent "$s" | _sc_tail_agent_row "$meta" >> "$t_agents" || ok=1
+      tu_turns subagent "$s" | _sc_tail_agent_row "$meta" >> "$d/agents" || ok=1
     done < <(tu_subagent_files "$f")
     [ "$ok" -eq 0 ] || break
     if [ "$json" -eq 1 ]; then
-      _sc_tail_windows "$sid" "$t_turns" "$t_calls" "$t_results" "$t_agents" || ok=1
+      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/agents" || ok=1
     else
-      _sc_tail_windows "$sid" "$t_turns" "$t_calls" "$t_results" "$t_agents" | jq -r '
-        "\(.session[0:8]) \(.start) primary=\(.primary_turns) subagent=\(.subagent_turns) cost=\(.cost) review=\(.review_cost)"
-        + (if .status == "open" then " open" else "" end),
-        (.subagents[] | "  agent \(.agent_id) parent=\(.parent_agent_id // "-") depth=\(.depth // "-") turns=\(.turns) cost=\(.cost)"
-                        + (if .review then " review" else "" end) + " \(.first_line)")
-      ' || ok=1
+      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/agents" | jq -r "$human" || ok=1
     fi
     [ "$ok" -eq 0 ] || break
   done
-  rm -f "$t_turns" "$t_calls" "$t_results" "$t_agents"
+  rm -f -r "$d"
   [ "$ok" -eq 0 ] || exit 1
 }
 
