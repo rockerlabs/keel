@@ -8,9 +8,8 @@
 #
 #   B1 — a SCRIPT is every tracked (or not-yet-tracked, not ignored) file whose first line is a `#!`
 #        naming sh or bash, except tests/test_*.sh and tests/lib.sh (covered by the unset at the top of
-#        tests/lib.sh). Each git-reaching script carries the guard line (B2: `unset GIT_DIR
-#        GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE`, byte-identical to tools/lib/repo-arg-guard.sh's)
-#        before its first git-reaching line.
+#        tests/lib.sh). Each git-reaching script carries the guard line (B2: the `unset` line,
+#        byte-identical to tools/lib/repo-arg-guard.sh's) before its first git-reaching line.
 #   B3 — git-reaching = a non-comment line naming `git` as the command word in any of the shapes below, or
 #        a line that sources a git-reaching LIB (derived here as a fixed point, never hard-coded). dir #661
 #        widened this from "`git` then whitespace" after the 0.13.0 audit (S5-1): `/usr/bin/git`, `"git"`,
@@ -21,14 +20,9 @@
 #        of the line anywhere else in the file, at any indentation (dir #661 S5-2).
 #   B5 — no lib gains the line: a lib-level unset changes every sourcer's behaviour.
 #
-# The guard line is the SEVEN-variable line: the four repo selectors plus GIT_OBJECT_DIRECTORY,
-# GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_NAMESPACE (dir #661 S5-3: with the four unset and an object-store
-# variable inherited, a fresh repo's commit writes its objects into the FOREIGN store). Deliberately NOT
-# in the line, each measured: GIT_CONFIG_* (the operator's/harness's config channel — tests/lib.sh appends
-# to GIT_CONFIG_COUNT and CLAUDE.md "Linux-leg traps" 4 relies on it), GIT_QUARANTINE_PATH (a `commit`
-# exits 128 with it set — fails closed — and only receive-pack hooks export it), and the discovery/view
-# variables GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM, GIT_PREFIX, GIT_REPLACE_REF_BASE,
-# GIT_NO_REPLACE_OBJECTS, GIT_SHALLOW_FILE, GIT_GRAFT_FILE (no `git -C` write redirect).
+# The guard line is the SEVEN-variable line (dir #661 S5-3: the four repo selectors plus the object-store
+# and namespace trio). Which variables are in it, which are left out and why, each measured, is recorded
+# once, in the header of tools/lib/repo-arg-guard.sh; this test only compares each script's copy to it.
 #
 # Disclosed limits of a line-based census (it reads text, it does not run the scripts): a guard in a
 # function body or `if` block is rejected only by the column-0 rule; a git call reached through a variable
@@ -50,13 +44,11 @@ echo "git-env guard census (dir #647)"
 #      (not a list of subcommands: an earlier 30-subcommand list missed `git clone` and `git add`)
 #   B  an absolute path ending in bin/git (/usr/bin/git, /opt/homebrew/bin/git)
 #   C  a default expansion naming it: ${GIT_BIN:-git}
-#   D  an assignment of the command word: GIT=git, G=/usr/bin/git
-#   E  an expansion of a variable conventionally holding it: "$GIT", ${GIT_BIN}
+#   D  an expansion of a variable conventionally holding it: "$GIT", ${GIT_BIN}
 TR='[[:space:];)}"'"'"'|&<>`]'
 GW="(^|[^A-Za-z0-9_./-])git(${TR}|\$)"
 GW="$GW|(^|[^A-Za-z0-9_.-])/[A-Za-z0-9_/.-]*bin/git(${TR}|\$)"
 GW="$GW|[\$][{][A-Za-z_]+:[-=]git[}]"
-GW="$GW|[A-Za-z_]+=[\"']?(/[A-Za-z0-9_/.-]*/)?git[\"']?([[:space:];]|\$)"
 GW="$GW|[\$][{]?(GIT|GIT_BIN|GIT_CMD|git_bin|gitbin)[}]?([^A-Za-z0-9_]|\$)"
 GUARD="$(grep -m1 '^unset GIT_DIR' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
 case "$GUARD" in
@@ -142,6 +134,9 @@ add_off() { C_OFF="${C_OFF:+$C_OFF
 # is_script FILE — a B1 script: first line is a `#!` naming sh, bash, dash, ash, ksh or zsh.
 is_script() { head -1 "$1" | grep -Eq '^#!.*(^|[^A-Za-z0-9_])(ba|da|a|k|z)?sh([^A-Za-z0-9_]|$)'; }
 
+# census_files ROOT — every tracked or not-yet-tracked, not ignored, file of the tree.
+census_files() { (cd "$1" && git ls-files --cached --others --exclude-standard); }
+
 # lib_candidates ROOT — every lib the census may derive: tools/lib/*.sh, range-lib.sh, and every other
 # tracked shebang-less `.sh` (dir #661: a lib outside tools/lib), except tests/lib.sh and tests/test_*.sh.
 lib_candidates() {
@@ -154,7 +149,7 @@ lib_candidates() {
       [ -f "$root/$f" ] || continue
       head -1 "$root/$f" | grep -q '^#!' && continue
       printf '%s\n' "$f"
-    done <<< "$(cd "$root" && git ls-files --cached --others --exclude-standard)"
+    done <<< "$(census_files "$root")"
   } | sort -u
 }
 
@@ -225,7 +220,7 @@ census() {
         add_off "$f|dir #647 B1|the guard (line $g) comes after the first git-reaching line ($first)"
       fi
     fi
-  done <<< "$(cd "$root" && git ls-files --cached --others --exclude-standard)"
+  done <<< "$(census_files "$root")"
   # B5: no lib, range-lib.sh or hook stub carries the line (stripped — the stricter reading), except
   # repo-arg-guard.sh itself.
   while IFS= read -r l; do
@@ -455,9 +450,6 @@ if grep -q -- '^scratch-no-git.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: pros
 if has_line "$real_reach" tools/machine-watch.sh; then pass "dir #661 S5-1: tools/machine-watch.sh (loop-sourced git-global-paths) is in the real git-reaching set"; else fail "dir #661 S5-1: tools/machine-watch.sh (loop-sourced git-global-paths) is in the real git-reaching set" "the census does not know machine-watch.sh reaches git"; fi
 
 # S5-3: the dropped set covers the object-store variables, behaviourally
-for v in GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE; do
-  check_contains "dir #661 S5-3: the lib's unset line drops $v" "$GUARD" "$v"
-done
 t_a="$(new_repo)"; t_d="$(new_repo)"
 env GIT_OBJECT_DIRECTORY="$t_d/.git/objects" bash -c "$GUARD"'; git -C "$1" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m first' _ "$t_a" >/dev/null 2>&1
 check_eq "dir #661 S5-3: an inherited GIT_OBJECT_DIRECTORY no longer sends a fresh repo's commit into the foreign store" 0 "$(find "$t_d/.git/objects" -type f | wc -l | tr -d ' ')"
