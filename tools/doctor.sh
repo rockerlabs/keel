@@ -1047,14 +1047,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
     if command -v jq >/dev/null 2>&1 && [ -f "$deny_settings" ] && jq empty "$deny_settings" >/dev/null 2>&1; then deny_jq=1; fi
     for deny_rule in 'Read(**/.env)' 'Read(**/.env.*)' 'Read(**/*.env)'; do
       if [ "$deny_jq" = 1 ]; then
-        jq -e --arg r "$deny_rule" '[.permissions.deny // [] | .[]?] | any(. == $r)' "$deny_settings" >/dev/null 2>&1 && continue
+        jq -e --arg r "$deny_rule" '[(.permissions // {}) | (.deny // [])[]?] | any(. == $r)' "$deny_settings" >/dev/null 2>&1 && continue
       elif [ -f "$deny_settings" ]; then
         grep -qF -e "\"$deny_rule\"" "$deny_settings" 2>/dev/null && continue
       fi
       deny_missing="${deny_missing:+$deny_missing, }$deny_rule"
     done
     if [ -n "$deny_missing" ]; then
-      hint H-DENY-ENV "permissions.deny in $deny_settings lacks: $deny_missing — a Read deny keeps the Read tool off env files; it narrows that tool only, Bash verbs stay open (recipe: $secrets_doc; a differently-written equivalent rule: accept this ID in $ihome/.keel/doctor-accept)"
+      hint H-DENY-ENV "the deny list in $deny_settings lacks: $deny_missing — a Read deny keeps the Read tool off env files; it narrows that tool only, Bash verbs stay open (recipe: $secrets_doc; a differently-written equivalent rule: accept this ID in $ihome/.keel/doctor-accept)"
     fi
   fi
 

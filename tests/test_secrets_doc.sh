@@ -28,7 +28,7 @@ RE_C='AGE-SECRET-KEY-(PQ-)?1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58,}'
 RE_IND='^ {4,}(sops |age)'
 # flags TEXT — true when any plaintext-printing shape is present in TEXT.
 flags() {
-  printf '%s\n' "$1" | grep -Eq -e "$RE_A" -e "$RE_B1" -e "$RE_B2" -e "$RE_C" -e "$RE_IND"
+  grep -Eq -e "$RE_A" -e "$RE_B1" -e "$RE_B2" -e "$RE_C" -e "$RE_IND" <<< "$1"
 }
 
 # --- the checker, on samples (A12's proof) -----------------------------------------------------------
