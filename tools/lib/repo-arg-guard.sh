@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # tools/lib/repo-arg-guard.sh (dir #644): sourcing this file unsets GIT_DIR / GIT_COMMON_DIR /
-# GIT_WORK_TREE / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES /
-# GIT_NAMESPACE, unconditionally, for the rest of the sourcing process and anything
-# it spawns. An inherited value for any of these redirects EVERY `git -C "$X"` call the process makes
+# GIT_WORK_TREE / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES,
+# unconditionally, for the rest of the sourcing process and anything it spawns. An inherited value for
+# any of these redirects EVERY `git -C "$X"` call the process makes
 # — including a validity gate — into a different repository than the one named on the command line: a
 # foreign GIT_DIR alone binds to whatever it points at (git prefers it over -C's path resolution for
 # the repo it operates on), and a foreign GIT_DIR paired with a GIT_COMMON_DIR that happens to equal a
@@ -18,18 +18,23 @@
 # this right: its own unset is the first thing that runs after `set -uo pipefail`, load-bearing for every
 # git call the file goes on to make, not just some of them.
 #
-# The last three (dir #661) are the object-store and ref-namespace selectors: with the first four unset
-# and GIT_OBJECT_DIRECTORY inherited, a fresh repo's `commit` writes its objects into the FOREIGN store
-# while its refs land in the named repo (fsck on the target then reports an invalid sha1 pointer; pinned
-# by a fixture in tests/test_git_env_guard.sh); GIT_ALTERNATE_OBJECT_DIRECTORIES lets a write skip an
-# object a foreign store already holds (also pinned). GIT_NAMESPACE is in on the audit's say-so (it moves
-# refs under refs/namespaces/<n>/): the 0.13.0 audit saw a non-empty repo's commit fail closed with it
-# set, and it did NOT reproduce here on git 2.52.0 — so it is dropped as a cheap precaution, not pinned.
-# Left out ON PURPOSE, measured on git 2.52.0 by hand (not pinned by a test: git-version dependent): GIT_CONFIG_* (the operator's and the harness's config channel — tests/lib.sh
-# appends to GIT_CONFIG_COUNT and CLAUDE.md "Linux-leg traps" 4 relies on it), GIT_QUARANTINE_PATH (a
-# `commit` exits 128 with it set, so it fails closed, and only receive-pack hooks export it), and the
-# discovery/view variables GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM, GIT_PREFIX,
-# GIT_REPLACE_REF_BASE, GIT_NO_REPLACE_OBJECTS, GIT_SHALLOW_FILE, GIT_GRAFT_FILE (no `git -C` write redirect).
+# The last two (dir #661) are the object-store selectors: with the first four unset and
+# GIT_OBJECT_DIRECTORY inherited, a fresh repo's `commit` writes its objects into the FOREIGN store while
+# its refs land in the named repo (fsck on the target then reports an invalid sha1 pointer; pinned by a
+# fixture in tests/test_git_env_guard.sh); GIT_ALTERNATE_OBJECT_DIRECTORIES lets a write skip an object a
+# foreign store already holds (also pinned).
+#
+# Left out ON PURPOSE, measured on git 2.52.0 by hand (a git-version-dependent result, so not pinned by a
+# test):
+#   - GIT_CONFIG_* — the operator's and the harness's config channel: tests/lib.sh appends to
+#     GIT_CONFIG_COUNT and CLAUDE.md "Linux-leg traps" 4 relies on it.
+#   - GIT_NAMESPACE — the 0.13.0 audit named it a candidate, but a local `commit` ignores it (the ref stays
+#     in refs/heads, for a fresh and a non-empty repo alike; the audit's "fails closed" did not reproduce).
+#     Only the transport programs read it (upload-pack, receive-pack, http-backend), and those may rely on it.
+#   - GIT_QUARANTINE_PATH — a `commit` exits 128 with it set, so it fails closed; only receive-pack hooks
+#     export it.
+#   - GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM, GIT_PREFIX, GIT_REPLACE_REF_BASE,
+#     GIT_NO_REPLACE_OBJECTS, GIT_SHALLOW_FILE, GIT_GRAFT_FILE — no `git -C` write redirect.
 #
 # The census (tests/test_git_env_guard.sh, dir #647) requires every git-reaching script to carry THIS
 # file's unset as an inline line of its own, byte-identical to the one below — this file stays the single
@@ -56,7 +61,7 @@
 # `install-secret-guard.sh:_isg_rollback` comment names for a sibling function). Do not "simplify" this
 # to a `return` on the theory that the caller's `set -e` will catch it — a `return` value consumed
 # inside any of those exempted contexts would silently swallow the failure instead.
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 # keel_repo_arg_guard REPO — exit 2 with "not a git repo: REPO" (unchanged wording — the exact message
 # every caller printed before this file existed) if REPO is not a git repository. The env sanitizing

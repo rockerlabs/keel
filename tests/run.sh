@@ -11,7 +11,7 @@
 # arrays: a poll loop over tracked PIDs stands in for both.
 set -uo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 # dir #653: the WHOLE runner body lives in main(), called by the last line. bash reads a script
 # incrementally, from a file offset, as it runs — so a test that overwrites this very file in place

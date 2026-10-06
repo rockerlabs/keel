@@ -20,8 +20,8 @@
 #        of the line anywhere else in the file, at any indentation (dir #661 S5-2).
 #   B5 — no lib gains the line: a lib-level unset changes every sourcer's behaviour.
 #
-# The guard line is the SEVEN-variable line (dir #661 S5-3: the four repo selectors plus the object-store
-# and namespace trio). Which variables are in it, which are left out and why, each measured, is recorded
+# The guard line is the SIX-variable line (dir #661 S5-3: the four repo selectors plus the two object-store
+# selectors). Which variables are in it, which are left out and why, each measured, is recorded
 # once, in the header of tools/lib/repo-arg-guard.sh; this test only compares each script's copy to it.
 #
 # Disclosed limits of a line-based census (it reads text, it does not run the scripts): a guard in a
@@ -52,8 +52,8 @@ GW="$GW|[\$][{][A-Za-z_]+:[-=]git[}]"
 GW="$GW|[\$][{]?(GIT|GIT_BIN|GIT_CMD|git_bin|gitbin)[}]?([^A-Za-z0-9_]|\$)"
 GUARD="$(grep -m1 '^unset GIT_DIR' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
 case "$GUARD" in
-  "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE") pass "the lib's unset line is the seven-variable line (the one source of the list)" ;;
-  *) fail "the lib's unset line is the seven-variable line" "tools/lib/repo-arg-guard.sh's first '^unset GIT_DIR' line reads: $GUARD" ;;
+  "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES") pass "the lib's unset line is the six-variable line (the one source of the list)" ;;
+  *) fail "the lib's unset line is the six-variable line" "tools/lib/repo-arg-guard.sh's first '^unset GIT_DIR' line reads: $GUARD" ;;
 esac
 
 # The allowlist — one reason per entry, each with a mode. `exempt`: never demanded a guard.
@@ -109,10 +109,15 @@ guard_line() {
     /^(exit|return)([[:space:]]|$)/ { dead = 1 }
     $0 == g && !dead { print NR; exit }
     {
-      if (match($0, "<<-?[[:space:]]*[A-Za-z_\"" q "]") && substr($0, RSTART - 1, 1) != "<") {
-        h = substr($0, RSTART); hdash = (h ~ /^<<-/)
+      # every `<<` on the line, left to right: `<<<` (a here-string) is skipped, a real opener ends the scan
+      rest = $0; off = 0
+      while (match(rest, "<<-?[[:space:]]*[A-Za-z_\"" q "]")) {
+        pos = off + RSTART
+        if (pos > 1 && substr($0, pos - 1, 1) == "<") { off += RSTART; rest = substr(rest, RSTART + 1); continue }
+        h = substr(rest, RSTART); hdash = (h ~ /^<<-/)
         sub(/^<<-?[[:space:]]*/, "", h); gsub("[\"" q "]", "", h); sub(/[^A-Za-z0-9_].*$/, "", h)
         if (h != "") hd = h
+        break
       }
     }' "$1"
 }
@@ -438,6 +443,18 @@ git -C "$sb" add -A
 census "$sb" "$real_libs"
 if grep -q -- '^scratch-herestring.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present" "the census named scratch-herestring.sh: $C_OFF"; else pass "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present"; fi
 has_line "$C_REACH" scratch-herestring.sh && pass "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" || fail "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" "not in the reach set"
+
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'read -r x <<< "$1"; cat <<EOF' "$GUARD" 'EOF' 'git -C "$1" status' > "$sb/scratch-herestring-heredoc.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a heredoc opened after a here-string on the same line still hides its body's guard -> red, naming it" scratch-herestring-heredoc.sh "$sb" "$base_off"
+# the same list is spelled by tools/lib/impact-store.sh's scoped `env -u` form, which the census cannot see
+impact_line="$(grep -F 'env -u GIT_DIR' "$REPO_ROOT/tools/lib/impact-store.sh"; sed -n '/^_keel_store_git() {/,/^}/p' "$REPO_ROOT/tools/lib/impact-store.sh")"
+impact_missing=""
+for v in ${GUARD#unset }; do
+  case "$impact_line" in *"-u $v"*) ;; *) impact_missing="$impact_missing $v" ;; esac
+done
+if [ -z "$impact_missing" ]; then pass "dir #661: tools/lib/impact-store.sh's scoped env -u names every variable of the guard line"; else fail "dir #661: tools/lib/impact-store.sh's scoped env -u names every variable of the guard line" "missing -u for:$impact_missing"; fi
 
 # S5-2: B4 also rejects an INDENTED guard outside selftest() (a hook arm), not only a column-0 one
 sb="$(build_sandbox)"

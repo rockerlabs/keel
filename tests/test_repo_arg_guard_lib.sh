@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_repo_arg_guard_lib.sh — dir #644: sourcing tools/lib/repo-arg-guard.sh unsets GIT_DIR /
 # GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (and, since dir #661, GIT_OBJECT_DIRECTORY /
-# GIT_ALTERNATE_OBJECT_DIRECTORIES / GIT_NAMESPACE), unconditionally, and its `keel_repo_arg_guard` is
+# GIT_ALTERNATE_OBJECT_DIRECTORIES), unconditionally, and its `keel_repo_arg_guard` is
 # the shared validity gate for a tool that resolves a caller-named <repo> via `git -C "$REPO"`. Before
 # this ticket, an inherited value for any of the first four could redirect that first `git -C "$REPO"` call
 # — including the validity gate itself — into a different repository than the one named on the command
@@ -20,18 +20,17 @@ check_file "tools/lib/repo-arg-guard.sh exists" "$lib"
 # shellcheck source=/dev/null
 . "$lib"
 
-# --- sourcing unsets all seven vars, unconditionally, before any caller does anything else — run in a
+# --- sourcing unsets all six vars, unconditionally, before any caller does anything else — run in a
 # CHILD process: this file already sourced $lib once above (before the export below could pollute
 # anything), so re-observing the unset needs a fresh process that sources it AFTER the vars are set.
 src_out="$(env GIT_DIR=/should-not-survive GIT_COMMON_DIR=/should-not-survive \
   GIT_WORK_TREE=/should-not-survive GIT_INDEX_FILE=/should-not-survive \
   GIT_OBJECT_DIRECTORY=/should-not-survive GIT_ALTERNATE_OBJECT_DIRECTORIES=/should-not-survive \
-  GIT_NAMESPACE=should-not-survive \
-  bash -c '. "$1"; printf "GIT_DIR=[%s] GIT_COMMON_DIR=[%s] GIT_WORK_TREE=[%s] GIT_INDEX_FILE=[%s] GIT_OBJECT_DIRECTORY=[%s] GIT_ALTERNATE_OBJECT_DIRECTORIES=[%s] GIT_NAMESPACE=[%s]\n" \
+  bash -c '. "$1"; printf "GIT_DIR=[%s] GIT_COMMON_DIR=[%s] GIT_WORK_TREE=[%s] GIT_INDEX_FILE=[%s] GIT_OBJECT_DIRECTORY=[%s] GIT_ALTERNATE_OBJECT_DIRECTORIES=[%s]\n" \
     "${GIT_DIR:-}" "${GIT_COMMON_DIR:-}" "${GIT_WORK_TREE:-}" "${GIT_INDEX_FILE:-}" "${GIT_OBJECT_DIRECTORY:-}" \
-    "${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}" "${GIT_NAMESPACE:-}"' _ "$lib")"
-check_block_equal "sourcing repo-arg-guard.sh unsets all seven vars unconditionally" \
-  "GIT_DIR=[] GIT_COMMON_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[] GIT_OBJECT_DIRECTORY=[] GIT_ALTERNATE_OBJECT_DIRECTORIES=[] GIT_NAMESPACE=[]" "$src_out"
+    "${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}"' _ "$lib")"
+check_block_equal "sourcing repo-arg-guard.sh unsets all six vars unconditionally" \
+  "GIT_DIR=[] GIT_COMMON_DIR=[] GIT_WORK_TREE=[] GIT_INDEX_FILE=[] GIT_OBJECT_DIRECTORY=[] GIT_ALTERNATE_OBJECT_DIRECTORIES=[]" "$src_out"
 
 # --- keel_repo_arg_guard itself, on a valid repo: succeeds (no exit) --------------------------------
 r1="$(new_repo)"
@@ -77,8 +76,8 @@ for consumer in install-read-trace.sh install-pre-pr-gate.sh install-machine-wat
   check_contains "tools/$consumer's <repo> branch calls keel_repo_arg_guard" "$csrc" 'keel_repo_arg_guard "$repo"'
 done
 isg_src="$(cat "$REPO_ROOT/tools/install-secret-guard.sh")"
-check_contains "tools/install-secret-guard.sh unsets the seven vars inline (not sourced), at the top" \
-  "$isg_src" 'unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE'
+check_contains "tools/install-secret-guard.sh unsets the six vars inline (not sourced), at the top" \
+  "$isg_src" 'unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES'
 # ...and its validity-check line stays identical (modulo indentation — the two live at different
 # nesting depths) to the shared lib's own — the two are duplicated on purpose (install-secret-guard.sh
 # must stay copy-standalone). Read directly out of $lib rather than a literal frozen into this test

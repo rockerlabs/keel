@@ -298,8 +298,8 @@ _impact_override_active() {
 }
 
 # _keel_store_git ARGS… — dir #630 fix round (F1): run `git ARGS…` with the repo-selecting variables
-# (the list in tools/lib/repo-arg-guard.sh; dir #661 made it seven) cleared, for the one-off `-C "$top"` calls keel_store_record and
-# keel_store_recorded make. A caller process started with one of those already set (a hook, a tool
+# (the list in tools/lib/repo-arg-guard.sh, pinned by tests/test_git_env_guard.sh) cleared, for the
+# one-off `-C "$top"` calls keel_store_record and keel_store_recorded make. A caller process started with one of those already set (a hook, a tool
 # invoked from inside another repo's git machinery) otherwise hijacks `-C`: git honors an inherited
 # GIT_DIR over it, so e.g. `rev-parse --show-toplevel` silently succeeds against the HIJACKED repo
 # (not `$top`) and a `--add` lands in ITS .git/config — as long as `$top` exists as SOME directory on
@@ -319,7 +319,7 @@ _impact_override_active() {
 # deliberately left alone — it is baseline v0.11.0 behavior, not part of this fix's scope.
 _keel_store_git() {
   env -u GIT_DIR -u GIT_COMMON_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
-    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_NAMESPACE git "$@"
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES git "$@"
 }
 
 # keel_store_record KEY ENTRY TOP — S4: record that TOP's project has (or had) a store entry at ENTRY,
