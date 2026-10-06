@@ -150,12 +150,11 @@ keep-alive ping must ask for a no-op, one-word reply ("keep-alive, reply ok, tak
 phrased as "check status" triggers real tool turns and re-prices the whole context per turn, turning the
 warmer into the very thing it was meant to avoid.
 
-The same edge applies to waiting. A session blocked on external state it cannot observe — a CI run — should
-poll *inside* one backgrounded command and let that command's completion notify it. A scheduled wakeup or a
-short-interval monitor does the opposite: each tick is a turn of its own that re-prices the whole accumulated
-context and returns nothing (felt in 0.11.0: a 30-tick `No-op, awaiting CI` streak on one worker, which had
-already backgrounded `gh pr checks --watch`). `commands/polish.md` carries the rule at the step that opens the
-PR, and `docs/release-management.md` carries it in the worker brief beside the keep-alive contract.
+Waiting on external state is the same edge. A session blocked on something it cannot observe — a CI run —
+should poll *inside* one backgrounded command and let its completion notify it. A scheduled wakeup or a
+short-interval monitor makes every tick a turn of its own that re-prices the whole accumulated context and
+returns nothing (felt in 0.11.0: a 30-tick `No-op, awaiting CI` streak on a worker that had already
+backgrounded `gh pr checks --watch`). The rule's text: `polish-guide` § Step 9.
 
 ## See also
 

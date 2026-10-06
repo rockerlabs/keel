@@ -374,13 +374,12 @@ sections real content going forward — see that page for exactly when each one 
   outcome, instead of fanning out the four `/simplify` review agents. Anything with code, a procedure doc, or
   any doubt still runs the full `/simplify`. The core gained a one-line trigger; a refused or unavailable
   `/simplify` now also reads the guide for its inline fallback.
-- **Waiting on CI is one backgrounded command, never a wakeup (dir #616).** A worker that had already
-  backgrounded `gh pr checks --watch` also scheduled wakeups to "make sure it resumes" and the operator watched a
-  30-tick `No-op, awaiting CI` streak; the rule against it lived only in a personal knowledge base. It now ships
-  where sessions read: one sentence at `/polish`'s PR-opening step (the full text in `polish-guide` § Step 9),
-  the worker-brief section of `docs/release-management.md` beside the keep-alive contract, and
-  `docs/token-economy.md`, which owns the cost reason — every tick re-prices the whole context. Claude Code's
-  tool names (`ScheduleWakeup`, `Monitor`) appear only in that harness-scoped wording.
+- **Waiting on CI is one backgrounded command with a timeout, never a wakeup (dir #616).** A worker that had
+  backgrounded `gh pr checks --watch` also scheduled wakeups, and a 30-tick no-op streak followed; the rule lived
+  only in a personal knowledge base. `/polish` step 9 now carries it (full text in `polish-guide` § Step 9), and
+  so does the worker-brief item in `docs/release-management.md`, beside the keep-alive contract;
+  `docs/token-economy.md` owns the cost reason. Step 9's core text lost two rationale clauses to make room
+  (the guide keeps them).
 
 ## [0.13.0] — 2026-10-03
 

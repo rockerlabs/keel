@@ -247,13 +247,11 @@ check_contains "guide: § Step 2 sends anything else, or any doubt, to the full 
 check_contains "guide: § Step 2 states the inline pass is one reuse/duplication pass" "$g2" 'ONE inline reuse/duplication pass'
 check_contains "guide: § Step 2 keeps the unavailable-skill receipt" "$g2" 'inline:no-simplify-skill'
 
-# --- dir #616: wait on CI in ONE backgrounded command — never a wakeup, a sleep chain or a short Monitor ----
-check_contains "core: step 9 says to wait on CI in one backgrounded command and names what never to use" "$(step_text 9)" \
-  'CI wait: ONE backgrounded command; never wakeups, sleeps or short Monitors.'
-pinfg "guide: § Step 9 owns the CI-wait rule (dir #616)" '**Waiting on CI (dir #616).**'
-pinfg "guide: § Step 9 names the one backgrounded command" 'watch CI in ONE backgrounded Bash command'
+# --- dir #616: wait on CI in ONE backgrounded, bounded command — never a wakeup, a sleep chain or a short Monitor ----
+check_contains "core: step 9 names the one backgrounded command and what never to use" "$(step_text 9)" \
+  'Waiting on CI: ONE backgrounded `gh pr checks <n> --watch` with a timeout; never wakeups, sleeps or short Monitors.'
+pinfg "guide: § Step 9 owns the CI-wait rule, bounded (dir #616)" '**Waiting on CI (dir #616).** If you wait on CI after the PR opens, wait in ONE backgrounded Bash command with a timeout or iteration cap'
 pinfg "guide: § Step 9 forbids ScheduleWakeup for a background wait" 'Never ScheduleWakeup'
-pinfg "guide: § Step 9 forbids a foreground sleep chain and a short-interval Monitor" 'a foreground `sleep` chain, or a short-interval Monitor'
-pinfg "guide: § Step 9 ends no turn waiting without a live background task" 'unless a harness-tracked background task is live'
+pinfg "guide: § Step 9 gives a harness with no completion notice a bounded foreground wait" 'A harness with no background-completion notice: one bounded foreground wait'
 
 summary
