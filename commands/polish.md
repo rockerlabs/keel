@@ -9,8 +9,7 @@ step here still runs and is worth doing — only the gh pr create block is inert
 
 The final pass over the diff before a PR — run between implementation and `/wrap`: hand a human reviewer an
 already-tidied diff and open the PR. Once `tools/install-pre-pr-gate.sh` has wired the gate, it also blocks
-`gh pr create` until this command has run cleanly on the current HEAD. The test command lives in the
-project's `CLAUDE.md`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
+`gh pr create` until this command has run cleanly on the current HEAD. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
 
@@ -72,7 +71,9 @@ Steps, in order:
    K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) — establish availability by
    attempting, never from the skill listing. On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
-   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level.
+   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level. The
+   two-way conformance mandate (step 5(a)'s): the diff must realize the ticket's done-criterion, and nothing
+   in it may silently exceed or contradict it.
 
    **K2 — for `low|medium|high`, the FIRST attempt is a review run by a fresh-context subagent (dir #670);
    `max`, `ultra` and `skip` keep their paths below, unchanged.** It runs the same `/code-review` recipe in a
@@ -198,8 +199,7 @@ Steps, in order:
 
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP
    (non-zero exit) is a red test: no receipt, report what it flagged, stop. Receipt:
-   `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it
-   flagged → a convergence round, guide § Step 1.
+   `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`).
 
 8. **Unlock the gate.** Push the branch first (the gate checks that HEAD is reachable on the push remote),
    then `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:

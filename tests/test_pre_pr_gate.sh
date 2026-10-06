@@ -2901,15 +2901,12 @@ deny_out="$OUT"    # capture before the trace call below overwrites $OUT with sk
 askuserquestion_trace "$d" "The gate denied with: $deny_out — how should we proceed?"
 check_nofile "dir #116: the skip deny message recapped in a dialog mints NO trace" "$tf"
 check_absent "dir #116: ...because the deny never spells the composed marker" "$deny_out" "DIALOG: level=skip"
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/polish.md")"
-check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$tf"
-# dir #670: the same for the guide, which now holds the step-4/5 dialog rules this fixture exists to keep inert.
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/polish-guide.md")"
-check_nofile "dir #670: all of polish-guide.md quoted into a dialog mints NO trace" "$tf"
+for polish_file in polish.md polish-guide.md; do   # dir #670: the guide holds the dialog rules this fixture keeps inert
+  d="$(mkrepo)"
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/$polish_file")"
+  check_nofile "dir #116: all of $polish_file quoted into a dialog mints NO trace" "$tf"
+done
 # The mechanized floor for the whole class: NO tracked file outside tests/ may contain a composed
 # marker (token + ': level=' + an accepted word) — any such string, quoted into a dialog, is a minted
 # credential. The installer header was the instance the per-file sweeps kept missing (found by the

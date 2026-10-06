@@ -11,11 +11,11 @@ go="$REPO_ROOT/commands/go.md"
 # dir #670 (K1, slice 3): commands/polish.md is now a condensed core, and every pre-split paragraph lives,
 # unchanged, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
 # GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
-polish="$REPO_ROOT/commands/polish-guide.md"
+guide="$REPO_ROOT/commands/polish-guide.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "commands/go.md exists" "$go"
-check_file "commands/polish-guide.md exists" "$polish"
+check_file "commands/polish-guide.md exists" "$guide"
 check_file "FRAMEWORK.md exists" "$framework"
 
 # (A) /go derives failing acceptance tests from the ticket's done-criterion before implementing,
@@ -40,14 +40,14 @@ fi
 
 # (B) /polish step 5(a)'s subagent prompt carries the ticket/spec + a two-way conformance mandate,
 # with an explicit no-ticket fallback.
-if grep -qi 'two-way conformance' "$polish"; then
+if grep -qi 'two-way conformance' "$guide"; then
   pass "polish-guide.md: step 5(a) prompt carries a two-way conformance mandate"
 else
   fail "polish-guide.md: step 5(a) prompt carries a two-way conformance mandate" \
     "expected 'two-way conformance' in the subagent prompt-contents list"
 fi
 
-if grep -qi 'no ticket exists' "$polish" || grep -qi 'no-ticket fallback' "$polish"; then
+if grep -qi 'no ticket exists' "$guide" || grep -qi 'no-ticket fallback' "$guide"; then
   pass "polish-guide.md: step 5(a) states the no-ticket fallback explicitly"
 else
   fail "polish-guide.md: step 5(a) states the no-ticket fallback explicitly" \
@@ -92,14 +92,14 @@ fi
 # claimed to pin, so the window covered the "nothing warns you" half only and the header's "states the
 # SINGLE-add-on rule" was an overclaim — a pin whose comment promises more than its window reaches is
 # worse than no pin, since it reads as coverage.
-addon_line="$(grep -n 'receipt carries AT MOST ONE add-on' "$polish" | head -1 | cut -d: -f1)"
+addon_line="$(grep -n 'receipt carries AT MOST ONE add-on' "$guide" | head -1 | cut -d: -f1)"
 if [ -z "$addon_line" ]; then
   fail "polish-guide.md: add-on paragraph present" "anchor sentence not found"
 else
   # +45, not +30: the furthest needle sat 3 lines from a +30 edge, so any clarification added to
   # this paragraph — or a re-wrap, one of which this ticket itself made — would red a pin whose prose
   # is entirely correct. The window is a locality check, not a line budget; err wide.
-  addon_window="$(sed -n "${addon_line},$((addon_line + 45))p" "$polish")"
+  addon_window="$(sed -n "${addon_line},$((addon_line + 45))p" "$guide")"
   # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
   if match "$addon_window" -qi 'nothing warns you' && match "$addon_window" -qi 'dir #183'; then
     pass "polish-guide.md: step 5 states that a dropped add-on no longer warns (dir #183)"
@@ -148,11 +148,11 @@ fi
 # the fallback for a refused attempt, not the standing default. Two windows, same idiom as block (D):
 # assert the new prose is present AND the old, now-false prose it replaces is gone, so a revert or a
 # partial edit both fail loudly instead of going unnoticed.
-ask_line="$(grep -n 'Then decide \*\*auto vs ask\*\*' "$polish" | head -1 | cut -d: -f1)"
+ask_line="$(grep -n 'Then decide \*\*auto vs ask\*\*' "$guide" | head -1 | cut -d: -f1)"
 if [ -z "$ask_line" ]; then
   fail "polish-guide.md: step 4's auto-vs-ask decision still present" "anchor sentence not found"
 else
-  ask_window="$(sed -n "${ask_line},$((ask_line + 10))p" "$polish")"
+  ask_window="$(sed -n "${ask_line},$((ask_line + 10))p" "$guide")"
   # No backslash before the backtick: inside single quotes it's already a shell-literal backtick, and
   # `\`` is a GNU grep extension meaning "start of buffer" (paired with `\'`) — escaping it here matched
   # BSD grep/busybox (backtick taken literally either way) but silently failed on GNU grep/Linux CI,
@@ -172,11 +172,11 @@ else
   fi
 fi
 
-review_line="$(grep -n 'one terminal pass, no loop-back' "$polish" | head -1 | cut -d: -f1)"
+review_line="$(grep -n 'one terminal pass, no loop-back' "$guide" | head -1 | cut -d: -f1)"
 if [ -z "$review_line" ]; then
   fail "polish-guide.md: step 5's review intro still present" "anchor sentence not found"
 else
-  review_window="$(sed -n "${review_line},$((review_line + 15))p" "$polish")"
+  review_window="$(sed -n "${review_line},$((review_line + 15))p" "$guide")"
   if match "$review_window" -qi 'ATTEMPT `Skill(code-review)'; then
     pass "polish-guide.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)"
   else
@@ -191,7 +191,7 @@ else
   fi
 fi
 
-if grep -qi '(a) Fallback for .*reached when the direct attempt above was refused' "$polish"; then
+if grep -qi '(a) Fallback for .*reached when the direct attempt above was refused' "$guide"; then
   pass "polish-guide.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default"
 else
   fail "polish-guide.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default" \
@@ -201,22 +201,22 @@ fi
 # (F) dir #206: step 9 gains an already-open-PR branch (a review finding corrected the source after the
 # PR opened, and nothing re-derived the body) — named triggers with a concrete check each, not a general
 # re-read; step 1 points at it from the convergence-round sequence sentence.
-if grep -qi 'Already-open-PR branch' "$polish"; then
+if grep -qi 'Already-open-PR branch' "$guide"; then
   pass "polish-guide.md: step 9 gains an already-open-PR branch"
 else
   fail "polish-guide.md: step 9 gains an already-open-PR branch" \
     "expected an 'Already-open-PR branch' heading in step 9"
 fi
 pin "polish-guide.md step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
-  "$polish" '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |' \
+  "$guide" '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |' \
   "expected the trigger table's test/CI-outcome row naming a re-derive-from-current-HEAD check"
-if grep -qi 'every recorded catch of this class came from a cross-session reviewer' "$polish"; then
+if grep -qi 'every recorded catch of this class came from a cross-session reviewer' "$guide"; then
   pass "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
 else
   fail "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
     "expected a clause naming that every recorded catch came from a cross-session reviewer"
 fi
-if grep -qi "step 9's already-open-PR" "$polish"; then
+if grep -qi "step 9's already-open-PR" "$guide"; then
   pass "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
 else
   fail "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \

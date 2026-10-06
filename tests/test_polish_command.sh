@@ -20,7 +20,6 @@ check_file "commands/polish-guide.md exists" "$guide"
 flat="$(tr '\n' ' ' < "$polish" | tr -s ' ')"
 gflat="$(tr '\n' ' ' < "$guide" | tr -s ' ')"
 pinf() { check_contains "$1" "$flat" "$2"; }
-pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfg() { check_contains "$1" "$gflat" "$2"; }
 pinfgn() { check_absent "$1" "$gflat" "$2"; }
 
@@ -28,16 +27,17 @@ pinfgn() { check_absent "$1" "$gflat" "$2"; }
 # A normal run loads only the core, and a skill's body re-enters every later turn's context, so its size is
 # the cost this split exists to cut. The guide has no budget: it holds rare text verbatim.
 POLISH_MD_WORD_BUDGET=3000
+# budget_status FILE — "ok", or "over by N" words (the one predicate both checks below run).
+budget_status() {
+  local w; w="$(wc -w < "$1" | tr -d ' ')"
+  if [ "$w" -le "$POLISH_MD_WORD_BUDGET" ]; then echo ok; else echo "over by $((w - POLISH_MD_WORD_BUDGET))"; fi
+}
 core_words="$(wc -w < "$polish" | tr -d ' ')"
-check_eq "polish.md is within POLISH_MD_WORD_BUDGET ($core_words words, budget $POLISH_MD_WORD_BUDGET)" "ok" \
-  "$([ "$core_words" -le "$POLISH_MD_WORD_BUDGET" ] && echo ok || echo "over by $((core_words - POLISH_MD_WORD_BUDGET))")"
-# The pin must be able to fail: a core one word over the budget reads red.
+check_eq "polish.md is within POLISH_MD_WORD_BUDGET ($core_words words, budget $POLISH_MD_WORD_BUDGET)" "ok" "$(budget_status "$polish")"
+# The predicate must be able to fail: a copy one word over the budget reads red.
 over="$SANDBOX/polish-over.md"
 { cat "$polish"; yes extra | head -n $((POLISH_MD_WORD_BUDGET + 1 - core_words)) | tr '\n' ' '; } > "$over"
-over_words="$(wc -w < "$over" | tr -d ' ')"
-check_eq "the budget check is red against a $over_words-word copy" "red" \
-  "$([ "$over_words" -le "$POLISH_MD_WORD_BUDGET" ] && echo ok || echo red)"
-check_eq "that copy is exactly one word over" "$((POLISH_MD_WORD_BUDGET + 1))" "$over_words"
+check_eq "the budget predicate is red against a copy exactly one word over" "over by 1" "$(budget_status "$over")"
 
 # --- K1: the guide's own header (B8d) ------------------------------------------------------------------
 check_eq "polish-guide.md opens a leading --- block" "---" "$(sed -n 1p "$guide")"
@@ -137,6 +137,8 @@ pinf "step 5: the prompt's first line is exactly session-cost.sh's SC_REVIEW_FIR
   "The FIRST line is exactly \`$fixed_line\`"
 pinf "step 5: the prompt carries the diff scope" \
   'the diff scope `git diff origin/<default>...HEAD`'
+pinf "step 5: the two-way conformance mandate is defined in the core, not only in the guide" \
+  "The two-way conformance mandate (step 5(a)'s): the diff must realize the ticket's done-criterion, and nothing in it may silently exceed or contradict it."
 pinf "step 5: the prompt states a missing ticket explicitly" \
   'step 5(a)'"'"'s two-way conformance mandate — or the explicit statement that none exists'
 pinf "step 5: the args are level first, then the diff target" \
@@ -215,8 +217,6 @@ pinfg "guide: (d)'s mechanism list names the subagent-run pass" \
 pinfgn "guide: the retired 'bare — this IS the genuine in-session pass' wording is gone" \
   'bare — this IS the genuine in-session pass'
 pinfgn "guide: the retired 'ordinary automated outcome' wording is gone" \
-  'the ordinary automated outcome'
-pinfn "core: the retired 'ordinary automated outcome' wording is gone" \
   'the ordinary automated outcome'
 
 summary

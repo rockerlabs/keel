@@ -62,8 +62,7 @@ awk -v file="$doc_row_file" -v fig="$warn_fig" '
 max_cmd_tok=0
 for f in "$warn_copy"/commands/*.md; do
   [ -f "$f" ] || continue
-  [ "$(basename "$f")" = "polish.md" ] && continue
-  [ "$(basename "$f")" = "polish-guide.md" ] && continue
+  case "$(basename "$f")" in polish.md|polish-guide.md) continue ;; esac
   c="$(wc -c < "$f" | tr -d ' ')"
   t=$(( c / 4 ))
   [ "$t" -gt "$max_cmd_tok" ] && max_cmd_tok="$t"

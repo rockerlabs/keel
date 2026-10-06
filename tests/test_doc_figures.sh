@@ -159,8 +159,7 @@ assert_commands_range() {
   if match "$cell" -qE '[0-9][0-9,]*\+'; then open_upper=1; fi
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
-    [ "$(basename "$f")" = "polish.md" ] && continue
-    [ "$(basename "$f")" = "polish-guide.md" ] && continue
+    case "$(basename "$f")" in polish.md|polish-guide.md) continue ;; esac
     tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
     if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
