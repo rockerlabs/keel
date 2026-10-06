@@ -62,6 +62,16 @@ sections real content going forward — see that page for exactly when each one 
   from a vendor-review gate run no longer records against the caller's repo: its cwd is now an empty
   directory with no impact store. agy's MCP servers and plugins are not checked, and the docs say so.
 
+- **Keel ships a read-only review agent, `agents/keel-polish-reviewer.md`, and `install.sh` wires it (dir #413,
+  slice 1 of 2).** Its `tools:` allowlist is `Read, Grep, Glob` — no shell, no git, no tests — so a `/polish`
+  review subagent running as it cannot run the git-mutating command that destroyed a parent session's
+  uncommitted work (the dir #375 class), instead of being asked not to. `install.sh` places it in
+  `<home>/agents/` (a symlink under `--link`, skipped under `--codex`, an adopter's own file of that name
+  refused), `uninstall.sh` removes what it placed, and `doctor --install` reports a missing agent
+  (`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
+  (`W-REVIEW-AGENT-FLOOR`). It is inert until a later release points `/polish`'s review spawn at it;
+  existing adopters re-run `install.sh` (`--link` for a linked install) to receive it.
+
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —
   delegated to the harness, with no template rail added) and the external channel (`secret-guard` plus

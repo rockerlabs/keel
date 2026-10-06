@@ -51,6 +51,8 @@ check_status "fresh link install -> exit 0" 0 "$STATUS"
 lman="$link_home/.claude/.keel/install-manifest.claude"
 check_status "linked layout=link" "link" "$(manifest_field "$lman" layout)"
 check_contains "keel/CORE.md recorded as a symlink" "$(cat "$lman")" "artifact=symlink	keel/CORE.md	"
+# dir #413 A2: the linked agent is recorded as a symlink to its real readlink target.
+check_contains "the linked review agent is recorded with its readlink target" "$(cat "$lman")" "artifact=symlink	agents/keel-polish-reviewer.md	$REPO_ROOT/agents/keel-polish-reviewer.md"
 # dir #369: the third field is the link's real readlink target now, not the old `-` placeholder.
 check_contains "keel/CORE.md's recorded target is its real readlink target" "$(cat "$lman")" "artifact=symlink	keel/CORE.md	$REPO_ROOT/CORE.md"
 check_contains "linked edit artifact is import-line" "$(cat "$lman")" "artifact=edit	CLAUDE.md	import-line"
