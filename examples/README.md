@@ -40,6 +40,7 @@ init-project: scaffolding /tmp/demo/my-project
   + .gitignore += .DS_Store
   + .gitignore += .idea/
   + .gitignore += /.keel/map-drift-baseline
+  + .gitignore += /.keel/secrets-accept
   keel-impact: impact tracking enabled for /tmp/demo/my-project
     guardrail fires now record events with no env needed; run /keel-score to score.
   + CLAUDE.md created from template
