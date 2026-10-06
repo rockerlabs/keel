@@ -269,6 +269,25 @@ check_status "vendor-review A2: TMPDIR=/nonexistent (no neutral dir can be made)
 check_nofile "vendor-review A2: ...the client is never invoked" "$SANDBOX/ran-a2"
 check_nodir "vendor-review A2: ...nothing is written" "$SANDBOX/out-a2-notmp"
 
+# A2 (exit paths): the NAMED handler, not the explicit rm after a normal gate, is what removes the dir when the
+# run dies MID-gate. The fake scanner SIGTERMs the orchestrator (pid handed over through a file) and exits; bash
+# runs its TERM trap once the scanner returns → exit 143 through the EXIT handler. (SIGINT cannot be driven here:
+# a background job starts with SIGINT ignored, and an ignored-on-entry signal cannot be trapped. SIGKILL has no
+# handler by design — the Cases table's "unhandled on purpose" row.)
+pid_a2="$SANDBOX/a2-main-pid"; rm -f "$pid_a2"
+printf '#!/bin/sh\nfor i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do [ -s "%s" ] && break; sleep 0.2; done\nkill -TERM "$(cat "%s")"\nexit 0\n' "$pid_a2" "$pid_a2" > "$fx2_scan"
+chmod +x "$fx2_scan"
+rm -f "$SANDBOX/ran-a2"
+env TMPDIR="$tmp_a2" "$fx2_tool" --client "$a2_mk" --system "$system" --bundle "$bundle" --label a2term --out "$SANDBOX/out-a2-term" \
+  > "$SANDBOX/a2term.out" 2> "$SANDBOX/a2term.err" < /dev/null &
+a2_pid=$!
+printf '%s' "$a2_pid" > "$pid_a2"
+wait "$a2_pid"; a2_st=$?
+check_status "vendor-review A2: SIGTERM mid-gate → exit 143" 143 "$a2_st"
+check_eq "vendor-review A2: ...and the handler removed the neutral dir" "0" "$(find "$tmp_a2" -maxdepth 1 -name 'vendor-review.*' | wc -l | tr -d ' ')"
+check_nofile "vendor-review A2: ...and the client never ran" "$SANDBOX/ran-a2"
+check_eq "vendor-review A2: ...and stdout stayed empty" "" "$(cat "$SANDBOX/a2term.out")"
+
 # --- A8 (B5): no round on an empty bundle or an empty reply ------------------------------------------
 : > "$SANDBOX/bundle-empty.md"; printf ' \n\t\n' > "$SANDBOX/bundle-ws.md"
 a8_cl="$(mk_marker_client a8)"
