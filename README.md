@@ -133,6 +133,7 @@ flowchart TD
         prin["PRINCIPLES.md (~5.9K)"]
         inst["INSTANCE.md"]
         cmd["commands/* (when invoked)"]
+        agents["agents/keel-polish-reviewer<br/>(/polish's read-only reviewer)"]
     end
     subgraph never["Never in context — runs in the shell (0 tokens)"]
         tools["secret-guard, doctor,<br/>public-audit, init-project, …"]
@@ -141,6 +142,7 @@ flowchart TD
     core --> prin
     core --> inst
     core -.->|when invoked| cmd
+    cmd -.->|/polish spawns it| agents
     tools -.->|only their output reaches context| core
 ```
 

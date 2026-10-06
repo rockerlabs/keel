@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
+  new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
+  characters of age's Bech32 alphabet — the line `age-keygen -o` writes, which until now scanned clean
+  (exit 0). Length-anchored like its siblings: the bare prefix and the pattern line itself still pass, and so
+  does SOPS ciphertext (checked against a real `sops` 3.13.3 file). **Re-run the guard installer to pick it up:**
+  a vendored per-repo copy or a machine-global one differs from this engine until you do, and `doctor`
+  reports it as stale (`W-GUARD-STALE` / `W-GUARD-GLOBAL-STALE`).
+
 - **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
   feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
   `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a
@@ -74,6 +82,16 @@ sections real content going forward — see that page for exactly when each one 
   until it is removed, a decision left to the person who owns those rules. The scanner's guard-fire event
   from a vendor-review gate run no longer records against the caller's repo: its cwd is now an empty
   directory with no impact store. agy's MCP servers and plugins are not checked, and the docs say so.
+
+- **Keel ships a read-only review agent, `agents/keel-polish-reviewer.md`, and `install.sh` wires it (dir #413,
+  slice 1 of 2).** Its `tools:` allowlist is `Read, Grep, Glob` — no shell, no git, no tests — so a `/polish`
+  review subagent running as it cannot run the git-mutating command that destroyed a parent session's
+  uncommitted work (the dir #375 class), instead of being asked not to. `install.sh` places it in
+  `<home>/agents/` (a symlink under `--link`, skipped under `--codex`, an adopter's own file of that name
+  refused), `uninstall.sh` removes what it placed, and `doctor --install` reports a missing agent
+  (`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
+  (`W-REVIEW-AGENT-FLOOR`). It is inert until a later release points `/polish`'s review spawn at it;
+  existing adopters re-run `install.sh` (`--link` for a linked install) to receive it.
 
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —

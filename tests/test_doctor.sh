@@ -1389,4 +1389,64 @@ check_absent   "a wired machine-global guard draws no provenance clause" "$OUT" 
 check_absent   "...and hooksPath being set means the staleness check ran → no dir #120 disclosure" "$OUT" \
   "staleness check: no core.hooksPath resolved"
 
+# =================================================================================================
+# dir #413 A4 — doctor --install audits the shipped read-only review agent (agents/keel-polish-reviewer.md):
+# wired (X of Y), its link liveness, and the tool FLOOR of the installed copy (copy mode lets an adopter
+# edit it; a floor that silently grows Bash is no floor).
+# =================================================================================================
+install413="$REPO_ROOT/install.sh"
+dah="$SANDBOX/doctor-agent-copy/.claude"
+run "$install413" --home "$dah" --no-hooks
+check_status "A4 fixture: copy install → exit 0" 0 "$STATUS"
+dag="$dah/agents/keel-polish-reviewer.md"
+run "$doctor" --install "$dah"
+check_contains "A4 clean copy install: agents X of Y wired" "$OUT" "OK   agents: 1 of 1 shipped are wired"
+check_absent "A4 clean copy install: no W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+check_absent "A4 clean copy install: no W-REVIEW-AGENT-MISSING" "$OUT" "W-REVIEW-AGENT-MISSING"
+
+# floor erosion shapes — each is a mutated copy of the shipped file; every one must warn
+agent_variant() { # NAME SED-EXPR — rewrite the installed agent from the shipped one
+  sed "$2" "$REPO_ROOT/agents/keel-polish-reviewer.md" > "$dag"
+  run "$doctor" --install "$dah"
+}
+agent_variant bash 's/^tools: .*/tools: Read, Grep, Glob, Bash/'
+check_contains "A4 Bash added to tools → W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+agent_variant notools '/^tools: /d'
+check_contains "A4 tools: line deleted (grants every tool) → W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+agent_variant flow 's/^tools: .*/tools: [Read, Grep, Glob]/'
+check_contains "A4 flow-list tools → W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+agent_variant webfetch 's/^tools: .*/tools: Read, Grep, Glob, WebFetch/'
+check_contains "A4 a tool outside the allowed set (not on the deny list) → W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+agent_variant twice 's/^tools: .*/tools: Read, Grep, Glob\ntools: Read, Grep, Glob/'
+check_contains "A4 a second tools: line → W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+check_contains "A4 the floor warning names the remedy with the install.sh --force route" "$OUT" "install.sh --force"
+# a body line that merely MENTIONS tools: Bash is prose, not the allowlist — must not warn
+{ cat "$REPO_ROOT/agents/keel-polish-reviewer.md"; printf 'tools: Bash, Write (prose in the body)\n'; } > "$dag"
+run "$doctor" --install "$dah"
+check_absent "A4 a body line mentioning tools: Bash does not warn (frontmatter only)" "$OUT" "W-REVIEW-AGENT-FLOOR"
+
+# absent agent, with a FOREIGN agent present → still W-REVIEW-AGENT-MISSING
+rm -f "$dag"; printf 'my own agent\n' > "$dah/agents/mine.md"
+run "$doctor" --install "$dah"
+check_contains "A4 agent absent (a foreign agent present) → W-REVIEW-AGENT-MISSING" "$OUT" "W-REVIEW-AGENT-MISSING"
+check_contains "A4 the missing warning carries the home marker (tools/self/doctor.sh's dir #98 rule)" "$OUT" "install.sh --home"
+check_absent "A4 a missing agent FILE is the MISSING check's, not the FLOOR's" "$OUT" "W-REVIEW-AGENT-FLOOR"
+
+# linked mode: clean → no FLOOR; dangling → G-LINK-DANGLING; a link into another checkout → W-LINK-FOREIGN
+dal="$SANDBOX/doctor-agent-link/.claude"
+run "$install413" --link --home "$dal" --no-hooks
+check_status "A4 fixture: link install → exit 0" 0 "$STATUS"
+run "$doctor" --install "$dal"
+check_contains "A4 clean linked install: agents X of Y wired" "$OUT" "OK   agents: 1 of 1 shipped are wired"
+check_absent "A4 clean linked install: no W-REVIEW-AGENT-FLOOR" "$OUT" "W-REVIEW-AGENT-FLOOR"
+check_absent "A4 clean linked install: no dangling or foreign link finding for the agent" "$OUT" "keel-polish-reviewer.md resolves outside"
+ln -sfn /nonexistent-keel-target "$dal/agents/keel-polish-reviewer.md"
+run "$doctor" --install "$dal"
+check_contains "A4 dangling agent link → G-LINK-DANGLING" "$OUT" "G-LINK-DANGLING"
+check_contains "A4 the dangling finding names the agent link" "$OUT" "agents/keel-polish-reviewer.md"
+mkdir -p "$SANDBOX/other-checkout"; cp "$REPO_ROOT/agents/keel-polish-reviewer.md" "$SANDBOX/other-checkout/keel-polish-reviewer.md"
+ln -sfn "$SANDBOX/other-checkout/keel-polish-reviewer.md" "$dal/agents/keel-polish-reviewer.md"
+run "$doctor" --install "$dal"
+check_contains "A4 an agent link into another checkout → W-LINK-FOREIGN" "$OUT" "W-LINK-FOREIGN"
+
 summary

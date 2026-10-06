@@ -105,6 +105,11 @@ keep them around and paste the one you need when you need it.
   bypass — is built entirely on Claude Code `PreToolUse`/`PostToolUse`/`SessionStart`/`UserPromptExpansion`
   hooks (`tools/install-pre-pr-gate.sh` wires them). It **does not port**: on another tool, `/polish`'s
   steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them.
+- **The restricted review agent** — `agents/keel-polish-reviewer.md` (`tools: Read, Grep, Glob`, no
+  shell) is `/polish`'s review subagent, wired by `install.sh` into `<home>/agents/`. The tool allowlist
+  is a Claude Code feature (`agents/*.md` with a `tools:` list). On another harness `/polish`'s review has
+  no structural floor: the prose rails stay the only containment, and the trace gate does not port anyway —
+  use your tool's own read-only or sandboxed subagent mode if it has one.
 - **The machine-global watcher** (`tools/machine-watch.sh`) — its *hook* wiring (`tools/install-machine-watch.sh`)
   is Claude Code `SessionStart`/`PostToolUse`/`PostToolUseFailure`/`SessionEnd` hooks and **does not port**.
   Its CLI (`snapshot`/`check`) runs by hand on any tool with a shell, and the `docs/delegation.md` deny-rule

@@ -73,6 +73,10 @@ PATTERNS=(
   'hf_[A-Za-z0-9]{34,}'                # Hugging Face user access token
   'xox[baprs]-[A-Za-z0-9-]{10,}'       # Slack token
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'  # PEM private key
+  # age private key (dir #631): Bech32 with the HRP `AGE-SECRET-KEY-` (a post-quantum identity adds `PQ-`),
+  # the separator `1`, then the Bech32 charset — 58 characters for an X25519 key. {58,} is a lower bound: the PQ
+  # variant's length is not pinned here.
+  'AGE-SECRET-KEY-(PQ-)?1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58,}'
 )
 
 # Agent/session metadata in COMMIT and annotated-TAG MESSAGES — the per-session trailer an agent
