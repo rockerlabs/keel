@@ -58,7 +58,17 @@
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
 #                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
-#   HINT  H-FOOTPRINT          session startup footprint (project CLAUDE.md + resolved global
+#   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env; templates excluded) that git
+#                              tracks or would commit — a plaintext secrets file one `cat` from a
+#                              permanent transcript (dir #631; names and git state only, no content read)
+#   WARN  W-SECRETS-PLAINTEXT  an env-shaped file resting gitignored and untracked — still plaintext in
+#                              the tree; "migration unfinished" when .sops.yaml says the project adopted
+#                              SOPS. Both: path-level accept in .keel/secrets-accept (exact paths)
+#   WARN  W-SECRETS-IGNORE     adopted (.sops.yaml) but the recipe's ignore rules are missing — .env,
+#                              .env.local, secrets.env must be ignored, secrets.enc.yaml must not be
+#   HINT  H-DENY-ENV           (--install, Claude Code only) the Read deny globs for env files are
+#                              missing from the machine-global settings.json — see the install note below
+#   HINT  H-FOOTPRINT         session startup footprint (project CLAUDE.md + resolved global
 #                              CLAUDE.md/keel/CORE.md) over budget (KEEL_STARTUP_WARN_TOKENS, 10000).
 #                              A KNOWN UNDERCOUNT: the harness's MEMORY.md index loads every session
 #                              too and is NOT summed (a budget decision of its own, dir #686 — dir #521
@@ -85,7 +95,8 @@
 #   HINT  H-DEP-FLOATING       floating dependency version (image :latest / Action @vN)
 #   HINT  H-LINT-*             a detected stack missing its lint gate (JAVA/PY/SWIFT/BASH);
 #                              H-JAVA-WILDCARD — a Java file uses a wildcard import
-# (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below.)
+# (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below —
+# the one HINT exception is H-DENY-ENV, listed above.)
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
@@ -99,6 +110,9 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/gate-paths.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$_doctor_dir/lib/stat-portable.sh"
+# dir #631: the secrets recipe's absolute path, resolved from THIS checkout (`keel doctor` execs it), so
+# the pointer in a finding works from any cwd and does not depend on docs/ being shipped to the install.
+secrets_doc="$(cd "$_doctor_dir/.." && pwd)/docs/secrets-in-the-working-tree.md"
 unset _doctor_dir
 
 QUIET=0
@@ -1021,6 +1035,29 @@ if [ "$INSTALL_MODE" = 1 ]; then
     done
   done
 
+  # dir #631 B4: H-DENY-ENV — the Claude Code Read deny globs the secrets recipe requires. A harness
+  # surface, so it lives here (the machine-global settings.json is all this mode sees) and is skipped
+  # under --codex. A HINT, not a WARN: a nudge, and a Read deny narrows the Read tool only. Literal
+  # match: jq structural when the file parses, else grep -F (gate_hook_wired's posture) — an equivalent
+  # rule written differently reads as missing; the escape is accepting the ID in $ihome/.keel/doctor-accept.
+  if [ "$CODEX_MODE" != 1 ]; then
+    deny_missing=""
+    deny_settings="$ihome/settings.json"
+    deny_jq=0
+    if command -v jq >/dev/null 2>&1 && [ -f "$deny_settings" ] && jq empty "$deny_settings" >/dev/null 2>&1; then deny_jq=1; fi
+    for deny_rule in 'Read(**/.env)' 'Read(**/.env.*)' 'Read(**/*.env)'; do
+      if [ "$deny_jq" = 1 ]; then
+        jq -e --arg r "$deny_rule" '[.permissions.deny // [] | .[]?] | any(. == $r)' "$deny_settings" >/dev/null 2>&1 && continue
+      elif [ -f "$deny_settings" ]; then
+        grep -qF -e "\"$deny_rule\"" "$deny_settings" 2>/dev/null && continue
+      fi
+      deny_missing="${deny_missing:+$deny_missing, }$deny_rule"
+    done
+    if [ -n "$deny_missing" ]; then
+      hint H-DENY-ENV "permissions.deny in $deny_settings lacks: $deny_missing — a Read deny keeps the Read tool off env files; it narrows that tool only, Bash verbs stay open (recipe: $secrets_doc; a differently-written equivalent rule: accept this ID in $ihome/.keel/doctor-accept)"
+    fi
+  fi
+
   flush_notes "$ihome/.keel/doctor-accept"
   if [ "$exit_code" = 0 ]; then say "doctor: install is complete — everything shipped is wired or declined"; fi
   finish
@@ -1614,6 +1651,61 @@ $wt_list
 EOF
     if [ "$wt_missing" -gt 0 ]; then
       warn W-WT-BRIDGE "$wt_missing linked worktree(s) missing the CLAUDE.md bridge — the session starts blind there (FRAMEWORK 'Worktree discipline')"
+    fi
+  fi
+
+  # dir #631 B1–B3: the secrets-in-the-working-tree floor. NAMES AND GIT STATE ONLY — no file is ever
+  # opened. An env-shaped file = a regular file named .env, .env.* or *.env, minus templates (a dot-
+  # segment example/sample/template/dist/tpl), minus nested repos/submodules (judged by their own run;
+  # check-ignore exits 128 across that boundary) and minus exact paths in .keel/secrets-accept (the
+  # main checkout's, gitignored per-checkout like the map-drift baseline). Each file yields exactly ONE
+  # of B1 (tracked, or untracked and not ignored) / B2 (untracked and ignored). Silent when clean.
+  # B3 runs only for an ADOPTED project (.sops.yaml at its root): plain absence is never flagged.
+  # Skipped outside a git repo — G-GIT-MISSING already speaks.
+  if [ -n "$d_top" ]; then
+    sx_dd="${d%/}"; [ -n "$sx_dd" ] || sx_dd="/"
+    sx_accept=$'\n'"$(load_token_set "$unit_top/.keel/secrets-accept" 1)"$'\n'
+    sx_exposed=""; sx_plain=""
+    while IFS= read -r sx_f; do
+      [ -n "$sx_f" ] || continue
+      sx_rel="${sx_f#"$sx_dd"/}"
+      if [[ "${sx_rel##*/}" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
+      if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
+      sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"
+      if [ "$sx_top" != "$d_top" ]; then continue; fi
+      if _tracked "$d" "$sx_rel" || ! _ignored "$d" "$sx_rel"; then
+        sx_exposed="${sx_exposed:+$sx_exposed$'\n'}$sx_rel"
+      else
+        sx_plain="${sx_plain:+$sx_plain$'\n'}$sx_rel"
+      fi
+    done <<EOF
+$(fp_find "$d" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) -print | LC_ALL=C sort)
+EOF
+    # sx_names LIST — "p1, p2, p3 (+k more)" for the first 3 paths of a sorted list; sx_n = the count.
+    sx_names() {
+      sx_n="$(printf '%s\n' "$1" | awk 'END{print NR}')"
+      sx_shown="$(printf '%s\n' "$1" | awk 'NR<=3{s=s (NR>1?", ":"") $0} END{printf "%s", s}')"
+      [ "$sx_n" -le 3 ] || sx_shown="$sx_shown (+$((sx_n - 3)) more)"
+    }
+    if [ -n "$sx_exposed" ]; then
+      sx_names "$sx_exposed"
+      warn W-SECRETS-EXPOSED "$sx_n env-shaped file(s) git tracks or would commit — plaintext secrets one cat from a permanent transcript: $sx_shown (recipe: $secrets_doc; doctor reads names and git state, never content; a deliberate one: list its exact path in .keel/secrets-accept)"
+    fi
+    if [ -n "$sx_plain" ]; then
+      sx_names "$sx_plain"
+      if [ -f "$d/.sops.yaml" ]; then sx_state="migration unfinished — plaintext still rests beside .sops.yaml"
+      else sx_state="plaintext rests in the tree, gitignored"; fi
+      warn W-SECRETS-PLAINTEXT "$sx_n env-shaped file(s), $sx_state: $sx_shown (recipe: $secrets_doc; doctor reads names and git state, never content; a deliberate one: list its exact path in .keel/secrets-accept)"
+    fi
+    if [ -f "$d/.sops.yaml" ]; then
+      sx_need=""; sx_not=""
+      for sx_p in .env .env.local secrets.env; do
+        git -C "$d" check-ignore -q --no-index -- "$sx_p" 2>/dev/null || sx_need="${sx_need:+$sx_need, }$sx_p"
+      done
+      if git -C "$d" check-ignore -q --no-index -- secrets.enc.yaml 2>/dev/null; then sx_not="secrets.enc.yaml"; fi
+      if [ -n "$sx_need$sx_not" ]; then
+        warn W-SECRETS-IGNORE "this project uses SOPS (.sops.yaml) but its ignore rules miss the recipe's:${sx_need:+ must be ignored, is not: $sx_need;}${sx_not:+ must NOT be ignored, is: $sx_not;} (recipe: $secrets_doc)"
+      fi
     fi
   fi
 

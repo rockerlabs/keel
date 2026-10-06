@@ -15,6 +15,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
+  feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
+  `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a
+  seven-item Limits section that sizes the claim as a speed bump) plus a short `SECURITY.md` section.
+  `doctor` adds `W-SECRETS-EXPOSED` (an env-shaped file git tracks or would commit),
+  `W-SECRETS-PLAINTEXT` (one resting gitignored), `W-SECRETS-IGNORE` (the recipe's ignore rules missing,
+  only once `.sops.yaml` exists) and, under `--install` for Claude Code, `H-DENY-ENV` (the three `Read`
+  deny globs for env files missing — the first HINT install mode emits). All advisories, names and git
+  state only, never an exit-code change; an exact path you keep on purpose goes in the new per-checkout
+  `.keel/secrets-accept`, which `init-project.sh` now gitignores. Expect `W-SECRETS-PLAINTEXT` on any
+  project that keeps a gitignored env file until it migrates or accepts the path.
+
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —
   delegated to the harness, with no template rail added) and the external channel (`secret-guard` plus

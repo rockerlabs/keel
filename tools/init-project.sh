@@ -95,6 +95,9 @@ ensure_ignore ".idea/"
 # doctor's map-drift check (dir #39 T1): an accepted stale-path mention lands here, script-only read —
 # gitignore it up front so a later `doctor.sh` WARN never tempts a `git add` of a per-checkout file.
 ensure_ignore "/.keel/map-drift-baseline"
+# doctor's secrets floor (dir #631): the path-level accept file names plaintext-secret paths — per-checkout
+# like the baseline above, and committing it would publish that list.
+ensure_ignore "/.keel/secrets-accept"
 
 # 2b. Impact tracking — opt this project into an external store entry (dir #251) so guardrail hooks
 # get recorded with no env needed. Delegated to keel-impact.sh enable: its resolver always targets the
