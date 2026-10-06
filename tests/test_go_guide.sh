@@ -47,7 +47,7 @@ fi
 # --- (d) every I8 form field label present, one needle each -------------------------------------------
 field_labels=(
   "Ticket:" "Readiness:" "Guide:" "Tests:" "Conform:" "Escapes:" "Outcome test:"
-  "Recorded, not fixed:" "Seams:" "Marker:" "Operator next:"
+  "Recorded, not fixed:" "Seams:" "Handoff:" "Marker:" "Operator next:"
 )
 for label in "${field_labels[@]}"; do
   pin "(d) I8 form field: '$label' present" "$guide_md" "$label" \
@@ -134,6 +134,44 @@ else
 fi
 pin_exact "(g) I4 item 2 is 'Seams.' (before the full test run)" "$guide_md" "2. Seams." \
   "expected item 2 of I4 to open with '2. Seams.'"
+
+# --- (h) the handoff note's wiring (dir #401 A12): each action names its helper call ------------------
+# Scoped to the action's own paragraph — "go-handoff.sh read" anywhere in the file would still pass
+# after the call moved out of I1. The quote after the verb is part of each needle: an unquoted ticket
+# reaches the tool as the bare word `dir` (`#401` is a shell comment), and the helper refuses it.
+# action_text N — the text from the `**I<N> — ` label to the next label or `## ` heading.
+action_text() {
+  awk -v n="$1" '
+    index($0, "**I" n " — ") == 1 { f = 1; print; next }
+    f && (/^\*\*I[0-9]+ — / || /^## /) { f = 0 }
+    f { print }
+  ' "$guide_md"
+}
+handoff_needles=(
+  '1|go-handoff.sh read "'
+  '3|go-handoff.sh write "'
+  '8|go-handoff.sh clear "'
+  '8|Handoff:'
+)
+for spec in "${handoff_needles[@]}"; do
+  n="${spec%%|*}"; needle="${spec#*|}"
+  # Captured first, then matched through lib.sh's match() (a here-string): piping action_text straight into
+  # `grep -q` lets grep's early exit SIGPIPE awk, and pipefail then reports a real match as "not found" (dir #280;
+  # felt on the busybox leg of PR #526).
+  action="$(action_text "$n")"
+  if match "$action" -qF -- "$needle"; then
+    pass "(h) I$n names '$needle'"
+  else
+    fail "(h) I$n names '$needle'" "no '$needle' inside I$n's own text in $guide_md"
+  fi
+done
+# (c) counts distinct I1-I8 labels, so an I0 or I9 label would slip past it: count every label.
+all_labels="$(grep -oE '\*\*I[0-9]+ — ' "$guide_md" | wc -l | tr -d ' ')"
+if [ "$all_labels" -eq 8 ]; then
+  pass "(h) exactly eight **I<n> — ** action labels (no I0, no I9)"
+else
+  fail "(h) exactly eight **I<n> — ** action labels (no I0, no I9)" "found $all_labels in $guide_md"
+fi
 
 # =======================================================================================================
 # Mutation proof: each case above is shown red first — never on a tracked file (spec A1). scratch_copy,
@@ -362,5 +400,29 @@ assert_case_turns_red "(g) numbering mutation: Seams not item 2" \
   "(g) I4 items are numbered 1-4 in order" "KEEL_GO_GUIDE_MD=$g11_copy"
 assert_case_turns_red "(g) numbering mutation: Seams not item 2 (pin)" \
   "(g) I4 item 2 is 'Seams.' (before the full test run)" "KEEL_GO_GUIDE_MD=$g11_copy"
+
+# (d) the new I8 field — drop its line.
+d2_copy="$(scratch_copy "$guide_md" go-guide.md)"
+delete_line_containing "$d2_copy" "Handoff: <none (reason)"
+assert_case_turns_red "(d) I8 form field mutation: Handoff: removed" \
+  "(d) I8 form field: 'Handoff:' present" "KEEL_GO_GUIDE_MD=$d2_copy"
+
+# (h) wiring — each call loses its helper name, scoped to its own line.
+h1_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$h1_copy" "go-handoff.sh read" "go-handoff.sh read" "go-handoff.sh peek"
+assert_case_turns_red "(h) wiring mutation: I1 read call lost" \
+  "(h) I1 names 'go-handoff.sh read \"'" "KEEL_GO_GUIDE_MD=$h1_copy"
+h3_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$h3_copy" "go-handoff.sh write" "go-handoff.sh write" "go-handoff.sh put"
+assert_case_turns_red "(h) wiring mutation: I3 write call lost" \
+  "(h) I3 names 'go-handoff.sh write \"'" "KEEL_GO_GUIDE_MD=$h3_copy"
+h8_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$h8_copy" "go-handoff.sh clear" "go-handoff.sh clear" "go-handoff.sh drop"
+assert_case_turns_red "(h) wiring mutation: I8 clear call lost" \
+  "(h) I8 names 'go-handoff.sh clear \"'" "KEEL_GO_GUIDE_MD=$h8_copy"
+h9_copy="$(scratch_copy "$guide_md" go-guide.md)"
+append_line "$h9_copy" "**I9 — extra.** A ninth action."
+assert_case_turns_red "(h) wiring mutation: a ninth label" \
+  "(h) exactly eight **I<n> — ** action labels (no I0, no I9)" "KEEL_GO_GUIDE_MD=$h9_copy"
 
 summary

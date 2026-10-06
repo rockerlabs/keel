@@ -3,7 +3,8 @@
 # questions: where does the /polish pre-PR gate's PROJECT-SCOPE settings.json live for a given repo
 # top (`gate_project_settings_path`); where does keel's own ephemeral state — this gate's
 # sentinel/trace/handoff/rollout rendezvous files, keel-check.sh's counters, pipeline-canary.sh's
-# sandbox record — live on this machine (`gate_state_root`, `gate_pre_pr_gate_root`,
+# sandbox record, and `/go`'s per-ticket handoff notes under `go-handoff/` (tools/go-handoff.sh, dir #401) —
+# live on this machine (`gate_state_root`, `gate_pre_pr_gate_root`,
 # `gate_sentinel_path_for_key`/`gate_prev_sentinel_path_for_key`/`gate_trace_path_for_key`); and how
 # a caller makes one of those state directories exist, owner-only (`gate_ensure_owner_dir`).
 #
