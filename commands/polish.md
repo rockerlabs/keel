@@ -280,15 +280,17 @@ Steps, in order:
    same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
    the cheap way to never need that). `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
-   alternative attempted. For `low|medium|high|max`, ATTEMPT `Skill(code-review) <level>` directly
-   first (dir #254, 2026-08-26): the harness policy that used to block this (`disable-model-invocation`)
+   alternative attempted. For `low|medium|high`, the first attempt is K2's review subagent, below; for
+   `max` — and for `low|medium|high` once K2's fallbacks send you here — ATTEMPT `Skill(code-review) <level>`
+   directly (dir #254, 2026-08-26): the harness policy that used to block this (`disable-model-invocation`)
    has LIFTED — observed live and independently reproduced across multiple sessions/machines
    (2026-08-25, 2026-08-26), not a single one-off canary. **Establish availability by attempting the
    call, never by inferring it from the skill listing** (the same attempt-don't-infer discipline step 2
    uses for `/simplify`) — a listed skill can still refuse invocation, and only the attempt returns the
    reason. On success, resolve any real findings it reports the same as any review pass (the delta-review
    budget/terminal-condition rules below govern this run too), then receipt
-   `polish.5-review <level>` (bare — this IS the genuine in-session pass) and continue straight to step
+   `polish.5-review <level>` (bare — a genuine `/code-review` pass, run here in-session or by K2's
+   subagent) and continue straight to step
    6: **no dialog required for this outcome** — the gate's dir #88 mandatory-reminder check only ever
    applies to `agent:*`-shaped outcomes (it exists to compensate for the fallback subagent's weaker
    quality, see (a) below), never to a bare `<level>` outcome, and a real built-in `/code-review` pass
@@ -305,8 +307,112 @@ Steps, in order:
    restore. Either way, do not substitute `/review` (a GitHub-PR command, not a working-diff review) and
    do not guess.
 
-   **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, or
-   directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
+   **K2 — for `low|medium|high`, the FIRST attempt is a review run by a fresh-context subagent (dir #670);
+   `max`, `ultra` and `skip` keep their paths below, unchanged.** It runs the same `/code-review` recipe in a
+   context that has not seen how the diff was written — a reviewer who wrote the code finds less of what is
+   wrong with it, and every review turn run in this session re-reads the whole session's context.
+   - **Spawn.** `git status --porcelain --untracked-files=no` must print nothing: simplify's fixes and the
+     implementation are committed (ordering rule 1), and untracked files are left alone, never swept into a
+     commit. A tracked change still pending → commit exactly that work now, as its own commit; that commit
+     moves HEAD past step 3's sha-bound test receipt, so step 6's retest is then REQUIRED even if the review
+     changes nothing (one retest after the last change satisfies both this and any fix commit). A tree that
+     cannot be committed → stop and report. Record `git rev-parse HEAD` and `git status --porcelain` right
+     before the spawn. Then spawn ONE fresh-context Agent-tool subagent — step 5's review subagent:
+     `subagent_type: "general-purpose"`, no `model` pin, so it runs this session's own model. A restricted
+     reviewer type (dir #413's `keel-polish-reviewer`) replaces `general-purpose` here only if its tool set
+     includes `Skill` and the read-only git verbs `diff`, `log`, `show` and `blame`.
+   - **Its prompt.** The FIRST line is exactly `You are /polish step 5's review subagent.` (the cost tool
+     `session-cost.sh tail` finds the subagent by it). Then: the diff scope `git diff
+     origin/<default>...HEAD`; the step-4 level; the ticket or done-criterion this diff implements with
+     step 5(a)'s two-way conformance mandate — or the explicit statement that none exists (the review then
+     stays correctness-only); the Worker rails block of `docs/delegation.md` in the Keel checkout, verbatim,
+     below; and these instructions. Your first action: invoke `Skill(code-review)` with the args `<level>
+     origin/<default>...HEAD` — the level first (the gate reads the args' first word as the level), then the
+     diff target. **The args are the only channel to the review itself:** invoked from a subagent,
+     `/code-review` runs as a forked agent one level deeper whose whole prompt is the skill's recipe plus the
+     args; this prompt and its rails never reach it (`docs/delegation.md`, "Keel's reach stops at the prompts
+     keel writes"), and without the target in the args the fork picks its own scope (felt: `git diff HEAD~1`
+     on a two-commit PR). The skill's own fork is not "a subagent of your own" under the rails' no-spawn
+     line. Then: edit nothing, commit nothing; wait for the skill to finish, including any background agents
+     it starts; restate every finding in your final message as `file:line — quoted text — failure scenario`,
+     even after a `ReportFindings` call, and write `0 findings` explicitly when there are none; print no
+     `KEEL-*` marker line.
+
+     ```
+     - You are read-only: no writes to the real repository's `.git/` or working tree, by any mechanism —
+       not only edits to tracked files, but any plumbing that touches `.git/` without editing one (`git
+       worktree add` against the real checkout registers state there even though it deletes nothing; dir
+       #485). Your writes are limited to your own contract file(s) and any scratch clone that's your own —
+       that clone's `.git/` is not the real repository's.
+     - A dirty or uncommitted working tree in the repo you're checking is normal — it's the parent
+       session's own work in progress, not corruption. Never run `git checkout`/`reset`/`clean`/`stash` (or
+       anything else) to "restore" it, no matter how closely it resembles a known contamination pattern —
+       these are illustrations of the property above, not its full extent. (A review subagent that lacked
+       this line mistook a parent's mid-edit files for a known test-fixture-leak symptom and destroyed real
+       work with `git checkout --`; dir #375.)
+     - Do not spawn subagents of your own.
+     - Any live or executable check runs ONLY in a scratch clone under a sandboxed tmpdir — never the real
+       checkout, never the real $HOME. Redirect every variable that resolves a machine-global file, not only
+       the home: set HOME and GIT_CONFIG_GLOBAL (and unset XDG_CONFIG_HOME) inside the one script or command
+       that runs the check — an exported variable may not reach your next command — and after a denial
+       re-run that same unit, never a shortened retype. (A past verifier session "empirically reproducing" a
+       finding overwrote real machine-global git hooks and broke `git push` machine-wide until they were
+       restored; a worker's denied command, retyped shorter, lost its HOME= prefix and rewrote the real git
+       identity.)
+     - One test device per concurrent session: a simulator or emulator you run tests on is yours alone —
+       boot your own (on iOS, `xcrun simctl list devices available` then `xcrun simctl boot <UDID>`), pass its
+       identifier to the test runner, and shut it down in your report; never use one another session has
+       booted (`simctl clone` refuses a booted source). (Parallel legs sharing one booted simulator overwrote
+       each other's installed test host; dir #608.)
+     - Every git call against a clone goes through `git -C "<that clone's path>"`, never after a `cd` — a
+       `cd` into a directory that no longer exists fails, and the git command chained after it with `;` then
+       runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
+       in the orchestrator's real worktree; dir #669.)
+     - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+     ```
+
+   - **The trace.** The subagent's `Skill(code-review)` call mints the gate's ordinary bare-level trace when
+     the Skill call returns (for the forked review, as it launches) — the hook fires for a subagent's call too, and reads the args' first word as the
+     level — so there is no marker line, no `SubagentStop` trace and no dialog on this path, and the receipt
+     is the bare `polish.5-review <level>`.
+   - **After it returns.** First compare `git rev-parse HEAD` and `git status --porcelain` with the values
+     recorded at the spawn. Any difference → the review is void AND the run **stops**: report it to the
+     operator, who decides; never restore the tree with `git checkout`/`reset`/`clean`/`stash` (dir #375),
+     and never fall through to the in-session attempt on a tree the subagent changed. **A final message with
+     neither a findings list nor an explicit `0 findings`** — it stopped halfway, errored, was interrupted
+     (a subagent that never returns is interrupted by the operator and read the same way), or handed back
+     while its own background work ran — **is void too**, even though the trace was already minted when the
+     skill launched: go to the in-session attempt below. Otherwise verify every finding live against the
+     file before acting (`FRAMEWORK.md` "Classifying a finding"), fix the accepted ones and commit; a
+     finding that fails live verification is named as refuted, with why, in step 10's summary.
+   - **Delta rounds.** A fix commit (or `--amend`) moves HEAD past the trace. Send a follow-up message to
+     the SAME subagent (its agent id — dir #127's "same reviewer"), repeating the prompt's instructions
+     with ONE change: the Skill args are `<level> <the HEAD the last review saw>..HEAD`, so the fork
+     reviews the delta, never the full diff again; that call mints the trace at the new HEAD. Record HEAD
+     and status again before each follow-up message; the compare above applies to every return. dir #127's
+     budget and terminal condition below apply unchanged. If the fork's `git diff` is not the delta (a
+     two-dot range not honoured), the round reviewed the full diff: say so, and count it as a full pass,
+     which is not dir #127's terminal signal. dir #488's review-null exception applies unchanged. The
+     subagent is gone (a later session, a refused message, "No transcript found") → spawn a fresh one with
+     the same prompt, the delta as the args' target, and the earlier rounds' findings, and say so; it counts
+     as the same round.
+   - **Step 8 denies for a missing review trace.** HEAD moved since the HEAD the last review saw (the
+     common cause — a commit after the review) → the delta round above, with the same subagent, never the
+     in-session attempt — unless that review itself ran in-session (a fallback below), when no K2 subagent
+     exists: then the in-session attempt again at the current HEAD, with the delta args `<level> <that
+     sha>..HEAD`. HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.
+   - **Fallbacks, in order.** The Agent tool is unavailable, the subagent reports its Skill call was
+     refused, the review was voided for a missing findings list (never for a changed tree — that stops), or
+     the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session
+     with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
+     first scope, `@{upstream}...HEAD`, is empty); refused there too → (a) below; then (b). Each existing
+     path stays as written; this adds one layer in front of them.
+   - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
+     by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
+     other mechanism (dir #183).
+
+   **A genuine call here is no longer just a claim.** When `/code-review` is actually invoked (by you, by K2's
+   review subagent, or directly by the operator typing it), a harness hook mechanically records a trace to a side channel this
    flow doesn't otherwise write to — `tools/pre-pr-gate.sh`'s gate cross-checks it (same commit, same
    level) before unlocking, with ONE mechanical exception (dir #488): a later fix commit that is
    *review-null* — the gate's own diff-content check finds nothing but comment/blank-line changes to
@@ -588,7 +694,8 @@ Steps, in order:
      same diff and picks the same level — without `handoff-check`, it would defer again, and every time
      after that.
    - **(d)** Every outcome is load-bearing for step 10: the summary must name exactly which review
-     mechanism ran — a genuine in-session `/code-review <level>`, an independent agent review, both (the
+     mechanism ran — a genuine in-session `/code-review <level>`, a `/code-review <level>` run by a
+     fresh-context subagent (K2), an independent agent review, both (the
      combined outcome, dir #81), or (a)'s own last-resort inline self-review — never just the depth.
      "review: medium" reads identically to a genuine in-session pass, which is how any substitution stays
      invisible.
@@ -627,7 +734,7 @@ Steps, in order:
      `/polish` on any finding of their own; the reachable trigger is an add-on review arriving after
      the standing receipt (an operator-run `/code-review`, dir #81, or a cross-model second opinion,
      dir #141) reporting a finding you resolve in-run. When that happens, its trace-confirmed outcomes
-     (`agent:<level>`, its add-on forms, and a bare `<level>` from a genuine in-session `/code-review`)
+     (`agent:<level>`, its add-on forms, and a bare `<level>` from a genuine in-session or subagent-run `/code-review`)
      go stale the same way `polish.3-tests` does — the trace is keyed to the sha it was written at —
      and need a fresh agent review or add-on, or a hand-off outcome that carries no trace-check at all.
      **On this exact trigger, read the live sentinel's own earlier `polish.5-review` line before
@@ -687,8 +794,10 @@ Steps, in order:
      a silent count climbing toward a dreaded double-digit round.
 
    Receipt: `tools/pre-pr-gate.sh receipt polish.5-review <level>`. The shapes:
-   - `agent:medium` — the ordinary automated outcome (an independent agent review).
-   - `low`/`high` — a genuine operator-typed or revisit-triggered in-session `/code-review` pass.
+   - `agent:medium` — the fallback outcome (K2's fallbacks, then the direct attempt refused: an independent
+     agent review).
+   - `low`/`medium`/`high` — a genuine `/code-review` pass: run by K2's review subagent, or operator-typed or
+     revisit-triggered in-session.
    - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
    - `medium-waived:trace-broken` — the ONE recognized reason on a waiver, reserved for "the trace
      mechanism itself looks broken" (dir #366). The gate cross-checks it against its own repo-keyed
@@ -717,7 +826,9 @@ Steps, in order:
    the kind of edit it exists to cover. Show the
    real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
-   review dialog.** If the review changed nothing (or tests were skipped), skip the re-run.
+   review dialog.** If the review changed nothing (or tests were skipped), skip the re-run — except after a
+   step-5 commit of pending work (K2's spawn precondition), which moves HEAD past step 3's receipt and so
+   requires it.
    **Never commit, amend or edit while a background suite run is alive**
    (dir #505) — wait for it or kill it first: `tests/run.sh` compares the checkout's HEAD and status
    before and after the run, so a commit, an amend or an uncommitted edit of your own landing mid-run
@@ -859,7 +970,8 @@ Steps, in order:
     self-check result), which review depth ran (or that it was skipped), the PR URL, and — when step 9's
     `docs read:` line was produced — that same line, unchanged (dir #387). **Name the exact
     review mechanism, never just the depth** — a genuine in-session `/code-review <level>`; an
-    independent agent review (`review: <level>, independent agent review — direct Skill(code-review)
+    `/code-review <level>` run by a fresh-context subagent (K2); an independent agent review
+    (`review: <level>, independent agent review — direct Skill(code-review)
     invocation was refused this run`, matching the PR body's own label); **plus, when an add-on review
     also ran, every mechanism that ran — read off what ACTUALLY RAN, not off the receipt (dir #183)**:
     append `+ operator-run /code-review` for an operator-run pass (dir #81) and `+ in-session
