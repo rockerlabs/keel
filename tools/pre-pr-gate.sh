@@ -1463,12 +1463,12 @@ case "${1:-}" in
     if ph_keys="$(_require_receipt_key "$PWD" 2>/dev/null && printf '%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
       ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"
     fi
-    ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel='(unavailable: $HOME is unset)'
-    ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace='(unavailable: $HOME is unset)'
+    ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
+    ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
     printf '%s\n' \
       'pre-pr-gate.sh — the /polish pre-PR gate, a PreToolUse(Bash) hook on `gh pr create` (subcommands: see the script header).' \
       '' \
-      'State files — two keys, side by side:' \
+      'State files for the checkout of the current directory — two keys, side by side:' \
       "  sentinel (the receipts)  $ph_sentinel" \
       '                           keyed by repo AND branch' \
       "  review trace             $ph_trace" \

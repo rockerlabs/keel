@@ -3733,9 +3733,13 @@ check_contains "dir #583: --help outside a repo still shows the key shapes" "$OU
 run_in "$d" env -u HOME bash "$gate" -h </dev/null
 check_status "dir #583: -h with HOME unset still exits 0" 0 "$STATUS"
 check_contains "dir #583: -h with HOME unset says the live paths are unavailable" "$OUT" 'unavailable: $HOME is unset'
+run_in "$d" env HOME="$SANDBOX/no-such-home-583" bash "$gate" -h </dev/null
+check_status "dir #583: -h with HOME set to a missing directory still exits 0" 0 "$STATUS"
+check_contains "dir #583: -h names that cause, not 'unset'" "$OUT" 'unavailable: $HOME is not a directory'
 # The script header states the same pair, so a reader of the file needs no other source.
-gate_head="$(head -n 80 "$gate")"
-check_contains "dir #583: the header names the sentinel's repo+branch key" "$gate_head" "keyed by repo AND branch"
-check_contains "dir #583: the header names the trace's repo-only key and the sandboxed-shell failure" "$gate_head" "keyed by repo only (dir #80)"
+gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
+check_contains "dir #583: the header names the sentinel's repo+branch key" "$gate_head" '`<root>/sentinel/<receipt-key>`, keyed by repo AND branch'
+check_contains "dir #583: the header names the trace's repo-only key" "$gate_head" "keyed by repo only (dir #80)"
+check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "a sandboxed shell can keep its own private view of"
 
 summary
