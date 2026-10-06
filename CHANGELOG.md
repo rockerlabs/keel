@@ -381,12 +381,10 @@ sections real content going forward — see that page for exactly when each one 
   `docs/token-economy.md` owns the cost reason. Step 9's core text lost two rationale clauses to make room
   (the guide keeps them).
 - **A sandboxed shell's receipts no longer read as a key problem (dir #583).** The gate's "no receipt on file"
-  deny described only a wrong repo or branch; it now also names the other cause — `init` and every `receipt`
-  were written from a sandboxed shell that keeps a private view of the state directory the hook reads — and the
-  fix: re-run them all with the sandbox disabled, not only the final `gh pr create`. `pre-pr-gate.sh -h` (it
-  printed nothing before) now shows both key shapes side by side with this checkout's live sentinel and trace
-  paths, the sentinel keyed by repo and branch and the review trace by repo only; the script header and
-  `polish-guide` § Step 8 say the same, so a worker needs no personal notes to reach the fix.
+  deny described only a wrong repo or branch; it now also names a sandboxed shell's private view of the state
+  directory, prints the sentinel path it checked, and says to re-run `init` and every `receipt` with the sandbox
+  disabled. `pre-pr-gate.sh -h` (it printed nothing before) shows both key shapes — sentinel by repo and branch,
+  review trace by repo only — with live paths, even with `$HOME` unset; the header and `polish-guide` § Step 8 say the same.
 - **`/polish` step 2's unavailable-`/simplify` fallback is no longer worded as the prose-only pass (dir #612).**
   `polish-guide` § Step 2 said "the same ONE inline pass", which after the content-class sizing read as the
   prose-only reuse pass; on a diff with code the fallback is now an inline pass over the cleanup angles

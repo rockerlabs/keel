@@ -3710,27 +3710,32 @@ check_absent "dir #647 A3: cwd=B (receipted) under GIT_DIR=A/.git is still allow
 # --- dir #583: a sandboxed shell's receipts are invisible to the hook — the deny, `-h` and the header say so ----
 # The deny for a missing receipt used to describe only a KEY problem (other repo/branch). A shell the
 # harness sandboxes can keep a private view of the gate's state directory, so `init`/`receipt` written
-# from it never reach the hook: the deny now names that cause and its fix in the same breath.
+# from it never reach the hook: the deny now names that cause, the sentinel path it checked, and the fix.
 d="$(mkrepo)"
-rm -f "$(sentinel_for "$d")"
+s583="$(sentinel_for "$d")"
+rm -f "$s583"
 gate "gh pr create --fill" "$d"
 check_contains "dir #583: the no-receipt deny names the sandboxed-shell possibility" "$OUT" "sandboxed shell"
+check_contains "dir #583: the no-receipt deny prints the sentinel path the hook checked" "$OUT" "$s583"
 check_contains "dir #583: the no-receipt deny names the fix (every receipt, sandbox off)" "$OUT" 're-run `init` and every `receipt` with the sandbox disabled'
-check_contains "dir #583: the no-receipt deny points at -h for the exact paths" "$OUT" 'pre-pr-gate.sh -h'
 # `-h` prints both key shapes side by side, with this checkout's live paths.
 run_in "$d" bash "$gate" -h </dev/null
 check_status "dir #583: -h exits 0" 0 "$STATUS"
-check_contains "dir #583: -h prints this checkout's sentinel path" "$OUT" "$(sentinel_for "$d")"
+check_contains "dir #583: -h prints this checkout's sentinel path" "$OUT" "$s583"
 check_contains "dir #583: -h prints this checkout's trace path" "$OUT" "$(trace_for "$d")"
 check_contains "dir #583: -h says the sentinel is keyed by repo AND branch" "$OUT" "keyed by repo AND branch"
 check_contains "dir #583: -h says the review trace is keyed by repo only" "$OUT" "keyed by repo only"
 mkdir -p "$SANDBOX/nonrepo-583"
 run_in "$SANDBOX/nonrepo-583" bash "$gate" --help </dev/null
 check_status "dir #583: --help outside a repo still exits 0" 0 "$STATUS"
-check_contains "dir #583: --help outside a repo still shows the key shapes" "$OUT" "<receipt-key>"
+check_contains "dir #583: --help outside a repo still shows the key shapes" "$OUT" "keyed by repo only"
+# Help must work in a broken environment: an unset $HOME used to exit 1 before any text.
+run_in "$d" env -u HOME bash "$gate" -h </dev/null
+check_status "dir #583: -h with HOME unset still exits 0" 0 "$STATUS"
+check_contains "dir #583: -h with HOME unset says the live paths are unavailable" "$OUT" 'unavailable: $HOME is unset'
 # The script header states the same pair, so a reader of the file needs no other source.
 gate_head="$(head -n 80 "$gate")"
-check_contains "dir #583: the header names the sentinel's repo+branch key beside the trace's repo-only key" "$gate_head" "keyed by repo AND branch; the review trace by repo only"
-check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "sandboxed shell"
+check_contains "dir #583: the header names the sentinel's repo+branch key" "$gate_head" "keyed by repo AND branch"
+check_contains "dir #583: the header names the trace's repo-only key and the sandboxed-shell failure" "$gate_head" "keyed by repo only (dir #80)"
 
 summary
