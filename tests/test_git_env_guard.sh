@@ -410,21 +410,21 @@ git -C "$sb" add -A
 case_red "dir #661 S5-1: a dash-shebang script (#!/usr/bin/env dash) -> red, naming it" scratch-dash.sh "$sb" "$base_off"
 # a git-reaching lib OUTSIDE tools/lib (shebang-less .sh anywhere), and a script that sources it
 sb="$(build_sandbox)"
-mkdir -p "$sb/tools/self"
-printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/tools/self/extlib.sh"
-printf '%s\n' '#!/usr/bin/env bash' '. "$(dirname "$0")/tools/self/extlib.sh"' > "$sb/scratch-ext-user.sh"
+mkdir -p "$sb/extras"
+printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/extras/extlib.sh"
+printf '%s\n' '#!/usr/bin/env bash' '. "$(dirname "$0")/extras/extlib.sh"' > "$sb/scratch-ext-user.sh"
 git -C "$sb" add -A
 census "$sb"
 if has_line "$C_LIBS" extlib.sh; then pass "dir #661 S5-1: a git-reaching lib outside tools/lib is in the derived lib set"; else fail "dir #661 S5-1: a git-reaching lib outside tools/lib is in the derived lib set" "derived: $(printf '%s' "$C_LIBS" | tr '\n' ' ')"; fi
 if grep -q -- '^scratch-ext-user.sh|' <<< "$C_OFF"; then pass "dir #661 S5-1: a script sourcing a lib outside tools/lib -> red, naming it"; else fail "dir #661 S5-1: a script sourcing a lib outside tools/lib -> red, naming it" "offenders: ${C_OFF:-none}"; fi
 # B5 reaches such a lib too
 sb="$(build_sandbox)"
-mkdir -p "$sb/tools/self"
-printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/tools/self/extlib.sh"
-append_line "$sb/tools/self/extlib.sh" "$GUARD"
+mkdir -p "$sb/extras"
+printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/extras/extlib.sh"
+append_line "$sb/extras/extlib.sh" "$GUARD"
 git -C "$sb" add -A
 census "$sb"
-if grep -q -- '^tools/self/extlib.sh|' <<< "$C_OFF"; then pass "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)"; else fail "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)" "offenders: ${C_OFF:-none}"; fi
+if grep -q -- '^extras/extlib.sh|' <<< "$C_OFF"; then pass "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)"; else fail "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)" "offenders: ${C_OFF:-none}"; fi
 
 # a guard that never executes must not count as present (heredoc body; after a column-0 exit)
 sb="$(build_sandbox)"
