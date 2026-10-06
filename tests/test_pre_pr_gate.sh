@@ -1231,6 +1231,7 @@ do
   check_contains "a comma-joined add-on ('$bad_addon') → denied" "$OUT" '"permissionDecision":"deny"'
   check_contains "...naming the retired comma set as the cause, not the depth" "$OUT" "no longer a valid shape"
   check_contains "...and pointing at a stale-copy fix that does not route through install.sh's prompt" "$OUT" "copy the shipped file over your own"
+  check_contains "dir #670: ...which names the guide in the same hand-copy" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
   check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
   # Cross-family: this must NOT be the generic depth-mismatch message. Pins the two denies apart, so a
   # future edit that lets one route swallow the other is caught — including the double-`deny`
@@ -2374,6 +2375,7 @@ check_contains "dir #96: the deny names the stale-polish.md cause" "$OUT" "an ol
 # a keel-polish.md alias exists — a non-interactive install creates one on its own — the file counts as
 # the adopter's and is never offered again). Flipped deliberately, not mechanically.
 check_contains "dir #96: ...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
+check_contains "dir #670: ...and names the guide in the same hand-copy (the core points at it)" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
 check_absent "dir #96: ...so it never prescribes a bare install.sh re-run" "$OUT" "re-run install.sh"
 
 # 86. dir #96: `--recover` must never clobber a receipt this run already wrote. Recovery appends and the
@@ -2804,6 +2806,8 @@ check_contains "dir #116: ...for the missing step-4 skip dialog" "$OUT" "no step
 # same stale-copy reasoning as the dir #96 block above, and the same assertion pair as the dir #183
 # depth deny, which is where this remedy was first established.
 check_contains "...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
+check_contains "dir #670: ...and names the guide in the same hand-copy (the core points at it)" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
+check_contains "dir #670: ...and names the guide section that now holds step 4 in full" "$OUT" "polish-guide.md § Step 4"
 check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
 
 # 95. dir #116: ARMED, the reproduction from the ticket must not reach allow. Round 1 sizes a trivial
@@ -2897,10 +2901,12 @@ deny_out="$OUT"    # capture before the trace call below overwrites $OUT with sk
 askuserquestion_trace "$d" "The gate denied with: $deny_out — how should we proceed?"
 check_nofile "dir #116: the skip deny message recapped in a dialog mints NO trace" "$tf"
 check_absent "dir #116: ...because the deny never spells the composed marker" "$deny_out" "DIALOG: level=skip"
-d="$(mkrepo)"
-tf="$(trace_for "$d")"; rm -f "$tf"
-askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/polish.md")"
-check_nofile "dir #116: all of polish.md quoted into a dialog mints NO trace" "$tf"
+for polish_file in polish.md polish-guide.md; do   # dir #670: the guide holds the dialog rules this fixture keeps inert
+  d="$(mkrepo)"
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/$polish_file")"
+  check_nofile "dir #116: all of $polish_file quoted into a dialog mints NO trace" "$tf"
+done
 # The mechanized floor for the whole class: NO tracked file outside tests/ may contain a composed
 # marker (token + ': level=' + an accepted word) — any such string, quoted into a dialog, is a minted
 # credential. The installer header was the instance the per-file sweeps kept missing (found by the

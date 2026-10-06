@@ -17,7 +17,10 @@ checklist="$REPO_ROOT/docs/publishing-checklist.md"
 going="$REPO_ROOT/docs/going-public.md"
 go="$REPO_ROOT/commands/go.md"
 wrap="$REPO_ROOT/commands/wrap.md"
-polish="$REPO_ROOT/commands/polish.md"
+# dir #670 (K1, slice 3): commands/polish.md is now a condensed core, and every pre-split paragraph lives,
+# unchanged, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
+# GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
+guide="$REPO_ROOT/commands/polish-guide.md"
 readme="$REPO_ROOT/README.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
@@ -27,7 +30,7 @@ check_file "commands/go.md exists" "$go"
 check_file "README.md exists" "$readme"
 check_file "FRAMEWORK.md exists" "$framework"
 check_file "commands/wrap.md exists" "$wrap"
-check_file "commands/polish.md exists" "$polish"
+check_file "commands/polish-guide.md exists" "$guide"
 
 # --- dir #99: neither go-public doc may read as "green exit = no personal data" ------------------
 # public-audit's personal-data heuristics are all WARN-tier and leave the exit code at 0, so both
@@ -74,34 +77,34 @@ pin "go.md: gives the decision a home that outlives the ticket (the PR's test pl
   "expected the test decision written into the PR test plan and the IN FLIGHT marker, not only the chat"
 
 # --- dir #119: a step-7 finding triggers the same convergence round as a step-5 one --------------
-pin "polish.md: step 1's convergence branch names a step-7 self-check trigger" \
-  "$polish" "step 7's self-check" \
+pin "polish-guide.md: step 1's convergence branch names a step-7 self-check trigger" \
+  "$guide" "step 7's self-check" \
   "expected the convergence-round question to cover step 7, not only step 5's review"
-pin "polish.md: step 7 itself names the convergence round its finding triggers" \
-  "$polish" 'you are in a convergence round' \
+pin "polish-guide.md: step 7 itself names the convergence round its finding triggers" \
+  "$guide" 'you are in a convergence round' \
   "expected step 7 to state that a fix commit puts the run into step 1's convergence branch"
 
 # --- dir #177: the IN-RUN convergence path (resolve, --amend, continue the same run) needs its own
 # paragraph beside step 5's "converge, don't restart" block, and step 1's --recover warning needs the
 # mirror-image case added: a "nothing to recover" answer is by-design on this path too, not proof of a
 # fresh run. -----------------------------------------------------------------------------------------
-pin "polish.md: step 5 names the in-run converge-and-continue path explicitly" \
-  "$polish" 'The IN-RUN path is the cheaper alternative when steps 6/7/8 are still ahead' \
+pin "polish-guide.md: step 5 names the in-run converge-and-continue path explicitly" \
+  "$guide" 'The IN-RUN path is the cheaper alternative when steps 6/7/8 are still ahead' \
   "expected step 5 to name the in-run --amend-and-continue path beside 'converge, don't restart'"
-pin "polish.md: step 5's in-run paragraph names polish.3-tests as the pre-existing sha-bound receipt" \
-  "$polish" '**`polish.3-tests`**, the one PRE-EXISTING receipt' \
+pin "polish-guide.md: step 5's in-run paragraph names polish.3-tests as the pre-existing sha-bound receipt" \
+  "$guide" '**`polish.3-tests`**, the one PRE-EXISTING receipt' \
   "expected the in-run paragraph to name polish.3-tests by id"
-pin "polish.md: step 5's in-run paragraph names polish.6-retest as the receipt that re-establishes binding" \
-  "$polish" '`polish.6-retest` receipt against the new HEAD satisfies it on its own' \
+pin "polish-guide.md: step 5's in-run paragraph names polish.6-retest as the receipt that re-establishes binding" \
+  "$guide" '`polish.6-retest` receipt against the new HEAD satisfies it on its own' \
   "expected the in-run paragraph to name polish.6-retest by id"
-pin "polish.md: step 1's --recover warning names the in-run mirror-image trap" \
-  "$polish" 'answer has a mirror-image trap too (dir #177)' \
+pin "polish-guide.md: step 1's --recover warning names the in-run mirror-image trap" \
+  "$guide" 'answer has a mirror-image trap too (dir #177)' \
   "expected step 1's 'do NOT use --recover's own output' warning to cover the nothing-to-recover case too"
-pin "polish.md: step 5's in-run paragraph does not misattribute the later-staleness trigger to steps 6/7" \
-  "$polish" 'but not via step 6 or step 7' \
+pin "polish-guide.md: step 5's in-run paragraph does not misattribute the later-staleness trigger to steps 6/7" \
+  "$guide" 'but not via step 6 or step 7' \
   "expected the polish.5-review staleness clause to name an add-on review as the trigger, not step 6/7 (which mandate re-invoking /polish, never an in-run amend)"
-pin "polish.md: step 5's in-run paragraph names the review dialog as per-commit too" \
-  "$polish" 'The MANDATORY review dialog (dir #88), on that same later-amend trigger' \
+pin "polish-guide.md: step 5's in-run paragraph names the review dialog as per-commit too" \
+  "$guide" 'The MANDATORY review dialog (dir #88), on that same later-amend trigger' \
   "expected the polish.5-review staleness clause to also cover the dir #88 review dialog going stale"
 
 
@@ -165,20 +168,20 @@ pin "init-project.sh captures register-project.sh's stderr instead of discarding
 # The step-9 and step-10 source clauses differ only by the word "them", which is too thin a
 # distinction to rest on: normalize step 9's wording and the step-10 pin would start matching step 9's
 # line, leaving step 10 deletable in silence. So the step-10 pins key on wording only step 10 uses.
-pin "polish.md: step 9's PR-body rule is sourced from what RAN, not from the receipt" \
-  "$polish" 'read them off what ACTUALLY RAN, not off the receipt' \
+pin "polish-guide.md: step 9's PR-body rule is sourced from what RAN, not from the receipt" \
+  "$guide" 'read them off what ACTUALLY RAN, not off the receipt' \
   "expected step 9 to source the PR body's mechanism list from the review history, not the receipt (dir #183 left the receipt naming at most one add-on)"
-pin "polish.md: step 9's PR-body rule demands EVERY mechanism, not just the receipted one" \
-  "$polish" 'must name EVERY mechanism that reviewed' \
+pin "polish-guide.md: step 9's PR-body rule demands EVERY mechanism, not just the receipted one" \
+  "$guide" 'must name EVERY mechanism that reviewed' \
   "expected step 9 to keep dir #81's completeness clause — the source clause alone permits naming one mechanism faithfully"
-pin "polish.md: step 9 says outright that the receipt is no longer the mechanism list" \
-  "$polish" '**The receipt is no longer that list.**' \
+pin "polish-guide.md: step 9 says outright that the receipt is no longer the mechanism list" \
+  "$guide" '**The receipt is no longer that list.**' \
   "expected step 9 to state the receipt/prose split explicitly, so a reader can't infer the pre-dir-#183 read-off-the-receipt rule"
-pin "polish.md: step 10's summary rule is sourced from what RAN, not from the receipt" \
-  "$polish" 'every mechanism that ran — read off what ACTUALLY RAN' \
+pin "polish-guide.md: step 10's summary rule is sourced from what RAN, not from the receipt" \
+  "$guide" 'every mechanism that ran — read off what ACTUALLY RAN' \
   "expected step 10's summary to carry the same source rule as step 9's PR body — the two must not drift apart"
-pin "polish.md: step 10's summary names the receipt's one-slot limit as the reason prose must carry the rest" \
-  "$polish" 'even though its receipt names only' \
+pin "polish-guide.md: step 10's summary names the receipt's one-slot limit as the reason prose must carry the rest" \
+  "$guide" 'even though its receipt names only' \
   "expected step 10 to say why the summary can exceed the receipt, so the two-mechanism case can't be read as a contradiction"
 
 # --- dir #510 (F17): step 3's no-rerun condition was stated BACKWARDS -----------------------------
@@ -188,10 +191,10 @@ pin "polish.md: step 10's summary names the receipt's one-slot limit as the reas
 # reads as the opposite condition (zero exempt touches) and would mislead a reader who takes it
 # literally. `check_absent` guards the retired phrasing directly — a rewording that quietly restores it
 # would otherwise slip past a bare presence pin on the new wording alone.
-check_absent "polish.md: step 3 no longer states the no-rerun condition backwards" \
-  "$(cat "$polish")" "touched nothing exempt"
-pin "polish.md: step 3 states the no-rerun condition as 'touched only exempt files'" \
-  "$polish" 'touched only exempt files' \
+check_absent "polish-guide.md: step 3 no longer states the no-rerun condition backwards" \
+  "$(cat "$guide")" "touched nothing exempt"
+pin "polish-guide.md: step 3 states the no-rerun condition as 'touched only exempt files'" \
+  "$guide" 'touched only exempt files' \
   "expected step 3 to say the hash unlocks with no rerun when the commit touched ONLY exempt files (dir #510 F17)"
 
 # --- dir #516 (F15): README's pre-PR-gate section had drifted from polish.md/getting-started.md ---
@@ -227,11 +230,11 @@ pin "FRAMEWORK.md: states doctor's non-flagging of runner labels as a known limi
 # receipt write chained ahead of it on the same line evaluates the gate against the pre-write sentinel
 # and denies — the receipt never ran, and the deny reads as a gate defect. Felt 4x on this machine
 # before being promoted to the shipped doc; guard the caution against silent removal.
-pin "polish.md: step 9 warns receipts and gh pr create must be separate Bash calls" \
-  "$polish" 'invoke `gh pr create` alone in the next one — never in' \
+pin "polish-guide.md: step 9 warns receipts and gh pr create must be separate Bash calls" \
+  "$guide" 'invoke `gh pr create` alone in the next one — never in' \
   "expected step 9 to warn against chaining a receipt write and gh pr create in one Bash command (dir #487)"
-pin "polish.md: step 9 names a non-gate gh pr create failure as still spending the receipt chain" \
-  "$polish" 'still spends the receipt chain' \
+pin "polish-guide.md: step 9 names a non-gate gh pr create failure as still spending the receipt chain" \
+  "$guide" 'still spends the receipt chain' \
   "expected step 9 to note that a gh pr create failing for a non-gate reason (bad --body-file, worktree .git-as-file) still spends the chain (dir #487)"
 
 # --- dir #413 slice 1 (A14): the read-only /polish review agent is a Claude Code feature, said so ------

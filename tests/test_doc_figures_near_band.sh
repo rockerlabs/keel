@@ -57,12 +57,12 @@ awk -v file="$doc_row_file" -v fig="$warn_fig" '
   { print }
 ' "$doc" > "$doc.tmp" && mv "$doc.tmp" "$doc"
 
-# The real largest ORDINARY command (excl. polish.md), by the same ~4-chars/token estimate the guard
+# The real largest ORDINARY command (excl. polish.md and polish-guide.md), by the same ~4-chars/token estimate the guard
 # itself uses — this is what the shrunk HI below has to sit 25%+ under.
 max_cmd_tok=0
 for f in "$warn_copy"/commands/*.md; do
   [ -f "$f" ] || continue
-  [ "$(basename "$f")" = "polish.md" ] && continue
+  case "$(basename "$f")" in polish.md|polish-guide.md) continue ;; esac
   c="$(wc -c < "$f" | tr -d ' ')"
   t=$(( c / 4 ))
   [ "$t" -gt "$max_cmd_tok" ] && max_cmd_tok="$t"
@@ -87,7 +87,7 @@ check_status "warn+ceiling copy: test_doc_figures.sh still exits 0 (both are non
 check_contains "warn copy: prints a near-band note" "$OUT" "  note  "
 check_contains "warn copy: note names the nudged file's label" "$OUT" "$doc_row_file"
 check_contains "ceiling copy: note names the commands/*.md range label" "$OUT" \
-  "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
+  "commands/*.md (excl. polish.md, polish-guide.md) sizes fall inside the quoted range"
 check_contains "ceiling copy: note cites the shrunk ceiling" "$OUT" "ceiling ~$new_hi+"
 
 summary
