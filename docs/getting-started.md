@@ -270,7 +270,10 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   If the subagent cannot run it, step 5 attempts the pass in-session. Only if that direct attempt is refused
   too (the block could return) does step 5 fall back to spawning a second, independent Agent-tool subagent
   (fresh context, no memory of the code it's reviewing) to do the review instead, traced the same mechanical
-  way. The PR body
+  way. That subagent is `keel-polish-reviewer`, a read-only agent type (`Read`, `Grep`, `Glob` — no shell, no
+  git, no tests, so `/polish` hands it the diff in the prompt) that `install.sh` places in `<home>/agents/`;
+  the gate's trace trusts only that type, so
+  after a pull re-run `install.sh` and `tools/install-pre-pr-gate.sh`, then restart your session. The PR body
   and the closing summary are always labeled honestly — "independent agent review" is never presented as
   if `/code-review` itself ran on the fallback path. **You're asked before the fact only at the two ends of
   the scale** — `max`/`ultra` (expensive) and `skip` (no review at all); `low`/`medium`/`high` run with no

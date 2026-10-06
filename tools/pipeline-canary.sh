@@ -192,11 +192,19 @@ GHEOF
       { "matcher": "startup", "hooks": [{ "type": "command", "command": "bash $GATE rollout-check" }] }
     ],
     "SubagentStop": [
-      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash $GATE skill-trace" }] }
+      { "matcher": "keel-polish-reviewer", "hooks": [{ "type": "command", "command": "bash $GATE skill-trace" }] }
     ]
   }
 }
 EOF
+
+  # dir #413 B6: the gate trusts only the shipped read-only review agent, so the canary's real /polish needs it
+  # LOADED. The launch below passes `--setting-sources project,local`, which excludes the user scope — an agent
+  # placed in the sandbox home never loads and step 5(a) would answer "agent type not found" — so it goes at
+  # PROJECT scope in the toy repo. A copy, not a symlink: the toy repo is a throwaway sandbox, and a copy
+  # survives the checkout moving under it.
+  mkdir -p "$repo/.claude/agents"
+  cp "$SELF_DIR/../agents/keel-polish-reviewer.md" "$repo/.claude/agents/keel-polish-reviewer.md"
 
   # dir #398: CANARY_STATE now lives under the keel-owned root instead of flat in /tmp — the parent
   # may not exist yet on a machine where the gate itself has never run. Shared idiom

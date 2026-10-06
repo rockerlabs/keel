@@ -85,6 +85,20 @@ check_file "setup writes a stub gh on PATH" "$sandbox/bin/gh"
 check_contains "settings.json wires the PreToolUse gate" "$(cat "$sandbox/settings.json" 2>/dev/null)" "pre-pr-gate.sh"
 check_contains "settings.json wires the SessionStart rollout-check" "$(cat "$sandbox/settings.json" 2>/dev/null)" "rollout-check"
 check_contains "the toy repo is a real git repo" "$(git -C "$repo" rev-parse --is-inside-work-tree 2>&1)" "true"
+# dir #413 slice 2 (A8): the canary's settings wire the SubagentStop matcher the gate now trusts, and the toy repo
+# holds the shipped review agent at PROJECT scope (the canary launches `claude --setting-sources project,local`,
+# which never loads the sandbox home's user scope — a real /polish inside it would hit "agent type not found").
+check_eq "A8: the sandbox settings' SubagentStop matchers are exactly [keel-polish-reviewer]" '["keel-polish-reviewer"]' \
+  "$(jq -c '[.hooks.SubagentStop[].matcher]' "$sandbox/settings.json" 2>/dev/null)"
+check_absent "A8: ...and none for general-purpose" "$(cat "$sandbox/settings.json" 2>/dev/null)" 'general-purpose'
+check_file "A8: the toy repo holds the agent at project scope" "$repo/.claude/agents/keel-polish-reviewer.md"
+if [ -s "$repo/.claude/agents/keel-polish-reviewer.md" ] && cmp -s "$repo/.claude/agents/keel-polish-reviewer.md" "$REPO_ROOT/agents/keel-polish-reviewer.md"; then
+  pass "A8: the toy repo's agent is non-empty and byte-equal to the checkout's"
+else
+  fail "A8: the toy repo's agent is non-empty and byte-equal to the checkout's" "missing, empty, or different"
+fi
+check_nofile "A8: the agent is NOT only in the sandbox home's user scope (home/.claude/agents)" "$sandbox/home/.claude/agents/keel-polish-reviewer.md"
+check_nofile "A8: ...nor in home/agents" "$sandbox/home/agents/keel-polish-reviewer.md"
 
 # Two separate `setup` runs must not collide on the same sentinel — pre-pr-gate.sh keys off a
 # basename-plus-hash-of-the-full-path (dir #481), so a fixed toy-repo dir name (even one whose full

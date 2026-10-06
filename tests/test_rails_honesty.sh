@@ -258,4 +258,22 @@ pin "README.md: the layout diagram names the agents/ channel" \
   "$readme" 'agents/keel-polish-reviewer' \
   "expected the README's how-it-works diagram to show the shipped review agent (dir #413)"
 
+# --- dir #413 slice 2 (A9 header half, A14 S2 half): the flip is said where the claim lives --------------------
+gate_sh="$REPO_ROOT/tools/pre-pr-gate.sh"
+check_absent "A9: the gate's dir #70 header no longer says no structural fix exists" "$(cat "$gate_sh")" 'No structural fix exists today'
+pin "A9: the gate header records residual (2) as closed for this leg" "$gate_sh" 'is closed for this leg' \
+  "expected the dir #70 header to say what shipped: the trace matches only keel-polish-reviewer (dir #413)"
+pin "A9: the gate header records the agent-NAME residual (a same-named project agent shadows the shipped one)" "$gate_sh" \
+  'shadows the shipped' "expected the new residual: the gate trusts the agent NAME (dir #413 B5)"
+pin "A14: polish-guide.md's Verified-against sentence names the new agent_type" "$guide" \
+  'agent_type == keel-polish-reviewer' "expected the dir #141 bullet to say the trace matches on the new type (dir #413 B2)"
+pin "A14: getting-started.md names the read-only review agent" "$REPO_ROOT/docs/getting-started.md" \
+  'keel-polish-reviewer' "expected the getting-started fallback paragraph to name the agent (dir #413)"
+pin "A14: getting-started.md tells existing adopters to re-run both installers" "$REPO_ROOT/docs/getting-started.md" \
+  'after a pull re-run `install.sh` and `tools/install-pre-pr-gate.sh`' "expected the re-run-both-installers instruction (dir #413)"
+check_absent "A14: docs/reference.md no longer says the agent ships inert (the flip landed)" \
+  "$(cat "$REPO_ROOT/docs/reference.md")" 'ships inert'
+check_absent "A14: the slice-1 CHANGELOG bullet no longer says inert until a later release" \
+  "$(cat "$REPO_ROOT/CHANGELOG.md")" 'It is inert until a later release'
+
 summary
