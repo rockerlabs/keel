@@ -523,9 +523,7 @@ MARKER_AGENT_REVIEW="${COMPOSED_MARKER_NAMES[0]}"
 MARKER_DEPTH_DIALOG="${COMPOSED_MARKER_NAMES[1]}"
 MARKER_REVIEW_DIALOG="${COMPOSED_MARKER_NAMES[2]}"
 # dir #413 (F2, strict): the ONE `agent_type` the SubagentStop leg trusts — the keel-shipped, read-only
-# review agent (agents/keel-polish-reviewer.md, `tools: Read, Grep, Glob`). Held in one named constant, the
-# way the marker names above are, so the handler and any future caller cannot drift apart; the installer's
-# matcher (install-pre-pr-gate.sh) and doctor's W-GATE-REVIEW-MATCHER name the same string.
+# review agent (agents/keel-polish-reviewer.md). install-pre-pr-gate.sh and doctor.sh spell the same string.
 REVIEW_AGENT_TYPE='keel-polish-reviewer'
 # dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
 # resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
@@ -933,8 +931,8 @@ main_top_for() {
 # dir #413 B5: the walk below is now generic — "is hook X wired in any settings.json this gate can see?" —
 # because the review-trace-missing deny asks the identical question about a DIFFERENT hook (the SubagentStop
 # slot for $REVIEW_AGENT_TYPE) for the identical "between `git pull` and the operator re-running the
-# installer" window. One walk, two predicates: `_dialog_leg_armed` and `_review_matcher_wired` are thin
-# wrappers; never copy this candidate list a second time.
+# installer" window. One walk, two predicates (`_gate_settings_has_dialog_hook`, `_gate_settings_has_review_hook`);
+# `_dialog_leg_armed` is the dialog wrapper; never copy this candidate list a second time.
 _gate_settings_any() {
   local top="${1:?_gate_settings_any: main-checkout top path required}" pred="${2:?_gate_settings_any: predicate required}" f
   command -v jq >/dev/null 2>&1 || return 1
@@ -973,14 +971,10 @@ _dialog_leg_armed() {
   _gate_settings_any "${1:?_dialog_leg_armed: main-checkout top path required}" _gate_settings_has_dialog_hook
 }
 
-# dir #413 B5: true iff some settings.json this gate can see wires a SubagentStop hook running this gate for
-# $REVIEW_AGENT_TYPE. A matcher-less / "" / "*" entry fires on every agent type, so it counts as wired — the
-# same `covers` rule tools/lib/hook-install.sh and doctor's W-GATE-REVIEW-MATCHER apply. Without jq the walk
-# answers "not wired" (skill-trace needs jq to run at all).
-_review_matcher_wired() {
-  _gate_settings_any "${1:?_review_matcher_wired: main-checkout top path required}" _gate_settings_has_review_hook
-}
-
+# dir #413 B5: predicate for _gate_settings_any — does this settings.json wire a SubagentStop hook running this
+# gate for $REVIEW_AGENT_TYPE? A matcher-less / "" / "*" entry fires on every agent type, so it counts — the
+# `covers` rule of tools/lib/hook-install.sh, which tools/doctor.sh's gate_review_matcher_wired mirrors (this
+# file and doctor.sh do not source that lib). Without jq nothing counts as wired (skill-trace needs jq anyway).
 _gate_settings_has_review_hook() {
   jq -e --arg t "$REVIEW_AGENT_TYPE" '
       (.hooks.SubagentStop // []) | any(
@@ -3082,13 +3076,9 @@ case "$status" in
           # release, so an `agent:*` outcome with no trace and no settings.json wiring the new matcher is most
           # likely a pull without the installer re-run. ONE added sentence, never reworded text (several tests pin
           # the surrounding wording); a settings file that already wires it (or matches every agent type) omits it.
-          case "$review_outcome" in
-            agent:*)
-              if ! _review_matcher_wired "$main_top"; then
-                trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
-              fi
-              ;;
-          esac
+          if [[ "$review_outcome" == agent:* ]] && ! _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
+            trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+          fi
           # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
           # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
           # A trace is bound to the exact commit it was written against and is never retroactive, so the

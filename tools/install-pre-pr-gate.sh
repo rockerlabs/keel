@@ -312,6 +312,17 @@ retired_specs="$(jq -n --arg gate "$gate" '[
   {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")}
 ]')"
 
+# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out and
+# $n_retired to how many came out. Sets globals, never prints: a command substitution would lose n_retired.
+retire_legacy() {
+  local removal
+  removal="$(hook_install_remove "$retired_specs" "$1")"
+  n_retired="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
+  retired_json="$1"
+  [ "$n_retired" -gt 0 ] && retired_json="$(jq -c '.new' <<<"$removal")"
+  return 0
+}
+
 # Backup/atomic-write/shape-check/merge/remove all live in tools/lib/hook-install.sh (dir #437 MW8),
 # shared with install-read-trace.sh — reconcile there, not here, on drift.
 # Valid JSON is not the same as the expected SHAPE (a hand-edited ".hooks" as an array): the lib's
@@ -327,10 +338,8 @@ if [ "$uninstall" = 1 ]; then
   # The retired (legacy) specs come out first, so a settings.json holding ONLY the legacy entry is still
   # cleaned; the current specs' removal then runs on that result. The "of 6" counter below counts the
   # current specs only — the legacy removal is reported on its own line.
-  retired_removal="$(hook_install_remove "$retired_specs" "$current")"
-  n_retired="$(jq -r '.report' <<<"$retired_removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
-  [ "$n_retired" -gt 0 ] && current="$(jq -c '.new' <<<"$retired_removal")"
-  removal="$(hook_install_remove "$hook_specs" "$current")"
+  retire_legacy "$current"
+  removal="$(hook_install_remove "$hook_specs" "$retired_json")"
   statuses="$(jq -r '.report' <<<"$removal")"
 
   # One definition of each status's print line, reused by both the early "nothing removed" exit (KEPT
@@ -410,11 +419,8 @@ fi
 # result. Retiring BEFORE the merge (not after, as the design text had it) matters for one shape: our command
 # inside a MATCHER-LESS SubagentStop entry reads SAME for the new matcher (`covers`), and a retirement after the
 # merge would then strip the only copy; retiring first leaves the merge to wire the new slot beside it.
-retired="$(hook_install_remove "$retired_specs" "$current")"
-n_retired="$(jq -r '.report' <<<"$retired" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
-merge_input="$current"
-[ "$n_retired" -gt 0 ] && merge_input="$(jq -c '.new' <<<"$retired")"
-merged="$(hook_install_merge "$hook_specs" "$merge_input")"
+retire_legacy "$current"
+merged="$(hook_install_merge "$hook_specs" "$retired_json")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
 stale=""

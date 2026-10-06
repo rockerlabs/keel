@@ -92,10 +92,11 @@ check_eq "A8: the sandbox settings' SubagentStop matchers are exactly [keel-poli
   "$(jq -c '[.hooks.SubagentStop[].matcher]' "$sandbox/settings.json" 2>/dev/null)"
 check_absent "A8: ...and none for general-purpose" "$(cat "$sandbox/settings.json" 2>/dev/null)" 'general-purpose'
 check_file "A8: the toy repo holds the agent at project scope" "$repo/.claude/agents/keel-polish-reviewer.md"
-if [ -s "$repo/.claude/agents/keel-polish-reviewer.md" ] && cmp -s "$repo/.claude/agents/keel-polish-reviewer.md" "$REPO_ROOT/agents/keel-polish-reviewer.md"; then
-  pass "A8: the toy repo's agent is non-empty and byte-equal to the checkout's"
+# cmp -s fails on a missing file; the shipped agent is non-empty, so byte-equal also rules out an empty copy.
+if cmp -s "$repo/.claude/agents/keel-polish-reviewer.md" "$REPO_ROOT/agents/keel-polish-reviewer.md"; then
+  pass "A8: the toy repo's agent is byte-equal to the checkout's"
 else
-  fail "A8: the toy repo's agent is non-empty and byte-equal to the checkout's" "missing, empty, or different"
+  fail "A8: the toy repo's agent is byte-equal to the checkout's" "missing, empty, or different"
 fi
 check_nofile "A8: the agent is NOT only in the sandbox home's user scope (home/.claude/agents)" "$sandbox/home/.claude/agents/keel-polish-reviewer.md"
 check_nofile "A8: ...nor in home/agents" "$sandbox/home/agents/keel-polish-reviewer.md"

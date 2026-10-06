@@ -64,14 +64,12 @@ pin "commands/polish-guide.md's retest caution names the canary it would trip" \
 needle="step 5's review subagent"
 n_gp="$(cat "$polish" "$guide" | grep -cF 'subagent_type: "general-purpose"')"
 check_eq "A7: exactly ONE subagent_type: \"general-purpose\" remains across polish.md + polish-guide.md (K2's)" 1 "$n_gp"
-for f in "$polish" "$guide"; do
+unexempt="$(for f in "$polish" "$guide"; do
   awk -v n="$needle" '
-    index($0, "subagent_type: \"general-purpose\"") && !(index($0, n) || index(prev, n)) { bad++ }
-    { prev = $0 }
-    END { print bad + 0 }' "$f" > "$SANDBOX/a7-unexempt-$(basename "$f")"
-done
-check_eq "A7: the one remaining general-purpose spawn line is K2's (needle on it or the line before) — core" 0 "$(cat "$SANDBOX/a7-unexempt-polish.md")"
-check_eq "A7: ...and none in the guide is un-exempted" 0 "$(cat "$SANDBOX/a7-unexempt-polish-guide.md")"
+    index($0, "subagent_type: \"general-purpose\"") && !(index($0, n) || index(prev, n)) { print FILENAME ":" NR }
+    { prev = $0 }' "$f"
+done)"
+check_eq "A7: the one remaining general-purpose spawn line is K2's (needle on it or the line before)" "" "$unexempt"
 # every other general-purpose line says NOT
 bare_gp="$(for f in "$polish" "$guide"; do
   awk -v n="$needle" '
