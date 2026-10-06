@@ -297,10 +297,10 @@ _impact_override_active() {
   [ -n "${KEEL_IMPACT_LEDGER:-}" ] || [ -n "${KEEL_IMPACT_EVIDENCE:-}" ] || [ -n "${KEEL_IMPACT_LOG:-}" ]
 }
 
-# _keel_store_git ARGS… — dir #630 fix round (F1): run `git ARGS…` with GIT_DIR/GIT_COMMON_DIR/
-# GIT_WORK_TREE/GIT_INDEX_FILE cleared, for the one-off `-C "$top"` calls keel_store_record and
-# keel_store_recorded make. A caller process started with one of those already set (a hook, a tool
-# invoked from inside another repo's git machinery) otherwise hijacks `-C`: git honors an inherited
+# _keel_store_git ARGS… — dir #630 fix round (F1): run `git ARGS…` with the repo-selecting variables
+# (the list in tools/lib/repo-arg-guard.sh, pinned by tests/test_git_env_guard.sh) cleared, for the
+# one-off `-C "$top"` calls keel_store_record and keel_store_recorded make. A caller process started
+# with one of those already set (a hook, a tool invoked from inside another repo's git machinery) otherwise hijacks `-C`: git honors an inherited
 # GIT_DIR over it, so e.g. `rev-parse --show-toplevel` silently succeeds against the HIJACKED repo
 # (not `$top`) and a `--add` lands in ITS .git/config — as long as `$top` exists as SOME directory on
 # disk (a project not yet git-initialized is enough: `-C` only needs a `chdir` to succeed, and git
@@ -308,7 +308,7 @@ _impact_override_active() {
 # doesn't exist on disk at all was already safe before this fix, verified live (git 2.52.0): `-C`
 # fails outright on the `chdir` before git ever consults `GIT_DIR`, hijacked or not — tests below
 # cover the exists-but-not-a-repo case, the one that actually reproduces the hijack. `env -u` clears
-# the four variables for this one exec without a subshell fork (`( unset …; git … )` forks
+# the variables for this one exec without a subshell fork (`( unset …; git … )` forks
 # once for the subshell and once for git; `env -u … git …` execs git directly). Scoped to these two
 # functions' own calls, not a lib-level unset (this file is sourced by tools/pre-pr-gate.sh,
 # public-audit.sh, doctor.sh, citation-resolvability.sh, pipeline-canary.sh, keel-impact.sh and
@@ -318,7 +318,8 @@ _impact_override_active() {
 # the process-wide effect dir #647 is scoped to avoid here. `impact_claim_key` (:71-73) is
 # deliberately left alone — it is baseline v0.11.0 behavior, not part of this fix's scope.
 _keel_store_git() {
-  env -u GIT_DIR -u GIT_COMMON_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git "$@"
+  env -u GIT_DIR -u GIT_COMMON_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_NAMESPACE git "$@"
 }
 
 # keel_store_record KEY ENTRY TOP — S4: record that TOP's project has (or had) a store entry at ENTRY,

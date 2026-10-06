@@ -352,8 +352,8 @@ fi
 # guarded repo's OWN gitdir (E19a/b) — so a GIT_DIR naming any OTHER real repo makes `git -C
 # <target>` silently operate on THAT other repo instead of the one named on the command line: the
 # write escapes -C entirely, unrefused, and lands in the ambient repo. tests/lib.sh now unsets
-# GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE before its own first git call, closing this for
-# every process that sources it — once unset, -C is the only thing left that can select a repo.
+# GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE (and, since dir #661, the object-store and namespace
+# selectors) before its own first git call, closing this for every process that sources it — once unset, -C is the only thing left that can select a repo.
 #
 # `other13` and `foreign13` are BOTH created in THIS (unpoisoned) process, before the child ever
 # runs — load-bearing: `new_repo()` is itself a `git init`, and `git init` under an ambient GIT_DIR

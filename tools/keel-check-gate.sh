@@ -21,7 +21,7 @@
 # answering for a different repo (the hijack shape is in keel-check.sh's comment on its copy of this line).
 # Above `command -v jq` because this hook fires on EVERY Bash call: a builtin `unset` costs nothing there,
 # a sourced guard that failed to load would fail silently (tests/test_git_env_guard.sh pins this line).
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)

@@ -8,14 +8,28 @@
 #
 #   B1 — a SCRIPT is every tracked (or not-yet-tracked, not ignored) file whose first line is a `#!`
 #        naming sh or bash, except tests/test_*.sh and tests/lib.sh (covered by the unset at the top of
-#        tests/lib.sh). Each git-reaching script carries the guard line (B2: `unset GIT_DIR
-#        GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE`, byte-identical to tools/lib/repo-arg-guard.sh's)
-#        before its first git-reaching line.
-#   B3 — git-reaching = a non-comment line where `git` is a word followed by whitespace or end of line,
-#        or a source line naming a git-reaching LIB (derived here as a fixed point, never hard-coded).
+#        tests/lib.sh). Each git-reaching script carries the guard line (B2: the `unset` line,
+#        byte-identical to tools/lib/repo-arg-guard.sh's) before its first git-reaching line.
+#   B3 — git-reaching = a non-comment line naming `git` as the command word in any of the shapes below, or
+#        a line that sources a git-reaching LIB (derived here as a fixed point, never hard-coded). dir #661
+#        widened this from "`git` then whitespace" after the 0.13.0 audit (S5-1): `/usr/bin/git`, `"git"`,
+#        `git;`, `"${GIT:-git}"`, `X=git`, `"$GIT"`; a lib sourced after `&&`/inside `if`/in a `for` loop/
+#        with no slash; a `dash`/`ksh`/`zsh` shebang; a lib anywhere (every shebang-less `.sh`).
 #   B4 — the hook carve-out: secret-scan.sh keeps every inherited variable in its hook modes (git's own
-#        GIT_DIR/GIT_INDEX_FILE for the commit being scanned) and drops them only inside selftest().
+#        GIT_DIR/GIT_INDEX_FILE for the commit being scanned) and drops them only inside selftest() — no copy
+#        of the line anywhere else in the file, at any indentation (dir #661 S5-2).
 #   B5 — no lib gains the line: a lib-level unset changes every sourcer's behaviour.
+#
+# The guard line is the SEVEN-variable line (dir #661 S5-3: the four repo selectors plus the object-store
+# and namespace trio). Which variables are in it, which are left out and why, each measured, is recorded
+# once, in the header of tools/lib/repo-arg-guard.sh; this test only compares each script's copy to it.
+#
+# Disclosed limits of a line-based census (it reads text, it does not run the scripts): a guard in a
+# function body or `if` block is rejected only by the column-0 rule; a git call reached through a variable
+# holding the command under a name other than GIT/GIT_BIN/GIT_CMD/git_bin/gitbin AND assigned from a non-
+# literal is missed; a lib is matched by BASENAME, so tools/lib/read-trace.sh and tools/read-trace.sh share
+# a name; a shebang-less `.sh` is treated as a lib; and a lib named in a `for` list counts only when a
+# source line expands that loop variable.
 #
 # The census is a function over a root dir: it runs once on this repo and, per case, on a sandbox tree
 # this file builds (a scratch `git init` holding copies), so the detector's own non-vacuity is asserted.
@@ -24,13 +38,22 @@
 
 echo "git-env guard census (dir #647)"
 
-# `git` as a word, then whitespace or end of line — not a list of subcommands: an earlier 30-subcommand
-# list missed `git clone`, `git --no-optional-locks` and `git add`.
-GW='(^|[^A-Za-z0-9_./-])git([[:space:]]|$)'
+# git-reaching words (dir #661 widened; each alternative is one shape, none contains a backslash — awk -v
+# would process it). TR = what may follow the command word.
+#   A  `git` after anything but a word/path character, then whitespace, end of line or ; ) } " ' | & < > `
+#      (not a list of subcommands: an earlier 30-subcommand list missed `git clone` and `git add`)
+#   B  an absolute path ending in bin/git (/usr/bin/git, /opt/homebrew/bin/git)
+#   C  a default expansion naming it: ${GIT_BIN:-git}
+#   D  an expansion of a variable conventionally holding it: "$GIT", ${GIT_BIN}
+TR='[[:space:];)}"'"'"'|&<>`]'
+GW="(^|[^A-Za-z0-9_./-])git(${TR}|\$)"
+GW="$GW|(^|[^A-Za-z0-9_.-])/[A-Za-z0-9_/.-]*bin/git(${TR}|\$)"
+GW="$GW|[\$][{][A-Za-z_]+:[-=]git[}]"
+GW="$GW|[\$][{]?(GIT|GIT_BIN|GIT_CMD|git_bin|gitbin)[}]?([^A-Za-z0-9_]|\$)"
 GUARD="$(grep -m1 '^unset GIT_DIR' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
 case "$GUARD" in
-  "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE") pass "the lib's unset line is the four-variable line (the one source of the list)" ;;
-  *) fail "the lib's unset line is the four-variable line" "tools/lib/repo-arg-guard.sh's first '^unset GIT_DIR' line reads: $GUARD" ;;
+  "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE") pass "the lib's unset line is the seven-variable line (the one source of the list)" ;;
+  *) fail "the lib's unset line is the seven-variable line" "tools/lib/repo-arg-guard.sh's first '^unset GIT_DIR' line reads: $GUARD" ;;
 esac
 
 # The allowlist — one reason per entry, each with a mode. `exempt`: never demanded a guard.
@@ -45,29 +68,64 @@ allow_mode() {
   esac
 }
 
-# first_reach FILE SRC_RE — line number of the first non-comment line that is git-reaching (GW, or a
-# source line matching SRC_RE); empty if none. Strings, heredocs and messages count (stricter, never
-# weaker).
+# first_reach FILE LIBS — line number of the first non-comment line that is git-reaching; empty if none.
+# LIBS is the newline-separated git-reaching lib basenames (".sh" included). A line is git-reaching when it
+#   - matches GW, or
+#   - is a source line (`.`/`source`, anywhere on the line: after &&, ;, then, do, {, ( …) naming a lib by
+#     basename, with or without a directory part, or
+#   - is a `for VAR in …` header naming a lib while a later or earlier source line expands $VAR / ${VAR}
+#     (the loop-sourced shape: `for l in a b; do . "$d/lib/$l.sh"; done`).
+# Strings, heredocs and messages count (stricter, never weaker). An awk -v regex carries no backslash.
 first_reach() {
-  awk -v gw="$GW" -v src="$2" '
-    /^[[:space:]]*#/ { next }
-    $0 ~ gw || $0 ~ src { print NR; exit }
-  ' "$1"
-}
-
-# src_re LIBS — an ERE for a source line naming any lib in the newline-separated LIBS ("." escaped as
-# a bracket: awk -v would process a backslash).
-src_re() {
   local alt="" b
   while IFS= read -r b; do
     [ -n "$b" ] || continue
+    b="${b%.sh}"
     alt="${alt:+$alt|}${b//./[.]}"
-  done <<< "$1"
-  printf '^[[:space:]]*([.]|source)[[:space:]].*/(%s)' "${alt:-NO_SUCH_LIB}"
+  done <<< "${2:-}"
+  awk -v gw="$GW" -v srccmd='(^|[;&|({[:space:]])([.]|source)[[:space:]]+' \
+      -v lb="(^|[^A-Za-z0-9_-])(${alt:-NO_SUCH_LIB})([^A-Za-z0-9_-]|[.]sh|\$)" '
+    /^[[:space:]]*#/ { next }
+    $0 ~ gw && !g { g = NR }
+    $0 ~ srccmd { srcl[++ns] = $0; if ($0 ~ lb && !l) l = NR }
+    /(^|[^A-Za-z0-9_])for[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in[[:space:]]/ && $0 ~ lb {
+      v = $0; sub(/^.*for[[:space:]]+/, "", v); sub(/[[:space:]].*$/, "", v); fv[++nf] = v; fl[nf] = NR }
+    END {
+      r = g + 0
+      if (l && (!r || l < r)) r = l
+      for (i = 1; i <= nf; i++) for (j = 1; j <= ns; j++)
+        if (index(srcl[j], "$" fv[i]) || index(srcl[j], "${" fv[i] "}")) { if (!r || fl[i] < r) r = fl[i] }
+      if (r) print r
+    }' "$1"
 }
 
-# guard_line FILE — number of the first line equal to GUARD (column 0); empty if none.
-guard_line() { awk -v g="$GUARD" '$0 == g { print NR; exit }' "$1"; }
+# guard_line FILE — number of the first line equal to GUARD that EXECUTES at top level: column 0, outside a
+# heredoc body, and with no column-0 `exit`/`return` line before it (dir #661 S5-1: a guard in a heredoc or
+# after an exit "counted as present"). Empty if none. A function body or `if` block is rejected only by the
+# column-0 rule (disclosed in the header).
+guard_line() {
+  awk -v g="$GUARD" -v q="'" '
+    nq > 0 {  # inside heredoc bodies: the queue holds the delimiters still owed, in order
+      t = $0; if (hdash[1]) sub(/^\t+/, "", t)
+      if (t == dq[1]) { for (i = 1; i < nq; i++) { dq[i] = dq[i + 1]; hdash[i] = hdash[i + 1] } nq-- }
+      next
+    }
+    /^(exit|return)([[:space:]]|$)/ { dead = 1 }
+    $0 == g && !dead { print NR; exit }
+    {
+      # every `<<` on the line, left to right, each real opener queued (`cat <<A; cat <<B` owes A then B).
+      # Not an opener: `<<<` (a here-string) and a shift inside `((` ... `))` (arithmetic).
+      rest = $0; off = 0
+      while (match(rest, "<<-?[[:space:]]*[A-Za-z_\"" q "]")) {
+        pos = off + RSTART; pre = substr($0, 1, pos - 1)
+        if ((pos > 1 && substr($0, pos - 1, 1) == "<") || pre ~ /[(][(][^)]*$/) { off += RSTART; rest = substr(rest, RSTART + 1); continue }
+        h = substr(rest, RSTART); d = (h ~ /^<<-/)
+        sub(/^<<-?[[:space:]]*/, "", h); gsub("[\"" q "]", "", h); sub(/[^A-Za-z0-9_].*$/, "", h)
+        if (h != "") { nq++; dq[nq] = h; hdash[nq] = d }
+        off += RSTART + 1; rest = substr(rest, RSTART + 2)
+      }
+    }' "$1"
+}
 
 # has_line LIST ITEM — is ITEM one of the newline-separated lines of LIST.
 has_line() {
@@ -83,11 +141,33 @@ $2
 add_off() { C_OFF="${C_OFF:+$C_OFF
 }$1"; }
 
+# is_script FILE — a B1 script: first line is a `#!` naming sh, bash, dash, ash, ksh or zsh.
+is_script() { head -1 "$1" | grep -Eq '^#!.*(^|[^A-Za-z0-9_])(ba|da|a|k|z)?sh([^A-Za-z0-9_]|$)'; }
+
+# census_files ROOT — every tracked or not-yet-tracked, not ignored, file of the tree.
+census_files() { (cd "$1" && git ls-files --cached --others --exclude-standard); }
+
+# lib_candidates ROOT — every lib the census may derive: tools/lib/*.sh, range-lib.sh, and every other
+# tracked shebang-less `.sh` (dir #661: a lib outside tools/lib), except tests/lib.sh and tests/test_*.sh.
+lib_candidates() {
+  local root="$1" f
+  {
+    (cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh 2>/dev/null)
+    while IFS= read -r f; do
+      case "$f" in *.sh) ;; *) continue ;; esac
+      case "$f" in tests/test_*.sh | tests/lib.sh) continue ;; esac
+      [ -f "$root/$f" ] || continue
+      head -1 "$root/$f" | grep -q '^#!' && continue
+      printf '%s\n' "$f"
+    done <<< "$(census_files "$root")"
+  } | sort -u
+}
+
 # derive_libs ROOT — sets C_LIBS: the libs that reach git, directly or by sourcing one that does (a fixed
-# point, never hard-coded). Candidates are tools/lib/*.sh and tools/secret-guard/range-lib.sh.
+# point, never hard-coded), as basenames.
 derive_libs() {
   local root="$1" libs l b changed=1
-  libs="$(cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh 2>/dev/null)"
+  libs="$(lib_candidates "$root")"
   C_LIBS=""
   while [ "$changed" = 1 ]; do
     changed=0
@@ -95,7 +175,7 @@ derive_libs() {
       [ -n "$l" ] || continue
       b="$(basename "$l")"
       has_line "$C_LIBS" "$b" && continue
-      if [ -n "$(first_reach "$root/$l" "$(src_re "$C_LIBS")")" ]; then
+      if [ -n "$(first_reach "$root/$l" "$C_LIBS")" ]; then
         C_LIBS="${C_LIBS:+$C_LIBS
 }$b"
         changed=1
@@ -109,54 +189,58 @@ derive_libs() {
 # `set -u` crashes, so no arrays). LIBS, when given, is a lib set derived earlier (the sandbox trees copy
 # the real libs unchanged, so re-deriving it per case would only cost time).
 census() {
-  local root="$1" f l re mode first g sel
+  local root="$1" f l first g sel mode
   C_REACH="" C_OFF=""
   if [ -n "${2:-}" ]; then C_LIBS="$2"; else derive_libs "$root"; fi
-  re="$(src_re "$C_LIBS")"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     [ -f "$root/$f" ] || continue
     case "$f" in tests/test_*.sh | tests/lib.sh) continue ;; esac
-    head -1 "$root/$f" | grep -Eq '^#!.*[^A-Za-z0-9_](ba)?sh([^A-Za-z0-9_]|$)' || continue
-    first="$(first_reach "$root/$f" "$re")"
+    is_script "$root/$f" || continue
+    first="$(first_reach "$root/$f" "$C_LIBS")"
     [ -n "$first" ] || continue
     C_REACH="${C_REACH:+$C_REACH
 }$f"
     mode="$(allow_mode "$f")"
     [ "$mode" = exempt ] && continue
-    g="$(guard_line "$root/$f")"
     if [ "$mode" = selftest-only ]; then
-      # B4: no column-0 guard (a top-level drop would open the pre-commit hook), and the line, leading
-      # whitespace stripped, sits inside selftest() before that function's first git-reaching line.
-      [ -z "$g" ] || add_off "$f|dir #647 B4|the guard sits at top level (line $g): hook modes need git's own GIT_DIR/GIT_INDEX_FILE"
+      # B4: no copy of the guard line OUTSIDE selftest() at any indentation (a top-level or hook-arm drop
+      # would open the pre-commit hook), and the line inside selftest() comes before that function's first
+      # git-reaching line. sel = guard line inside selftest, its first git line, copies outside selftest.
       sel="$(awk -v g="$GUARD" -v gw="$GW" '
+        { s = $0; sub(/^[ \t]+/, "", s) }
         /^selftest\(\) \{/ { on = 1 }
-        on { s = $0; sub(/^[ \t]+/, "", s)
-             if (s == g && !bg) bg = NR
+        on { if (s == g && !bg) bg = NR
              if (s !~ /^#/ && s ~ gw && !bf) bf = NR }
-        on && /^\}/ { exit }
-        END { print bg + 0, bf + 0 }' "$root/$f")"
-      set -- $sel   # two integers: the guard line and the first git-reaching line, 0 = none
+        !on && s == g { out++ ; if (!ol) ol = NR }
+        on && /^\}/ { on = 0 }
+        END { print bg + 0, bf + 0, out + 0, ol + 0 }' "$root/$f")"
+      set -- $sel   # four integers: guard line in selftest, its first git line, copies outside, first such line (0 = none)
+      [ "$3" = 0 ] || add_off "$f|dir #647 B4|the guard sits outside selftest() (line $4): hook modes need git's own GIT_DIR/GIT_INDEX_FILE"
       if [ "$1" = 0 ]; then
         add_off "$f|dir #647 B4|selftest() carries no copy of the guard line"
       elif [ "$2" != 0 ] && [ "$1" -gt "$2" ]; then
         add_off "$f|dir #647 B4|selftest()'s guard (line $1) comes after its first git-reaching line ($2)"
       fi
-    elif [ -z "$g" ]; then
-      add_off "$f|dir #647 B1|no column-0 '$GUARD' line (first git-reaching line: $first)"
-    elif [ "$g" -gt "$first" ]; then
-      add_off "$f|dir #647 B1|the guard (line $g) comes after the first git-reaching line ($first)"
+    else
+      g="$(guard_line "$root/$f")"
+      if [ -z "$g" ]; then
+        add_off "$f|dir #647 B1|no executing column-0 '$GUARD' line (first git-reaching line: $first)"
+      elif [ "$g" -gt "$first" ]; then
+        add_off "$f|dir #647 B1|the guard (line $g) comes after the first git-reaching line ($first)"
+      fi
     fi
-  done <<< "$(cd "$root" && git ls-files --cached --others --exclude-standard)"
+  done <<< "$(census_files "$root")"
   # B5: no lib, range-lib.sh or hook stub carries the line (stripped — the stricter reading), except
   # repo-arg-guard.sh itself.
   while IFS= read -r l; do
     [ -n "$l" ] || continue
     [ "$l" = tools/lib/repo-arg-guard.sh ] && continue
+    [ -f "$root/$l" ] || continue
     if awk -v g="$GUARD" '{ s = $0; sub(/^[ \t]+/, "", s); if (s == g) { found = 1 } } END { exit !found }' "$root/$l"; then
       add_off "$l|dir #647 B5|a lib or hook stub carries the guard line (a lib-level unset changes every sourcer)"
     fi
-  done <<< "$(cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null)"
+  done <<< "$({ lib_candidates "$root"; printf '%s\n' tools/secret-guard/pre-commit tools/secret-guard/pre-push; } | sort -u)"
 }
 
 # --- the real tree ---------------------------------------------------------------------------------
@@ -263,11 +347,11 @@ delete_line_containing "$sb/tools/pre-pr-gate.sh" "$GUARD"
 mutated "A2 case 1: deleting the guard from pre-pr-gate.sh changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
 case_red "A2 case 1: the guard deleted from pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
 
-# 2. a three-variable line (not byte-identical to the lib's)
+# 2. a shortened line (one name dropped; not byte-identical to the lib's)
 sb="$(build_sandbox)"
 replace_in_line_containing "$sb/tools/pre-pr-gate.sh" "$GUARD" " GIT_INDEX_FILE" ""
-mutated "A2 case 2: a three-variable line changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
-case_red "A2 case 2: a three-variable line in pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
+mutated "A2 case 2: a shortened guard line changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
+case_red "A2 case 2: a shortened guard line in pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
 
 # 3. the line deleted from secret-scan.sh's selftest() (leading whitespace: it is indented there)
 sb="$(build_sandbox)"
@@ -304,6 +388,120 @@ sb="$(build_sandbox)"
 printf '%s\n' '#!/usr/bin/env bash' '. "$(dirname "$0")/lib/repo-top.sh"' > "$sb/scratch-lib-user.sh"
 git -C "$sb" add -A
 case_red "A2 case 7: a script reaching git only through a sourced git-reaching lib -> red, naming it" scratch-lib-user.sh "$sb" "$base_off"
+
+# --- dir #661: the widened census — one fixture per shape the detector used to fail open on ----------------
+# Each fixture is a scratch script with NO guard whose only git reach is the named shape; the census must
+# name it. case_red proves "red without the change" for the detector; the baseline stays clean.
+shape_case() { # LABEL FILE LINE... — a new bash script (shebang first) holding LINEs, named by the census
+  local label="$1" file="$2"; shift 2
+  local sbc; sbc="$(build_sandbox)"
+  printf '%s\n' '#!/usr/bin/env bash' "$@" > "$sbc/$file"
+  git -C "$sbc" add -A
+  case_red "$label" "$file" "$sbc" "$base_off"
+}
+shape_case 'dir #661 S5-1: GIT="${GIT:-git}" then "$GIT" -C -> red, naming it' scratch-var-default.sh 'GIT="${GIT:-git}"' '"$GIT" -C "$1" commit -m x'
+shape_case 'dir #661 S5-1: "${GIT_BIN:-git}" -C -> red, naming it' scratch-bin-default.sh '"${GIT_BIN:-git}" -C "$1" status'
+shape_case 'dir #661 S5-1: /usr/bin/git -C -> red, naming it' scratch-abs-path.sh '/usr/bin/git -C "$1" status'
+shape_case 'dir #661 S5-1: "git" -C (quoted command word) -> red, naming it' scratch-quoted.sh '"git" -C "$1" status'
+shape_case 'dir #661 S5-1: git; (word then semicolon) -> red, naming it' scratch-semicolon.sh 'git; echo done'
+shape_case 'dir #661 S5-1: G=git then "$G" (assignment of the command word) -> red, naming it' scratch-assigned.sh 'G=git' '"$G" -C "$1" status'
+shape_case 'dir #661 S5-1: a git-reaching lib sourced in a for-loop -> red, naming it' scratch-loop-src.sh 'for l in repo-top; do . "$(dirname "$0")/lib/$l.sh"; done'
+shape_case 'dir #661 S5-1: a git-reaching lib sourced after && -> red, naming it' scratch-and-src.sh '[ -f x ] && . "$(dirname "$0")/lib/repo-top.sh"'
+shape_case 'dir #661 S5-1: a git-reaching lib sourced inside if/then -> red, naming it' scratch-if-src.sh 'if true; then . "$(dirname "$0")/lib/repo-top.sh"; fi'
+shape_case 'dir #661 S5-1: a git-reaching lib sourced without a slash -> red, naming it' scratch-bare-src.sh '. repo-top.sh'
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env dash' 'git -C "$1" status' > "$sb/scratch-dash.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a dash-shebang script (#!/usr/bin/env dash) -> red, naming it" scratch-dash.sh "$sb" "$base_off"
+# a git-reaching lib OUTSIDE tools/lib (shebang-less .sh anywhere), and a script that sources it
+sb="$(build_sandbox)"
+mkdir -p "$sb/extras"
+printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/extras/extlib.sh"
+printf '%s\n' '#!/usr/bin/env bash' '. "$(dirname "$0")/extras/extlib.sh"' > "$sb/scratch-ext-user.sh"
+git -C "$sb" add -A
+census "$sb"
+if has_line "$C_LIBS" extlib.sh; then pass "dir #661 S5-1: a git-reaching lib outside tools/lib is in the derived lib set"; else fail "dir #661 S5-1: a git-reaching lib outside tools/lib is in the derived lib set" "derived: $(printf '%s' "$C_LIBS" | tr '\n' ' ')"; fi
+if grep -q -- '^scratch-ext-user.sh|' <<< "$C_OFF"; then pass "dir #661 S5-1: a script sourcing a lib outside tools/lib -> red, naming it"; else fail "dir #661 S5-1: a script sourcing a lib outside tools/lib -> red, naming it" "offenders: ${C_OFF:-none}"; fi
+# B5 reaches such a lib too
+sb="$(build_sandbox)"
+mkdir -p "$sb/extras"
+printf '%s\n' '# shellcheck shell=bash' 'ext_status() { git -C "$1" status; }' > "$sb/extras/extlib.sh"
+append_line "$sb/extras/extlib.sh" "$GUARD"
+git -C "$sb" add -A
+census "$sb"
+if grep -q -- '^extras/extlib.sh|' <<< "$C_OFF"; then pass "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)"; else fail "dir #661 S5-1: the guard line added to a lib outside tools/lib -> red, naming it (B5)" "offenders: ${C_OFF:-none}"; fi
+
+# a guard that never executes must not count as present (heredoc body; after a column-0 exit)
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' "cat <<'EOF'" "$GUARD" 'EOF' 'git -C "$1" status' > "$sb/scratch-heredoc-guard.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a guard line inside a heredoc body does not count -> red, naming it" scratch-heredoc-guard.sh "$sb" "$base_off"
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' "$GUARD" 'git -C "$1" status' > "$sb/scratch-after-exit.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a guard line after a column-0 exit does not count -> red, naming it" scratch-after-exit.sh "$sb" "$base_off"
+
+# a here-string (<<<) is not a heredoc opener: a real guard after one still counts
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' "read -r x <<< 'word'" "$GUARD" 'git -C "$1" status' > "$sb/scratch-herestring.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+if grep -q -- '^scratch-herestring.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present" "the census named scratch-herestring.sh: $C_OFF"; else pass "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present"; fi
+has_line "$C_REACH" scratch-herestring.sh && pass "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" || fail "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" "not in the reach set"
+
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'read -r x <<< "$1"; cat <<EOF' "$GUARD" 'EOF' 'git -C "$1" status' > "$sb/scratch-herestring-heredoc.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a heredoc opened after a here-string on the same line still hides its body's guard -> red, naming it" scratch-herestring-heredoc.sh "$sb" "$base_off"
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'cat <<A; cat <<B' 'a' 'A' "$GUARD" 'B' 'git -C "$1" status' > "$sb/scratch-two-heredocs.sh"
+git -C "$sb" add -A
+case_red "dir #661 S5-1: a second heredoc opener on one line hides the guard line in its body -> red, naming it" scratch-two-heredocs.sh "$sb" "$base_off"
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'n=3; x=$((1<<n))' "$GUARD" 'git -C "$1" status' > "$sb/scratch-shift.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+if grep -q -- '^scratch-shift.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: an arithmetic shift (<<) is not a heredoc opener — a real guard after it still counts" "the census named scratch-shift.sh: $C_OFF"; else pass "dir #661 S5-1: an arithmetic shift (<<) is not a heredoc opener — a real guard after it still counts"; fi
+# the same list is spelled by tools/lib/impact-store.sh's scoped `env -u` form, which the census cannot see
+impact_names="$(sed -n '/^_keel_store_git() {/,/^}/p' "$REPO_ROOT/tools/lib/impact-store.sh" | grep -v '^[[:space:]]*#' | tr -s ' \\\n' '\n\n' | awk '$0 == "-u" { getline; print }' | sort | tr '\n' ' ')"
+guard_names="$(printf '%s\n' ${GUARD#unset } | sort | tr '\n' ' ')"
+check_eq "dir #661: tools/lib/impact-store.sh's scoped env -u names exactly the variables of the guard line" "$guard_names" "$impact_names"
+
+# S5-3, transport side: an inherited GIT_NAMESPACE makes a clone of a local repo come up EMPTY (measured, git 2.52.0)
+t_src="$(new_repo)"
+git -C "$t_src" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m first
+for t_url in "$t_src" "file://$t_src"; do
+  t_dst="$(mktemp -d "$SANDBOX/clone.XXXXXX")"
+  env GIT_NAMESPACE=foo bash -c "$GUARD"'; git clone -q "$1" "$2/c" >/dev/null 2>&1' _ "$t_url" "$t_dst"
+  check_eq "dir #661 S5-3: with GIT_NAMESPACE inherited, a clone of ${t_url%%$t_src*}<local repo> carries the source's commit once the guard ran" 1 "$(git -C "$t_dst/c" rev-list --count HEAD 2>/dev/null || echo 0)"
+done
+
+# S5-2: B4 also rejects an INDENTED guard outside selftest() (a hook arm), not only a column-0 one
+sb="$(build_sandbox)"
+insert_before_line_containing "$sb/tools/secret-guard/secret-scan.sh" "selftest() {" "  $GUARD"
+mutated "dir #661 S5-2: an indented guard in secret-scan.sh outside selftest() changes the file" "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$sb/tools/secret-guard/secret-scan.sh"
+case_red "dir #661 S5-2: an indented guard outside selftest() -> red, naming secret-scan.sh (B4)" tools/secret-guard/secret-scan.sh "$sb" "$base_off"
+
+# non-vacuity the other way: the widened detector must not name a script that does not reach git
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'GIT_DIR_X=1' 'echo "see .gitignore and digit and a-git-like name"' \
+  '# git status is mentioned in a comment only' 'cat <<'"'"'EOF'"'"'' 'Move keel stores: the read-trace store and impact store.' 'EOF' \
+  'for name in impact read-trace; do echo "$name"; done' '. "$(dirname "$0")/tools/lib/state-root.sh"' > "$sb/scratch-no-git.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+if grep -q -- '^scratch-no-git.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: prose, a store-name loop list and a non-git lib source are not git-reaching" "the widened census named scratch-no-git.sh: $C_OFF"; else pass "dir #661 S5-1: prose, a store-name loop list and a non-git lib source are not git-reaching"; fi
+
+# the real in-tree instance of the loop-sourced shape (S5's own evidence)
+if has_line "$real_reach" tools/machine-watch.sh; then pass "dir #661 S5-1: tools/machine-watch.sh (loop-sourced git-global-paths) is in the real git-reaching set"; else fail "dir #661 S5-1: tools/machine-watch.sh (loop-sourced git-global-paths) is in the real git-reaching set" "the census does not know machine-watch.sh reaches git"; fi
+
+# S5-3: the dropped set covers the object-store variables, behaviourally
+t_a="$(new_repo)"; t_d="$(new_repo)"
+env GIT_OBJECT_DIRECTORY="$t_d/.git/objects" bash -c "$GUARD"'; git -C "$1" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m first' _ "$t_a" >/dev/null 2>&1
+check_eq "dir #661 S5-3: an inherited GIT_OBJECT_DIRECTORY no longer sends a fresh repo's commit into the foreign store" 0 "$(find "$t_d/.git/objects" -type f | wc -l | tr -d ' ')"
+check_eq "dir #661 S5-3: ... and the target repo's own object store passes fsck" 0 "$(git -C "$t_a" fsck >/dev/null 2>&1; echo $?)"
+t_blob="$(printf 'pin661' | git -C "$t_d" hash-object -w --stdin)"
+printf 'pin661' | env GIT_ALTERNATE_OBJECT_DIRECTORIES="$t_d/.git/objects" bash -c "$GUARD"'; git -C "$1" hash-object -w --stdin >/dev/null' _ "$t_a" >/dev/null 2>&1
+if git -C "$t_a" cat-file -e "$t_blob" 2>/dev/null; then pass "dir #661 S5-3: an inherited GIT_ALTERNATE_OBJECT_DIRECTORIES no longer hides a write behind a foreign store"; else fail "dir #661 S5-3: an inherited GIT_ALTERNATE_OBJECT_DIRECTORIES no longer hides a write behind a foreign store" "the blob never reached the target's own store"; fi
 
 # A8 — the lib's header: the superseded "NOT a complete census" clause is gone and the census is named.
 check_eq "A8: tools/lib/repo-arg-guard.sh no longer carries the 'NOT a complete census' clause" 0 "$(grep -c 'NOT a complete census' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"

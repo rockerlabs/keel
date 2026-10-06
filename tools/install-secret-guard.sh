@@ -29,15 +29,15 @@
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
-# GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE redirects `git -C "$repo"` — including the validity
-# gate itself — into a DIFFERENT repository than the one named on the command line, so this can pass a
-# non-git $repo as valid and vendor the hook write somewhere else entirely
+# GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (or, since dir #661, an object-store or namespace variable)
+# redirects `git -C "$repo"` — including the validity gate itself — into a DIFFERENT repository than
+# the one named on the command line, so this can pass a non-git $repo as valid and vendor the hook write somewhere else entirely
 # (docs/specs/318-test-ref-isolation.md E19(c)). Inlined rather than sourced from
 # tools/lib/repo-arg-guard.sh: this script is designed to be copied standalone alongside only its
 # sibling secret-guard/ dir (see the header and this file's own test fixtures in
 # tests/test_secret_guard.sh, which run scratch copies that carry no tools/lib/) — that lib's own
 # header explains why install-read-trace.sh and install-pre-pr-gate.sh share it instead.
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/secret-guard"
 
@@ -681,7 +681,8 @@ EOF
     echo "usage: install-secret-guard.sh --global | <repo-path>" >&2; exit 2 ;;
   *)
     repo="$1"
-    # dir #644: GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE are already unset (top of file) —
+    # dir #644: GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE and the object-store and namespace
+    # selectors are already unset (top of file) —
     # this validity gate, and every git -C "$repo" call below it, is trustworthy because of that, not
     # because of anything done here.
     git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
