@@ -31,7 +31,7 @@ pin "body states the reviewer cannot run commands" "$agent" 'cannot run' \
 check_eq "zero copies of the rails block" "0" \
   "$(grep -c 'You are read-only: no writes to the real repository' "$agent" || true)"
 check_eq "the body is at most ~25 lines" "ok" \
-  "$(awk 'f{n++} /^---$/{c++; if(c==2)f=1} END{print (n<=30 ? "ok" : "too long: " n)}' "$agent")"
+  "$(awk 'f{n++} /^---$/{c++; if(c==2)f=1} END{print (n<=25 ? "ok" : "too long: " n)}' "$agent")"
 
 # --- the extractor on a good and a bad sample ------------------------------------------------------
 good="$SANDBOX/agent-good.md"; bad="$SANDBOX/agent-bad.md"
