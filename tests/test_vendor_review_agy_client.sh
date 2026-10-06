@@ -156,10 +156,21 @@ check_contains "agy.sh B3: the refusal keeps the HARD STOP wording" "$A_ERR" "HA
 check_contains "agy.sh B3: ...names the Linux cap" "$A_ERR" "131071"
 check_contains "agy.sh B3: ...names the platform" "$A_ERR" "Linux"
 check_contains "agy.sh B3: ...and says to chunk the bundle" "$A_ERR" "hunk the bundle"
+# non-Linux keeps the 185 KiB (189440-byte) cap: refusal above it works on every host; the "a 150000-byte prompt
+# runs" half needs a kernel that really accepts a 150000-byte argument, so a real-Linux host (a `uname` shim
+# cannot change the kernel's own limit) skips it.
+mk_user_of 189441 "$SANDBOX/in-189441"
 rm -f "$cnt"
-a_run "$SANDBOX/in-150000" env PATH="$uname_darwin:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
-check_status "agy.sh B3: non-Linux keeps the 185 KiB cap (a 150000-byte prompt runs)" 0 "$A_ST"
-check_eq "agy.sh B3: ...agy received all 150000 bytes" "150000" "$(cat "$cnt" 2>/dev/null)"
+a_run "$SANDBOX/in-189441" env PATH="$uname_darwin:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+check_status "agy.sh B3: non-Linux, combined 189441 bytes → exit 2 (over the 185 KiB cap)" 2 "$A_ST"
+check_contains "agy.sh B3: ...the refusal names the 189440-byte cap" "$A_ERR" "189440"
+check_nofile "agy.sh B3: ...agy is never invoked" "$cnt"
+if [ "$(uname -s)" != Linux ]; then
+  rm -f "$cnt"
+  a_run "$SANDBOX/in-150000" env PATH="$uname_darwin:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+  check_status "agy.sh B3: non-Linux keeps the 185 KiB cap (a 150000-byte prompt runs)" 0 "$A_ST"
+  check_eq "agy.sh B3: ...agy received all 150000 bytes" "150000" "$(cat "$cnt" 2>/dev/null)"
+fi
 if [ "$(uname -s)" = Linux ]; then
   # the real-Linux leg (CI alpine): the per-argument limit is the kernel's own, not a shim's claim
   rm -f "$cnt"
