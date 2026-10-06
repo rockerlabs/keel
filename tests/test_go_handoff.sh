@@ -227,6 +227,11 @@ check_ne "A8 with mv failing the write reports failure" "0" "$RC"
 check_eq "A8 with mv failing the previous note is byte-identical" "$keep" "$(sum "$(note_of "$r" dir-8)")"
 check_eq "A8 with mv failing no partial file sits beside it" "1" "$(find "$d8" -type f | wc -l | tr -d ' ')"
 
+mkdir "$d8/dir-8x"
+hrun "$r" "$(body a8 x)" write "dir #8x"
+check_status "A8 a directory at the note path → exit 3, nothing nested" 3 "$RC"
+check_eq "A8 …and nothing was nested inside it" "0" "$(find "$d8/dir-8x" -type f | wc -l | tr -d ' ')"
+
 # --- A9 — clear -----------------------------------------------------------------------------------------
 r="$(mkrepo)"
 hrun "$r" "$(body a9 one)" write "dir #9"
@@ -295,7 +300,7 @@ OUT="$(cd "$r" && env -u HOME bash "$tool" read "dir #11" 2>"$ERRF" </dev/null)"
 check_status "A11 read with HOME unset → exit 3" 3 "$RC"
 
 # --- A16 — directory modes ------------------------------------------------------------------------------
-rm -rf "$HOME/.keel"
+case "$HOME" in "$SANDBOX"/*) rm -rf "$HOME/.keel" ;; *) fail "A16 HOME is the sandbox" "HOME=$HOME" ;; esac
 r="$(mkrepo)"
 hrun "$r" "$(body a16)" write "dir #16"
 check_eq "A16 go-handoff/ is mode 700" "700" "$(stat_portable_mode "$ROOT")"

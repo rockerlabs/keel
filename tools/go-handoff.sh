@@ -105,7 +105,8 @@ esac
 # --- the root -----------------------------------------------------------------------------------
 state_root="$(gate_state_root)" || die "\$HOME $(gate_home_diagnosis) — cannot place the handoff root" 3
 hroot="$state_root/go-handoff"
-repo_key="$(bash "$SELF_DIR/pre-pr-gate.sh" repo-key "$PWD" 2>/dev/null)" || repo_key=""
+# </dev/null: on `write` stdin carries the note body, which the child must never see.
+repo_key="$(bash "$SELF_DIR/pre-pr-gate.sh" repo-key "$PWD" 2>/dev/null </dev/null)" || repo_key=""
 [ -n "$repo_key" ] || die "cannot derive the repo key from $PWD" 3
 ndir="$hroot/$repo_key"
 note="$ndir/$tkey"
@@ -163,6 +164,8 @@ EOF
   gate_ensure_owner_dir "$hroot"
   gate_ensure_owner_dir "$ndir"
   [ -d "$ndir" ] || die "cannot create $ndir" 3
+  # `mv` onto an existing directory would nest the temp file inside it and exit 0.
+  [ ! -d "$note" ] || die "cannot write $note: a directory is in the way" 3
   tmp="$ndir/$tkey.tmp.$$"
   if ! { { printf 'ticket: %s\nbranch: %s\nworktree: %s\nhead: %s\nwritten: %s\n' \
              "$ticket" "${b:-none}" "${w:-none}" "${h:-none}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
