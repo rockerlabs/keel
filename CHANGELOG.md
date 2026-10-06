@@ -45,6 +45,12 @@ sections real content going forward — see that page for exactly when each one 
   marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
   (`commands/go-guide.md`).
 
+- **`session-cost.sh tail` measures a `/go` session's fixed per-PR tail (dir #670, slice 1).** One row per
+  `/polish` window, from the first `polish` turn to the `gh pr create` that names a pull-request URL, plus
+  a row per subagent inside it and the window's review cost; over the ten 0.13.0 sessions it reproduces
+  the 11-PR baseline (median 5.62M cache-read tokens). The shared transcript reader gains `tu_tool_results`
+  and `tu_subagent_meta`, and `tu_tool_calls` gains each call's id and a Bash call's command.
+
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —
   delegated to the harness, with no template rail added) and the external channel (`secret-guard` plus

@@ -196,6 +196,72 @@ check_contains "tu_tool_calls normalizes a second cwd-prefixed path too" "$calls
 check_contains "tu_tool_calls leaves a path outside the session's own cwd absolute" \
   "$calls" '"file_path":"/Users/x/.keel/kb/notes.md"'
 
+# --- tu_tool_calls (dir #670 B10): the tool_use `id` and, for Bash only, `input.command` ----------
+# The per-PR tail window (tools/self/session-cost.sh tail) pairs a `gh pr create` call with its result
+# by the tool_use id, so the call reader must carry both fields.
+id_file="$SANDBOX/ids.jsonl"
+cat > "$id_file" <<'EOF'
+{"type":"assistant","requestId":"req_A","timestamp":"t1","message":{"model":"m","content":[{"type":"thinking"}],"usage":{"output_tokens":1}}}
+{"type":"assistant","requestId":"req_A","timestamp":"t2","message":{"model":"m","content":[{"type":"tool_use","id":"toolu_bash1","name":"Bash","input":{"command":"gh pr create --title x"}}],"usage":{"output_tokens":1}}}
+{"type":"assistant","requestId":"req_A","timestamp":"t3","message":{"model":"m","content":[{"type":"tool_use","id":"toolu_read1","name":"Read","input":{"file_path":"/a/b.md"}}],"usage":{"output_tokens":1}}}
+EOF
+id_calls="$(tu_tool_calls primary "$id_file")"
+check_contains "tu_tool_calls carries the tool_use id" "$id_calls" '"id":"toolu_bash1"'
+check_contains "tu_tool_calls carries a Bash call's command" "$id_calls" '"command":"gh pr create --title x"'
+check_eq "tu_tool_calls: a non-Bash call's command is null" "null" \
+  "$(printf '%s\n' "$id_calls" | jq -s -r '.[] | select(.name=="Read") | .command')"
+check_eq "tu_tool_calls: the Bash call keeps its own requestId (second record of the request)" "req_A" \
+  "$(printf '%s\n' "$id_calls" | jq -s -r '.[] | select(.name=="Bash") | .requestId')"
+
+# --- tu_tool_results (dir #670 B10): one line per tool_result block, never deduped -----------------
+res_file="$SANDBOX/results.jsonl"
+cat > "$res_file" <<'EOF'
+{"type":"user","timestamp":"t5","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_ok","content":"https://github.com/o/r/pull/7\n"}]}}
+{"type":"user","timestamp":"t6","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_err","is_error":true,"content":[{"type":"text","text":"denied by gate"},{"type":"text","text":"second part"}]},{"type":"tool_result","tool_use_id":"toolu_two","is_error":false,"content":"plain"}]}}
+{"type":"user","timestamp":"t7","message":{"role":"user","content":"a plain-string prompt, not a tool result"}}
+{"type":"assistant","requestId":"r","timestamp":"t8","message":{"model":"m","content":[{"type":"tool_use","id":"toolu_x","name":"Bash","input":{"command":"ls"}}],"usage":{"output_tokens":1}}}
+EOF
+results="$(tu_tool_results primary "$res_file")"
+check_eq "tu_tool_results: three tool_result blocks across two user records" "3" \
+  "$(printf '%s\n' "$results" | jq -s 'length')"
+check_eq "tu_tool_results: a string result's text" "https://github.com/o/r/pull/7" \
+  "$(printf '%s\n' "$results" | jq -s -r '.[] | select(.tool_use_id=="toolu_ok") | .text' | head -n1)"
+check_eq "tu_tool_results: is_error defaults to false when absent" "false" \
+  "$(printf '%s\n' "$results" | jq -s -r '.[] | select(.tool_use_id=="toolu_ok") | .is_error')"
+check_eq "tu_tool_results: is_error true is kept" "true" \
+  "$(printf '%s\n' "$results" | jq -s -r '.[] | select(.tool_use_id=="toolu_err") | .is_error')"
+check_contains "tu_tool_results: an array result joins its text blocks" \
+  "$(printf '%s\n' "$results" | jq -s -r '.[] | select(.tool_use_id=="toolu_err") | .text')" "second part"
+check_contains "tu_tool_results stamps the caller-supplied kind" "$results" '"kind":"primary"'
+check_contains "tu_tool_results carries the record's timestamp" "$results" '"timestamp":"t5"'
+check_eq "tu_tool_results: a transcript with no tool_result yields nothing" "0" \
+  "$(tu_tool_results primary "$dedupe_file" | wc -l | tr -d ' ')"
+
+# --- tu_subagent_meta (dir #670 B10): who a subagent is, from its transcript and its .meta.json -----
+meta_dir="$SANDBOX/meta-sess/uuid-1/subagents"
+mkdir -p "$meta_dir"
+cat > "$meta_dir/agent-abc123.jsonl" <<'EOF'
+{"type":"user","isSidechain":true,"agentId":"abc123","timestamp":"2026-10-01T10:00:05.000Z","message":{"role":"user","content":"You are /polish step 5's review subagent.\nSecond line of the prompt."}}
+{"type":"assistant","isSidechain":true,"requestId":"r1","agentId":"abc123","timestamp":"2026-10-01T10:00:06.000Z","message":{"model":"m","content":[],"usage":{"output_tokens":1}}}
+EOF
+printf '%s' '{"agentType":"general-purpose","parentAgentId":"par999","spawnDepth":2}' > "$meta_dir/agent-abc123.meta.json"
+sm="$(tu_subagent_meta "$meta_dir/agent-abc123.jsonl")"
+check_eq "tu_subagent_meta: agentId is the file's id" "abc123" "$(printf '%s' "$sm" | jq -r '.agentId')"
+check_eq "tu_subagent_meta: parentAgentId from the .meta.json" "par999" "$(printf '%s' "$sm" | jq -r '.parentAgentId')"
+check_eq "tu_subagent_meta: spawnDepth from the .meta.json" "2" "$(printf '%s' "$sm" | jq -r '.spawnDepth')"
+check_eq "tu_subagent_meta: firstLine is the prompt's first line only" \
+  "You are /polish step 5's review subagent." "$(printf '%s' "$sm" | jq -r '.firstLine')"
+check_eq "tu_subagent_meta: firstTimestamp is the file's first record" "2026-10-01T10:00:05.000Z" \
+  "$(printf '%s' "$sm" | jq -r '.firstTimestamp')"
+cat > "$meta_dir/agent-blocks.jsonl" <<'EOF'
+{"type":"user","isSidechain":true,"timestamp":"2026-10-01T10:00:07.000Z","message":{"role":"user","content":[{"type":"text","text":"Block prompt first line\nmore"}]}}
+EOF
+bm="$(tu_subagent_meta "$meta_dir/agent-blocks.jsonl")"
+check_eq "tu_subagent_meta: a content-block prompt reads its first text block's first line" \
+  "Block prompt first line" "$(printf '%s' "$bm" | jq -r '.firstLine')"
+check_eq "tu_subagent_meta: no .meta.json -> null parent and null depth" "null/null" \
+  "$(printf '%s' "$bm" | jq -r '"\(.parentAgentId)/\(.spawnDepth)"')"
+
 # --- tu_session_totals: primary and subagent kept separate, never folded into one number -----------
 totals_sess_dir="$proj_root/${slug_main}"
 totals_sess_uuid="22222222-2222-2222-2222-222222222222"
