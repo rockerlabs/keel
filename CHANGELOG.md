@@ -37,6 +37,12 @@ sections real content going forward — see that page for exactly when each one 
   marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
   (`commands/go-guide.md`).
 
+- **`session-cost.sh tail` measures a `/go` session's fixed per-PR tail (dir #670, slice 1).** One row per
+  `/polish` window, from the first `polish` turn to the `gh pr create` that names a pull-request URL, plus
+  a row per subagent inside it and the window's review cost; over the ten 0.13.0 sessions it reproduces
+  the 11-PR baseline (median 5.62M cache-read tokens). The shared transcript reader gains `tu_tool_results`
+  and `tu_subagent_meta`, and `tu_tool_calls` gains each call's id and a Bash call's command.
+
 - **`tools/vendor-review.sh` and its `agy.sh` client are hardened (dir #662, the 0.13.0 delta audit's S7 findings).**
   This closes known issues (5) and (6) of the 0.13.0 section, which stays as history. The leak gate now runs
   the scanner from a fresh empty directory with absolute paths, so a `.secret-scan-allow` in the caller's cwd
