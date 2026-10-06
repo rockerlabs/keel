@@ -75,6 +75,18 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 
 `go-guide` is not a slash command: it is the implementer guide `/go` loads at its step 7.
 
+## Agents (`agents/`)
+
+| Agent | What it does |
+|---|---|
+| `keel-polish-reviewer` | `/polish`'s review subagent: reads the diff its caller embeds in the prompt plus files on disk, and nothing else — its `tools:` allowlist is `Read, Grep, Glob`, so it cannot run a command, a test or git (a structural floor under the read-only rails, not a remembered instruction). |
+
+`install.sh` wires `agents/*.md` into `<home>/agents/` (a symlink under `--link`, never under `--codex`);
+`uninstall.sh` removes what it placed; `doctor.sh --install` reports a missing agent
+(`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
+(`W-REVIEW-AGENT-FLOOR`). The agent ships inert: `/polish` spawns it from the release that flips its
+spawn point, and until then nothing calls it.
+
 ## Extras
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard

@@ -39,6 +39,10 @@ check_contains "template map names FRAMEWORK.md the way the re-pointer expects" 
 check_contains "template map names PRINCIPLES.md the way the re-pointer expects" "$tpl" '**`PRINCIPLES.md`**'
 check_nolink "INSTANCE.md is a real file, never a symlink into the checkout" "$HOME/.claude/INSTANCE.md"
 check_link "commands are wired as symlinks" "$HOME/.claude/commands/wrap.md"
+# dir #413 A2: --link makes the review agent a symlink into the checkout, like a command.
+check_link "the review agent is wired as a symlink" "$HOME/.claude/agents/keel-polish-reviewer.md"
+run cmp -s "$HOME/.claude/agents/keel-polish-reviewer.md" "$REPO_ROOT/agents/keel-polish-reviewer.md"
+check_status "the agent link resolves to the shipped file" 0 "$STATUS"
 # dir #68: /polish now ships like every other command — its gate is the separate opt-in step instead.
 check_link "polish.md ships too (its gate is the opt-in step, not the command)" "$HOME/.claude/commands/polish.md"
 

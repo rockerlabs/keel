@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
+  new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
+  characters of age's Bech32 alphabet — the line `age-keygen -o` writes, which until now scanned clean
+  (exit 0). Length-anchored like its siblings: the bare prefix and the pattern line itself still pass, and so
+  does SOPS ciphertext (checked against a real `sops` 3.13.3 file). **Re-run the guard installer to pick it up:**
+  a vendored per-repo copy or a machine-global one differs from this engine until you do, and `doctor`
+  reports it as stale (`W-GUARD-STALE` / `W-GUARD-GLOBAL-STALE`).
+
 - **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
   feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
   `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a
@@ -50,6 +58,35 @@ sections real content going forward — see that page for exactly when each one 
   a row per subagent inside it and the window's review cost; over the ten 0.13.0 sessions it reproduces
   the 11-PR baseline (median 5.62M cache-read tokens). The shared transcript reader gains `tu_tool_results`
   and `tu_subagent_meta`, and `tu_tool_calls` gains each call's id and a Bash call's command.
+
+- **`tools/vendor-review.sh` and its `agy.sh` client are hardened (dir #662, the 0.13.0 delta audit's S7 findings).**
+  This closes known issues (5) and (6) of the 0.13.0 section, which stays as history. The leak gate now runs
+  the scanner from a fresh empty directory with absolute paths, so a `.secret-scan-allow` in the caller's cwd
+  or repo can no longer relax it, and neither this tool's nor `tools/audit-packet/export.sh`'s refusal text
+  names an exemption mechanism (the export's own root allow-list is unchanged). `agy.sh` caps the combined
+  prompt at 131071 bytes on Linux, where a single argument over that failed with "Argument list too long"
+  before the old 185 KiB cap (an E2BIG from the exec is now exit 2, never "agy CLI call failed"); it exits 1
+  when agy reports a denied tool call even with a reply, forwards agy's other stderr, refuses empty input,
+  and runs agy from an empty directory so no `AGENTS.md` or `GEMINI.md` from the caller's tree is loaded.
+  `vendor-review.sh` refuses an empty bundle and treats a client's empty reply as a failure, defaults
+  `--out` to `$HOME/.keel/vendor-review` (it used to write an un-ignored `out/` into the caller's tree), and
+  prints exactly one line on stdout, the round path, with the status sentence on stderr. **One refusal an
+  existing machine will meet:** `agy.sh` now refuses to run while agy's settings
+  (`~/.gemini/antigravity-cli/settings.json`) carry any `permissions.allow` rule, because such a rule
+  reaches this headless call and hands the model file reads; a machine with one gets `agy.sh` exiting 1
+  until it is removed, a decision left to the person who owns those rules. The scanner's guard-fire event
+  from a vendor-review gate run no longer records against the caller's repo: its cwd is now an empty
+  directory with no impact store. agy's MCP servers and plugins are not checked, and the docs say so.
+
+- **Keel ships a read-only review agent, `agents/keel-polish-reviewer.md`, and `install.sh` wires it (dir #413,
+  slice 1 of 2).** Its `tools:` allowlist is `Read, Grep, Glob` — no shell, no git, no tests — so a `/polish`
+  review subagent running as it cannot run the git-mutating command that destroyed a parent session's
+  uncommitted work (the dir #375 class), instead of being asked not to. `install.sh` places it in
+  `<home>/agents/` (a symlink under `--link`, skipped under `--codex`, an adopter's own file of that name
+  refused), `uninstall.sh` removes what it placed, and `doctor --install` reports a missing agent
+  (`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
+  (`W-REVIEW-AGENT-FLOOR`). It is inert until a later release points `/polish`'s review spawn at it;
+  existing adopters re-run `install.sh` (`--link` for a linked install) to receive it.
 
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —

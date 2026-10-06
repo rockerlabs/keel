@@ -33,11 +33,17 @@ check_contains "CLAUDE.md imports the core" "$(cat "$H/CLAUDE.md")" "keel/CORE.m
 
 # A file the USER owns (a command they wrote) must survive uninstall — refuse-to-clobber in reverse.
 printf 'my own tool, not Keel\n' > "$H/commands/mytool.md"
+# dir #413 A3: the shipped review agent is Keel's (a link into the checkout); a foreign agent the adopter
+# keeps beside it is theirs — never listed, never removed, and it keeps agents/ alive.
+check_link "linked install wired the review agent" "$H/agents/keel-polish-reviewer.md"
+printf 'my own agent, not Keel\n' > "$H/agents/mine.md"
 
 # --- dry-run changes nothing --------------------------------------------------------------------
 unin --dry-run
 check_status "dry-run exits 0" 0 "$STATUS"
 check_contains "dry-run says would remove" "$OUT" "would remove  keel"
+check_contains "dry-run lists the review agent (manifest-backed run)" "$OUT" "would remove  agents/keel-polish-reviewer.md"
+check_absent "dry-run does NOT list the adopter's own agent" "$OUT" "agents/mine.md"
 check_dir "dry-run left keel/ in place" "$H/keel"
 check_link "dry-run left bin/keel in place" "$H/bin/keel"
 check_nofile "dry-run created no backup" "$H/.keel-uninstall-nonexistent"
@@ -57,6 +63,9 @@ check_nolink "bin/keel symlink removed" "$H/bin/keel"
 if [ -e "$H/bin" ]; then fail "empty bin/ pruned" "bin/ still present"; else pass "empty bin/ pruned"; fi
 check_absent "import line stripped from CLAUDE.md" "$(cat "$H/CLAUDE.md")" "keel/CORE.md"
 check_file "user's own command kept" "$H/commands/mytool.md"
+check_nolink "the review agent link is removed" "$H/agents/keel-polish-reviewer.md"
+check_file "the adopter's own agent survives" "$H/agents/mine.md"
+check_dir "agents/ stays while a foreign file lives in it" "$H/agents"
 check_file "INSTANCE.md (user data) kept" "$H/INSTANCE.md"
 check_file "LEARNINGS.md (user data) kept" "$H/LEARNINGS.md"
 
@@ -84,6 +93,7 @@ inst --home "$H2" --no-hooks
 check_status "copy-mode install succeeds" 0 "$STATUS"
 check_file "copy-mode placed FRAMEWORK.md" "$H2/FRAMEWORK.md"
 check_file "copy-mode placed PRINCIPLES.md" "$H2/PRINCIPLES.md"
+check_file "copy-mode placed the review agent" "$H2/agents/keel-polish-reviewer.md"
 
 # Drift PRINCIPLES.md so it reads as the user's; leave FRAMEWORK.md pristine.
 printf '\nmy own edit\n' >> "$H2/PRINCIPLES.md"
@@ -92,6 +102,8 @@ unin --home "$H2" --yes
 check_status "copy-mode uninstall exits 0" 0 "$STATUS"
 if [ -e "$H2/FRAMEWORK.md" ]; then fail "untouched FRAMEWORK copy removed" "still present"; else pass "untouched FRAMEWORK copy removed"; fi
 check_file "drifted PRINCIPLES copy kept (yours)" "$H2/PRINCIPLES.md"
+check_nofile "copy-mode: the untouched agent copy is removed" "$H2/agents/keel-polish-reviewer.md"
+check_nodir "copy-mode: the then-empty agents/ is pruned" "$H2/agents"
 check_file "copy-mode INSTANCE.md kept" "$H2/INSTANCE.md"
 
 # =================================================================================================
@@ -731,9 +743,24 @@ check_status "B15D dry-run over a manifest-less home falls through -> exit 0" 0 
 check_contains "B15D dry-run labels the listing as heuristic" "$OUT" "heuristic"
 check_contains "B15D dry-run lists a would-remove line" "$OUT" "would remove"
 check_contains "B15D dry-run states a real run refuses instead of removing (code-review high finding)" "$OUT" "a REAL (non-dry) run in this same state refuses"
+check_contains "B15D (dir #413) the heuristic listing names the review agent" "$OUT" "would remove  agents/keel-polish-reviewer.md"
 check_link "B15D nothing removed — the CLI symlink survives" "$B15D/bin/keel"
 check_file "B15D nothing removed — FRAMEWORK.md survives" "$B15D/FRAMEWORK.md"
 check_file "B15D INSTANCE.md (user data) untouched" "$B15D/INSTANCE.md"
+
+# --- B15F: dir #413 — home_has_keel_content's agents arm. A home whose ONLY Keel artifact is the shipped
+# agent (no manifest, no keel/, no commands) is a Keel home: a real run refuses (exit 2) rather than
+# calling it empty ("nothing to do"); an adopter's different agent of that name is not Keel's. ---------
+B15F="$SANDBOX/b15f-agent-only/.claude"; mkdir -p "$B15F/agents"
+cp "$REPO_ROOT/agents/keel-polish-reviewer.md" "$B15F/agents/keel-polish-reviewer.md"
+unin --home "$B15F" --yes
+check_status "B15F a home holding only the shipped agent is not 'empty' → refuses, exit 2" 2 "$STATUS"
+check_file "B15F nothing removed on the refusal" "$B15F/agents/keel-polish-reviewer.md"
+B15G="$SANDBOX/b15g-foreign-agent-only/.claude"; mkdir -p "$B15G/agents"
+printf 'my own agent\n' > "$B15G/agents/keel-polish-reviewer.md"
+unin --home "$B15G" --yes
+check_status "B15G a foreign agent of that name is not Keel content → nothing to do, exit 0" 0 "$STATUS"
+check_file "B15G the foreign agent is untouched" "$B15G/agents/keel-polish-reviewer.md"
 
 # --- B15E: dir #233 (found by PR #244's own /code-review high pass) — the SAME manifest-less
 # heuristic listing must not read an unrelated user directory literally named `keel` at the home root
