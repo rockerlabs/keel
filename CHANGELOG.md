@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
+  `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
+  `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or
+  edits, so the later PR notices what an earlier one made false. It reads at most ten files, files a claim
+  that was already false as recorded rather than fixed, and the final report gains a `Seams:` line. The same
+  edit states the managed-release carve-out once (a worker writes no marker, ticket or backlog entry), makes
+  `/go`'s step 5 name a branch by its commits or its claim marker, and puts the `tests:` suffix after the
+  marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
+  (`commands/go-guide.md`).
+
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —
   delegated to the harness, with no template rail added) and the external channel (`secret-guard` plus
