@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`docs/grooming.md` G0/G2/G3: three amendments from an adopter's first `/groom` (2026-10-06).**
+  **G0:** an empty read-trace aggregate can mean nothing in the repository is in the trace's scope —
+  compare the tree against the coverage line before reading it (a compensation, remover dir #706).
+  **G2:** the live premise check adds one grep per groom of the operator's cross-project records for the
+  project's name (an account a ticket waited on had been active for months, recorded only there).
+  **G3:** a set the heading tags do not carry, such as the PRs merged since the last tag, comes from a
+  named command or file (`git log <last-tag>..<default-branch>`) — the draft plan said four, git said
+  nine.
+
 - **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
   feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
   `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a

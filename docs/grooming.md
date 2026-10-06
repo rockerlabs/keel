@@ -95,6 +95,12 @@ a rotation): reads before the loss are gone` before its table, so a destroyed st
 an ordinary empty aggregate — and then the cycle is recorded as lost, never as a quiet one. Read what
 the tool prints; it is no longer guidance to remember by hand.
 
+**An empty aggregate can also mean nothing in the repository is in the trace's scope (an adopter's
+first groom, 2026-10-06: its backlog lives outside the repository, with no `docs/` or `commands/`).**
+The tool then prints the same empty table as for a project nobody has opened since the install. So
+compare the tree against the coverage line first; where nothing matches, record "no traced surface" and
+degrade cleanly (below). A compensation; its remover is `dir #706`.
+
 **Rotation is this phase's own closing step: once the aggregate is read and both figures recorded,
 run the tool's `rotate` subcommand and record the archive suffix and the new cycle boundary in this
 groom's run record (dir #543, applied 2026-09-20).** The order it obeys is
@@ -261,6 +267,12 @@ caught only by a 17-finding adjudication round (G6). A heading understates or ov
 real size and scope often enough that a heading-only read mis-sizes the plan it produces — read the
 body of every ticket entering the slate before it is assigned anywhere.
 
+**A premise can change where no ticket records it, so the live premise check also greps the operator's
+cross-project records — once per groom, `grep -il` for the project's name over the instance/registry
+file and the fleet ideas or planning file (an adopter's 2026-10-06 groom: the paid account a
+notarization ticket waited on had been active for three months, recorded only in the instance
+registry).** A rule of the procedure, not a compensation.
+
 **When the previous groom read every body and the file's diff since then is enumerable, the duty
 concentrates rather than lapses — and it says which rule it applied (adopter run 2, 2026-09-18).** A
 3 000-line backlog re-read whole ten days after a body-read groom, on a diff that is insertions
@@ -279,13 +291,14 @@ known body-read commit), G2 applies whole, as written above.
 
 ## G3 — derive, don't assert
 
-Every list and count in the plan is regenerated from live heading tags at groom time, never
-hand-written and never carried forward from a previous cycle's numbers. The 2026-09-03 pass's own
-hand-written re-tag list was wrong for 11 of 16 tickets the moment it was checked against the live
-file — the exact failure this rule exists to close. This includes any prose reference to a specific
-ticket's release tag: cite the ticket by number and let the reader (or the next groom) resolve its
-current tag live. Never assert a specific release tag in prose — a later re-tag leaves an asserted one
-stale and silently wrong.
+Every list and count in the plan is regenerated from live heading tags at groom time — or, for a set the
+tags do not carry, from a named command or file (the PRs merged since the last tag: `git log
+<last-tag>..<default-branch>`) — never hand-written and never carried forward from a previous cycle's
+numbers. The 2026-09-03 pass's own hand-written re-tag list was wrong for 11 of 16 tickets the moment it
+was checked against the live file — the exact failure this rule exists to close. This includes any prose
+reference to a specific ticket's release tag: cite the ticket by number and let the reader (or the next
+groom) resolve its current tag live. Never assert a specific release tag in prose — a later re-tag
+leaves an asserted one stale and silently wrong.
 
 A heading's release tag is the **last** `→` token on the heading that names a release or the pool —
 headings carry prose arrows too ("→ ask", "→ contest with dir #N", "→ a release of its own"), and an
