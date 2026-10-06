@@ -311,11 +311,14 @@ matter — it does not have to be settled for the norm/control distinction above
 
 **Keel's reach stops at the prompts keel writes.** This block, and the rest of this pattern's rails, are
 injected only where keel controls the prompt text: the worker/verifier prompts this pattern generates,
-`/polish`'s own fallback review subagent, and the managed-release brief templates. A review fan-out a
-vendor tool composes on its own — a built-in skill spawning its own finder agents, for instance — never
-receives this text, because keel never writes that prompt (dir #617: a vendor-composed finder agent
-reproducing a defect live mutated a machine-global installer target this block would have named, had it
-reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
+`/polish`'s own review subagents (step 5's first-attempt review subagent, which runs the real `/code-review`
+skill through the `Skill` tool, and its fallback review subagent), and the managed-release brief templates. A
+review fan-out a vendor tool composes on its own — a built-in skill spawning its own finder agents, for
+instance — never receives this text, because keel never writes that prompt: when step 5's review subagent
+invokes `/code-review`, the skill runs as a forked agent one level deeper whose whole prompt is the skill's own
+recipe plus the args, so the rails stop at the subagent and its args are the only channel to the review (dir
+#670; dir #617: a vendor-composed finder agent reproducing a defect live mutated a machine-global installer
+target this block would have named, had it reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
 *tool* being reviewed, not something a prompt rail can reach.
 
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly

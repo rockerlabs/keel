@@ -21,4 +21,5 @@ tools/install-pre-pr-gate.sh	docs/reference.md	never-clobber install discipline 
 tools/install-secret-guard.sh	docs/reference.md	never-clobber install discipline (same table)
 tools/install-read-trace.sh	docs/reference.md	never-clobber install discipline (this ticket's own installer)
 commands/polish.md:step5(a)-subagent	docs/delegation.md	dir #375's felt incident — a review subagent that never read this doc destroyed a session's uncommitted work
+commands/polish.md:step5-review-subagent	docs/delegation.md	dir #670 — K2's review subagent carries the Worker rails verbatim and its `/code-review` fork never receives them (see "Keel's reach stops")
 ticket:SPEC-READY	BACKLOG.md	a SPEC-READY ticket's body IS its own spec — the implementer must read the whole ticket, not just its heading (the 2026-09-03 groom's own felt failure)

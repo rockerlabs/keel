@@ -197,9 +197,10 @@ Once wired, the agent's own `gh pr create` is **hard-denied** until `/polish` �
 review depth matched to the diff — has run cleanly on the current commit. And the claim can't be faked:
 a hook writes a mechanical trace the moment a real `/code-review` pass runs, and the gate cross-checks it
 before unlocking — so "review: medium" in a PR's own history means a review actually ran, not that the
-model said so. `/polish` attempts the real, built-in `/code-review` pass directly first; only if that
-attempt is refused does it fall back to spawning an independent subagent to review instead, traced the
-same mechanical way, and the PR is labeled honestly either way.
+model said so. `/polish` has a fresh-context subagent run the real, built-in `/code-review` pass first (for `low`,
+`medium` and `high`), attempts that pass in-session if the subagent cannot, and only if that attempt is
+refused too does it fall back to spawning an independent subagent to review instead, traced the same
+mechanical way, and the PR is labeled honestly in every case.
 
 ```bash
 tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global covers every repo instead
