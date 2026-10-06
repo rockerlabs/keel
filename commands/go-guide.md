@@ -26,6 +26,12 @@ screenshot path, a named person's sign-off. "Done", "looks right" and "should wo
 ## Actions
 
 **I1 — reconcile.** Before you change anything:
+0. Handoff note: run `<keel-checkout>/tools/go-handoff.sh read "<ticket>"` from the project (as `/polish` runs its
+   tools; `<ticket>` is the id as the resolved heading spells it, without a trailing `.`, always in quotes; spec mode:
+   the file name without `.md`; ad-hoc work: skip). Found → a hint, live files win: each `done` item you re-prove live
+   stays done, unbuilt; `next` leads the change list. A `branch:` or `worktree:` not yours that still exists holds the
+   predecessor's uncommitted work → ask the operator, writing nothing first: continue there (absolute paths, `git -C`)
+   or go fresh. No note → say so, go on. The tool fails → say so once, make no more helper calls.
 1. Read every live file the spec names. The spec is a snapshot; where it and the live file disagree,
    the file is the truth and the gap is an escape (I5).
 2. Walk the spec's Impact map, row by row (no Impact map → skip this item; say so). "changed in the same PR" (or in a PR this ticket names) → put it on your change list.
@@ -51,6 +57,10 @@ Result: every Acceptance item has a red test or an open checklist item.
 3. Touch only files on the change list. A file you now need that is not on it → add it with the
    reason, and count it as an escape (a missed dependency). A defect you notice outside the ticket →
    record it (PR body or a new ticket; `go.md` step 6's override in a managed release); do not fix it.
+4. After I1's change list, I2 and every item, and before any later turn that ends short of `/polish` (limit, pause, a
+   question owed): `<keel-checkout>/tools/go-handoff.sh write "<ticket>"`, stdin `done:` (finished items, with proof),
+   `next:` (open items in order, why you stopped), `carry:` (uncommitted files — nothing is committed before I4 — and
+   anything outside git, absolute paths); `none` if empty, no secrets. Exit 2: fix the input, retry once, then stop writing.
 Result: every change-list item done, its checks green.
 
 **I4 — self-check.** After the last item, before conform:
@@ -100,11 +110,13 @@ Escapes: <n> (as appended to the spec)
 Outcome test: <result | pending — owner, due | none in spec>
 Recorded, not fixed: <out-of-ticket defects | none>
 Seams: <none | skipped — why | fixed <n>, escape <n>, unchecked <n>>
+Handoff: <none (reason) | read <verdict>>
 Marker: <the claim marker as it now reads | requested from <writer>>
 Operator next: <merge PR <URL> | sign off this report | answer: <question>>
 ```
 
 Where it goes: the PR body and chat (git); the report section and chat (no git, see the map).
+Once the PR (no git: the report section) exists, run `<keel-checkout>/tools/go-handoff.sh clear "<ticket>"`.
 
 ## Spec mode — a spec file is the ticket
 
