@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # tools/lib/repo-arg-guard.sh (dir #644): sourcing this file unsets GIT_DIR / GIT_COMMON_DIR /
-# GIT_WORK_TREE / GIT_INDEX_FILE, unconditionally, for the rest of the sourcing process and anything
+# GIT_WORK_TREE / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES /
+# GIT_NAMESPACE, unconditionally, for the rest of the sourcing process and anything
 # it spawns. An inherited value for any of these redirects EVERY `git -C "$X"` call the process makes
 # — including a validity gate — into a different repository than the one named on the command line: a
 # foreign GIT_DIR alone binds to whatever it points at (git prefers it over -C's path resolution for
@@ -16,6 +17,16 @@
 # branch — the same shape of gap that let dir #318's N8 go unnoticed the first time. tests/lib.sh gets
 # this right: its own unset is the first thing that runs after `set -uo pipefail`, load-bearing for every
 # git call the file goes on to make, not just some of them.
+#
+# The last three (dir #661) are the object-store and ref-namespace selectors: with the first four unset
+# and GIT_OBJECT_DIRECTORY inherited, a fresh repo's `commit` writes its objects into the FOREIGN store
+# while its refs land in the named repo (fsck on the target then reports an invalid sha1 pointer);
+# GIT_ALTERNATE_OBJECT_DIRECTORIES lets a write skip an object a foreign store already holds. Left out ON
+# PURPOSE, each measured: GIT_CONFIG_* (the operator's and the harness's config channel — tests/lib.sh
+# appends to GIT_CONFIG_COUNT and CLAUDE.md "Linux-leg traps" 4 relies on it), GIT_QUARANTINE_PATH (a
+# `commit` exits 128 with it set, so it fails closed, and only receive-pack hooks export it), and the
+# discovery/view variables GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM, GIT_PREFIX,
+# GIT_REPLACE_REF_BASE, GIT_NO_REPLACE_OBJECTS, GIT_SHALLOW_FILE, GIT_GRAFT_FILE (no `git -C` write redirect).
 #
 # The census (tests/test_git_env_guard.sh, dir #647) requires every git-reaching script to carry THIS
 # file's unset as an inline line of its own, byte-identical to the one below — this file stays the single
@@ -42,7 +53,7 @@
 # `install-secret-guard.sh:_isg_rollback` comment names for a sibling function). Do not "simplify" this
 # to a `return` on the theory that the caller's `set -e` will catch it — a `return` value consumed
 # inside any of those exempted contexts would silently swallow the failure instead.
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
 # keel_repo_arg_guard REPO — exit 2 with "not a git repo: REPO" (unchanged wording — the exact message
 # every caller printed before this file existed) if REPO is not a git repository. The env sanitizing

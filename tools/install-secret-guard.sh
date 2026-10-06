@@ -37,7 +37,7 @@ set -euo pipefail
 # sibling secret-guard/ dir (see the header and this file's own test fixtures in
 # tests/test_secret_guard.sh, which run scratch copies that carry no tools/lib/) — that lib's own
 # header explains why install-read-trace.sh and install-pre-pr-gate.sh share it instead.
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/secret-guard"
 

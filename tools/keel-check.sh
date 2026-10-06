@@ -29,7 +29,7 @@ set -uo pipefail
 # decoy's key and the commit slips through (fail OPEN). The unset also reaches the operator's declared
 # check command spawned below: accepted, see tools/lib/repo-arg-guard.sh's header
 # (tests/test_git_env_guard.sh pins this line).
-unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
 _kc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
