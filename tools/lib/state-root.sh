@@ -21,7 +21,8 @@
 #
 # Names under the state root — each name once, here (B6). A new name joins this list in the PR that
 # introduces it:
-#   in use:    tmp          (tools/lib/gate-paths.sh gate_state_root: the gate's rendezvous files)
+#   in use:    tmp          (tools/lib/gate-paths.sh gate_state_root: the gate's rendezvous files, and
+#                           `go-handoff/` — tools/go-handoff.sh's per-ticket notes, dir #401)
 #              impact       (tools/lib/impact-store.sh impact_store_root)
 #              read-trace   (tools/lib/read-trace.sh read_trace_store_root)
 #              machine-watch, machine-watch.paths   (tools/machine-watch.sh: the baseline store, and the

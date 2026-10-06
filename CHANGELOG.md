@@ -27,6 +27,19 @@ sections real content going forward — see that page for exactly when each one 
   `.keel/secrets-accept`, which `init-project.sh` now gitignores. Expect `W-SECRETS-PLAINTEXT` on any
   project that keeps a gitignored env file until it migrates or accepts the path.
 
+- **`/go` leaves a handoff note, so an interrupted session does not lose its plan (dir #401).** A new
+  `tools/go-handoff.sh` (`write` / `read` / `clear`) keeps one small note per ticket in
+  `$HOME/.keel/tmp/go-handoff/` — what is done and proven, what is next, and what exists only outside the
+  commit — keyed by the ticket's id and shared by every worktree of the repo, never committed. The implementer
+  guide reads it before reconciling (a `done` item re-proved live is not rebuilt; a predecessor's still-existing
+  branch or worktree makes the session ask the operator first), rewrites it at each milestone and before any
+  turn that stops short of `/polish`, clears it once the PR exists, and the final report gains a `Handoff:`
+  line. `read` ends with a `verdict:` line (`fresh`, `behind n`, `ahead n`, `unrelated`, `unknown`) saying how
+  far the repo has moved since the note was written; the note is a dated hint, a live file that disagrees wins,
+  and a note older than 30 days is pruned. It needs a kept Keel checkout, so a copy-mode install has none.
+  `FRAMEWORK.md`'s L4 "no mid-task checkpoint" gap is reworded to say so. Covered by `tests/test_go_handoff.sh`
+  and new pins in `tests/test_go_guide.sh`.
+
 - **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
   `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
   `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or

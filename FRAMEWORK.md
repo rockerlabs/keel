@@ -179,14 +179,16 @@ target instead of ad-hoc reasoning about "the review process."
   "Convergence check" subsection below.
 - **L4 — Dev (a backlog ticket).** *Input:* one backlog ticket. *Work:* implement, test, review.
   *Carry-forward:* a merged PR + the ticket closed in the backlog. *Termination:* PR merged and the
-  session wraps. *Frequency:* per ticket. *Observability:* none for a ticket that runs long — no
-  mid-task checkpoint if the session is interrupted before merge.
+  session wraps. *Frequency:* per ticket. *Observability:* a ticket that runs long
+  leaves a handoff note (`tools/go-handoff.sh`, in keel's state root) at each milestone, so an interrupted
+  session's plan survives; nothing verifies the note is accurate.
 
 **Coupling:** L4 nests inside L1 (a dev session is still a session — it starts and ends the same way).
 L1 triggers L2 (every session ends in a wrap). L3 reads the accumulated state of every L1/L2 iteration
 since the last review — it is the only loop that looks backward across many sessions rather than forward
 within one. **Shared state:** all four loops read and write the same knowledge-base repo; there is no
-separate state store per loop, so a loop's "carry-forward" is really just "what it committed."
+separate state store per loop, so a loop's "carry-forward" is really just "what it committed" — the one
+exception is a ticket's handoff note (`tools/go-handoff.sh`), a file in keel's state root, never committed.
 
 ### Convergence check
 
@@ -217,7 +219,9 @@ trend.
   captured everything worth persisting.
 - L3 has no cadence backstop — a felt-friction trigger with no maximum interval can go dormant
   indefinitely.
-- L4 has no mid-task checkpoint, so a long-running ticket interrupted mid-session loses its plan state.
+- L4's mid-task checkpoint (`tools/go-handoff.sh`) exists only where keel's tools are available from a kept
+  checkout; an adopter in copy mode has none, so a long-running ticket they interrupt mid-session still
+  loses its plan state.
 
 **When any of these loops' work is bulk read-only analysis over many independent units** (an audit, a
 grooming wave, a recon dossier), fan it out to stateless subagent workers behind a file contract instead
