@@ -208,6 +208,10 @@ tu_turns() {
 # logged). `file_path` is normalized to repo-relative form when the record's own `.cwd` is a prefix of
 # it (dir #314 SPEC §6.6); left absolute otherwise (a memory file, a KB doc — outside any repo this
 # session's cwd names).
+#
+# dir #670 (B10): each line also carries the tool_use `id` (what a tool_result's `tool_use_id` names,
+# see tu_tool_results) and, for a `Bash` call only, `command` (`input.command`; null for every other
+# tool) — additive fields, so tools/token-report.sh's filters on the older ones are unaffected.
 tu_tool_calls() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
@@ -221,13 +225,76 @@ tu_tool_calls() {
         kind: $kind,
         requestId: $rec.requestId,
         timestamp: $rec.timestamp,
+        id: (.id // null),
         name: .name,
+        command: (if .name == "Bash" then (.input.command // null) else null end),
         file_path: (
           if ($fp != null and $rec.cwd != null and ($fp | startswith($rec.cwd + "/")))
           then ($fp | ltrimstr($rec.cwd + "/"))
           else $fp
           end
         )
+      }
+  ' "$file"
+}
+
+# tu_tool_results KIND FILE — every tool_result content block from one transcript file (dir #670, B10),
+# ONE line per block, in file order, never deduped. The harness writes a tool's result as a `user`
+# record whose `message.content` is an array of blocks; a plain-string prompt (the operator's own
+# message) has no tool_result and yields nothing. Fields: file, kind, timestamp (the record's),
+# tool_use_id (pairs with tu_tool_calls' `id`), is_error (false when the block omits it), text (a
+# string result as-is; an array result's `text` blocks joined with a newline; "" for anything else).
+tu_tool_results() {
+  local kind="$1" file="$2"
+  tu_require_jq || return 1
+  jq -c -s --arg file "$file" --arg kind "$kind" '
+    .[] | select(.type == "user") as $rec
+    | (if (($rec.message.content | type) == "array") then $rec.message.content else [] end)[]
+    | select(type == "object" and .type == "tool_result")
+    | {
+        file: $file,
+        kind: $kind,
+        timestamp: $rec.timestamp,
+        tool_use_id: (.tool_use_id // null),
+        is_error: (.is_error // false),
+        text: (
+          if ((.content | type) == "string") then .content
+          elif ((.content | type) == "array")
+          then ([.content[] | select(type == "object" and .type == "text") | .text] | join("\n"))
+          else ""
+          end
+        )
+      }
+  ' "$file"
+}
+
+# tu_subagent_meta SUBAGENT_JSONL_FILE — who one subagent is (dir #670, B10), as one compact JSON
+# object: agentId (the file's own `agent-<id>.jsonl` id), parentAgentId and spawnDepth and agentType
+# (from the `.meta.json` twin; null when the twin is absent or unreadable — a depth-1 subagent has no
+# parent), firstLine (the first line of the subagent's prompt: the first `user` record's string
+# content, or its first text block; trailing whitespace trimmed; "" when there is none) and
+# firstTimestamp (the file's first record that carries one). Verified live: a skill's fork is a
+# depth-2 file whose twin names the depth-1 subagent that called the skill as `parentAgentId`.
+tu_subagent_meta() {
+  local file="$1" id meta meta_json='{}'
+  tu_require_jq || return 1
+  id="$(basename "$file" .jsonl)"
+  id="${id#agent-}"
+  meta="${file%.jsonl}.meta.json"
+  if [ -f "$meta" ] && jq -e . "$meta" >/dev/null 2>&1; then meta_json="$(cat "$meta")"; fi
+  jq -c -s --arg file "$file" --arg id "$id" --argjson meta "$meta_json" '
+    (first(.[] | select(.type == "user") | .message.content
+           | if (type == "string") then .
+             elif (type == "array") then (first(.[] | select(type == "object" and .type == "text") | .text) // "")
+             else "" end) // "") as $prompt
+    | {
+        file: $file,
+        agentId: $id,
+        parentAgentId: ($meta.parentAgentId // null),
+        spawnDepth: ($meta.spawnDepth // null),
+        agentType: ($meta.agentType // null),
+        firstLine: ($prompt | split("\n")[0] | sub("[ \t\r]+$"; "")),
+        firstTimestamp: (first(.[] | select(.timestamp != null) | .timestamp) // null)
       }
   ' "$file"
 }

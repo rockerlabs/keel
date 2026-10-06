@@ -33,6 +33,9 @@
 #                                                     the subagent total, reported separately
 #   session-cost.sh table MANIFEST                   read a manifest (see below) and print the full
 #                                                     per-ticket table plus the median per (tier, model) cell
+#   session-cost.sh tail [--json] FILE...            dir #670: the per-PR tail of each session file — one row per
+#                                                     /polish window (B9), plus one row per subagent inside it and
+#                                                     the window's review cost (B10)
 #
 # Manifest format (one ticket per line, tab-separated, '#'-prefixed comment lines and blank lines
 # skipped): TICKET<TAB>TIER<TAB>MODEL<TAB>FILE1[,FILE2,...]
@@ -57,6 +60,7 @@ Usage:
   session-cost.sh selfcheck FILE...
   session-cost.sh ticket TIER MODEL FILE...
   session-cost.sh table MANIFEST
+  session-cost.sh tail [--json] FILE...
   session-cost.sh -h | --help
 EOF
 }
@@ -263,6 +267,135 @@ cmd_table() {
   rm -f "$tmp"
 }
 
+# --- tail (dir #670) ----------------------------------------------------------------------------------
+# The per-PR tail (B9): what a /go session pays between the first /polish turn and the PR opening — the
+# fixed cost this ticket's cut is meant to lower, measured positionally so it needs no `wrap` exclusion
+# and sees subagent turns (a subagent's turns after its own Skill call carry no attributionSkill, so an
+# attribution-based total would read the review subagent as free).
+#
+# A window opens at the first primary turn attributed to `polish` that follows a turn attributed
+# otherwise (the chain's own later turns open nothing) while none is open; it closes at the primary turn
+# whose `gh pr create` Bash call has a NON-error result naming a github.com/<owner>/<repo>/pull/<n> URL.
+# A turn is one requestId, and its tool calls are read across EVERY record carrying that id (the harness
+# writes one record per content block, so the tool_use often sits in a later record than the first).
+# Cost = the cache-read tokens of the window's primary turns (deduped by requestId; `wrap` and
+# `keel-score` turns are never in a window) + every turn of every subagent whose first record's
+# timestamp falls inside the window (timestamps of one fixed ISO-8601 shape compare as strings). A new
+# /polish invocation while a window is open EXTENDS it (one PR's tail includes its rounds); one that
+# follows a window closed on the same branch is a re-run on an already-open PR — `gh pr create` fails
+# there by design — so its window never closes. A window still open at the end of the file is reported
+# `open` and is never a closed window; a consumer's median takes the closed ones only.
+#
+# The review cost (B10, the Outcome's M2) is the subagent whose prompt's FIRST line is /polish step 5's
+# fixed line, plus every subagent in the window whose parent chain reaches one (the code-review skill's
+# fork, depth 2, and its children). SC_REVIEW_FIRST_LINE is that fixed line; polish.md's step 5 (B2)
+# writes it, and tests/test_session_cost_tail.sh pins this side.
+SC_REVIEW_FIRST_LINE="You are /polish step 5's review subagent."
+
+# _sc_tail_agent_row META_JSON — stdin: one subagent's tu_turns lines; stdout: that agent's meta plus its
+# turn count and cache-read cost, as one compact JSON object.
+_sc_tail_agent_row() {
+  jq -c -s --argjson meta "$1" '$meta + {turns: length, cost: (map(.cache_read_input_tokens) | add // 0)}'
+}
+
+# _sc_tail_windows SESSION_ID TURNS CALLS RESULTS AGENTS — the window walk (see the block comment above)
+# over the four derived streams cmd_tail wrote; one compact JSON object per window on stdout.
+_sc_tail_windows() {
+  jq -n -c --arg session "$1" --arg fixed "$SC_REVIEW_FIRST_LINE" \
+    --slurpfile turns "$2" --slurpfile calls "$3" --slurpfile results "$4" --slurpfile agents "$5" '
+    def closure($ag; $seed):
+      ($seed | unique) as $s
+      | ($s + [$ag[] | select(.parentAgentId != null and (.parentAgentId | IN($s[]))) | .agentId] | unique) as $n
+      | if ($n | length) == ($s | length) then $s else closure($ag; $n) end;
+    ($results | map(select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+"))) | .tool_use_id)) as $okids
+    | (reduce ($calls[] | select(.name == "Bash" and ((.command // "") | contains("gh pr create"))
+                                 and .requestId != null and (.id as $i | ($okids | index($i)) != null))) as $c
+        ({}; .[$c.requestId] = true)) as $closers
+    | (reduce range(0; ($turns | length)) as $i (
+        {cur: null, wins: [], closed_on: [], prev: null};
+        $turns[$i] as $t
+        | $t.attributionSkill as $sk
+        | (if .cur == null and $sk == "polish" and .prev != "polish" then
+             .cur = {start: $t.timestamp, branch: $t.gitBranch, cost: 0, turns: 0,
+                     rerun: ($t.gitBranch != null and ((.closed_on | index($t.gitBranch)) != null))}
+           else . end)
+        | (if .cur != null and $sk != "wrap" and $sk != "keel-score" then
+             .cur.cost += $t.cache_read_input_tokens | .cur.turns += 1
+             | (if ($t.requestId != null and ($closers[$t.requestId] // false)) and (.cur.rerun | not) then
+                  .wins += [.cur + {end: $t.timestamp, status: "closed"}]
+                  | .closed_on += [.cur.branch] | .cur = null
+                else . end)
+           else . end)
+        | .prev = $sk)) as $w
+    | ($w.wins + (if $w.cur != null then [$w.cur + {end: null, status: "open"}] else [] end))[]
+    | . as $win
+    | [$agents[] | select(.firstTimestamp != null and .firstTimestamp >= $win.start
+                          and ($win.end == null or .firstTimestamp <= $win.end))] as $in
+    | closure($in; [$in[] | select(.firstLine == $fixed) | .agentId]) as $rev
+    | ([$in[] | .cost] | add // 0) as $sub_cost
+    | {session: $session, start: $win.start, end: $win.end, status: $win.status,
+       primary_turns: $win.turns, subagent_turns: ([$in[] | .turns] | add // 0),
+       cost: ($win.cost + $sub_cost),
+       review_cost: ([$in[] | select(.agentId | IN($rev[])) | .cost] | add // 0),
+       subagents: [$in[] | {agent_id: .agentId, parent_agent_id: .parentAgentId, depth: .spawnDepth,
+                            first_line: .firstLine, turns: .turns, cost: .cost,
+                            review: (.agentId | IN($rev[]))}]}
+  ' || return 1
+}
+
+# cmd_tail [--json] FILE... — one block of rows per window per file, in file order (see the block comment
+# above): human form is a window row with an indented row per subagent under it; --json is one object per
+# window per line. A file with no /polish prints nothing.
+cmd_tail() {
+  local json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json=1; shift ;;
+      --) shift; break ;;
+      -*) printf 'session-cost.sh: tail: unknown option %s\n' "$1" >&2; exit 2 ;;
+      *) break ;;
+    esac
+  done
+  [ $# -gt 0 ] || { printf 'session-cost.sh: tail needs at least one FILE\n' >&2; exit 2; }
+  local f
+  for f in "$@"; do
+    [ -f "$f" ] || { printf 'session-cost.sh: no such file: %s\n' "$f" >&2; exit 2; }
+  done
+
+  local sid s meta ok=0 t_turns t_calls t_results t_agents
+  t_turns="$(mktemp)" || exit 1
+  t_calls="$(mktemp)" || { rm -f "$t_turns"; exit 1; }
+  t_results="$(mktemp)" || { rm -f "$t_turns" "$t_calls"; exit 1; }
+  t_agents="$(mktemp)" || { rm -f "$t_turns" "$t_calls" "$t_results"; exit 1; }
+  for f in "$@"; do
+    sid="$(basename "$f" .jsonl)"
+    # Everything about the transcript comes through the shared reader (dir #313's rule; dir #670 A1b).
+    tu_turns primary "$f" > "$t_turns" || ok=1
+    tu_tool_calls primary "$f" > "$t_calls" || ok=1
+    tu_tool_results primary "$f" > "$t_results" || ok=1
+    : > "$t_agents"
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      meta="$(tu_subagent_meta "$s")" || { ok=1; continue; }
+      tu_turns subagent "$s" | _sc_tail_agent_row "$meta" >> "$t_agents" || ok=1
+    done < <(tu_subagent_files "$f")
+    [ "$ok" -eq 0 ] || break
+    if [ "$json" -eq 1 ]; then
+      _sc_tail_windows "$sid" "$t_turns" "$t_calls" "$t_results" "$t_agents" || ok=1
+    else
+      _sc_tail_windows "$sid" "$t_turns" "$t_calls" "$t_results" "$t_agents" | jq -r '
+        "\(.session[0:8]) \(.start) primary=\(.primary_turns) subagent=\(.subagent_turns) cost=\(.cost) review=\(.review_cost)"
+        + (if .status == "open" then " open" else "" end),
+        (.subagents[] | "  agent \(.agent_id) parent=\(.parent_agent_id // "-") depth=\(.depth // "-") turns=\(.turns) cost=\(.cost)"
+                        + (if .review then " review" else "" end) + " \(.first_line)")
+      ' || ok=1
+    fi
+    [ "$ok" -eq 0 ] || break
+  done
+  rm -f "$t_turns" "$t_calls" "$t_results" "$t_agents"
+  [ "$ok" -eq 0 ] || exit 1
+}
+
 main() {
   tu_require_jq || exit 1
   local cmd="${1:-}"; shift || true
@@ -271,6 +404,7 @@ main() {
     selfcheck) cmd_selfcheck "$@" ;;
     ticket)    cmd_ticket "$@" ;;
     table)     cmd_table "$@" ;;
+    tail)      cmd_tail "$@" ;;
     -h|--help|'') usage ;;
     *) printf 'session-cost.sh: unknown command %s\n' "$cmd" >&2; usage >&2; exit 2 ;;
   esac
