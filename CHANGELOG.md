@@ -374,20 +374,23 @@ sections real content going forward — see that page for exactly when each one 
   with unset four variables (`GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`) and left
   `GIT_OBJECT_DIRECTORY` inherited: a fresh repo's first commit then wrote its objects into the FOREIGN store
   while its refs landed in the named repo, so `git fsck` on the target reported an invalid sha1 pointer. The
-  line is now seven variables — those four plus `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES` and
-  `GIT_NAMESPACE` — in all 42 files that carry it (the scripts, the test harness, and
-  `tools/lib/repo-arg-guard.sh`, still the one source the census compares against, byte for byte). Left out on purpose, each measured:
-  `GIT_CONFIG_*` (the config channel the test harness and CI rely on), `GIT_QUARANTINE_PATH` (a commit fails
-  closed with it set) and the discovery and view variables. `tests/test_git_env_guard.sh` now recognizes the
-  git calls it used to miss — `/usr/bin/git`, `"git"`, `git;`, `"${GIT:-git}"`, `G=git`, a git-reaching lib
-  sourced after `&&`, inside `if`, in a `for` loop or with no slash, a lib outside `tools/lib`, a `dash` or
-  `ksh` shebang — plus a guard line that sits in a heredoc or after an `exit`; each shape is a fixture that is
-  red without the change. Measured before building, on `v0.12.0` and `v0.13.0` and today's tree, the widened
-  detector adds one script (`tools/machine-watch.sh`, whose guard was there only because its author typed it)
-  and no false positive. It stays a text census: a guard inside an indented function body or `if` block is
-  caught only by the column-0 rule, and a lib is matched by file name. **Upgrade note:** the vendored
-  `secret-scan.sh` changed (its `selftest()` line), so a vendored or machine-global copy differs until you
-  re-run the guard installer; `doctor` reports it as stale.
+  line is now six variables — those four plus `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`
+  — in all 42 files that carry it (the scripts, the test harness, and `tools/lib/repo-arg-guard.sh`, still the
+  one source the census compares against, byte for byte); the scoped `env -u` form in
+  `tools/lib/impact-store.sh` carries the same six, pinned by the census test. Left out on purpose, each
+  measured on git 2.52.0 and recorded in the lib's header: `GIT_CONFIG_*` (the config channel the test
+  harness and CI rely on), `GIT_NAMESPACE` (the audit named it, but a local commit ignores it),
+  `GIT_QUARANTINE_PATH` (a commit fails closed with it set) and the discovery and view variables.
+  `tests/test_git_env_guard.sh` now recognizes the git calls it used to miss — `/usr/bin/git`, `"git"`,
+  `git;`, `"${GIT:-git}"`, `"$GIT"`, a git-reaching lib sourced after `&&`, inside `if`, in a `for` loop or
+  with no slash, a lib outside `tools/lib`, a `dash` or `ksh` shebang — plus a guard line that sits in a
+  heredoc or after an `exit`; each shape is a fixture that is red without the change. Measured before
+  building, on `v0.12.0` and `v0.13.0` and today's tree, the widened detector adds one script
+  (`tools/machine-watch.sh`, whose guard was there only because its author typed it) and no false positive.
+  It stays a text census: a guard inside an indented function body or `if` block is caught only by the
+  column-0 rule, and a lib is matched by file name. **Upgrade note:** the vendored `secret-scan.sh` changed
+  (its `selftest()` line), so a vendored or machine-global copy differs until you re-run the guard
+  installer; `doctor` reports it as stale.
 
 ## [0.13.0] — 2026-10-03
 
