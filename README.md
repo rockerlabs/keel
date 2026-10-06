@@ -31,7 +31,8 @@ felt to the reason the project exists:
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
 3. **Constraint.** The mechanized layer — the secret-guard git hook — blocks a key-shaped leak no
-   matter what the model decides. A hard guarantee, not a nudge.
+   matter what the model decides. A hard guarantee, not a nudge. What it does and does not cover, leg by
+   leg: [`SECURITY.md`](SECURITY.md#threat-model--the-lethal-trifecta).
 4. **Accumulation.** The reason for the other three ([`PRINCIPLES.md`](PRINCIPLES.md), P0):
    decisions and project knowledge earned in a session outlive the session — and the model, and the
    tool itself.

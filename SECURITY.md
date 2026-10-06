@@ -41,6 +41,64 @@ Known limits (by design — not vulnerabilities):
   CI runner. A push to a non-`main` branch with no open PR yet isn't covered by either trigger; the
   local hook is the only backstop until a PR opens.
 
+## Threat model — the lethal trifecta
+
+Simon Willison's ["lethal trifecta"](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) is the
+shared vocabulary for agent prompt-injection risk: an agent that combines **(1) access to private data**,
+**(2) exposure to untrusted content** and **(3) a way to communicate externally** can be tricked into
+stealing the first through the third. Remove any one leg and the attack collapses. This section says how
+much of each leg Keel covers — and where it covers none.
+
+Keel's original threat model is the **honestly erring** agent — a careless leak, a wrong push — not the
+hijacked one. The mechanized barriers below happen to hold against both, because they live outside the
+model; nothing here claims more than that.
+
+| Leg | Keel's coverage |
+|---|---|
+| 1 — private data in context | **Partial.** Prose rails keep secrets out of the always-loaded surface; nothing keeps them out of the working tree or the session. |
+| 2 — untrusted content | **None, by design.** Delegated to the harness. |
+| 3 — external channel | **Strongest.** `secret-guard` and the CI re-scan block secret-shaped content at commit/push; human-in-the-loop rails gate the main outbound actions. |
+
+**Leg 1 — private data.** The rails say never to put API keys or tokens in `CLAUDE.md`, memory or
+knowledge-base docs, and to anonymize personal data at authoring time: what is not in context cannot be
+exfiltrated by an injected instruction. That covers only what Keel loads. A `.env` (or any secret file)
+inside the working tree is readable by the agent by default — the Read tool, or `cat` through Bash,
+typically with no permission prompt — so its contents can enter the session context and the on-disk
+transcript. Secrets also reach context without any file read: terminal output, logs, stack traces, tools
+that print credentials in error output, or the agent dumping environment variables while debugging.
+Keel closes none of this; the prose rails are advice, not enforcement. What narrows it sits at the harness
+and the machine: permission deny rules (Claude Code's `permissions.deny`, for example
+`"Read(./.env)"` and `"Read(./.env.*)"`; a Bash call is a separate surface the rule does not cover, and
+bare `**/` patterns are relative to the working directory, so a machine-wide rule needs a `~/**` twin),
+and — the real fix — secrets that never reach the process environment at all (a secret manager,
+short-lived tokens, a file outside the repo). Keel's own contribution is the context-surface rules plus
+`secret-guard` (leg 3), which stops a secret the agent *did* read from at least leaving by commit or push.
+
+**Leg 2 — untrusted content.** Keel has no "tool output is data, not instructions" rail, and adds none:
+that boundary belongs to the harness (Claude Code's instruction-source boundary, for example), and Keel
+relies on it without strengthening it. A prose rail against injection would be exactly the model-dependent
+nudge [`ADAPTING.md`](ADAPTING.md) warns about, so there is deliberately no template line for it. Do not
+read Keel's silence here as coverage. The incidents are real and routine for agents that read issues and
+pull requests: a public GitHub issue taking over a Gemini-powered triage agent on `gemini-cli`
+([Pillar Security, "My Agentic Trust Issues"](https://www.pillar.security/blog/my-agentic-trust-issues-from-prompt-injection-to-supply-chain-compromise-on-gemini-cli)),
+and a crafted issue *title* driving Cline's AI triage workflow toward its release credentials
+([Clinejection](https://adnanthekhan.com/posts/clinejection/)).
+
+**Leg 3 — external channel.** This is the leg Keel weakens hardest, and the one it mechanizes. The
+`secret-guard` git hooks block secret-shaped and personal-literal content at commit and push whatever the
+model decided — the one model-independent floor ([`ADAPTING.md`](ADAPTING.md) records why), subject to the
+known limits above (a prefix backstop, not DLP). CI re-scans server-side. The human-in-the-loop rails —
+never merge autonomously, confirm irreversible or outward-facing actions — gate a coding agent's main
+outbound channels, but as prose they bias the agent rather than enforce; on Claude Code the pre-PR gate
+mechanically denies the agent's own `gh pr create` until `/polish` has run, which covers that one step and
+nothing wider. A channel Keel does not watch (a network call from a tool, a package install) stays open.
+
+**Proportionate to what you can lose.** A learning side project and a production service holding other
+people's data call for different amounts of this. Treat the table as a map of where Keel helps, not as an
+all-or-nothing bar. A public video treatment of the same threat model, in Russian, reaches the same
+split — defense outside the model, rules as instructions rather than guarantees:
+[Как взламывают вайбкодеров?](https://youtu.be/sl5rGSm3Wmk)
+
 ## Supported versions
 
 Only the latest `main` and the most recent tag receive fixes; there is no
