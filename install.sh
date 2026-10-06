@@ -1655,6 +1655,21 @@ if [ "$CODEX" = 0 ] && [ -d "$root/commands" ]; then
   done
 fi
 
+# Shipped agents (dir #413) — Claude Code reads user-scope agents from <home>/agents/, so one install
+# serves every project, as the commands above do. `agents/keel-polish-reviewer.md` is /polish's
+# read-only review subagent (`tools: Read, Grep, Glob`, no shell — the structural floor under the
+# dir #375 rails prose). No collision alias (a keel-prefixed copy of an agent would be a second,
+# differently-named agent) and NO separate record_placed: sync_product already records what it places
+# or confirms, and a second unconditional call would record an adopter's own declined file as Keel
+# content (the dir #512 defect class). Skipped under --codex: a Claude-format dir Codex never reads.
+if [ "$CODEX" = 0 ] && [ -d "$root/agents" ]; then
+  mkdir -p "$HOME_DIR/agents"
+  for agent_src in "$root"/agents/*.md; do
+    [ -f "$agent_src" ] || continue
+    sync_product "$agent_src" "$HOME_DIR/agents/$(basename "$agent_src")"
+  done
+fi
+
 # The `keel` CLI on PATH — one entry point (keel install|sync|doctor|audit|init|check|uninstall) so
 # the lifecycle tools work from any cwd, not just the checkout. ALWAYS a symlink into the checkout in
 # BOTH modes: the dispatcher resolves its siblings (install.sh, tools/*) relative to its real path, so

@@ -361,6 +361,13 @@ home_has_keel_content() {
     [ -f "$f" ] || continue
     if is_keel_owned "$home/docs/${f#"$root"/docs/}" "$f"; then return 0; fi
   done
+  # dir #413: the shipped agents (install.sh's agents loop) are Keel's too — same is_keel_owned test.
+  if [ -d "$root/agents" ] && [ -d "$home/agents" ]; then
+    for f in "$root"/agents/*.md; do
+      [ -f "$f" ] || continue
+      if is_keel_owned "$home/agents/$(basename "$f")" "$f"; then return 0; fi
+    done
+  fi
   return 1
 }
 
@@ -442,6 +449,13 @@ dry_run_heuristic_listing() {
             if is_keel_owned "$alias_slot" "$cmd"; then echo "  would remove  commands/keel-$name"; fi
           fi ;;
       esac
+    done
+  fi
+  # dir #413: the shipped agents, listed the way commands/<name> is (no alias form — agents have none).
+  if [ -d "$root/agents" ]; then
+    for f in "$root"/agents/*.md; do
+      [ -f "$f" ] || continue
+      if is_keel_owned "$HOME_DIR/agents/$(basename "$f")" "$f"; then echo "  would remove  agents/$(basename "$f")"; fi
     done
   fi
   for f in FRAMEWORK.md PRINCIPLES.md; do
@@ -942,7 +956,7 @@ if [ "$this_usable" = 1 ]; then
   # artifact that lived in it is gone (a symlink-mismatch or cksum-drift leftover keeps it non-empty).
   # dir #650 D7: the docs dirs go first, deepest first (keel/docs/drydock before keel/docs before keel,
   # docs/drydock before docs) — `rmdir` only, so a dir still holding an adopter file survives.
-  for d in keel/docs/drydock keel/docs docs/drydock docs keel bin commands; do
+  for d in keel/docs/drydock keel/docs docs/drydock docs keel bin commands agents; do
     [ -d "$HOME_DIR/$d" ] && [ "$DRY_RUN" = 0 ] && rmdir "$HOME_DIR/$d" 2>/dev/null || true
   done
 fi

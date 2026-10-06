@@ -99,6 +99,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/gate-paths.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$_doctor_dir/lib/stat-portable.sh"
+# shellcheck source=tools/lib/agent-floor.sh
+. "$_doctor_dir/lib/agent-floor.sh"
 unset _doctor_dir
 
 QUIET=0
@@ -671,7 +673,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # -ef (same physical file) catches that; advisory, since a second checkout can be deliberate.
   # dir #650: a linked home's keel/docs/ (and keel/docs/drydock/) hold one symlink per shipped doc — the
   # one-level "$ihome/keel"/* glob skips those dirs, so they are walked explicitly.
-  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/bin"/*; do
+  for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/agents"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
     # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
@@ -692,6 +694,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
       "$ihome/commands/"*)
         tgt="$repo_root/commands/${b#keel-}"
         if [ -f "$repo_root/commands/$b" ]; then tgt="$repo_root/commands/$b"; fi ;;
+      "$ihome/agents/"*)
+        tgt="$repo_root/agents/$b" ;;
       "$ihome/bin/keel")
         tgt="$repo_root/keel" ;;
       # The docs arm MUST precede the generic keel/ arm: a `case` `*` matches `/`, so keel/docs/x.md would
@@ -825,6 +829,43 @@ if [ "$INSTALL_MODE" = 1 ]; then
       say "  OK   commands: $wired of $total shipped are wired"
     else
       warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    fi
+  fi
+
+  # Agents (dir #413): X of Y shipped agents are wired at <home>/agents/ — Claude Code's user-scope agents
+  # dir, so (like commands) not applicable under --codex — plus the FLOOR of the installed
+  # keel-polish-reviewer: its frontmatter `tools:` must stay the shipped read-only set. Copy mode lets an
+  # adopter edit the file, and a floor that silently grows Bash is no floor; a linked install IS the
+  # checkout's file. A missing agent FILE is the wired check's finding, never the floor's.
+  if [ "$CODEX_MODE" = 1 ]; then
+    say "  =    agents: not applicable under --codex (Codex has no agents/ dir — see ADAPTING.md)"
+  else
+    awired=0; atotal=0; missing_agents=""
+    for agent_src in "$repo_root"/agents/*.md; do
+      [ -f "$agent_src" ] || continue
+      aname="$(basename "$agent_src")"
+      atotal=$((atotal + 1))
+      if [ -f "$ihome/agents/$aname" ]; then
+        awired=$((awired + 1))
+      else
+        missing_agents="$missing_agents $aname"
+      fi
+    done
+    if [ "$atotal" = 0 ]; then
+      :  # a checkout shipping no agents has nothing to wire
+    elif [ "$awired" = "$atotal" ]; then
+      say "  OK   agents: $awired of $atotal shipped are wired"
+    else
+      warn W-REVIEW-AGENT-MISSING "agents: only $awired of $atotal shipped are wired — missing:$missing_agents (/polish's read-only review agent; a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+    fi
+    reviewer_src="$repo_root/agents/keel-polish-reviewer.md"
+    reviewer_inst="$ihome/agents/keel-polish-reviewer.md"
+    if [ -f "$reviewer_src" ] && [ -f "$reviewer_inst" ]; then
+      shipped_tools="$(agent_fm_value "$reviewer_src" tools)"
+      floor_problem="$(agent_floor_problem "$reviewer_inst" "${shipped_tools:-Read, Grep, Glob}")"
+      if [ -n "$floor_problem" ]; then
+        warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md is not the shipped read-only floor: $floor_problem — the review subagent could act, not just read; restore the shipped file: re-run install.sh --force$ihome_flag (backed up first; a linked install is the checkout's own file)"
+      fi
     fi
   fi
 
