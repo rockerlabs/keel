@@ -56,12 +56,16 @@ step_text() {
     f { print }' "$polish" | tr '\n' ' ' | tr -s ' '
 }
 instr='load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file'
+# ends_with_rare N — step N's text from its LAST "*Rare —" marker on, i.e. the pointer line the step ends with.
+ends_with_rare() { step_text "$1" | sed 's/.*\*Rare — /*Rare — /'; }
 for n in 1 4 5 8 9; do
-  t="$(step_text "$n")"
+  t="$(ends_with_rare "$n")"
+  check_contains "step $n ends with a rare-trigger marker" "$t" "*Rare — "
   check_contains "step $n ends with the exact guide-loading instruction" "$t" "$instr"
-  check_contains "step $n names a guide section" "$t" "§ Step $n"
-  check_contains "step $n says an unreachable guide stops the run" "$t" "guide unreachable → stop and report"
+  check_contains "step $n's closing pointer names its guide section" "$t" "§ Step $n"
+  check_contains "step $n's closing pointer says an unreachable guide stops the run" "$t" "guide unreachable → stop and report"
 done
+check_contains "step 9's closing pointer also reaches step 10's add-on summary forms" "$(ends_with_rare 9)" "§ Step 10 for the add-on summary forms"
 check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
 check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
 check_contains "step 4's trigger list names a handoff-check match" "$(step_text 4)" 'a `handoff-check` match'
@@ -87,11 +91,15 @@ pinf "core: step 8 pushes before it unlocks" 'Push the branch first'
 pinf "core: step 8's unlock receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
 pinf "core: step 6's retest receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"`'
 pinf "core: step 3's tests receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"`'
-pinf "core: step 1 mints the run's nonce with init" '`tools/pre-pr-gate.sh init`'
+check_contains "core: step 1 mints the run's nonce with init" "$(step_text 1)" '`tools/pre-pr-gate.sh init`'
 pinf "core: step 4's receipt carries the sizing evidence" '`tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`'
 pinf "core: the delta-round budget" 'the full review runs once, then at most TWO delta rounds'
-pinf "core: dir #244's commit-message re-read after an --amend" 'on `--amend`, re-read the commit message against the final diff (dir #244)'
+pinf "core: dir #244's commit-message re-read after an --amend" 'On `--amend`, re-read the commit message against the final diff (dir #244)'
 pinf "core: step 6 never commits while a background suite run is alive" '**Never commit, amend or edit while a background suite run is alive**'
+pinf "core: ordering rule 1 is named, K2 cites it" '**Ordering rule 1 — have the implementation committed by step 3**'
+pinf "core: dir #488's review-null exception is defined where K2 cites it" "a later fix commit that only changes comments or blank lines in already-reviewed \`.sh\` files keeps the earlier trace"
+check_contains "core: step 6 skips the retest under --no-test" "$(step_text 6)" "and tests weren't \`--no-test\`-skipped, re-run the test command once"
+check_contains "core: step 7 sends a fix commit to a convergence round" "$(step_text 7)" "A fix commit for what it flagged → a convergence round, guide § Step 1"
 pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every step id is present for the current run'
 pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
 pinf "core: step 4's auto rule" '`low`/`medium`/`high` clearly inside one bucket → run it automatically'
@@ -202,7 +210,7 @@ pinf "step 5: the disclosure wording" \
 pinf "step 5: a bare level means a genuine pass run here or by K2's subagent" \
   "the bare \`polish.5-review <level>\` (a genuine \`/code-review\` pass, run here or by K2's subagent)"
 pinf "step 6: a step-5 commit of pending work requires the retest" \
-  'or committed pending work, re-run the test command once'
+  'or committed pending work, and tests weren'"'"'t `--no-test`-skipped, re-run the test command once'
 pinf "step 10: the summary names the subagent-run mechanism" \
   '`/code-review <level>` run by a fresh-context subagent, a genuine in-session'
 # the guide keeps the pre-split step-5 text, with B7a's clause fates applied

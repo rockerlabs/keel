@@ -7,8 +7,7 @@ install.sh never auto-wires (a hook changes what a session can do without asking
 tools/install-pre-pr-gate.sh <repo> once, per project, to turn the gate below on. Without it, every
 step here still runs and is worth doing — only the gh pr create block is inert. -->
 
-The final pass over the diff before a PR — run between implementation and `/wrap`: hand a human reviewer an
-already-tidied diff and open the PR. Once `tools/install-pre-pr-gate.sh` has wired the gate, it also blocks
+The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` has wired the gate, it also blocks
 `gh pr create` until this command has run cleanly on the current HEAD. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
@@ -19,7 +18,7 @@ a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every s
 current run — never skip a receipt write. An unexpected permission prompt on one: note it once with
 `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
-**Have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
+**Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires, so a late commit costs a full re-receipt cycle.
 
 **The guide.** The rare branches live in `polish-guide.md`, loaded when a step below names a trigger that
@@ -30,8 +29,8 @@ Steps, in order:
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
-   *Rare — a convergence round (you re-invoked `/polish` on this branch only because step 5's review or step
-   7's self-check found something), `--recover`:* load the `polish-guide` skill
+   *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
+   something), `--recover`:* load the `polish-guide` skill
    (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, § Step 1; guide unreachable →
    stop and report.
 
@@ -43,7 +42,7 @@ Steps, in order:
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) and show the real
    output; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
-   the sha is the point: the gate unlocks only when a test run is bound to the commit being shipped.
+   the gate unlocks only on a test run bound to the commit being shipped.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** Proceed only if simplify left no open
    problems and tests are green or explicitly skipped; otherwise report what is left and stop (no receipt).
@@ -59,8 +58,7 @@ Steps, in order:
    Bucket unclear (near a threshold, mixed docs+code, references present) → bias up one notch. **Auto vs
    ask:** `low`/`medium`/`high` clearly inside one bucket → run it automatically, saying which and why. Borderline, and ALWAYS for `skip`, `max` and `ultra`, → an `AskUserQuestion` dialog with the
    recommendation pre-selected and a `skip` option, ended by the literal line `KEEL-DEPTH-DIALOG`.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` (e.g.
-   `medium:+412-96,10f,code`).
+   Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`.
    *Rare — a `handoff-check` match, any of the max/ultra/skip/borderline dialogs and their marker rule:*
    load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file,
    § Step 4; guide unreachable → stop and report.
@@ -71,7 +69,8 @@ Steps, in order:
    K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) — establish availability by
    attempting, never from the skill listing. On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
-   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level. The
+   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488: a later
+   fix commit that only changes comments or blank lines in already-reviewed `.sh` files keeps the earlier trace). The
    two-way conformance mandate (step 5(a)'s): the diff must realize the ticket's done-criterion, and nothing
    in it may silently exceed or contradict it.
 
@@ -179,7 +178,7 @@ Steps, in order:
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
      other mechanism (dir #183).
 
-   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical; on
+   **Fixes and delta rounds, the normal path.** On
    `--amend`, re-read the commit message against the final diff (dir #244). dir #127: the full review runs
    once, then at most TWO delta rounds; only zero findings in a delta round ends the cycle (a clean full
    re-review does not). A second delta round still finding → file the residual, say so in the PR body, open
@@ -191,15 +190,16 @@ Steps, in order:
    if aliased), else `polish-guide.md` beside this file, § Step 5; guide unreachable → stop and report.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (hand-off edits count)
-   or committed pending work, re-run the test command once and show the real output; red → no receipt,
-   report what broke and stop. Nothing changed → skip the re-run. **Never commit,
+   or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once and show the real output; red → no receipt,
+   report what broke and stop. **Never commit,
    amend or edit while a background suite run is alive** (dir #505): it trips `tests/run.sh`'s
    self-corruption canary as a false positive. Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or
    `skipped:no-file-changes`) — the outcome IS the sha the retest ran at, and after a fix commit or `--amend` it also re-binds step 3's receipt to the new HEAD.
 
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP
    (non-zero exit) is a red test: no receipt, report what it flagged, stop. Receipt:
-   `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`).
+   `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it flagged
+   → a convergence round, guide § Step 1.
 
 8. **Unlock the gate.** Push the branch first (the gate checks that HEAD is reachable on the push remote),
    then `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
@@ -217,7 +217,7 @@ Steps, in order:
    and open the PR; the merge stays the operator's. Return the PR URL. *Rare — `gh pr create` fails (the PR
    is already open, or a non-gate failure that still spends the receipt chain), an add-on review's
    disclosure:* load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside
-   this file, § Step 9; guide unreachable → stop and report.
+   this file, § Step 9 (§ Step 10 for the add-on summary forms); guide unreachable → stop and report.
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (any post-review re-run and the
     self-check), the PR URL, step 9's `docs read:` line unchanged if it produced one, and the review depth

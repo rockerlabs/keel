@@ -152,7 +152,7 @@ release nobody checked.
 **The `CHANGELOG.md` section this phase hands off is a source with two derivatives** — the curated
 release-notes file and the release-prep PR's own narrative — and a convergence round that edits shipped
 wording invalidates both. See `docs/publishing-checklist.md` §4 for the notes-file rule and
-`commands/polish.md` step 9 for the PR-body rule; this phase doesn't restate either (dir #206).
+`commands/polish-guide.md` § Step 9 (the already-open-PR branch) for the PR-body rule; this phase doesn't restate either (dir #206).
 
 **The order is: cut, land, then tag — and the tag is not the preparing session's to cut.** Rename
 `## [Unreleased]` to `## [x.y.z] — <date>`, open a fresh empty `## [Unreleased]` above it, and land
