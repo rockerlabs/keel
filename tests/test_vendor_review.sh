@@ -221,6 +221,14 @@ vr_split "$a1_dir" "$TOOL" --client "$a1_cl" --system sys.md --bundle leaky.md -
 check_status "vendor-review A1(i): a cwd .secret-scan-allow of '.' does NOT relax the gate (exit 3)" 3 "$V_ST"
 check_nofile "vendor-review A1(i): ...the client is never invoked" "$SANDBOX/ran-a1i"
 check_nodir "vendor-review A1(i): ...nothing is written" "$SANDBOX/out-a1i"
+# the exit code alone cannot tell a BLOCKED finding from a scanner that failed to run (also exit 3): a
+# relative path left unresolved would hand the scanner a file it cannot find from its empty cwd
+check_contains "vendor-review A1(i): ...refused because the gate BLOCKED a finding (not because it failed to run)" "$V_ERR" "leak gate BLOCKED"
+check_absent "vendor-review A1(i): ...and the gate did run (relative --bundle/--system were resolved before the cd)" "$V_ERR" "failed to run"
+# the clean counterpart: the same relative arguments, no secret → the round runs
+printf 'clean text\n' > "$a1_dir/clean.md"
+vr_split "$a1_dir" "$TOOL" --client "$client" --system sys.md --bundle clean.md --label a1c --out "$SANDBOX/out-a1c"
+check_status "vendor-review A1: a clean bundle given by RELATIVE path runs (exit 0)" 0 "$V_ST"
 
 a1_repo="$(new_repo)"; mkdir -p "$a1_repo/sub"
 printf '.\n' > "$a1_repo/.secret-scan-allow"
@@ -231,6 +239,7 @@ vr_split "$a1_repo/sub" "$TOOL" --client "$a1_cl2" --system sys.md --bundle leak
 check_status "vendor-review A1(ii): the caller repo's ROOT .secret-scan-allow does not relax the gate (exit 3)" 3 "$V_ST"
 check_nofile "vendor-review A1(ii): ...the client is never invoked" "$SANDBOX/ran-a1ii"
 check_nodir "vendor-review A1(ii): ...nothing is written" "$SANDBOX/out-a1ii"
+check_contains "vendor-review A1(ii): ...refused because the gate BLOCKED a finding" "$V_ERR" "leak gate BLOCKED"
 check_contains "vendor-review A1: the BLOCKED text names the path the caller passed (relative), not the resolved one" "$V_ERR" "leaky.md"
 
 # --- A2 (B1): the scanner's cwd is a fresh empty dir under TMPDIR, removed on every exit path ---------
