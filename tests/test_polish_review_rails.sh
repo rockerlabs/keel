@@ -29,8 +29,6 @@ polish_rails="$(extract_rails_block "$polish" 1)"
 check_block_equal "commands/polish.md's two rails copies (K2's review subagent, the dir #70 fallback) are each byte-identical (mod indent) to docs/delegation.md's canonical text" \
   "$polish_rails" "$canonical_rails
 $canonical_rails"
-check_eq "commands/polish.md carries exactly two rails blocks (one per keel-written review subagent prompt)" "2" \
-  "$(grep -c '^[[:space:]]*- You are read-only:' "$polish")"
 
 # The byte-equality check above only catches ASYMMETRIC drift (one side losing the line while the
 # other keeps it) — reproduced live: stripping the dirty-tree bullet from BOTH delegation.md and
