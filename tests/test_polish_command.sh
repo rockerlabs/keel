@@ -229,4 +229,22 @@ pinfgn "guide: the retired 'bare — this IS the genuine in-session pass' wordin
 pinfgn "guide: the retired 'ordinary automated outcome' wording is gone" \
   'the ordinary automated outcome'
 
+# --- dir #612: step 2 sizes by content class — a prose-only diff gets ONE inline pass, receipted by name ----
+# guide_step N — the guide's `## Step N` section, line breaks and space runs collapsed (stops at the next `## `).
+guide_step() { awk -v h="## Step $1 " 'index($0, h) == 1 { f = 1; next } f && /^## / { exit } f { print }' "$guide" | tr '\n' ' ' | tr -s ' '; }
+c2="$(step_text 2)"
+g2="$(guide_step 2)"
+check_contains "core: step 2's trigger is an md-only diff with no command, skill or runbook, and loads the guide's § Step 2" \
+  "$c2" 'Every changed file `*.md`, none a command, skill or runbook → load `polish-guide`, § Step 2'
+check_contains "core: step 2's guide pointer says an unreachable guide stops the run" "$c2" 'Guide unreachable → stop and report'
+check_contains "core: step 2 keeps the plain /simplify receipt" "$c2" '`tools/pre-pr-gate.sh receipt polish.2-simplify`'
+check_absent "core: the no-simplify-skill receipt moved to the guide" "$c2" 'inline:no-simplify-skill'
+check_contains "guide: § Step 2 names the prose-only class by its receipt" "$g2" '`tools/pre-pr-gate.sh receipt polish.2-simplify inline:prose-only`'
+check_contains "guide: § Step 2's prose-only class needs no changed code file" "$g2" '(a) no changed file is code'
+check_contains "guide: § Step 2's prose-only class needs no fenced block touched" "$g2" '(b) no fenced block is added, removed or edited'
+check_contains "guide: § Step 2's prose-only class keeps procedure docs out" "$g2" '(c) no changed file is a procedure doc'
+check_contains "guide: § Step 2 sends anything else, or any doubt, to the full /simplify" "$g2" 'Anything else, or any doubt, runs the full `/simplify`'
+check_contains "guide: § Step 2 states the inline pass is one reuse/duplication pass" "$g2" 'ONE inline reuse/duplication pass'
+check_contains "guide: § Step 2 keeps the unavailable-skill receipt" "$g2" 'inline:no-simplify-skill'
+
 summary

@@ -368,6 +368,12 @@ sections real content going forward — see that page for exactly when each one 
   unset worker tier is the launcher's own, verified by the running-tier evidence before session metadata,
   with a hello-then-hold launch; `docs/release-management.md` R3 inherits it. R9 and `commands/manage-release.md`
   M8 add an install-where-the-operator-uses-it step. dir #455, dir #596.
+- **`/polish` step 2 now sizes the cleanup pass by what the diff is (dir #612).** A diff of only `*.md` files
+  that is none of a command, skill or runbook is read against `polish-guide` § Step 2: when it is prose-only
+  (defined there) step 2 runs ONE inline reuse/duplication pass and receipts it `inline:prose-only`, a named
+  outcome, instead of fanning out the four `/simplify` review agents. Anything with code, a procedure doc, or
+  any doubt still runs the full `/simplify`. The core gained a one-line trigger; a refused or unavailable
+  `/simplify` now also reads the guide for its inline fallback.
 
 - **The git-environment guard now drops the object-store variables, and the census that enforces it stops
   failing open (dir #661, from the 0.13.0 delta audit).** The one inline line every git-reaching script opens
