@@ -55,7 +55,10 @@ pin "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "$g
 # operator approved "~1110" as the target; the six mandatory fixes (F1-F5, dir #640) plus F7/F9/F10
 # landed the live file at 1114 words after cutting every unpinned rationale word available (round 1's
 # lesson: never a pinned phrase) — 1125 gives it the same small margin round 1's 1055/1045 pair did.
-GO_MD_WORD_BUDGET=1125
+# Raised 1125 -> 1250 (operator decision D5, 2026-10-04, dir #670's design; consumed by dir #668,
+# docs/specs/668-go-seam-step.md B10): the managed-release carve-out cite, step 5's two bullets and the
+# marker-placement rule; dir #401 adds none to go.md, so this PR raises it alone.
+GO_MD_WORD_BUDGET=1250
 word_count="$(wc -w < "$go_md" | tr -d ' ')"
 if [ "$word_count" -le "$GO_MD_WORD_BUDGET" ]; then
   pass "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words (got $word_count)"
@@ -161,6 +164,11 @@ needle_rules=(
   "dir #642 SPEC1: spec-path heading of steps 2, 4, 6"
   "dir #642 SPEC1: claim into Status: line"
   "dir #642 SPEC1: closed per the guide"
+  "dir #668 C-a: carve-out cite at the intro"
+  "dir #668 C-b: ticket and backlog entry named"
+  "dir #668 C-c: marker placement"
+  "dir #668 C-d: bullet 2"
+  "dir #668 C-e: bullet 3"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -199,9 +207,14 @@ needle_texts=(
   "the heading of steps 2, 4 and 6"
   "spec mode: its"
   "closed per the guide"
+  "step 6's override, in a managed release"
+  "a ticket or any backlog entry"
+  "after the marker's closing parenthesis, never inside it"
+  "already holds this ticket's commits, or that its claim marker names"
+  "a fresh worktree's own branch"
 )
 # T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
-# for every row here, old and new alike (verified live: all 31 needles below already satisfy this,
+# for every row here, old and new alike (verified live: every needle below already satisfies this,
 # so the exact check is a strict superset of mere presence, not a special case for dir #642's own
 # additions — code-review high's altitude finding on this ticket's own diff).
 i=0
@@ -236,8 +249,11 @@ fi
 # non-ASCII characters (—, →, ⏳, 📐, …) differently from GNU/BSD wc, undercounting the real file by
 # ~45 words there (919 vs macOS's 964) — a fixed +10-word nudge crossed 965 on macOS but not on
 # busybox. 80 padding words clears that gap with margin on any wc's word-boundary handling.
+# Pad computed from the live count (as in tests/test_go_guide.sh), so it crosses the ceiling however the
+# budget moves (dir #668 B10).
+a_pad=$((GO_MD_WORD_BUDGET - word_count + 80))
 a_copy="$(scratch_copy "$go_md" go.md)"
-append_line "$a_copy" "$(printf 'filler %.0s' {1..80})"
+append_line "$a_copy" "$(printf 'filler %.0s' $(seq 1 "$a_pad"))"
 assert_case_turns_red "(a) budget mutation" \
   "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words" "KEEL_GO_MD=$a_copy"
 
@@ -502,5 +518,47 @@ h3_copy="$(scratch_copy "$go_md" go.md)"
 delete_line_containing "$h3_copy" '**10. close.** Close through `/polish` where installed'
 assert_case_turns_red "(h) mutation: close rule removed" \
   "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "KEEL_GO_MD=$h3_copy"
+
+# (g) needle — dir #668's five go.md clauses (spec Appendix B), each shown red by its own mutation.
+
+# C-a: the intro's out-of-ticket-defect clause cites step 6's managed-release override.
+c668a_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c668a_copy" "step 6's override, in a managed release" \
+  " (step 6's override, in a managed release)" ""
+assert_case_turns_red "(g) needle mutation: dir #668 C-a carve-out cite removed" \
+  "(g) needle [dir #668 C-a: carve-out cite at the intro]: 'step 6's override, in a managed release' matches exactly one line" \
+  "KEEL_GO_MD=$c668a_copy"
+
+# C-b: step 6's override names a ticket and any backlog entry, not only the marker.
+c668b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c668b_copy" "a ticket or any backlog entry" \
+  "the marker, a ticket or any backlog entry; request them" "the marker; request it"
+assert_case_turns_red "(g) needle mutation: dir #668 C-b ticket-or-backlog-entry clause removed" \
+  "(g) needle [dir #668 C-b: ticket and backlog entry named]: 'a ticket or any backlog entry' matches exactly one line" \
+  "KEEL_GO_MD=$c668b_copy"
+
+# C-c: the tests: suffix goes after the marker's closing parenthesis, never inside it.
+c668c_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c668c_copy" "after the marker's closing parenthesis, never inside it" \
+  "after the marker's closing parenthesis, never inside it" "to the marker"
+assert_case_turns_red "(g) needle mutation: dir #668 C-c marker-placement clause removed" \
+  "(g) needle [dir #668 C-c: marker placement]: 'after the marker's closing parenthesis, never inside it' matches exactly one line" \
+  "KEEL_GO_MD=$c668c_copy"
+
+# C-d: step 5 bullet 2 names a branch by what makes it THIS ticket's (its commits or its claim marker).
+c668d_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c668d_copy" "already holds this ticket's commits, or that its claim marker names" \
+  "that already holds this ticket's commits, or that its claim marker names," "worktree's own"
+assert_case_turns_red "(g) needle mutation: dir #668 C-d bullet-2 clause removed" \
+  "(g) needle [dir #668 C-d: bullet 2]: 'already holds this ticket's commits, or that its claim marker names' matches exactly one line" \
+  "KEEL_GO_MD=$c668d_copy"
+
+# C-e: step 5 bullet 3 names the fresh harness worktree branch as the case it covers.
+c668e_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c668e_copy" "a fresh worktree's own branch" \
+  " (a fresh worktree's own branch)" ""
+assert_case_turns_red "(g) needle mutation: dir #668 C-e bullet-3 clause removed" \
+  "(g) needle [dir #668 C-e: bullet 3]: 'a fresh worktree's own branch' matches exactly one line" \
+  "KEEL_GO_MD=$c668e_copy"
 
 summary
