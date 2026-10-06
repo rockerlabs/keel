@@ -374,6 +374,12 @@ sections real content going forward — see that page for exactly when each one 
   outcome, instead of fanning out the four `/simplify` review agents. Anything with code, a procedure doc, or
   any doubt still runs the full `/simplify`. The core gained a one-line trigger; a refused or unavailable
   `/simplify` now also reads the guide for its inline fallback.
+- **Waiting on CI is one backgrounded command with a timeout, never a wakeup (dir #616).** A worker that had
+  backgrounded `gh pr checks --watch` also scheduled wakeups, and a 30-tick no-op streak followed; the rule lived
+  only in a personal knowledge base. `/polish` step 9 now carries it (full text in `polish-guide` § Step 9), and
+  so does the worker-brief item in `docs/release-management.md`, beside the keep-alive contract;
+  `docs/token-economy.md` owns the cost reason. Step 9's core text lost two rationale clauses to make room
+  (the guide keeps them).
 - **A sandboxed shell's receipts no longer read as a key problem (dir #583).** The gate's "no receipt on file"
   deny described only a wrong repo or branch; it now also names the other cause — `init` and every `receipt`
   were written from a sandboxed shell that keeps a private view of the state directory the hook reads — and the

@@ -247,6 +247,13 @@ check_contains "guide: § Step 2 sends anything else, or any doubt, to the full 
 check_contains "guide: § Step 2 states the inline pass is one reuse/duplication pass" "$g2" 'ONE inline reuse/duplication pass'
 check_contains "guide: § Step 2 keeps the unavailable-skill receipt" "$g2" 'inline:no-simplify-skill'
 
+# --- dir #616: wait on CI in ONE backgrounded, bounded command — never a wakeup, a sleep chain or a short Monitor ----
+check_contains "core: step 9 names the one backgrounded command and what never to use" "$(step_text 9)" \
+  'Waiting on CI: ONE backgrounded `gh pr checks <n> --watch` with a timeout; never wakeups, sleeps or short Monitors.'
+pinfg "guide: § Step 9 owns the CI-wait rule, bounded (dir #616)" '**Waiting on CI (dir #616).** If you wait on CI after the PR opens, wait in ONE backgrounded Bash command with a timeout or iteration cap'
+pinfg "guide: § Step 9 forbids ScheduleWakeup for a background wait" 'Never ScheduleWakeup'
+pinfg "guide: § Step 9 gives a harness with no completion notice a bounded foreground wait" 'A harness with no background-completion notice: one bounded foreground wait'
+
 # --- dir #583: guide § Step 8 says a missing-receipt deny can be a sandbox visibility problem ----------------
 pinfg "guide: § Step 8 names the sandbox visibility cause (dir #583)" '"No receipt is on file" can be a visibility problem, not a missing one (dir #583).'
 pinfg "guide: § Step 8 states both key shapes side by side" 'the sentinel by repo AND branch, the review trace by repo only'

@@ -150,6 +150,12 @@ keep-alive ping must ask for a no-op, one-word reply ("keep-alive, reply ok, tak
 phrased as "check status" triggers real tool turns and re-prices the whole context per turn, turning the
 warmer into the very thing it was meant to avoid.
 
+Waiting on external state is the same edge. A session blocked on something it cannot observe — a CI run —
+should poll *inside* one backgrounded command and let its completion notify it. A scheduled wakeup or a
+short-interval monitor makes every tick a turn of its own that re-prices the whole accumulated context and
+returns nothing (felt in 0.11.0: a 30-tick `No-op, awaiting CI` streak on a worker that had already
+backgrounded `gh pr checks --watch`). The rule's text: `polish-guide` § Step 9.
+
 ## See also
 
 - [`docs/loading-and-cost.md`](loading-and-cost.md) — what Keel's own always-loaded files cost.
