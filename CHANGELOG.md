@@ -15,6 +15,28 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
+  feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
+  `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a
+  seven-item Limits section that sizes the claim as a speed bump) plus a short `SECURITY.md` section.
+  `doctor` adds `W-SECRETS-EXPOSED` (an env-shaped file git tracks or would commit),
+  `W-SECRETS-PLAINTEXT` (one resting gitignored), `W-SECRETS-IGNORE` (the recipe's ignore rules missing,
+  only once `.sops.yaml` exists) and, under `--install` for Claude Code, `H-DENY-ENV` (the three `Read`
+  deny globs for env files missing — the first HINT install mode emits). All advisories, names and git
+  state only, never an exit-code change; an exact path you keep on purpose goes in the new per-checkout
+  `.keel/secrets-accept`, which `init-project.sh` now gitignores. Expect `W-SECRETS-PLAINTEXT` on any
+  project that keeps a gitignored env file until it migrates or accepts the path.
+
+- **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
+  `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
+  `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or
+  edits, so the later PR notices what an earlier one made false. It reads at most ten files, files a claim
+  that was already false as recorded rather than fixed, and the final report gains a `Seams:` line. The same
+  edit states the managed-release carve-out once (a worker writes no marker, ticket or backlog entry), makes
+  `/go`'s step 5 name a branch by its commits or its claim marker, and puts the `tests:` suffix after the
+  marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
+  (`commands/go-guide.md`).
+
 - **Keel ships a read-only review agent, `agents/keel-polish-reviewer.md`, and `install.sh` wires it (dir #413,
   slice 1 of 2).** Its `tools:` allowlist is `Read, Grep, Glob` — no shell, no git, no tests — so a `/polish`
   review subagent running as it cannot run the git-mutating command that destroyed a parent session's
