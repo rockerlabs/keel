@@ -262,6 +262,28 @@ a_run "$in_hi" env TMPDIR=/nonexistent AGY_MARK="$mark" AGY_BIN="$agy_mark" "$CL
 check_status "agy.sh B8: TMPDIR=/nonexistent (no neutral dir) → exit 1" 1 "$A_ST"
 check_nofile "agy.sh B8: ...agy is never invoked" "$mark"
 
+# B8 (exit paths): SIGTERM while agy is running removes the neutral dir AT ONCE. There is deliberately no
+# explicit `trap … TERM`: it would defer the cleanup until agy returns (up to its whole print timeout), while an
+# untrapped fatal signal runs the EXIT handler immediately. The fake agy sleeps 4 s; the run must end well before.
+agy_sleepy="$(mk_agy <<'SCRIPT'
+: > "${AGY_REC:?}"
+sleep 4
+printf '%s' '{"status":"SUCCESS","response":"late"}'
+SCRIPT
+)"
+rm -f "$SANDBOX/sleepy-started"
+env TMPDIR="$tmp11" AGY_REC="$SANDBOX/sleepy-started" AGY_BIN="$agy_sleepy" "$CLIENT" --system "$system" \
+  < "$in_hi" > /dev/null 2>&1 &
+sleepy_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do [ -e "$SANDBOX/sleepy-started" ] && break; sleep 0.2; done
+sleepy_t0="$(date +%s)"
+kill -TERM "$sleepy_pid" 2>/dev/null
+wait "$sleepy_pid"; sleepy_st=$?
+sleepy_dt=$(( $(date +%s) - sleepy_t0 ))
+check_status "agy.sh B8: SIGTERM while agy runs → exit 143" 143 "$sleepy_st"
+[ "$sleepy_dt" -lt 3 ] && pass "agy.sh B8: ...at once, not after agy returns (${sleepy_dt}s < 3s)" || fail "agy.sh B8: ...at once, not after agy returns" "took ${sleepy_dt}s"
+check_eq "agy.sh B8: ...and the neutral dir is gone" "0" "$(find "$tmp11" -maxdepth 1 -name 'agy.*' | wc -l | tr -d ' ')"
+
 # --- B9: no tool access is enforced — any agy allow-rule refuses, an unreadable policy refuses -------
 settings_dir="$HOME/.gemini/antigravity-cli"; settings="$settings_dir/settings.json"
 mkdir -p "$settings_dir"

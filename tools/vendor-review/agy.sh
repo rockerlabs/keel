@@ -151,9 +151,7 @@ on_exit() {
   [ -z "$agy_cwd" ] || rm -rf "$agy_cwd"
   exit "$st"
 }
-trap on_exit EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap on_exit EXIT   # no explicit INT/TERM traps: an untrapped signal runs this handler at once; a TERM trap would defer it until agy returns
 
 resp_json="$(mktemp)"
 err_file="$(mktemp)"

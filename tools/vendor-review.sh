@@ -126,7 +126,9 @@ relabel_gate_path() {
 # `mktemp -d` ignores TMPDIR on macOS. The dir is removed on EVERY exit by a NAMED handler using the dir #264
 # completion-marker idiom (`ok=1` on the last line of the one legitimate exit-0 path), never a bare quoted
 # `trap '…' EXIT`: on bash 3.2 a bare trap turns a `set -u` crash into exit 0 (dir #692,
-# tests/test_exit_trap_marker.sh). INT/TERM exit through the same handler (the scanner's own pattern).
+# tests/test_exit_trap_marker.sh). No explicit INT/TERM traps: an untrapped fatal signal already runs the EXIT
+# handler and exits 128+N at once (measured on bash 3.2), whereas `trap 'exit 143' TERM` would DEFER it until the
+# foreground child — here the vendor client, up to its whole timeout — returns.
 gate_dir=""
 ok=""
 on_exit() {
@@ -136,8 +138,6 @@ on_exit() {
   exit "$st"
 }
 trap on_exit EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 gate_dir="$(mktemp -d "${TMPDIR:-/tmp}/vendor-review.XXXXXX")" \
   || refuse "could not create a scratch directory for the leak gate under ${TMPDIR:-/tmp} — refusing to run
   without a clean gate. Nothing was sent."
