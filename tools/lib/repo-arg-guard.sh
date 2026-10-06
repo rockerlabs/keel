@@ -20,9 +20,12 @@
 #
 # The last three (dir #661) are the object-store and ref-namespace selectors: with the first four unset
 # and GIT_OBJECT_DIRECTORY inherited, a fresh repo's `commit` writes its objects into the FOREIGN store
-# while its refs land in the named repo (fsck on the target then reports an invalid sha1 pointer);
-# GIT_ALTERNATE_OBJECT_DIRECTORIES lets a write skip an object a foreign store already holds. Left out ON
-# PURPOSE, each measured: GIT_CONFIG_* (the operator's and the harness's config channel — tests/lib.sh
+# while its refs land in the named repo (fsck on the target then reports an invalid sha1 pointer; pinned
+# by a fixture in tests/test_git_env_guard.sh); GIT_ALTERNATE_OBJECT_DIRECTORIES lets a write skip an
+# object a foreign store already holds (also pinned). GIT_NAMESPACE is in on the audit's say-so (it moves
+# refs under refs/namespaces/<n>/): the 0.13.0 audit saw a non-empty repo's commit fail closed with it
+# set, and it did NOT reproduce here on git 2.52.0 — so it is dropped as a cheap precaution, not pinned.
+# Left out ON PURPOSE, measured on git 2.52.0 by hand (not pinned by a test: git-version dependent): GIT_CONFIG_* (the operator's and the harness's config channel — tests/lib.sh
 # appends to GIT_CONFIG_COUNT and CLAUDE.md "Linux-leg traps" 4 relies on it), GIT_QUARANTINE_PATH (a
 # `commit` exits 128 with it set, so it fails closed, and only receive-pack hooks export it), and the
 # discovery/view variables GIT_CEILING_DIRECTORIES, GIT_DISCOVERY_ACROSS_FILESYSTEM, GIT_PREFIX,

@@ -109,7 +109,7 @@ guard_line() {
     /^(exit|return)([[:space:]]|$)/ { dead = 1 }
     $0 == g && !dead { print NR; exit }
     {
-      if (match($0, "<<-?[[:space:]]*[A-Za-z_\"" q "]")) {
+      if (match($0, "<<-?[[:space:]]*[A-Za-z_\"" q "]") && substr($0, RSTART - 1, 1) != "<") {
         h = substr($0, RSTART); hdash = (h ~ /^<<-/)
         sub(/^<<-?[[:space:]]*/, "", h); gsub("[\"" q "]", "", h); sub(/[^A-Za-z0-9_].*$/, "", h)
         if (h != "") hd = h
@@ -337,11 +337,11 @@ delete_line_containing "$sb/tools/pre-pr-gate.sh" "$GUARD"
 mutated "A2 case 1: deleting the guard from pre-pr-gate.sh changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
 case_red "A2 case 1: the guard deleted from pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
 
-# 2. a three-variable line (not byte-identical to the lib's)
+# 2. a shortened line (one name dropped; not byte-identical to the lib's)
 sb="$(build_sandbox)"
 replace_in_line_containing "$sb/tools/pre-pr-gate.sh" "$GUARD" " GIT_INDEX_FILE" ""
-mutated "A2 case 2: a three-variable line changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
-case_red "A2 case 2: a three-variable line in pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
+mutated "A2 case 2: a shortened guard line changes the file" "$REPO_ROOT/tools/pre-pr-gate.sh" "$sb/tools/pre-pr-gate.sh"
+case_red "A2 case 2: a shortened guard line in pre-pr-gate.sh -> red, naming it (B1)" tools/pre-pr-gate.sh "$sb" "$base_off"
 
 # 3. the line deleted from secret-scan.sh's selftest() (leading whitespace: it is indented there)
 sb="$(build_sandbox)"
@@ -430,6 +430,14 @@ sb="$(build_sandbox)"
 printf '%s\n' '#!/usr/bin/env bash' 'exit 0' "$GUARD" 'git -C "$1" status' > "$sb/scratch-after-exit.sh"
 git -C "$sb" add -A
 case_red "dir #661 S5-1: a guard line after a column-0 exit does not count -> red, naming it" scratch-after-exit.sh "$sb" "$base_off"
+
+# a here-string (<<<) is not a heredoc opener: a real guard after one still counts
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' "read -r x <<< 'word'" "$GUARD" 'git -C "$1" status' > "$sb/scratch-herestring.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+if grep -q -- '^scratch-herestring.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present" "the census named scratch-herestring.sh: $C_OFF"; else pass "dir #661 S5-1: a real guard after a here-string (<<<) still counts as present"; fi
+has_line "$C_REACH" scratch-herestring.sh && pass "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" || fail "dir #661 S5-1: ... and that script is in the git-reaching set (the guard check ran)" "not in the reach set"
 
 # S5-2: B4 also rejects an INDENTED guard outside selftest() (a hook arm), not only a column-0 one
 sb="$(build_sandbox)"

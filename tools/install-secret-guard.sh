@@ -29,7 +29,7 @@
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
-# GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE redirects `git -C "$repo"` — including the validity
+# GIT_COMMON_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (or, since dir #661, an object-store variable) redirects `git -C "$repo"` — including the validity
 # gate itself — into a DIFFERENT repository than the one named on the command line, so this can pass a
 # non-git $repo as valid and vendor the hook write somewhere else entirely
 # (docs/specs/318-test-ref-isolation.md E19(c)). Inlined rather than sourced from
@@ -681,7 +681,7 @@ EOF
     echo "usage: install-secret-guard.sh --global | <repo-path>" >&2; exit 2 ;;
   *)
     repo="$1"
-    # dir #644: GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE are already unset (top of file) —
+    # dir #644: GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE and the object-store trio are already unset (top of file) —
     # this validity gate, and every git -C "$repo" call below it, is trustworthy because of that, not
     # because of anything done here.
     git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
