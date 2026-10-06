@@ -450,7 +450,7 @@ selftest() {
   # repo. Dropped here, in selftest() only — never at top level: the hook modes run under git's own
   # GIT_DIR/GIT_INDEX_FILE for the commit being scanned, and dropping GIT_INDEX_FILE there scans nothing
   # (tests/test_git_env_guard.sh B4, tests/test_secret_guard.sh A6).
-  unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"

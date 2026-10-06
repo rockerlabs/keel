@@ -374,13 +374,13 @@ sections real content going forward — see that page for exactly when each one 
   with unset four variables (`GIT_DIR`, `GIT_COMMON_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`) and left
   `GIT_OBJECT_DIRECTORY` inherited: a fresh repo's first commit then wrote its objects into the FOREIGN store
   while its refs landed in the named repo, so `git fsck` on the target reported an invalid sha1 pointer. The
-  line is now six variables — those four plus `GIT_OBJECT_DIRECTORY` and `GIT_ALTERNATE_OBJECT_DIRECTORIES`
-  — in all 42 files that carry it (the scripts, the test harness, and `tools/lib/repo-arg-guard.sh`, still the
-  one source the census compares against, byte for byte); the scoped `env -u` form in
-  `tools/lib/impact-store.sh` carries the same six, pinned by the census test. Left out on purpose, each
-  measured on git 2.52.0 and recorded in the lib's header: `GIT_CONFIG_*` (the config channel the test
-  harness and CI rely on), `GIT_NAMESPACE` (the audit named it, but a local commit ignores it),
-  `GIT_QUARANTINE_PATH` (a commit fails closed with it set) and the discovery and view variables.
+  line is now seven variables — those four plus `GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`
+  and `GIT_NAMESPACE` (an inherited one made a `git clone` of a local repo come up empty) — in all 42 files
+  that carry it (the scripts, the test harness, and `tools/lib/repo-arg-guard.sh`, still the one source the
+  census compares against, byte for byte); the scoped `env -u` form in `tools/lib/impact-store.sh` carries the
+  same seven, pinned by the census test. Left out on purpose, each measured on git 2.52.0 and recorded in the
+  lib's header: `GIT_CONFIG_*` (the config channel the test harness and CI rely on), `GIT_QUARANTINE_PATH`
+  (a commit fails closed with it set) and the discovery and view variables.
   `tests/test_git_env_guard.sh` now recognizes the git calls it used to miss — `/usr/bin/git`, `"git"`,
   `git;`, `"${GIT:-git}"`, `"$GIT"`, a git-reaching lib sourced after `&&`, inside `if`, in a `for` loop or
   with no slash, a lib outside `tools/lib`, a `dash` or `ksh` shebang — plus a guard line that sits in a
