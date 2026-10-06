@@ -53,6 +53,15 @@
 #
 # On any other nonzero result, sets LEAK_GATE_STDERR to the scanner's own stderr text, so the caller can
 # report the failure.
+#
+# LEAK_GATE_CWD (optional, a variable the CALLER sets — dir #662): when set and non-empty, the scanner runs
+# from that directory (`cd "$LEAK_GATE_CWD" || exit 2` inside the same command substitution, so the caller's
+# own cwd never moves). The scanner's file-list mode reads `./.secret-scan-allow` relative to ITS cwd and
+# trusts every entry, so a caller that must not have any allow-list apply (tools/vendor-review.sh) runs it
+# from a fresh EMPTY directory. A directory that cannot be entered is status 2 ("failed to run"), never 1
+# (BLOCKED), and the scanner does not run at all — no silent fall-back to the caller's cwd. SCAN_SCRIPT and
+# every FILE must then be absolute paths (the cwd changes under them). Unset or empty is the unchanged
+# behaviour — tools/audit-packet/export.sh never sets it, so its repo-root allow-list keeps applying.
 leak_gate_run() {
   local scan_script="$1" relabel_fn="$2"
   shift 2
@@ -64,7 +73,7 @@ leak_gate_run() {
   LEAK_GATE_HIT_PATHS=""
   # shellcheck disable=SC2034
   LEAK_GATE_STDERR=""
-  err_text="$("$scan_script" -- "$@" 2>&1 >/dev/null)" || status=$?
+  err_text="$([ -z "${LEAK_GATE_CWD:-}" ] || cd "$LEAK_GATE_CWD" || exit 2; "$scan_script" -- "$@" 2>&1 >/dev/null)" || status=$?
   [ "$status" = 0 ] && return 0
   if [ "$status" = 1 ]; then
     while IFS= read -r p; do

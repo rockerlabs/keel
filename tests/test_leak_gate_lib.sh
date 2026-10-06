@@ -107,6 +107,41 @@ check_contains "leak_gate_run: RELABEL_FN relabels the path it matches" "$LEAK_G
 check_contains "leak_gate_run: RELABEL_FN leaves a non-matching path unchanged" "$LEAK_GATE_HIT_PATHS" "b/two.txt"
 check_absent "leak_gate_run: RELABEL_FN's relabeled path no longer appears raw" "$LEAK_GATE_HIT_PATHS" "a/one.txt"
 
+# --- dir #662 (B1): LEAK_GATE_CWD — the scanner runs from a caller-chosen directory ----------------------
+# The scanner's file-list mode reads `./.secret-scan-allow` relative to ITS cwd, so a caller that wants
+# no cwd-relative allow-list to apply runs the scanner from an empty directory. Optional: unset or empty
+# is today's behaviour (tools/audit-packet/export.sh never sets it); an unusable directory is status 2
+# ("failed to run"), never 1 (BLOCKED) and never a silent fall-back to the caller's cwd.
+scan_pwd="$SANDBOX/scan-pwd.sh"
+cat > "$scan_pwd" <<'EOF'
+#!/usr/bin/env bash
+pwd -P > "${SCAN_PWD_REC:?}"
+exit 0
+EOF
+chmod +x "$scan_pwd"
+cwd_dir="$SANDBOX/gate-cwd"; mkdir -p "$cwd_dir"
+export SCAN_PWD_REC="$SANDBOX/scan-pwd.rec"
+
+rm -f "$SCAN_PWD_REC"
+LEAK_GATE_CWD="$cwd_dir" leak_gate_run "$scan_pwd" "" "some/file.txt"
+check_eq "leak_gate_run: LEAK_GATE_CWD=<dir> → the scanner's cwd is <dir>" "$(cd "$cwd_dir" && pwd -P)" "$(cat "$SCAN_PWD_REC" 2>/dev/null)"
+
+rm -f "$SCAN_PWD_REC"
+( unset LEAK_GATE_CWD; leak_gate_run "$scan_pwd" "" "some/file.txt" )
+check_eq "leak_gate_run: LEAK_GATE_CWD unset → the scanner runs in the caller's cwd (export.sh's behaviour)" "$(pwd -P)" "$(cat "$SCAN_PWD_REC" 2>/dev/null)"
+
+rm -f "$SCAN_PWD_REC"
+LEAK_GATE_CWD="" leak_gate_run "$scan_pwd" "" "some/file.txt"
+check_eq "leak_gate_run: LEAK_GATE_CWD empty → the caller's cwd too" "$(pwd -P)" "$(cat "$SCAN_PWD_REC" 2>/dev/null)"
+
+rm -f "$SCAN_PWD_REC"
+LEAK_GATE_CWD="$SANDBOX/no-such-dir" leak_gate_run "$scan_pwd" "" "some/file.txt"
+status=$?
+check_status "leak_gate_run: LEAK_GATE_CWD=<nonexistent> → status 2 (failed to run), never 1 (BLOCKED)" 2 "$status"
+check_nofile "leak_gate_run: ...and the scanner never ran (no fall-back to the caller's cwd)" "$SCAN_PWD_REC"
+check_status "leak_gate_run: ...and LEAK_GATE_HIT_PATHS stays empty" "" "$LEAK_GATE_HIT_PATHS"
+unset SCAN_PWD_REC
+
 # --- both known callers source the shared lib, not a private inline copy of this shape ---------------
 check_contains "tools/audit-packet/export.sh sources tools/lib/leak-gate.sh" \
   "$(cat "$REPO_ROOT/tools/audit-packet/export.sh")" 'lib/leak-gate.sh'
