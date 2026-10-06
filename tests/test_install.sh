@@ -115,6 +115,13 @@ check_eq "exactly ONE file in agents/ (no keel- alias copy)" "1" "$(find "$fag/a
 check_absent "the declined agent is NOT in the manifest" "$(cat "$fag/.keel/install-manifest.claude")" "agents/keel-polish-reviewer.md"
 run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/uninstall.sh" --home "$fag" --yes
 check_file "uninstall leaves the foreign agent in place" "$fag/agents/keel-polish-reviewer.md"
+# doctor's W-REVIEW-AGENT-FLOOR advice is `install.sh --force`: prove that remedy really restores the
+# shipped floor over an adopter's edited copy, backed up first.
+run env "${FRESH_HOME_ENV[@]}" "$install" --force --home "$fag" --no-hooks
+check_status "--force over the foreign agent → exit 0" 0 "$STATUS"
+run cmp -s "$REPO_ROOT/agents/keel-polish-reviewer.md" "$fag/agents/keel-polish-reviewer.md"
+check_status "--force restores the shipped agent (the floor remedy doctor advises)" 0 "$STATUS"
+check_eq "--force backed the edited copy up first" "1" "$(find "$fag/agents" -name 'keel-polish-reviewer.md.*.bak' | wc -l | tr -d ' ')"
 
 # never clobbers a pre-existing foreign global hooksPath — and, with a real (foreign) pre-commit
 # present there, must NOT then falsely report it as Keel's secret-guard (the old verify did).

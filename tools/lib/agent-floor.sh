@@ -34,7 +34,7 @@ _agent_tool_set() {
 # Bash/Write/Edit/NotebookEdit/Agent (named explicitly so an edit of the shipped set itself still cannot
 # hand them back). An unset `tools:` grants every tool, so a missing line is a failure.
 agent_floor_problem() {
-  local f="$1" shipped="$2" n val t
+  local f="$1" shipped="$2" n val t set_have
   [ -f "$f" ] || { echo "file is missing"; return 0; }
   n="$(agent_fm_keys "$f" | grep -cx tools || true)"
   if [ "$n" = 0 ]; then echo "no tools: line in the frontmatter (an unset tools: grants every tool)"; return 0; fi
@@ -43,10 +43,15 @@ agent_floor_problem() {
   case "$val" in
     *'['*|*']'*|*'"'*|*"'"*) echo "tools: is not the plain one-line comma form ($val)"; return 0 ;;
   esac
+  # A newline-wrapped case match, not `... | grep -q`: under a caller's `set -o pipefail` grep -q's early
+  # exit can SIGPIPE the producer and read a present tool as absent.
+  set_have="$(_agent_tool_set "$val")"
   for t in Bash Write Edit NotebookEdit Agent; do
-    if _agent_tool_set "$val" | grep -qx "$t"; then echo "tools: grants $t ($val)"; return 0; fi
+    case $'\n'"$set_have"$'\n' in
+      *$'\n'"$t"$'\n'*) echo "tools: grants $t ($val)"; return 0 ;;
+    esac
   done
-  if [ "$(_agent_tool_set "$val")" != "$(_agent_tool_set "$shipped")" ]; then
+  if [ "$set_have" != "$(_agent_tool_set "$shipped")" ]; then
     echo "tools: is '$val', not the shipped '$shipped'"; return 0
   fi
   return 0
