@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
+  new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
+  characters of age's Bech32 alphabet — the line `age-keygen -o` writes, which until now scanned clean
+  (exit 0). Length-anchored like its siblings: the bare prefix and the pattern line itself still pass, and so
+  does SOPS ciphertext (checked against a real `sops` 3.13.3 file). **Re-run the guard installer to pick it up:**
+  a vendored per-repo copy or a machine-global one differs from this engine until you do, and `doctor`
+  reports it as stale (`W-GUARD-STALE` / `W-GUARD-GLOBAL-STALE`).
+
 - **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
   feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
   `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a
