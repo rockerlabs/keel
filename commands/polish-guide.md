@@ -417,13 +417,14 @@ Steps, in order:
      `keel-polish-reviewer` was not found, step 5(a) is unavailable for this run: say so in one line and
      name the remedies — re-run `install.sh` from the keel checkout (`--link` for a linked install), and if
      the agent still reads not found afterwards, restart the session — then take the path the Agent tool
-     being unavailable takes: **Fallback within a fallback** below (the one inline pass), then (b).
+     being unavailable takes: the inline pass of **Fallback within a fallback** below (it applies to this
+     case too), then (b).
      Never retry as `general-purpose` (it is NOT the type the gate trusts: no trace, and no tool floor).
 
      It must also carry
-     the ticket or spec this diff implements — when the session knows it, as the done-criterion TEXT (the
-     diff hand-off above: an id alone cannot be opened by a read-only reviewer) — with a **two-way conformance mandate**: the diff must realize that done-criterion, and
-     nothing in it may silently exceed or contradict it. **When no ticket exists** (an ad-hoc diff with no
+     the ticket or spec this diff implements — when the session knows it, as the done-criterion TEXT (see
+     the diff hand-off paragraph above) — with a **two-way conformance mandate**: the diff must realize
+     that done-criterion, and nothing in it may silently exceed or contradict it. **When no ticket exists** (an ad-hoc diff with no
      tracked done-criterion), the prompt states that absence explicitly rather than leaving the reviewer to
      assume a spec it was never given, and the review stays correctness-only. The prompt MUST
      also require the subagent to end its final response with a line, alone, exactly

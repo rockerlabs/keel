@@ -511,6 +511,10 @@ jq 'del(.hooks.SubagentStop[0].matcher)' "$dh_matchless/settings.json" > "$dh_ma
   && mv "$dh_matchless/settings.json.tmp" "$dh_matchless/settings.json"
 run "$doctor" --install "$dh_matchless"
 check_absent "A13: a matcher-less SubagentStop entry holding our command is not flagged" "$OUT" "W-GATE-REVIEW-MATCHER"
+# without jq doctor cannot structurally back a finding, so it stays silent rather than guess (fail-open)
+run env PATH="$farm" "$doctor" --install "$dh_legacy"
+check_contains "A13: ...and doctor still ran its gate check without jq" "$OUT" "/polish gate: wired machine-global"
+check_absent "A13: no jq -> no W-GATE-REVIEW-MATCHER guess" "$OUT" "W-GATE-REVIEW-MATCHER"
 # the per-project half
 legproj="$(new_repo)"; clean_baseline "$legproj"
 run "$installer" "$legproj"

@@ -450,7 +450,9 @@ fi
 if { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; then
   hook_install_backup "$settings"
   backup_why=""
-  [ "$n_stale" -gt 0 ] && backup_why="--force"
+  if [ "$n_stale" -gt 0 ]; then
+    backup_why="--force"
+  fi
   if [ "$n_retired" -gt 0 ]; then
     backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
   fi
