@@ -31,6 +31,9 @@ check_contains "rails are recognized (embedded copy, same as Claude copy mode)" 
 # --- (b) commands are never wired under --codex by design -> not reported as missing ----------------
 check_absent "no W-CMDS-MISSING nag under --codex (commands/ is a Claude-only mechanism)" "$OUT" "W-CMDS-MISSING"
 check_contains "commands check says why, instead of just going silent" "$OUT" "codex"
+# dir #413 A4: agents/ is Claude-format too — never wired under --codex, so never reported missing.
+check_contains "agents check says not applicable under --codex" "$OUT" "agents: not applicable under --codex"
+check_absent "no W-REVIEW-AGENT-MISSING nag under --codex" "$OUT" "W-REVIEW-AGENT-MISSING"
 
 # --- (c) without --codex, the SAME healthy codex install reports the OLD false gap ------------------
 # This is the regression guard: prove the bug this ticket closes actually existed, so a future revert

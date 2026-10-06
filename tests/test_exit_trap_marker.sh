@@ -85,6 +85,30 @@ for sh in $shells; do
   check_contains "dir #692 agy.sh under $sh: ...and prints the reply" "$OUT" "verdict-from-agy"
 done
 
+# --- vendor-review.sh (dir #662, B1) -------------------------------------------------------------
+# The orchestrator creates a scratch dir for its leak gate and removes it in an EXIT handler, so it joins
+# the same probe: a fatal error injected right after the handler is armed (before the client runs) must
+# exit non-zero and never print a round path. A whole tools/ copy: the script resolves the scanner and
+# its libs next to itself.
+vr_tree="$SANDBOX/pl662-vr"; rm -rf "$vr_tree"; mkdir -p "$vr_tree"; cp -R "$REPO_ROOT/tools" "$vr_tree/tools"
+vr_copy="$vr_tree/tools/vendor-review.sh"
+probe_copy "dir #662 vendor-review.sh" "$REPO_ROOT/tools/vendor-review.sh" "$vr_copy" "client_status=0" "$fatal"
+vr_client="$SANDBOX/pl662-client"; printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf "verdict-from-client\\n"\n' > "$vr_client"; chmod +x "$vr_client"
+printf 'bundle text\n' > "$SANDBOX/pl662-bundle.md"
+for sh in $shells; do
+  vout="$SANDBOX/pl662-out-${sh//\//_}"
+  run "$sh" "$vr_copy" --client "$vr_client" --system "$agy_system" --bundle "$SANDBOX/pl662-bundle.md" --label probe --out "$vout"
+  if [ "$STATUS" -ne 0 ]; then
+    pass "dir #662 vendor-review.sh under $sh: a top-level fatal error exits non-zero (status $STATUS)"
+  else
+    fail "dir #662 vendor-review.sh under $sh: a top-level fatal error exits non-zero" "exit 0 (masked): $OUT"
+  fi
+  check_absent "dir #662 vendor-review.sh under $sh: never prints a round path after the fatal error" "$OUT" "round-"
+  run "$sh" "$REPO_ROOT/tools/vendor-review.sh" --client "$vr_client" --system "$agy_system" --bundle "$SANDBOX/pl662-bundle.md" --label real --out "$vout-ok"
+  check_status "dir #662 vendor-review.sh under $sh: a real run still exits 0" 0 "$STATUS"
+  check_contains "dir #662 vendor-review.sh under $sh: ...and prints the round path" "$OUT" "round-"
+done
+
 # --- changelog-section.sh -----------------------------------------------------------------------
 # --edit is the one path that arms the trap (a scratch file for $EDITOR); its normal end is `exit 0`.
 csdir="$SANDBOX/pl692-cs"
@@ -177,5 +201,7 @@ bare="$(grep -nE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" \
   "$REPO_ROOT/tools/delta-audit/derive.sh" "$REPO_ROOT/tools/vendor-review/agy.sh" \
   "$REPO_ROOT/tools/changelog-section.sh" "$REPO_ROOT/tools/keel-impact.sh" "$REPO_ROOT/bootstrap.sh" || true)"
 check_eq "dir #692: no bare quoted-command EXIT trap in the five scripts" "" "$bare"
+bare_vr="$(grep -nE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/tools/vendor-review.sh" || true)"
+check_eq "dir #662: no bare quoted-command EXIT trap in vendor-review.sh" "" "$bare_vr"
 
 summary

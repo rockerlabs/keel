@@ -237,4 +237,25 @@ pin "polish-guide.md: step 9 names a non-gate gh pr create failure as still spen
   "$polish" 'still spends the receipt chain' \
   "expected step 9 to note that a gh pr create failing for a non-gate reason (bad --body-file, worktree .git-as-file) still spends the chain (dir #487)"
 
+# --- dir #413 slice 1 (A14): the read-only /polish review agent is a Claude Code feature, said so ------
+# The agent (agents/keel-polish-reviewer.md, `tools: Read, Grep, Glob`) is a structural floor only where
+# Claude Code loads agents/*.md. ADAPTING.md must say the floor does not port (the prose rails stay the
+# only containment elsewhere); docs/reference.md and the README name the agents/ channel so an adopter
+# can find what install.sh wires. One pin per site — a single shared phrase would let one satisfy all.
+pin "ADAPTING.md: the honest boundary says the review agent's tool floor is Claude Code-only" \
+  "$REPO_ROOT/ADAPTING.md" 'keel-polish-reviewer' \
+  "expected the honest-boundary bullet for the restricted /polish review agent (dir #413)"
+pin "ADAPTING.md: the bullet says the prose rails are the only containment on another harness" \
+  "$REPO_ROOT/ADAPTING.md" 'the prose rails stay the only containment' \
+  "expected the bullet to say that without the agents/ allowlist the prose rails are all there is (dir #413)"
+pin "docs/reference.md: an agents/ entry beside Commands" \
+  "$REPO_ROOT/docs/reference.md" '## Agents (`agents/`)' \
+  "expected docs/reference.md to list the shipped agents/ channel (dir #413)"
+pin "docs/reference.md: the agents/ entry names the shipped review agent" \
+  "$REPO_ROOT/docs/reference.md" '`keel-polish-reviewer`' \
+  "expected the agents/ entry to name keel-polish-reviewer (dir #413)"
+pin "README.md: the layout diagram names the agents/ channel" \
+  "$readme" 'agents/keel-polish-reviewer' \
+  "expected the README's how-it-works diagram to show the shipped review agent (dir #413)"
+
 summary

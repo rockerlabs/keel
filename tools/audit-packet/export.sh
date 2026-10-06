@@ -312,9 +312,7 @@ run_leak_gate() {
   tools/secret-guard/secret-scan.sh's own output by re-running it directly)"
     refuse "leak gate BLOCKED$context — secret-shaped string(s) or personal data found in:
 $(printf '%s\n' "$hit_paths" | sed 's/^/  /')
-Nothing was written. Remove the finding (or, for a genuine test fixture, an operator-approved
-.secret-scan-allow entry — a human, out-of-band decision, never an agent's own workaround) and
-re-export. There is no --force and no --skip-scan."
+Nothing was written. Remove the finding and re-export. There is no --force and no --skip-scan."
   else
     refuse "leak gate failed to run$context (tools/secret-guard/secret-scan.sh exited $status) —
   refusing to export without a clean gate. Its stderr:
