@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
+  new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
+  characters of age's Bech32 alphabet — the line `age-keygen -o` writes, which until now scanned clean
+  (exit 0). Length-anchored like its siblings: the bare prefix and the pattern line itself still pass, and so
+  does SOPS ciphertext (checked against a real `sops` 3.13.3 file). **Re-run the guard installer to pick it up:**
+  a vendored per-repo copy or a machine-global one differs from this engine until you do, and `doctor`
+  reports it as stale (`W-GUARD-STALE` / `W-GUARD-GLOBAL-STALE`).
+
 - **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
   `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
   `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or
