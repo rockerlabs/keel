@@ -371,8 +371,8 @@ Steps, in order:
      - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
      ```
 
-   - **The trace.** The subagent's `Skill(code-review)` call mints the gate's ordinary bare-level trace as
-     the skill returns — the hook fires for a subagent's call too, and reads the args' first word as the
+   - **The trace.** The subagent's `Skill(code-review)` call mints the gate's ordinary bare-level trace when
+     the Skill call returns (for the forked review, as it launches) — the hook fires for a subagent's call too, and reads the args' first word as the
      level — so there is no marker line, no `SubagentStop` trace and no dialog on this path, and the receipt
      is the bare `polish.5-review <level>`.
    - **After it returns.** First compare `git rev-parse HEAD` and `git status --porcelain` with the values
@@ -398,7 +398,9 @@ Steps, in order:
      as the same round.
    - **Step 8 denies for a missing review trace.** HEAD moved since the HEAD the last review saw (the
      common cause — a commit after the review) → the delta round above, with the same subagent, never the
-     in-session attempt. HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.
+     in-session attempt — unless that review itself ran in-session (a fallback below), when no K2 subagent
+     exists: then the in-session attempt again at the current HEAD, with the delta args `<level> <that
+     sha>..HEAD`. HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.
    - **Fallbacks, in order.** The Agent tool is unavailable, the subagent reports its Skill call was
      refused, the review was voided for a missing findings list (never for a changed tree — that stops), or
      the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session

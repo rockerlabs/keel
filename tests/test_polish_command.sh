@@ -73,6 +73,8 @@ pinf "step 5: a ReportFindings-only reply still restates" \
   'even after a `ReportFindings` call, and write `0 findings` explicitly'
 
 # --- B3/B4: the trace and the return --------------------------------------------------------------------
+pinf "step 5: the trace is minted when the Skill call returns, as the fork launches" \
+  'when the Skill call returns (for the forked review, as it launches)'
 pinf "step 5: no marker, SubagentStop trace or dialog on this path" \
   'no marker line, no `SubagentStop` trace and no dialog on this path'
 pinf "step 5: HEAD and status are compared after every return" \
@@ -103,6 +105,8 @@ pinf "step 5: a gone subagent is replaced by a fresh spawn on the delta" \
 # --- B6/B6a: fallbacks --------------------------------------------------------------------------------
 pinf "step 5: a missing-trace deny after a moved HEAD is a delta round" \
   'HEAD moved since the HEAD the last review saw'
+pinf "step 5: a missing-trace deny after an in-session review re-reviews in-session" \
+  'unless that review itself ran in-session (a fallback below), when no K2 subagent exists'
 pinf "step 5: a missing-trace deny with HEAD unchanged goes in-session" \
   'HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.'
 pinf "step 5: the in-session fallback keeps the two-word args" \
