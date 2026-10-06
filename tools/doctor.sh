@@ -392,8 +392,8 @@ gate_hook_wired() {
 # `keel-polish-reviewer` agent type and runs pre-pr-gate.sh (dir #413 B9 iii). "Covers" = the exact matcher,
 # or a match-all one (no matcher / "" / "*", which fire on every agent type) — the rule
 # tools/lib/hook-install.sh's `covers` and the gate's own `_gate_settings_has_review_hook` apply. Called only
-# once gate_hook_wired already said the gate is wired, so "no jq" falls back to the same plain grep that
-# function does (fail-open: never a finding doctor cannot structurally back).
+# once gate_hook_wired already said the gate is wired. Without jq it answers "covered" (fail-open: never a
+# finding doctor cannot structurally back — a grep cannot see a match-all entry — and skill-trace needs jq).
 gate_review_matcher_wired() {
   local settings="$1"
   [ -f "$settings" ] || return 1
@@ -401,7 +401,7 @@ gate_review_matcher_wired() {
     jq -e '.hooks.SubagentStop // [] | any((.matcher == "keel-polish-reviewer" or .matcher == null or .matcher == "" or .matcher == "*") and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
       "$settings" >/dev/null 2>&1
   else
-    grep -q 'keel-polish-reviewer' "$settings" 2>/dev/null
+    return 0
   fi
 }
 

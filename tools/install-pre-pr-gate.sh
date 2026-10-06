@@ -314,13 +314,17 @@ retired_specs="$(jq -n --arg gate "$gate" '[
 
 # retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out and
 # $n_retired to how many came out. Sets globals, never prints: a command substitution would lose n_retired.
+# hook_install_remove matches by the lib's `covers`, so our command inside a match-all entry (no matcher, ""
+# or "*") also comes out of that entry; the merge that follows re-wires it under the named matcher, so the
+# end state is the same wiring — one narrow entry — and the "retired" line is the only imprecise part.
 retire_legacy() {
   local removal
   removal="$(hook_install_remove "$retired_specs" "$1")"
   n_retired="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
   retired_json="$1"
-  [ "$n_retired" -gt 0 ] && retired_json="$(jq -c '.new' <<<"$removal")"
-  return 0
+  if [ "$n_retired" -gt 0 ]; then
+    retired_json="$(jq -c '.new' <<<"$removal")"
+  fi
 }
 
 # Backup/atomic-write/shape-check/merge/remove all live in tools/lib/hook-install.sh (dir #437 MW8),
@@ -376,7 +380,9 @@ if [ "$uninstall" = 1 ]; then
   new_settings="$(jq '.new' <<<"$removal")"
   hook_install_atomic_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
-  [ "$n_retired" -gt 0 ] && echo "  -    SubagentStop/general-purpose removed (the legacy matcher, replaced by keel-polish-reviewer)"
+  if [ "$n_retired" -gt 0 ]; then
+    echo "  -    SubagentStop/general-purpose removed (the legacy matcher, replaced by keel-polish-reviewer)"
+  fi
 
   while IFS=$'\t' read -r status event matcher; do
     [ -n "$status" ] || continue
@@ -445,14 +451,18 @@ if { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; th
   hook_install_backup "$settings"
   backup_why=""
   [ "$n_stale" -gt 0 ] && backup_why="--force"
-  [ "$n_retired" -gt 0 ] && backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
+  if [ "$n_retired" -gt 0 ]; then
+    backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
+  fi
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") ($backup_why)"
 fi
 
 new_settings="$(jq '.new' <<<"$merged")"
 hook_install_atomic_write "$settings" "$new_settings"
 
-[ "$n_retired" -gt 0 ] && echo "  -    SubagentStop/general-purpose retired (the legacy matcher — keel-polish-reviewer replaces it; your other hooks untouched)"
+if [ "$n_retired" -gt 0 ]; then
+  echo "  -    SubagentStop/general-purpose retired (the legacy matcher — keel-polish-reviewer replaces it; your other hooks untouched)"
+fi
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
   case "$status" in
