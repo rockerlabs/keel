@@ -109,6 +109,235 @@ OUT="$(AGY_BIN="$SANDBOX/does-not-exist" "$CLIENT" --system "$system" --raw-out 
 check_status "agy.sh: a missing AGY_BIN exits non-zero" 1 "$STATUS"
 check_contains "agy.sh: names the install command" "$OUT" "antigravity.google"
 
+# ======================================================================================================
+# dir #662 — vendor-review hardening, agy.sh half (B3 platform cap, B4 denial, B5(b) empty stdin,
+# B8 neutral cwd, B9 settings allow-rules). No real agy: every case is a fake CLI. Unlike the cases
+# above, these need stdout and stderr APART (a forwarded stderr line is part of the contract), so
+# a_run keeps them in two files.
+# ======================================================================================================
+a_run() {  # a_run STDIN_FILE CMD... — sets A_ST, A_OUT (stdout), A_ERR (stderr)
+  local in="$1"; shift
+  "$@" < "$in" > "$SANDBOX/a.out" 2> "$SANDBOX/a.err"; A_ST=$?
+  A_OUT="$(cat "$SANDBOX/a.out")"; A_ERR="$(cat "$SANDBOX/a.err")"
+}
+in_hi="$SANDBOX/in-hi"; printf 'hi' > "$in_hi"
+
+# --- B3: the cap fits the platform's per-argument limit (Linux: 131071) -----------------------------
+# A fake agy records the byte count of its -p argument; a `uname` shim chooses the platform so the
+# result does not depend on the host running the suite.
+agy_count="$(mk_agy <<'SCRIPT'
+printf '%s' "$2" | wc -c | tr -d ' ' > "${AGY_COUNT:?}"
+printf '%s' '{"status":"SUCCESS","response":"ok"}'
+SCRIPT
+)"
+uname_linux="$SANDBOX/uname-linux"; mkdir -p "$uname_linux"
+printf '#!/bin/sh\necho Linux\n' > "$uname_linux/uname"; chmod +x "$uname_linux/uname"
+uname_darwin="$SANDBOX/uname-darwin"; mkdir -p "$uname_darwin"
+printf '#!/bin/sh\necho Darwin\n' > "$uname_darwin/uname"; chmod +x "$uname_darwin/uname"
+cnt="$SANDBOX/agy-count"
+# overhead: the combined prompt's bytes beyond the user text (system prompt + the fixed no-tools block)
+printf 'x' > "$SANDBOX/in-x"
+rm -f "$cnt"; a_run "$SANDBOX/in-x" env AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+overhead=$(( $(cat "$cnt" 2>/dev/null || echo 0) - 1 ))
+mk_user_of() {  # mk_user_of TOTAL FILE — a user message making the combined prompt exactly TOTAL bytes
+  head -c $(( $1 - overhead )) /dev/zero | tr '\0' 'x' > "$2"
+}
+mk_user_of 131071 "$SANDBOX/in-131071"; mk_user_of 131072 "$SANDBOX/in-131072"; mk_user_of 150000 "$SANDBOX/in-150000"
+
+rm -f "$cnt"
+a_run "$SANDBOX/in-131071" env PATH="$uname_linux:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+check_status "agy.sh B3: Linux, combined 131071 bytes → invoked, exit 0" 0 "$A_ST"
+check_eq "agy.sh B3: Linux, 131071 → agy received exactly 131071 bytes" "131071" "$(cat "$cnt" 2>/dev/null)"
+rm -f "$cnt"
+a_run "$SANDBOX/in-131072" env PATH="$uname_linux:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+check_status "agy.sh B3: Linux, combined 131072 bytes → exit 2 (over the per-argument cap)" 2 "$A_ST"
+check_nofile "agy.sh B3: Linux, 131072 → agy is never invoked" "$cnt"
+check_contains "agy.sh B3: the refusal keeps the HARD STOP wording" "$A_ERR" "HARD STOP"
+check_contains "agy.sh B3: ...names the Linux cap" "$A_ERR" "131071"
+check_contains "agy.sh B3: ...names the platform" "$A_ERR" "Linux"
+check_contains "agy.sh B3: ...and says to chunk the bundle" "$A_ERR" "hunk the bundle"
+# non-Linux keeps the 185 KiB (189440-byte) cap: refusal above it works on every host; the "a 150000-byte prompt
+# runs" half needs a kernel that really accepts a 150000-byte argument, so a real-Linux host (a `uname` shim
+# cannot change the kernel's own limit) skips it.
+mk_user_of 189441 "$SANDBOX/in-189441"
+rm -f "$cnt"
+a_run "$SANDBOX/in-189441" env PATH="$uname_darwin:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+check_status "agy.sh B3: non-Linux, combined 189441 bytes → exit 2 (over the 185 KiB cap)" 2 "$A_ST"
+check_contains "agy.sh B3: ...the refusal names the 189440-byte cap" "$A_ERR" "189440"
+check_nofile "agy.sh B3: ...agy is never invoked" "$cnt"
+if [ "$(uname -s)" != Linux ]; then
+  rm -f "$cnt"
+  a_run "$SANDBOX/in-150000" env PATH="$uname_darwin:$PATH" AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+  check_status "agy.sh B3: non-Linux keeps the 185 KiB cap (a 150000-byte prompt runs)" 0 "$A_ST"
+  check_eq "agy.sh B3: ...agy received all 150000 bytes" "150000" "$(cat "$cnt" 2>/dev/null)"
+fi
+if [ "$(uname -s)" = Linux ]; then
+  # the real-Linux leg (CI alpine): the per-argument limit is the kernel's own, not a shim's claim
+  rm -f "$cnt"
+  a_run "$SANDBOX/in-131071" env AGY_COUNT="$cnt" AGY_BIN="$agy_count" "$CLIENT" --system "$system"
+  check_status "agy.sh B3 (real Linux): a 131071-byte combined prompt reaches agy, exit 0" 0 "$A_ST"
+fi
+
+# --- B3: an E2BIG from the exec (a platform with a smaller limit) is named, never "agy CLI call failed" ----
+agy_e2big="$(mk_agy <<'SCRIPT'
+echo "bash: line 1: /x/agy: Argument list too long" >&2
+exit 126
+SCRIPT
+)"
+a_run "$in_hi" env AGY_BIN="$agy_e2big" "$CLIENT" --system "$system"
+check_status "agy.sh B3: exit 126 + 'Argument list too long' → exit 2" 2 "$A_ST"
+check_contains "agy.sh B3: ...the message names the per-argument size limit" "$A_ERR" "per-argument"
+check_contains "agy.sh B3: ...and says to chunk the bundle" "$A_ERR" "hunk the bundle"
+check_absent "agy.sh B3: ...and never reports it as a plain agy CLI failure" "$A_ERR" "agy CLI call failed"
+
+# --- B4: a denied tool call is a failure even when a reply came back ---------------------------------
+agy_deny_reply="$(mk_agy <<'SCRIPT'
+echo 'jetski: no output produced — a tool required the "read_file" permission' >&2
+printf '%s' '{"status":"SUCCESS","response":"Based on what I could see, the verdict is clean."}'
+SCRIPT
+)"
+a_run "$in_hi" env AGY_BIN="$agy_deny_reply" "$CLIENT" --system "$system"
+check_status "agy.sh B4: a denial notice + a non-blank reply → exit 1" 1 "$A_ST"
+check_eq "agy.sh B4: ...nothing on stdout" "" "$A_OUT"
+check_contains "agy.sh B4: ...agy's denial line is forwarded on stderr" "$A_ERR" 'required the "read_file" permission'
+check_contains "agy.sh B4: ...and the message says a tool call was denied" "$A_ERR" "denied"
+
+agy_warn_reply="$(mk_agy <<'SCRIPT'
+echo 'warning: quota at 80%' >&2
+printf '%s' '{"status":"SUCCESS","response":"Based on what I could see, the verdict is clean."}'
+SCRIPT
+)"
+a_run "$in_hi" env AGY_BIN="$agy_warn_reply" "$CLIENT" --system "$system"
+check_status "agy.sh B4: other stderr + a reply → exit 0" 0 "$A_ST"
+check_contains "agy.sh B4: ...the reply is on stdout" "$A_OUT" "verdict is clean"
+check_contains "agy.sh B4: ...and the stderr line is forwarded, no longer dropped" "$A_ERR" "quota at 80%"
+
+agy_unquoted="$(mk_agy <<'SCRIPT'
+echo 'a tool required the read_file permission' >&2
+printf '%s' '{"status":"SUCCESS","response":"Based on what I could see, the verdict is clean."}'
+SCRIPT
+)"
+a_run "$in_hi" env AGY_BIN="$agy_unquoted" "$CLIENT" --system "$system"
+check_status "agy.sh B4 (changed format, no quoted tool name): not matched → exit 0 (fail-visible, pinned)" 0 "$A_ST"
+check_contains "agy.sh B4: ...the reply is on stdout" "$A_OUT" "verdict is clean"
+check_contains "agy.sh B4: ...and the line stays visible on stderr" "$A_ERR" "required the read_file permission"
+
+# --- B5(b): no round on empty input ------------------------------------------------------------------
+agy_mark="$(mk_agy <<'SCRIPT'
+: > "${AGY_MARK:?}"
+printf '%s' '{"status":"SUCCESS","response":"x"}'
+SCRIPT
+)"
+mark="$SANDBOX/agy-mark"
+rm -f "$mark"; a_run /dev/null env AGY_MARK="$mark" AGY_BIN="$agy_mark" "$CLIENT" --system "$system"
+check_status "agy.sh B5: empty stdin → exit 2" 2 "$A_ST"
+check_nofile "agy.sh B5: ...agy is never invoked" "$mark"
+printf '  \n\t \n' > "$SANDBOX/in-ws"
+rm -f "$mark"; a_run "$SANDBOX/in-ws" env AGY_MARK="$mark" AGY_BIN="$agy_mark" "$CLIENT" --system "$system"
+check_status "agy.sh B5: whitespace-only stdin → exit 2" 2 "$A_ST"
+check_nofile "agy.sh B5: ...agy is never invoked" "$mark"
+
+# --- B8: agy runs from a fresh empty directory, not the caller's tree -------------------------------
+agy_rec="$(mk_agy <<'SCRIPT'
+{ pwd -P; ls -A | wc -l | tr -d ' '; } > "${AGY_REC:?}"
+printf '%s' '{"status":"SUCCESS","response":"ok"}'
+SCRIPT
+)"
+tmp11="$SANDBOX/tmp-b8"; mkdir -p "$tmp11"; tmp11_p="$(cd "$tmp11" && pwd -P)"
+rec="$SANDBOX/agy-rec"; rm -f "$rec"
+printf 'caller-tree context\n' > "$SANDBOX/AGENTS.md"   # a file agy would load from ITS cwd
+a_run "$in_hi" env TMPDIR="$tmp11" AGY_REC="$rec" AGY_BIN="$agy_rec" "$CLIENT" --system "$system"
+check_status "agy.sh B8: run with TMPDIR at a sandbox dir → exit 0" 0 "$A_ST"
+rec_cwd="$(sed -n 1p "$rec" 2>/dev/null)"
+case "$rec_cwd" in "$tmp11_p"/agy.*) pass "agy.sh B8: agy's cwd is a fresh agy.* dir under TMPDIR" ;; *) fail "agy.sh B8: agy's cwd is a fresh agy.* dir under TMPDIR" "recorded '$rec_cwd', want $tmp11_p/agy.*" ;; esac
+check_eq "agy.sh B8: ...and it held no entries (so no AGENTS.md/GEMINI.md to load)" "0" "$(sed -n 2p "$rec" 2>/dev/null)"
+check_eq "agy.sh B8: ...and it is gone after the run" "0" "$(find "$tmp11" -maxdepth 1 -name 'agy.*' | wc -l | tr -d ' ')"
+# a relative AGY_BIN / --system / --raw-out are resolved BEFORE the cd
+rm -f "$rec" "$SANDBOX/raw-rel.json"
+OUT="$(cd "$SANDBOX" && env TMPDIR="$tmp11" AGY_REC="$rec" AGY_BIN="./$(basename "$agy_rec")" "$CLIENT" --system system.md --raw-out raw-rel.json 2>&1 <<< "hi")"; STATUS=$?
+check_status "agy.sh B8: a relative AGY_BIN / --system / --raw-out still works" 0 "$STATUS"
+check_file "agy.sh B8: ...--raw-out lands relative to the CALLER, not agy's cwd" "$SANDBOX/raw-rel.json"
+rm -f "$mark"
+a_run "$in_hi" env TMPDIR=/nonexistent AGY_MARK="$mark" AGY_BIN="$agy_mark" "$CLIENT" --system "$system"
+check_status "agy.sh B8: TMPDIR=/nonexistent (no neutral dir) → exit 1" 1 "$A_ST"
+check_nofile "agy.sh B8: ...agy is never invoked" "$mark"
+
+# B8 (exit paths): SIGTERM while agy is running removes the neutral dir AT ONCE. There is deliberately no
+# explicit `trap … TERM`: it would defer the cleanup until agy returns (up to its whole print timeout), while an
+# untrapped fatal signal runs the EXIT handler immediately. The fake agy sleeps 4 s; the run must end well before.
+agy_sleepy="$(mk_agy <<'SCRIPT'
+: > "${AGY_REC:?}"
+sleep 4
+printf '%s' '{"status":"SUCCESS","response":"late"}'
+SCRIPT
+)"
+rm -f "$SANDBOX/sleepy-started"
+env TMPDIR="$tmp11" AGY_REC="$SANDBOX/sleepy-started" AGY_BIN="$agy_sleepy" "$CLIENT" --system "$system" \
+  < "$in_hi" > /dev/null 2>&1 &
+sleepy_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do [ -e "$SANDBOX/sleepy-started" ] && break; sleep 0.2; done
+sleepy_t0="$(date +%s)"
+kill -TERM "$sleepy_pid" 2>/dev/null
+wait "$sleepy_pid"; sleepy_st=$?
+sleepy_dt=$(( $(date +%s) - sleepy_t0 ))
+check_status "agy.sh B8: SIGTERM while agy runs → exit 143" 143 "$sleepy_st"
+[ "$sleepy_dt" -lt 3 ] && pass "agy.sh B8: ...at once, not after agy returns (${sleepy_dt}s < 3s)" || fail "agy.sh B8: ...at once, not after agy returns" "took ${sleepy_dt}s"
+check_eq "agy.sh B8: ...and the neutral dir is gone" "0" "$(find "$tmp11" -maxdepth 1 -name 'agy.*' | wc -l | tr -d ' ')"
+
+# --- B9: no tool access is enforced — any agy allow-rule refuses, an unreadable policy refuses -------
+settings_dir="$HOME/.gemini/antigravity-cli"; settings="$settings_dir/settings.json"
+mkdir -p "$settings_dir"
+set_settings() { rm -f "$settings"; printf '%s' "$1" > "$settings"; }
+b9_run() {  # b9_run [extra env...] — a run of the marker agy; sets A_ST/A_ERR, $mark says whether agy ran
+  rm -f "$mark"
+  a_run "$in_hi" env "$@" AGY_MARK="$mark" AGY_BIN="$agy_mark" "$CLIENT" --system "$system"
+}
+set_settings '{"permissions":{"allow":["read_file(/x/)"]}}'
+b9_run
+check_status "agy.sh B9: one allow-rule → exit 1" 1 "$A_ST"
+check_nofile "agy.sh B9: ...agy is never invoked" "$mark"
+check_contains "agy.sh B9: ...the message names the settings file" "$A_ERR" "settings.json"
+check_contains "agy.sh B9: ...and the number of rules" "$A_ERR" "1 permissions.allow rule"
+check_absent "agy.sh B9: ...and never the rule itself (rules carry paths)" "$A_ERR" "read_file(/x/)"
+check_absent "agy.sh B9: ...and carries no imperative to edit the file" "$A_ERR" "remove the"
+for ok_json in '{"permissions":{"allow":[]}}' '{}' '{"permissions":{}}'; do
+  set_settings "$ok_json"; b9_run
+  check_status "agy.sh B9: $ok_json → proceeds, exit 0" 0 "$A_ST"
+  check_file "agy.sh B9: ...agy was invoked" "$mark"
+done
+rm -f "$settings"; b9_run
+check_status "agy.sh B9: no settings file → proceeds, exit 0" 0 "$A_ST"
+check_file "agy.sh B9: ...agy was invoked" "$mark"
+for bad_json in 'not json' '{"permissions":{"allow":"read_file(/x/)"}}' '{"permissions":"x"}' '[]' ''; do
+  set_settings "$bad_json"; b9_run
+  check_status "agy.sh B9: unparseable/odd settings ($bad_json) → exit 1 (fail closed)" 1 "$A_ST"
+  check_nofile "agy.sh B9: ...agy is never invoked" "$mark"
+done
+set_settings '{"permissions":{"allow":["read_file(/x/)"]}}'; chmod 000 "$settings"
+b9_run
+check_status "agy.sh B9: an unreadable one-rule settings file → exit 1" 1 "$A_ST"
+check_nofile "agy.sh B9: ...agy is never invoked" "$mark"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then   # chmod 000 is a no-op for root (CLAUDE.md Linux-leg trap 2)
+  check_contains "agy.sh B9: ...the message says the permissions could not be read" "$A_ERR" "could not be read"
+fi
+chmod 600 "$settings"
+farm_nojq="$SANDBOX/nojq-bin"; path_farm "$farm_nojq" jq
+b9_run PATH="$farm_nojq"
+check_status "agy.sh B9: jq absent (one-rule file) → exit 1 (fail closed)" 1 "$A_ST"
+check_nofile "agy.sh B9: ...agy is never invoked" "$mark"
+# the call shape never widens agy's grants
+agy_argv="$(mk_agy <<'SCRIPT'
+printf '%s\n' "$@" > "${AGY_ARGV:?}"
+printf '%s' '{"status":"SUCCESS","response":"ok"}'
+SCRIPT
+)"
+rm -f "$settings"
+argv_f="$SANDBOX/agy-argv"
+a_run "$in_hi" env AGY_ARGV="$argv_f" AGY_BIN="$agy_argv" "$CLIENT" --system "$system"
+check_absent "agy.sh B9: agy's argv never carries --add-dir" "$(cat "$argv_f" 2>/dev/null)" "--add-dir"
+check_absent "agy.sh B9: ...nor --dangerously-skip-permissions" "$(cat "$argv_f" 2>/dev/null)" "--dangerously-skip-permissions"
+rm -rf "$HOME/.gemini"
+
 # --- --help (no stdin needed) ------------------------------------------------------------------------
 run "$CLIENT" -h
 check_status "agy.sh: --help exits 0" 0 "$STATUS"
