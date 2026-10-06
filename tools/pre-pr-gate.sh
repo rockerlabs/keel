@@ -26,6 +26,14 @@
 # both the last step id and the SHA effect-check — no separate finalize step needed — while steps 3 and 6
 # are what actually tie a TEST RUN to the commit being shipped; see the dir #96 block further down.
 #
+# --- where the state lives, and why a sandboxed shell breaks it (dir #583) ------------------------------
+# Under `<root>` = `$HOME/.keel/tmp/pre-pr-gate/` (tools/lib/gate-paths.sh): the sentinel (the receipts) is
+# `<root>/sentinel/<receipt-key>`, keyed by repo AND branch; the review trace is `<root>/trace/<repo-key>`,
+# keyed by repo only (dir #80). `pre-pr-gate.sh -h` prints this checkout's live paths. The hook is understood
+# to run outside the sandbox (not reproduced here), and a sandboxed shell can keep its own private view of
+# `<root>`: its `init` and `receipt` calls succeed and never reach the hook, which reports "no receipt on
+# file". Fix: re-run `init` and EVERY `receipt` with the sandbox disabled — not only the final `gh pr create`.
+#
 # CLI subcommands (used by commands/polish.md, so a step never needs a raw `echo >>`):
 #   pre-pr-gate.sh init                    mint a fresh nonce, start a new receipt (run from repo root)
 #   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
@@ -437,7 +445,7 @@ unset _ppg_dir
 # `gate_state_root` check just before the first `sentinel=` resolution, further down) — by then
 # `deny()` is defined and `$cwd` is parsed, so that check uses the file's own real, established
 # decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
-if [ -n "${1:-}" ]; then
+if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ]; then
   gate_state_root >/dev/null || {
     printf 'pre-pr-gate: $HOME %s — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' \
       "$(gate_home_diagnosis)" >&2
@@ -1445,6 +1453,33 @@ log_event() {
 }
 
 case "${1:-}" in
+  -h|--help)
+    # dir #583: both key shapes side by side, with this checkout's live paths — a worker whose `gh pr create`
+    # was denied for a missing receipt can `ls` the sentinel from an unsandboxed call and see whether its
+    # receipts ever reached the hook. Exempt from the CLI-mode $HOME guard above (help must work in a broken
+    # environment); key resolution is best-effort: a non-repo cwd or a detached HEAD (where
+    # _require_receipt_key exits, inside this substitution only) leaves the placeholders.
+    ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
+    ph_note='(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> stand for the keys `pre-pr-gate.sh keys` prints inside the checkout.)'
+    if ph_keys="$(_require_receipt_key "$PWD" 2>/dev/null && printf '%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
+      ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"; ph_note=""
+    fi
+    ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
+    ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
+    printf '%s\n' \
+      'pre-pr-gate.sh — the /polish pre-PR gate, a PreToolUse(Bash) hook on `gh pr create` (subcommands: see the script header).' \
+      '' \
+      'State files for the checkout of the current directory — two keys, side by side:' \
+      "  sentinel (the receipts)  $ph_sentinel" \
+      '                           keyed by repo AND branch' \
+      "  review trace             $ph_trace" \
+      '                           keyed by repo only' \
+      ${ph_note:+"$ph_note"} \
+      '' \
+      'A "no receipt on file" deny can mean the receipts were written from a sandboxed shell (a private view of this state' \
+      'directory). From an UNSANDBOXED call, `ls` the sentinel: if it is absent, re-run `init` and every `receipt` with the sandbox disabled.'
+    exit 0
+    ;;
   repo-key)
     # Exposes _repo_key() (the worktree-aware main_top_for(...) resolution, dir #61, reduced to a
     # basename-plus-hash-of-the-full-path key, dir #481) to other tools — dir #64's own
@@ -2408,7 +2443,7 @@ if [ ! -f "$sentinel" ]; then
     # `basename-hash` — not a display string; quoting it verbatim here would show the operator a
     # confusing hash suffix where a plain repo name used to read. `basename "$main_top"` recovers the
     # same clean name the OLD message showed, purely for this one human-facing sentence.
-    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$(basename "$main_top")' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).)"
+    deny "Pre-PR gate: run /polish first (simplify + independent review + tests). The gate unlocks automatically when /polish completes cleanly. (No receipt is on file for repo '$(basename "$main_top")' on branch '$resolved_branch' specifically — the sentinel is keyed by repo AND branch, so besides a DIFFERENT repo or checkout than this session's own tracked working directory, this can also mean /polish completed on a different BRANCH in this same checkout: $(_cwd_key_note).) If /polish did run here on this branch, its receipts may sit in a sandboxed shell's private view of the state directory this hook reads: from an UNSANDBOXED call, \`ls $sentinel\` — if it is absent, re-run \`init\` and every \`receipt\` with the sandbox disabled (\`pre-pr-gate.sh -h\` shows the key shapes)."
   fi
 fi
 

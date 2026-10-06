@@ -254,4 +254,16 @@ pinfg "guide: § Step 9 owns the CI-wait rule, bounded (dir #616)" '**Waiting on
 pinfg "guide: § Step 9 forbids ScheduleWakeup for a background wait" 'Never ScheduleWakeup'
 pinfg "guide: § Step 9 gives a harness with no completion notice a bounded foreground wait" 'A harness with no background-completion notice: one bounded foreground wait'
 
+# --- dir #583: guide § Step 8 says a missing-receipt deny can be a sandbox visibility problem ----------------
+pinfg "guide: § Step 8 names the sandbox visibility cause (dir #583)" '"No receipt is on file" can be a visibility problem, not a missing one (dir #583)'
+pinfg "guide: § Step 8 states both key shapes side by side" 'the sentinel by repo AND branch, the review trace by repo only'
+pinfg "guide: § Step 8 says every write is redone, not just the last command" 'not just the final `gh pr create`'
+
+# --- dir #612 seam (found by dir #661's review): the unavailable-/simplify fallback is its OWN inline pass ----
+# "the same ONE inline pass" read as the prose-only reuse pass, but the fallback runs on a diff that has code:
+# it must cover the cleanup angles /simplify would, and say it is not the prose-only pass.
+check_contains "guide: § Step 2's unavailable-skill fallback covers /simplify's own cleanup angles" "$g2" \
+  'over the angles `/simplify` covers (duplication, dead code, over-complication, naming)'
+check_contains "guide: § Step 2 says the fallback is not the prose-only pass" "$g2" 'not the prose-only pass above'
+
 summary

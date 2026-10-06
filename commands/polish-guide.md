@@ -182,8 +182,9 @@ Steps, in order:
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable, do the same ONE inline pass over the step-1 diff, say what you
-   tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
+   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff, over the angles
+   `/simplify` covers (duplication, dead code, over-complication, naming) — not the prose-only pass above —
+   say what you tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`, or the prose-only receipt above).
@@ -813,7 +814,17 @@ Steps, in order:
      `tools/pre-pr-gate.sh init` then `tools/pre-pr-gate.sh receipt --recover` to restore whatever was
      genuinely valid before, or start over from step 1 if `--recover` finds nothing to restore.
 
-   Before either path, honestly check whether the named step's work actually happened and was simply not
+   - **"No receipt is on file" can be a visibility problem, not a missing one (dir #583)** — neither case
+     above, and not a chain problem. A shell the harness sandboxes can keep its own private view of the gate's
+     state directory (the hook is understood to run outside the sandbox; not reproduced here), so `init` and
+     every `receipt` written from it succeed and never reach the hook that evaluates `gh pr create`. The two
+     files are keyed differently: the sentinel by repo AND branch, the review trace by repo only (the deny
+     prints the sentinel path it checked; `tools/pre-pr-gate.sh -h` shows both shapes). From an unsandboxed
+     call, `ls` that path: absent → re-write `init` and EVERY `receipt` for work already done (do not redo
+     it) with the sandbox disabled, not just the final `gh pr create` (an exemption applied only to the last
+     command leaves the earlier writes where they were).
+
+   Before any of these, honestly check whether the named step's work actually happened and was simply not
    receipted, or was genuinely skipped — then log one verdict line: `tools/pre-pr-gate.sh log receipt-verdict
    "true-catch <step-id>"` (a real skip — the gate did its job) or `"false-fire <step-id>"` (the step ran,
    only the receipt write was missed). This is instrumentation for the pilot's own keep/drop review (dir
