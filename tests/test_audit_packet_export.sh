@@ -111,6 +111,10 @@ run_in "$r2" "$TOOL" --vendor x --baseline HEAD --out out --disclosure-ack "t" -
 check_status "export: BLOCKS on a planted key-shaped secret" 3 "$STATUS"
 check_contains "export: BLOCKED message names the offending path" "$OUT" "tool.sh"
 check_absent "export: BLOCKED message never repeats the secret's own text" "$OUT" "$(rep a 36)"
+# dir #662 A4 (B2): the refusal text names no exemption mechanism (the scanner's own policy: say WHAT to do,
+# never HOW to bypass the check) — the root .secret-scan-allow stays honoured, only the message changes.
+check_absent "export: BLOCKED message never names .secret-scan-allow" "$OUT" "secret-scan-allow"
+check_absent "export: BLOCKED message never names the inline secret-scan:allow marker" "$OUT" "secret-scan:allow"
 check_nodir "export: nothing written when the gate blocks" "$r2/out"
 
 # --- the leak gate: a personal literal (class 2) BLOCKS too, from the sandboxed HOME's file --------
