@@ -37,6 +37,12 @@ sections real content going forward — see that page for exactly when each one 
   marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
   (`commands/go-guide.md`).
 
+- **`session-cost.sh tail` measures a `/go` session's fixed per-PR tail (dir #670, slice 1).** One row per
+  `/polish` window, from the first `polish` turn to the `gh pr create` that names a pull-request URL, plus
+  a row per subagent inside it and the window's review cost; over the ten 0.13.0 sessions it reproduces
+  the 11-PR baseline (median 5.62M cache-read tokens). The shared transcript reader gains `tu_tool_results`
+  and `tu_subagent_meta`, and `tu_tool_calls` gains each call's id and a Bash call's command.
+
 - **Keel ships a read-only review agent, `agents/keel-polish-reviewer.md`, and `install.sh` wires it (dir #413,
   slice 1 of 2).** Its `tools:` allowlist is `Read, Grep, Glob` — no shell, no git, no tests — so a `/polish`
   review subagent running as it cannot run the git-mutating command that destroyed a parent session's

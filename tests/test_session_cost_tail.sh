@@ -1,0 +1,341 @@
+#!/usr/bin/env bash
+# tests/test_session_cost_tail.sh — dir #670 (slice 1): `tools/self/session-cost.sh tail`, the per-PR
+# tail measurement (B9) and its review-cost split (B10). Every fixture is SYNTHETIC — built here, inside
+# the sandbox, in the shapes verified live against real transcripts (CLAUDE.md: no real transcript
+# content enters a tracked file). One case per A2 item (i)-(ix); each was shown red against a wrong
+# build first (the first-record-only reader must fail (i) — the exact bug the design's E5 records).
+set -uo pipefail
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
+
+tool="$REPO_ROOT/tools/self/session-cost.sh"
+check_file "tools/self/session-cost.sh exists" "$tool"
+
+PRURL='https://github.com/example-org/example-repo/pull/42'
+FIXED_LINE="You are /polish step 5's review subagent."
+
+# --- fixture builders ------------------------------------------------------------------------------
+# A time is "HH:MM:SS" on one fixed day; ISO strings of one format compare lexicographically.
+T() { printf '2026-10-01T%s.000Z' "$1"; }
+
+# rec_turn REQUEST_ID HH:MM:SS SKILL BRANCH CACHE_READ CONTENT_JSON — one assistant record
+rec_turn() {
+  jq -nc --arg rid "$1" --arg ts "$(T "$2")" --arg sk "$3" --arg br "$4" --argjson cr "$5" --argjson content "$6" '
+    {type:"assistant", requestId:$rid, timestamp:$ts, gitBranch:(if $br=="" then null else $br end),
+     attributionSkill:(if $sk=="" then null else $sk end),
+     message:{model:"claude-sonnet-5-5", content:$content,
+              usage:{input_tokens:1, output_tokens:1, cache_read_input_tokens:$cr}}}'
+}
+# bash_use ID COMMAND — a Bash tool_use content array
+bash_use() { jq -nc --arg id "$1" --arg c "$2" '[{type:"tool_use", id:$id, name:"Bash", input:{command:$c}}]'; }
+# rec_result HH:MM:SS TOOL_USE_ID IS_ERROR TEXT — a user record holding one tool_result
+rec_result() {
+  jq -nc --arg ts "$(T "$1")" --arg id "$2" --argjson err "$3" --arg t "$4" '
+    {type:"user", timestamp:$ts,
+     message:{role:"user", content:[{type:"tool_result", tool_use_id:$id, is_error:$err, content:$t}]}}'
+}
+# mk_session NAME — sets SF to a fresh primary transcript path (empty) with its subagents dir
+mk_session() {
+  SESS_ID="$(printf '%s' "$1" | tr -c 'a-z0-9' '0')-aaaa-bbbb-cccc-dddddddddddd"
+  SDIR="$SANDBOX/proj-$1"
+  mkdir -p "$SDIR/$SESS_ID/subagents"
+  SF="$SDIR/$SESS_ID.jsonl"
+  : > "$SF"
+}
+# mk_agent ID PARENT DEPTH HH:MM:SS FIRSTLINE CR... — a subagent transcript beside $SF: one prompt record at
+# the given time, then one assistant turn per CR (cache-read) value, one second apart after it. PARENT "" = none.
+mk_agent() {
+  local id="$1" parent="$2" depth="$3" at="$4" first="$5"; shift 5
+  local f="$SDIR/$SESS_ID/subagents/agent-$id.jsonl" n=0 cr
+  jq -nc --arg ts "$(T "$at")" --arg p "$first"$'\nsecond prompt line' \
+    '{type:"user", isSidechain:true, timestamp:$ts, message:{role:"user", content:$p}}' > "$f"
+  for cr in "$@"; do
+    n=$((n + 1))
+    jq -nc --arg rid "req-$id-$n" --arg ts "$(T "$at")" --argjson cr "$cr" --arg id "$id" \
+      '{type:"assistant", isSidechain:true, agentId:$id, requestId:$rid, timestamp:$ts,
+        message:{model:"claude-sonnet-5-5", content:[], usage:{output_tokens:1, cache_read_input_tokens:$cr}}}' >> "$f"
+  done
+  if [ -n "$parent" ]; then
+    printf '{"agentType":"general-purpose","parentAgentId":"%s","spawnDepth":%s}' "$parent" "$depth" > "${f%.jsonl}.meta.json"
+  else
+    printf '{"agentType":"general-purpose","spawnDepth":%s}' "$depth" > "${f%.jsonl}.meta.json"
+  fi
+}
+# tail_json — run `tail --json` over $SF
+tail_json() { run bash "$tool" tail --json "$SF"; }
+# field: jq a value out of the NTH (1-based) JSON line of $OUT
+field() { printf '%s\n' "$OUT" | sed -n "${1}p" | jq -r "$2"; }
+
+# --- usage / dispatch (A1) -------------------------------------------------------------------------
+run bash "$tool"
+check_contains "usage names the tail subcommand" "$OUT" "tail"
+
+run bash "$tool" tail
+check_status "tail with no file exits 2" "2" "$STATUS"
+
+run bash "$tool" tail --json "$SANDBOX/does-not-exist.jsonl"
+check_status "tail on a missing file exits 2" "2" "$STATUS"
+
+# --- (v) a transcript with no /polish: no window, empty output --------------------------------------
+mk_session nopolish
+{
+  rec_turn R1 10:00:00 go b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:00:01 wrap b1 900 '[{"type":"text","text":"x"}]'
+} > "$SF"
+tail_json
+check_status "(v) no /polish: exits 0" "0" "$STATUS"
+check_eq "(v) no /polish: no output" "" "$OUT"
+
+# --- A1 + (i): the tool call in the SECOND record of its requestId still closes the window -------------
+mk_session second
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  # one API response logged as two records sharing requestId R2: the thinking block first, the tool_use second
+  rec_turn R2 10:00:10 polish b1 1000 '[{"type":"thinking"}]'
+  rec_turn R2 10:00:11 polish b1 1000 "$(bash_use toolu_pr1 'gh pr create --title t --body b')"
+  rec_result 10:00:20 toolu_pr1 false "$PRURL"
+} > "$SF"
+tail_json
+check_status "A1: tail --json exits 0" "0" "$STATUS"
+check_eq "A1: one window object" "1" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "A1: the output line is valid JSON" "0" "$(printf '%s\n' "$OUT" | jq -e . >/dev/null 2>&1; echo $?)"
+check_eq "(i) a tool call in the second record of its requestId closes the window" "closed" "$(field 1 .status)"
+check_eq "(i) the window costs its deduped primary turns (100 + 1000, not 100 + 2x1000)" "1100" "$(field 1 .cost)"
+check_eq "(i) primary turns counted per requestId, not per record" "2" "$(field 1 .primary_turns)"
+check_eq "(i) the window starts at its first polish turn" "$(T 10:00:00)" "$(field 1 .start)"
+check_eq "(i) the JSON names the session" "$SESS_ID" "$(field 1 .session)"
+check_eq "(i) the window carries a review_cost field (0 with no review subagent)" "0" "$(field 1 .review_cost)"
+
+# --- the human form ----------------------------------------------------------------------------------
+run bash "$tool" tail "$SF"
+check_status "human tail exits 0" "0" "$STATUS"
+check_contains "human tail names the session's first 8 chars" "$OUT" "${SESS_ID:0:8}"
+check_contains "human tail shows the cost" "$OUT" "1100"
+check_contains "human tail shows the window start" "$OUT" "$(T 10:00:00)"
+
+# --- (ii) a gate-denied `gh pr create` leaves the window open; the later success closes it ----------
+mk_session denied
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:00:10 polish b1 200 "$(bash_use toolu_a 'gh pr create --title t')"
+  rec_result 10:00:12 toolu_a true "BLOCKED by the pre-PR gate: no receipt for this HEAD"
+  rec_turn R3 10:00:20 polish b1 300 "$(bash_use toolu_b 'gh pr create --title t')"
+  rec_result 10:00:22 toolu_b false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(ii) a denied gh pr create then a success: one window" "1" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(ii) closed by the later success" "closed" "$(field 1 .status)"
+check_eq "(ii) the window includes the denied attempt's turn (100+200+300)" "600" "$(field 1 .cost)"
+
+mk_session deniedonly
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:00:10 polish b1 200 "$(bash_use toolu_a 'gh pr create --title t')"
+  rec_result 10:00:12 toolu_a true "BLOCKED by the pre-PR gate"
+} > "$SF"
+tail_json
+check_eq "(ii) only a denied gh pr create: the window stays open" "open" "$(field 1 .status)"
+
+# --- (ii-b) a NON-error Bash call whose command contains `gh pr create` but whose output names no PR URL
+mk_session grepcmd
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:00:10 polish b1 200 "$(bash_use toolu_g "grep -n 'gh pr create' commands/polish.md")"
+  rec_result 10:00:12 toolu_g false "412:  gh pr create --head <branch> --title ..."
+  rec_turn R3 10:00:20 polish b1 300 "$(bash_use toolu_e "echo 'about to run gh pr create'")"
+  rec_result 10:00:22 toolu_e false "about to run gh pr create"
+} > "$SF"
+tail_json
+check_eq "(ii-b) a non-error gh-pr-create-mentioning call with no PR URL leaves the window open" "open" "$(field 1 .status)"
+
+# --- (iii) straddlers: a subagent counts iff its FIRST record falls inside the window ---------------
+mk_session straddle
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:10:00 polish b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:10:05 toolu_p false "$PRURL"
+} > "$SF"
+mk_agent inside "" 1 10:05:00 "Simplify review: reuse" 7000 8000
+mk_agent before "" 1 09:50:00 "Some earlier agent" 70000
+mk_agent after "" 1 10:30:00 "Some later agent" 90000
+tail_json
+check_eq "(iii) only the subagent that starts inside the window counts (100+200+7000+8000)" "15300" "$(field 1 .cost)"
+check_eq "(iii) the window's subagent turns: the 2 of the one counted agent" "2" "$(field 1 .subagent_turns)"
+check_eq "(iii) exactly one subagent row under the window" "1" "$(field 1 '.subagents | length')"
+check_eq "(iii) the row names the agent that starts inside" "inside" "$(field 1 '.subagents[0].agent_id')"
+
+# --- (iv) two PRs in one session -> two windows ----------------------------------------------------
+mk_session twoprs
+{
+  rec_turn R1 10:00:00 polish branch-one 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:01:00 polish branch-one 200 "$(bash_use toolu_1 'gh pr create --title one')"
+  rec_result 10:01:05 toolu_1 false "$PRURL"
+  rec_turn R3 10:02:00 go branch-two 5000 '[{"type":"text","text":"x"}]'
+  rec_turn R4 10:03:00 polish branch-two 300 '[{"type":"text","text":"x"}]'
+  rec_turn R5 10:04:00 polish branch-two 400 "$(bash_use toolu_2 'gh pr create --title two')"
+  rec_result 10:04:05 toolu_2 false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(iv) two PRs in one session: two window objects" "2" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(iv) first window cost" "300" "$(field 1 .cost)"
+check_eq "(iv) second window cost excludes the go turn between them" "700" "$(field 2 .cost)"
+check_eq "(iv) both closed" "closedclosed" "$(field 1 .status)$(field 2 .status)"
+
+# --- (vi) a window never closed -> `open`, flagged in the human form (never a closed window) ---------------
+mk_session neverclosed
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:01:00 polish b1 200 '[{"type":"text","text":"x"}]'
+} > "$SF"
+tail_json
+check_eq "(vi) a session that never opened its PR: one window, open" "open" "$(field 1 .status)"
+check_eq "(vi) the open window still reports its cost" "300" "$(field 1 .cost)"
+run bash "$tool" tail "$SF"
+check_contains "(vi) the human form flags an open window" "$OUT" "open"
+
+# --- (vii) wrap and keel-score turns are never in a window's cost -----------------------------------
+mk_session wrapturns
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:00:30 wrap b1 5000 '[{"type":"text","text":"x"}]'
+  rec_turn R3 10:00:40 keel-score b1 9000 '[{"type":"text","text":"x"}]'
+  rec_turn R4 10:01:00 polish b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:01:05 toolu_p false "$PRURL"
+  rec_turn R5 10:02:00 wrap b1 6000 '[{"type":"text","text":"x"}]'
+  rec_turn R6 10:02:10 keel-score b1 8000 '[{"type":"text","text":"x"}]'
+} > "$SF"
+tail_json
+check_eq "(vii) wrap/keel-score turns inside a still-open window are not counted (100+200)" "300" "$(field 1 .cost)"
+check_eq "(vii) the wrap/keel-score turns after the PR open no window" "1" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(vii) primary turns exclude them too" "2" "$(field 1 .primary_turns)"
+
+# --- (viii) a second /polish invocation while a window is open EXTENDS it; after a close, a re-run is open
+mk_session extend
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:01:00 polish b1 200 '[{"type":"text","text":"x"}]'
+  rec_turn R3 10:02:00 "" b1 400 '[{"type":"text","text":"operator turn between the rounds"}]'
+  rec_turn R4 10:03:00 polish b1 800 '[{"type":"text","text":"second invocation"}]'
+  rec_turn R5 10:04:00 polish b1 1600 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:04:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(viii) a second invocation before the PR exists: ONE window" "1" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(viii) it covers both rounds and the turn between (100+200+400+800+1600)" "3100" "$(field 1 .cost)"
+check_eq "(viii) closed by the later success" "closed" "$(field 1 .status)"
+
+mk_session rerun
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R2 10:00:10 polish b1 50 '[{"type":"text","text":"PR status, same chain: not a new invocation"}]'
+  rec_turn R3 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R4 10:06:00 polish b1 300 "$(bash_use toolu_q 'gh pr create --title t')"
+  rec_result 10:06:05 toolu_q true "a pull request for branch b1 already exists"
+} > "$SF"
+tail_json
+check_eq "(viii) a re-run on a closed branch: two windows (the chain's tail turn opens none)" "2" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(viii) the first window closed" "closed" "$(field 1 .status)"
+check_eq "(viii) the re-run window stays open" "open" "$(field 2 .status)"
+check_eq "(viii) the re-run window's cost" "300" "$(field 2 .cost)"
+
+mk_session rerun2
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R3 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R4 10:06:00 polish b1 300 "$(bash_use toolu_q 'gh pr create --title t')"
+  rec_result 10:06:05 toolu_q false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(viii) a same-branch re-run never closes, even on a result that names a PR URL" "open" "$(field 2 .status)"
+
+# a never-closing re-run window must not swallow the NEXT PR's tail (a different branch, same session)
+mk_session rerun3
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R3 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R4 10:06:00 polish b1 300 "$(bash_use toolu_q 'gh pr create --title t')"
+  rec_result 10:06:05 toolu_q true "a pull request for branch b1 already exists"
+  rec_turn R5 10:10:00 go b2 5000 '[{"type":"text","text":"next ticket"}]'
+  rec_turn R6 10:11:00 polish b2 700 "$(bash_use toolu_r 'gh pr create --title t2')"
+  rec_result 10:11:05 toolu_r false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(viii) a re-run window then a different branch's PR: three windows" "3" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(viii) closed, open (the re-run), closed" "closed open closed" "$(field 1 .status) $(field 2 .status) $(field 3 .status)"
+check_eq "(viii) the next PR's window has its own cost (not folded into the re-run's)" "700" "$(field 3 .cost)"
+check_eq "(viii) the re-run window keeps only its own turns" "300" "$(field 2 .cost)"
+
+# --- (ix) review_cost: B2's fixed-first-line subagents plus every agent whose parent chain reaches one --
+mk_session review
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:20:00 polish b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:20:05 toolu_p false "$PRURL"
+} > "$SF"
+mk_agent rev1 ""    1 10:05:00 "$FIXED_LINE" 1000
+mk_agent fork1 rev1 2 10:05:10 "recipe header for the fork" 2000
+mk_agent kid1 fork1 3 10:05:20 "a depth-3 child of the fork" 3000
+mk_agent rev2 ""    1 10:10:00 "$FIXED_LINE" 4000
+mk_agent fork2 rev2 2 10:10:10 "recipe header for the second fork" 5000
+# a /simplify subagent whose prompt QUOTES the fixed line, but not on its first line
+f="$SDIR/$SESS_ID/subagents/agent-simp.jsonl"
+jq -nc --arg ts "$(T 10:12:00)" --arg p $'Simplify review: reuse\n'"$FIXED_LINE" \
+  '{type:"user", isSidechain:true, timestamp:$ts, message:{role:"user", content:$p}}' > "$f"
+jq -nc --arg ts "$(T 10:12:01)" \
+  '{type:"assistant", isSidechain:true, requestId:"req-simp-1", timestamp:$ts, message:{model:"m", content:[], usage:{output_tokens:1, cache_read_input_tokens:7000}}}' >> "$f"
+printf '{"agentType":"general-purpose","spawnDepth":1}' > "${f%.jsonl}.meta.json"
+tail_json
+check_eq "(ix) review_cost is exactly the five chained agents (1000+2000+3000+4000+5000)" "15000" "$(field 1 .review_cost)"
+check_eq "(ix) the window cost counts the simplify agent too (300 + 15000 + 7000)" "22300" "$(field 1 .cost)"
+check_eq "(ix) six subagent rows under the window" "6" "$(field 1 '.subagents | length')"
+check_eq "(ix) the fork row names its parent and depth" "rev1/2" \
+  "$(field 1 '.subagents[] | select(.agent_id=="fork1") | "\(.parent_agent_id)/\(.depth)"')"
+check_eq "(ix) the row carries the prompt's first line" "$FIXED_LINE" \
+  "$(field 1 '.subagents[] | select(.agent_id=="rev1") | .first_line')"
+check_eq "(ix) the simplify agent is not review cost: its row says so" "false" \
+  "$(field 1 '.subagents[] | select(.agent_id=="simp") | .review')"
+check_eq "(ix) the depth-3 child is review cost" "true" \
+  "$(field 1 '.subagents[] | select(.agent_id=="kid1") | .review')"
+run bash "$tool" tail "$SF"
+check_contains "(ix) the human form prints a subagent row with its first line" "$OUT" "$FIXED_LINE"
+check_contains "(ix) the human form prints the review cost" "$OUT" "15000"
+
+# --- a fork whose parent is OUTSIDE the window is not review cost (chain must reach a B2 agent in it) --
+mk_session orphan
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:20:00 polish b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:20:05 toolu_p false "$PRURL"
+} > "$SF"
+mk_agent notrev "" 1 10:05:00 "Some other agent" 1000
+mk_agent child notrev 2 10:05:10 "its child" 2000
+tail_json
+check_eq "a subagent chain that never reaches a B2 agent is no review cost" "0" "$(field 1 .review_cost)"
+
+# --- several files: each file's windows, in file order -----------------------------------------------
+mk_session multi_a
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+} > "$SF"
+fa="$SF"
+mk_session multi_b
+{
+  rec_turn R1 11:00:00 polish b9 700 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 11:00:05 toolu_p false "$PRURL"
+} > "$SF"
+run bash "$tool" tail --json "$fa" "$SF"
+check_eq "two files: one window each" "2" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "two files: costs in file order" "100/700" "$(field 1 .cost)/$(field 2 .cost)"
+
+# --- A1b: the tail path reads transcripts only through the shared reader -------------------------------
+body="$(sed -n '/^cmd_tail()/,/^}/p' "$tool")"
+check_contains "A1b: cmd_tail exists" "$body" "cmd_tail"
+for fn in tu_turns tu_tool_calls tu_tool_results tu_subagent_meta; do
+  check_contains "A1b: cmd_tail reads transcripts through $fn" "$body" "$fn"
+done
+check_absent "A1b: cmd_tail never hands a transcript file to jq itself" "$body" 'jq -c -s'
+
+summary

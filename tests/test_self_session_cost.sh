@@ -14,6 +14,9 @@ run bash "$tool"
 check_status "no args prints usage, exit 0" "0" "$STATUS"
 check_contains "usage names every subcommand" "$OUT" "session"
 check_contains "usage names every subcommand" "$OUT" "table"
+check_contains "usage names every subcommand" "$OUT" "tail"
+check_contains "usage names every subcommand" "$OUT" "selfcheck"
+check_contains "usage names every subcommand" "$OUT" "ticket"
 
 run bash "$tool" bogus-command
 check_status "an unknown command exits 2" "2" "$STATUS"
