@@ -15,6 +15,13 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/polish` is split into a core and a hidden guide (dir #670, slice 3).** `commands/polish.md` shrinks to the
+  text a normal run needs, at most 3,000 words (pinned by a word budget), because a command's whole body
+  re-enters every later turn's context and `/polish` was the largest at about 27k tokens. The rare branches —
+  a convergence round, the depth dialogs, a refused or void review, the add-ons, a gate deny, an
+  already-open PR — move unchanged into `commands/polish-guide.md`, which the core loads only when one of
+  them fires. The gate's copy-mode hints name both files; the doctor counts 15 shipped commands.
+
 - **A secrets-in-the-working-tree recipe, and a `doctor` floor for it (dir #631, from the dir #379
   feasibility pass).** New `docs/secrets-in-the-working-tree.md` (SOPS + age: ciphertext
   `secrets.enc.yaml`, plaintext only through `sops exec-env` / `exec-file`, migration, rotation, and a

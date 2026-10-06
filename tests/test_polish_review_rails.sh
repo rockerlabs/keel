@@ -21,14 +21,18 @@ check_file "commands/polish.md exists" "$polish"
 # strip_indent=1 on both sides: polish.md's copy sits inside a nested list item and needs its leading
 # whitespace normalized before comparison; it's a no-op on delegation.md's already-flush-left canonical
 # text, so one call shape covers both.
-# dir #670: polish.md now carries TWO copies of the block — step 5's K2 review subagent prompt and the dir #70
-# fallback's — and extract_rails_block's awk range reopens at each start marker, so its output over polish.md
-# is the two copies back to back. Each must equal the canonical text, so the expected value is that text twice.
+# dir #670: the Worker rails block now appears in two places — step 5's K2 review subagent prompt, in the
+# core (commands/polish.md), and the dir #70 fallback's, in the guide (commands/polish-guide.md, moved
+# verbatim by K1). Each must equal the canonical text exactly once.
+guide="$REPO_ROOT/commands/polish-guide.md"
+check_file "commands/polish-guide.md exists" "$guide"
 canonical_rails="$(extract_rails_block "$delegation" 1)"
 polish_rails="$(extract_rails_block "$polish" 1)"
-check_block_equal "commands/polish.md's two rails copies (K2's review subagent, the dir #70 fallback) are each byte-identical (mod indent) to docs/delegation.md's canonical text" \
-  "$polish_rails" "$canonical_rails
-$canonical_rails"
+guide_rails="$(extract_rails_block "$guide" 1)"
+check_block_equal "commands/polish.md's K2 review-subagent rails copy is byte-identical (mod indent) to docs/delegation.md's canonical text" \
+  "$polish_rails" "$canonical_rails"
+check_block_equal "commands/polish-guide.md's dir #70 fallback rails copy is byte-identical (mod indent) to docs/delegation.md's canonical text" \
+  "$guide_rails" "$canonical_rails"
 
 # The byte-equality check above only catches ASYMMETRIC drift (one side losing the line while the
 # other keeps it) — reproduced live: stripping the dirty-tree bullet from BOTH delegation.md and
@@ -44,11 +48,11 @@ pin "docs/delegation.md's rails block states the dirty-tree discriminator" \
 # background suite runs is still alive trips dir #318's self-corruption canary — a false positive that
 # costs a full rerun (hit twice in 0.10.1, ten trips in 0.12.0). /polish's test and retest steps are
 # where a worker starts those runs, so the caution lives there. Single-line needles (pin() is line-mode).
-pin "commands/polish.md's retest step warns against committing or editing while a background suite run is alive" \
-  "$polish" 'Never commit, amend or edit while a background suite run is alive' \
+pin "commands/polish-guide.md's retest step warns against committing or editing while a background suite run is alive" \
+  "$guide" 'Never commit, amend or edit while a background suite run is alive' \
   "expected the retest caution naming commit, amend and edit (dir #505)"
-pin "commands/polish.md's retest caution names the canary it would trip" \
-  "$polish" 'self-corruption canary' \
+pin "commands/polish-guide.md's retest caution names the canary it would trip" \
+  "$guide" 'self-corruption canary' \
   "expected the caution to say what trips (dir #505)"
 
 summary

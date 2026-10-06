@@ -73,7 +73,7 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 | `/backlog` | Shows the backlog. |
 | `/keel-score` | Scores how much Keel shaped a session — derived from cited events, not asserted. |
 
-`go-guide` is not a slash command: it is the implementer guide `/go` loads at its step 7.
+`go-guide` is not a slash command: it is the implementer guide `/go` loads at its step 7. `polish-guide` is not one either: it holds `/polish`'s rare branches (a convergence round, the depth dialogs, a refused or void review, an add-on, a gate deny, an already-open PR), and the `/polish` core loads it only when one of them fires.
 
 ## Extras
 

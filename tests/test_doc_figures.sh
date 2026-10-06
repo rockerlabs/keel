@@ -160,6 +160,7 @@ assert_commands_range() {
   for f in "$REPO_ROOT"/commands/*.md; do
     [ -f "$f" ] || continue
     [ "$(basename "$f")" = "polish.md" ] && continue
+    [ "$(basename "$f")" = "polish-guide.md" ] && continue
     tok="$(tok_of "$f")"
     if [ "$tok" -lt "$lo" ]; then bad="$bad $(basename "$f")=$tok"; continue; fi
     if [ -z "$open_upper" ] && [ "$tok" -gt "$hi" ]; then bad="$bad $(basename "$f")=$tok"; fi
@@ -306,7 +307,8 @@ assert_figure "templates/IDEAS.md figure within 10%"          templates/IDEAS.md
 assert_figure "ADAPTING.md figure within 10%"                 ADAPTING.md
 assert_figure "CHANGELOG.md figure within 10%"                CHANGELOG.md
 assert_figure "commands/polish.md figure (open floor)"        commands/polish.md
-assert_commands_range "commands/*.md (excl. polish.md) sizes fall inside the quoted range"
+assert_figure "commands/polish-guide.md figure (open floor)"  commands/polish-guide.md
+assert_commands_range "commands/*.md (excl. polish.md, polish-guide.md) sizes fall inside the quoted range"
 
 assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
 assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'

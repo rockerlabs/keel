@@ -8,11 +8,14 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 go="$REPO_ROOT/commands/go.md"
-polish="$REPO_ROOT/commands/polish.md"
+# dir #670 (K1, slice 3): commands/polish.md is now a condensed core, and every pre-split paragraph lives,
+# unchanged, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
+# GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
+polish="$REPO_ROOT/commands/polish-guide.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "commands/go.md exists" "$go"
-check_file "commands/polish.md exists" "$polish"
+check_file "commands/polish-guide.md exists" "$polish"
 check_file "FRAMEWORK.md exists" "$framework"
 
 # (A) /go derives failing acceptance tests from the ticket's done-criterion before implementing,
@@ -38,16 +41,16 @@ fi
 # (B) /polish step 5(a)'s subagent prompt carries the ticket/spec + a two-way conformance mandate,
 # with an explicit no-ticket fallback.
 if grep -qi 'two-way conformance' "$polish"; then
-  pass "polish.md: step 5(a) prompt carries a two-way conformance mandate"
+  pass "polish-guide.md: step 5(a) prompt carries a two-way conformance mandate"
 else
-  fail "polish.md: step 5(a) prompt carries a two-way conformance mandate" \
+  fail "polish-guide.md: step 5(a) prompt carries a two-way conformance mandate" \
     "expected 'two-way conformance' in the subagent prompt-contents list"
 fi
 
 if grep -qi 'no ticket exists' "$polish" || grep -qi 'no-ticket fallback' "$polish"; then
-  pass "polish.md: step 5(a) states the no-ticket fallback explicitly"
+  pass "polish-guide.md: step 5(a) states the no-ticket fallback explicitly"
 else
-  fail "polish.md: step 5(a) states the no-ticket fallback explicitly" \
+  fail "polish-guide.md: step 5(a) states the no-ticket fallback explicitly" \
     "expected an explicit 'no ticket exists' / no-ticket-fallback clause"
 fi
 
@@ -91,7 +94,7 @@ fi
 # worse than no pin, since it reads as coverage.
 addon_line="$(grep -n 'receipt carries AT MOST ONE add-on' "$polish" | head -1 | cut -d: -f1)"
 if [ -z "$addon_line" ]; then
-  fail "polish.md: add-on paragraph present" "anchor sentence not found"
+  fail "polish-guide.md: add-on paragraph present" "anchor sentence not found"
 else
   # +45, not +30: the furthest needle sat 3 lines from a +30 edge, so any clarification added to
   # this paragraph — or a re-wrap, one of which this ticket itself made — would red a pin whose prose
@@ -99,24 +102,24 @@ else
   addon_window="$(sed -n "${addon_line},$((addon_line + 45))p" "$polish")"
   # match(), not a direct `printf | grep -q` pipe (dir #280 — see tests/lib.sh's match() for why).
   if match "$addon_window" -qi 'nothing warns you' && match "$addon_window" -qi 'dir #183'; then
-    pass "polish.md: step 5 states that a dropped add-on no longer warns (dir #183)"
+    pass "polish-guide.md: step 5 states that a dropped add-on no longer warns (dir #183)"
   else
-    fail "polish.md: step 5 states that a dropped add-on no longer warns (dir #183)" \
+    fail "polish-guide.md: step 5 states that a dropped add-on no longer warns (dir #183)" \
       "expected a 'nothing warns you ... (dir #183)' clause in the add-on paragraph"
   fi
   if match "$addon_window" -qi 'prints a warning naming it'; then
-    fail "polish.md: the old, now-false 'prints a warning' sentence is gone" \
+    fail "polish-guide.md: the old, now-false 'prints a warning' sentence is gone" \
       "found dir #161's warn description still present, but dir #183 deleted that warning"
   else
-    pass "polish.md: the old, now-false 'prints a warning' sentence is gone"
+    pass "polish-guide.md: the old, now-false 'prints a warning' sentence is gone"
   fi
   # The single-add-on rule and its tie-break — the half the old anchor never reached. This is where
   # dir #183 moved dir #81's honesty guarantee OUT of the mechanically-validated receipt, so it is the
   # sentence with the least other protection in the tree.
   if match "$addon_window" -qi 'operator-run` wins the receipt slot'; then
-    pass "polish.md: step 5 states the operator-run-wins tie-break for the single add-on slot"
+    pass "polish-guide.md: step 5 states the operator-run-wins tie-break for the single add-on slot"
   else
-    fail "polish.md: step 5 states the operator-run-wins tie-break for the single add-on slot" \
+    fail "polish-guide.md: step 5 states the operator-run-wins tie-break for the single add-on slot" \
       "expected the rule naming which add-on takes the receipt slot when both applied"
   fi
   # The warning is gone, so what replaces it must be named, not merely omitted: the session's own read
@@ -127,15 +130,15 @@ else
   # deleting the concrete live-sentinel instruction would have left this green on the leftover mention
   # of the other — neither replacement individually pinned, which is the whole point of the pin.
   if match "$addon_window" -qi 'live sentinel'; then
-    pass "polish.md: step 5 names the live-sentinel read that replaces the deleted warning"
+    pass "polish-guide.md: step 5 names the live-sentinel read that replaces the deleted warning"
   else
-    fail "polish.md: step 5 names the live-sentinel read that replaces the deleted warning" \
+    fail "polish-guide.md: step 5 names the live-sentinel read that replaces the deleted warning" \
       "expected the concrete instruction to read this run's earlier polish.5-review line"
   fi
   if match "$addon_window" -qi 'step-10 disclosure'; then
-    pass "polish.md: step 5 names the step-10 disclosure as the record that now carries every mechanism"
+    pass "polish-guide.md: step 5 names the step-10 disclosure as the record that now carries every mechanism"
   else
-    fail "polish.md: step 5 names the step-10 disclosure as the record that now carries every mechanism" \
+    fail "polish-guide.md: step 5 names the step-10 disclosure as the record that now carries every mechanism" \
       "expected the paragraph to point at the step-10 disclosure, not only the sentinel read"
   fi
 fi
@@ -147,7 +150,7 @@ fi
 # partial edit both fail loudly instead of going unnoticed.
 ask_line="$(grep -n 'Then decide \*\*auto vs ask\*\*' "$polish" | head -1 | cut -d: -f1)"
 if [ -z "$ask_line" ]; then
-  fail "polish.md: step 4's auto-vs-ask decision still present" "anchor sentence not found"
+  fail "polish-guide.md: step 4's auto-vs-ask decision still present" "anchor sentence not found"
 else
   ask_window="$(sed -n "${ask_line},$((ask_line + 10))p" "$polish")"
   # No backslash before the backtick: inside single quotes it's already a shell-literal backtick, and
@@ -156,42 +159,42 @@ else
   # since the pattern then required three buffer-starts in one line and could never match mid-string
   # (found live via Docker ubuntu:24.04 + GNU grep 3.11, cross-checked against BSD grep 2.6.0-FreeBSD).
   if match "$ask_window" -qE '`max`.*`ultra`.*always open'; then
-    pass "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)"
+    pass "polish-guide.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)"
   else
-    fail "polish.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)" \
+    fail "polish-guide.md: step 4's mandatory-ask threshold is max/ultra (dir #254, raised from high)" \
       "expected a '\`max\` or \`ultra\` -> always open' clause"
   fi
   if match "$ask_window" -qE '`high` or above → always open'; then
-    fail "polish.md: the old, now-false 'high or above -> always ask' sentence is gone" \
+    fail "polish-guide.md: the old, now-false 'high or above -> always ask' sentence is gone" \
       "found the pre-dir-#254 high-and-above threshold still present alongside the new wording"
   else
-    pass "polish.md: the old, now-false 'high or above -> always ask' sentence is gone"
+    pass "polish-guide.md: the old, now-false 'high or above -> always ask' sentence is gone"
   fi
 fi
 
 review_line="$(grep -n 'one terminal pass, no loop-back' "$polish" | head -1 | cut -d: -f1)"
 if [ -z "$review_line" ]; then
-  fail "polish.md: step 5's review intro still present" "anchor sentence not found"
+  fail "polish-guide.md: step 5's review intro still present" "anchor sentence not found"
 else
   review_window="$(sed -n "${review_line},$((review_line + 15))p" "$polish")"
   if match "$review_window" -qi 'ATTEMPT `Skill(code-review)'; then
-    pass "polish.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)"
+    pass "polish-guide.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)"
   else
-    fail "polish.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)" \
+    fail "polish-guide.md: step 5 attempts the real Skill(code-review) call FIRST (dir #254)" \
       "expected an 'ATTEMPT \`Skill(code-review)\`' clause ahead of the subagent fallback"
   fi
   if match "$review_window" -qi 'do NOT attempt `Skill(code-review)`'; then
-    fail "polish.md: the old, now-false 'do NOT attempt the skill' sentence is gone" \
+    fail "polish-guide.md: the old, now-false 'do NOT attempt the skill' sentence is gone" \
       "found the pre-dir-#254 blanket-unavailable sentence still present alongside the new wording"
   else
-    pass "polish.md: the old, now-false 'do NOT attempt the skill' sentence is gone"
+    pass "polish-guide.md: the old, now-false 'do NOT attempt the skill' sentence is gone"
   fi
 fi
 
 if grep -qi '(a) Fallback for .*reached when the direct attempt above was refused' "$polish"; then
-  pass "polish.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default"
+  pass "polish-guide.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default"
 else
-  fail "polish.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default" \
+  fail "polish-guide.md: branch (a)'s subagent is framed as the refusal fallback, not the standing default" \
     "expected (a)'s intro to name itself as reached on a refused direct attempt"
 fi
 
@@ -199,24 +202,24 @@ fi
 # PR opened, and nothing re-derived the body) — named triggers with a concrete check each, not a general
 # re-read; step 1 points at it from the convergence-round sequence sentence.
 if grep -qi 'Already-open-PR branch' "$polish"; then
-  pass "polish.md: step 9 gains an already-open-PR branch"
+  pass "polish-guide.md: step 9 gains an already-open-PR branch"
 else
-  fail "polish.md: step 9 gains an already-open-PR branch" \
+  fail "polish-guide.md: step 9 gains an already-open-PR branch" \
     "expected an 'Already-open-PR branch' heading in step 9"
 fi
-pin "polish.md step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
+pin "polish-guide.md step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
   "$polish" '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |' \
   "expected the trigger table's test/CI-outcome row naming a re-derive-from-current-HEAD check"
 if grep -qi 'every recorded catch of this class came from a cross-session reviewer' "$polish"; then
-  pass "polish.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
+  pass "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
 else
-  fail "polish.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
+  fail "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
     "expected a clause naming that every recorded catch came from a cross-session reviewer"
 fi
 if grep -qi "step 9's already-open-PR" "$polish"; then
-  pass "polish.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
+  pass "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
 else
-  fail "polish.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
+  fail "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
     "expected step 1's sequence sentence to point at step 9 for an already-open PR"
 fi
 

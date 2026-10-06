@@ -1,25 +1,105 @@
 #!/usr/bin/env bash
-# tests/test_polish_command.sh — dir #670: pins on commands/polish.md's step 5 as K2 (slice 2) writes it —
-# the review run by a fresh-context subagent first, for `low|medium|high`. Each pin is a needle matched
-# against the file with its line breaks and runs of spaces collapsed (pinf below), so re-wrapping prose never
-# turns one red; only a change of the words does — the rule's text is what these hold. The spawn needle is dir #413's one exemption (its A7
-# lets exactly one `general-purpose` spawn line stand, by the phrase below on that line or the line
-# before), so it is pinned by line position, not by presence alone.
+# tests/test_polish_command.sh — dir #670: pins on commands/polish.md, the core, and its hidden guide
+# commands/polish-guide.md. Slice 2 (K2): step 5's review run by a fresh-context subagent first, for
+# `low|medium|high`. Slice 3 (K1): the split — a core of at most POLISH_MD_WORD_BUDGET words that a
+# normal run reads alone, plus a guide holding every rare branch, loaded on a named trigger.
+# Needles are matched against the file with its line breaks and runs of spaces collapsed (pinf/ping
+# below), so re-wrapping prose never turns a pin red — only a change of the words does. The spawn needle
+# is dir #413's one exemption (its A7 lets exactly one `general-purpose` spawn line stand, by the phrase
+# below on that line or the line before), so it is pinned by line position, not by presence alone.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 polish="$REPO_ROOT/commands/polish.md"
+guide="$REPO_ROOT/commands/polish-guide.md"
 check_file "commands/polish.md exists" "$polish"
+check_file "commands/polish-guide.md exists" "$guide"
 
-# pinf LABEL NEEDLE HINT — NEEDLE as a fixed string in polish.md read as ONE line (newlines -> spaces, space
-# runs collapsed), so a needle may span a wrap point and prose can be re-wrapped freely.
+# pinf LABEL NEEDLE — NEEDLE as a fixed string in the CORE read as ONE line (newlines -> spaces, space runs
+# collapsed). ping is the same against the GUIDE.
 flat="$(tr '\n' ' ' < "$polish" | tr -s ' ')"
-pinf() { check_contains "$1" "$flat" "$2" ; }
+gflat="$(tr '\n' ' ' < "$guide" | tr -s ' ')"
+pinf() { check_contains "$1" "$flat" "$2"; }
+pinfn() { check_absent "$1" "$flat" "$2"; }
+pinfg() { check_contains "$1" "$gflat" "$2"; }
+pinfgn() { check_absent "$1" "$gflat" "$2"; }
 
-# --- the spawn line and dir #413's needle -------------------------------------------------------------
+# --- K1 (slice 3): size — the core stays at most POLISH_MD_WORD_BUDGET words ---------------------------------
+# A normal run loads only the core, and a skill's body re-enters every later turn's context, so its size is
+# the cost this split exists to cut. The guide has no budget: it holds rare text verbatim.
+POLISH_MD_WORD_BUDGET=3000
+core_words="$(wc -w < "$polish" | tr -d ' ')"
+check_eq "polish.md is within POLISH_MD_WORD_BUDGET ($core_words words, budget $POLISH_MD_WORD_BUDGET)" "ok" \
+  "$([ "$core_words" -le "$POLISH_MD_WORD_BUDGET" ] && echo ok || echo "over by $((core_words - POLISH_MD_WORD_BUDGET))")"
+# The pin must be able to fail: a core one word over the budget reads red.
+over="$SANDBOX/polish-over.md"
+{ cat "$polish"; yes extra | head -n $((POLISH_MD_WORD_BUDGET + 1 - core_words)) | tr '\n' ' '; } > "$over"
+over_words="$(wc -w < "$over" | tr -d ' ')"
+check_eq "the budget check is red against a $over_words-word copy" "red" \
+  "$([ "$over_words" -le "$POLISH_MD_WORD_BUDGET" ] && echo ok || echo red)"
+check_eq "that copy is exactly one word over" "$((POLISH_MD_WORD_BUDGET + 1))" "$over_words"
+
+# --- K1: the guide's own header (B8d) ------------------------------------------------------------------
+check_eq "polish-guide.md opens a leading --- block" "---" "$(sed -n 1p "$guide")"
+guide_head="$(awk 'NR==1 && /^---$/ {f=1; next} f && /^---$/ {exit} f' "$guide")"
+check_contains "polish-guide.md is hidden from invocation (user-invocable: false)" "$guide_head" "user-invocable: false"
+check_contains "polish-guide.md carries a description: line in its leading block" "$guide_head" "description: "
+pinfg "polish-guide.md says the core wins a disagreement" 'Where this guide and `polish.md` (the core) disagree, the core wins.'
+pinf "polish.md says the core wins a disagreement" 'Where the guide and this file disagree, this file wins.'
+
+# --- K1: the pointer (B8c) — every step's own trigger list, and the exact instruction ----------------------
+# step_text N — the text of numbered step N, from "N. **" to the next step's line.
+step_text() {
+  awk -v n="$1" -v nx="$(($1 + 1))" '
+    $0 ~ "^"n"\\. \\*\\*" { f = 1; print; next }
+    f && $0 ~ "^"nx"\\. \\*\\*" { exit }
+    f { print }' "$polish" | tr '\n' ' ' | tr -s ' '
+}
+instr='load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file'
+for n in 1 4 5 8 9; do
+  t="$(step_text "$n")"
+  check_contains "step $n ends with the exact guide-loading instruction" "$t" "$instr"
+  check_contains "step $n names a guide section" "$t" "§ Step $n"
+  check_contains "step $n says an unreachable guide stops the run" "$t" "guide unreachable → stop and report"
+done
+check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
+check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
+check_contains "step 4's trigger list names a handoff-check match" "$(step_text 4)" 'a `handoff-check` match'
+check_contains "step 4's trigger list names the max/ultra/skip/borderline dialogs" "$(step_text 4)" 'max/ultra/skip/borderline dialogs'
+check_contains "step 5's trigger list names a refused attempt or an unavailable Agent tool" "$(step_text 5)" 'the direct attempt refused or the Agent tool unavailable'
+check_contains "step 5's trigger list names a void review" "$(step_text 5)" 'a void review'
+check_contains "step 5's trigger list names an add-on review" "$(step_text 5)" 'an add-on review'
+check_contains "step 5's trigger list names a second delta round still finding" "$(step_text 5)" 'a second delta round still finding'
+check_contains "step 8's trigger list names a deny" "$(step_text 8)" 'any deny'
+check_contains "step 9's trigger list names an already-open PR" "$(step_text 9)" 'the PR is already open'
+check_contains "step 9's trigger list names an add-on disclosure" "$(step_text 9)" "an add-on review's disclosure"
+for n in 1 2 3 4 5 6 7 8 9 10; do
+  check_ne "step $n exists in the core" "" "$(step_text "$n")"
+done
+for h in 'Preamble' 'Step 1' 'Step 2' 'Step 3' 'Step 4' 'Step 5' 'Step 6' 'Step 7' 'Step 8' 'Step 9' 'Step 10'; do
+  pinfg "polish-guide.md has a section for $h" "## $h "
+done
+
+# --- K1: what a normal run needs stays in the CORE (B8b) -----------------------------------------------------
+pinf "core: step 9 requires --head" '`gh pr create --head <branch>` — `--head` is mandatory'
+pinf "core: step 9 writes every receipt in its own Bash call" 'Write every receipt in its own Bash call and invoke `gh pr create` alone in the next'
+pinf "core: step 8 pushes before it unlocks" 'Push the branch first'
+pinf "core: step 8's unlock receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
+pinf "core: step 6's retest receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"`'
+pinf "core: step 3's tests receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"`'
+pinf "core: step 1 mints the run's nonce with init" '`tools/pre-pr-gate.sh init`'
+pinf "core: step 4's receipt carries the sizing evidence" '`tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`'
+pinf "core: the delta-round budget" 'the full review runs once, then at most TWO delta rounds'
+pinf "core: dir #244's commit-message re-read after an --amend" 'on `--amend`, re-read the commit message against the final diff (dir #244)'
+pinf "core: step 6 never commits while a background suite run is alive" '**Never commit, amend or edit while a background suite run is alive**'
+pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every step id is present for the current run'
+pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
+pinf "core: step 4's auto rule" '`low`/`medium`/`high` clearly inside one bucket → run it automatically'
+pinf "core: step 4's dialog marker" 'ended by the literal line `KEEL-DEPTH-DIALOG`'
+
+# --- K2 (slice 2): the spawn line and dir #413's needle ------------------------------------------------------
 # Of the lines carrying `subagent_type: "general-purpose"`, at least one has the needle on it or on the
-# line before. (polish.md has other general-purpose lines — the (a) fallback, the second opinion — which
-# are dir #413's to retire; this one is K2's.)
+# line before. (The guide's (a) fallback and second opinion carry others — dir #413's to retire; this one is K2's.)
 needle="step 5's review subagent"
 spawn_ok="$(awk -v n="$needle" '
   index($0, "subagent_type: \"general-purpose\"") { if (index($0, n) || index(prev, n)) ok = 1 }
@@ -27,13 +107,13 @@ spawn_ok="$(awk -v n="$needle" '
   END { print ok ? "yes" : "no" }' "$polish")"
 check_eq "K2's spawn line carries the needle on it or the line before (dir #413 A7's exemption)" "yes" "$spawn_ok"
 
-# --- B1: when ---------------------------------------------------------------------------------------
+# B1: when ---------------------------------------------------------------------------------------
 pinf "step 5: K2 is the first attempt for low|medium|high" \
   'the FIRST attempt is a review run by a fresh-context subagent (dir #670);'
 pinf "step 5: max, ultra and skip keep their paths" \
   '`max`, `ultra` and `skip` keep their paths below, unchanged.'
 pinf "step 5: the direct attempt is for max, and for low|medium|high after K2's fallbacks" \
-  '`max` — and for `low|medium|high` once K2'"'"'s fallbacks send you here — ATTEMPT `Skill(code-review) <level>`'
+  "for \`max\`, and when K2's fallbacks send you here, ATTEMPT \`Skill(code-review) <level>\` directly"
 
 # --- B2: the spawn ----------------------------------------------------------------------------------
 pinf "step 5: spawn precondition — no tracked change pending" \
@@ -114,20 +194,29 @@ pinf "step 5: the in-session fallback keeps the two-word args" \
 pinf "step 5: the fallback order ends in (a) then (b)" \
   'refused there too → (a) below; then (b)'
 
-# --- B7/B7a: disclosure and clause fates -------------------------------------------------------------------
+# B7/B7a: disclosure and clause fates
 pinf "step 5: the disclosure wording" \
   'name this mechanism as "`/code-review <level>` run by a fresh-context subagent"'
-pinf "step 5: a bare level now means a genuine pass run here or by K2's subagent" \
-  '(bare — a genuine `/code-review` pass, run here in-session or by K2'"'"'s subagent)'
-check_absent "step 5: the retired 'bare — this IS the genuine in-session pass' wording is gone" \
-  "$(cat "$polish")" 'bare — this IS the genuine in-session pass'
-check_absent "step 5: the retired 'ordinary automated outcome' wording is gone" \
-  "$(cat "$polish")" 'the ordinary automated outcome'
-pinf "step 5: the receipt catalogue names the subagent-run pass" \
-  'run by K2'"'"'s review subagent, or operator-typed or revisit-triggered in-session'
+pinf "step 5: a bare level means a genuine pass run here or by K2's subagent" \
+  "the bare \`polish.5-review <level>\` (a genuine \`/code-review\` pass, run here or by K2's subagent)"
 pinf "step 6: a step-5 commit of pending work requires the retest" \
-  'step-5 commit of pending work (K2'"'"'s spawn precondition)'
+  'or committed pending work, re-run the test command once'
 pinf "step 10: the summary names the subagent-run mechanism" \
-  '`/code-review <level>` run by a fresh-context subagent (K2); an independent agent review'
+  '`/code-review <level>` run by a fresh-context subagent, a genuine in-session'
+# the guide keeps the pre-split step-5 text, with B7a's clause fates applied
+pinfg "guide: a bare level now means a genuine pass run here in-session or by K2's subagent" \
+  "(bare — a genuine \`/code-review\` pass, run here in-session or by K2's subagent)"
+pinfg "guide: the receipt catalogue names the subagent-run pass" \
+  "run by K2's review subagent, or operator-typed or revisit-triggered in-session"
+pinfg "guide: agent:medium is the fallback outcome, not the ordinary one" \
+  'the fallback outcome (K2'"'"'s fallbacks, then the direct attempt refused'
+pinfg "guide: (d)'s mechanism list names the subagent-run pass" \
+  'a `/code-review <level>` run by a fresh-context subagent (K2)'
+pinfgn "guide: the retired 'bare — this IS the genuine in-session pass' wording is gone" \
+  'bare — this IS the genuine in-session pass'
+pinfgn "guide: the retired 'ordinary automated outcome' wording is gone" \
+  'the ordinary automated outcome'
+pinfn "core: the retired 'ordinary automated outcome' wording is gone" \
+  'the ordinary automated outcome'
 
 summary
