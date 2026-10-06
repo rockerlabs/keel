@@ -381,6 +381,10 @@ sections real content going forward — see that page for exactly when each one 
   printed nothing before) now shows both key shapes side by side with this checkout's live sentinel and trace
   paths, the sentinel keyed by repo and branch and the review trace by repo only; the script header and
   `polish-guide` § Step 8 say the same, so a worker needs no personal notes to reach the fix.
+- **`/polish` step 2's unavailable-`/simplify` fallback is no longer worded as the prose-only pass (dir #612).**
+  `polish-guide` § Step 2 said "the same ONE inline pass", which after the content-class sizing read as the
+  prose-only reuse pass; on a diff with code the fallback is now an inline pass over the cleanup angles
+  `/simplify` covers — duplication, dead code, over-complication, naming — receipted `inline:no-simplify-skill`.
 
 ## [0.13.0] — 2026-10-03
 

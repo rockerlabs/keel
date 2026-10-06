@@ -182,8 +182,9 @@ Steps, in order:
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable, do the same ONE inline pass over the step-1 diff, say what you
-   tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
+   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff covering the angles
+   `/simplify` would — duplication, dead code, over-complication, naming — (a different pass from the
+   prose-only one above), say what you tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`, or the prose-only receipt above).

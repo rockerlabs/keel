@@ -253,4 +253,13 @@ pinfg "guide: § Step 8 states both key shapes side by side" 'the sentinel by re
 pinfg "guide: § Step 8 sends the worker to -h for the live paths" '`tools/pre-pr-gate.sh -h` prints both paths for this checkout'
 pinfg "guide: § Step 8 says every write is redone, not just the last command" 'not just the final `gh pr create`'
 
+# --- dir #612 seam (found by dir #661's review): the unavailable-/simplify fallback is its OWN inline pass ----
+# "the same ONE inline pass" read as the prose-only reuse pass, but the fallback runs on a diff that has code:
+# it must cover the cleanup angles /simplify would, and say it is a different pass from the prose-only one.
+g2="$(guide_step 2)"
+check_contains "guide: § Step 2's unavailable-skill fallback covers /simplify's own cleanup angles" "$g2" \
+  'do ONE inline cleanup pass over the step-1 diff covering the angles `/simplify` would — duplication, dead code, over-complication, naming'
+check_contains "guide: § Step 2 says the fallback is a different pass from the prose-only one" "$g2" 'a different pass from the prose-only one above'
+check_absent "guide: § Step 2 no longer calls the fallback 'the same' inline pass" "$g2" 'do the same ONE inline pass'
+
 summary
