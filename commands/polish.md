@@ -66,7 +66,7 @@ Steps, in order:
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
    K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) (establish availability by
-   attempting, as in step 2). On success resolve its findings, receipt the bare
+   attempting, never from the skill listing). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
    step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488, decided by the
    gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to
