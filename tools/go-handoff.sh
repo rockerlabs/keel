@@ -78,13 +78,13 @@ positive_int() {
 verb="${1:-}"
 case "$verb" in
   write|read|clear) ;;
-  -h|--help) sed -n '2,/^set -euo/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n -e '/^set -euo/q' -e '2,$s/^# \{0,1\}//p' "$0"; exit 0 ;;
   *) die "usage: go-handoff.sh write|read|clear \"<ticket>\"  (see --help)" ;;
 esac
 [ "$#" -eq 2 ] || die "usage: go-handoff.sh $verb \"<ticket>\" — exactly one ticket argument, quoted"
 ticket="$2"
 
-# --- the ticket and its key (B1) ----------------------------------------------------------------------
+# --- the ticket and its key ----------------------------------------------------------------------
 case "$ticket" in
   *$'\n'*|*$'\r'*) die "the ticket must be one line" ;;
 esac
@@ -102,7 +102,7 @@ case "$verb" in
   read)  prune_days="$(positive_int KEEL_GO_HANDOFF_PRUNE_DAYS 30)" ;;
 esac
 
-# --- the root (B1) -----------------------------------------------------------------------------------
+# --- the root -----------------------------------------------------------------------------------
 state_root="$(gate_state_root)" || die "\$HOME $(gate_home_diagnosis) — cannot place the handoff root" 3
 hroot="$state_root/go-handoff"
 repo_key="$(bash "$SELF_DIR/pre-pr-gate.sh" repo-key "$PWD" 2>/dev/null)" || repo_key=""
@@ -116,9 +116,6 @@ prune() {
   [ -d "$hroot" ] || return 0
   find "$hroot" -type f -mtime "+$prune_days" -exec rm -f {} + 2>/dev/null || true
 }
-
-# in_git — 0 when the cwd is inside a git work tree.
-in_git() { git rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 
 case "$verb" in
 # --- clear -------------------------------------------------------------------------------------------
@@ -135,52 +132,42 @@ write)
   [ "${#body}" -le "$max_bytes" ] || die "stdin is over KEEL_GO_HANDOFF_MAX_BYTES ($max_bytes bytes) — a note is a note, not a transcript"
   case "$body" in *$'\n') ;; *) body="$body"$'\n' ;; esac
 
-  want="done"; seen_text=0; ndone=0
-  while IFS= read -r line || [ -n "$line" ]; do
+  want="done"; seen_text=0
+  while IFS= read -r line; do
     case "$line" in
       ticket:*|branch:*|worktree:*|head:*|written:*|verdict:*)
         die "stdin has a line starting '${line%%:*}:' — that key is the tool's own" ;;
       done:*|next:*|carry:*)
         key="${line%%:*}"
         [ "$key" = "$want" ] || die "stdin key '$key:' is duplicated or out of order (the order is done:, next:, carry:, each once)"
-        if [ "$ndone" -gt 0 ] && [ "$seen_text" -eq 0 ]; then die "the field before '$key:' is empty — say 'none' when there is nothing"; fi
-        ndone=$((ndone + 1)); seen_text=0
+        [ "$want" = "done" ] || [ "$seen_text" -eq 1 ] || die "the field before '$key:' is empty — say 'none' when there is nothing"
+        seen_text=0
         case "$key" in done) want=next ;; next) want=carry ;; carry) want=end ;; esac
-        rest="${line#*:}"
-        case "$rest" in *[![:space:]]*) seen_text=1 ;; esac
+        line="${line#*:}"
         ;;
-      *)
-        if [ "$ndone" -eq 0 ]; then
-          case "$line" in *[![:space:]]*) die "stdin text before 'done:' — the three fields are all there is" ;; esac
-        else
-          case "$line" in *[![:space:]]*) seen_text=1 ;; esac
-        fi
-        ;;
+    esac
+    case "$line" in
+      *[![:space:]]*) [ "$want" != "done" ] || die "stdin text before 'done:' — the three fields are all there is"; seen_text=1 ;;
     esac
   done <<EOF
 $body
 EOF
-  [ "$ndone" -eq 3 ] || die "stdin needs the three fields done:, next:, carry: (found $ndone)"
+  [ "$want" = end ] || die "stdin needs the three fields done:, next:, carry:"
   [ "$seen_text" -eq 1 ] || die "the last field is empty — say 'none' when there is nothing"
 
-  b="none"; w="none"; h="none"
-  if in_git; then
-    b="$(git branch --show-current 2>/dev/null || true)"; [ -n "$b" ] || b="none"
-    w="$(git rev-parse --show-toplevel 2>/dev/null || true)"; [ -n "$w" ] || w="none"
-    h="$(git rev-parse HEAD 2>/dev/null || true)"; [ -n "$h" ] || h="none"
-  fi
+  # Outside git (or on an unborn HEAD) each call fails with nothing on stdout: the fields read `none`.
+  b="$(git branch --show-current 2>/dev/null || true)"
+  w="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  h="$(git rev-parse --verify -q HEAD 2>/dev/null || true)"
 
   gate_ensure_owner_dir "$hroot"
   gate_ensure_owner_dir "$ndir"
   [ -d "$ndir" ] || die "cannot create $ndir" 3
   tmp="$ndir/$tkey.tmp.$$"
-  if ! { printf 'ticket: %s\nbranch: %s\nworktree: %s\nhead: %s\nwritten: %s\n' \
-           "$ticket" "$b" "$w" "$h" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-         printf '%s' "$body"; } > "$tmp" 2>/dev/null; then
-    rm -f "$tmp"; die "cannot write $tmp" 3
-  fi
-  if ! mv -f "$tmp" "$note" 2>/dev/null; then
-    rm -f "$tmp"; die "cannot replace $note" 3
+  if ! { { printf 'ticket: %s\nbranch: %s\nworktree: %s\nhead: %s\nwritten: %s\n' \
+             "$ticket" "${b:-none}" "${w:-none}" "${h:-none}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+           printf '%s' "$body"; } > "$tmp" && mv -f "$tmp" "$note"; } 2>/dev/null; then
+    rm -f "$tmp"; die "cannot write $note" 3
   fi
   prune
   exit 0
@@ -195,24 +182,17 @@ read)
   fi
   nhead="$(sed -n -e '/^head: /{s///p;q;}' "$note")"
   verdict=unknown
-  if [ "$nhead" != none ] && in_git && cur="$(git rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null)"; then
+  if [ "$nhead" != none ] && cur="$(git rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null)"; then
     case "$nhead" in
       *[!0-9a-f]*|'') verdict=unrelated ;;
+      "$cur")         verdict=fresh ;;
       *)
-        if [ "$nhead" = "$cur" ]; then
-          verdict=fresh
+        if git merge-base --is-ancestor "$nhead" "$cur" 2>/dev/null; then
+          verdict="behind $(git rev-list --count "$nhead..$cur" 2>/dev/null || echo '?')"
+        elif git merge-base --is-ancestor "$cur" "$nhead" 2>/dev/null; then
+          verdict="ahead $(git rev-list --count "$cur..$nhead" 2>/dev/null || echo '?')"
         else
-          rc=0; git merge-base --is-ancestor "$nhead" "$cur" 2>/dev/null || rc=$?
-          if [ "$rc" -eq 0 ]; then
-            verdict="behind $(git rev-list --count "$nhead..$cur" 2>/dev/null || echo '?')"
-          else
-            rc=0; git merge-base --is-ancestor "$cur" "$nhead" 2>/dev/null || rc=$?
-            if [ "$rc" -eq 0 ]; then
-              verdict="ahead $(git rev-list --count "$cur..$nhead" 2>/dev/null || echo '?')"
-            else
-              verdict=unrelated
-            fi
-          fi
+          verdict=unrelated
         fi
         ;;
     esac
