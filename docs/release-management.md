@@ -153,7 +153,12 @@ conventions that happen to look similar, it's one convention applied at two poin
    as anything status-shaped triggers real turns and re-prices the whole context. Felt here as well —
    a ping sent to an auditor mid-run set off a full status sweep of its own legs. What this rule adds
    is only *where* the contract has to appear: inline in the brief, verbatim, because the receiving
-   session never reads this doc. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
+   session never reads this doc. **Include the CI-wait rule beside it**, the same way — keel's wording: "if you wait on CI or any
+   external state, wait in ONE backgrounded command with a timeout (`gh pr checks <n> --watch`, or an
+   `until` loop) and let its completion notify you — never a scheduled wakeup, a foreground sleep chain or a
+   short-interval monitor; end no turn 'waiting' without a live background task." On Claude Code the tools to
+   name are `ScheduleWakeup` (for loop mode only) and `Monitor`; the bound is R11's, and the cost reason is
+   [`docs/token-economy.md`](token-economy.md)'s. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
    the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
    convention cannot see a rule that never made it into the brief (see R13's own text for the exact
    line and the incident that named this requirement). **A brief whose workers run simulator- or
