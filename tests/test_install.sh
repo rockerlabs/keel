@@ -31,12 +31,21 @@ check_absent "no foreign-core nag when install created CLAUDE.md" "$OUT" "NOT me
 check_link "kept-clone install wires bin/keel" "$HOME/.claude/bin/keel"
 check_contains "summary offers the CLI on a kept clone" "$OUT" "keel help"
 
+# dir #413 A2: the shipped read-only review agent lands at <home>/agents/ (Claude Code's user-scope
+# agents dir) beside the commands, byte-equal in copy mode, and is recorded in the manifest.
+check_file "installs the review agent into <home>/agents" "$HOME/.claude/agents/keel-polish-reviewer.md"
+run cmp -s "$REPO_ROOT/agents/keel-polish-reviewer.md" "$HOME/.claude/agents/keel-polish-reviewer.md"
+check_status "the installed agent is byte-equal to the shipped file" 0 "$STATUS"
+check_contains "the manifest records the placed agent" "$(cat "$HOME/.claude/.keel/install-manifest.claude")" \
+  "artifact=file	agents/keel-polish-reviewer.md	cksum:"
+
 # idempotent re-run preserves a user edit and clobbers nothing
 printf '\nMY-EDIT\n' >> "$HOME/.claude/CLAUDE.md"
 run "$install"
 check_status "re-run → exit 0" 0 "$STATUS"
 check_contains "re-run preserves the user edit" "$(cat "$HOME/.claude/CLAUDE.md")" "MY-EDIT"
 check_contains "re-run leaves files untouched" "$OUT" "left untouched"
+check_contains "re-run: the review agent is up to date, nothing rewritten" "$OUT" "keel-polish-reviewer.md (up to date)"
 check_absent "no foreign-core nag on a Keel-derived CLAUDE.md" "$OUT" "NOT merged in"
 
 # One non-interactive re-run covers three drift/collision scenarios at once (each extra installer run
@@ -46,6 +55,9 @@ check_absent "no foreign-core nag on a Keel-derived CLAUDE.md" "$OUT" "NOT merge
 #    keel-go.md AUTOMATICALLY (a brand-new file clobbers nothing; the curl|sh path would otherwise
 #    re-warn forever and never deliver the command);
 #  - a drifted keel-* command: plain drift handling only, never a keel-keel-* alias.
+# dir #413 A2: an adopter's edit of the installed agent, non-interactive → untouched (drift is
+# sync_product's own: refused without --force), and no keel-prefixed alias copy appears beside it.
+printf '# my own reviewer, not Keel\n' > "$HOME/.claude/agents/keel-polish-reviewer.md"
 printf '\nDRIFTED-FRAMEWORK\n' >> "$HOME/.claude/FRAMEWORK.md"
 printf '# my own go command\n' > "$HOME/.claude/commands/go.md"
 printf '\nMY-EDIT\n' >> "$HOME/.claude/commands/keel-setup.md"
@@ -54,6 +66,8 @@ check_status "drift + collision re-run → exit 0 (no hang)" 0 "$STATUS"
 check_contains "warns the installed FRAMEWORK differs" "$OUT" "FRAMEWORK.md differs from Keel's shipped version"
 check_contains "preserves the drifted copy (no clobber without a yes)" "$(cat "$HOME/.claude/FRAMEWORK.md")" "DRIFTED-FRAMEWORK"
 check_contains "own /go preserved" "$(cat "$HOME/.claude/commands/go.md")" "my own go command"
+check_contains "the adopter's own agent file is left untouched" "$(cat "$HOME/.claude/agents/keel-polish-reviewer.md")" "my own reviewer"
+check_eq "the drifted agent still has no alias copy beside it" "1" "$(find "$HOME/.claude/agents" -type f | wc -l | tr -d ' ')"
 check_contains "collision announces the alongside install" "$OUT" "go.md is your own command"
 # dir #323 Part 3 (reachability): the non-tty alias-creation branch used to print no remedy at all —
 # it now names --force as the way to reclaim the name.
@@ -79,6 +93,7 @@ fresh_home_env "$unguarded"
 run env "${FRESH_HOME_ENV[@]}" "$install" --home "$alt" --no-hooks
 check_status "--no-hooks --home → exit 0" 0 "$STATUS"
 check_file "custom home gets CLAUDE.md" "$alt/CLAUDE.md"
+check_file "--home retarget: the agent lands in DIR/agents like the commands" "$alt/agents/keel-polish-reviewer.md"
 check_contains "secret-guard step skipped" "$OUT" "skipped"
 case "$OUT" in
   *"secret-guard already guards"*) fail "--no-hooks summary must NOT claim the guard is active" "found the claim in output" ;;
@@ -86,6 +101,27 @@ case "$OUT" in
 esac
 check_contains "--no-hooks summary says the guard is NOT wired" "$OUT" "secret-guard is NOT wired"
 check_contains "--no-hooks Verify section explains WHY it isn't wired" "$OUT" "this run did not touch git hooks"
+
+# dir #413 A2: a FOREIGN file already at the agent path before the first install — non-interactive run
+# leaves it untouched, does NOT record it as Keel content, lands no alias copy, and uninstall keeps it.
+fag="$SANDBOX/foreign-agent-home"; mkdir -p "$fag/agents"
+printf '# my own reviewer, not Keel\n' > "$fag/agents/keel-polish-reviewer.md"
+fresh_home_env "$unguarded"
+run env "${FRESH_HOME_ENV[@]}" "$install" --home "$fag" --no-hooks
+check_status "foreign agent at the shipped path → exit 0 (no hang)" 0 "$STATUS"
+check_contains "the foreign agent is flagged, not overwritten" "$OUT" "keel-polish-reviewer.md differs"
+check_contains "the foreign agent content is untouched" "$(cat "$fag/agents/keel-polish-reviewer.md")" "my own reviewer"
+check_eq "exactly ONE file in agents/ (no keel- alias copy)" "1" "$(find "$fag/agents" -type f | wc -l | tr -d ' ')"
+check_absent "the declined agent is NOT in the manifest" "$(cat "$fag/.keel/install-manifest.claude")" "agents/keel-polish-reviewer.md"
+run env "${FRESH_HOME_ENV[@]}" "$REPO_ROOT/uninstall.sh" --home "$fag" --yes
+check_file "uninstall leaves the foreign agent in place" "$fag/agents/keel-polish-reviewer.md"
+# doctor's W-REVIEW-AGENT-FLOOR advice is `install.sh --force`: prove that remedy really restores the
+# shipped floor over an adopter's edited copy, backed up first.
+run env "${FRESH_HOME_ENV[@]}" "$install" --force --home "$fag" --no-hooks
+check_status "--force over the foreign agent → exit 0" 0 "$STATUS"
+run cmp -s "$REPO_ROOT/agents/keel-polish-reviewer.md" "$fag/agents/keel-polish-reviewer.md"
+check_status "--force restores the shipped agent (the floor remedy doctor advises)" 0 "$STATUS"
+check_eq "--force backed the edited copy up first" "1" "$(find "$fag/agents" -name 'keel-polish-reviewer.md.*.bak' | wc -l | tr -d ' ')"
 
 # never clobbers a pre-existing foreign global hooksPath — and, with a real (foreign) pre-commit
 # present there, must NOT then falsely report it as Keel's secret-guard (the old verify did).

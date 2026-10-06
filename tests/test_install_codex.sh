@@ -23,6 +23,8 @@ check_status "KEEL-CORE block byte-equals CORE.md" 0 "$STATUS"
 check_file "FRAMEWORK.md lands at the root (same map as templates/CLAUDE.md)" "$SANDBOX/codex-home/FRAMEWORK.md"
 check_file "PRINCIPLES.md lands at the root" "$SANDBOX/codex-home/PRINCIPLES.md"
 check_nofile "no commands/ dir wired" "$SANDBOX/codex-home/commands/wrap.md"
+# dir #413 A2: agents/ is a Claude-format dir Codex never reads — not created under --codex.
+check_nodir "no agents/ dir wired under --codex" "$SANDBOX/codex-home/agents"
 check_nofile "no CLAUDE.md — this is the AGENTS.md preset" "$SANDBOX/codex-home/CLAUDE.md"
 
 # --- idempotent re-run: block reported up to date, a user edit OUTSIDE the block survives it -------
