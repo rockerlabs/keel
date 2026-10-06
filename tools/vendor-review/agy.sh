@@ -74,15 +74,13 @@ done
 # other sessions or tools — editing them is a human's decision, not an agent's workaround.
 settings="$HOME/.gemini/antigravity-cli/settings.json"
 if [ -e "$settings" ]; then
-  n_rules="bad"
-  if command -v jq >/dev/null 2>&1; then
-    n_rules="$(jq -r '.permissions as $p
-      | if $p == null then 0
-        elif ($p | type) != "object" then "bad"
-        elif $p.allow == null then 0
-        elif ($p.allow | type) != "array" then "bad"
-        else ($p.allow | length) end' "$settings" 2>/dev/null)" || n_rules="bad"
-  fi
+  # jq absent (127), unparseable (2) and a non-object root (5) all land on "bad": fail closed.
+  n_rules="$(jq -r '.permissions as $p
+    | if $p == null then 0
+      elif ($p | type) != "object" then "bad"
+      elif $p.allow == null then 0
+      elif ($p.allow | type) != "array" then "bad"
+      else ($p.allow | length) end' "$settings" 2>/dev/null)" || n_rules="bad"
   case "$n_rules" in
     0) ;;
     ''|*[!0-9]*)
