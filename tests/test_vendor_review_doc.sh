@@ -59,4 +59,22 @@ pin "vendor-review.md names drydock.md back" \
   "$doc" '](drydock.md)' \
   "expected vendor-review.md to name the unscriptable-leg sibling"
 
+# --- dir #662 (B10): the prose states the hardened rails, and the retired claims are gone --------------
+check_absent "vendor-review.md: rail 1's retired 'applies unconditionally here' limitation is gone" \
+  "$(cat "$doc")" 'applies unconditionally here'
+check_absent "vendor-review.md: Usage no longer writes rounds to the dir an agy allow-rule covered" \
+  "$(cat "$doc")" '--out private/audit-harness/out'
+check_absent "agy.sh's header no longer claims 'The model has NO tool access' unqualified" \
+  "$(cat "$client")" 'The model has NO tool access'
+pin "vendor-review.md states the Linux per-argument cap (131071)" "$doc" '131071' \
+  "expected Usage/the rails to state B3's Linux cap"
+pin "vendor-review.md states the default --out (.keel/vendor-review)" "$doc" '.keel/vendor-review' \
+  "expected Usage to state B6's default round location"
+pin "vendor-review.md states the agy allow-rule refusal (permissions.allow)" "$doc" 'permissions.allow' \
+  "expected a rail for B9"
+pin "vendor-review.md states B9's scope limit (MCP servers / plugins are not checked)" "$doc" 'MCP' \
+  "expected the O-2 limit in the docs, never 'no tool access' unqualified"
+check_contains "CHANGELOG [Unreleased] carries a bullet citing dir #662" \
+  "$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' "$REPO_ROOT/CHANGELOG.md")" 'dir #662'
+
 summary
