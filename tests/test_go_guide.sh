@@ -21,9 +21,9 @@ check_file "go-guide.md target exists" "$guide_md"
 
 # --- (a) budget: GUIDE7 ≤ 1650 words -----------------------------------------------------------------
 # Raised 1500 -> 1650 (operator decision F4, 2026-10-05, dir #668 spec docs/specs/668-go-seam-step.md):
-# the Seams step (+207 words, measured) and dir #401's checkpoint-note hunk (+202) both land in this
-# file (~1644-1647 combined, macOS `wc -w` binds), so the constant moves once for both. Raising it
-# again is an operator decision — never bump it here just to make a clause fit.
+# the Seams step and dir #401's checkpoint-note hunk both land in this file (macOS `wc -w` binds), so
+# the constant moves once for both. Raising it again is an operator decision — never bump it here just
+# to make a clause fit.
 GUIDE_MD_WORD_BUDGET=1650
 word_count="$(wc -w < "$guide_md" | tr -d ' ')"
 if [ "$word_count" -le "$GUIDE_MD_WORD_BUDGET" ]; then
@@ -286,79 +286,81 @@ assert_case_turns_red "(f) needle mutation: SPEC3 never-write-closing-marker cla
 # own clause on its own line so no other case collapses with it.
 
 # GUIDE8 — the Seams item's opening sentence.
-g1_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g1_copy" "Others' PRs merged while you built" "Others' PRs merged while you built" "Other work"
+f14_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f14_copy" "Others' PRs merged while you built" "Others' PRs merged while you built" "Other work"
 assert_case_turns_red "(f) needle mutation: GUIDE8 seams-heading clause removed" \
   "(f) needle [GUIDE8 seams heading]: 'Others' PRs merged while you built' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g1_copy"
+  "KEEL_GO_GUIDE_MD=$f14_copy"
 
 # GUIDE8 — commit before the rebase.
-g2_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g2_copy" "Commit your work," "Commit your work," "Save your work,"
+f15_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f15_copy" "Commit your work," "Commit your work," "Save your work,"
 assert_case_turns_red "(f) needle mutation: GUIDE8 commit-first clause removed" \
   "(f) needle [GUIDE8 commit first]: 'Commit your work,' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g2_copy"
+  "KEEL_GO_GUIDE_MD=$f15_copy"
 
 # GUIDE8 — the recount rule.
-g3_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g3_copy" "A different number is falsified" "A different number is falsified" "A different number is noted"
+f16_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f16_copy" "A different number is falsified" "A different number is falsified" "A different number is noted"
 assert_case_turns_red "(f) needle mutation: GUIDE8 recount-rule clause removed" \
   "(f) needle [GUIDE8 recount rule]: 'A different number is falsified' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g3_copy"
+  "KEEL_GO_GUIDE_MD=$f16_copy"
 
 # GUIDE8 — the consumer-list question.
-g4_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g4_copy" "is yours in it" "is yours in it" "is a list kept"
+f17_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f17_copy" "is yours in it" "is yours in it" "is a list kept"
 assert_case_turns_red "(f) needle mutation: GUIDE8 consumer-lists clause removed" \
   "(f) needle [GUIDE8 consumer lists]: 'is yours in it' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g4_copy"
+  "KEEL_GO_GUIDE_MD=$f17_copy"
 
 # GUIDE8 — the ten-file cap.
-g5_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g5_copy" "Read at most ten files" "Read at most ten files" "Read the files"
+f18_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f18_copy" "Read at most ten files" "Read at most ten files" "Read the files"
 assert_case_turns_red "(f) needle mutation: GUIDE8 ten-file-cap clause removed" \
   "(f) needle [GUIDE8 cap]: 'Read at most ten files' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g5_copy"
+  "KEEL_GO_GUIDE_MD=$f18_copy"
 
 # GUIDE3 — the cite of go.md step 6's override at the out-of-ticket-defect clause.
-g6_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g6_copy" "in a managed release); do not fix it" "in a managed release); do not fix it" "); do not fix it"
+f19_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f19_copy" "in a managed release); do not fix it" "in a managed release); do not fix it" "); do not fix it"
 assert_case_turns_red "(f) needle mutation: GUIDE3 managed-release cite removed" \
   "(f) needle [GUIDE3 carve-out cite]: 'in a managed release); do not fix it' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g6_copy"
+  "KEEL_GO_GUIDE_MD=$f19_copy"
 
 # GUIDE8 — a claim already false before the diff is recorded, not fixed.
-g7_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g7_copy" "record it (I3) and count it on" "record it (I3) and count it on" "note it on"
+f20_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f20_copy" "record it (I3) and count it on" "record it (I3) and count it on" "note it on"
 assert_case_turns_red "(f) needle mutation: GUIDE8 pre-existing-falsehood clause removed" \
   "(f) needle [GUIDE8 pre-existing falsehood]: 'record it (I3) and count it on' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g7_copy"
+  "KEEL_GO_GUIDE_MD=$f20_copy"
 
 # GUIDE8 — the report form's Seams line dropped (the whole line is the needle).
-g8_copy="$(scratch_copy "$guide_md" go-guide.md)"
-delete_line_containing "$g8_copy" "Seams: <none"
+f21_copy="$(scratch_copy "$guide_md" go-guide.md)"
+delete_line_containing "$f21_copy" "Seams: <none"
 assert_case_turns_red "(f) needle mutation: GUIDE8 report-field line removed" \
   "(f) needle [GUIDE8 report field]: 'Seams: <none | skipped — why | fixed <n>, escape <n>, unchecked <n>>' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g8_copy"
+  "KEEL_GO_GUIDE_MD=$f21_copy"
 
 # GUIDE4 — the renumbered old item 3 (I1's "unaffected" re-run) must keep its text.
-g9_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g9_copy" "you wrote down in I1. Red" "you wrote down in I1. Red" "you listed. Red"
+f22_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f22_copy" "you wrote down in I1. Red" "you wrote down in I1. Red" "you listed. Red"
 assert_case_turns_red "(f) needle mutation: GUIDE4 old item 3 text lost" \
   "(f) needle [GUIDE4 old item 3 kept]: 'you wrote down in I1. Red' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g9_copy"
+  "KEEL_GO_GUIDE_MD=$f22_copy"
 
 # GUIDE4 — the renumbered old item 4 (the full test run) must keep its text.
-g10_copy="$(scratch_copy "$guide_md" go-guide.md)"
-replace_in_line_containing "$g10_copy" "Run the project's full test command" "Run the project's full test command" "Run the tests"
+f23_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$f23_copy" "Run the project's full test command" "Run the project's full test command" "Run the tests"
 assert_case_turns_red "(f) needle mutation: GUIDE4 old item 4 text lost" \
   "(f) needle [GUIDE4 old item 4 kept]: 'Run the project's full test command' matches exactly one line" \
-  "KEEL_GO_GUIDE_MD=$g10_copy"
+  "KEEL_GO_GUIDE_MD=$f23_copy"
 
-# (g) numbering — Seams moved to item 4 (the old items keep their numbers 2, 3 and Seams is last).
+# (g) numbering — Seams renumbered 2 -> 5: the 1-4 order check and the item-2 pin both go red.
 g11_copy="$(scratch_copy "$guide_md" go-guide.md)"
 replace_in_line_containing "$g11_copy" "2. Seams." "2. Seams." "5. Seams."
 assert_case_turns_red "(g) numbering mutation: Seams not item 2" \
   "(g) I4 items are numbered 1-4 in order" "KEEL_GO_GUIDE_MD=$g11_copy"
+assert_case_turns_red "(g) numbering mutation: Seams not item 2 (pin)" \
+  "(g) I4 item 2 is 'Seams.' (before the full test run)" "KEEL_GO_GUIDE_MD=$g11_copy"
 
 summary

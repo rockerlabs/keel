@@ -57,7 +57,7 @@ pin "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "$g
 # lesson: never a pinned phrase) — 1125 gives it the same small margin round 1's 1055/1045 pair did.
 # Raised 1125 -> 1250 (operator decision D5, 2026-10-04, dir #670's design; consumed by dir #668,
 # docs/specs/668-go-seam-step.md B10): the managed-release carve-out cite, step 5's two bullets and the
-# marker-placement rule add ~30 words (1121 -> 1151); dir #401 adds none to go.md, so this PR raises it alone.
+# marker-placement rule; dir #401 adds none to go.md, so this PR raises it alone.
 GO_MD_WORD_BUDGET=1250
 word_count="$(wc -w < "$go_md" | tr -d ' ')"
 if [ "$word_count" -le "$GO_MD_WORD_BUDGET" ]; then
@@ -214,7 +214,7 @@ needle_texts=(
   "a fresh worktree's own branch"
 )
 # T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
-# for every row here, old and new alike (verified live: all 31 needles below already satisfy this,
+# for every row here, old and new alike (verified live: every needle below already satisfies this,
 # so the exact check is a strict superset of mere presence, not a special case for dir #642's own
 # additions — code-review high's altitude finding on this ticket's own diff).
 i=0
@@ -249,8 +249,8 @@ fi
 # non-ASCII characters (—, →, ⏳, 📐, …) differently from GNU/BSD wc, undercounting the real file by
 # ~45 words there (919 vs macOS's 964) — a fixed +10-word nudge crossed 965 on macOS but not on
 # busybox. 80 padding words clears that gap with margin on any wc's word-boundary handling.
-# The pad is computed from the live count, like tests/test_go_guide.sh's: a fixed 80 words only crossed the
-# old 1125 ceiling, and with the budget raised to 1250 it would stay green on a 1151-word file (dir #668 B10).
+# Pad computed from the live count (as in tests/test_go_guide.sh), so it crosses the ceiling however the
+# budget moves (dir #668 B10).
 a_pad=$((GO_MD_WORD_BUDGET - word_count + 80))
 a_copy="$(scratch_copy "$go_md" go.md)"
 append_line "$a_copy" "$(printf 'filler %.0s' $(seq 1 "$a_pad"))"
