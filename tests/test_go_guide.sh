@@ -155,7 +155,11 @@ handoff_needles=(
 )
 for spec in "${handoff_needles[@]}"; do
   n="${spec%%|*}"; needle="${spec#*|}"
-  if action_text "$n" | grep -qF -- "$needle"; then
+  # Captured first, then matched through lib.sh's match() (a here-string): piping action_text straight into
+  # `grep -q` lets grep's early exit SIGPIPE awk, and pipefail then reports a real match as "not found" (dir #280;
+  # felt on the busybox leg of PR #526).
+  action="$(action_text "$n")"
+  if match "$action" -qF -- "$needle"; then
     pass "(h) I$n names '$needle'"
   else
     fail "(h) I$n names '$needle'" "no '$needle' inside I$n's own text in $guide_md"
