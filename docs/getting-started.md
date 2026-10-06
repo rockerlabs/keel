@@ -264,10 +264,13 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   without one actually having happened.
 - **`/code-review` now runs for real, on its own (dir #254).** The harness's earlier
   `disable-model-invocation` block on `/code-review` has lifted — a session can invoke it directly, so
-  `/polish`'s step 5 attempts the real, built-in multi-agent `/code-review <level>` pass itself, with no
-  operator hand-off, for `low|medium|high|max`. Only if that direct attempt is refused (the block could
-  return) does step 5 fall back to spawning a second, independent Agent-tool subagent (fresh context, no
-  memory of the code it's reviewing) to do the review instead, traced the same mechanical way. The PR body
+  `/polish`'s step 5 runs the real, built-in `/code-review <level>` pass itself, with no operator
+  hand-off: for `low|medium|high`, inside a fresh-context subagent first (dir #670 — a reviewer that has
+  not seen how the diff was written, and a smaller context for every review turn), and for `max` directly.
+  If the subagent cannot run it, step 5 attempts the pass in-session. Only if that direct attempt is refused
+  too (the block could return) does step 5 fall back to spawning a second, independent Agent-tool subagent
+  (fresh context, no memory of the code it's reviewing) to do the review instead, traced the same mechanical
+  way. The PR body
   and the closing summary are always labeled honestly — "independent agent review" is never presented as
   if `/code-review` itself ran on the fallback path. **You're asked before the fact only at the two ends of
   the scale** — `max`/`ultra` (expensive) and `skip` (no review at all); `low`/`medium`/`high` run with no

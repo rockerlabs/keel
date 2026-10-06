@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/polish`'s step 5 runs the review in a fresh-context subagent first (dir #670, slice 2).** For `low`,
+  `medium` and `high` it spawns one subagent that invokes the real `/code-review` with the diff target in
+  the args, so the reviewer has not seen how the diff was written and every review turn stops re-reading
+  the author's whole session. The gate's review trace unlocks as before, with no gate change beyond a deny
+  text that names the new route. A void or refused review falls back to the in-session attempt, then to
+  the old fallback subagent; `max`, `ultra` and `skip` are unchanged. `README`, `docs/getting-started.md`
+  and `docs/delegation.md` state the new order, and `tests/test_polish_command.sh` pins the rules.
+
 - **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
   `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
   `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or

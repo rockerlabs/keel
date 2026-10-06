@@ -21,10 +21,16 @@ check_file "commands/polish.md exists" "$polish"
 # strip_indent=1 on both sides: polish.md's copy sits inside a nested list item and needs its leading
 # whitespace normalized before comparison; it's a no-op on delegation.md's already-flush-left canonical
 # text, so one call shape covers both.
+# dir #670: polish.md now carries TWO copies of the block — step 5's K2 review subagent prompt and the dir #70
+# fallback's — and extract_rails_block's awk range reopens at each start marker, so its output over polish.md
+# is the two copies back to back. Each must equal the canonical text, so the expected value is that text twice.
 canonical_rails="$(extract_rails_block "$delegation" 1)"
 polish_rails="$(extract_rails_block "$polish" 1)"
-check_block_equal "commands/polish.md's dir #70 fallback rails block is byte-identical (mod indent) to docs/delegation.md's canonical text" \
-  "$polish_rails" "$canonical_rails"
+check_block_equal "commands/polish.md's two rails copies (K2's review subagent, the dir #70 fallback) are each byte-identical (mod indent) to docs/delegation.md's canonical text" \
+  "$polish_rails" "$canonical_rails
+$canonical_rails"
+check_eq "commands/polish.md carries exactly two rails blocks (one per keel-written review subagent prompt)" "2" \
+  "$(grep -c '^[[:space:]]*- You are read-only:' "$polish")"
 
 # The byte-equality check above only catches ASYMMETRIC drift (one side losing the line while the
 # other keeps it) — reproduced live: stripping the dirty-tree bullet from BOTH delegation.md and
