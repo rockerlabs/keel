@@ -94,12 +94,14 @@ pinf "core: step 3's tests receipt binds HEAD" '`tools/pre-pr-gate.sh receipt po
 check_contains "core: step 1 mints the run's nonce with init" "$(step_text 1)" '`tools/pre-pr-gate.sh init`'
 pinf "core: step 4's receipt carries the sizing evidence" '`tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`'
 pinf "core: the delta-round budget" 'the full review runs once, then at most TWO delta rounds'
-pinf "core: dir #244's commit-message re-read after an --amend" 'On `--amend`, re-read the commit message against the final diff (dir #244)'
+pinf "core: dir #244's commit-message re-read after an --amend" 'on `--amend`, re-read the commit message against the final diff (dir #244)'
 pinf "core: step 6 never commits while a background suite run is alive" '**Never commit, amend or edit while a background suite run is alive**'
+pinf "core: a finding's fix is folded into one commit where practical" "Fold a finding's fix into one commit where practical"
+check_contains "core: step 6 skips the re-run when nothing changed" "$(step_text 6)" "Nothing changed → skip the re-run (\`skipped:no-file-changes\`)"
 pinf "core: ordering rule 1 is named, K2 cites it" '**Ordering rule 1 — have the implementation committed by step 3**'
-pinf "core: dir #488's review-null exception is defined where K2 cites it" "a later fix commit that only changes comments or blank lines in already-reviewed \`.sh\` files keeps the earlier trace"
+pinf "core: dir #488's review-null exception is defined where K2 cites it" "decided by the gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to already-reviewed \`.sh\` files keeps the earlier trace at that level; anything else needs a fresh one"
 check_contains "core: step 6 skips the retest under --no-test" "$(step_text 6)" "and tests weren't \`--no-test\`-skipped, re-run the test command once"
-check_contains "core: step 7 sends a fix commit to a convergence round" "$(step_text 7)" "A fix commit for what it flagged → a convergence round, guide § Step 1"
+check_contains "core: step 7 sends a fix commit to a convergence round" "$(step_text 7)" "A fix commit for what it flagged → re-invoke \`/polish\`: a convergence round (step 1's pointer)"
 pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every step id is present for the current run'
 pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
 pinf "core: step 4's auto rule" '`low`/`medium`/`high` clearly inside one bucket → run it automatically'

@@ -19,7 +19,7 @@ current run — never skip a receipt write. An unexpected permission prompt on o
 `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
-review trace binds the HEAD current when the review fires, so a late commit costs a full re-receipt cycle.
+review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt cycle.
 
 **The guide.** The rare branches live in `polish-guide.md`, loaded when a step below names a trigger that
 fired; never improvise one from memory. Where the guide and this file disagree, this file wins.
@@ -66,11 +66,12 @@ Steps, in order:
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
-   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) — establish availability by
-   attempting, never from the skill listing. On success resolve its findings, receipt the bare
+   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) (establish availability by
+   attempting, as in step 2). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
-   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488: a later
-   fix commit that only changes comments or blank lines in already-reviewed `.sh` files keeps the earlier trace). The
+   step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488, decided by the
+   gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to
+   already-reviewed `.sh` files keeps the earlier trace at that level; anything else needs a fresh one). The
    two-way conformance mandate (step 5(a)'s): the diff must realize the ticket's done-criterion, and nothing
    in it may silently exceed or contradict it.
 
@@ -178,20 +179,19 @@ Steps, in order:
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
      other mechanism (dir #183).
 
-   **Fixes and delta rounds, the normal path.** On
+   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical; on
    `--amend`, re-read the commit message against the final diff (dir #244). dir #127: the full review runs
    once, then at most TWO delta rounds; only zero findings in a delta round ends the cycle (a clean full
    re-review does not). A second delta round still finding → file the residual, say so in the PR body, open
    the PR.
 
-   *Rare — the direct attempt refused or the Agent tool unavailable, a void review, an add-on review (an
-   operator-run `/code-review`, a cross-model second opinion), a second delta round still finding, the
-   in-run `--amend` re-establishment list, the receipt shapes:* load the `polish-guide` skill (`keel-polish-guide`
+   *Rare — the direct attempt refused or the Agent tool unavailable, a void review, an add-on review, a second
+   delta round still finding, the in-run `--amend` path:* load the `polish-guide` skill (`keel-polish-guide`
    if aliased), else `polish-guide.md` beside this file, § Step 5; guide unreachable → stop and report.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (hand-off edits count)
    or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once and show the real output; red → no receipt,
-   report what broke and stop. **Never commit,
+   report what broke and stop. Nothing changed → skip the re-run (`skipped:no-file-changes`). **Never commit,
    amend or edit while a background suite run is alive** (dir #505): it trips `tests/run.sh`'s
    self-corruption canary as a false positive. Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or
    `skipped:no-file-changes`) — the outcome IS the sha the retest ran at, and after a fix commit or `--amend` it also re-binds step 3's receipt to the new HEAD.
@@ -199,7 +199,7 @@ Steps, in order:
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP
    (non-zero exit) is a red test: no receipt, report what it flagged, stop. Receipt:
    `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it flagged
-   → a convergence round, guide § Step 1.
+   → re-invoke `/polish`: a convergence round (step 1's pointer).
 
 8. **Unlock the gate.** Push the branch first (the gate checks that HEAD is reachable on the push remote),
    then `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
@@ -210,8 +210,8 @@ Steps, in order:
 
 9. **Open the PR.** `gh pr create --head <branch>` — `--head` is mandatory (the gate keys its receipt by
    branch). **Write every receipt in its own Bash call and invoke `gh pr create` alone in the next** (dir
-   #487): the hook reads the command text before any of it runs. Compose the title and body from the
-   implementation context (what changed, why, a test plan); if `<keel-checkout>/tools/read-trace.sh` exists,
+   #487): the hook reads the command text before any of it runs. Compose the title and body (what changed,
+   why, a test plan); if `<keel-checkout>/tools/read-trace.sh` exists,
    include the line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints. The body names every review
    mechanism that ACTUALLY RAN, not only the receipt's one. Invoking `/polish` IS the authorization to push
    and open the PR; the merge stays the operator's. Return the PR URL. *Rare — `gh pr create` fails (the PR
