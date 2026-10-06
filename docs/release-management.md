@@ -153,7 +153,16 @@ conventions that happen to look similar, it's one convention applied at two poin
    as anything status-shaped triggers real turns and re-prices the whole context. Felt here as well —
    a ping sent to an auditor mid-run set off a full status sweep of its own legs. What this rule adds
    is only *where* the contract has to appear: inline in the brief, verbatim, because the receiving
-   session never reads this doc. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
+   session never reads this doc. **Include the CI-wait rule beside it**, the same way: a worker that must
+   wait on CI, or on any external state its harness cannot observe, makes the wait one backgrounded
+   command and lets that command's completion notify it — keel's wording: "waiting on CI is ONE backgrounded command
+   (`gh pr checks <n> --watch`, or an `until` loop) — never a scheduled wakeup, a foreground sleep chain or
+   a short-interval monitor." On Claude Code the two tools to name are
+   `ScheduleWakeup` (for loop mode only) and `Monitor`. The reason is the ping's reason, one level
+   up: every tick is a turn that re-prices the whole context ([`docs/token-economy.md`](token-economy.md)),
+   and a wait the harness already tracks needs no second timer. Felt in 0.11.0: a worker that had backgrounded
+   `gh pr checks --watch` also scheduled wakeups, and the operator watched a 30-tick `No-op, awaiting CI`
+   streak. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
    the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
    convention cannot see a rule that never made it into the brief (see R13's own text for the exact
    line and the incident that named this requirement). **A brief whose workers run simulator- or

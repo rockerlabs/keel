@@ -368,6 +368,13 @@ sections real content going forward — see that page for exactly when each one 
   unset worker tier is the launcher's own, verified by the running-tier evidence before session metadata,
   with a hello-then-hold launch; `docs/release-management.md` R3 inherits it. R9 and `commands/manage-release.md`
   M8 add an install-where-the-operator-uses-it step. dir #455, dir #596.
+- **Waiting on CI is one backgrounded command, never a wakeup (dir #616).** A worker that had already
+  backgrounded `gh pr checks --watch` also scheduled wakeups to "make sure it resumes" and the operator watched a
+  30-tick `No-op, awaiting CI` streak; the rule against it lived only in a personal knowledge base. It now ships
+  where sessions read: one sentence at `/polish`'s PR-opening step (the full text in `polish-guide` § Step 9),
+  the worker-brief section of `docs/release-management.md` beside the keep-alive contract, and
+  `docs/token-economy.md`, which owns the cost reason — every tick re-prices the whole context. Claude Code's
+  tool names (`ScheduleWakeup`, `Monitor`) appear only in that harness-scoped wording.
 
 ## [0.13.0] — 2026-10-03
 

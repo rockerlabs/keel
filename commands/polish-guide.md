@@ -859,6 +859,12 @@ Steps, in order:
    body off the receipt would silently drop the second opinion — which is precisely the honesty the
    receipt half was carrying until dir #183 removed it, so the burden is here now. Return the PR URL.
 
+   **Waiting on CI (dir #616).** Once the PR is open, watch CI in ONE backgrounded Bash command —
+   `gh pr checks <n> --watch`, or an `until` loop over `gh pr view <n> --json mergeStateStatus` — and let that
+   command's completion notify you. Never ScheduleWakeup (Claude Code's timer for loop mode only), a foreground `sleep` chain, or a short-interval Monitor:
+   a wait the harness already tracks needs no second timer, and every wakeup or tick is a whole turn that
+   re-prices the session's context and returns nothing. Never end a turn "waiting" unless a harness-tracked background task is live.
+
    **Already-open-PR branch (dir #206).** `gh pr create` fails against an existing PR — this is a
    convergence round on a branch whose PR is already open (step 1's pointer sent you here). In that
    case this step's job is not to create a PR but to bring the open body back into agreement with what

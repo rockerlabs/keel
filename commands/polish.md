@@ -208,13 +208,12 @@ Steps, in order:
    *Rare — any deny, before you act on it:* load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md`
    beside this file, § Step 8; guide unreachable → stop and report.
 
-9. **Open the PR.** `gh pr create --head <branch>` — `--head` is mandatory (the gate keys its receipt by
-   branch). **Write every receipt in its own Bash call and invoke `gh pr create` alone in the next** (dir
-   #487): the hook reads the command text before any of it runs. Compose the title and body (what changed,
+9. **Open the PR.** `gh pr create --head <branch>` — `--head` is mandatory. **Write every receipt in its own
+   Bash call and invoke `gh pr create` alone in the next**: the hook reads the command text before any of it runs. Compose the title and body (what changed,
    why, a test plan); if `<keel-checkout>/tools/read-trace.sh` exists,
    include the line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints. The body names every review
    mechanism that ACTUALLY RAN, not only the receipt's one. Invoking `/polish` IS the authorization to push
-   and open the PR; the merge stays the operator's. Return the PR URL. *Rare — `gh pr create` fails (the PR
+   and open the PR; the merge stays the operator's. Return the PR URL. CI wait: ONE backgrounded command; never wakeups, sleeps or short Monitors. *Rare — `gh pr create` fails (the PR
    is already open, or a non-gate failure that still spends the receipt chain), an add-on review's
    disclosure:* load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside
    this file, § Step 9 (§ Step 10 for the add-on summary forms); guide unreachable → stop and report.

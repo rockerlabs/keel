@@ -229,4 +229,13 @@ pinfgn "guide: the retired 'bare — this IS the genuine in-session pass' wordin
 pinfgn "guide: the retired 'ordinary automated outcome' wording is gone" \
   'the ordinary automated outcome'
 
+# --- dir #616: wait on CI in ONE backgrounded command — never a wakeup, a sleep chain or a short Monitor ----
+check_contains "core: step 9 says to wait on CI in one backgrounded command and names what never to use" "$(step_text 9)" \
+  'CI wait: ONE backgrounded command; never wakeups, sleeps or short Monitors.'
+pinfg "guide: § Step 9 owns the CI-wait rule (dir #616)" '**Waiting on CI (dir #616).**'
+pinfg "guide: § Step 9 names the one backgrounded command" 'watch CI in ONE backgrounded Bash command'
+pinfg "guide: § Step 9 forbids ScheduleWakeup for a background wait" 'Never ScheduleWakeup'
+pinfg "guide: § Step 9 forbids a foreground sleep chain and a short-interval Monitor" 'a foreground `sleep` chain, or a short-interval Monitor'
+pinfg "guide: § Step 9 ends no turn waiting without a live background task" 'unless a harness-tracked background task is live'
+
 summary

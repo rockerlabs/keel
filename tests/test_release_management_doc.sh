@@ -208,4 +208,21 @@ pin "M8 lists install next to merge, tag, publish" "$cmd" \
   'merge, tag, publish, and install' \
   "expected M8's hand-over sentence to name install (dir #596)"
 
+# --- dir #616: the CI-wait rule rides in the worker brief beside the keep-alive contract ---------------------
+pin "R-brief item 4 carries the CI-wait rule beside the keep-alive contract" "$doc" \
+  '**Include the CI-wait rule beside it**' \
+  "expected the worker-brief section to carry the CI-wait rule (dir #616)"
+pin "the CI-wait rule names the one backgrounded command" "$doc" \
+  'waiting on CI is ONE backgrounded command' \
+  "expected the rule to say one backgrounded command"
+pin "the CI-wait rule names the Claude Code tools it forbids" "$doc" \
+  '`ScheduleWakeup` (for loop mode only) and `Monitor`' \
+  "expected the harness-scoped tool names"
+pin "docs/token-economy.md carries the matching waiting edge" "$REPO_ROOT/docs/token-economy.md" \
+  'The same edge applies to waiting.' \
+  "expected token-economy to own the cost reason for the CI-wait rule (dir #616)"
+pin "docs/release-management.md cross-cites token-economy for the CI-wait cost" "$doc" \
+  'every tick is a turn that re-prices the whole context' \
+  "expected the brief rule to cite the cost reason"
+
 summary
