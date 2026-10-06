@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/go` checks its finished diff for seams against PRs merged while it built (dir #668).** A new
+  `Seams:` item in the implementer guide's self-check re-counts the numbers and "every/both" sets that
+  `CHANGELOG.md`'s `[Unreleased]` states, and opens the consumer lists of each lib the diff newly sources or
+  edits, so the later PR notices what an earlier one made false. It reads at most ten files, files a claim
+  that was already false as recorded rather than fixed, and the final report gains a `Seams:` line. The same
+  edit states the managed-release carve-out once (a worker writes no marker, ticket or backlog entry), makes
+  `/go`'s step 5 name a branch by its commits or its claim marker, and puts the `tests:` suffix after the
+  marker's closing parenthesis. The word budgets rise to 1250 (`commands/go.md`) and 1650
+  (`commands/go-guide.md`).
+
 - **`session-cost.sh tail` measures a `/go` session's fixed per-PR tail (dir #670, slice 1).** One row per
   `/polish` window, from the first `polish` turn to the `gh pr create` that names a pull-request URL, plus
   a row per subagent inside it and the window's review cost; over the ten 0.13.0 sessions it reproduces

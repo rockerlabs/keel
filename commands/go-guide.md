@@ -50,13 +50,24 @@ Result: every Acceptance item has a red test or an open checklist item.
 2. Re-run the checks it touches. Red → fix before the next item.
 3. Touch only files on the change list. A file you now need that is not on it → add it with the
    reason, and count it as an escape (a missed dependency). A defect you notice outside the ticket →
-   record it (PR body or a new ticket); do not fix it.
+   record it (PR body or a new ticket; `go.md` step 6's override in a managed release); do not fix it.
 Result: every change-list item done, its checks green.
 
 **I4 — self-check.** After the last item, before conform:
 1. Re-read the spec's rules one by one. A rule nothing in your change implements → back to I3.
-2. Run every "unaffected" check you wrote down in I1. Red → back to I3.
-3. Run the project's full test command (its `CLAUDE.md` names it); no command → skip, say so.
+2. Seams. Others' PRs merged while you built can falsify your diff.
+   Commit your work, `git fetch`, rebase on `origin/<default>` (merge if pushed), then:
+   a. Their claims: `awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}' CHANGELOG.md`
+      (no changelog → skip). For each line that states a number: name the set it counts, then count that set on
+      your tree with the command that derives it. A different number is falsified, even when every member you
+      added conforms. For each "every"/"both" set, is your new member in it?
+   b. Their lists: `git diff origin/<default>...HEAD | grep -E '^\+[[:space:]]*(\.|source)[[:space:]].*lib/'` lists the
+      libs you newly source; add every lib you edit. For each, `grep -rl <its file name> tests tools`; in each hit,
+      find the loop, list or comment that names its other consumers: is yours in it, even if yours conforms?
+   Read at most ten files; list the rest as unchecked. Falsified → fix it now, your change broke it; false
+   before your change → record it (I3) and count it on `Seams:`; cannot fix → escape (I5). Result: one line for `Seams:`.
+3. Run every "unaffected" check you wrote down in I1. Red → back to I3.
+4. Run the project's full test command (its `CLAUDE.md` names it); no command → skip, say so.
 Result: all green, or each red named with its next action.
 
 **I5 — escapes.** An escape is a spec defect you hit: a false premise, a missed dependency, an
@@ -88,6 +99,7 @@ Conform: <r> rules + <a> Acceptance items — <d> done, <e> escape, <p> pending
 Escapes: <n> (as appended to the spec)
 Outcome test: <result | pending — owner, due | none in spec>
 Recorded, not fixed: <out-of-ticket defects | none>
+Seams: <none | skipped — why | fixed <n>, escape <n>, unchecked <n>>
 Marker: <the claim marker as it now reads | requested from <writer>>
 Operator next: <merge PR <URL> | sign off this report | answer: <question>>
 ```
