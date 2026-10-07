@@ -242,6 +242,44 @@ check_nodir "vendor-review A1(ii): ...nothing is written" "$SANDBOX/out-a1ii"
 check_contains "vendor-review A1(ii): ...refused because the gate BLOCKED a finding" "$V_ERR" "leak gate BLOCKED"
 check_contains "vendor-review A1: the BLOCKED text names the path the caller passed (relative), not the resolved one" "$V_ERR" "leaky.md"
 
+# --- A1b (0.14.0 delta audit S7-5): a RELATIVE path-valued scanner env var resolves against the CALLER's cwd -
+# (the story: tools/lib/leak-gate.sh's header). Neutral stand-in literal; the bundle is otherwise innocuous.
+a1b_dir="$SANDBOX/a1b-cwd"; mkdir -p "$a1b_dir/home/.claude"
+printf 'zzq-personal-literal\n' > "$a1b_dir/pers"
+cp "$a1b_dir/pers" "$a1b_dir/home/.claude/secret-scan-personal"
+printf 'notes mentioning zzq-personal-literal here\n' > "$a1b_dir/leaky.md"
+printf 'plain text\n' > "$a1b_dir/clean.md"
+printf 'system prompt\n' > "$a1b_dir/sys.md"
+a1b_case() {  # a1b_case NAME EXPECTED_STATUS BUNDLE ENV... — run from a1b_cwd with the given env; client must run iff status 0
+  local n="$1" want="$2" b="$3"; shift 3
+  rm -f "$SANDBOX/ran-a1b$n"
+  vr_split "$a1b_dir" env "$@" "$TOOL" --client "$(mk_marker_client "a1b$n")" --system sys.md --bundle "$b" --label "a1b$n" --out "$SANDBOX/out-a1b$n"
+  check_status "vendor-review A1b ($n): exit status" "$want" "$V_ST"
+  if [ "$want" = 0 ]; then
+    check_file "vendor-review A1b ($n): ...the client ran" "$SANDBOX/ran-a1b$n"
+  else
+    check_nofile "vendor-review A1b ($n): ...the client is never invoked" "$SANDBOX/ran-a1b$n"
+    check_nodir "vendor-review A1b ($n): ...nothing is written" "$SANDBOX/out-a1b$n"
+    check_contains "vendor-review A1b ($n): ...refused because the gate BLOCKED a finding (not because it failed to run)" "$V_ERR" "leak gate BLOCKED"
+  fi
+}
+a1b_case rel-personal 3 leaky.md SECRET_SCAN_PERSONAL_FILE=./pers
+a1b_case abs-personal 3 leaky.md "SECRET_SCAN_PERSONAL_FILE=$a1b_dir/pers"
+a1b_case rel-home-default 3 leaky.md HOME=home SECRET_SCAN_PERSONAL_FILE=
+a1b_case rel-personal-clean 0 clean.md SECRET_SCAN_PERSONAL_FILE=./pers
+a1b_case empty-personal-default 0 clean.md "HOME=$a1b_dir/home-none" SECRET_SCAN_PERSONAL_FILE=
+# the same class, the side-effect path: a relative KEEL_IMPACT_LOG lands in the CALLER's cwd, not the removed gate dir
+rm -f "$a1b_dir/impact.log"
+a1b_case rel-personal-impact-log 3 leaky.md SECRET_SCAN_PERSONAL_FILE=pers KEEL_IMPACT_LOG=impact.log
+check_file "vendor-review A1b: a relative KEEL_IMPACT_LOG is written against the caller's cwd (the guard event survives the gate dir)" "$a1b_dir/impact.log"
+
+pin "vendor-review A1b: docs/vendor-review.md rail 1 says a relative scanner env path resolves against the caller's cwd" \
+  "$REPO_ROOT/docs/vendor-review.md" 'is resolved against' \
+  "rail 1 promises no working-directory bypass; the S7-5 fix's resolution rule must be stated there"
+pin "vendor-review A1b: tools/lib/leak-gate.sh's header names the path-valued scanner env it absolutizes" \
+  "$REPO_ROOT/tools/lib/leak-gate.sh" '_LEAK_GATE_PATH_ENV is the list of variables' \
+  "the header contract must name the env list, not only SCAN_SCRIPT and FILE"
+
 # --- A2 (B1): the scanner's cwd is a fresh empty dir under TMPDIR, removed on every exit path ---------
 # A copy of tools/ whose scanner is a fake that records pwd -P and how many entries its cwd holds.
 fx2="$SANDBOX/gate-cwd-fx"; rm -rf "$fx2"; mkdir -p "$fx2"; cp -R "$REPO_ROOT/tools" "$fx2/tools"

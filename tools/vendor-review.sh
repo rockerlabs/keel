@@ -39,8 +39,10 @@
 # The leak gate is mandatory and has no bypass — no --force, no --skip-scan, and no working-directory
 # bypass: --system and --bundle are resolved to absolute paths and the scanner runs from a fresh EMPTY
 # directory (tools/lib/leak-gate.sh's LEAK_GATE_CWD), so no `.secret-scan-allow` in the caller's cwd or repo
-# applies. It scans them with tools/secret-guard/secret-scan.sh before anything is sent, and refuses on any
-# hit, printing only the offending path, never the matched content — the scan-then-parse-then-refuse shape
+# applies; leak_gate_run also resolves the scanner's path-valued environment (a relative
+# SECRET_SCAN_PERSONAL_FILE) against the caller's cwd first. It scans them with
+# tools/secret-guard/secret-scan.sh before anything is sent, and refuses on any hit, printing only the offending
+# path, never the matched content — the scan-then-parse-then-refuse shape
 # is tools/lib/leak-gate.sh's leak_gate_run, shared with tools/audit-packet/export.sh's own leak gate
 # rather than a second hand-copy of it. An empty or whitespace-only --bundle is refused (exit 2) before the
 # gate and the client; a client that exits 0 with an empty reply is a failure (exit 1, round dir kept).

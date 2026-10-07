@@ -142,6 +142,24 @@ check_nofile "leak_gate_run: ...and the scanner never ran (no fall-back to the c
 check_status "leak_gate_run: ...and LEAK_GATE_HIT_PATHS stays empty" "" "$LEAK_GATE_HIT_PATHS"
 unset SCAN_PWD_REC
 
+# S7-5: the scanner resolves its path-valued env against ITS cwd, so with LEAK_GATE_CWD set a relative value is made
+# absolute against the CALLER's cwd inside the call (an absolute or empty value is left as is; the caller's own
+# environment is not touched). Without LEAK_GATE_CWD nothing is rewritten.
+scan_env="$SANDBOX/scan-env.sh"
+printf '#!/usr/bin/env bash\nprintf "%%s|%%s|%%s\\n" "${SECRET_SCAN_PERSONAL_FILE-unset}" "${KEEL_IMPACT_LOG-unset}" "${HOME-unset}" > "${SCAN_ENV_REC:?}"\nexit 0\n' > "$scan_env"
+chmod +x "$scan_env"
+export SCAN_ENV_REC="$SANDBOX/scan-env.rec"
+caller_cwd="$SANDBOX/env-caller"; mkdir -p "$caller_cwd"; caller_p="$(cd "$caller_cwd" && pwd)"
+( cd "$caller_cwd" && export SECRET_SCAN_PERSONAL_FILE=./pers KEEL_IMPACT_LOG=/abs/log HOME= && LEAK_GATE_CWD="$cwd_dir" \
+    leak_gate_run "$scan_env" "" "some/file.txt"
+  printf '%s' "$SECRET_SCAN_PERSONAL_FILE" > "$SANDBOX/scan-env.caller" )
+check_eq "leak_gate_run: LEAK_GATE_CWD set → a relative path-valued env is absolutized against the caller's cwd; absolute and empty values are kept" \
+  "$caller_p/./pers|/abs/log|" "$(cat "$SCAN_ENV_REC" 2>/dev/null)"
+check_eq "leak_gate_run: ...and the caller's own environment keeps the relative value" "./pers" "$(cat "$SANDBOX/scan-env.caller" 2>/dev/null)"
+( cd "$caller_cwd" && unset LEAK_GATE_CWD && SECRET_SCAN_PERSONAL_FILE=./pers leak_gate_run "$scan_env" "" "some/file.txt" )
+check_eq "leak_gate_run: LEAK_GATE_CWD unset → the env is passed through unchanged" "./pers|${KEEL_IMPACT_LOG-unset}|$HOME" "$(cat "$SCAN_ENV_REC" 2>/dev/null)"
+unset SCAN_ENV_REC
+
 # --- both known callers source the shared lib, not a private inline copy of this shape ---------------
 check_contains "tools/audit-packet/export.sh sources tools/lib/leak-gate.sh" \
   "$(cat "$REPO_ROOT/tools/audit-packet/export.sh")" 'lib/leak-gate.sh'
