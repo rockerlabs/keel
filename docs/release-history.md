@@ -75,7 +75,8 @@ the release: three doc tests' changelog assertions that read only the live `[Unr
 turned the cut's own CI red, the leak gate reading clean over a relative scanner path, a census test's SIGPIPE
 flake, and three adopter-prose items (a doc saying `doctor` deletes noise, the README's "updates it all at
 once", and the section's upgrade note). Open at the GO: 38 behavioural findings, 24 ticketed and 14 recorded as no-action, all
-filed in the backlog or on the standing list (39 standing-list lines: 37 from the first pass, 2 from the second); the ones an adopter can meet are
+filed in the backlog or on the standing list; the two passes put 39 lines on the standing list in all (37 from the
+first, 2 from the second), and the findings an adopter can meet are
 disclosed as the CHANGELOG section's ten known issues. **Behavioural defects:** pass 1 accepted 39 behavioural
 findings — 37 in product code and 2 in test infrastructure; of the 37, 14 were introduced by the range and 23
 are baseline or further instances of known classes. One range-introduced defect failed open a documented

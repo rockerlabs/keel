@@ -25,8 +25,9 @@ them back, and a copy sits in the uninstall backup folder (dir #716). (2) If `ag
 is already a file or a dangling link, `install.sh` stops on a `mkdir` error after it has placed the core
 files, `docs/` and the commands, and writes no install manifest (dir #716). (3) When you accept the terminal
 offer to refresh the rails block in `CLAUDE.md`, a file with mode 0600 is rewritten with the umask's default
-mode (0644 under the usual umask 022); the backup copy keeps 0600 (dir #716). (4) `doctor.sh --install` reports the machine-global secret guard OK when the hooks
-directory `core.hooksPath` names holds a pre-commit that is not Keel's, while
+mode (0644 under the usual umask 022); the backup copy keeps 0600 (dir #716). (4) `doctor.sh --install`
+reports the machine-global secret guard OK when the hooks directory `core.hooksPath` names holds a pre-commit
+that is not Keel's, while
 `install-secret-guard.sh --where --global` reports it as `foreign` (dir #717). (5) `doctor`'s plaintext
 env-file floor skips directories named `dist`, `build`, `out`, `vendor`, `target`, `node_modules`, `.build`,
 `.gradle` and `.claude`, at any depth, so an env-shaped file git tracks inside one reads clean (dir #718).
