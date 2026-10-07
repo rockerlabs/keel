@@ -77,7 +77,7 @@ flake, and three adopter-prose items (a doc saying `doctor` deletes noise, the R
 once", and the section's upgrade note). Open at the GO: 38 behavioural findings, 24 ticketed and 14 recorded as no-action, all
 filed in the backlog or on the standing list; the two passes put 39 lines on the standing list in all (37 from the
 first, 2 from the second); the CHANGELOG section discloses ten known issues from
-these, and its closing sentence points at the rest. **Behavioural defects:** pass 1 accepted 39 behavioural
+the audit's findings, and its closing sentence points at the rest. **Behavioural defects:** pass 1 accepted 39 behavioural
 findings — 37 in product code and 2 in test infrastructure; of the 37, 14 were introduced by the range and 23
 are baseline or further instances of known classes. One range-introduced defect failed open a documented
 no-bypass gate (the leak gate and the relative path above), and it was fixed before the tag; no range-introduced

@@ -45,7 +45,7 @@ and yours stops running (dir #717); `uninstall.sh` replaces a symlinked `CLAUDE.
 stripping the rails from that copy only (dir #716); and its rails strip treats a line of yours that merely
 mentions its begin marker as the start of the block, dropping that line and everything after it up to the next
 end marker, or to the end of the file when none follows (dir #716). The audit's other open findings are filed
-as dir #715, dir #719, dir #720, dir #721, dir #723 and dir #726, as appends to dir #698 and dir #707 through
+as dir #715, dir #719, dir #720, dir #721, dir #722, dir #723 and dir #726, as appends to dir #698 and dir #707 through
 dir #711, or sit on the project's standing list.
 
 - **Upgrading from 0.13.0 — re-run the installers; a `git pull` alone does not wire what this release adds.**
