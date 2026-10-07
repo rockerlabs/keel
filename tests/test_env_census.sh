@@ -61,7 +61,9 @@ inherited_reads() {
     [ -n "$code" ] || continue
     while IFS= read -r name; do
       [ -n "$name" ] || continue
-      printf '%s\n' "$code" | owns_name "$name" && continue
+      # a here-string, not a pipe: owns_name exits at its first match, and a producer killed by SIGPIPE
+      # flips the pipeline's status under pipefail — an owned name would fall through as an inherited read
+      owns_name "$name" <<<"$code" && continue
       printf '%s\n' "$name"
     done < <(printf '%s\n' "$code" \
       | grep -aoE '(\$\{?|ENVIRON\["|printenv +)KEEL_[A-Z0-9_]+' | grep -aoE 'KEEL_[A-Z0-9_]+' | LC_ALL=C sort -u)

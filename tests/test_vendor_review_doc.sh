@@ -74,7 +74,8 @@ pin "vendor-review.md states the agy allow-rule refusal (permissions.allow)" "$d
   "expected a rail for B9"
 pin "vendor-review.md states B9's scope limit (MCP servers / plugins are not checked)" "$doc" 'MCP' \
   "expected the O-2 limit in the docs, never 'no tool access' unqualified"
-check_contains "CHANGELOG [Unreleased] carries a bullet citing dir #662" \
-  "$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' "$REPO_ROOT/CHANGELOG.md")" 'dir #662'
+# The whole file, never the live [Unreleased] section: the release cut empties that section.
+check_contains "CHANGELOG carries a bullet citing dir #662" \
+  "$(cat "$REPO_ROOT/CHANGELOG.md")" 'dir #662'
 
 summary
