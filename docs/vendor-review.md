@@ -75,7 +75,9 @@ the `agy` CLI installed and authenticated on your own machine; the script itself
    before anything is sent, and refuses — printing only the offending path, never the matched
    content — on any hit. There is no `--force` and no `--skip-scan`, and no working-directory
    bypass: the scanner runs from a fresh empty directory, so a `.secret-scan-allow` in your cwd or
-   your repo is never read, and the refusal text names no exemption mechanism. (`tools/audit-packet/export.sh`
+   your repo is never read, and the refusal text names no exemption mechanism. A path you hand the
+   scanner through its environment (`SECRET_SCAN_PERSONAL_FILE` first among them) is resolved against
+   *your* working directory first, so a relative one still finds your personal-literals file. (`tools/audit-packet/export.sh`
    still honours the audited repo's own root allow-list by design — it scans that repo's tracked
    files, where the file is that repo's own human decision.) Anonymize and review the bundle
    yourself; don't rely on the gate as the only check.

@@ -60,8 +60,13 @@
 # trusts every entry, so a caller that must not have any allow-list apply (tools/vendor-review.sh) runs it
 # from a fresh EMPTY directory. A directory that cannot be entered is status 2 ("failed to run"), never 1
 # (BLOCKED), and the scanner does not run at all — no silent fall-back to the caller's cwd. SCAN_SCRIPT and
-# every FILE must then be absolute paths (the cwd changes under them). Unset or empty is the unchanged
-# behaviour — tools/audit-packet/export.sh never sets it, so its repo-root allow-list keeps applying.
+# every FILE must then be absolute paths (the cwd changes under them), AND so must every path-valued
+# environment variable the scanner reads (SECRET_SCAN_PERSONAL_FILE, KEEL_IMPACT_LOG, ...): the scanner
+# resolves a relative one against ITS cwd, so a caller that sets LEAK_GATE_CWD owns absolutizing them against
+# its own cwd first — a relative SECRET_SCAN_PERSONAL_FILE otherwise reads "file not found" = "no personal
+# literals" and the gate fails OPEN (0.14.0 delta audit S7-5; tools/vendor-review.sh does it before its call).
+# Unset or empty is the unchanged behaviour — tools/audit-packet/export.sh never sets it, so its repo-root
+# allow-list keeps applying.
 leak_gate_run() {
   local scan_script="$1" relabel_fn="$2"
   shift 2
