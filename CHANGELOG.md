@@ -15,6 +15,21 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Upgrading from 0.13.0 — re-run the installers; a `git pull` alone does not wire what this release adds.**
+  (1) Re-run `./install.sh` (`./install.sh --link` for a linked install): it wires `docs/` beside
+  `FRAMEWORK.md` (dir #650), the `keel-polish-reviewer` agent (dir #413), and the `/triage`
+  (dir #517) and `/polish` guide (dir #670) commands. Until then `doctor --install` reports
+  `W-DOCS-MISSING`, `W-CMDS-MISSING` and `W-REVIEW-AGENT-MISSING`, and `/polish`'s rare-branch guide is
+  unreachable. (2) Re-run `tools/install-pre-pr-gate.sh` with the scope flag you used before (`<repo-path>`
+  or `--global`) to migrate the `SubagentStop` matcher (dir #413), then restart open sessions. (3) Refresh
+  the secret guard: re-vendor each repo that carries a copy (`tools/install-secret-guard.sh <repo-path>`)
+  AND, if you use the machine-wide guard, re-run `tools/install-secret-guard.sh --global`; `doctor`
+  reports stale copies as `W-GUARD-STALE` / `W-GUARD-GLOBAL-STALE`.
+
+- **Two doc claims corrected (caught by the 0.14.0 delta audit).** `docs/memory-layers.md` said `doctor`
+  "deletes noise" — it only flags; and the README said a `git pull` in a linked clone "updates it all at
+  once" — it refreshes what is already wired, and a release that adds files needs the installer re-run.
+
 - **`tools/vendor-review.sh`'s leak gate no longer reads clean when a scanner path is relative (dir #662).** The
   same release's neutral-cwd change (the scanner runs from a fresh empty directory, so a `.secret-scan-allow`
   in your cwd cannot relax it) introduced the gap, and the 0.14.0 delta audit caught it: a relative

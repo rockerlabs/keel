@@ -54,7 +54,8 @@ git clone https://github.com/rockerlabs/keel.git && cd keel && ./install.sh --li
 ```
 
 `--link` wires everything by *reference* (symlinks + one import line): a later `git pull` in this clone
-updates it all at once, and removal is fully enumerable. It also turns on the secret-guard git hook.
+refreshes what is already wired, but a release that *adds* files needs `./install.sh --link` re-run to
+wire them (the `CHANGELOG` says when), and removal is fully enumerable. It also turns on the secret-guard git hook.
 (Plain `./install.sh` makes a one-time copy instead — right for tools other than Claude Code; Codex has
 its own preset, `./install.sh --codex`, that generates `~/.codex/AGENTS.md` directly.)
 
