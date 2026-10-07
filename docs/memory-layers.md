@@ -43,7 +43,7 @@ Each line is a thing the next playbook will suggest. Each is ruled out by a prin
 - **An ontology schema** (typed entities, relations, required fields). No felt problem has asked for one
   (P4), and a schema is the first thing a harness upgrade invalidates (P0).
 - **A token-saving memory budget.** The scarce resource is the reasoner's attention on the right fact,
-  not the visible token meter (P3). `doctor` deletes noise because noise misleads, not to save tokens.
+  not the visible token meter (P3). `doctor` flags noise because noise misleads, not to save tokens.
 
 If a vendor reports big savings from one of these, treat the figure as a claim by the party selling it;
 it says nothing about whether the memory was *correct*.
