@@ -34,7 +34,7 @@ sections real content going forward — see that page for exactly when each one 
   dir #662, dir #663).** Both were caught by the 0.14.0 delta audit. Three doc tests asserted a changelog
   cite against the live `[Unreleased]` section only (the go-handoff test's A19 for dir #401, the
   secrets-recipe test's A15 for dir #631 and dir #379, the vendor-review doc test for dir #662), and the
-  release cut empties that section, so the cut PR would have failed four assertions in three files. They now
+  release cut empties that section, so the cut PR would have failed four assertions in three files (A15 pins two cites). They now
   read the whole file, and `docs/release-audit.md`'s cut step says why no test may pin the live section.
   Separately, the environment-gate census (dir #663) fed its owned-name check through a pipe; under
   `pipefail` a SIGPIPE'd producer turned an owned name into a false "inherited read" (about 1 run in 40 on a
