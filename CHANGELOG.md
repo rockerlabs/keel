@@ -20,10 +20,11 @@ sections real content going forward — see that page for exactly when each one 
   in your cwd cannot relax it) introduced the gap, and the 0.14.0 delta audit caught it: a relative
   `SECRET_SCAN_PERSONAL_FILE` was resolved against that empty directory, the file was "not found", and a
   bundle holding one of your personal literals scanned clean (round written, exit 0) where an absolute path was
-  refused (exit 3). The script now resolves every path-valued scanner variable — `SECRET_SCAN_PERSONAL_FILE`,
-  `KEEL_IMPACT_LOG`, `KEEL_IMPACT_STORE`, `KEEL_HOME`, `HOME` and `TMPDIR` — against your working directory
-  before it changes directory, so a relative value means what it means to a direct scan. `tools/lib/leak-gate.sh`'s
-  header and `docs/vendor-review.md` rail 1 now state that caller duty and the no-bypass promise's actual shape.
+  refused (exit 3). `leak_gate_run` (`tools/lib/leak-gate.sh`) now resolves every path-valued scanner variable —
+  `SECRET_SCAN_PERSONAL_FILE`, `KEEL_IMPACT_LOG`, `KEEL_IMPACT_STORE`, `KEEL_HOME`, `HOME` and `TMPDIR` — against
+  your working directory before the scanner's directory change whenever its caller sets `LEAK_GATE_CWD`, so a
+  relative value means what it means to a direct scan, and any future caller gets that by default. The
+  `docs/vendor-review.md` rail 1 sentence says what the no-bypass promise now covers.
 
 - **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
   new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
