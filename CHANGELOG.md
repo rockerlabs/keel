@@ -15,6 +15,37 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-10-07
+
+**Known issues, disclosed at the cut.** These things from the 0.14.0 delta audit ship known-imperfect; none
+is fixed in this release, and each is filed. (1) If the `docs` or `agents` folder in your harness home is a
+symlink into the Keel checkout, a plain `install.sh` records the checkout's own files as files it placed, and
+`uninstall.sh` then removes them from the checkout: `git status` shows them deleted, `git restore` brings
+them back, and a copy sits in the uninstall backup folder (dir #716). (2) If `agents` in your harness home
+is already a file or a dangling link, `install.sh` stops on a `mkdir` error after it has placed the core
+files, `docs/` and the commands, and writes no install manifest (dir #716). (3) When you accept the terminal
+offer to refresh the rails block in `CLAUDE.md`, a file with mode 0600 comes back as 0644; the backup copy
+keeps 0600 (dir #716). (4) `doctor.sh --install` reports the machine-global secret guard OK when the hooks
+directory `core.hooksPath` names holds a pre-commit that is not Keel's, while
+`install-secret-guard.sh --where --global` reports it as `foreign` (dir #717). (5) `doctor`'s plaintext
+env-file floor skips directories named `dist`, `build`, `out`, `vendor`, `target`, `node_modules`, `.build`,
+`.gradle` and `.claude`, at any depth, so an env-shaped file git tracks inside one reads clean (dir #718).
+(6) `G-GITIGNORE-CONTEXT` can raise a gap for a `.claude/` whose files are all ignored by a `.gitignore`
+inside it, though `git status` shows nothing there to commit (dir #718). (7) `doctor.sh` sources
+`tools/lib/agent-floor.sh` unguarded when it loads, so a corrupt or missing copy makes every run fail with a
+shell error before any check (dir #718). (8) `secret-scan.sh` reads an explicitly set
+`SECRET_SCAN_PERSONAL_FILE` that names a file that does not exist as "no personal literals", so a mistyped
+path switches the personal-data half of the scan off without a warning (dir #725). (9) The README says a
+`git pull` "refreshes what is already wired", but the secret-guard hook is a copy: after a pull it stays
+stale until you re-vendor it, `doctor` reports `W-GUARD-STALE` or `W-GUARD-GLOBAL-STALE`, and the upgrade
+note below gives the command (dir #723). (10) Three never-clobber holes in the installers are older than
+this release (each reproduces on v0.13.0) and also ship open: `install-secret-guard.sh --global` appends its
+`hooksPath` after a `[includeIf]` block that delivers one, so inside the matching directories Keel's hook
+directory wins and yours stops running (dir #717); `uninstall.sh` replaces a symlinked `CLAUDE.md` with a
+regular file, stripping the rails from that copy only (dir #716); and its rails strip drops every line after
+a line of yours that merely mentions its begin marker (dir #716). The audit's other open findings are filed
+as dir #715, dir #719, dir #720, dir #721 and dir #726, or sit on the project's standing list.
+
 - **Upgrading from 0.13.0 — re-run the installers; a `git pull` alone does not wire what this release adds.**
   (1) Re-run `./install.sh` (`./install.sh --link` for a linked install): it wires `docs/` beside
   `FRAMEWORK.md` (dir #650), the `keel-polish-reviewer` agent (dir #413), and the `/triage`

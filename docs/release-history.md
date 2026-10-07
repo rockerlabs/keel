@@ -28,6 +28,83 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.14.0 — 2026-10-07
+
+A managed release, groomed after the operator lifted the moratorium on keel work, with the delta audit run
+before the tag. Its centre is the secrets path. A recipe for keeping secrets out of the working tree (SOPS and
+age, with a `doctor` floor that names env-shaped files git tracks or would commit) ships with a scanner pattern
+for an age private key (dir #631). The secret scanner no longer exits 0 after a crash on macOS bash 3.2 and no
+longer reports `clean` over a staged file it could not read; the personal-literals file has one parser; the
+installers and `doctor` agree on which hooks directory a guard lives in; and the installers close three more
+ways past their never-clobber rule. `tools/vendor-review.sh` and its `agy.sh` client are hardened (dir #662).
+Installs now place Keel's `docs/` beside `FRAMEWORK.md`, so the doc paths the rails and commands name resolve on
+an adopter's machine (dir #650), and ship a read-only review agent, `keel-polish-reviewer`, that `/polish` runs
+its fallback review as (dir #413). `/polish` split into a core and a hidden guide and now runs its review in a
+fresh-context subagent first (dir #670); `/go` leaves a handoff note and checks its finished diff for seams
+against PRs merged while it built (dir #401, dir #668); `/triage` is a new promote-or-drop command for the
+accumulator tiers (dir #517). `doctor` gains a forgetting layer for the harness memory dir (dir #521) and no
+longer passes an exposed `.claude/` because `CLAUDE.md` is ignored (dir #473); the test suite's canary sees a
+leak that rewrites a file you were already editing, and the suite gates its environment and its leftovers in
+the real temp dir (dir #664, dir #663). `SECURITY.md` gained a threat-model section (dir #89). The audit's
+fix round then repaired the doc tests that turned the cut's own CI red, a leak gate that read clean over a
+relative scanner path, a flaky census test, and three adopter-prose claims. Thirty-six merged PRs, #498–#533,
+plus three audit fixes, #534–#536. Ten known issues ship disclosed in the CHANGELOG section, and its upgrade
+note tells an existing install which installers to re-run.
+
+**Verification.** **Scope:** 158 files across 36 merged PRs (#498–#533), range v0.13.0 (`31e32ec`) to the
+release candidate `7d0fd60`, 191 commits, +12,322/−1,648; plus a fix round of three PRs (#534–#536), 13 files,
++149/−23, to the GO commit `62c71bb` — audit fixes, not feature work, so the anchor was not re-cut.
+**Method:** a managed release; orchestrator Opus 5.5 at high effort. A mechanical baseline leg plus eleven
+whole-read legs (Sonnet) over clusters cut by coupling, after a three-leg pilot; the diverse leg was DeepSeek's
+chat model on eight coupled bundles (whole files, range diffs for five oversize files), no reasoning-model
+rounds. The verifier (Sonnet) returned NO-GO at `7d0fd60`; on the operator's decision all six
+fix-before-tag findings were fixed and the Clause A re-check was scoped to the fix round's new surface. Three
+Fixer sessions — real sessions — merged as #534–#536. A re-check pair then read `62c71bb` in
+parallel and blind to each other: a fresh same-family leg (whole-read of the 13 touched files, live closure runs
+and mutation) and DeepSeek chat on two bundles. A second verifier pass, fresh from the written record, returned
+GO. **Coverage:** 158 ledger rows, exactly one verdict each at both passes — pass 2: 84 clean, 74 finding, 0
+mechanical-only, 0 waived (pass 1: 86 clean, 72 finding); the 13 rows on the fix surface were re-verdicted and
+the other 145 are byte-identical to pass 1. CI run 37650500230, 6/6 on the exact GO commit by commit, including
+the Alpine/busybox leg (the pass-1 candidate's run: 37551380137, 6/6). Suite evidence from sandboxed clones and
+CI only, never the operator's own checkout: 9,517 passed, 0 failed, at the candidate; a simulated cut
+(an emptied `[Unreleased]` above a dated heading) at the GO commit, 119 files, 9,543 passed, 0 failed, run
+independently by the re-check leg and by the verifier. The verifier re-derived the six fix-before-tag findings
+itself, live. **Findings:** 95 accepted across two passes — pass 1: 92 (89 leg findings plus 5 DeepSeek-derived,
+less 2 merged duplicates); pass 2: 3, all low and non-behavioural. The six fix-before-tag findings were fixed in
+the release: three doc tests' changelog assertions that read only the live `[Unreleased]` section and would have
+turned the cut's own CI red, the leak gate reading clean over a relative scanner path, a census test's SIGPIPE
+flake, and three adopter-prose items (a doc saying `doctor` deletes noise, the README's "updates it all at
+once", and the section's upgrade note). Open at the GO: 38 behavioural findings, 24 ticketed and 14 recorded as no-action, all
+filed in the backlog or on the standing list (37 standing-list lines in all); the ones an adopter can meet are
+disclosed as the CHANGELOG section's ten known issues. **Behavioural defects:** pass 1 accepted 39 behavioural
+findings — 37 in product code and 2 in test infrastructure; of the 37, 14 were introduced by the range and 23
+are baseline or further instances of known classes. One range-introduced defect failed open a documented
+no-bypass gate (the leak gate and the relative path above), and it was fixed before the tag; no range-introduced
+default-path crash was found. Pass 2 accepted none: the re-check pair and the verifier found no behavioural
+finding. **Which layer found what:** the same-family legs found every fix-before-tag finding. DeepSeek's first
+wave raised 53 numbered candidates and 6 were accepted (4 low baseline items in the secret scanner and the
+suite canary, 1 corroboration of a same-family finding, 1 baseline no-action); 47 were refuted or left as leads,
+mostly claims about code outside the changed hunks and busybox-portability claims refuted by container probes;
+none was fix-before-tag or range-introduced. In the re-check pair, DeepSeek raised no accepted behavioural
+finding and one claim refuted live (a stale `PWD` defeating the gate); the same-family leg found the three
+pass-2 findings. Pass 1 named two new classes: a test that pins mutable release-flow state (the live
+`[Unreleased]` text), and a path-valued environment variable re-resolved after the process changes directory.
+No gate ran the suite on the cut shape; a check for that is filed. **What was NOT checked:** Clause A on the whole state. The verdicts ran NO-GO at `7d0fd60`, then GO
+at `62c71bb` after one fix round, with Clause A satisfied on the fix round's surface under the operator's
+scoping, not on the whole state: the re-check pair read only what the fix round newly reached and found no
+behavioural finding and no new class, while the whole-state pair was not run and the 38 findings above remain
+open. Beyond that: Linux, busybox and dash behaviour of the fix code was not re-run by the verifier — CI's
+ubuntu and alpine legs are the only evidence, and the Linux flake rate of the repaired census test is
+unmeasured; the simulated cut tests a shape, and the real cut also adds this history entry, which no test the
+verifier ran has seen; the DeepSeek re-check bundles were not re-diffed byte for byte against the tree; the
+pass-1 findings stand on pass-1 evidence, since nothing in the fix surface touches them; and the standing-list
+lines were not re-read by the verifier. **Induced-defect rate:** 3 / 95 — the verifier's per-finding tally,
+pass 1 0 / 92 and pass 2 3 / 3, all three low and none behavioural: an assertion widened to a whole file that
+the fix's own changelog bullet satisfies, a list of path variables only half bound by tests, and a corrected
+README sentence left unscoped beside the guard-hook copy it names. The automated tally counts marker lines and
+reads 3 / 92, because DeepSeek-derived findings carry no marker line and two duplicates were merged; recorded
+rather than smoothed. **Records:** the run's own audit directory, gitignored.
+
 ## v0.13.0 — 2026-10-03
 
 The machine-safety slate, built ticket by ticket with `/go` under the operator's moratorium on keel
