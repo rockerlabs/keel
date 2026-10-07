@@ -155,12 +155,12 @@ wording invalidates both. See `docs/publishing-checklist.md` §4 for the notes-f
 `commands/polish-guide.md` § Step 9 (the already-open-PR branch) for the PR-body rule; this phase doesn't restate either (dir #206).
 
 **The order is: cut, land, then tag — and the tag is not the preparing session's to cut.** Rename
-`## [Unreleased]` to `## [x.y.z] — <date>`, open a fresh empty `## [Unreleased]` above it, and land
-that through the normal branch → PR → merge flow like any other change. Only then does a human tag
-the merge commit and publish the release. A tag is outward-facing and effectively irreversible, so it
-sits behind the same rail as a merge: the session prepares everything up to "tag ready to cut," names
-the exact SHA, and stops. The cut empties the live `[Unreleased]` section, so no test
-may pin its text: an assertion on a changelog cite reads the whole file, or it turns the cut PR's own CI red.
+`## [Unreleased]` to `## [x.y.z] — <date>`, open a fresh empty `## [Unreleased]` above it (the cut empties
+the live section, so no test may pin its text: an assertion on a changelog cite reads the whole file, or it
+turns the cut PR's own CI red), and land that through the normal branch → PR → merge flow like any
+other change. Only then does a human tag the merge commit and publish the release. A tag is
+outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
+prepares everything up to "tag ready to cut," names the exact SHA, and stops.
 
 **In that same cut-and-land PR, add the entry to [`docs/release-history.md`](release-history.md),
 following the house form described at the top of that file** — a digest of the `CHANGELOG.md` section
