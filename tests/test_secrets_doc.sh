@@ -3,7 +3,7 @@
 # adopter-facing doc: no fenced example hands the agent plaintext (decrypt to stdout, an exec-env/exec-file
 # whose command prints, a full age private-key literal, indented sops/age code), the `## Limits` section
 # carries its seven labelled items, migration and rotation sections exist, SECURITY.md links the recipe and
-# CHANGELOG [Unreleased] cites the ticket. The shape checker is proven on good and bad samples first — a
+# CHANGELOG cites the ticket. The shape checker is proven on good and bad samples first — a
 # checker that flags nothing would pass the doc for the wrong reason.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
@@ -98,10 +98,12 @@ grep -qx '## Secrets in the working tree' "$sec" && pass "A14: SECURITY.md has t
 sec_body="$(awk '/^## /{ on = ($0 == "## Secrets in the working tree") } on' "$sec")"
 case "$sec_body" in *secrets-in-the-working-tree.md*) pass "A14: the section links the recipe" ;; *) fail "A14: the section links the recipe" "no link" ;; esac
 
-# --- A15: CHANGELOG [Unreleased] ------------------------------------------------------------------------------------
-unrel="$(awk '/^## \[/{ on = ($0 ~ /^## \[Unreleased\]/) } on' "$REPO_ROOT/CHANGELOG.md" | sed 's/`[^`]*`//g')"
+# --- A15: CHANGELOG cite -------------------------------------------------------------------------------------------
+# The whole file, never the live [Unreleased] section: the release cut empties that section, and the cite
+# then lives in the dated section below it.
+clog="$(sed 's/`[^`]*`//g' "$REPO_ROOT/CHANGELOG.md")"
 for n in 631 379; do
-  case "$unrel" in *"dir #$n"*) pass "A15: [Unreleased] cites dir #$n, not backtick-wrapped" ;; *) fail "A15: [Unreleased] cites dir #$n, not backtick-wrapped" "absent (after dropping backtick spans)" ;; esac
+  case "$clog" in *"dir #$n"*) pass "A15: CHANGELOG cites dir #$n, not backtick-wrapped" ;; *) fail "A15: CHANGELOG cites dir #$n, not backtick-wrapped" "absent (after dropping backtick spans)" ;; esac
 done
 
 summary

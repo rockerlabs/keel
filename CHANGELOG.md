@@ -15,6 +15,8 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Three doc tests no longer go red on the release-cut PR, and a census test no longer flakes (dir #401, dir #631, dir #662, dir #663).** Both were caught by the 0.14.0 delta audit. The assertions that check a changelog cite (the go-handoff test's A19 for dir #401, the secrets-recipe test's A15 for dir #631 and dir #379, the vendor-review doc test for dir #662) read only the live `[Unreleased]` section, which the cut empties, so the cut PR's own CI would have failed on all four; they now read the whole file, and `docs/release-audit.md`'s cut step says why no test may pin the live section. Separately, the environment-gate census (dir #663) fed its owned-name check through a pipe, and under `pipefail` a SIGPIPE'd producer turned an owned name into a false "inherited read" (about 1 run in 40 on a loaded machine); it now reads a here-string, so the check can no longer lose that race.
+
 - **`secret-guard` now blocks an age private key (dir #631, the scanner half of the secrets recipe).** One
   new key-shaped pattern in `secret-scan.sh`, `AGE-SECRET-KEY-` (or `AGE-SECRET-KEY-PQ-`) + `1` + 58 or more
   characters of age's Bech32 alphabet — the line `age-keygen -o` writes, which until now scanned clean
