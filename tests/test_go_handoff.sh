@@ -363,8 +363,10 @@ for lib in gate-paths state-root; do
   n="$(grep -c 'go-handoff' "$REPO_ROOT/tools/lib/$lib.sh")"
   if [ "$n" -ge 1 ]; then pass "A19 tools/lib/$lib.sh names go-handoff"; else fail "A19 tools/lib/$lib.sh names go-handoff" "0 mentions"; fi
 done
-unrel="$(awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' "$REPO_ROOT/CHANGELOG.md")"
-check_contains "A19 CHANGELOG [Unreleased] names dir #401 in full" "$unrel" "dir #401"
-check_absent "A19 …not backtick-wrapped" "$unrel" '`dir #401`'
+# The whole file, never the live [Unreleased] section: the release cut empties that section, and a cite
+# that moves to the dated section below it must still be found.
+clog="$(cat "$REPO_ROOT/CHANGELOG.md")"
+check_contains "A19 CHANGELOG names dir #401 in full" "$clog" "dir #401"
+check_absent "A19 …not backtick-wrapped" "$clog" '`dir #401`'
 
 summary
