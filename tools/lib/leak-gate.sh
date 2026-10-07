@@ -60,13 +60,29 @@
 # trusts every entry, so a caller that must not have any allow-list apply (tools/vendor-review.sh) runs it
 # from a fresh EMPTY directory. A directory that cannot be entered is status 2 ("failed to run"), never 1
 # (BLOCKED), and the scanner does not run at all — no silent fall-back to the caller's cwd. SCAN_SCRIPT and
-# every FILE must then be absolute paths (the cwd changes under them), AND so must every path-valued
-# environment variable the scanner reads (SECRET_SCAN_PERSONAL_FILE, KEEL_IMPACT_LOG, ...): the scanner
-# resolves a relative one against ITS cwd, so a caller that sets LEAK_GATE_CWD owns absolutizing them against
-# its own cwd first — a relative SECRET_SCAN_PERSONAL_FILE otherwise reads "file not found" = "no personal
-# literals" and the gate fails OPEN (0.14.0 delta audit S7-5; tools/vendor-review.sh does it before its call).
-# Unset or empty is the unchanged behaviour — tools/audit-packet/export.sh never sets it, so its repo-root
-# allow-list keeps applying.
+# every FILE must then be absolute paths (the cwd changes under them). The scanner also resolves its
+# PATH-VALUED environment variables (_LEAK_GATE_PATH_ENV, below) against ITS cwd, so leak_gate_run
+# absolutizes each one set to a relative value against the CALLER's cwd, inside that same command
+# substitution, before the cd — the caller's own environment is never touched, and a set-but-empty value
+# keeps its meaning. Without it a relative SECRET_SCAN_PERSONAL_FILE reads "file not found" = "no personal
+# literals" and the gate fails OPEN (0.14.0 delta audit S7-5). Unset or empty LEAK_GATE_CWD is the unchanged
+# behaviour — tools/audit-packet/export.sh never sets it, so its repo-root allow-list keeps applying.
+#
+# _LEAK_GATE_PATH_ENV is the list of variables tools/secret-guard/secret-scan.sh reads whose value is a path:
+# the personal-literals file (HOME is its default's base), where a block's guard event is logged
+# (KEEL_IMPACT_LOG / KEEL_IMPACT_STORE / KEEL_HOME) and its scratch dir (TMPDIR). Re-derive it from that script
+# when it gains one.
+_LEAK_GATE_PATH_ENV="SECRET_SCAN_PERSONAL_FILE KEEL_IMPACT_LOG KEEL_IMPACT_STORE KEEL_HOME HOME TMPDIR"
+_leak_gate_absolutize_env() {
+  local v val
+  for v in $_LEAK_GATE_PATH_ENV; do
+    val="${!v-}"
+    case "$val" in
+      ''|/*) ;;
+      *) export "$v=$PWD/$val" ;;
+    esac
+  done
+}
 leak_gate_run() {
   local scan_script="$1" relabel_fn="$2"
   shift 2
@@ -78,7 +94,7 @@ leak_gate_run() {
   LEAK_GATE_HIT_PATHS=""
   # shellcheck disable=SC2034
   LEAK_GATE_STDERR=""
-  err_text="$([ -z "${LEAK_GATE_CWD:-}" ] || cd "$LEAK_GATE_CWD" || exit 2; "$scan_script" -- "$@" 2>&1 >/dev/null)" || status=$?
+  err_text="$([ -z "${LEAK_GATE_CWD:-}" ] || { _leak_gate_absolutize_env; cd "$LEAK_GATE_CWD" || exit 2; }; "$scan_script" -- "$@" 2>&1 >/dev/null)" || status=$?
   [ "$status" = 0 ] && return 0
   if [ "$status" = 1 ]; then
     while IFS= read -r p; do

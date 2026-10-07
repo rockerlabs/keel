@@ -37,11 +37,12 @@
 # exists (same label within the same second) rather than silently overwriting a concurrent launch's output.
 #
 # The leak gate is mandatory and has no bypass — no --force, no --skip-scan, and no working-directory
-# bypass: --system, --bundle and every path-valued scanner environment variable (SECRET_SCAN_PERSONAL_FILE
-# first among them) are resolved to absolute paths against YOUR cwd, and the scanner runs from a fresh EMPTY
-# directory (tools/lib/leak-gate.sh's LEAK_GATE_CWD), so no `.secret-scan-allow` in your cwd or repo applies
-# and a relative personal-literals file is still found. It scans them with tools/secret-guard/secret-scan.sh before anything is sent, and refuses on any
-# hit, printing only the offending path, never the matched content — the scan-then-parse-then-refuse shape
+# bypass: --system and --bundle are resolved to absolute paths and the scanner runs from a fresh EMPTY
+# directory (tools/lib/leak-gate.sh's LEAK_GATE_CWD), so no `.secret-scan-allow` in the caller's cwd or repo
+# applies; leak_gate_run also resolves the scanner's path-valued environment (a relative
+# SECRET_SCAN_PERSONAL_FILE) against the caller's cwd first. It scans them with
+# tools/secret-guard/secret-scan.sh before anything is sent, and refuses on any hit, printing only the offending
+# path, never the matched content — the scan-then-parse-then-refuse shape
 # is tools/lib/leak-gate.sh's leak_gate_run, shared with tools/audit-packet/export.sh's own leak gate
 # rather than a second hand-copy of it. An empty or whitespace-only --bundle is refused (exit 2) before the
 # gate and the client; a client that exits 0 with an empty reply is a failure (exit 1, round dir kept).
@@ -112,22 +113,6 @@ scan_script="$script_dir/secret-guard/secret-scan.sh"
 abs_path() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
 abs_system="$(abs_path "$system")"
 abs_bundle="$(abs_path "$bundle")"
-# The scanner also resolves PATH-VALUED environment variables against its cwd, and its cwd is the empty gate dir
-# (below) — so a relative one would be read from the wrong place. For SECRET_SCAN_PERSONAL_FILE that is a
-# fail-OPEN: the file is "not found", which the scanner reads as "no personal literals", and a bundle holding one
-# scans clean (0.14.0 delta audit S7-5). Resolve every scanner variable that names a path against the CALLER's cwd,
-# once, before the cd — the same meaning a direct scan from the caller's cwd gives it. A set-but-empty value keeps
-# its own meaning (the scanner's `${X:-default}` / `[ -n ]` tests treat it as unset). The list is the whole class:
-# the variables tools/secret-guard/secret-scan.sh reads whose value is a path — SECRET_SCAN_PERSONAL_FILE (the
-# personal-literals file; HOME is its default's base), KEEL_IMPACT_LOG / KEEL_IMPACT_STORE / KEEL_HOME (where a
-# block's guard event is logged) and TMPDIR (its scratch dir). Re-derive it from that script when it gains one.
-for env_path_var in SECRET_SCAN_PERSONAL_FILE KEEL_IMPACT_LOG KEEL_IMPACT_STORE KEEL_HOME HOME TMPDIR; do
-  env_path_val="${!env_path_var-}"
-  if [ -n "$env_path_val" ]; then
-    export "$env_path_var=$(abs_path "$env_path_val")"
-  fi
-done
-
 # The BLOCKED text names each file by the path the caller PASSED, not the resolved one.
 relabel_gate_path() {
   case "$1" in

@@ -243,10 +243,7 @@ check_contains "vendor-review A1(ii): ...refused because the gate BLOCKED a find
 check_contains "vendor-review A1: the BLOCKED text names the path the caller passed (relative), not the resolved one" "$V_ERR" "leaky.md"
 
 # --- A1b (0.14.0 delta audit S7-5): a RELATIVE path-valued scanner env var resolves against the CALLER's cwd -
-# The scanner runs from the empty gate dir, so a relative SECRET_SCAN_PERSONAL_FILE (or a relative HOME that its
-# default personal-file path hangs off) used to read "file not found" = "no personal literals" and the bundle
-# scanned CLEAN — a fail-open in a documented no-bypass gate. Neutral stand-in literal; the bundle is otherwise
-# innocuous so only the personal-literals class can fire.
+# (the story: tools/lib/leak-gate.sh's header). Neutral stand-in literal; the bundle is otherwise innocuous.
 a1b_dir="$SANDBOX/a1b-cwd"; mkdir -p "$a1b_dir/home/.claude"
 printf 'zzq-personal-literal\n' > "$a1b_dir/pers"
 cp "$a1b_dir/pers" "$a1b_dir/home/.claude/secret-scan-personal"
@@ -267,22 +264,21 @@ a1b_case() {  # a1b_case NAME EXPECTED_STATUS BUNDLE ENV... — run from a1b_cwd
   fi
 }
 a1b_case rel-personal 3 leaky.md SECRET_SCAN_PERSONAL_FILE=./pers
-a1b_case rel-personal-bare 3 leaky.md SECRET_SCAN_PERSONAL_FILE=pers
 a1b_case abs-personal 3 leaky.md "SECRET_SCAN_PERSONAL_FILE=$a1b_dir/pers"
 a1b_case rel-home-default 3 leaky.md HOME=home SECRET_SCAN_PERSONAL_FILE=
 a1b_case rel-personal-clean 0 clean.md SECRET_SCAN_PERSONAL_FILE=./pers
 a1b_case empty-personal-default 0 clean.md "HOME=$a1b_dir/home-none" SECRET_SCAN_PERSONAL_FILE=
 # the same class, the side-effect path: a relative KEEL_IMPACT_LOG lands in the CALLER's cwd, not the removed gate dir
 rm -f "$a1b_dir/impact.log"
-a1b_case rel-impact-log 3 leaky.md SECRET_SCAN_PERSONAL_FILE=./pers KEEL_IMPACT_LOG=impact.log
+a1b_case rel-personal-impact-log 3 leaky.md SECRET_SCAN_PERSONAL_FILE=pers KEEL_IMPACT_LOG=impact.log
 check_file "vendor-review A1b: a relative KEEL_IMPACT_LOG is written against the caller's cwd (the guard event survives the gate dir)" "$a1b_dir/impact.log"
 
 pin "vendor-review A1b: docs/vendor-review.md rail 1 says a relative scanner env path resolves against the caller's cwd" \
   "$REPO_ROOT/docs/vendor-review.md" 'is resolved against' \
   "rail 1 promises no working-directory bypass; the S7-5 fix's resolution rule must be stated there"
-pin "vendor-review A1b: tools/lib/leak-gate.sh's header says a LEAK_GATE_CWD caller owns absolutizing path-valued scanner env" \
-  "$REPO_ROOT/tools/lib/leak-gate.sh" 'owns absolutizing them' \
-  "the header contract must name the caller's duty, not only SCAN_SCRIPT and FILE"
+pin "vendor-review A1b: tools/lib/leak-gate.sh's header names the path-valued scanner env it absolutizes" \
+  "$REPO_ROOT/tools/lib/leak-gate.sh" '_LEAK_GATE_PATH_ENV is the list of variables' \
+  "the header contract must name the env list, not only SCAN_SCRIPT and FILE"
 
 # --- A2 (B1): the scanner's cwd is a fresh empty dir under TMPDIR, removed on every exit path ---------
 # A copy of tools/ whose scanner is a fake that records pwd -P and how many entries its cwd holds.
