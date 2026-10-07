@@ -27,27 +27,26 @@ files, `docs/` and the commands, and writes no install manifest (dir #716). (3) 
 offer to refresh the rails block in `CLAUDE.md`, a file with mode 0600 is rewritten with the umask's default
 mode (0644 under the usual umask 022); the backup copy keeps 0600 (dir #716). (4) `doctor.sh --install`
 reports the machine-global secret guard OK when the hooks directory `core.hooksPath` names holds a pre-commit
-that is not Keel's, while
-`install-secret-guard.sh --where --global` reports it as `foreign` (dir #717). (5) `doctor`'s plaintext
-env-file floor skips directories named `dist`, `build`, `out`, `vendor`, `target`, `node_modules`, `.build`,
-`.gradle` and `.claude`, at any depth, so an env-shaped file git tracks inside one reads clean (dir #718).
-(6) `G-GITIGNORE-CONTEXT` can raise a gap for a `.claude/` whose files are all ignored by a `.gitignore`
-inside it, though `git status` shows nothing there to commit (dir #718). (7) `doctor.sh` sources
-`tools/lib/agent-floor.sh` unguarded when it loads, so a corrupt or missing copy makes every run fail with a
-shell error before any check (dir #718). (8) `secret-scan.sh` reads an explicitly set
+that is not Keel's, while `install-secret-guard.sh --where --global` reports it as `foreign` (dir #717). (5)
+`doctor`'s plaintext env-file floor skips directories named `dist`, `build`, `out`, `vendor`, `target`,
+`node_modules`, `.build`, `.gradle` and `.claude`, at any depth, so an env-shaped file git tracks inside one
+reads clean (dir #718). (6) `G-GITIGNORE-CONTEXT` can raise a gap for a `.claude/` whose files are all ignored
+by a `.gitignore` inside it, though `git status` shows nothing there to commit (dir #718). (7) `doctor.sh`
+sources `tools/lib/agent-floor.sh` unguarded when it loads, so a corrupt or missing copy makes every run fail
+with a shell error before any check (dir #718). (8) `secret-scan.sh` reads an explicitly set
 `SECRET_SCAN_PERSONAL_FILE` that names a file that does not exist as "no personal literals", so a mistyped
 path switches the personal-data half of the scan off without a warning (dir #725). (9) The README says a
-`git pull` "refreshes what is already wired", but the secret-guard hook is a copy: after a pull it stays
-stale until you re-vendor it, `doctor` reports `W-GUARD-STALE` or `W-GUARD-GLOBAL-STALE`, and the upgrade
-note below gives the command (dir #723). (10) Three never-clobber holes in the installers are older than
-this release (each reproduces on v0.13.0) and also ship open: `install-secret-guard.sh --global` appends its
-`hooksPath` after a `[includeIf]` block that delivers one, so inside the matching directories Keel's hook
-directory wins and yours stops running (dir #717); `uninstall.sh` replaces a symlinked `CLAUDE.md` with a
-regular file, stripping the rails from that copy only (dir #716); and its rails strip treats a line of yours
-that merely mentions its begin marker as the start of the block, dropping that line and everything after it up
-to the next end marker, or to the end of the file when none follows (dir #716). The audit's other open
-findings are filed as dir #715, dir #719, dir #720, dir #721, dir #723 and dir #726, as appends to dir #698
-and dir #707 through dir #711, or sit on the project's standing list.
+`git pull` "refreshes what is already wired", but the secret-guard hook is a copy: after a pull it stays stale
+until you re-vendor it, `doctor` reports `W-GUARD-STALE` or `W-GUARD-GLOBAL-STALE`, and the upgrade note below
+gives the command (dir #723). (10) Three never-clobber holes in the installers are older than this release
+(each reproduces on v0.13.0) and also ship open: `install-secret-guard.sh --global` appends its `hooksPath`
+after a `[includeIf]` block that delivers one, so inside the matching directories Keel's hook directory wins
+and yours stops running (dir #717); `uninstall.sh` replaces a symlinked `CLAUDE.md` with a regular file,
+stripping the rails from that copy only (dir #716); and its rails strip treats a line of yours that merely
+mentions its begin marker as the start of the block, dropping that line and everything after it up to the next
+end marker, or to the end of the file when none follows (dir #716). The audit's other open findings are filed
+as dir #715, dir #719, dir #720, dir #721, dir #723 and dir #726, as appends to dir #698 and dir #707 through
+dir #711, or sit on the project's standing list.
 
 - **Upgrading from 0.13.0 — re-run the installers; a `git pull` alone does not wire what this release adds.**
   (1) Re-run `./install.sh` (`./install.sh --link` for a linked install): it wires `docs/` beside
