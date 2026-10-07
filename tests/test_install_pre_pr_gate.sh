@@ -2,7 +2,8 @@
 # install-pre-pr-gate.sh — wires the /polish gate's 6 hooks into a project's (or the machine-global)
 # Claude Code settings.json. dir #68: this is the opt-in step that makes the gate real for an adopter,
 # separate from install.sh (which now ships polish.md unconditionally but never wires a hook itself).
-# The 5th hook (SubagentStop/general-purpose, dir #70) traces the independent-agent-review leg. The 6th
+# The 5th hook (SubagentStop/keel-polish-reviewer, dir #70, matcher moved by dir #413 slice 2) traces the
+# independent-agent-review leg. The 6th
 # hook (PostToolUse/AskUserQuestion, dir #88) traces step 5(a)'s MANDATORY review-reminder dialog —
 # shares the PostToolUse event with the Skill matcher, so FIVE_EVENTS below still names 5 distinct event
 # NAMES even though there are now 6 matcher entries across them.
@@ -55,7 +56,8 @@ check_contains "PreToolUse matcher is Bash" "$sj" '"matcher": "Bash"'
 check_contains "SessionStart matcher is startup" "$sj" '"matcher": "startup"'
 check_contains "PostToolUse matcher is Skill" "$sj" '"matcher": "Skill"'
 check_contains "UserPromptExpansion matcher is code-review" "$sj" '"matcher": "code-review"'
-check_contains "SubagentStop matcher is general-purpose" "$sj" '"matcher": "general-purpose"'
+check_contains "SubagentStop matcher is keel-polish-reviewer (dir #413 slice 2)" "$sj" '"matcher": "keel-polish-reviewer"'
+check_absent "A6(a): a fresh install wires no general-purpose matcher" "$sj" '"matcher": "general-purpose"'
 check_contains "PostToolUse matcher includes AskUserQuestion (dir #88)" "$sj" '"matcher": "AskUserQuestion"'
 n_ptu="$(jq '[.hooks.PostToolUse[].matcher] | length' "$repo/.claude/settings.json")"
 check_status "PostToolUse carries both matchers (Skill + AskUserQuestion), not a collision" 2 "$n_ptu"
@@ -168,6 +170,93 @@ check_status "--uninstall over our PreToolUse + an empty SessionStart -> exit 0"
 check_status "our emptied PreToolUse is pruned; the already-empty SessionStart is not ours to delete" \
   '{"SessionStart":[]}' "$(jq -c '.hooks' "$prepo/.claude/settings.json")"
 
+# --- (c4) dir #413 slice 2, A6: the SubagentStop matcher moved general-purpose -> keel-polish-reviewer, and
+# the installer RETIRES the legacy slot (hook_install_remove on exactly our legacy {type, command}). ---------
+legacy_cmd="bash '$gate' skill-trace"
+foreign_cmd="echo foreign-subagent-hook"
+nhooks() { jq '[.hooks[][] | .hooks[]] | length' "$1"; }
+no_empty_hooks() { jq -e '[.hooks[][] | (.hooks // [] | length)] | all(. > 0)' "$1" >/dev/null 2>&1 && echo yes || echo no; }
+
+# (a) fresh: the SubagentStop matchers are exactly ["keel-polish-reviewer"], 6 hook entries, no `retired` line.
+a_repo="$(new_repo)"
+run "$installer" "$a_repo"
+check_status "A6(a): fresh install -> exit 0" 0 "$STATUS"
+check_status "A6(a): SubagentStop matchers are exactly [keel-polish-reviewer]" '["keel-polish-reviewer"]' \
+  "$(jq -c '[.hooks.SubagentStop[].matcher]' "$a_repo/.claude/settings.json")"
+check_status "A6(a): 6 hook entries" 6 "$(nhooks "$a_repo/.claude/settings.json")"
+check_absent "A6(a): a fresh install prints no retired line" "$OUT" "retired"
+
+# (b1) legacy + a foreign hook INSIDE the same entry; (b2) the foreign hook in a SIBLING entry.
+for shape in same-entry sibling-entry; do
+  b_repo="$(new_repo)"; mkdir -p "$b_repo/.claude"
+  if [ "$shape" = same-entry ]; then
+    jq -n --arg l "$legacy_cmd" --arg f "$foreign_cmd" \
+      '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$f},{type:"command",command:$l}]}]}}' > "$b_repo/.claude/settings.json"
+  else
+    jq -n --arg l "$legacy_cmd" --arg f "$foreign_cmd" \
+      '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$l}]},{matcher:"general-purpose",hooks:[{type:"command",command:$f}]}]}}' > "$b_repo/.claude/settings.json"
+  fi
+  b_before="$(cat "$b_repo/.claude/settings.json")"
+  run "$installer" "$b_repo"
+  check_status "A6(b/$shape): legacy + foreign seeded -> exit 0" 0 "$STATUS"
+  check_contains "A6(b/$shape): prints a retired line for the legacy slot" "$OUT" "SubagentStop/general-purpose retired"
+  b_sj="$b_repo/.claude/settings.json"
+  check_status "A6(b/$shape): our legacy command is gone from the legacy slot" 0 \
+    "$(jq --arg l "$legacy_cmd" '[.hooks.SubagentStop[] | select(.matcher=="general-purpose") | .hooks[] | select(.command==$l)] | length' "$b_sj")"
+  check_status "A6(b/$shape): the foreign hook stays" 1 \
+    "$(jq --arg f "$foreign_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$f)] | length' "$b_sj")"
+  check_status "A6(b/$shape): the new slot exists" 1 \
+    "$(jq '[.hooks.SubagentStop[] | select(.matcher=="keel-polish-reviewer")] | length' "$b_sj")"
+  check_status "A6(b/$shape): no empty hooks array or entry remains" yes "$(no_empty_hooks "$b_sj")"
+  b_bak="$(find "$b_repo/.claude" -name 'settings.json.*.bak' | head -n1)"
+  [ -n "$b_bak" ] && pass "A6(b/$shape): a .bak was written" || fail "A6(b/$shape): a .bak was written" "none found"
+  check_status "A6(b/$shape): the .bak is byte-equal to the settings BEFORE the run (it holds our legacy command)" \
+    "$b_before" "$(cat "${b_bak:-/dev/null}")"
+  # (c) already migrated: re-run -> SAME, no retired line, content unchanged, no second backup.
+  b_after="$(cat "$b_sj")"
+  b_nbak="$(find "$b_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+  run "$installer" "$b_repo"
+  check_status "A6(c/$shape): re-run over a migrated settings -> exit 0" 0 "$STATUS"
+  check_absent "A6(c/$shape): re-run prints no retired line" "$OUT" "retired"
+  check_contains "A6(c/$shape): re-run reports the new slot already wired" "$OUT" "=    SubagentStop/keel-polish-reviewer"
+  check_status "A6(c/$shape): settings content unchanged" "$b_after" "$(cat "$b_sj")"
+  check_status "A6(c/$shape): no second backup" "$b_nbak" "$(find "$b_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+done
+
+# (b3) our legacy command inside a MATCHER-LESS SubagentStop entry (hand-merged; the merge's `covers` reads it
+# as SAME for the new matcher, so retiring AFTER the merge would strip the only copy): afterwards our command
+# is wired exactly once, under the new matcher.
+m_repo="$(new_repo)"; mkdir -p "$m_repo/.claude"
+jq -n --arg l "$legacy_cmd" '{hooks:{SubagentStop:[{hooks:[{type:"command",command:$l}]}]}}' > "$m_repo/.claude/settings.json"
+run "$installer" "$m_repo"
+check_status "A6(b3): a legacy command in a matcher-less entry -> exit 0" 0 "$STATUS"
+check_status "A6(b3): our SubagentStop command is wired exactly once" 1 \
+  "$(jq --arg l "$legacy_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$l)] | length' "$m_repo/.claude/settings.json")"
+check_status "A6(b3): ...and it sits under the new matcher" '["keel-polish-reviewer"]' \
+  "$(jq -c --arg l "$legacy_cmd" '[.hooks.SubagentStop[] | select(any(.hooks[]; .command==$l)) | .matcher]' "$m_repo/.claude/settings.json")"
+
+# (d) --uninstall on a settings holding ONLY the legacy entry removes it and does not exit "nothing to remove".
+u_repo="$(new_repo)"; mkdir -p "$u_repo/.claude"
+jq -n --arg l "$legacy_cmd" '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$l}]}]}}' > "$u_repo/.claude/settings.json"
+run "$installer" --uninstall "$u_repo"
+check_status "A6(d): --uninstall over a legacy-only settings -> exit 0" 0 "$STATUS"
+check_absent "A6(d): it does not say nothing-to-remove" "$OUT" "nothing to remove"
+check_status "A6(d): the legacy entry is gone" "null" "$(jq -c '.hooks.SubagentStop' "$u_repo/.claude/settings.json")"
+check_contains "A6(d): the counter counts current specs only (0 of 6)" "$OUT" "0 of 6 hook(s) removed"
+# ...and with a foreign hook on the legacy slot the foreign hook survives --uninstall.
+uf_repo="$(new_repo)"; mkdir -p "$uf_repo/.claude"
+jq -n --arg l "$legacy_cmd" --arg f "$foreign_cmd" \
+  '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$f},{type:"command",command:$l}]}]}}' > "$uf_repo/.claude/settings.json"
+run "$installer" --uninstall "$uf_repo"
+check_status "A6(d): --uninstall with a foreign hook on the legacy slot -> exit 0" 0 "$STATUS"
+check_status "A6(d): the foreign hook survives" 1 \
+  "$(jq --arg f "$foreign_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$f)] | length' "$uf_repo/.claude/settings.json")"
+check_status "A6(d): our legacy command is gone" 0 \
+  "$(jq --arg l "$legacy_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$l)] | length' "$uf_repo/.claude/settings.json")"
+# a full install then --uninstall still reports the numerator as 6 of 6, never more.
+run "$installer" --uninstall "$a_repo"
+check_contains "A6(d): a full uninstall reports 6 of 6" "$OUT" "6 of 6 hook(s) removed"
+
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
 farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
 njrepo="$(new_repo)"
@@ -176,6 +265,8 @@ check_status "no jq -> non-zero (nothing installed)" 1 "$STATUS"
 check_contains "explains jq is required" "$OUT" "jq is required"
 check_contains "prints a ready-to-paste snippet" "$OUT" "\"hooks\""
 check_contains "snippet names the gate path" "$OUT" "$gate"
+check_contains "A6(e): the no-jq snippet shows the new SubagentStop matcher" "$OUT" '"matcher": "keel-polish-reviewer"'
+check_absent "A6(e): the no-jq snippet contains no general-purpose" "$OUT" '"general-purpose"'
 check_nofile "no jq -> settings.json was never written" "$njrepo/.claude/settings.json"
 
 # --- (d2) regression (dir #514): the no-jq snippet path has its OWN escaping (the jq `@sh` fix above
@@ -397,6 +488,44 @@ EOF
 run "$doctor" "$partgate"
 check_status "W-GATE-PARTIAL is advisory only -> exit 0" 0 "$STATUS"
 check_contains "referenced but load-bearing hook missing -> WARN W-GATE-PARTIAL" "$OUT" "W-GATE-PARTIAL"
+
+# --- dir #413 slice 2, A13: W-GATE-REVIEW-MATCHER — the gate is wired but its SubagentStop slot still carries
+# the LEGACY general-purpose matcher (a pull without re-running the gate installer): both halves. ----------
+# bad sample: the RN2 shape (machine-global, a retargeted home so the advice must carry --home).
+dh_legacy="$SANDBOX/dh-legacy-matcher"
+run "$REPO_ROOT/install.sh" --home "$dh_legacy" --no-hooks
+run env KEEL_HOME="$dh_legacy" "$installer" --global
+jq '.hooks.SubagentStop[0].matcher = "general-purpose"' "$dh_legacy/settings.json" > "$dh_legacy/settings.json.tmp" \
+  && mv "$dh_legacy/settings.json.tmp" "$dh_legacy/settings.json"
+run "$doctor" --install "$dh_legacy"
+check_contains "A13: gate wired with only the legacy SubagentStop matcher -> W-GATE-REVIEW-MATCHER" "$OUT" "W-GATE-REVIEW-MATCHER"
+check_contains "A13: the advice names the installer with the --home flag when the home is retargeted" "$OUT" "install-pre-pr-gate.sh --home \"$dh_legacy\""
+# good sample: the migrated settings (a real install) -> the finding is absent.
+run "$doctor" --install "$dh_wired"
+check_absent "A13: a migrated settings -> no W-GATE-REVIEW-MATCHER" "$OUT" "W-GATE-REVIEW-MATCHER"
+# a matcher-less SubagentStop entry holding our command fires on every agent type, so it is as wired as the named one
+dh_matchless="$SANDBOX/dh-matchless-matcher"
+run "$REPO_ROOT/install.sh" --home "$dh_matchless" --no-hooks
+run env KEEL_HOME="$dh_matchless" "$installer" --global
+jq 'del(.hooks.SubagentStop[0].matcher)' "$dh_matchless/settings.json" > "$dh_matchless/settings.json.tmp" \
+  && mv "$dh_matchless/settings.json.tmp" "$dh_matchless/settings.json"
+run "$doctor" --install "$dh_matchless"
+check_absent "A13: a matcher-less SubagentStop entry holding our command is not flagged" "$OUT" "W-GATE-REVIEW-MATCHER"
+# without jq doctor cannot structurally back a finding, so it stays silent rather than guess (fail-open)
+run env PATH="$farm" "$doctor" --install "$dh_legacy"
+check_contains "A13: ...and doctor still ran its gate check without jq" "$OUT" "/polish gate: wired machine-global"
+check_absent "A13: no jq -> no W-GATE-REVIEW-MATCHER guess" "$OUT" "W-GATE-REVIEW-MATCHER"
+# the per-project half
+legproj="$(new_repo)"; clean_baseline "$legproj"
+run "$installer" "$legproj"
+jq '.hooks.SubagentStop[0].matcher = "general-purpose"' "$legproj/.claude/settings.json" > "$legproj/.claude/settings.json.tmp" \
+  && mv "$legproj/.claude/settings.json.tmp" "$legproj/.claude/settings.json"
+run "$doctor" "$legproj"
+check_status "A13: W-GATE-REVIEW-MATCHER is advisory only -> exit 0" 0 "$STATUS"
+check_contains "A13: project scope, legacy matcher -> W-GATE-REVIEW-MATCHER" "$OUT" "W-GATE-REVIEW-MATCHER"
+check_contains "A13: ...naming the project installer re-run" "$OUT" "install-pre-pr-gate.sh $legproj"
+run "$doctor" "$fullgate"
+check_absent "A13: project scope, migrated settings -> no W-GATE-REVIEW-MATCHER" "$OUT" "W-GATE-REVIEW-MATCHER"
 
 # --- regression: a checkout path containing a space still produces a working (single-token) command --
 sp_root="$(mktemp -d "$SANDBOX/space.XXXXXX")/space checkout"

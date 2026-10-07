@@ -58,6 +58,11 @@
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
 #                              PreToolUse/Bash one is missing (plain absence isn't flagged — opt-in)
+#   WARN  W-GATE-REVIEW-MATCHER the /polish gate is wired (load-bearing PreToolUse/Bash hook present) but no
+#                              SubagentStop entry covers `keel-polish-reviewer` — the gate trusts only that
+#                              agent type since dir #413's flip, so /polish's independent-agent review leaves
+#                              no trace and step 8 denies until tools/install-pre-pr-gate.sh is re-run (a
+#                              pull refreshes the script, not the installed settings). Both scopes
 #   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env; templates excluded) that git
 #                              tracks or would commit — a plaintext secrets file one `cat` from a
 #                              permanent transcript (dir #631; names and git state only, no content read)
@@ -380,6 +385,23 @@ gate_hook_wired() {
       "$settings" >/dev/null 2>&1
   else
     grep -q 'pre-pr-gate.sh' "$settings" 2>/dev/null
+  fi
+}
+
+# gate_review_matcher_wired SETTINGS_JSON — true iff a SubagentStop entry in SETTINGS_JSON covers the
+# `keel-polish-reviewer` agent type and runs pre-pr-gate.sh (dir #413 B9 iii). "Covers" = the exact matcher,
+# or a match-all one (no matcher / "" / "*", which fire on every agent type) — the rule
+# tools/lib/hook-install.sh's `covers` and the gate's own `_gate_settings_has_review_hook` apply. Called only
+# once gate_hook_wired already said the gate is wired. Without jq it answers "covered" (fail-open: never a
+# finding doctor cannot structurally back — a grep cannot see a match-all entry — and skill-trace needs jq).
+gate_review_matcher_wired() {
+  local settings="$1"
+  [ -f "$settings" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.hooks.SubagentStop // [] | any((.matcher == "keel-polish-reviewer" or .matcher == null or .matcher == "" or .matcher == "*") and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
+      "$settings" >/dev/null 2>&1
+  else
+    return 0
   fi
 }
 
@@ -1027,6 +1049,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
     else
       warn W-GATE-UNWIRED "commands/polish.md is shipped but no machine-global gate is wired at $igate_settings — expected if you wired it per-project instead (tools/install-pre-pr-gate.sh <repo>, the default); run $gate_flag there for every repo, or confirm project scope with tools/doctor.sh <repo> instead (look for its own '/polish gate: wired' OK line)"
     fi
+    # dir #413 B9 (iii): wired, but the SubagentStop slot still carries the legacy matcher (or none) — the gate
+    # now trusts only keel-polish-reviewer, so the independent-agent-review leg would leave no trace.
+    if gate_hook_wired "$igate_settings" && ! gate_review_matcher_wired "$igate_settings"; then
+      warn W-GATE-REVIEW-MATCHER "the gate is wired at $igate_settings but no SubagentStop hook covers the keel-polish-reviewer agent — /polish's independent-agent review would leave no trace and step 8 would deny; a pull refreshes the script, not the installed settings: re-run tools/install-pre-pr-gate.sh $gate_flag, then restart the session"
+    fi
   fi
 
   # Secret-guard: machine-global wiring (per-repo vendoring is checked by the project audit).
@@ -1582,6 +1609,9 @@ for d in "${DIRS[@]}"; do
   proj_settings="$(gate_project_settings_path "$d")"
   if gate_hook_wired "$proj_settings"; then
     say "  OK   /polish gate: wired (project scope, $proj_settings)"
+    if ! gate_review_matcher_wired "$proj_settings"; then
+      warn W-GATE-REVIEW-MATCHER "$proj_settings wires the gate but no SubagentStop hook covers the keel-polish-reviewer agent — /polish's independent-agent review would leave no trace and step 8 would deny; re-run tools/install-pre-pr-gate.sh $d, then restart the session"
+    fi
   elif gate_any_reference "$proj_settings"; then
     warn W-GATE-PARTIAL "$proj_settings references pre-pr-gate.sh but the load-bearing PreToolUse/Bash hook isn't wired — gh pr create is NOT actually gated here; re-run tools/install-pre-pr-gate.sh $d (--force if it refuses over a stale path)"
   fi

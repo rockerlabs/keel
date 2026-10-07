@@ -105,8 +105,23 @@ sections real content going forward — see that page for exactly when each one 
   `<home>/agents/` (a symlink under `--link`, skipped under `--codex`, an adopter's own file of that name
   refused), `uninstall.sh` removes what it placed, and `doctor --install` reports a missing agent
   (`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
-  (`W-REVIEW-AGENT-FLOOR`). It is inert until a later release points `/polish`'s review spawn at it;
-  existing adopters re-run `install.sh` (`--link` for a linked install) to receive it.
+  (`W-REVIEW-AGENT-FLOOR`). Existing adopters re-run `install.sh` (`--link` for a linked install) to receive
+  it; the flip that makes `/polish` spawn it is the next entry (dir #413, slice 2 of 2).
+
+- **`/polish`'s fallback review subagent now runs as `keel-polish-reviewer`, a read-only agent, and the gate
+  trusts only that agent type (dir #413, slice 2 of 2).** Step 5(a)'s fallback and the dir #141 second
+  opinion spawn the shipped agent (`tools: Read, Grep, Glob`) instead of `general-purpose`, so a review
+  subagent can no longer run `git checkout --` on its parent's uncommitted work. Because it cannot run git,
+  `/polish` embeds the diff and the done-criterion text in the prompt (capped at 65536 bytes; over the cap,
+  whole per-file diffs with deleted files first and an `OMITTED` list) and re-embeds the delta on each
+  follow-up round. `pre-pr-gate.sh`'s `SubagentStop` leg accepts only that agent type, which also closes the
+  old collision where any subagent echoing the marker line wrote a trace. **Existing adopters must act:**
+  re-run `install.sh` (`--link` for a linked install) AND `tools/install-pre-pr-gate.sh` (the same scope flag
+  as before; it retires the legacy `SubagentStop`/`general-purpose` entry after a timestamped backup and
+  leaves any other hook on that slot), then restart open sessions. Until then step 5(a) reports the agent type
+  as not found, or step 8 denies with the installer named, and `doctor --install` reports
+  `W-GATE-REVIEW-MATCHER`. `docs/delegation.md` now also says what to do about review fan-outs keel does not
+  write: commit before launching one, and a `permissions.deny` recipe with its cost stated.
 
 - **`SECURITY.md` gains a threat-model section built on the "lethal trifecta" (dir #89).** It states, leg
   by leg, what Keel covers: private data in context (partial, prose only), untrusted content (none —

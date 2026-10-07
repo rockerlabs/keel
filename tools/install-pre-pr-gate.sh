@@ -31,9 +31,13 @@
 # tests + a depth-matched review) has run cleanly on the current commit — your own terminal is never
 # gated, only the agent's tool calls (a PreToolUse hook fires on THOSE, not on you typing `gh` yourself).
 #
-# The 5th hook (`SubagentStop`/`general-purpose`, dir #70) traces the independent-agent-review leg
-# `/polish` step 5 falls back to when `/code-review` itself refuses model invocation — see
-# tools/pre-pr-gate.sh's own dir #70 header section for the full mechanism.
+# The 5th hook (`SubagentStop`/`keel-polish-reviewer`, dir #70; the matcher moved off `general-purpose` in
+# dir #413's flip) traces the independent-agent-review leg `/polish` step 5 falls back to when `/code-review`
+# itself refuses model invocation — see tools/pre-pr-gate.sh's own dir #70 header section for the full
+# mechanism. The matcher names the keel-shipped read-only agent (agents/keel-polish-reviewer.md, wired by
+# install.sh); a run of this installer over a settings.json that still carries OUR legacy
+# `SubagentStop`/`general-purpose` entry RETIRES that entry (after a timestamped backup) — only our exact
+# {type, command}, never a foreign hook on that slot — and `--uninstall` removes it too.
 #
 # The 6th hook (`PostToolUse`/`AskUserQuestion`, dir #88) traces step 5(a)'s MANDATORY review-reminder
 # dialog — the "agent review already ran, additionally run /code-review too?" question — so the gate can
@@ -254,7 +258,7 @@ print_snippet() {
       { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "SubagentStop": [
-      { "matcher": "general-purpose", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
+      { "matcher": "keel-polish-reviewer", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ]
   }
 }
@@ -297,9 +301,31 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "SessionStart",       matcher: "startup",        command: ("bash " + ($gate|@sh) + " rollout-check")},
   {event: "PostToolUse",        matcher: "Skill",          command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash " + ($gate|@sh) + " skill-trace")},
-  {event: "SubagentStop",       matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "SubagentStop",       matcher: "keel-polish-reviewer", command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")}
 ]')"
+
+# dir #413 B6: the legacy slot. Specs this installer USED to wire and no longer does: install RETIRES them
+# (hook_install_remove — only our exact {type, command} comes out; a foreign hook on the slot stays, an entry
+# it empties goes) and --uninstall removes them too, so an adopter who never re-ran the installer is cleaned.
+retired_specs="$(jq -n --arg gate "$gate" '[
+  {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")}
+]')"
+
+# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out and
+# $n_retired to how many came out. Sets globals, never prints: a command substitution would lose n_retired.
+# hook_install_remove matches by the lib's `covers`, so our command inside a match-all entry (no matcher, ""
+# or "*") also comes out of that entry; the merge that follows re-wires it under the named matcher, so the
+# end state is the same wiring — one narrow entry — and the "retired" line is the only imprecise part.
+retire_legacy() {
+  local removal
+  removal="$(hook_install_remove "$retired_specs" "$1")"
+  n_retired="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
+  retired_json="$1"
+  if [ "$n_retired" -gt 0 ]; then
+    retired_json="$(jq -c '.new' <<<"$removal")"
+  fi
+}
 
 # Backup/atomic-write/shape-check/merge/remove all live in tools/lib/hook-install.sh (dir #437 MW8),
 # shared with install-read-trace.sh — reconcile there, not here, on drift.
@@ -313,7 +339,11 @@ hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$curre
 # sits in a sibling entry; after a forced STALE swap, inside an entry that also holds someone else's
 # command); an entry it leaves empty goes with it, and everything else on that slot stays.
 if [ "$uninstall" = 1 ]; then
-  removal="$(hook_install_remove "$hook_specs" "$current")"
+  # The retired (legacy) specs come out first, so a settings.json holding ONLY the legacy entry is still
+  # cleaned; the current specs' removal then runs on that result. The "of 6" counter below counts the
+  # current specs only — the legacy removal is reported on its own line.
+  retire_legacy "$current"
+  removal="$(hook_install_remove "$hook_specs" "$retired_json")"
   statuses="$(jq -r '.report' <<<"$removal")"
 
   # One definition of each status's print line, reused by both the early "nothing removed" exit (KEPT
@@ -334,7 +364,7 @@ if [ "$uninstall" = 1 ]; then
     esac
   done <<<"$statuses"
 
-  if [ "$n_removed" = 0 ]; then
+  if [ "$n_removed" = 0 ] && [ "$n_retired" = 0 ]; then
     echo "install-pre-pr-gate: nothing to remove — no wired hook at $settings matches what this installer would wire"
     if [ "$n_kept" -gt 0 ]; then
       echo "  ($n_kept hook(s) present on the same event+matcher, but differing from ours — left in place)"
@@ -350,6 +380,9 @@ if [ "$uninstall" = 1 ]; then
   new_settings="$(jq '.new' <<<"$removal")"
   hook_install_atomic_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
+  if [ "$n_retired" -gt 0 ]; then
+    echo "  -    SubagentStop/general-purpose removed (the legacy matcher, replaced by keel-polish-reviewer)"
+  fi
 
   while IFS=$'\t' read -r status event matcher; do
     [ -n "$status" ] || continue
@@ -387,7 +420,13 @@ fi
 # runs someone else's hook: ours lands in a sibling entry, theirs untouched), or STALE (this same hook at
 # another path — the one case that needs --force). The as-if-forced result is computed even on a STALE
 # and is never written unless the refuse/--force gate below clears it.
-merged="$(hook_install_merge "$hook_specs" "$current")"
+#
+# dir #413 B6: the legacy SubagentStop/general-purpose entry is RETIRED first, then the merge runs over the
+# result. Retiring BEFORE the merge (not after, as the design text had it) matters for one shape: our command
+# inside a MATCHER-LESS SubagentStop entry reads SAME for the new matcher (`covers`), and a retirement after the
+# merge would then strip the only copy; retiring first leaves the merge to wire the new slot beside it.
+retire_legacy "$current"
+merged="$(hook_install_merge "$hook_specs" "$retired_json")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
 stale=""
@@ -407,14 +446,25 @@ if [ "$n_stale" -gt 0 ] && [ "$force" != 1 ]; then
   exit 3
 fi
 
-if [ "$n_stale" -gt 0 ] && [ -f "$settings" ]; then
+# ONE backup, before the first write, for a run that takes the --force STALE swap, retires, or both.
+if { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; then
   hook_install_backup "$settings"
-  echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
+  backup_why=""
+  if [ "$n_stale" -gt 0 ]; then
+    backup_why="--force"
+  fi
+  if [ "$n_retired" -gt 0 ]; then
+    backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
+  fi
+  echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") ($backup_why)"
 fi
 
 new_settings="$(jq '.new' <<<"$merged")"
 hook_install_atomic_write "$settings" "$new_settings"
 
+if [ "$n_retired" -gt 0 ]; then
+  echo "  -    SubagentStop/general-purpose retired (the legacy matcher — keel-polish-reviewer replaces it; your other hooks untouched)"
+fi
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
   case "$status" in

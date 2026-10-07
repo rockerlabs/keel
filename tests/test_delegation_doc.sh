@@ -206,4 +206,12 @@ else
   pass "no keel script writes permissions.deny"
 fi
 
+# --- dir #413 slice 2 (A9 / B11): the three answers for spawn points keel does not own -----------------------
+for needle in 'commit before you launch' 'binds the parent session too' 'git checkout -- *' 'dir #559' \
+              'one keel-owned spawn that is NOT floored'; do
+  pin "delegation.md B11 carries: $needle" "$doc" "$needle" "expected B11's adopter answer to carry this string (dir #413 A9)"
+done
+check_absent "delegation.md's deny recipe never denies the broad Bash(git checkout *) (polish.md tells agents to prefer git checkout -b)" \
+  "$(cat "$doc")" 'Bash(git checkout *)'
+
 summary

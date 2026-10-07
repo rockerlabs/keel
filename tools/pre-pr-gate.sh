@@ -175,17 +175,18 @@
 # dir #254 — see commands/polish.md step 5's own intro for the why/when.** Everything below in this
 # section is reached only as the FALLBACK when a direct `Skill(code-review)` attempt is refused for a
 # given run, not as the standing default. commands/polish.md step 5(a) spawns ONE
-# independent Agent-tool subagent (type `general-purpose`, fresh context — no memory of the code-writing
-# session) to do the review instead; this file's job is making THAT claim verifiable too, the same way
-# dir #63 made a real in-session `/code-review` call verifiable.
+# independent Agent-tool subagent (type `keel-polish-reviewer` since dir #413's flip — the shipped read-only
+# agent, `tools: Read, Grep, Glob`; fresh context, no memory of the code-writing session) to do the review
+# instead; this file's job is making THAT claim verifiable too, the same way dir #63 made a real in-session
+# `/code-review` call verifiable.
 #
 # **TO VERIFY, resolved at impl start (corrects the ticket's own original assumption):** the ticket
 # guessed a `PostToolUse` hook matched on a "Task"/"Agent" tool name, mirroring the Skill leg above.
 # Checked against code.claude.com/docs/en/hooks.md: no such tool-call hook exists for subagent spawning.
 # `TaskCreate`/`TaskCreated`/`TaskCompleted` are a DIFFERENT feature (the background-task queue, unrelated
 # to subagent review). The real, documented mechanism is a pair of DEDICATED lifecycle events,
-# `SubagentStart`/`SubagentStop`, matched on `agent_type` (not `tool_name`) — `general-purpose` is one of
-# the built-in values. `SubagentStop` additionally carries `last_assistant_message`: "the final assistant
+# `SubagentStart`/`SubagentStop`, matched on `agent_type` (not `tool_name`) — the built-in types by their
+# name, a custom agent by its `name:` (so `keel-polish-reviewer` here). `SubagentStop` additionally carries `last_assistant_message`: "the final assistant
 # text from the subagent's conversation." That is the ONLY place this hook can read the review's outcome
 # — unlike PostToolUse(Skill), a subagent event has no `tool_input`/`prompt` field to read a call argument
 # from — so the marker commands/polish.md's step 5(a) prompt requires (`KEEL-AGENT-REVIEW: level=<level>`,
@@ -208,24 +209,26 @@
 # it doesn't inspect the review's substance, but a fabricated marker still can't claim a DIFFERENT level
 # than what step 4 sized, narrowing the fabrication to "ran a real subagent and lied about doing the work,
 # at the correct level" rather than "claimed anything at all."
-# (2) the match itself is looser than the Skill/UserPromptExpansion legs': those require a SPECIFIC
-# structured field (`tool_input.skill == "code-review"`), so only an actual code-review invocation can
-# leave a trace. This leg matches on `agent_type == "general-purpose"` — the platform's default/catch-all
-# subagent type, used for arbitrary unrelated work in the SAME gated session, not only /polish's own
-# spawn — plus a free-text regex over that subagent's prose. ANY general-purpose subagent whose final
-# message happens to contain a line matching the marker exactly (an unrelated subagent asked to quote or
-# explain this very mechanism, say) writes a trace line for the CURRENT commit, even though it reviewed
-# nothing. Found in the operator-run /code-review high pass on this ticket. Not a new SECURITY hole (a
-# dishonest model already has Bash and could write the trace file directly, the same residual (1)
-# describes) — but it IS a real ACCIDENTAL-collision surface an honest session could hit by coincidence.
-# **"No structural fix exists today" is STALE (found and corrected 2026-09-06, dir #413/#414
-# feasibility check): a more-restricted subagent type is real — a `tools:` frontmatter allowlist on a
-# committed subagent definition (code.claude.com/docs/en/sub-agents.md) genuinely blocks `Bash`/`Edit`/
-# `Write` for that type, confirmed not assumed, and matching a trace on that dedicated agent_type instead
-# of the catch-all `general-purpose` would close this residual for the dir #70 leg specifically. Not yet
-# built — dir #413/#414 (pooled, its own scope) is queued, not shipped, so this residual still applies to
-# the CURRENT `general-purpose` matcher exactly as described above, for both the dir #70 leg and dir
-# #141's second-opinion leg, until that ticket lands.
+# (2) [CLOSED for this leg by dir #413's flip — see below] the match itself used to be looser than the
+# Skill/UserPromptExpansion legs': those require a SPECIFIC structured field (`tool_input.skill ==
+# "code-review"`), so only an actual code-review invocation can leave a trace, while this leg matched on the
+# platform's default/catch-all subagent type, used for arbitrary unrelated work in the SAME gated session, plus
+# a free-text regex over that subagent's prose — ANY such subagent whose final message happened to contain a
+# line matching the marker exactly (an unrelated subagent asked to quote or explain this very mechanism, say)
+# wrote a trace line for the CURRENT commit, though it reviewed nothing. Found in the operator-run
+# /code-review high pass on that ticket. Not a SECURITY hole (a dishonest model already has Bash and could
+# write the trace file directly, which residual (1) describes) — a real ACCIDENTAL-collision surface.
+# **What shipped (dir #413 slice 2; the older "no structural fix exists" note is retired).** A more-restricted
+# subagent type is real: a `tools:` allowlist on a committed agent definition (agents/keel-polish-reviewer.md,
+# wired by install.sh into `<home>/agents/`) genuinely blocks Bash/Edit/Write for that type — confirmed by probe,
+# not assumed (code.claude.com/docs/en/sub-agents.md). The leg now matches ONLY `agent_type ==
+# "keel-polish-reviewer"` ($REVIEW_AGENT_TYPE), for the dir #70 standing review and dir #141's second opinion
+# alike, so residual (2) is closed for this leg: an unrelated subagent can no longer write a trace by echoing
+# the marker — it would have to BE that type, whose tool floor is structural. Two states keep it open:
+# - a stale OLD-checkout hook still wired with the legacy matcher at a moved path (install-pre-pr-gate.sh
+#   retires only its exact own command, never an other-path one) keeps writing `agent:<level>` for any such
+#   stop into the same HOME-wide, repo-keyed trace file this gate reads, so there the residual is NOT closed;
+# - residual (4), below.
 # (3) dir #85 (rails audit M2-6): commands/polish.md step 5(a) mandates that the subagent prompt carry
 # the ticket/spec the diff implements, with a two-way conformance mandate (dir #78). NOTHING here can
 # check that. A `SubagentStop` event carries no prompt/call-argument field (same absence residual (1)
@@ -233,6 +236,12 @@
 # not verified at all. The prose sits one line away from claims that ARE trace-backed, so it reads as
 # gated when it is not; recorded here rather than reworded, because the mandate is worth keeping even
 # unenforced. Mechanization candidate, not a defect in this file.
+#
+# (4) dir #413 B5: the gate trusts the agent NAME, as every matcher in this file does. Claude Code resolves a
+# same-named agent at project scope ahead of the user-scope one install.sh wired, so a project that defines
+# its own `keel-polish-reviewer` shadows the shipped file and has defined its own floor; nothing here reads
+# any `tools:` line. `tools/doctor.sh --install` audits the INSTALLED copy (W-REVIEW-AGENT-FLOOR), not a
+# project's shadow. Recorded, not closed.
 #
 # `sweep` (dir #64 tier 2b, below) counts an `agent:`-confirmed pass the same as a `trace-confirmed` one —
 # both are independently-verifiable reviews, the pre-#63 blind spot `sweep` exists to catch is
@@ -513,6 +522,9 @@ COMPOSED_MARKER_NAMES=(KEEL-AGENT-REVIEW KEEL-DEPTH-DIALOG KEEL-REVIEW-DIALOG)
 MARKER_AGENT_REVIEW="${COMPOSED_MARKER_NAMES[0]}"
 MARKER_DEPTH_DIALOG="${COMPOSED_MARKER_NAMES[1]}"
 MARKER_REVIEW_DIALOG="${COMPOSED_MARKER_NAMES[2]}"
+# dir #413 (F2, strict): the ONE `agent_type` the SubagentStop leg trusts — the keel-shipped, read-only
+# review agent (agents/keel-polish-reviewer.md). install-pre-pr-gate.sh and doctor.sh spell the same string.
+REVIEW_AGENT_TYPE='keel-polish-reviewer'
 # dir #296 simplify pass: the dialog leg and the skill-trace leg (below) both need "does this word
 # resolve to a real review level" — a loop over $ACCEPTED_REVIEW_LEVELS, deliberately not a `case`
 # pattern list (see $ACCEPTED_REVIEW_LEVELS's own comment on why an unquoted `|`-join can't be a case
@@ -571,7 +583,7 @@ _match_review_level() {
 # one cannot be silently allowed without also being given prose, and its unknown-token deny path
 # (below) needs no second list to stay consistent with.
 #
-# Every add-on is "(self-reported)": the SubagentStop trace proves SOME general-purpose subagent wrote
+# Every add-on is "(self-reported)": the SubagentStop trace proves SOME keel-polish-reviewer subagent wrote
 # the marker for this commit+level, but can neither count runs nor identify a model tier. Only the
 # STANDING agent review is trace-confirmed; see the `agent:*+*` arm below.
 _addon_label() {
@@ -916,8 +928,13 @@ main_top_for() {
 # a stale ledger line whose manifest was since removed contributes nothing. This closes the `--home`
 # gap without special-casing the flag: whatever directory the gate installer actually wired into is
 # exactly the directory its own manifest records, ledger-verified.
-_dialog_leg_armed() {
-  local top="${1:?_dialog_leg_armed: main-checkout top path required}" f
+# dir #413 B5: the walk below is now generic — "is hook X wired in any settings.json this gate can see?" —
+# because the review-trace-missing deny asks the identical question about a DIFFERENT hook (the SubagentStop
+# slot for $REVIEW_AGENT_TYPE) for the identical "between `git pull` and the operator re-running the
+# installer" window. One walk, two predicates (`_gate_settings_has_dialog_hook`, `_gate_settings_has_review_hook`);
+# `_dialog_leg_armed` is the dialog wrapper; never copy this candidate list a second time.
+_gate_settings_any() {
+  local top="${1:?_gate_settings_any: main-checkout top path required}" pred="${2:?_gate_settings_any: predicate required}" f
   command -v jq >/dev/null 2>&1 || return 1
   # dir #150 audit (kept, not removed): these four static candidates were in scope for the general
   # no-manifest-fallback removal sweep, but they are NOT a transitional pre-manifest fallback the way the
@@ -937,17 +954,34 @@ _dialog_leg_armed() {
            "${HOME:-}/.claude/settings.json" \
            "${KEEL_HOME:-${HOME:-}/.claude}/settings.json"; do
     [ -f "$f" ] || continue
-    if _gate_settings_has_dialog_hook "$f"; then
+    if "$pred" "$f"; then
       return 0
     fi
   done
   while IFS= read -r f; do
     [ -n "$f" ] && [ -f "$f" ] || continue
-    if _gate_settings_has_dialog_hook "$f"; then
+    if "$pred" "$f"; then
       return 0
     fi
   done < <(_gate_ledger_candidates)
   return 1
+}
+
+_dialog_leg_armed() {
+  _gate_settings_any "${1:?_dialog_leg_armed: main-checkout top path required}" _gate_settings_has_dialog_hook
+}
+
+# dir #413 B5: predicate for _gate_settings_any — does this settings.json wire a SubagentStop hook running this
+# gate for $REVIEW_AGENT_TYPE? A matcher-less / "" / "*" entry fires on every agent type, so it counts — the
+# `covers` rule of tools/lib/hook-install.sh, which tools/doctor.sh's gate_review_matcher_wired mirrors (this
+# file and doctor.sh do not source that lib). Without jq nothing counts as wired (skill-trace needs jq anyway).
+_gate_settings_has_review_hook() {
+  jq -e --arg t "$REVIEW_AGENT_TYPE" '
+      (.hooks.SubagentStop // []) | any(
+        (.matcher == $t or .matcher == null or .matcher == "" or .matcher == "*") and
+        ((.hooks // []) | any(.command // "" | contains("pre-pr-gate.sh")))
+      )
+    ' "$1" >/dev/null 2>&1
 }
 
 # `contains(...)`, not a regex `test(...)` — a plain substring check for this fixed literal, matching
@@ -1814,7 +1848,7 @@ case "${1:-}" in
     exit 1
     ;;
   skill-trace)
-    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — SubagentStop(general-purpose)
+    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — SubagentStop(keel-polish-reviewer)
     # — dir #70, the independent-agent-review leg — or PostToolUse(AskUserQuestion) — dir #88, the
     # step-5(a) review-reminder-dialog leg — hook. Never blocks or alters anything: silently no-ops
     # (exit 0) on anything it can't parse or that isn't a code-review invocation/review/dialog, since a
@@ -1845,10 +1879,11 @@ case "${1:-}" in
     [ -n "$st_cwd" ] || st_cwd="$PWD"
 
     if [ "$st_event" = "SubagentStop" ]; then
-      # dir #70: matcher "general-purpose" (install-pre-pr-gate.sh) already restricts which
+      # dir #70/#413: matcher "keel-polish-reviewer" (install-pre-pr-gate.sh) already restricts which
       # SubagentStop events reach this hook at all — checked again here in case a broader matcher is
-      # ever wired by hand (same double-check style as the PostToolUse/Skill leg below).
-      [ "$st_agent" = "general-purpose" ] || exit 0
+      # ever wired by hand (same double-check style as the PostToolUse/Skill leg below). Strict (F2): a
+      # `general-purpose` stop with a perfect marker writes NO trace — the tool floor is the unlock condition.
+      [ "$st_agent" = "$REVIEW_AGENT_TYPE" ] || exit 0
       st_msg="$(printf '%s' "$st_input" | jq -r '.last_assistant_message // ""' 2>/dev/null)"
       sa_level="$(printf '%s' "$st_msg" | grep -Eo "^${MARKER_AGENT_REVIEW}: level=(${ACCEPTED_REVIEW_LEVELS// /|})\$" | tail -n1)"
       sa_level="${sa_level#${MARKER_AGENT_REVIEW}: level=}"
@@ -3037,6 +3072,13 @@ case "$status" in
           traced_levels="$(_trace_levels_for "$wt" "$current_sha")"
           trace_deny_detail=""
           [ -n "$traced_levels" ] && trace_deny_detail=" The trace recorded '$traced_levels' for this commit instead — re-run the review with a bare level (no extra flags) if that's unexpected."
+          # dir #413 B5: the SubagentStop matcher changed (general-purpose → keel-polish-reviewer) in this
+          # release, so an `agent:*` outcome with no trace and no settings.json wiring the new matcher is most
+          # likely a pull without the installer re-run. ONE added sentence, never reworded text (several tests pin
+          # the surrounding wording); a settings file that already wires it (or matches every agent type) omits it.
+          if [[ "$review_outcome" == agent:* ]] && ! _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
+            trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+          fi
           # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
           # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
           # A trace is bound to the exact commit it was written against and is never retroactive, so the

@@ -85,8 +85,10 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 `install.sh` wires `agents/*.md` into `<home>/agents/` (a symlink under `--link`, never under `--codex`);
 `uninstall.sh` removes what it placed; `doctor.sh --install` reports a missing agent
 (`W-REVIEW-AGENT-MISSING`) and an installed copy whose `tools:` grew past the shipped set
-(`W-REVIEW-AGENT-FLOOR`). The agent ships inert: `/polish` spawns it from the release that flips its
-spawn point, and until then nothing calls it.
+(`W-REVIEW-AGENT-FLOOR`). `/polish` spawns it for step 5's fallback review and its second opinion, and the
+gate's `SubagentStop` trace trusts only that agent type: `tools/install-pre-pr-gate.sh` wires the matching
+hook and retires the legacy `general-purpose` one, and `doctor.sh --install` flags wiring that was not
+migrated (`W-GATE-REVIEW-MATCHER`).
 
 ## Extras
 

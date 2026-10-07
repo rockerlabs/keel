@@ -350,9 +350,10 @@ Steps, in order:
    - **(a) Fallback for `low|medium|high|max`, reached when the direct attempt above was refused for
      THIS run — an independent subagent reviews instead of you.** A DIFFERENT, independent reviewer has
      to run it. Spawn ONE fresh-context Agent-tool subagent,
-     `subagent_type: "general-purpose"`. Its
-     prompt must carry: the step-1 diff scope, the step-4 chosen depth, a correctness-focused review
-     mandate, and [`docs/delegation.md`](../docs/delegation.md)'s Worker rails, verbatim, not
+     `subagent_type: "keel-polish-reviewer"` — the keel-shipped, read-only agent (`tools: Read, Grep, Glob`,
+     dir #413): it cannot run a command, a test or git, which is the structural floor under the rails below.
+     Its prompt must carry: the step-1 diff scope **with the diff embedded (the diff hand-off below)**, the
+     step-4 chosen depth, a correctness-focused review mandate, and [`docs/delegation.md`](../docs/delegation.md)'s Worker rails, verbatim, not
      paraphrased — this is the same block that block-diff-pins byte-identical across every
      worker/verifier template this repo ships, because a paraphrase is exactly what let dir #375's
      review subagent believe "read-only" didn't cover "restoring" a dirty tree it had never touched:
@@ -390,10 +391,40 @@ Steps, in order:
      - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
      ```
 
+     **The diff hand-off (dir #413 B3) — for EVERY message the reviewer receives.** The reviewer has no
+     shell, so it cannot fetch the diff or open the spec: you run the diff command (`git diff --no-renames`,
+     so a rename is never read as a deletion) and embed the output verbatim in the prompt, headed by the
+     scope and `git rev-parse HEAD`. Every message also embeds the done-criterion TEXT the diff is checked
+     against — the ticket's Acceptance line, or the spec's Acceptance section verbatim — never an id or a
+     path alone, which a read-only reviewer cannot open (the spec is typically a gitignored file in the main
+     checkout, outside a worktree session's tree). ONE fence wraps the whole embedded diff, and that fence is
+     longer than any backtick run inside it (keel's own diffs, this file's included, contain code fences). A
+     dir #127 follow-up round re-engages the SAME reviewer, which cannot fetch the fix commit either: each
+     follow-up message embeds `git diff <last-reviewed-sha>..HEAD` under this same rule and cap, names both
+     shas, and carries the done-criterion text again.
+     **Cap: 65536 bytes of diff text** ("past the cap" means more than 65536 bytes; the `git diff --stat`
+     block and the headers do not count; the figure is this ticket's own choice, set near the p90 of recent
+     merged PRs). Over the cap: the prompt carries `git diff --stat`, then whole per-file diffs, with
+     deleted files' diffs first (their content is not on disk to read), then the rest in git's order. A
+     file whose whole diff would push the running total past the cap is NOT included, and the pass
+     CONTINUES with the next file, so a large file never blocks the smaller ones after it; and
+     no diff is ever cut inside a file. An `OMITTED (no hunks supplied):` line lists every file left out.
+     An omitted DELETED file is marked `deleted — not reviewable`, and the report says that file was not
+     reviewed; the reviewer reads each omitted, non-deleted file whole and states in its report that those
+     files were reviewed without hunks.
+
+     **Agent type "not found" (dir #413 B4).** If the Agent call answers that the type
+     `keel-polish-reviewer` was not found, step 5(a) is unavailable for this run: say so in one line and
+     name the remedies — re-run `install.sh` from the keel checkout (`--link` for a linked install), and if
+     the agent still reads not found afterwards, restart the session — then take the path the Agent tool
+     being unavailable takes: the inline pass of **Fallback within a fallback** below (it applies to this
+     case too), then (b).
+     Never retry as `general-purpose` (it is NOT the type the gate trusts: no trace, and no tool floor).
+
      It must also carry
-     the ticket or spec this diff implements — when the session knows it (an id, or the done-criterion
-     text itself) — with a **two-way conformance mandate**: the diff must realize that done-criterion, and
-     nothing in it may silently exceed or contradict it. **When no ticket exists** (an ad-hoc diff with no
+     the ticket or spec this diff implements — when the session knows it, as the done-criterion TEXT (see
+     the diff hand-off paragraph above) — with a **two-way conformance mandate**: the diff must realize
+     that done-criterion, and nothing in it may silently exceed or contradict it. **When no ticket exists** (an ad-hoc diff with no
      tracked done-criterion), the prompt states that absence explicitly rather than leaving the reviewer to
      assume a spec it was never given, and the review stays correctness-only. The prompt MUST
      also require the subagent to end its final response with a line, alone, exactly
@@ -446,8 +477,8 @@ Steps, in order:
      re-invocation of this same commit.
 
      **On "run an in-session cross-model second opinion too" (dir #141):** spawn ONE fresh-context
-     Agent-tool subagent, `subagent_type: "general-purpose"`, built the same way (a)'s own standing-review
-     subagent was, with one deliberate difference — pin its `model` parameter to a tier materially
+     Agent-tool subagent, `subagent_type: "keel-polish-reviewer"`, built the same way (a)'s own
+     standing-review subagent was (diff hand-off included), with one deliberate difference — pin its `model` parameter to a tier materially
      different from the running session's own resolved model (visible in this session's own environment
      context; the Agent tool defaults to the session's tier when `model` is omitted, which is exactly what
      (a)'s own subagent did). Default mapping, simplest first: session on `opus` → pin `sonnet`; session
@@ -459,16 +490,16 @@ Steps, in order:
      requirement, plain text, no markdown formatting (see (a) for the full list; nothing about the marker
      or the mandate changes here, only the model pin and the fact that a genuine independent review already
      stands before this second one even starts). **Verified against `tools/pre-pr-gate.sh`, not assumed
-     (dir #141):** the `SubagentStop` trace leg matches on `agent_type == general-purpose` and the marker
-     text alone — it has no way to see which subagent, prompt, or model tier produced a given trace line,
-     so this second subagent's own marker line satisfies the exact same trace check (a)'s did; the trace
-     mechanism itself needed no change. What DID need a small change is the receipt shape: an honest record
+     (dir #141, re-read for dir #413):** the `SubagentStop` trace leg matches on `agent_type == keel-polish-reviewer`
+     and the marker text alone — it has no way to see which prompt or model tier produced a given trace
+     line, so this second subagent's own marker line satisfies the exact same trace check (a)'s did; the
+     trace mechanism itself needed no change for the second opinion. What DID need a small change is the receipt shape: an honest record
      must say a second, cross-model pass happened rather than silently reuse the bare `agent:<level>`
      outcome that already means "one agent review ran" — so `tools/pre-pr-gate.sh` gained one new outcome
      literal for this, `agent:<level>+second-opinion` (dir #81's own `+operator-run` pattern, mirrored).
      **Its provenance label marks the second-opinion half "(self-reported)", not "(trace-confirmed)"**
      (found by the operator's own `/code-review high` pass on this ticket): the trace only proves SOME
-     general-purpose subagent wrote the marker for this commit+level, not that it happened TWICE — a
+     keel-polish-reviewer subagent wrote the marker for this commit+level, not that it happened TWICE — a
      receipt claiming this combined outcome after only the standing review's one real subagent run would
      pass the same trace check, the same ambiguity dir #81's own arm already resolves honestly for its
      operator-run half. Resolve any real findings this second subagent reports the same bar as (a)'s own findings — the SAME
@@ -684,7 +715,7 @@ Steps, in order:
    restart" paragraph above, same rule, three added specifics:**
    - **Same reviewer, not a fresh spawn.** "Re-review only the DELTA" (above) means: for the agent path
      (a), a follow-up message to the SAME Agent-tool subagent that ran the original pass, scoped to only
-     the fix commit's diff — never a new spawn; for an operator-run `/code-review` hand-off, the operator
+     the fix commit's diff, embedded in the message (the reviewer cannot fetch it) — never a new spawn; for an operator-run `/code-review` hand-off, the operator
      re-running it on the delta the same way; for a cross-model second opinion (dir #141), a follow-up
      message to that SAME pinned-model subagent, same discipline. A fresh full pass is justified only when
      the fix touched surface the original review never examined (dir #126 signal 1) — name that reason if

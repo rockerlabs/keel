@@ -321,6 +321,45 @@ recipe plus the args, so the rails stop at the subagent and its args are the onl
 target this block would have named, had it reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
 *tool* being reviewed, not something a prompt rail can reach.
 
+**What keel floors, and what an adopter does about the rest (dir #413).** A capability floor exists only
+where keel writes the spawn and the job needs no shell: `/polish`'s fallback and second-opinion review
+subagent run as `keel-polish-reviewer`, a keel-shipped agent whose `tools:` allowlist is `Read, Grep, Glob`
+(`agents/keel-polish-reviewer.md`, placed by `install.sh`), so it cannot run a git-mutating command however
+it misreads a dirty tree. Step 5's first-attempt review subagent (dir #670's K2) is the
+one keel-owned spawn that is NOT floored: it must run the `/code-review` skill, which wants `git diff`, so
+a read-only tool set would degrade the review by default — it is contained by a clean-tree precondition
+and a stop on any HEAD or status change instead (dir #676 is its possible future floor). For a fan-out a vendor tool composes, which keel cannot floor (`/code-review`'s finder
+agents are the felt case — dir #375's fourth recurrence), an adopter has three answers:
+
+1. Before launching one, **commit before you launch it** — a clean tree has nothing for a stray `git checkout --` to destroy. Use a
+   temporary WIP commit, never a stash (a stash is shared across every worktree of the repo).
+2. **A `permissions.deny` recipe for that class,** priced honestly. Claude Code `permissions.deny` rules (on
+   another harness, your permission layer's equivalent):
+
+   ```json
+   {
+     "permissions": {
+       "deny": [
+         "Bash(git checkout -- *)",
+         "Bash(git reset --hard *)",
+         "Bash(git clean *)",
+         "Bash(git restore *)",
+         "Bash(git stash *)"
+       ]
+     }
+   }
+   ```
+
+   Deliberately NOT a broader `checkout` rule: `/polish` tells its agents to prefer `git checkout -b`, which a
+   wider pattern would deny. The cost: a deny rule binds subagents, but there is no per-subagent scoping — it
+   binds the parent session too — so you then run those commands by hand. And it does not see
+   `git -C <dir> checkout`, a script that runs git, or a plain `rm` — the blind spots the recipe below states
+   for itself.
+3. **Two options keel names and has not built:** dir #559's B1 (a `SubagentStart` hook that injects these
+   rails into every subagent type — prose delivery, so not a floor) and dir #675's `agent_id`-scoped deny of
+   git-mutating verbs inside the gate's own Bash hook (a floor for every subagent, vendor-composed ones
+   included, with its own false-positive surface).
+
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
 
 The rail above is prose: nothing stops a real session's own command from touching the real machine, and the felt incident (dir #437) was a rail that was *followed*, then edited out of a command by a permission denial's shorter retry. [`tools/machine-watch.sh`](../tools/machine-watch.sh) is the backstop — an opt-in detector (wire it with [`tools/install-machine-watch.sh`](../tools/install-machine-watch.sh)) that fingerprints the machine-global files a live check must never touch and tells the session, on the tool call that caused it, what changed. The recipe below is the *prevention* half, documented and never installed: nothing in keel writes these rules into any settings file.

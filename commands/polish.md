@@ -86,7 +86,7 @@ Steps, in order:
      cannot be committed → stop and report. Record `git rev-parse HEAD` and `git status --porcelain` right
      before the spawn. Then spawn ONE fresh-context Agent-tool subagent — step 5's review subagent:
      `subagent_type: "general-purpose"`, no `model` pin, so it runs this session's own model. A restricted
-     reviewer type (dir #413's `keel-polish-reviewer`) replaces `general-purpose` here only if its tool set
+     reviewer type (dir #413's `keel-polish-reviewer`) replaces it here only if its tool set
      includes `Skill` and the read-only git verbs `diff`, `log`, `show` and `blame`.
    - **Its prompt.** The FIRST line is exactly `You are /polish step 5's review subagent.` (the cost tool
      `session-cost.sh tail` finds the subagent by it). Then: the diff scope `git diff

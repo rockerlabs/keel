@@ -55,4 +55,41 @@ pin "commands/polish-guide.md's retest caution names the canary it would trip" \
   "$guide" 'self-corruption canary' \
   "expected the caution to say what trips (dir #505)"
 
+# --- dir #413 slice 2 (A7): the flip — every spawn site but K2's names keel-polish-reviewer ----------------
+# Exactly ONE `subagent_type: "general-purpose"` may remain across the two files: dir #670's K2 default-review
+# spawn, which dir #413 deliberately does not floor (F4), identified by the needle `step 5's review subagent`
+# on that line or the line before. Every OTHER line that names general-purpose at all must say NOT (a rewritten
+# sentence saying the type is NOT trusted). Counts are over the raw files, line by line, exactly as the spec's
+# `grep -n` reads them.
+needle="step 5's review subagent"
+n_gp="$(cat "$polish" "$guide" | grep -cF 'subagent_type: "general-purpose"')"
+check_eq "A7: exactly ONE subagent_type: \"general-purpose\" remains across polish.md + polish-guide.md (K2's)" 1 "$n_gp"
+unexempt="$(for f in "$polish" "$guide"; do
+  awk -v n="$needle" '
+    index($0, "subagent_type: \"general-purpose\"") && !(index($0, n) || index(prev, n)) { print FILENAME ":" NR }
+    { prev = $0 }' "$f"
+done)"
+check_eq "A7: the one remaining general-purpose spawn line is K2's (needle on it or the line before)" "" "$unexempt"
+# every other general-purpose line says NOT
+bare_gp="$(for f in "$polish" "$guide"; do
+  awk -v n="$needle" '
+    /general-purpose/ {
+      if (index($0, "subagent_type: \"general-purpose\"") && (index($0, n) || index(prev, n))) { prev = $0; next }
+      if ($0 !~ /NOT/) print FILENAME ":" NR ": " $0
+    }
+    { prev = $0 }' "$f"
+done)"
+check_eq "A7: every other line naming general-purpose also says NOT (none names it as the traced type)" "" "$bare_gp"
+check_eq "A7: both spawn sites name keel-polish-reviewer (two subagent_type lines)" 2 \
+  "$(cat "$polish" "$guide" | grep -cF 'subagent_type: "keel-polish-reviewer"')"
+for nd in 'OMITTED (no hunks supplied):' 'CONTINUES with the next file' "deleted files' diffs first" \
+          'deleted — not reviewable' 'no diff is ever cut inside a file' 'longer than any backtick run' \
+          'done-criterion' 'last-reviewed' 'not found'; do
+  pin "A7: polish-guide.md carries B3/B4's needle: $nd" "$guide" "$nd" "expected B3/B4's wording to carry this exact string (dir #413 A7)"
+done
+pin "A7: B4 — never retry as general-purpose" "$guide" 'Never retry as `general-purpose`' \
+  "expected B4's refusal to fall back to the unfloored type (F2)"
+pin "A7: B3 — the 65536-byte cap" "$guide" '65536 bytes' "expected B3's diff cap"
+pin "A7: B4 names the remedy install.sh" "$guide" 're-run `install.sh`' "expected B4 to name install.sh as the remedy"
+
 summary

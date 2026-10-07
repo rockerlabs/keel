@@ -972,24 +972,24 @@ subagentstop_trace() {
   STATUS=$?
 }
 
-# dir #164: clears any stale trace for $d, then feeds it a SubagentStop(general-purpose) event
-# carrying $2 (default: a level=high marker with generic review text). Sets $tf to the trace path
+# dir #164: clears any stale trace for $d, then feeds it a SubagentStop(keel-polish-reviewer) event
+# (dir #413 slice 2: the one agent_type the gate trusts — F2's strict matcher) carrying $2 (default: a level=high marker with generic review text). Sets $tf to the trace path
 # for the caller to assert on — collapses the repeated `tf=...; rm -f "$tf"` + subagentstop_trace
 # preamble that appeared 22+ times across this file into one line per call site.
 agent_trace() {
   local d="$1" msg="${2:-$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')}"
   tf="$(trace_for "$d")"; rm -f "$tf"
-  subagentstop_trace "$d" "general-purpose" "$msg"
+  subagentstop_trace "$d" "keel-polish-reviewer" "$msg"
 }
 
-# 41. A SubagentStop(general-purpose) event whose final text carries the marker line (on its own
+# 41. A SubagentStop(keel-polish-reviewer) event whose final text carries the marker line (on its own
 # line, amid other prose — a real review write-up isn't just the marker) writes an `agent:<level>`
 # trace line keyed by the hook's OWN observed HEAD sha, never a self-reported one.
 d="$(mkrepo)"
 sha="$(git -C "$d" rev-parse HEAD)"
 agent_trace "$d" "$(printf 'Reviewed the diff, no issues found.\nKEEL-AGENT-REVIEW: level=high\n')"
-check_status "SubagentStop(general-purpose) with marker → exit 0" 0 "$STATUS"
-check_file "SubagentStop(general-purpose) with marker writes a trace file" "$tf"
+check_status "SubagentStop(keel-polish-reviewer) with marker → exit 0" 0 "$STATUS"
+check_file "SubagentStop(keel-polish-reviewer) with marker writes a trace file" "$tf"
 check_contains "trace line carries the sha and the agent:<level> tag" "$(cat "$tf" 2>/dev/null)" "$sha	agent:high"
 rm -f "$tf"
 
@@ -1003,16 +1003,31 @@ agent_trace "$d" "$(printf 'Line one.\nLine two.\nLine three.\nKEEL-AGENT-REVIEW
 check_file "marker found even several lines into the message (no newline truncation)" "$tf"
 rm -f "$tf"
 
-# 43. A non-`general-purpose` agent_type is ignored (no trace) — the hook's own defense-in-depth
-# check, redundant with the install-time matcher but exercised directly here.
+# 43. Any agent_type but `keel-polish-reviewer` is ignored (no trace) — the hook's own defense-in-depth
+# check, redundant with the install-time matcher but exercised directly here. dir #413 A5 / F2 (strict):
+# `general-purpose` WITH a perfect marker no longer writes a trace (the floor is the unlock condition), and
+# neither do near-names or an empty/absent agent_type — one case each, a fresh repo per case.
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 subagentstop_trace "$d" "Explore" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
-check_nofile "SubagentStop for a non-general-purpose agent_type is ignored" "$tf"
+check_nofile "SubagentStop for a non-keel-polish-reviewer agent_type (Explore) is ignored" "$tf"
+for ng in general-purpose keel-polish-reviewer-x keel-polish ''; do
+  d="$(mkrepo)"
+  tf="$(trace_for "$d")"; rm -f "$tf"
+  subagentstop_trace "$d" "$ng" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
+  check_status "A5: SubagentStop agent_type '${ng:-<empty>}' with a perfect marker → exit 0" 0 "$STATUS"
+  check_nofile "A5: SubagentStop agent_type '${ng:-<empty>}' with a perfect marker writes NO trace" "$tf"
+done
+# ...and with NO agent_type key at all (not just an empty string).
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+jq -n --arg cwd "$d" --arg msg "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')" \
+  '{hook_event_name:"SubagentStop", cwd:$cwd, agent_id:"test-agent-id", last_assistant_message:$msg}' \
+  | bash "$gate" skill-trace >/dev/null 2>&1
+check_nofile "A5: SubagentStop with no agent_type key at all writes NO trace" "$tf"
 
-# 44. A general-purpose SubagentStop with NO marker line at all is ignored — this fires on every
-# ordinary general-purpose subagent call in a session, not just polish's review, so silence here is
-# the common case, not an error.
+# 44. A keel-polish-reviewer SubagentStop with NO marker line at all is ignored — a reviewer that
+# forgot its closing line leaves no trace, and the gate denies later at step 8.
 d="$(mkrepo)"
 agent_trace "$d" "Just some unrelated subagent output, no marker here."
 check_nofile "SubagentStop with no marker line is ignored" "$tf"
@@ -1045,6 +1060,50 @@ write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_contains "agent:<level> receipt, no trace → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "agent:<level> receipt, no trace → names the trace as missing" "$OUT" "no trace matching"
+
+# 47b. dir #413 A10 / B5: the `review-trace-missing` deny for an `agent:*` outcome appends ONE sentence
+# naming the installer when no candidate settings.json wires a SubagentStop hook for keel-polish-reviewer
+# (the matcher changed in this release), and omits it when one does. The needle is a single line.
+review_hint='wires a SubagentStop hook for keel-polish-reviewer'
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "A10: agent:<level>, no trace, no settings anywhere → the installer sentence is appended" "$OUT" "$review_hint"
+check_contains "A10: ...and names the installer as the remedy" "$OUT" "install-pre-pr-gate.sh"
+# bad sample (the RN2 shape): settings that wire only the LEGACY general-purpose matcher → sentence present
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"general-purpose", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$d/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "A10: settings wiring only the legacy general-purpose matcher → sentence present" "$OUT" "$review_hint"
+# good sample: the matcher wired at project scope → sentence absent (the deny itself is unchanged)
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"keel-polish-reviewer", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$d/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "A10: matcher wired → still denied for the trace" "$OUT" "no trace matching"
+check_absent "A10: matcher wired at project scope → the installer sentence is omitted" "$OUT" "$review_hint"
+# good sample 2: wired at the user-scope settings (the walk covers the same candidates as the dialog leg)
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$HOME/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"keel-polish-reviewer", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$HOME/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_absent "A10: matcher wired at user scope → the installer sentence is omitted" "$OUT" "$review_hint"
+rm -f "$HOME/.claude/settings.json"
+# a bare-level (non-agent) outcome never carries the sentence
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "high"
+gate "gh pr create --fill" "$d"
+check_absent "A10: a non-agent outcome's deny never carries the installer sentence" "$OUT" "$review_hint"
 
 # 48. Gate DENY: a trace exists, but for a DIFFERENT level than the receipt claims — a real `agent:low`
 # review must not vouch for a receipt claiming `agent:max`.
@@ -1831,7 +1890,7 @@ d="$(mkrepo)"
 arm_dialog_leg "$d"
 tf="$(trace_for "$d")"; rm -f "$tf"
 printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\tdialog:high\n' > "$tf"
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
+subagentstop_trace "$d" "keel-polish-reviewer" "$(printf 'Reviewed. No issues.\nKEEL-AGENT-REVIEW: level=high\n')"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_contains "ARMED: dialog trace at a STALE sha → denied" "$OUT" '"permissionDecision":"deny"'
@@ -2039,7 +2098,7 @@ agent_trace "$d" "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')"
 check_file "trace is written on the starting branch" "$tf"
 trace_before="$(cat "$tf")"
 git -C "$d" checkout -q -b other-branch
-subagentstop_trace "$d" "general-purpose" "$(printf 'Reviewed again.\nKEEL-AGENT-REVIEW: level=high\n')"
+subagentstop_trace "$d" "keel-polish-reviewer" "$(printf 'Reviewed again.\nKEEL-AGENT-REVIEW: level=high\n')"
 check_status "the second branch appends to the SAME per-repo trace file" 2 "$(wc -l < "$tf" | tr -d ' ')"
 check_contains "the first branch's trace line is still there" "$(cat "$tf")" "$trace_before"
 # Same assertion for the OTHER deliberately-per-repo file, rollout state. The rollout-check subcommand
