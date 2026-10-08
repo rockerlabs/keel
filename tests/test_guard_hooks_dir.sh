@@ -643,8 +643,8 @@ check_status "A12(c): a re-run with an incomplete walk → exit 0" 0 "$STATUS"
 check_contains "A12(c): ...one NOTE naming the cause" "$OUT" "NOTE — conditional [includeIf] includes could not all be read (the scratch dir mktemp gives sits inside a repository"
 
 # --- A13: the walk's shapes ----------------------------------------------------------------------------------
-s2_refused() {  # label needle — `--global` in $H: exit 3, the needle named, nothing written
-  run_bounded genv "$isg" --global
+s2_refused() {  # label needle [runner] — `--global` in $H: exit 3, the needle named, nothing written
+  "${3:-run}" genv "$isg" --global
   check_status "A13 $1 → refused (exit 3)" 3 "$STATUS"
   check_contains "A13 $1: ...named" "$OUT" "$2"
   check_nodir "A13 $1: ...nothing written" "$H/$kh_rel"
@@ -689,7 +689,7 @@ check_status "A13: a conditional self-include whose value is Keel's dir → comp
 
 incomplete="could not read every conditional [includeIf] include"
 s2_home a13-selfu; s2_inc; printf '[include]\n\tpath = work.cfg\n' > "$H/work.cfg"
-s2_refused "an unconditional self-[include] in a target (git's own depth error)" "$incomplete (git config failed on $H/work.cfg)"
+s2_refused "an unconditional self-[include] in a target (git's own depth error)" "$incomplete (git config failed on $H/work.cfg)" run_bounded
 run_bounded genv "$isg" --global --force
 check_status "A13 unconditional self-[include], --force → proceeds (exit 0)" 0 "$STATUS"
 s2_chain() {  # depth — ~/.gitconfig → c1.cfg → … → c<depth>.cfg, each a conditional include of the next

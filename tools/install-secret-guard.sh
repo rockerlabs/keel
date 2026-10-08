@@ -464,11 +464,8 @@ _isg_tab_nl_free() { case "$1" in *$'\t'*|*$'\n'*) return 1 ;; esac; return 0; }
 # with c_cause set when the listing cannot be trusted.
 _isg_cond_list() {
   local outer="$1" f="${2:-}" out="$c_probe/.isg-list" rc=0 origin kv key cond raw base x
-  if [ -n "$f" ]; then
-    git -C "$c_probe" config --file "$f" --includes --show-origin -z --get-regexp '^includeif\..+\.path$' > "$out" 2>/dev/null || rc=$?
-  else
-    git -C "$c_probe" config --show-origin -z --get-regexp '^includeif\..+\.path$' > "$out" 2>/dev/null || rc=$?
-  fi
+  git -C "$c_probe" config ${f:+--file} ${f:+"$f"} ${f:+--includes} --show-origin -z \
+    --get-regexp '^includeif\..+\.path$' > "$out" 2>/dev/null || rc=$?
   case "$rc" in
     0) ;;
     1) return 0 ;;   # no includeIf at all
@@ -486,7 +483,7 @@ _isg_cond_list() {
     [ -n "$raw" ] || continue
     # shellcheck disable=SC2088  # matching a literal ~ on purpose
     case "$raw" in
-      "~/"*) raw="$HOME/${raw#\~/}" ;;
+      "~/"*) raw="$(_isg_norm_path "$raw")" ;;
       /*) ;;
       *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
          raw="$base/$raw" ;;
@@ -818,14 +815,14 @@ case "${1:-}" in
           echo "    in trees matching $c_cond: $c_tgt (included from $c_origin) sets $(_isg_cond_setting "$c_kind" "$c_val")" >&2
         done <<< "$c_conf"
         echo "  Point that setting at Keel's dir ($dir) or remove it; or give a repo its own hooks dir" >&2
-        echo "  (git -C <repo> config --local core.hooksPath <repo>/.git/hooks); or re-run with --force to wire anyway." >&2
+        echo "  (git -C <repo> config --local core.hooksPath <repo>/.git/hooks)." >&2
       fi
       if [ -n "$c_cause" ]; then
         echo "secret-guard: could not read every conditional [includeIf] include ($c_cause) — a hooksPath there may override this one. Nothing was changed." >&2
-        [ "$c_n" -gt 0 ] || echo "  Re-run with --force to wire anyway." >&2
       else
         echo "  Nothing was changed." >&2
       fi
+      echo "  Re-run with --force to wire anyway." >&2
       exit 3
     fi
     install_into "$dir"
