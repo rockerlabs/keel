@@ -171,59 +171,20 @@ advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
 CONTEXT_FILE="CLAUDE.md"
 [ "$CODEX" = 1 ] && CONTEXT_FILE="AGENTS.md"
 
-# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim), hoisted here — before the
-# linked-mode sticky-detect just below, this file's first call site — same reasoning as the self-link
-# guard further down: the earliest sane point either way, so the sticky-detect still fires from a
-# checkout that hasn't got a tools/ dir at all. OPTIONAL, unlike tools/lib/manifest.sh's REQUIRED
-# treatment for uninstall.sh/tools/doctor.sh: every call site below is a pure filesystem check with
-# zero tools/ dependency today, driving only this run's own LINK/NOGIT control flow and a printed
-# message — never a manifest record another script later trusts for a destructive decision, so there's
-# no cross-script poisoning risk to refuse outright over (contrast tools/lib/artifact-cksum.sh below).
-# Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see tools/lib/manifest.sh's
-# own guard further down for why; a bare `.` can't be guarded against a parse-time syntax-error abort
-# under `set -e`); the fallback is today's inline logic moved verbatim —
-# byte-identical to tools/lib/core-ownership.sh's own copy, not a stub, so a tools/-less checkout keeps
-# today's exact behaviour.
+# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim; dir #650: the block comparator;
+# dir #716: the anchored KEEL-CORE marker definition every reader and writer of the embedded block
+# shares), hoisted here — before the linked-mode sticky-detect just below, this file's first call site.
+# REQUIRED, like uninstall.sh and tools/doctor.sh: one definition in the lib, no inline copy to keep in
+# step with it. Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see
+# tools/lib/manifest.sh's own guard further down for why; a bare `.` can't be guarded against a
+# parse-time syntax-error abort under `set -e`). A checkout without tools/ stops here, with nothing
+# written (tools/lib/safe-write.sh is REQUIRED further down too, so it could not install anyway).
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
-  keel_core_is_link() {
-    [ -L "$1" ]
-  }
-  keel_core_is_nogit_trim() {
-    [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null
-  }
-  # dir #650: the block-currency comparator — byte-identical bodies to tools/lib/core-ownership.sh's
-  # keel_core_block_* (tools/self/doctor.sh's single-definition check compares them). core_block(), this
-  # file's former mirror of block_of() in tests/test_core_wrapper_sync.sh, is absorbed by
-  # keel_core_block_text.
-  keel_core_block_text() {
-    sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'
-  }
-  keel_core_block_is_trimmed() {
-    local block
-    block="$(keel_core_block_text "$1")"
-    case "$block" in
-      *'## Git — mandatory rails'*|*'## Before writing code — reconcile first'*) return 1 ;;
-    esac
-    return 0
-  }
-  keel_core_block_norm() {
-    awk '/KEEL-(NO)?GIT-(BEGIN|END)/ { next } NF { blank = 0; print; next } !blank { print; blank = 1 }'
-  }
-  keel_core_block_state() {
-    local inst ref
-    inst="$(keel_core_block_text "$1")"
-    ref="$(keel_core_block_text "$2")"
-    if ! keel_core_block_is_trimmed "$1"; then
-      if [ "$inst" = "$ref" ]; then echo current; else echo drift; fi
-      return 0
-    fi
-    inst="$(printf '%s\n' "$inst" | sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' | keel_core_block_norm)"
-    ref="$(printf '%s\n' "$ref" | awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' | keel_core_block_norm)"
-    if [ "$inst" = "$ref" ]; then echo current-trimmed; else echo drift; fi
-  }
+  echo "install: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely tell Keel's own files from yours; re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
 fi
 
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
@@ -291,11 +252,12 @@ echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
 # Self-link guard (linked mode only), hoisted here — before anything below sources tools/lib/manifest.sh
-# (dir #323) — so the refusal still fires from a checkout that hasn't got a tools/ dir at all (this is
+# (dir #323), so it still fires with the optional libs absent (a checkout with no tools/ dir at all now
+# stops at the core-ownership guard above, exit 1, writing nothing — dir #716). This is
 # the earliest sane point either way: if the consumption dir IS this checkout — e.g. --home "$HOME"
 # while the checkout sits at $HOME/keel, bootstrap's default — sync_product would see src -ef dest and
 # "upgrade" the checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves,
-# corrupting every file the links resolve to). -ef, not a string compare: different spellings of the
+# corrupting every file the links resolve to. -ef, not a string compare: different spellings of the
 # same dir still collide. Refuse rather than no-op — the invocation is nonsensical (home is ~/.claude,
 # not the checkout). $link_dir is referenced again inside the LINK-mode block further down.
 if [ "$LINK" = 1 ]; then
@@ -1067,11 +1029,7 @@ if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
 # (default: the import line; "" = block removed). The ONE definition of the marker transform;
 # callers own the destination (in-place migration or a pipe).
 strip_core_block() {
-  awk -v imp="${2-$import_line}" '
-    /KEEL-CORE-BEGIN/ {if (imp != "") print imp; skip=1; next}
-    /KEEL-CORE-END/   {skip=0; next}
-    !skip
-  ' "$1"
+  keel_core_block_replace "$1" "${2-$import_line}"
 }
 # replace_core_block FILE [REPLACEMENT] — FILE's KEEL-CORE block swapped in place (REPLACEMENT forwarded
 # to strip_core_block), as an EDIT through tools/lib/safe-write.sh: a dotfiles-managed CLAUDE.md is a
@@ -1080,6 +1038,7 @@ strip_core_block() {
 # Returns 1 when the lib refuses (its one line already said why); each caller then prints a
 # "left untouched" line and the run continues.
 replace_core_block() {
+  keel_core_block_check "$1" || return 1
   keel_write_through "$1" strip_core_block "$1" ${2+"$2"}
 }
 # (core_block, the former "lines between the markers" helper here, is now keel_core_block_text in
@@ -1099,16 +1058,13 @@ replace_core_block() {
 # mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
 refresh_core_block() {
   local file="$1" fresh
-  fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
+  keel_core_block_check "$file" || return 1
+  fresh="$(keel_core_block_full "$root/CORE.md")"
   if [ "${2-}" = trimmed ]; then
     fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
   fi
   # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
-  keel_write_through "$file" env KEEL_FRESH_BLOCK="$fresh" awk '
-    /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
-    /KEEL-CORE-END/   { skip=0; next }
-    !skip
-  ' "$file"
+  keel_write_through "$file" keel_core_block_replace "$file" "$fresh"
 }
 # core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
 # --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
@@ -1374,6 +1330,39 @@ sync_product() {
   fi
 }
 
+# product_dir DIR WHAT — ready DIR to receive Keel's WHAT (B7 of docs/specs/685-symlink-policy.md): make it
+# if it is missing, and return 0. Return 1 after ONE skip line, having written nothing, when:
+#   - DIR exists but is not a directory (a file, a dangling link) — a bare `mkdir -p` there used to abort
+#     the whole run before the manifest was written (S4-1);
+#   - `mkdir -p` cannot make it;
+#   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
+#     Keel checkout while the home's does not: `<home>/docs` symlinked into the checkout made install
+#     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
+#     anywhere else is followed — the operator's own commands/ and agents/ are such links.
+# Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
+# "Inside" is core-ownership's/safe-write's one definition (keel_dir_inside_checkout: the checkout's path
+# or below it, with the slash — a sibling `<checkout>-dots` is not inside).
+product_dir() {
+  local d="$1" what="$2" a="$1"
+  if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
+    echo "  !    $d exists and is not a directory — $what were not placed there"
+    return 1
+  fi
+  while [ ! -d "$a" ]; do
+    case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
+    [ -n "$a" ] || a="/"
+  done
+  if keel_dir_inside_checkout "$a" && ! keel_dir_inside_checkout "$HOME_DIR"; then
+    echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
+    return 1
+  fi
+  mkdir -p "$d" 2>/dev/null || {
+    echo "  !    could not create $d — $what were not placed there"
+    return 1
+  }
+  return 0
+}
+
 # ship_docs DOCS_DIR — place Keel's procedure docs (dir #650): every `docs/*.md` and
 # `docs/drydock/*.md` of the source root, each at the same relative path under DOCS_DIR — the directory
 # beside the FRAMEWORK.md this run places (copy/--codex: <home>/docs; linked: <home>/keel/docs). The
@@ -1385,21 +1374,15 @@ sync_product() {
 # `place()` picks copy vs symlink by mode. Guarded like the commands loop: skipped whole when the source
 # has no docs/ (tests/test_stamp_release_bootstrap.sh builds such a fixture), and per glob result
 # (an unmatched glob must not reach sync_product's `source missing … return 1` under set -e).
-# A dest dir that exists but is not a directory (or cannot be made) prints one skip line and moves on:
-# a bare `mkdir -p` failure here would abort the run before the manifest is written.
+# A dest dir that exists but is not a directory, cannot be made, or is really the checkout's own docs/
+# (a symlink into it) prints one skip line and moves on (product_dir): a bare `mkdir -p` failure here
+# would abort the run before the manifest is written, and a write there would land in the checkout.
 ship_docs() {
   local docs_dir="$1" doc rel sub subdir
   [ -d "$root/docs" ] || return 0
   for sub in "" drydock; do
     subdir="$docs_dir${sub:+/$sub}"
-    if { [ -e "$subdir" ] || [ -L "$subdir" ]; } && [ ! -d "$subdir" ]; then
-      echo "  !    $subdir exists and is not a directory — Keel's docs${sub:+/$sub} were not placed there"
-      continue
-    fi
-    mkdir -p "$subdir" 2>/dev/null || {
-      echo "  !    could not create $subdir — Keel's docs${sub:+/$sub} were not placed there"
-      continue
-    }
+    product_dir "$subdir" "Keel's docs${sub:+/$sub}" || continue
     for doc in "$root/docs${sub:+/$sub}"/*.md; do
       [ -f "$doc" ] || continue
       rel="${doc#"$root"/docs/}"
@@ -1421,7 +1404,7 @@ foreign_core=0
 if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ]; then
   if ! grep -q 'always-loaded core' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
     foreign_core=1
-  elif ! grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+  elif ! keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then
     foreign_core=1
   fi
 fi
@@ -1440,7 +1423,10 @@ if [ "$LINK" = 1 ]; then
   if [ -n "${HOME:-}" ]; then
     case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
   fi
-  mkdir -p "$link_dir"
+  # The linked layout lives or dies by keel/: every file below, and the import line, point into it. So
+  # unlike the other product directories, one that cannot be used ends the run (exit 1) rather than
+  # skipping — a skipped keel/ would leave the import line aimed at a CORE.md that was never placed.
+  product_dir "$link_dir" "Keel's linked core" || exit 1
 
   core_dest="$link_dir/CORE.md"
   if [ "$NOGIT" = 1 ]; then
@@ -1525,7 +1511,7 @@ EOF
       | keel_write_replace "$gclaude" || exit 1
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
-    if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+    if keel_core_has_block "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
       if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
@@ -1541,7 +1527,7 @@ EOF
     else
       echo "  =    CLAUDE.md already imports the linked core"
     fi
-  elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+  elif keel_core_has_block "$gclaude"; then
     if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
@@ -1649,8 +1635,7 @@ copy_gap "$root/templates/IDEAS.md"     "$HOME_DIR/IDEAS.md"
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
 # Skipped under --codex: commands/ is Claude-format files in a dir Codex never reads (its skills live
 # at ~/.codex/skills/<name>/SKILL.md and convert per ADAPTING.md's note — not mechanized here).
-if [ "$CODEX" = 0 ] && [ -d "$root/commands" ]; then
-  mkdir -p "$HOME_DIR/commands"
+if [ "$CODEX" = 0 ] && [ -d "$root/commands" ] && product_dir "$HOME_DIR/commands" "Keel's commands"; then
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"; alias_dest="$HOME_DIR/commands/keel-$name"
@@ -1671,8 +1656,7 @@ fi
 # differently-named agent) and NO separate record_placed: sync_product already records what it places
 # or confirms, and a second unconditional call would record an adopter's own declined file as Keel
 # content (the dir #512 defect class). Skipped under --codex: a Claude-format dir Codex never reads.
-if [ "$CODEX" = 0 ] && [ -d "$root/agents" ]; then
-  mkdir -p "$HOME_DIR/agents"
+if [ "$CODEX" = 0 ] && [ -d "$root/agents" ] && product_dir "$HOME_DIR/agents" "Keel's agents"; then
   for agent_src in "$root"/agents/*.md; do
     [ -f "$agent_src" ] || continue
     sync_product "$agent_src" "$HOME_DIR/agents/$(basename "$agent_src")"
@@ -1695,8 +1679,7 @@ fi
 # Ephemeral bootstrap run (see header): $root is reaped right after — a symlink would dangle.
 if [ "$EPHEMERAL" = 1 ]; then
   echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
-elif [ -f "$root/keel" ]; then
-  mkdir -p "$HOME_DIR/bin"
+elif [ -f "$root/keel" ] && product_dir "$HOME_DIR/bin" "the keel CLI link"; then
   keel_link="$HOME_DIR/bin/keel"
   if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
     echo "  =    bin/keel already wired"
@@ -1824,13 +1807,13 @@ done
 # to doctor it's legitimate copy mode (OK).)
 if [ "$LINK" = 1 ]; then
   if has_core_import "$HOME_DIR/CLAUDE.md"; then
-    if grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+    if keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
       echo "       Remove the block (or the import line) by hand."
     else
       echo "  OK   CLAUDE.md imports keel/CORE.md"
     fi
-  elif grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+  elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
     echo "       Migrate when ready: replace the KEEL-CORE block with the line  $import_line"
   else
@@ -2019,7 +2002,7 @@ if [ "$foreign_core" != 1 ]; then
     if has_core_import "$gclaude" 2>/dev/null; then
       context_created=1; edit_kind=edit; edit_extra=import-line
     fi
-  elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+  elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then
     context_created=1; edit_kind=edit; edit_extra=core-block
   fi
 fi

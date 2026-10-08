@@ -833,7 +833,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
       gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (re-run install.sh$irelink_mode$ihome_flag)"
-    elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+    elif keel_core_has_block "$gclaude"; then
       warn W-RAILS-DOUBLE "$icontext imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then
       # A --no-git install: keel/CORE.md is a GENERATED trimmed copy, not a symlink — `git pull`
@@ -870,7 +870,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
-  elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+  elif keel_core_has_block "$gclaude"; then
     # dir #650 D10: compare the embedded block with this checkout's CORE.md (the shared, trim-aware
     # comparator in tools/lib/core-ownership.sh) instead of claiming a drift check that never happened.
     case "$(keel_core_block_state "$gclaude" "$repo_root/CORE.md")" in

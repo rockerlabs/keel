@@ -150,8 +150,7 @@ else
 fi
 # core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim) — REQUIRED, same
 # guarded-and-required posture as tools/lib/manifest.sh above (see its own comment for why bare would
-# be wrong here); see tools/lib/core-ownership.sh's own header for why install.sh's consumption
-# differs (optional, with a byte-identical inline fallback).
+# be wrong here); install.sh requires it the same way since dir #716 (its inline fallback is gone).
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
@@ -273,7 +272,17 @@ core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
 # has_keel_rails FILE — the file carries Keel's always-on rails, embedded or imported.
 has_keel_rails() {
   [ -f "$1" ] || return 1
-  grep -q 'KEEL-CORE-BEGIN' "$1" 2>/dev/null || grep -qE "$core_import_re" "$1" 2>/dev/null
+  keel_core_has_block "$1" || grep -qE "$core_import_re" "$1" 2>/dev/null
+}
+
+# strip_rails FILE — FILE on stdout without Keel's rails: the embedded KEEL-CORE block (core-ownership's
+# anchored markers) and every line carrying the core import. The CMD of keel_write_through's command form.
+strip_rails() {
+  keel_core_block_replace "$1" "" | KEEL_IMPORT_RE="$core_import_re" awk '
+    BEGIN { re = ENVIRON["KEEL_IMPORT_RE"] }
+    $0 ~ re { next }
+    { print }
+  '
 }
 
 # other_context_shared_evidence — the WHOLE no-usable-other-manifest fallback answer computed ONCE, not
@@ -741,6 +750,15 @@ _ensure_backup() {
 take() {
   local p="$1" rel dest
   [ -e "$p" ] || [ -L "$p" ] || return 0
+  # B8 (dir #716): never move a recorded path out of a directory that is really the Keel checkout's own
+  # (`<home>/docs` symlinked into it, as an install before this fix recorded it) — the dentry is only
+  # ours to remove when its parent directory is not the checkout's. A home that itself lies inside the
+  # checkout is excluded from the rule, as at install.
+  if keel_dir_inside_checkout "$(dirname "$p")" && ! keel_dir_inside_checkout "$HOME_DIR"; then
+    case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
+    echo "  !    not removed: $rel — it lies inside the Keel checkout"
+    return 0
+  fi
   if [ "$DRY_RUN" = 1 ]; then echo "  would remove  ${p#"$HOME_DIR"/}"; removed=$((removed + 1)); return 0; fi
   _ensure_backup
   case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
@@ -990,29 +1008,27 @@ if [ "$this_has_rails" = 1 ]; then
     echo "  would strip the Keel rails (import line / KEEL-CORE block) from $CONTEXT_FILE"
     removed=$((removed + 1))
   else
-    _ensure_backup
-    mkdir -p "$backup"
-    cp "$gclaude" "$backup/$CONTEXT_FILE"
-    # Drop the embedded block (markers inclusive) and any line carrying the core import. The regex
-    # arrives through ENVIRON, not -v: awk applies escape processing to a -v assignment, which would
-    # eat the `\.` and quietly widen the pattern — the exact class of drift this shared definition exists
-    # to prevent. Written as an EDIT through tools/lib/safe-write.sh (dir #679): a dotfiles-managed
-    # file is a symlink, so the strip goes through it to the real file and keeps its mode (S5-3). A
-    # refusal (a hard link, or a link into this checkout — its tracked template must never lose its
-    # rails) leaves the file as it was, with the lib's one line, and the run goes on.
-    # The lib runs the awk itself (its command form): an awk that fails leaves the file untouched.
-    if keel_write_through "$gclaude" env KEEL_IMPORT_RE="$core_import_re" awk '
-      BEGIN             { re = ENVIRON["KEEL_IMPORT_RE"] }
-      /KEEL-CORE-BEGIN/ { skip=1; next }
-      /KEEL-CORE-END/   { skip=0; next }
-      skip              { next }
-      $0 ~ re           { next }
-      { print }
-    ' "$gclaude"; then
-      echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
-      removed=$((removed + 1))
-    else
-      echo "  left $CONTEXT_FILE untouched — the Keel rails are still in it (remove them by hand)"
+    # B12: markers that are not exactly one BEGIN followed by one END mean we cannot tell which lines are
+    # ours — the lib's one line says so, and nothing is backed up, edited or counted.
+    if keel_core_block_check "$gclaude"; then
+      _ensure_backup
+      mkdir -p "$backup"
+      cp "$gclaude" "$backup/$CONTEXT_FILE"
+      # Drop the embedded block (markers inclusive, found by core-ownership's ONE anchored definition — a
+      # prose line that merely mentions the marker is not one) and any line carrying the core import. The
+      # import regex arrives through ENVIRON, not -v: awk applies escape processing to a -v assignment,
+      # which would eat the `\.` and quietly widen the pattern — the exact class of drift this shared
+      # definition exists to prevent. Written as an EDIT through tools/lib/safe-write.sh (dir #679): a
+      # dotfiles-managed file is a symlink, so the strip goes through it to the real file and keeps its
+      # mode (S5-3). A refusal (a hard link, or a link into this checkout — its tracked template must never
+      # lose its rails) leaves the file as it was, with the lib's one line, and the run goes on.
+      # The lib runs the command itself (its command form): a failing one leaves the file untouched.
+      if keel_write_through "$gclaude" strip_rails "$gclaude"; then
+        echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
+        removed=$((removed + 1))
+      else
+        echo "  left $CONTEXT_FILE untouched — the Keel rails are still in it (remove them by hand)"
+      fi
     fi
   fi
 fi

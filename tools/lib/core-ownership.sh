@@ -13,22 +13,63 @@
 # sites, uninstall.sh's one, and tools/doctor.sh's four each asked one or both of these two questions
 # with their own hand-copied test before this file existed — two functions here, one definition each.
 #
-# REQUIRED, not optional, for uninstall.sh and tools/doctor.sh — GUARDED (`[ -s ] && bash -n`
-# pre-check, one actionable message, exit 1), matching tools/lib/manifest.sh's own contract for those
-# same two scripts, NOT a bare source like tools/lib/ledger.sh's own pre-existing, unaudited precedent
-# (an earlier draft of this header claimed bare sourcing; found stale by this ticket's own
-# /code-review max pass — the actual call sites in both scripts have always been guarded). Neither
-# script has an established "must survive a tools/-less checkout" contract to preserve here, so
-# refusing outright on a missing/corrupted copy is the right failure mode, not a silent degrade.
+# REQUIRED for all three consumers — install.sh, uninstall.sh and tools/doctor.sh — each GUARDED
+# (`[ -s ] && bash -n` pre-check, one actionable message, exit 1), matching tools/lib/manifest.sh's own
+# contract. Refusing outright on a missing or corrupted copy is the right failure mode, not a silent
+# degrade: an ownership decision needs a real predicate. (install.sh used to keep a byte-identical inline
+# fallback so a tools/-less checkout behaved as before; dir #716 deleted it — one definition, not two
+# to keep in step, and a tools/-less checkout cannot install anyway since tools/lib/safe-write.sh is
+# REQUIRED too.)
 #
-# OPTIONAL for install.sh, with a byte-identical inline fallback in its own sourcing block — unlike
-# tools/lib/artifact-cksum.sh, install.sh's three call sites are pure filesystem checks with zero
-# tools/ dependency today (the first runs before install.sh sources anything from tools/lib/ at all),
-# used only for this run's own LINK/NOGIT control flow and a printed message — never written into a
-# manifest record another script later trusts for a destructive decision, so there is no analogous
-# cross-script poisoning risk to guard against by refusing outright. See install.sh's own sourcing
-# block (hoisted before its first call site, same reasoning as its self-link guard) for the guarded,
-# degrade-with-fallback pattern and the fallback copy, which must stay byte-identical to this file.
+# dir #716 (B12 of docs/specs/685-symlink-policy.md) adds the in-file marker definition below: the ONE
+# anchored way to find the embedded KEEL-CORE block, for every reader, writer and presence check.
+# A prose line that merely MENTIONS a marker ("never edit inside KEEL-CORE-BEGIN by hand") is not a
+# marker, and used to make the uninstall strip and the refresh delete everything after it.
+
+# The marker lines. A BEGIN line starts at column 0 with `<!-- KEEL-CORE-BEGIN` and ends with `-->`
+# (trailing whitespace allowed, so a CRLF file still matches); the END line is `<!-- KEEL-CORE-END -->`
+# at column 0. Both shipped forms match (CORE.md's `<!-- KEEL-CORE-BEGIN -->` and templates/CLAUDE.md's
+# `<!-- KEEL-CORE-BEGIN — rails below … -->`). POSIX ERE: the same strings go to grep -E and, through
+# ENVIRON (never -v, whose escape processing would mangle them), to awk.
+KEEL_CORE_BEGIN_RE='^<!-- KEEL-CORE-BEGIN.*-->[[:space:]]*$'
+KEEL_CORE_END_RE='^<!-- KEEL-CORE-END -->[[:space:]]*$'
+
+# keel_core_has_block FILE — true iff FILE holds a BEGIN marker line: the one presence check.
+keel_core_has_block() {
+  grep -qE "$KEEL_CORE_BEGIN_RE" "$1" 2>/dev/null
+}
+
+# keel_core_block_check FILE — 0 when FILE holds no marker line at all (no block: nothing to refuse) or
+# exactly one BEGIN followed later by exactly one END; 1, with ONE line on stderr, for anything else
+# (two blocks, a BEGIN without an END, an END alone, the markers out of order). A write that touches the
+# block calls this first and changes nothing on a 1 — it cannot tell which lines the user meant.
+keel_core_block_check() {
+  local seq
+  seq="$(KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
+    BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
+    $0 ~ b { seq = seq (seq == "" ? "" : ",") "BEGIN"; next }
+    $0 ~ e { seq = seq (seq == "" ? "" : ",") "END" }
+    END { print seq }
+  ' "$1" 2>/dev/null)" || seq="unreadable"
+  case "$seq" in
+    ""|"BEGIN,END") return 0 ;;
+  esac
+  echo "keel: $1: left untouched — its KEEL-CORE markers are not exactly one BEGIN followed by one END (found: $seq); fix or remove them by hand" >&2
+  return 1
+}
+
+# keel_core_block_replace FILE [REPLACEMENT] — FILE on stdout with its KEEL-CORE block (markers
+# included) swapped for REPLACEMENT (multi-line allowed; empty or absent = the block removed). A file
+# with no BEGIN line passes through unchanged. Meant as the CMD of keel_write_through's command form,
+# after keel_core_block_check has said the markers are balanced.
+keel_core_block_replace() {
+  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" KEEL_CORE_REPL="${2-}" awk '
+    BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"]; r = ENVIRON["KEEL_CORE_REPL"] }
+    !skip && $0 ~ b { if (r != "") print r; skip = 1; next }
+    skip && $0 ~ e  { skip = 0; next }
+    !skip
+  ' "$1"
+}
 
 # keel_core_is_link FILE — true iff FILE is a symlink: an ordinary linked install. A dangling link
 # still counts (-L, not -f/-e) — a moved/reaped checkout is still a linked install, one a re-run heals.
@@ -49,7 +90,22 @@ keel_core_is_nogit_trim() {
 # absorbs install.sh's former core_block(), itself a mirror of block_of() in
 # tests/test_core_wrapper_sync.sh — that test's own copy is the byte-identity pin and stays.
 keel_core_block_text() {
-  sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'
+  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
+    BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
+    !inb && !done && $0 ~ b { inb = 1; next }
+    inb && $0 ~ e           { inb = 0; done = 1; next }
+    inb
+  ' "$1"
+}
+
+# keel_core_block_full FILE — the block WITH its marker lines (the first BEGIN through the next END).
+keel_core_block_full() {
+  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
+    BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
+    !inb && !done && $0 ~ b { inb = 1; print; next }
+    inb && $0 ~ e           { print; inb = 0; done = 1; next }
+    inb
+  ' "$1"
 }
 
 # keel_core_block_is_trimmed FILE — true iff FILE's embedded block carries NEITHER droppable heading:

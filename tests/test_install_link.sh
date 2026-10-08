@@ -233,6 +233,10 @@ check_file "the foreign dir's own file is left untouched" "$occupied/my-file"
 slroot="$SANDBOX/selflink-checkout"; mkdir -p "$slroot"
 cp "$REPO_ROOT/install.sh" "$slroot/install.sh"
 for f in CORE.md FRAMEWORK.md PRINCIPLES.md; do cp "$REPO_ROOT/$f" "$slroot/$f"; done
+# tools/lib/core-ownership.sh is REQUIRED by install.sh (dir #716: no inline fallback any more), so the
+# fixture carries it — otherwise the run would stop at that guard (exit 1) before reaching the self-link
+# guard this section is about.
+mkdir -p "$slroot/tools/lib"; cp "$REPO_ROOT/tools/lib/core-ownership.sh" "$slroot/tools/lib/core-ownership.sh"
 slhome="$SANDBOX/selflink-home"; mkdir -p "$slhome"
 ln -s "$slroot" "$slhome/keel"                       # link_dir ($slhome/keel) -ef root ($slroot)
 run bash "$slroot/install.sh" --link --home "$slhome" --no-hooks

@@ -15,6 +15,18 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
+  the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
+  symlink into the Keel checkout, `install.sh` now skips it with one line instead of recording the
+  checkout's own files, and `uninstall.sh` leaves them where they are — including for a manifest an earlier
+  release wrote (dir #716, slice 2 of the dir #685 symlink policy). A folder that is a file or a dangling
+  link is skipped with one line instead of aborting the install before it writes its manifest; a symlinked
+  folder anywhere else is still followed. The embedded rails block in `CLAUDE.md`/`AGENTS.md` is now found
+  by one anchored definition in `tools/lib/core-ownership.sh` (a line that starts with `<!-- KEEL-CORE-BEGIN`
+  and ends with `-->`), so a note of yours that merely mentions the marker no longer makes the uninstall
+  strip or the block refresh delete every line after it, and a file with two blocks, or a BEGIN without an
+  END, is left byte-identical with one line saying why. `install.sh` now requires `tools/lib/core-ownership.sh`
+  like the other scripts do; its inline copy of those functions is gone.
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,

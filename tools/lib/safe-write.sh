@@ -99,6 +99,13 @@ _keel_sw_inside() {
   return 1
 }
 
+# keel_dir_inside_checkout DIR — the public form of the "inside" test (B7 and B8 of the spec): true when
+# DIR's physical path is the Keel checkout's, or below it. install.sh's product-directory helper and
+# uninstall.sh's take() ask it, so "a directory that is really the checkout's own" is decided here, once.
+keel_dir_inside_checkout() {
+  _keel_sw_inside "$1"
+}
+
 # keel_write_through FILE [CMD ARGS...] — the new content → FILE, as an EDIT (header). The content is
 # CMD's stdout when a command is given, else stdin. Prefer the command form whenever the content is
 # computed (an awk or grep over the file): a pipe hides its producer's exit status from the function, so
