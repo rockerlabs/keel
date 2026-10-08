@@ -573,7 +573,7 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
   local ans="$1"; shift
   case "$(uname -s)" in
     Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-    *)      OUT="$(script -qc "$*" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
+    *)      OUT="$(script -qc "$(printf '%q ' "$@")" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
   esac
 }
 

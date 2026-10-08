@@ -252,7 +252,7 @@ echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
 # Self-link guard (linked mode only), hoisted here — before anything below sources tools/lib/manifest.sh
-# (dir #323), so it still fires with the optional libs absent. This is
+# (dir #323), so it still fires with the optional libs absent (core-ownership.sh, REQUIRED, loads above it). This is
 # the earliest sane point either way: if the consumption dir IS this checkout — e.g. --home "$HOME"
 # while the checkout sits at $HOME/keel, bootstrap's default — sync_product would see src -ef dest and
 # "upgrade" the checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves,
@@ -532,6 +532,47 @@ else
   exit 1
 fi
 KEEL_SAFE_WRITE_CHECKOUT="$root"
+
+# product_dir DIR WHAT — ready DIR to receive Keel's WHAT (B7 of docs/specs/685-symlink-policy.md): make it
+# if it is missing, and return 0. Return 1 after ONE skip line, having written nothing, when:
+#   - DIR exists but is not a directory (a file, a dangling link) — a bare `mkdir -p` there used to abort
+#     the whole run before the manifest was written (S4-1);
+#   - `mkdir -p` cannot make it;
+#   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
+#     Keel checkout while the home's does not: `<home>/docs` symlinked into the checkout made install
+#     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
+#     anywhere else is followed — the operator's own commands/ and agents/ are such links.
+# Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
+# "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
+# with the slash — a sibling `<checkout>-dots` is not inside — while the home's is not).
+product_dir() {
+  local d="$1" what="$2" a="$1"
+  if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
+    echo "  !    $d exists and is not a directory — $what were not placed there"
+    return 1
+  fi
+  while [ ! -d "$a" ]; do
+    case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
+    [ -n "$a" ] || a="/"
+  done
+  if keel_dir_is_checkouts_own "$a" "$HOME_DIR"; then
+    echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
+    return 1
+  fi
+  mkdir -p "$d" 2>/dev/null || {
+    echo "  !    could not create $d — $what were not placed there"
+    return 1
+  }
+  return 0
+}
+
+# The linked layout lives or dies by keel/: every file placed later, and the import line, point into it.
+# So unlike the other product directories, one that cannot be used refuses the run — here, before
+# anything is placed or edited, so the refusal is atomic (exit 2, like the self-link guard above) —
+# rather than skipping: a skipped keel/ would leave the import line aimed at a CORE.md never placed.
+if [ "$LINK" = 1 ]; then
+  product_dir "$link_dir" "Keel's linked core" >&2 || exit 2
+fi
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
@@ -1085,6 +1126,12 @@ core_block_currency() {
     current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
     current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
   esac
+  # Markers that are not exactly one BEGIN followed by one END: no offer, no backup — a refresh would only
+  # be refused after the adopter said yes (keel_core_block_check printed why).
+  if ! keel_core_block_check "$dest"; then
+    echo "  =    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
+    return 0
+  fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
   if [ -t 0 ]; then
     echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
@@ -1329,39 +1376,6 @@ sync_product() {
   fi
 }
 
-# product_dir DIR WHAT — ready DIR to receive Keel's WHAT (B7 of docs/specs/685-symlink-policy.md): make it
-# if it is missing, and return 0. Return 1 after ONE skip line, having written nothing, when:
-#   - DIR exists but is not a directory (a file, a dangling link) — a bare `mkdir -p` there used to abort
-#     the whole run before the manifest was written (S4-1);
-#   - `mkdir -p` cannot make it;
-#   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
-#     Keel checkout while the home's does not: `<home>/docs` symlinked into the checkout made install
-#     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
-#     anywhere else is followed — the operator's own commands/ and agents/ are such links.
-# Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
-# "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
-# with the slash — a sibling `<checkout>-dots` is not inside — while the home's is not).
-product_dir() {
-  local d="$1" what="$2" a="$1"
-  if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
-    echo "  !    $d exists and is not a directory — $what were not placed there"
-    return 1
-  fi
-  while [ ! -d "$a" ]; do
-    case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
-    [ -n "$a" ] || a="/"
-  done
-  if keel_dir_is_checkouts_own "$a" "$HOME_DIR"; then
-    echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
-    return 1
-  fi
-  mkdir -p "$d" 2>/dev/null || {
-    echo "  !    could not create $d — $what were not placed there"
-    return 1
-  }
-  return 0
-}
-
 # ship_docs DOCS_DIR — place Keel's procedure docs (dir #650): every `docs/*.md` and
 # `docs/drydock/*.md` of the source root, each at the same relative path under DOCS_DIR — the directory
 # beside the FRAMEWORK.md this run places (copy/--codex: <home>/docs; linked: <home>/keel/docs). The
@@ -1422,11 +1436,6 @@ if [ "$LINK" = 1 ]; then
   if [ -n "${HOME:-}" ]; then
     case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
   fi
-  # The linked layout lives or dies by keel/: every file below, and the import line, point into it. So
-  # unlike the other product directories, one that cannot be used ends the run (exit 1) rather than
-  # skipping — a skipped keel/ would leave the import line aimed at a CORE.md that was never placed.
-  product_dir "$link_dir" "Keel's linked core" || exit 1
-
   core_dest="$link_dir/CORE.md"
   if [ "$NOGIT" = 1 ]; then
     # A generated trimmed copy instead of the symlink. keel/ is Keel-owned and the KEEL-NOGIT token
@@ -1527,7 +1536,9 @@ EOF
       echo "  =    CLAUDE.md already imports the linked core"
     fi
   elif keel_core_has_block "$gclaude"; then
-    if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+    if ! keel_core_block_check "$gclaude"; then
+      echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+    elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
       else

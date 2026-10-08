@@ -87,4 +87,18 @@ a20 agents-file agents file
 a20 agents-dangling agents dangling
 a20 commands-file commands file
 
+# --- linked mode: an unusable keel/ refuses the run BEFORE anything is placed or edited (exit 2) ----------
+lk() {  # lk NAME KIND — KIND is file | into-checkout
+  local name="$1" kind="$2" ck h
+  ck="$(mk_ck "lk-ck-$name")"; h="$SANDBOX/lk-h-$name"; mkdir -p "$h"
+  if [ "$kind" = file ]; then printf 'mine\n' > "$h/keel"; else ln -s "$ck/docs" "$h/keel"; fi
+  run "$ck/install.sh" --link --home "$h" --no-hooks
+  check_status "linked keel/ $name: install refuses (exit 2)" 2 "$STATUS"
+  check_nofile "linked keel/ $name: nothing was edited — no CLAUDE.md" "$h/CLAUDE.md"
+  check_nofile "linked keel/ $name: no manifest was written" "$h/.keel/install-manifest.claude"
+  [ "$kind" = file ] || check_eq "linked keel/ $name: the checkout's docs are untouched" "" "$(porcelain "$ck" docs)"
+}
+lk file file
+lk into-checkout into-checkout
+
 summary

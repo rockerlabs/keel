@@ -1738,6 +1738,9 @@ single_def_check keel_core_block_norm       tools/lib/core-ownership.sh
 single_def_check keel_core_block_state      tools/lib/core-ownership.sh
 single_def_check keel_core_block_full       tools/lib/core-ownership.sh
 single_def_check keel_core_block_replace    tools/lib/core-ownership.sh
+single_def_check keel_core_has_block        tools/lib/core-ownership.sh
+single_def_check keel_core_block_check      tools/lib/core-ownership.sh
+single_def_check keel_dir_is_checkouts_own  tools/lib/safe-write.sh
 
 # --- 11. stray $HOME/keel*alpine*-shaped clones (dir #397's doctor-advisory half, handed to
 # dir #399's design pass) ---------------------------------------------------------------------

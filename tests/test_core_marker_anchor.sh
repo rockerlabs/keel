@@ -96,6 +96,8 @@ if command -v script >/dev/null 2>&1; then
   tty_run y "$install" --home "$h" --no-hooks
   check_eq "A22 two blocks: a refresh 'y' leaves the file byte-identical" "$before" "$(cksum_of "$h/CLAUDE.md")"
   check_contains "A22 two blocks: …and says it left the file untouched" "$OUT" "left untouched"
+  check_absent "A22 two blocks: …without ever offering the refresh" "$OUT" "Replace just the block"
+  check_eq "A22 two blocks: …and takes no backup of a file it will not change" 0 "$(find "$h" -maxdepth 1 -name 'CLAUDE.md.*.bak' | wc -l | tr -d ' ')"
 fi
 
 # (b) BEGIN without END
