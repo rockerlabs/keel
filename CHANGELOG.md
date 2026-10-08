@@ -15,6 +15,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/self/archive-sweep-check.sh` stops counting swept stubs.** A swept ticket leaves its heading plus
+  one "Full body → archive" line; counting those as closed lines kept the check WARNing after a full sweep
+  (dir #671's ended at 54%, with ~400 stubs). Pure stubs now get their own `swept stubs:` line and are left out
+  of the closed count, the share and the undated count; a closed ticket with content appended after its stub
+  still counts. dir #734.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
