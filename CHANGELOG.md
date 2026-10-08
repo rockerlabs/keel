@@ -26,6 +26,19 @@ sections real content going forward — see that page for exactly when each one 
   checkout's own template is left alone. A `--force` backup never overwrites an earlier one: a second backup
   in the same second is `<file>.<ts>.2.bak`. A checkout missing the library refuses to install, uninstall or
   register a project, with one message naming it.
+- **`secret-scan.sh` never reports clean over content it did not read.** Every file list and object read
+  is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
+  clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed
+  `secret-scan: clean`: a staged or tracked name holding a tab, a quote, a backslash or a newline (both lists now
+  use `-z`, and a newline in a name prints as `\n`); a `diff.*` config git cannot read, or a corrupt index; a
+  missing `sort` or `grep`; a corrupt object in a pushed range; a failing `git log`, `cat-file` or `readlink`; a
+  staged binary named like `1:x.bin`; and `--staged` run from a subdirectory. An unreadable file named on the
+  command line now exits 2, not 1. Under bash 5 with a UTF-8 locale, a name or a line ending in an invalid byte
+  also made the NEXT record vanish (staged, tracked, in a pushed range, and in the allowlist filter), so every
+  `read` now runs under `LC_ALL=C` (dir #715, absorbing dir #698). `--selftest` gains a `--staged` probe that
+  runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
+  `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
+  substitution or locale-bound `read` in the scanner.
 - **`doctor.sh --install` no longer prints `OK` over a foreign hook, and doctor, `uninstall.sh` and the
   watcher agree on the machine-wide hooks dir.** `--install` holds Keel's own machine hooks dir to the same
   marker line as the per-repo audit and `install.sh` Verify: a non-Keel `pre-commit` or `pre-push` there is
@@ -71,6 +84,10 @@ sections real content going forward — see that page for exactly when each one 
   false reds in 0.14.0 built in: `--no-hardlinks`, no `.DS_Store` under `.git`, and a branch, never a detached
   HEAD. It refuses a path that is not a clone of the source (stale origin) and never deletes; `--run` hands the
   clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
+- **`docs/delta-audit.md`: a mutation leg carries a size rule.** A leg keeps only the artifacts of
+  surviving mutants (a killed mutant's are deleted in the iteration that kills it), uses one shared build
+  cache per leg, checks a `df` floor before it starts, and its report states what it left and hands the
+  operator the `rm -rf` (dir #724). Pinned by `tests/test_delta_audit_doc.sh`.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and

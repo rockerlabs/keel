@@ -2171,4 +2171,415 @@ check_status "dir #682: a real block still exits 1" 1 "$STATUS"
 pl682_bare="$(grep -rnE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/tools/secret-guard/" || true)"
 check_eq "dir #682: no bare quoted-command EXIT trap in the vendored secret-guard set" "" "$pl682_bare"
 
+# =================================================================================================
+# --- dir #715 (absorbing dir #698): every enumeration and object read fails CLOSED. The scanner printed
+# `secret-scan: clean` (exit 0) over content it never read: a staged or tracked name holding a tab, quote,
+# backslash or newline (no -z), a failing diff.* config or a corrupt index (an unchecked enumeration), a
+# missing sort/grep (`|| true`), a corrupt object, a failing git or readlink read — and, under bash >= 5 +
+# a UTF-8 locale, a name ending in an invalid lead byte, whose read swallowed the NEXT record. Each case now
+# BLOCKS (exit 1) or exits 2 naming the step: `secret-scan: could not <step> (exit N) — refusing to report
+# it clean`. The A-ids are the spec's (docs/specs/715-scanner-fail-closed.md, slice 2).
+k715="$(key 'ghp_' "$(rep A 36)")"
+real_git715="$(type -P git)"
+R1_715='^secret-scan: could not .+ \(exit [0-9]+\) — refusing to report it clean$'
+R2_715='^secret-scan: could not read object [0-9a-f]{40,64} \(missing or corrupt\) — refusing to report it clean$'
+# A8: the FIRST output line holding `could not` has B1's shape (REGEX = R1_715 or R2_715)
+check_could_not715() {  # label regex
+  local l
+  l="$(match "$OUT" -m1 'could not')"
+  if [ -n "$l" ] && match "$l" -qE "$2"; then pass "$1"; else fail "$1" "first 'could not' line: ${l:-<none>}"; fi
+}
+# a git shim in DIR: exits 128 when its arguments start with one of the given words (each "a" or "a b"),
+# and execs the real git otherwise
+git_shim715() {  # dir first-args...
+  local d="$1" c
+  shift
+  mkdir -p "$d"
+  { printf '#!/bin/sh\n'
+    for c in "$@"; do
+      case "$c" in
+        *' '*) printf '[ "$1" = %s ] && [ "$2" = %s ] && exit 128\n' "${c%% *}" "${c#* }" ;;
+        *) printf '[ "$1" = %s ] && exit 128\n' "$c" ;;
+      esac
+    done
+    printf 'exec "%s" "$@"\n' "$real_git715"; } > "$d/git"
+  chmod +x "$d/git"
+}
+
+# A1 (S7-1, text): a staged text file whose name holds a tab, a quote, a backslash, a newline, or a
+# leading/trailing tab is scanned under its raw name.
+for n715 in $'tab\tname.txt' 'quote"name.txt' 'back\slash.txt' $'new\nline.txt' $'trail-tab\t' $'\tlead-tab.txt'; do
+  q715="$(printf '%q' "$n715")"
+  r715="$(new_repo)"
+  printf 'tok = %s\n' "$k715" > "$r715/$n715"
+  git -C "$r715" add -- "$n715"
+  run_in "$r715" "$scan" --staged
+  check_status "dir #715 A1: a staged text file named $q715 is scanned → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715 A1: ...and its key is reported ($q715)" "$OUT" "$k715"
+done
+
+# ...and a newline in a name never splits the record: a committed `path:README.md` must not exempt a key in
+# a file named README.md<LF>README.md (a split record's tail fragment matched the glob; dir #715 review).
+r715="$(new_repo)"
+printf 'path:README.md\n' > "$r715/.secret-scan-allow"
+git -C "$r715" add .secret-scan-allow
+git -C "$r715" commit -q -m allow
+printf 'tok = %s\n' "$k715" > "$r715/README.md
+README.md"
+git -C "$r715" add -A
+run_in "$r715" "$scan" --staged
+check_status "dir #715 A1: a path: glob cannot exempt a name holding a newline → BLOCKED" 1 "$STATUS"
+check_contains "dir #715 A1: ...the record names it with an escaped newline" "$OUT" 'README.md\nREADME.md:'
+
+# A2 (S7-1 binary + F5): the same for a staged binary — and `1:x.bin` is read as `:0:1:x.bin`, never as
+# stage 1 of `x.bin` (a `git show ":$f"` read skipped it).
+for n715 in $'tab\tname.bin' 'quote"name.bin' '1:x.bin'; do
+  q715="$(printf '%q' "$n715")"
+  r715="$(new_repo)"
+  printf 'head\000 tok = %s\n' "$k715" > "$r715/$n715"
+  git -C "$r715" add -- "$n715"
+  if [ "$n715" = 1:x.bin ]; then printf 'clean\n' > "$r715/2:y.txt"; git -C "$r715" add -- 2:y.txt; fi
+  run_in "$r715" "$scan" --staged
+  check_status "dir #715 A2: a staged binary named $q715 is scanned → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715 A2: ...and the record names it as a binary ($q715)" "$OUT" "$n715:(binary)"
+done
+
+# A3 (S7-2 + a corrupt index) and A29 (B1's ERRFILE form): the staged enumeration's own failure exits 2.
+for c715 in 'diff.context abc' 'diff.algorithm bogus' 'diff.orderFile /nonexistent' 'corrupt index'; do
+  r715="$(new_repo)"
+  printf 'tok = %s\n' "$k715" > "$r715/k.txt"
+  git -C "$r715" add k.txt
+  if [ "$c715" = 'corrupt index' ]; then
+    printf 'garbage' > "$r715/.git/index"
+  else
+    git -C "$r715" config "${c715%% *}" "${c715#* }"
+  fi
+  run_in "$r715" "$scan" --staged
+  check_status "dir #715 A3: --staged under $c715 → exit 2" 2 "$STATUS"
+  check_contains "dir #715 A3: ...naming the enumeration ($c715)" "$OUT" "secret-scan: could not list the staged files (exit 128)"
+  check_absent "dir #715 A3: ...never clean ($c715)" "$OUT" "secret-scan: clean"
+  check_could_not715 "dir #715 A8: the $c715 line has B1's shape" "$R1_715"
+  if [ "$c715" = 'diff.context abc' ]; then
+    a29_715="$(awk '/could not list the staged files/ { getline; print; exit }' <<< "$OUT")"
+    case "$a29_715" in
+      'secret-scan:   fatal:'*) pass "dir #715 A29: git's error line follows, under the 'secret-scan:   ' prefix" ;;
+      *) fail "dir #715 A29: git's error line follows, under the 'secret-scan:   ' prefix" "got: $a29_715" ;;
+    esac
+    check_eq "dir #715 A29: no output line starts with a bare two-space indent (kb-doctor counts those as hits)" \
+      0 "$(match "$OUT" -c '^  ')"
+    a29_repo715="$r715"
+  fi
+done
+
+# A4 (S7-3): a PATH of exactly the scanner's tools, minus one of sort/grep/awk/sed/tr at a time. Never
+# exit 0 / `clean`; where the missing tool runs on the path, exit 2 with a `could not` line. The rows
+# that differ (the spec's A4): tr is not on a staged text path with no personal file, sed is not on a
+# --range path with none (both → 1, the key is still found); with a personal file set, a missing grep
+# trips the personal-ERE preflight and a missing sed the personal-file parse first — each its own exit 2.
+# An allow-list on purpose, not lib.sh's path_farm (a deny-list over the whole $PATH): the scanner gets
+# exactly the tools it declares, so a new undeclared dependency shows up here as a red run.
+farm715() {  # dir tool-to-leave-out
+  local t p
+  mkdir -p "$1"
+  for t in git bash awk sed tr cmp mktemp cat rm sort grep iconv readlink dirname basename date mkdir head wc env; do
+    [ "$t" = "$2" ] && continue
+    p="$(type -P "$t")" && ln -sf "$p" "$1/$t"
+  done
+}
+pfile715="$SANDBOX/personal-715"
+printf 'SeekritPersonName\n' > "$pfile715"
+for t715 in sort grep awk sed tr; do
+  farm715 "$SANDBOX/farm715-no-$t715" "$t715"
+  r715="$(new_repo)"
+  git -C "$r715" commit -q --allow-empty -m base
+  printf 'tok = %s\n' "$k715" > "$r715/k.txt"
+  git -C "$r715" add k.txt
+  for m715 in staged range; do
+    [ "$m715" = range ] && git -C "$r715" commit -q -m key
+    for p715 in np p; do
+      pf715=/dev/null; pl715='unset'
+      [ "$p715" = p ] && { pf715="$pfile715"; pl715='set'; }
+      args715=(--staged); [ "$m715" = range ] && args715=(--range HEAD~1..HEAD)
+      run_in "$r715" env PATH="$SANDBOX/farm715-no-$t715" SECRET_SCAN_PERSONAL_FILE="$pf715" "$scan" "${args715[@]}"
+      case "$t715:$m715:$p715" in
+        tr:staged:np|sed:range:np) want715=1; named715="" ;;
+        grep:*:p|sed:*:p) want715=2; named715="" ;;
+        *) want715=2; named715=1 ;;
+      esac
+      check_status "dir #715 A4: no $t715, --$m715, personal file $pl715 → exit $want715" "$want715" "$STATUS"
+      check_absent "dir #715 A4: no $t715, --$m715 (personal file $pl715) → never clean" "$OUT" "secret-scan: clean"
+      if [ -n "$named715" ]; then
+        check_contains "dir #715 A4: no $t715, --$m715 (personal file $pl715) → the failing step is named" "$OUT" "secret-scan: could not"
+      fi
+    done
+  done
+done
+# A29 (3): B1 itself needs no sed — a failing enumeration on a sed-less PATH still exits 2, never 127
+run_in "$a29_repo715" env PATH="$SANDBOX/farm715-no-sed" "$scan" --staged
+check_status "dir #715 A29: a failing enumeration with no sed on PATH → exit 2" 2 "$STATUS"
+check_absent "dir #715 A29: ...and no exit 127 from the reporter" "$OUT" "exit 127"
+
+# A5 (CV1): a corrupt loose object. Truncated to 20 bytes, batch-check prints `<sha> missing` with rc 0;
+# truncated by 1 byte, the content read fails. Both exit 2.
+r715="$(new_repo)"
+git -C "$r715" commit -q --allow-empty -m base
+i715=0
+while [ "$i715" -lt 199 ]; do printf 'filler line %s\n' "$i715"; i715=$((i715 + 1)); done > "$r715/big.txt"
+printf 'tok = %s\n' "$k715" >> "$r715/big.txt"
+git -C "$r715" add big.txt
+git -C "$r715" commit -q -m big
+cp -R "$r715" "$r715-b"
+for cut715 in 20 minus1; do
+  rr715="$r715"; [ "$cut715" = minus1 ] && rr715="$r715-b"
+  b715="$(git -C "$rr715" rev-parse HEAD:big.txt)"
+  o715="$rr715/.git/objects/${b715:0:2}/${b715:2}"
+  chmod u+w "$o715"
+  size715="$(wc -c < "$o715")"
+  n715=20; [ "$cut715" = minus1 ] && n715=$((size715 - 1))
+  head -c "$n715" "$o715" > "$SANDBOX/obj715"
+  cat "$SANDBOX/obj715" > "$o715"
+  run_in "$rr715" "$scan" --range HEAD~1..HEAD
+  check_status "dir #715 A5: a blob truncated ($cut715) in the range → exit 2" 2 "$STATUS"
+  check_absent "dir #715 A5: ...never clean ($cut715)" "$OUT" "secret-scan: clean"
+  if [ "$cut715" = 20 ]; then
+    check_contains "dir #715 A5: the missing object is named" "$OUT" "could not read object $b715"
+    check_could_not715 "dir #715 A8: the missing-object line has B1's no-status shape" "$R2_715"
+  else
+    check_contains "dir #715 A5: the unreadable object read is named" "$OUT" "secret-scan: could not"
+    check_could_not715 "dir #715 A8: the truncated-object line has B1's shape" "$R1_715"
+  fi
+done
+
+# A6 (CV2): a failing `git log` in the commit-message pass exits 2; real git still finds the key.
+r715="$(new_repo)"
+git -C "$r715" commit -q --allow-empty -m base
+git -C "$r715" commit -q --allow-empty -m "msg $k715"
+git_shim715 "$SANDBOX/shim715-log" log
+run_in "$r715" env PATH="$SANDBOX/shim715-log:$PATH" "$scan" --range HEAD~1..HEAD
+check_status "dir #715 A6: a failing git log in the message pass → exit 2" 2 "$STATUS"
+check_contains "dir #715 A6: ...naming the message read" "$OUT" "could not read the range's commit messages"
+check_could_not715 "dir #715 A8: the message-read line has B1's shape" "$R1_715"
+run_in "$r715" "$scan" --range HEAD~1..HEAD
+check_status "dir #715 A6 control: real git finds the key in the message → BLOCKED" 1 "$STATUS"
+
+# A7 (CV5 + tracked names): --tracked over a corrupt index exits 2; odd tracked names are scanned.
+r715="$(new_repo)"
+printf 'tok = %s\n' "$k715" > "$r715/k.txt"
+git -C "$r715" add k.txt
+git -C "$r715" commit -q -m k
+printf 'garbage' > "$r715/.git/index"
+run_in "$r715" "$scan" --tracked
+check_status "dir #715 A7(a): --tracked over a corrupt index → exit 2" 2 "$STATUS"
+check_contains "dir #715 A7(a): ...naming the enumeration" "$OUT" "could not list the tracked files"
+check_could_not715 "dir #715 A8: the tracked-enumeration line has B1's shape" "$R1_715"
+for n715 in $'tab\tname.txt' 'quote"name.txt' $'new\nline.txt'; do
+  q715="$(printf '%q' "$n715")"
+  r715="$(new_repo)"
+  printf 'tok = %s\n' "$k715" > "$r715/$n715"
+  git -C "$r715" add -- "$n715"
+  git -C "$r715" commit -q -m k
+  run_in "$r715" "$scan" --tracked
+  check_status "dir #715 A7(b): a tracked file named $q715 is scanned → BLOCKED" 1 "$STATUS"
+done
+
+# A9: a failing staged-blob read and a failing --range blob read exit 2.
+git_shim715 "$SANDBOX/shim715-blob" show 'cat-file blob'
+r715="$(new_repo)"
+printf 'head\000 tok = %s\n' "$k715" > "$r715/b.bin"
+git -C "$r715" add b.bin
+run_in "$r715" env PATH="$SANDBOX/shim715-blob:$PATH" "$scan" --staged
+check_status "dir #715 A9: a failing staged-blob read → exit 2" 2 "$STATUS"
+check_contains "dir #715 A9: ...naming the blob read" "$OUT" "could not read the staged blob of 'b.bin'"
+check_could_not715 "dir #715 A8: the staged-blob line has B1's shape" "$R1_715"
+r715="$(new_repo)"
+git -C "$r715" commit -q --allow-empty -m base
+printf 'tok = %s\n' "$k715" > "$r715/k.txt"
+git -C "$r715" add k.txt
+git -C "$r715" commit -q -m k
+run_in "$r715" env PATH="$SANDBOX/shim715-blob:$PATH" "$scan" --range HEAD~1..HEAD
+check_status "dir #715 A9: a failing --range blob read → exit 2" 2 "$STATUS"
+check_contains "dir #715 A9: ...naming the blob read" "$OUT" "could not read blob"
+check_could_not715 "dir #715 A8: the range-blob line has B1's shape" "$R1_715"
+
+# A10-A12 (dir #698, E1/E7/E10): under bash >= 5 + a UTF-8 locale a read of a record ending in an
+# invalid lead byte swallowed the NUL/newline after it and dropped (or merged) the NEXT record. Every read
+# now runs under LC_ALL=C. macOS bash 3.2 does not reproduce — the red legs are CI's ubuntu job and the
+# alpine Docker leg. A10/A12 need a filesystem that accepts such a name (APFS refuses it).
+loc715="$(pick_utf8_locale)" || loc715=C.UTF-8
+e9_715="$(printf '\351')"
+fs715="$(mktemp -d "$SANDBOX/fs715.XXXXXX")"
+if ( : > "$fs715/x-caf$e9_715" ) 2>/dev/null; then
+  # (a) the invalid name LAST: the key file itself must be read
+  r715="$(new_repo)"
+  printf 'clean\n' > "$r715/a.txt"
+  printf 'tok = %s\n' "$k715" > "$r715/zz-caf$e9_715"
+  git -C "$r715" add -A
+  run_in "$r715" env LC_ALL="$loc715" "$scan" --staged
+  check_status "dir #715 A10(a): a staged key file named zz-caf<E9> is scanned under $loc715 → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715 A10(a): ...and named" "$OUT" "zz-caf"
+  # (b) the invalid name MID-list: the record after it must survive too
+  r715="$(new_repo)"
+  printf 'tok = %s\n' "$k715" > "$r715/m-caf$e9_715"
+  printf 'tok = %s\n' "$k715" > "$r715/zz-next.txt"
+  git -C "$r715" add -A
+  run_in "$r715" env LC_ALL="$loc715" "$scan" --staged
+  check_status "dir #715 A10(b): m-caf<E9> + zz-next.txt staged under $loc715 → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715 A10(b): the invalid-byte name is reported" "$OUT" "m-caf"
+  check_contains "dir #715 A10(b): the NEXT record is reported too" "$OUT" "zz-next.txt"
+  # (c) tracked
+  r715="$(new_repo)"
+  printf 'tok = %s\n' "$k715" > "$r715/zz-caf$e9_715"
+  git -C "$r715" add -A
+  git -C "$r715" commit -q -m k
+  run_in "$r715" env LC_ALL="$loc715" "$scan" --tracked
+  check_status "dir #715 A10(c): a tracked key file named zz-caf<E9> is scanned under $loc715 → BLOCKED" 1 "$STATUS"
+  # A12: the --range blob loop — a clean a-caf<E9> must not hide the b-next.txt line after it
+  r715="$(new_repo)"
+  git -C "$r715" commit -q --allow-empty -m base
+  printf 'clean\n' > "$r715/a-caf$e9_715"
+  printf 'tok = %s\n' "$k715" > "$r715/b-next.txt"
+  git -C "$r715" add -A
+  git -C "$r715" commit -q -m k
+  run_in "$r715" env LC_ALL="$loc715" "$scan" --range HEAD~1..HEAD
+  check_status "dir #715 A12: --range over a-caf<E9> + b-next.txt under $loc715 → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715 A12: ...naming b-next.txt" "$OUT" "b-next.txt"
+else
+  pass "dir #715 A10/A12: this filesystem refuses a name ending in byte 0xE9 — the name cases run on Linux"
+fi
+# A11 (E7, the record filter): a key line ending in an invalid byte, followed by an allowlisted line — the
+# two records must be filtered one at a time (a merge let the allowlist hit on the second drop both).
+# Content bytes, so this runs on every filesystem.
+r715="$(new_repo)"
+printf 'allowed-fixture-marker\n' > "$r715/.secret-scan-allow"
+git -C "$r715" add .secret-scan-allow
+git -C "$r715" commit -q -m allow
+k1_715="$(key 'AKIA' "$(rep A 16)")"
+printf 'aws = %s caf\351\naws = %s allowed-fixture-marker\n' "$k1_715" "$(key 'AKIA' "$(rep B 16)")" > "$r715/f.txt"
+git -C "$r715" add f.txt
+run_in "$r715" env LC_ALL="$loc715" "$scan" --staged
+check_status "dir #715 A11: a key line ending in 0xE9 before an allowlisted line, under $loc715 → BLOCKED" 1 "$STATUS"
+check_contains "dir #715 A11: ...and the first key is reported" "$OUT" "$k1_715"
+
+# A13 (B9, the register): every status-hiding idiom and every locale-bound read in the scanner is either
+# fixed or tagged `fail-open-ok:` with its reason. Two ranges are skipped by their anchor lines: the dir
+# #148 parser twin (byte-identical to tools/lib/personal-literals.sh) and emit_blob's dir #681 decode
+# recipe. Exact coverage: the four needles below plus `read -r`; `local x="$(…)"` and `if ! cmd; then
+# rc=$?` are left to review. Prints each offending line as "N: text".
+register715() {  # file
+  P1='_personal_literals_parse_inline() {' \
+  D1="LC_ALL=C tr -d '\\000' < \"\$tmp\"; echo" \
+  D2="} | LC_ALL=C tr -d '\\000' > \"\$dec\"" \
+  awk '
+    BEGIN { p1 = ENVIRON["P1"]; d1 = ENVIRON["D1"]; d2 = ENVIRON["D2"] }
+    skip == 1 { if ($0 == "}") skip = 0; next }
+    skip == 2 { if (index($0, d2)) skip = 0; next }
+    $0 == p1 { seen1 = 1; skip = 1; next }
+    index($0, d1) { seen2 = 1; skip = 2; next }
+    /^[[:space:]]*#/ { next }
+    {
+      tag = index($0, "fail-open-ok:")
+      if (!tag && (index($0, "|| true") || index($0, "|| :") || index($0, "< <(") || index($0, "[ \"$(")))
+        print NR ": " $0
+      else if (!tag && index($0, "read -r") && !index($0, "LC_ALL=C"))
+        print NR ": " $0
+    }
+    END {
+      if (!seen1) print "anchor not found: the parser twin"
+      if (!seen2) print "anchor not found: the decode recipe"
+      if (skip) print "a skipped range never closed"
+    }
+  ' "$1"
+}
+check_eq "dir #715 A13: no untagged status-hiding idiom or locale-bound read in secret-scan.sh" "" "$(register715 "$scan")"
+check_eq "dir #715 A13: the scanner holds no heredoc (the register reads it line by line)" "" \
+  "$(awk '{ g = $0; gsub(/<<</, "", g); if (index(g, "<<")) print NR }' "$scan")"
+# mutation proof: the register turns red on a dropped LC_ALL=C and on an untagged `|| true`
+cp "$scan" "$SANDBOX/reg715-locale.sh"
+replace_in_line_containing "$SANDBOX/reg715-locale.sh" 'read -r rec' 'LC_ALL=C ' ''
+check_ne "dir #715 A13 mutation: a read without LC_ALL=C is reported" "" "$(register715 "$SANDBOX/reg715-locale.sh")"
+cp "$scan" "$SANDBOX/reg715-true.sh"
+append_line "$SANDBOX/reg715-true.sh" 'x715="$(false)" || true'
+check_ne "dir #715 A13 mutation: an untagged || true is reported" "" "$(register715 "$SANDBOX/reg715-true.sh")"
+
+# A14 (B10): --selftest proves the staged path on THIS host's bash and locale, isolated from the user's git
+# config — a broken diff.* there, via GIT_CONFIG_GLOBAL or an appended GIT_CONFIG_COUNT triple, must
+# neither skip a probe nor fail the install.
+staged715='selftest: OK   — caught a staged key (--staged, this host'"'"'s bash and locale)'
+run "$scan" --selftest
+check_status "dir #715 A14(a): --selftest → exit 0" 0 "$STATUS"
+check_contains "dir #715 A14(a): --selftest runs the staged probe" "$OUT" "$staged715"
+printf '[diff]\n\tcontext = abc\n' > "$SANDBOX/gitconfig715"
+run env GIT_CONFIG_GLOBAL="$SANDBOX/gitconfig715" "$scan" --selftest
+check_status "dir #715 A14(b1): --selftest under a broken global diff.context → exit 0" 0 "$STATUS"
+check_contains "dir #715 A14(b1): ...and the staged probe still runs" "$OUT" "$staged715"
+check_absent "dir #715 A14(b1): ...and no probe is skipped" "$OUT" "selftest: WARN — could not create"
+n715="${GIT_CONFIG_COUNT:-0}"
+run env "GIT_CONFIG_KEY_$n715=diff.context" "GIT_CONFIG_VALUE_$n715=abc" "GIT_CONFIG_COUNT=$((n715 + 1))" "$scan" --selftest
+check_status "dir #715 A14(b2): --selftest under an appended GIT_CONFIG_COUNT diff.context → exit 0" 0 "$STATUS"
+check_contains "dir #715 A14(b2): ...and the staged probe still runs" "$OUT" "$staged715"
+check_absent "dir #715 A14(b2): ...and no probe is skipped" "$OUT" "selftest: WARN — could not create"
+
+# A15 (B10/B11): the comments the design falsified are gone
+for s715 in 'deliberately left bare' 'host-independent' 'needs none: its here-string'; do
+  check_eq "dir #715 A15: no '$s715' left in secret-scan.sh" 0 "$(grep -c -- "$s715" "$scan")"
+done
+
+# FILE mode (`--`, dir #495) must read a file named like an option as a file: a name such as `-v` passed
+# raw to cmp/grep was read as a flag and scanned clean (dir #715 review). The path goes through a spool.
+d715="$(mktemp -d "$SANDBOX/dash715.XXXXXX")"
+for n715 in -v -b -l -; do
+  printf 'tok = %s\n' "$k715" > "$d715/$n715"
+  run_in "$d715" "$scan" -- "$n715"
+  check_status "dir #715: FILE mode scans a file named '$n715' → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715: ...as text, its line numbered ('$n715')" "$OUT" "$n715:1:tok = "
+done
+# ...and an unreadable FILE-mode argument exits 2 naming it, never 1 with no hit line (root reads it anyway)
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  printf 'tok = %s\n' "$k715" > "$d715/unreadable.txt"
+  chmod 000 "$d715/unreadable.txt"
+  run_in "$d715" "$scan" -- unreadable.txt
+  check_status "dir #715: an unreadable FILE-mode argument → exit 2" 2 "$STATUS"
+  check_contains "dir #715: ...naming the read" "$OUT" "could not read 'unreadable.txt'"
+  chmod 644 "$d715/unreadable.txt"
+fi
+
+# A25 (B4): --staged from a subdirectory scans the root-relative paths and applies the root allowlist.
+r715="$(new_repo)"
+mkdir -p "$r715/sub"
+printf 'tok = %s\n' "$k715" > "$r715/sub/key.txt"
+git -C "$r715" add sub/key.txt
+run_in "$r715/sub" "$scan" --staged
+check_status "dir #715 A25: --staged from sub/ finds sub/key.txt → BLOCKED" 1 "$STATUS"
+check_contains "dir #715 A25: ...naming it root-relative" "$OUT" "sub/key.txt"
+r715="$(new_repo)"
+printf 'path:sub/*\n' > "$r715/.secret-scan-allow"
+git -C "$r715" add .secret-scan-allow
+git -C "$r715" commit -q -m allow
+mkdir -p "$r715/sub"
+printf 'tok = %s\n' "$k715" > "$r715/sub/key.txt"
+git -C "$r715" add sub/key.txt
+run_in "$r715/sub" "$scan" --staged
+check_status "dir #715 A25: from sub/, the ROOT allowlist's path:sub/* applies → exit 0" 0 "$STATUS"
+
+# A28: a failing tag read (B6 (e)) and a failing readlink on a tracked symlink (B5) exit 2.
+r715="$(new_repo)"
+git -C "$r715" commit -q --allow-empty -m base
+git -C "$r715" tag -a t715 -m "$(printf 'release\n\nClaude-%s: https://claude.ai/code/%s_t715' Session session)"
+git_shim715 "$SANDBOX/shim715-tag" 'cat-file tag'
+run_in "$r715" env PATH="$SANDBOX/shim715-tag:$PATH" "$scan" --range 't715 --not --remotes'
+check_status "dir #715 A28(a): a failing tag read → exit 2" 2 "$STATUS"
+check_contains "dir #715 A28(a): ...naming the tag read" "$OUT" "could not read tag"
+r715="$(new_repo)"
+ln -s /Users/SeekritPersonName/x "$r715/lnk"
+git -C "$r715" add lnk
+git -C "$r715" commit -q -m lnk
+mkdir -p "$SANDBOX/shim715-readlink"
+printf '#!/bin/sh\nexit 1\n' > "$SANDBOX/shim715-readlink/readlink"
+chmod +x "$SANDBOX/shim715-readlink/readlink"
+run_in "$r715" env PATH="$SANDBOX/shim715-readlink:$PATH" SECRET_SCAN_PERSONAL_FILE="$pfile715" "$scan" --tracked
+check_status "dir #715 A28(b): a failing readlink on a tracked symlink → exit 2" 2 "$STATUS"
+check_contains "dir #715 A28(b): ...naming the symlink read" "$OUT" "could not read the tracked symlink 'lnk'"
+run_in "$r715" env SECRET_SCAN_PERSONAL_FILE="$pfile715" "$scan" --tracked
+check_status "dir #715 A28(b) control: a real readlink finds the literal in the target → BLOCKED" 1 "$STATUS"
+
 summary
