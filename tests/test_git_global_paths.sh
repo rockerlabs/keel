@@ -64,4 +64,42 @@ repo="$(new_repo)"; git -C "$repo" config core.hooksPath "$repo/local-hooks"
 check_eq "hooks_dir: a repo's LOCAL core.hooksPath does not leak into the machine-wide read" "" \
   "$(cd "$repo" && HOME="$h" GIT_CONFIG_GLOBAL="$h/empty.cfg" git_global_hooks_dir)"
 
+# --- A7: parity with the producer — dir #688 -------------------------------------------------------------
+# tools/lib/git-global-paths.sh's git_global_hooks_dir is a NAMED TWIN of `install-secret-guard.sh --where
+# --global`'s dir= (that script ships standalone and cannot source this file). The watcher keeps the twin
+# for its hot path (a 57 ms vs 99 ms call), so a test — not a shared definition — holds the two to the same
+# answer: for every shape a hooksPath can arrive in, the strings are equal (both empty when unset or relative).
+isg="$REPO_ROOT/tools/install-secret-guard.sh"
+parity() {  # parity <label> <env assignments / -u flags…> — both resolvers under the SAME environment
+  local label="$1"; shift
+  local lib_out where_out
+  lib_out="$(env "$@" bash -c '. "$1"; git_global_hooks_dir' _ "$lib" 2>/dev/null)"
+  where_out="$(env "$@" "$isg" --where --global 2>/dev/null | sed -n 's/^dir=//p')"
+  check_eq "parity ($label): git_global_hooks_dir == --where --global's dir=" "$where_out" "$lib_out"
+}
+pw="$SANDBOX/par"; mkdir -p "$pw/hooks" "$pw/xdg/git"; : > "$pw/sys.cfg"
+pbase=("HOME=$pw" "GIT_CONFIG_SYSTEM=$pw/sys.cfg")
+: > "$pw/g.cfg"
+parity "unset" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+printf '[core]\n\thooksPath = %s/hooks\n' "$pw" > "$pw/g.cfg"
+parity "absolute" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+printf '[core]\n\thooksPath = ~/hooks\n' > "$pw/g.cfg"
+parity "tilde" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+printf '[core]\n\thooksPath = %s/hooks/\n' "$pw" > "$pw/g.cfg"
+parity "trailing slash" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+check_eq "parity: the trailing slash is dropped (the twin's own answer)" "$pw/hooks" \
+  "$(env "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg" bash -c '. "$1"; git_global_hooks_dir' _ "$lib")"
+printf '[core]\n\thooksPath = relative/hooks\n' > "$pw/g.cfg"
+parity "relative" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+printf '[include]\n\tpath = %s/inc.cfg\n' "$pw" > "$pw/g.cfg"
+printf '[core]\n\thooksPath = %s/hooks\n' "$pw" > "$pw/inc.cfg"
+parity "[include]" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+: > "$pw/g.cfg"
+printf '[core]\n\thooksPath = %s/hooks\n' "$pw" > "$pw/sys.cfg"
+parity "SYSTEM" "${pbase[@]}" "GIT_CONFIG_GLOBAL=$pw/g.cfg"
+: > "$pw/sys.cfg"
+printf '[user]\n\tname = Alice\n' > "$pw/.gitconfig"
+printf '[core]\n\thooksPath = %s/hooks\n' "$pw" > "$pw/xdg/git/config"
+parity "XDG behind ~/.gitconfig" -u GIT_CONFIG_GLOBAL "${pbase[@]}" "XDG_CONFIG_HOME=$pw/xdg"
+
 summary

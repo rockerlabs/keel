@@ -252,7 +252,9 @@ real_libs="$C_LIBS"
 # A1 — the non-vacuity floor, a hand-kept list on purpose (a census that silently finds nothing would be
 # green): every script known to reach git when this census was written, plus install-secret-guard.sh, is in
 # the git-reaching set; the derived lib set has the seven git-reaching libs, and range-lib.sh since dir #546.
-t1="bootstrap.sh install.sh uninstall.sh keel tests/run.sh examples/tour.sh docs/demo/record-demo.sh
+# (uninstall.sh left the list with dir #688: its only git call was the machine-wide hooksPath read, which now
+# goes through tools/install-secret-guard.sh --where --global, a script that is on the list.)
+t1="bootstrap.sh install.sh keel tests/run.sh examples/tour.sh docs/demo/record-demo.sh
 docs/keel-ab/seed.sh docs/keel-ab/grade.sh
 tools/pre-pr-gate.sh tools/public-audit.sh tools/doctor.sh tools/keel-impact.sh tools/read-trace.sh
 tools/branch-cleanup.sh tools/changelog-section.sh tools/init-project.sh tools/token-report.sh
