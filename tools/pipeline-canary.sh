@@ -131,6 +131,11 @@ cmd_setup() {
   command -v git >/dev/null 2>&1 || { printf 'pipeline-canary: git is required\n' >&2; exit 1; }
 
   sandbox="$(mktemp -d)"
+  # dir #720 S8-1: an empty $sandbox would make $repo below ("/repo.XXXXXX" — or empty) reach
+  # `git -C "$repo" config user.email ...` and, with an empty path, git resolves that to the CWD and
+  # writes the canary identity into the INVOKING repo's config (exit 0). Refuse instead (same shape as
+  # cmd_demo_bypass's dir #478 guard; this script runs `set -u` only, no `-e`).
+  [ -n "$sandbox" ] || { echo "pipeline-canary: mktemp -d failed" >&2; exit 1; }
   home="$sandbox/home"; mkdir -p "$home"
   bin="$sandbox/bin"; mkdir -p "$bin"
   ghcalls="$sandbox/gh-calls.log"
@@ -140,6 +145,7 @@ cmd_setup() {
   # regardless of basename), but a fixed literal would still read as though this toy repo IS a real
   # repo named "repo" in every log line and deny message the canary's own runs produce.
   repo="$(mktemp -d "$sandbox/repo.XXXXXX")"
+  [ -n "$repo" ] || { echo "pipeline-canary: mktemp -d failed" >&2; rm -rf "$sandbox"; exit 1; }
 
   # Stub `gh`: records every invocation instead of touching the network. `pr create` "succeeds" with a
   # fake URL so a real /polish run completes its final step; anything else is a harmless no-op success.
@@ -326,6 +332,13 @@ cmd_demo_bypass() {
   # dir #478: this script runs `set -u` only (no `-e`) — a failed mktemp would leave $d empty and
   # every `git -C "$d"`/`cd "$d"` below would silently act on the invocation directory instead.
   [ -n "$d" ] || { echo "pipeline-canary: mktemp -d failed" >&2; exit 1; }
+  # dir #720 DS-D7-CV3: the gate calls below write a receipt sentinel under $HOME/.keel/tmp/pre-pr-gate/
+  # and an impact event to $KEEL_IMPACT_LOG — run them (this function ends in `exit`) under a sandbox
+  # HOME with every store override unset, so nothing lands in the operator's real HOME or store.
+  mkdir -p "$d/home"
+  # shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is a space-separated list of NAMES (see impact-store.sh)
+  unset $IMPACT_ISOLATION_VARS
+  export HOME="$d/home"
   git -C "$d" init -q
   git -C "$d" config user.email canary@keel.invalid
   git -C "$d" config user.name "Keel Canary"

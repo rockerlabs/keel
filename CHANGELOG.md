@@ -97,6 +97,12 @@ sections real content going forward — see that page for exactly when each one 
   surviving mutants (a killed mutant's are deleted in the iteration that kills it), uses one shared build
   cache per leg, checks a `df` floor before it starts, and its report states what it left and hands the
   operator the `rm -rf` (dir #724). Pinned by `tests/test_delta_audit_doc.sh`.
+- **Three scripts no longer write outside their sandbox.** `tools/pipeline-canary.sh setup` refuses when
+  `mktemp -d` fails (it used to write the canary identity into the invoking repo's git config, exit 0);
+  `demo-bypass` runs the gate under a sandbox HOME with every impact-store override unset (it left a
+  receipt sentinel under the real HOME); `examples/tour.sh` and `docs/demo/record-demo.sh` unset the
+  same overrides, so an exported `KEEL_IMPACT_STORE`/`KEEL_IMPACT_LOG` no longer receives their events
+  (dir #720).
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
