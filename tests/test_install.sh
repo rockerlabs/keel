@@ -928,6 +928,10 @@ fi
 # reintroduce. Run in the BACKGROUND with a bounded wait on purpose: the suite ships no timeout helper
 # and `timeout` is absent on macOS, so a naive foreground version would hang CI instead of failing it.
 # The wait is only ever paid in full when the defect is present; the healthy path exits in about a second.
+# Since dir #679 the run ends by refusing the FIFO rather than renaming a regular file over it: the
+# manifest is a state edit through tools/lib/safe-write.sh, which never replaces a non-regular file and
+# exits 1 with its one line, because the run cannot record what it did (spec 685 B1 + B9). So exit 1,
+# the refusal named, the FIFO left in place — and still no hang, and the core still placed.
 if command -v mkfifo >/dev/null 2>&1; then
   fifohome="$SANDBOX/fifo-manifest-home"; mkdir -p "$fifohome/.keel"
   mkfifo "$fifohome/.keel/install-manifest.claude" 2>/dev/null || true
@@ -938,7 +942,7 @@ if command -v mkfifo >/dev/null 2>&1; then
     fail "T14f the FIFO fixture was actually created" "mkfifo produced no FIFO at that path"
   fi
   fresh_home_env "$fifohome"
-  env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >/dev/null 2>&1 </dev/null &
+  env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >"$SANDBOX/fifo-install.out" 2>&1 </dev/null &
   fifo_pid=$!
   fifo_waited=0
   while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt 30 ]; do
@@ -963,7 +967,14 @@ if command -v mkfifo >/dev/null 2>&1; then
     fail "T14f a FIFO at the manifest path must not hang the install" "still running after ${fifo_waited}s"
   else
     wait "$fifo_pid"; fifo_st=$?
-    check_status "T14f a FIFO at the manifest path does not hang the install" 0 "$fifo_st"
+    check_status "T14f a FIFO at the manifest path does not hang the install (refused: exit 1)" 1 "$fifo_st"
+    check_contains "T14f …the refusal names the manifest as not a regular file" \
+      "$(cat "$SANDBOX/fifo-install.out")" "install-manifest.claude is not a regular file"
+    if [ -p "$fifohome/.keel/install-manifest.claude" ]; then
+      pass "T14f …the FIFO is left in place, never renamed over"
+    else
+      fail "T14f …the FIFO is left in place, never renamed over" "the FIFO is gone"
+    fi
     check_file "T14f …and the core is still placed" "$fifohome/FRAMEWORK.md"
   fi
   rm -f "$fifohome/.keel/install-manifest.claude"

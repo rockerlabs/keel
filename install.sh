@@ -662,7 +662,7 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # block refresh, two runs) or a file someone left at that name. Never recorded in the manifest: a backup is
 # adopter data, so uninstall.sh (which removes by manifest, never by heuristic) must leave it behind —
 # a backup uninstall removes is not a backup.
-# Guarded against a non-regular DEST (dir #349): the backup's plain `cp` hangs on a FIFO and fails outright on a
+# Guarded against a non-regular DEST (dir #349): a plain `cp` hangs on a FIFO and fails outright on a
 # directory/device/socket — reached live at the bin/keel call site below (a directory there + --force
 # used to abort the whole run under `set -euo pipefail`, verified). One guard here covers all three call
 # sites, present and future, instead of asking each to re-derive it — same reasoning, and the same
@@ -739,7 +739,6 @@ _keel_test_checkpoint() {
   [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
   return 0
 }
-
 
 # manifest_artifacts — every Keel-owned artifact CONFIRMED in place this run (dir #125), one
 # "REL<TAB>KIND<TAB>EXTRA" element per record_artifact call below. Merged over the prior manifest's
