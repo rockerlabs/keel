@@ -15,6 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Code comments that cited `/polish` text moved into the guide now point at it (dir #710).** About 45 comments in `tools/pre-pr-gate.sh` and four in `tests/` (two test headers, one pin's label and message) named `commands/polish.md` step 4, 5(a)/(b)/(c), 8 or 9 for prose that dir #670's split moved into `commands/polish-guide.md`; each now reads `polish-guide.md § Step N`, and the `step 5(a)` spellings no plain `polish.md step` grep could find are covered too. Comments only: no behaviour, deny text or receipt changes.
 - **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
   push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,
   `--config-env core.hooksPath=…` in either spelling, or an inline `GIT_CONFIG_KEY_<n>=core.hooksPath` /

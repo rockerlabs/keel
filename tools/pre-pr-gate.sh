@@ -52,21 +52,21 @@
 #   pre-pr-gate.sh receipt <step-id> [outcome]   append a receipt line for the current run (outcome default: done)
 #   pre-pr-gate.sh receipt --recover       re-stamp the immediately-prior (retired) run's step receipts
 #                                           onto the current nonce — dir #72, the review-fix-commit
-#                                           convergence shortcut (see commands/polish.md step 1's
-#                                           convergence branch, and step 5's convergence rule)
+#                                           convergence shortcut (see commands/polish-guide.md § Step 1's
+#                                           convergence branch, and § Step 5's convergence rule)
 #   pre-pr-gate.sh log <type> [detail]     append a line to the impact log (same resolution as the guard event)
-#   pre-pr-gate.sh handoff <level> <sha>   record step 5(b)'s stop so a re-invocation doesn't re-ask (dir #63)
+#   pre-pr-gate.sh handoff <level> <sha>   record § Step 5 (b)'s stop so a re-invocation doesn't re-ask (dir #63)
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
 #   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
 #   pre-pr-gate.sh rollout-check           SessionStart hook subcommand (dir #64 tier 1) — not run by hand
 #   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
 #                                           polish runs closed without a verified (non-self-reported) review (default K=3)
 #   pre-pr-gate.sh sentinel-path <key>      print the sentinel path for a receipt key (dir #398, for
-#                                           commands/polish.md's own recipes — never-hand-copy-the-
+#                                           commands/polish-guide.md's own recipes — never-hand-copy-the-
 #                                           path-shape rationale as repo-key/receipt-key/keys below,
 #                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
-#                                           ditto — commands/polish.md's step 5(c) recipe uses this)
+#                                           ditto — commands/polish-guide.md § Step 5's (c) recipe uses this)
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
 # decides allow/deny for `gh pr create`.
@@ -118,7 +118,7 @@
 # — is cross-checked against `polish.4-depth`'s own recorded level: without this, a session could size
 # the diff `medium` and then simply write `polish.5-review skip`, since `skip` was trusted unconditionally.
 # **Residual limits** (write these into any doc referencing the mechanism):
-# (1) the unavailable→inline-pass hand-off (commands/polish.md step 5(a)/(b)/(c)) leaves no trace by
+# (1) the unavailable→inline-pass hand-off (commands/polish-guide.md § Step 5 (a)/(b)/(c)) leaves no trace by
 #     construction — its outcome (`-operator-run`/`-waived`) stays self-reported; the trace only makes
 #     ONE dishonesty channel checkable — "claims the skill ran when it didn't" — not the inline pass's
 #     own thoroughness.
@@ -133,14 +133,14 @@
 #     diverged, could overwrite each other's note) — an existing limitation of the sentinel's own
 #     per-repo (not per-worktree) keying, not a new one this ticket introduces.
 #
-# Hole B (the hand-off's only exit depended on session memory): step 5(c) used to exit only when "the
+# Hole B (the hand-off's only exit depended on session memory): § Step 5 (c) used to exit only when "the
 # session already shows they ran it" — gone after a compaction or a fresh session on the same branch, so
 # a re-invocation would defer forever (`init` mints a fresh nonce by design, wiping the receipt sentinel,
 # dir #49's replay fix). Fix: `handoff` writes `polish.5\t<level>\t<HEAD-sha>` to its OWN file
-# (`handoff_path()`, keyed like the sentinel) at step 5(b) stop time — a separate file, not a line folded
+# (`handoff_path()`, keyed like the sentinel) at § Step 5 (b) stop time — a separate file, not a line folded
 # into the sentinel, so `init`'s nonce reset never has to know it exists: it survives by construction,
 # not by a special case. `receipt polish.5-review <outcome>` removes it once the real receipt lands.
-# `handoff-check` on a re-invocation tells step 5(c) whether the question was already asked for this
+# `handoff-check` on a re-invocation tells § Step 5 (c) whether the question was already asked for this
 # EXACT diff (same HEAD SHA) — a match means collect the answer without re-deferring; any new commit
 # invalidates the match (same-SHA-only replay window, not open-ended).
 #
@@ -185,9 +185,9 @@
 # Root cause at the time this was built: `/code-review` shipped `disable-model-invocation: true`, so a
 # session could never call it on its own — every unavailable-case /polish run used to fall back to a
 # same-context inline pass (the author reviewing itself) standing in for a real review. **Superseded by
-# dir #254 — see commands/polish.md step 5's own intro for the why/when.** Everything below in this
+# dir #254 — see commands/polish-guide.md § Step 5's own intro for the why/when.** Everything below in this
 # section is reached only as the FALLBACK when a direct `Skill(code-review)` attempt is refused for a
-# given run, not as the standing default. commands/polish.md step 5(a) spawns ONE
+# given run, not as the standing default. commands/polish-guide.md § Step 5 (a) spawns ONE
 # independent Agent-tool subagent (type `keel-polish-reviewer` since dir #413's flip — the shipped read-only
 # agent, `tools: Read, Grep, Glob`; fresh context, no memory of the code-writing session) to do the review
 # instead; this file's job is making THAT claim verifiable too, the same way dir #63 made a real in-session
@@ -202,7 +202,7 @@
 # name, a custom agent by its `name:` (so `keel-polish-reviewer` here). `SubagentStop` additionally carries `last_assistant_message`: "the final assistant
 # text from the subagent's conversation." That is the ONLY place this hook can read the review's outcome
 # — unlike PostToolUse(Skill), a subagent event has no `tool_input`/`prompt` field to read a call argument
-# from — so the marker commands/polish.md's step 5(a) prompt requires (`KEEL-AGENT-REVIEW: level=<level>`,
+# from — so the marker commands/polish-guide.md § Step 5 (a) prompt requires (`KEEL-AGENT-REVIEW: level=<level>`,
 # alone on a line) must appear in the subagent's own returned text, not in its invocation.
 #
 # The sha is this hook's OWN `git … rev-parse HEAD` at fire time (never a self-reported field) — same
@@ -242,7 +242,7 @@
 #   retires only its exact own command, never an other-path one) keeps writing `agent:<level>` for any such
 #   stop into the same HOME-wide, repo-keyed trace file this gate reads, so there the residual is NOT closed;
 # - residual (4), below.
-# (3) dir #85 (rails audit M2-6): commands/polish.md step 5(a) mandates that the subagent prompt carry
+# (3) dir #85 (rails audit M2-6): commands/polish-guide.md § Step 5 (a) mandates that the subagent prompt carry
 # the ticket/spec the diff implements, with a two-way conformance mandate (dir #78). NOTHING here can
 # check that. A `SubagentStop` event carries no prompt/call-argument field (same absence residual (1)
 # is built around), so the spec hand-off is verifiable only by the subagent's own prose — i.e. it is
@@ -268,7 +268,7 @@
 # of the next /polish invocation) mints a fresh nonce that discards ALL eight step receipts, not just the
 # one (step 5) that actually needs redoing. Two ADDITIONAL fixes, both small and additive — nothing above
 # this section changes:
-#   (a) commands/polish.md step 5 now states the convergence rule in prose: fold a review fix into the
+#   (a) commands/polish-guide.md § Step 5 now states the convergence rule in prose: fold a review fix into the
 #       same commit where practical, then re-review the DELTA only and stop once a pass needs no further
 #       changes — a fix-commit moving HEAD is expected, not a "loop back to step 4" violation. Step 1
 #       gained its own convergence branch that calls `receipt --recover` (below) right after `init` and
@@ -311,7 +311,7 @@
 # `_receipt_key_for`, which owns the key FORMAT for every writer site. Two worktrees of the same repo
 # on DIFFERENT branches now get separate slots;
 # two sessions on the SAME branch of the same repo still share one (arguably correct-to-deny — accepted
-# and documented in commands/polish.md's receipt-deny paragraph as a manual-fallback last resort, not
+# and documented in commands/polish-guide.md § Step 8's receipt-deny paragraph as a manual-fallback last resort, not
 # fixed here). NOT re-keyed: `trace_path_for` (append-only, matched by sha+level scan — concurrent
 # branches already interleave harmlessly) and `rollout_state_path` (genuinely per-repo, not per-run).
 # `_require_receipt_key` hard-errors on a detached HEAD (empty branch slug) — /polish never legitimately
@@ -326,8 +326,8 @@
 # ticket's sentinel is a single-slot
 # completeness receipt (fixed by keying); dir #82's log is an append-only queue (fixed by a subtractive
 # rewrite). No shared mechanism; each keeps its own fix.
-# --- dir #88: gate-checking step 5(a)'s MANDATORY review-reminder dialog ---------------------------
-# Root cause: the MANDATORY `AskUserQuestion` reminder in commands/polish.md step 5(a) ("agent review
+# --- dir #88: gate-checking § Step 5 (a)'s MANDATORY review-reminder dialog ---------------------------
+# Root cause: the MANDATORY `AskUserQuestion` reminder in commands/polish-guide.md § Step 5 (a) ("agent review
 # already ran — additionally run the stronger built-in /code-review <level>?") was silently skipped 3x
 # (felt on dir #62/PR #147) — prose alone doesn't stop a session from writing the `agent:<level>`
 # receipt and moving straight to step 6. Same fix class as dir #63/#70: a THIRD trace leg, not a
@@ -386,7 +386,7 @@
 # (step 4's mandatory skip dialog, its own `KEEL-DEPTH-DIALOG` skip marker — a distinct token, so
 # a sizing dialog can never pre-satisfy this reminder check — and its own deny message):
 # skip bypasses step 5 outright, so the sizing dialog that chose it is the only dialog there is.
-# Unaffected: bare `<level>` (a genuine in-session /code-review run — step 5(a)'s reminder doesn't
+# Unaffected: bare `<level>` (a genuine in-session /code-review run — § Step 5 (a)'s reminder doesn't
 # exist on that path), `<level>-operator-run`/`<level>-waived` (the (b)/(c) hand-off outcomes, already
 # self-reported and covered by the depth-consistency check above), and `ultra` (never reaches (a) at
 # all).
@@ -503,7 +503,7 @@ _expected_step() {
 # split into alternatives at runtime; confirmed the hard way before shipping this). The regex use below
 # derives its own `|`-joined form from this via `${ACCEPTED_REVIEW_LEVELS// /|}`; the case-match use below
 # loops over the space-separated words instead. `ultra` deliberately excluded: it never reaches either
-# marker path (see commands/polish.md step 5).
+# marker path (see commands/polish-guide.md § Step 5).
 ACCEPTED_REVIEW_LEVELS='low medium high max'
 # dir #147: the three composed-marker tokens below (KEEL-AGENT-REVIEW / KEEL-DEPTH-DIALOG /
 # KEEL-REVIEW-DIALOG) used to be hardcoded independently at each of their three grep call sites
@@ -914,7 +914,7 @@ main_top_for() {
 # than engineered away): ARMED wins, so an extra candidate can only ever turn a false UNARMED into a
 # correct ARMED — but if it matches a settings.json the HARNESS never loads, the wired-there hook never
 # fires, no `dialog:` trace can ever be written, and the deny below becomes unsatisfiable. The escape
-# is the same one commands/polish.md step 8 documents — an operator running `gh pr create` in their own
+# is the same one commands/polish-guide.md § Step 8 documents — an operator running `gh pr create` in their own
 # terminal bypasses this PreToolUse hook entirely, since it fires on the AGENT's tool calls, not on a
 # human typing. Note step 8 scopes that instruction to the dir #80 sentinel race, not to this deny;
 # the mechanism is general, the written procedure for reaching for it is not. Why this is accepted: a
@@ -1216,7 +1216,7 @@ _sentinel_path_for_key()      { gate_sentinel_path_for_key "$1"; }
 _prev_sentinel_path_for_key() { gate_prev_sentinel_path_for_key "$1"; }
 
 # dir #63: the review-invocation trace (skill-trace writes it, the gate's PASS branch reads it) and the
-# step-5(b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
+# § Step 5 (b) hand-off note (handoff/handoff-check) each get their OWN file, keyed the same way as the
 # sentinel — not lines folded into the sentinel itself. Keeping them separate means `init`'s nonce reset
 # (the sentinel's job: wipe the PREVIOUS run's receipts, dir #49) never has to know the hand-off note
 # exists at all: it lives elsewhere, so it survives by construction, not by a special case in `init`.
@@ -1298,7 +1298,7 @@ _trace_shas_for_level() {
 # residuals in `_review_null_diff`'s own header):** candidates come back in the trace file's own
 # append order, and this returns the FIRST qualifying one — if a repo's trace ever accumulates two
 # distinct ancestors reviewed at the same LEVEL with both null-diffing to current HEAD, but only the
-# SECOND one also has step 5(a)'s dialog answered (Amendment B1, below), the caller can still deny on
+# SECOND one also has § Step 5 (a)'s dialog answered (Amendment B1, below), the caller can still deny on
 # the first (dialog-less) ancestor even though the second would satisfy both checks. Rare in practice
 # (it needs a multi-review trace history at one level), and not something Amendment B1 introduced —
 # this single-first-candidate selection already existed for the review check alone; the dialog check
@@ -1558,7 +1558,7 @@ case "${1:-}" in
     exit 0
     ;;
   sentinel-path)
-    # dir #398: exposes _sentinel_path_for_key() for commands/polish.md's own step-6 recipe (reading
+    # dir #398: exposes _sentinel_path_for_key() for commands/polish-guide.md § Step 5's own recipe (reading
     # the live sentinel's last-written polish.5-review line) — never-hand-copy-the-path-shape, same
     # rationale as repo-key/receipt-key/keys above, sharper now that the root itself can move (dir
     # #637's later work) and a hand-copied literal in a doc would silently go stale instead of loudly
@@ -1569,8 +1569,8 @@ case "${1:-}" in
     exit 0
     ;;
   prev-sentinel-path)
-    # dir #398: same rationale, for _prev_sentinel_path_for_key() — commands/polish.md's own
-    # step-5(c) recipe reads the retired backup this way instead of a hand-copied literal.
+    # dir #398: same rationale, for _prev_sentinel_path_for_key() — commands/polish-guide.md's own
+    # § Step 5 (c) recipe reads the retired backup this way instead of a hand-copied literal.
     printf '%s\n' "$(_prev_sentinel_path_for_key "${2:?pre-pr-gate: prev-sentinel-path <key> — key required}")"
     exit 0
     ;;
@@ -1597,7 +1597,7 @@ case "${1:-}" in
   receipt)
     if [ "${2:-}" = "--recover" ]; then
       # dir #72: re-stamp the immediately-prior (now-retired) run's receipts onto the CURRENT nonce, in
-      # one call — the convergence-round shortcut commands/polish.md step 1's own convergence branch
+      # one call — the convergence-round shortcut commands/polish-guide.md § Step 1's own convergence branch
       # calls right after `init`. dir #96 narrowed it once, so this is no longer "whatever the prior run
       # had, superseded later by a fresh write": `polish.5-review` is never restored (see the filter
       # below), and a step id THIS run already wrote is left alone rather than overwritten — so the
@@ -1707,7 +1707,7 @@ case "${1:-}" in
             # check (keyed to current HEAD), but the TRUSTED arms — `skip`, `*-operator-run`,
             # `*-waived` — skip that check entirely, so a recovered one claims this fix commit was
             # reviewed when it was not. Reproduced end-to-end by this ticket's own high review.
-            # commands/polish.md already tells the round to redo it ("step 5 for the delta re-review"),
+            # commands/polish-guide.md already tells the round to redo it ("step 5 for the delta re-review"),
             # so this makes the code say what the prose already said.
             _note_unrecovered "$r_step" "step 5 a fresh delta re-review"
             continue
@@ -1735,7 +1735,7 @@ case "${1:-}" in
           polish.4-depth)
             # dir #116: a SKIP-level depth is never recovered — the other depth with an arm that stays
             # silently true across a commit. `skip` is the one level that bypasses step 5 outright, and
-            # commands/polish.md step 4 tells a convergence round to reuse the recovered level AS-IS
+            # commands/polish-guide.md § Step 4 tells a convergence round to reuse the recovered level AS-IS
             # ("do not re-size") — so recovering it hands the new commit a review bypass the operator
             # chose for a DIFFERENT diff. Reproduced end-to-end by dir #96's own review: trivial diff →
             # skip → substantial fix commit → recovered skip + fresh `polish.5-review skip` matched the
@@ -1828,7 +1828,7 @@ case "${1:-}" in
     [ "$step_id" = "polish.4-depth" ] && outcome="$(_stamp_depth_outcome "$PWD" "$outcome")"
     require_active_receipt
     printf '%s\t%s\t%s\n' "$nonce" "$step_id" "$outcome" >> "$sentinel"
-    # dir #63/Hole B: the real receipt landing IS the answer step 5(b) was waiting on — clear the
+    # dir #63/Hole B: the real receipt landing IS the answer § Step 5 (b) was waiting on — clear the
     # hand-off note rather than let it linger past the question it recorded.
     if [ "$step_id" = "polish.5-review" ]; then
       rm -f "$(handoff_path)"
@@ -1863,7 +1863,7 @@ case "${1:-}" in
   skill-trace)
     # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — SubagentStop(keel-polish-reviewer)
     # — dir #70, the independent-agent-review leg — or PostToolUse(AskUserQuestion) — dir #88, the
-    # step-5(a) review-reminder-dialog leg — hook. Never blocks or alters anything: silently no-ops
+    # § Step 5 (a) review-reminder-dialog leg — hook. Never blocks or alters anything: silently no-ops
     # (exit 0) on anything it can't parse or that isn't a code-review invocation/review/dialog, since a
     # missed trace is a residual limit, not a false deny. One jq call for every field any of the four
     # legs needs — it fires on every Skill/slash-command/subagent-stop/AskUserQuestion event in every
@@ -1927,12 +1927,12 @@ case "${1:-}" in
       # runtime — confirmed the hard way while building this fix, see $ACCEPTED_REVIEW_LEVELS's own comment.
       # dir #116/dir #118: step 4's mandatory skip dialog carries its OWN `KEEL-DEPTH-DIALOG` skip
       # marker — never the review marker below. A distinct token keeps the namespaces mechanically
-      # separate: a sizing dialog cannot pre-satisfy step 5(a)'s dir #88 check (its token never yields
+      # separate: a sizing dialog cannot pre-satisfy § Step 5 (a)'s dir #88 check (its token never yields
       # a `dialog:<review-level>` line), and the review marker cannot vouch for a skip (skip stays out
       # of $ACCEPTED_REVIEW_LEVELS — the SubagentStop leg shares that set, and an agent review "at
       # skip" would vouch for no review at all). The two parses are INDEPENDENT, not exclusive — an
       # event carrying both tokens writes both lines. Exclusivity was the first cut and produced a real
-      # false-deny: a step 5(a) reminder dialog merely QUOTING the depth token lost its own
+      # false-deny: a § Step 5 (a) reminder dialog merely QUOTING the depth token lost its own
       # `dialog:<level>` line and denied a genuine agent unlock.
       # Common case first: most AskUserQuestion events (ordinary clarifying questions with neither
       # marker) carry NO marker — one builtin glob check keeps that dominant path fork-free. Unlike
@@ -1951,7 +1951,7 @@ case "${1:-}" in
       # the chosen option label(s) — a plain string for a single-select question, an array of
       # strings for multiSelect. The marker below is therefore now a BARE literal,
       # `KEEL-DEPTH-DIALOG` with no `level=` suffix — it no longer encodes an outcome in the question
-      # text at all (that's what let commands/polish.md collapse the old two-dialog ask-then-confirm
+      # text at all (that's what let commands/polish-guide.md § Step 4 collapse the old two-dialog ask-then-confirm
       # dance into a single dialog, since the marker's only job now is "this question's answer is
       # skip-trackable"; the ANSWER, not the question, decides the outcome). Looked up directly by
       # `tool_response.answers`' OWN keys (never `tool_response.questions` — that object is already
@@ -2608,7 +2608,7 @@ IFS=$'\x1f' read -r status detail review_outcome depth_outcome retest_outcome te
 # so plainly instead of naming a race that was never the cause. `_missing_step_hint` below adds the one
 # remaining real per-step hint (polish.5-review's bare-Agent-spawn cause, dir #346 remedy 4); genuine
 # concurrent `init` collisions (two worktrees sharing a branch, or two sessions racing the same `init`)
-# are a separate, narrower case commands/polish.md's own hand-off prose still covers.
+# are a separate, narrower case commands/polish-guide.md § Step 8's own hand-off prose still covers.
 _missing_step_hint() {
   local detail="$1"
   case ",$detail," in
@@ -2768,7 +2768,7 @@ case "$status" in
     #
     # The deeper point: the gate does not need to know WHETHER this is a convergence round. It needs to
     # know the shipped code was tested. Binding step 3 the same way steps 6 and 8 are bound removes the
-    # need for a discriminator entirely — which is why commands/polish.md no longer claims that
+    # need for a discriminator entirely — which is why commands/polish-guide.md § Step 1 no longer claims that
     # `receipt --recover`'s own output tells a session which kind of round it is in.
     #
     # The waivers are two LITERALS, never the `skipped:*` class. Receipt outcomes are free text
@@ -2840,7 +2840,7 @@ case "$status" in
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
     # decides whether the dir #88 dialog check applies (`$needs_dialog`: every `agent:*`-shaped
-    # outcome — bare, or carrying an add-on (dir #183) — the outcomes step 5(a)'s
+    # outcome — bare, or carrying an add-on (dir #183) — the outcomes § Step 5 (a)'s
     # reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
     # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
     # tag (below) from the same match — dir #141 was exactly the "future third suffix" this comment
@@ -2880,7 +2880,7 @@ case "$status" in
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
                          # dir #116: needs_dialog here reads step 4's mandatory skip dialog (its
-                         # `KEEL-DEPTH-DIALOG` skip marker), not step 5(a)'s reminder — skip is the one
+                         # `KEEL-DEPTH-DIALOG` skip marker), not § Step 5 (a)'s reminder — skip is the one
                          # depth that bypasses step 5 outright, so that ANSWERED dialog is the only
                          # mechanical evidence the skip question was put to a human for THIS commit
                          # (the trace records the question's marker, not the chosen answer — reading
@@ -3028,7 +3028,7 @@ case "$status" in
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
     esac
     # dir #116 (found by this change's own review): `skip` is only ever a BARE outcome. There is no
-    # review to waive, operator-run, or agent-run at skip — commands/polish.md's hand-off paths exist
+    # review to waive, operator-run, or agent-run at skip — commands/polish-guide.md § Step 5's hand-off paths exist
     # only for real review levels — so any suffixed/prefixed route to outcome_level=skip is an invented
     # shape, not a hand-off result. Deny it outright rather than let a trusted-arm suffix dodge the
     # skip-dialog check below: reproduced in a sandbox, `skip-waived` + a matching `polish.4-depth
@@ -3179,7 +3179,7 @@ case "$status" in
     # `agent:<level>+<addon>` — dir #183 — the reminder fires
     # identically for all of them, `$needs_dialog` set by the SAME case statement above) additionally
     # requires a mechanically-traced, ANSWERED
-    # AskUserQuestion dialog for step 5(a)'s MANDATORY reminder — the review claim itself can be
+    # AskUserQuestion dialog for § Step 5 (a)'s MANDATORY reminder — the review claim itself can be
     # receipted honestly while that reminder is silently skipped by momentum (felt on dir #62/PR #147).
     # Armed only when the AskUserQuestion leg is actually wired (`_dialog_leg_armed`, above) — see the
     # dir #88 header section for why an unconditional check would false-deny every `agent:*` unlock
@@ -3191,13 +3191,13 @@ case "$status" in
       # $current_sha with no such fallback — so an `agent:*` outcome (the ordinary, adopter-observed
       # shape per dir #488's own body) still denied here even after the review check passed, on any
       # installation where the AskUserQuestion leg is armed (this repo's own project-scope hooks are).
-      # Re-answering that dialog means re-running step 5(a) — a Skill(code-review) invocation — which
+      # Re-answering that dialog means re-running § Step 5 (a) — a Skill(code-review) invocation — which
       # is exactly the mechanical cost dir #488 exists to remove, so an unexempted twin here defeated
       # the whole ticket on every armed install. `$review_null_ancestor` is always defined by this
       # point (initialized "" alongside `trusted`/`needs_dialog` above, never left unset by `set -u`)
       # — for the `skip` arm specifically it is unconditionally "" (skip sets trusted=1, so the
       # review-trace block above that would populate it never runs), so this fallback is structurally
-      # a no-op for skip's own, unrelated dialog (step 4's, not step 5(a)'s) — its behavior is
+      # a no-op for skip's own, unrelated dialog (step 4's, not § Step 5 (a)'s) — its behavior is
       # untouched, deliberately.
       dialog_ancestor_ok=0
       if [ -n "$review_null_ancestor" ] && _trace_has_line "$wt" "$review_null_ancestor" "dialog:$outcome_level"; then
@@ -3214,7 +3214,7 @@ case "$status" in
         # dialog trace is missing, a precondition the session can still satisfy without losing the
         # other 7 receipts.
         # dir #116: skip's missing dialog is a DIFFERENT one than the agent arms' — step 4's own skip
-        # dialog, not step 5(a)'s reminder. Named separately in both the log reason and the message so
+        # dialog, not § Step 5 (a)'s reminder. Named separately in both the log reason and the message so
         # a convergence round doesn't mis-read this as the dir #88 deny and go re-answer the wrong
         # dialog. An explicit if/else (not two deny calls relying on deny()'s own exit): the same
         # duplicate-JSON hazard the dir #96 comment in deny() documents would reappear the day deny
