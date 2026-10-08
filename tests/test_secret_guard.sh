@@ -2263,6 +2263,8 @@ done
 # that differ (the spec's A4): tr is not on a staged text path with no personal file, sed is not on a
 # --range path with none (both → 1, the key is still found); with a personal file set, a missing grep
 # trips the personal-ERE preflight and a missing sed the personal-file parse first — each its own exit 2.
+# An allow-list on purpose, not lib.sh's path_farm (a deny-list over the whole $PATH): the scanner gets
+# exactly the tools it declares, so a new undeclared dependency shows up here as a red run.
 farm715() {  # dir tool-to-leave-out
   local t p
   mkdir -p "$1"
@@ -2284,11 +2286,8 @@ for t715 in sort grep awk sed tr; do
     for p715 in np p; do
       pf715=/dev/null; pl715='unset'
       [ "$p715" = p ] && { pf715="$pfile715"; pl715='set'; }
-      if [ "$m715" = staged ]; then
-        run_in "$r715" env PATH="$SANDBOX/farm715-no-$t715" SECRET_SCAN_PERSONAL_FILE="$pf715" "$scan" --staged
-      else
-        run_in "$r715" env PATH="$SANDBOX/farm715-no-$t715" SECRET_SCAN_PERSONAL_FILE="$pf715" "$scan" --range HEAD~1..HEAD
-      fi
+      args715=(--staged); [ "$m715" = range ] && args715=(--range HEAD~1..HEAD)
+      run_in "$r715" env PATH="$SANDBOX/farm715-no-$t715" SECRET_SCAN_PERSONAL_FILE="$pf715" "$scan" "${args715[@]}"
       case "$t715:$m715:$p715" in
         tr:staged:np|sed:range:np) want715=1; named715="" ;;
         grep:*:p|sed:*:p) want715=2; named715="" ;;

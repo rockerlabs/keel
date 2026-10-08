@@ -137,19 +137,13 @@ trap 'exit 143' TERM
 # _fail_closed STEP [STATUS [ERRFILE]] — dir #715: the one exit for a read the scan could not complete. A
 # producer that failed, or a read that lost a record, must never look like a clean input ("nothing came
 # back" read as "nothing found" — the class behind dir #508 (b), #693, #697, #680, #682, #280 and #715).
-# Prints `secret-scan: could not STEP (exit STATUS) — refusing to report it clean` (no STATUS → no
-# parenthesis: the scanner's own finding over output that exited 0), then each ERRFILE line under the
-# `secret-scan:   ` prefix — never a bare two-space indent, which kb-doctor and leak_gate_run read as hit
-# lines — and exits 2. Builtins only: a missing tool may be the very failure being reported. Call it from
-# the main shell only (an `exit` inside `$(…)` ends just that subshell); a function that runs inside one
-# returns a status, and its caller hands that status here: `cmd > "$spool" 2>"$err" || _fail_closed …`.
+# ERRFILE lines get the `secret-scan:   ` prefix, never a bare two-space indent: kb-doctor and
+# leak_gate_run read those as hit lines. Builtins only: a missing tool may be the very failure reported.
+# Main shell only (an `exit` inside `$(…)` ends just that subshell): a function that runs inside one
+# returns a status, and its caller hands it here — `cmd > "$spool" 2>"$err" || _fail_closed STEP $? "$err"`.
 _fail_closed() {
   local l=""
-  if [ -n "${2:-}" ]; then
-    printf 'secret-scan: could not %s (exit %s) — refusing to report it clean\n' "$1" "$2" >&2
-  else
-    printf 'secret-scan: could not %s — refusing to report it clean\n' "$1" >&2
-  fi
+  printf 'secret-scan: could not %s%s — refusing to report it clean\n' "$1" "${2:+ (exit $2)}" >&2
   if [ -n "${3:-}" ] && [ -r "$3" ]; then
     while LC_ALL=C IFS= read -r l || [ -n "$l" ]; do
       printf 'secret-scan:   %s\n' "$l" >&2
@@ -295,6 +289,24 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
   printf '%s' "${n:-0}"
 }
 
+# collect_matches LABEL PREFIX FILE FLAGS [EXTRA] — the one path from a match pass to records (dir #715):
+# match_text FILE (FLAGS, EXTRA as there), fail closed on its status (STEP `match 'LABEL'`), and append
+# each hit as a "PREFIX<hit>" record. Main shell only, so the records+= appends land here.
+# dir #693 — the read carries `|| [ -n "$hit" ]`: under a UTF-8 locale bash 5.x `read -r` returns 1 for a
+# FINAL line whose last byte is an invalid multibyte lead byte (the newline is swallowed into the incomplete
+# sequence), though it did fill the variable — a bare `while read` dropped exactly the record carrying the
+# key (found by CI's ubuntu leg: bash 5.2 + a key line ending in a stray 0xE9).
+# dir #715 (B3) — the same swallow mid-stream drops or merges the NEXT record (a NUL-delimited name list
+# too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
+# never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
+collect_matches() {
+  local label="$1" prefix="$2" f="$3" m="$SCRATCH/matches" hit=""
+  match_text "$4" "$f" "${5:-}" > "$m" || _fail_closed "match '$label'" $?
+  while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
+    [ -z "$hit" ] || records+="$prefix$hit"$'\n'
+  done < "$m"
+}
+
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
 # classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
 # public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync.
@@ -309,7 +321,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
 # pass — covers any pass added here later for free, with no line to remember to re-append.
 emit_blob() {  # $1 = record label (path)
-  local label="$1" tmp dec hits
+  local label="$1" tmp dec
   tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"
   cat > "$tmp"
   {
@@ -324,39 +336,25 @@ emit_blob() {  # $1 = record label (path)
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo            # raw printable runs
   } | LC_ALL=C tr -d '\000' > "$dec"
-  hits="$(match_text -o "$dec")" || _fail_closed "match '$label'" $?
+  collect_matches "$label" "$label:(binary) " "$dec" -o
   rm -f "$tmp" "$dec"
-  [ -z "$hits" ] && return 0
-  # dir #693 — every `read` loop that collects match output carries `|| [ -n "$var" ]`: under a UTF-8 locale
-  # bash 5.x `read -r` returns 1 for a FINAL line whose last byte is an invalid multibyte lead byte (the
-  # newline is swallowed into the incomplete sequence), though it did fill the variable — so a bare `while
-  # read` dropped exactly the record carrying the key and the scan ended `clean` (found by CI's ubuntu leg:
-  # bash 5.2 + a key line ending in a stray 0xE9). The tail keeps an unterminated last line.
-  # dir #715 (B3) — the same swallow mid-stream drops or merges the NEXT record (a NUL-delimited name list
-  # too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
-  # never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
-  while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
-    [ -n "$hit" ] && records+="$label:(binary) $hit"$'\n'
-  done <<< "$hits"
 }
 
-# route one unit of content (stdin) by type: binary → the decode pass, text → line matching with
-# line numbers. Spools stdin to a temp file; callers must feed it via redirection from a spool file
-# (NOT a pipe) so the records+= appends run in this shell.
-emit_stream() {  # $1 = record label (path)
-  local label="$1" stmp mtmp
+# route one unit of content by type: binary → the decode pass, text → line matching with line numbers.
+# emit_file reads a FILE the caller already holds (a spool, a scanned file); emit_stream spools stdin
+# first. Both run in this shell (never in a pipe or a `$(…)`), so the records+= appends land here.
+emit_file() {  # $1 = record label (path), $2 = file
+  if is_binary_file "$2"; then
+    emit_blob "$1" < "$2"
+  else
+    collect_matches "$1" "$1:" "$2" -n
+  fi
+}
+emit_stream() {  # $1 = record label (path); the content on stdin
+  local stmp
   stmp="$(spool)"
   cat > "$stmp"
-  if is_binary_file "$stmp"; then
-    emit_blob "$label" < "$stmp"
-  else
-    mtmp="$(spool)"
-    match_text -n "$stmp" > "$mtmp" || _fail_closed "match '$label'" $?
-    while LC_ALL=C IFS= read -r line || [ -n "$line" ]; do   # dir #693/#715: see emit_blob's loop
-      records+="$label:$line"$'\n'
-    done < "$mtmp"
-    rm -f "$mtmp"
-  fi
+  emit_file "$1" "$stmp"
   rm -f "$stmp"
 }
 
@@ -467,18 +465,13 @@ emit_diff() {
   # `diff.external` program replaces the patch with its own output (no `@@` header, so awk emits nothing)
   # and a `textconv` filter replaces the file's content with the converter's output — either one hid a
   # staged key (`clean`, exit 0). The scanner reads the staged bytes, whatever the git config says.
-  local derr mtmp
-  derr="$(spool)"
+  local derr="$dtmp.err"
   git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>"$derr" | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
   ' | LC_ALL=C sed 's/^+//' > "$dtmp" || _fail_closed "parse the staged diff of '$path'" $? "$derr"
-  mtmp="$(spool)"
-  match_text '' "$dtmp" > "$mtmp" || _fail_closed "match '$path'" $?
-  while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do   # dir #693/#715: see emit_blob's loop
-    records+="$path:$hit"$'\n'
-  done < "$mtmp"
-  rm -f "$dtmp" "$derr" "$mtmp"
+  collect_matches "$path" "$path:" "$dtmp" ''
+  rm -f "$dtmp" "$derr"
 }
 
 # selftest — end-to-end verification via child runs of this same script in FILE mode, from a neutral
@@ -526,7 +519,7 @@ selftest() {
 
   probe() {  # $1 = expected exit, $2 = label, $3 = personal file, $4 = fixture path
     local want="$1" label="$2" pfile="$3" fixture="$4" got=0
-    (cd "$dir" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
+    (cd "$dir" && SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq "$want" ]; then
       echo "selftest: OK   — $label"
     else
@@ -590,8 +583,7 @@ selftest() {
   repo_probe() {  # $1 = repo, $2 = label, remaining = the scan's arguments — expects the scan to BLOCK
     local repo="$1" label="$2" got=0
     shift 2
-    (cd "$repo" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" "$@" >/dev/null 2>&1) || got=$?
+    (cd "$repo" && "$script" "$@" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq 1 ]; then
       echo "selftest: OK   — $label"
     else
@@ -667,7 +659,7 @@ scan_file_args() {
   local f
   for f in "$@"; do
     [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-    emit_stream "$f" < "$f"
+    emit_file "$f" "$f"
   done
 }
 
@@ -749,7 +741,7 @@ case "$mode" in
       while LC_ALL=C IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693/#715: see emit_blob's loop
         [ -n "$osha" ] || continue
         git cat-file blob "$osha" > "$btmp" 2>"$berr" || _fail_closed "read blob $osha ('$opath')" $? "$berr"
-        emit_stream "$opath" < "$btmp"
+        emit_file "$opath" "$btmp"
       done <<< "$blobs"
       rm -f "$btmp" "$berr"
     fi
@@ -767,19 +759,16 @@ case "$mode" in
     msg_hits="$(count_matches "$msgtmp" "$SESSION_META")" \
       || _fail_closed "count matches in the range's commit messages" $?
     if [ "$msg_hits" -gt 0 ]; then
-      clist="$(spool)"; ctmp="$(spool)"; mtmp="$(spool)"
+      clist="$(spool)"; ctmp="$(spool)"
       # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
       git rev-list $rng > "$clist" 2>"$merr" || _fail_closed "list the range's commits" $? "$merr"
       while LC_ALL=C IFS= read -r csha; do
         [ -n "$csha" ] || continue
         git log -1 --format=%B "$csha" > "$ctmp" 2>"$merr" \
           || _fail_closed "read the message of commit ${csha:0:7}" $? "$merr"
-        match_text '' "$ctmp" "$SESSION_META" > "$mtmp" || _fail_closed "match 'commit ${csha:0:7} message'" $?
-        while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do   # dir #693/#715: see emit_blob's loop
-          [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
-        done < "$mtmp"
+        collect_matches "commit ${csha:0:7} message" "commit ${csha:0:7} message:" "$ctmp" '' "$SESSION_META"
       done < "$clist"
-      rm -f "$clist" "$ctmp" "$mtmp"
+      rm -f "$clist" "$ctmp"
     fi
     rm -f "$msgtmp" "$merr"
     # An annotated TAG's own message is neither a blob nor a commit message, so both passes above
@@ -796,16 +785,11 @@ case "$mode" in
       done <<< "$tagshas" > "$tagtmp"
       tag_hits="$(count_matches "$tagtmp" "$SESSION_META")" || _fail_closed "count matches in the range's tag messages" $?
       if [ "${tag_hits:-0}" -gt 0 ]; then
-        mtmp="$(spool)"
         while LC_ALL=C IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
           tag_body "$tsha" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $?
-          match_text '' "$tagtmp" "$SESSION_META" > "$mtmp" || _fail_closed "match 'tag ${tsha:0:7} message'" $?
-          while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do   # dir #693/#715: see emit_blob's loop
-            [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
-          done < "$mtmp"
+          collect_matches "tag ${tsha:0:7} message" "tag ${tsha:0:7} message:" "$tagtmp" '' "$SESSION_META"
         done <<< "$tagshas"
-        rm -f "$mtmp"
       fi
       rm -f "$tagtmp"
     fi
@@ -839,19 +823,19 @@ case "$mode" in
     sblob="$(spool)"
     tab=$'\t'
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
-      # "<added>TAB<deleted>TAB<path>": split on the FIRST two tabs only — a name may itself begin or end
-      # with a tab, so never `IFS=$'\t' read`.
-      added="${rec%%"$tab"*}"; rest="${rec#*"$tab"}"; deleted="${rest%%"$tab"*}"; f="${rest#*"$tab"}"
+      # "<added>TAB<deleted>TAB<path>": the path is everything after the FIRST two tabs — a name may itself
+      # begin or end with a tab, so never `IFS=$'\t' read`.
+      f="${rec#*"$tab"*"$tab"}"
       [ -n "$f" ] || continue
-      if [ "$added" = - ] && [ "$deleted" = - ]; then
-        # a binary file has no text diff — decode and scan its staged blob. `cat-file blob :0:<path>`, not
-        # `git show :<path>`: show reads `1:x.bin` as stage 1 of `x.bin` (that file was silently skipped),
-        # and only show can apply a textconv driver.
-        git cat-file blob ":0:$f" > "$sblob" 2>"$serr" || _fail_closed "read the staged blob of '$f'" $? "$serr"
-        emit_stream "$f" < "$sblob"
-      else
-        emit_diff "$f" --cached
-      fi
+      case "$rec" in
+        "-$tab-$tab"*)
+          # a binary file has no text diff — decode and scan its staged blob. `cat-file blob :0:<path>`, not
+          # `git show :<path>`: show reads `1:x.bin` as stage 1 of `x.bin` (that file was silently skipped),
+          # and only show can apply a textconv driver.
+          git cat-file blob ":0:$f" > "$sblob" 2>"$serr" || _fail_closed "read the staged blob of '$f'" $? "$serr"
+          emit_file "$f" "$sblob" ;;
+        *) emit_diff "$f" --cached ;;
+      esac
     done < "$slist"
     ;;
   --tracked)
@@ -876,7 +860,7 @@ case "$mode" in
         emit_stream "$f" <<< "$target"
       elif [ -f "$top/$f" ]; then
         if [ -r "$top/$f" ]; then
-          emit_stream "$f" < "$top/$f"
+          emit_file "$f" "$top/$f"
         else
           # skip-and-warn, never abort: one unreadable file must not void the rest of the audit
           echo "secret-scan: WARN unreadable, skipped: $f" >&2
