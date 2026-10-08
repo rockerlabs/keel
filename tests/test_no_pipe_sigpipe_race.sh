@@ -36,13 +36,13 @@
 # never spells this shape with a literal producer-pipe-consumer sequence (found in review: an
 # earlier draft's own pass/fail strings self-matched this exact regex, which would have made the
 # test fail on its own source the moment it became in-scope of its own scan).
-QMHEAD_RE='grep( +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
+QMHEAD_RE='(e|f)?grep( +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
 # dir #708 widened the q/m consumer to ANY producer. Measured @0a99412: `| grep -q/-m` after any
 # command was 9 hits tree-wide (all fixed), while `| head` after any command was ~97 — nearly all
 # `x="$(... | head -1)"` captures whose pipeline status nobody reads, so a SIGPIPE there changes no
 # result. grep -q/-m is branched on, which is what makes the race real; `head` stays bounded to the
 # fixed producer list above. `(^|[^|])` keeps `|| grep -q ...` (an OR list, not a pipe) out.
-# The consumer also takes (e|f)grep as a substring and flag clusters before the q/m one (`grep -F -q`); a flag that
+# The consumer also takes egrep/fgrep (the prefix matters: the pipe anchor needs the name to start right after it) and flag clusters before the q/m one (`grep -F -q`); a flag that
 # takes an argument ahead of it (`grep -e pat -q`) stays a known gap, like the others in the header.
 ANY_QM_RE="(^|[^|])\\|[[:space:]]*$QMHEAD_RE"
 RACE_RE="(^|[^a-zA-Z0-9_])(printf|echo|sed|tr)[[:space:]][^|]*\\|[[:space:]]*($QMHEAD_RE|head)|$ANY_QM_RE"
@@ -132,13 +132,15 @@ fx="$SANDBOX/race-fixture.sh"
   echo "func_prod $P grep -F -q x || true"
   echo "  $P grep -qE 'x'"
   echo "func_prod $P grep -q x   # sigpipe-ok: x"
+  echo "func_prod $P egrep -q x"
+  echo "func_prod $P fgrep -qx x"
 } > "$fx"
 got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
-if [ "$got" = "1 2 3 7 8 9 " ]; then
+if [ "$got" = "1 2 3 7 8 9 10 11 " ]; then
   pass "guard flags function/awk/git producers; skips allow-comment, OR list, head capture"
 else
   fail "guard flags function/awk/git producers; skips allow-comment, OR list, head capture" \
-    "flagged lines: '$got' (want '1 2 3 7 8 9 ')"
+    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 ')"
 fi
 
 summary
