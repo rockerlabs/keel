@@ -123,6 +123,14 @@ This is the durable public referent a future run points at instead of re-derivin
    means every quote and `grep` result the reading leg produces is unverifiable for as long as the
    mutation is live, whether or not the mutating leg restores cleanly afterward — the report would read
    as confidently grounded regardless (dir #485).
+   **A mutation leg also carries a size rule** — a build keeps artifacts per mutant, and a leg that keeps
+   them all fills the disk (felt: 4–10 GB left by one leg, never deleted, in a session scratchpad no tool
+   prunes). So: keep the artifacts of **surviving** mutants only — the leg deletes a killed mutant's
+   artifacts in the same iteration that kills it; use one shared build cache per leg, never a build-cache
+   copy per mutant; check a `df` floor before the leg starts (free space on the volume that holds its
+   scratch area, and stop rather than start below it); and the leg's report states what it left (paths and
+   sizes) and hands the operator the `rm -rf` for it — a leg cannot delete its own scratch area, so the
+   cleanup command is part of its report contract.
 6. **Report contract** — your report must contain, in this order:
    - `## Surfaces checked` — every assigned file, with "read whole: yes/no" and which checks ran;
    - `## Verdicts` — one line per assigned file: `clean` | `FINDING-<id>` | `waived(<reason>)`;

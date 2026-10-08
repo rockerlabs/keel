@@ -171,4 +171,23 @@ pin "the disclosure-only round states the measuring-platform axis" "$doc" \
   'the platform it was measured on, or measures both' \
   "expected section 10 to require a platform-dependent correction to name or cover its platform"
 
+# --- dir #724: the mutation mandate carries a size rule for per-mutant artifacts ---------------------
+# A mutation leg that keeps one build artifact per mutant fills the disk (felt: 4-10 GB per leg, never
+# deleted). Each clause is pinned separately so a trim of one cannot hide behind the others.
+pin "mutation size rule: keep artifacts of SURVIVING mutants only" "$doc" \
+  'artifacts of **surviving** mutants only' \
+  "expected item 5 to bind a mutation leg to keep only surviving mutants' artifacts"
+pin "mutation size rule: delete the killed mutants' artifacts per iteration" "$doc" \
+  'deletes a killed mutant' \
+  "expected item 5 to require per-iteration deletion of killed mutants' artifacts"
+pin "mutation size rule: one shared build cache per leg" "$doc" \
+  'one shared build cache per leg' \
+  "expected item 5 to forbid a per-mutant build cache copy"
+pin "mutation size rule: df floor before a leg starts" "$doc" \
+  '`df` floor' \
+  "expected item 5 to require a free-space check before a mutation leg starts"
+pin "mutation size rule: the report states what the leg left and hands over the rm -rf" "$doc" \
+  'hands the operator the `rm -rf`' \
+  "expected item 5 to make the leg report what it left and give the operator the cleanup command"
+
 summary
