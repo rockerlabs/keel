@@ -40,7 +40,6 @@ sections real content going forward — see that page for exactly when each one 
   strip or the block refresh delete every line after it, and a file with two blocks, or a BEGIN without an
   END, is left byte-identical with one line saying why. `install.sh` now requires `tools/lib/core-ownership.sh`
   like the other scripts do; its inline copy of those functions is gone.
-=======
 - **`install-secret-guard.sh --global` no longer silently overrides a `core.hooksPath` a conditional
   `[includeIf]` include sets** (dir #717, S5-1). Appending Keel's `[core] hooksPath` after such an include
   used to take over every tree its condition matched, with exit 0. The installer now walks the conditional
@@ -54,7 +53,6 @@ sections real content going forward — see that page for exactly when each one 
   with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
   and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
   next to the guard hook, which is a copy: re-running `./install.sh --link` refreshes it (dir #717, R1-3).
->>>>>>> origin/main
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
