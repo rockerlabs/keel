@@ -36,7 +36,9 @@ core_words="$(wc -w < "$polish" | tr -d ' ')"
 check_eq "polish.md is within POLISH_MD_WORD_BUDGET ($core_words words, budget $POLISH_MD_WORD_BUDGET)" "ok" "$(budget_status "$polish")"
 # The predicate must be able to fail: a copy one word over the budget reads red.
 over="$SANDBOX/polish-over.md"
-{ cat "$polish"; yes extra | head -n $((POLISH_MD_WORD_BUDGET + 1 - core_words)) | tr '\n' ' '; } > "$over"
+# Built from scratch, not from the core: a count derived from $core_words goes negative once the core passes the
+# budget, and `head -n -N` never ends on GNU/busybox.
+yes extra | head -n $((POLISH_MD_WORD_BUDGET + 1)) | tr '\n' ' ' > "$over"
 check_eq "the budget predicate is red against a copy exactly one word over" "over by 1" "$(budget_status "$over")"
 
 # --- K1: the guide's own header (B8d) ------------------------------------------------------------------
@@ -204,7 +206,9 @@ pinf "step 5: a missing-trace deny with HEAD unchanged goes in-session" \
 pinf "step 5: the in-session fallback keeps the two-word args" \
   'with the SAME two-word args `<level> origin/<default>...HEAD`'
 pinf "step 5: the fallback order ends in (a) then (b)" \
-  'refused there too → (a) below; then (b)'
+  'refused there too → the guide'"'"'s (a) and (b)'
+pinf "step 6: the receipt names both skip receipts (no-file-changes, --no-test)" \
+  '`skipped:no-file-changes`/`skipped:--no-test`) — the outcome IS the sha'
 
 # B7/B7a: disclosure and clause fates
 pinf "step 5: the disclosure wording" \

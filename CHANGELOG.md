@@ -15,6 +15,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
+  `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
+  truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
+  only there (dir #711). `tests/test_polish_command.sh` builds its over-budget copy from scratch, so its
+  `head -n` count cannot go negative once the core passes 3,001 words (dir #709).
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and

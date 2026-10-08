@@ -172,7 +172,7 @@ Steps, in order:
      refused, the review was voided for a missing findings list (never for a changed tree — that stops), or
      the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session
      with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
-     first scope, `@{upstream}...HEAD`, is empty); refused there too → (a) below; then (b). Each existing
+     first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b). Each existing
      path stays as written; this adds one layer in front of them.
    - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
@@ -189,11 +189,11 @@ Steps, in order:
    if aliased), else `polish-guide.md` beside this file, § Step 5; guide unreachable → stop and report.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (hand-off edits count)
-   or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once and show the real output; red → no receipt,
+   or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once, showing the real output; red → no receipt,
    report what broke and stop. Nothing changed → skip the re-run (`skipped:no-file-changes`). **Never commit,
    amend or edit while a background suite run is alive** (dir #505): it trips `tests/run.sh`'s
    self-corruption canary as a false positive. Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or
-   `skipped:no-file-changes`) — the outcome IS the sha the retest ran at, and after a fix commit or `--amend` it also re-binds step 3's receipt to the new HEAD.
+   `skipped:no-file-changes`/`skipped:--no-test`) — the outcome IS the sha the retest ran at, and after a fix commit or `--amend` it also re-binds step 3's receipt to the new HEAD.
 
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP
    (non-zero exit) is a red test: no receipt, report what it flagged, stop. Receipt:
