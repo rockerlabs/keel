@@ -123,7 +123,7 @@ type_p_bypass() {
   local tf="$1" tvars tv
   tvars="$(grep -oE '(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=("?)\$\(type -P git\)' "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly )?([A-Za-z_0-9]+)=.*/\2/' || true)"
   for tv in $tvars; do
-    grep -nE "(\\\$\\{$tv\\}|\\\$$tv([^A-Za-z0-9_]|\$))[^|;&]*[[:space:]]-C([^[:alpha:]]|\$)" "$tf" | sed "s|^|${tf##*/} ($tv): |" || true
+    grep -nE "(\\\$\\{$tv\\}|\\\$$tv([^A-Za-z0-9_]|\$))([^|;\&]*[[:space:]])?-C([^[:alpha:]]|\$)" "$tf" | sed "s|^|${tf##*/} ($tv): |" || true
   done
 }
 # The checker must be able to fail: planted files in each bypass shape are flagged, a `config --global`
@@ -135,8 +135,9 @@ printf '%s\n' 'export GB="$(type -P git)"' 'env X=1 "$GB" -C "$d" status' > "$pl
 printf '%s\n' 'gitt="$(type -P git)"' 'env H=1 "$gitt" config --global core.hooksPath "$d"' > "$planted/no-C.sh"
 printf '%s\n' 'g="$(type -P git)"' 'grep -n "$gitt" -C 3 f; "$gh" -C "$d" x' > "$planted/prefix.sh"
 printf '%s\n' 'gitt="$(type -P git)"' '"$gitt" -C"$d" add f' > "$planted/glued.sh"
+printf '%s\n' 'gitt="$(type -P git)"' 'env H=1 $gitt -C "$d" add f' > "$planted/unquoted.sh"
 printf '%s\n' 'gitt="$(type -P git)"' 'env H=1 "$gitt" -C' '  "$d" add f' > "$planted/eol.sh"
-for pf in plain local-flags export glued eol; do
+for pf in plain local-flags export glued eol unquoted; do
   check_ne "C2 control: the checker flags the $pf bypass shape" "" "$(type_p_bypass "$planted/$pf.sh")"
 done
 check_eq "C2 control: a \$(type -P git) variable without -C is not flagged" "" "$(type_p_bypass "$planted/no-C.sh")"
