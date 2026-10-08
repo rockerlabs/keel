@@ -43,6 +43,7 @@ check_eq "the clone's origin is the source" "$src" "$(git -C "$want" config remo
 
 # reuse: untracked and ignored leftovers of a previous run are cleaned too
 echo junk > "$want/leftover"; mkdir -p "$want/scratchdir"; echo junk > "$want/scratchdir/x"
+git init -q "$want/nestedrepo"   # a nested repo survives a single -f
 # reuse: moves to the new sha, and re-cleans a .DS_Store that appeared since
 : > "$want/.git/objects/.DS_Store"
 run "$tool" W5 "$sha2" --source "$src"
@@ -50,6 +51,7 @@ check_status "a reuse run exits 0" 0 "$STATUS"
 check_eq "reuse moves the branch to the new sha" "$sha2" "$(git -C "$want" rev-parse HEAD)"
 check_nofile "reuse drops an untracked leftover file" "$want/leftover"
 check_nodir "reuse drops an untracked leftover dir" "$want/scratchdir"
+check_nodir "reuse drops a leftover nested repo" "$want/nestedrepo"
 check_eq "reuse stays on a branch" "$br" "$(git -C "$want" symbolic-ref -q --short HEAD || true)"
 check_eq "reuse removes a fresh .DS_Store" "" "$(find "$want/.git" -name .DS_Store | head -1)"
 check_eq "reuse leaves no hard-linked object file" "" "$(find "$want/.git/objects" -type f -links +1 | head -1)"

@@ -82,7 +82,7 @@ git -C "$clone" cat-file -e "$full^{commit}" 2>/dev/null \
   || die "$full is not reachable from the branches of $source_dir"
 git -C "$clone" checkout -q -f -B keel-alpine-leg "$full"
 # a reused clone must not carry the previous run's untracked/ignored leftovers into this one (git-only, no rm)
-git -C "$clone" clean -q -f -d -x || die "could not clean untracked files in $clone"
+git -C "$clone" clean -q -f -f -d -x || die "could not clean untracked files in $clone"
 strip_ds_store
 
 printf '%s\n' "$clone"
