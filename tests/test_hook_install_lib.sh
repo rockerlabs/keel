@@ -28,6 +28,10 @@ done
 n="$(grep -c 'merge_prog=\|remove_prog=' "$lib" || true)"
 check_status "the lib holds both programs (one merge_prog=, one remove_prog=)" 2 "$n"
 
+# The backup and atomic-write helpers are thin wrappers over tools/lib/safe-write.sh (dir #679), which
+# every installer sources itself; the hook lib does not, so this test loads it the way they do.
+# shellcheck source=tools/lib/safe-write.sh
+. "$REPO_ROOT/tools/lib/safe-write.sh"
 # shellcheck source=/dev/null
 . "$lib"
 
@@ -206,6 +210,16 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 check_status "atomic_write: …and no temp is left beside it" 0 \
   "$(find "$SANDBOX" -maxdepth 1 -name 'ro.json.keeltmp.*' | grep -c . || true)"
+# dir #679 A9: a hard-linked settings.json is refused, not split — a rename over one name would leave
+# the other holding the old bytes, so the edit would silently reach only half of the file's names.
+printf '{}\n' > "$SANDBOX/hl.json"; ln "$SANDBOX/hl.json" "$SANDBOX/hl-other.json"
+run hook_install_atomic_write "$SANDBOX/hl.json" '{"a":1}'
+check_ne "atomic_write: a hard-linked settings.json → rc ≠ 0" 0 "$STATUS"
+check_contains "atomic_write: …the refusal names the hard link" "$OUT" "hard link"
+check_status "atomic_write: …the name written to still holds {}" '{}' "$(cat "$SANDBOX/hl.json")"
+check_status "atomic_write: …the other name still holds {}" '{}' "$(cat "$SANDBOX/hl-other.json")"
+run test "$SANDBOX/hl.json" -ef "$SANDBOX/hl-other.json"
+check_status "atomic_write: …the hard link is not split" 0 "$STATUS"
 
 # Same-second collision (S3-5), made deterministic: a `date` function shadows the binary inside the lib's
 # $(date …), so both backups read one clock second — without the fix the second cp overwrote the first.

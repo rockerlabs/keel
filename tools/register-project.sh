@@ -5,6 +5,19 @@
 # refine the Tag afterward. Idempotent: a path already listed is skipped.
 set -euo pipefail
 
+# safe-write (dir #679) — REQUIRED: the row lands as an EDIT through it, so a dotfiles-managed
+# INSTANCE.md stays a link and keeps its mode, and one linked into this checkout's templates/ never
+# gets a private project path written into a tracked file. Refuse outright when it is missing.
+here="$(cd "$(dirname "$0")" && pwd)"
+if [ -s "$here/lib/safe-write.sh" ] && bash -n "$here/lib/safe-write.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/safe-write.sh
+  . "$here/lib/safe-write.sh"
+else
+  echo "register-project: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
+  exit 1
+fi
+KEEL_SAFE_WRITE_CHECKOUT="$(cd "$here/.." && pwd)"
+
 # Where the registry lives: KEEL_INSTANCE wins, else <KEEL_HOME>/INSTANCE.md, else ~/.claude/INSTANCE.md.
 INSTANCE="${KEEL_INSTANCE:-${KEEL_HOME:-${HOME:?set HOME, or pass KEEL_INSTANCE}/.claude}/INSTANCE.md}"
 
@@ -41,14 +54,16 @@ for dir in "$@"; do
     continue
   fi
   row="| $name | $abs | $abs/CLAUDE.md | - |"
-  # Insert the row at the end of the FIRST Projects table (the run of '|' lines after its header).
-  awk -v row="$row" '
+  # Insert the row at the end of the FIRST Projects table (the run of '|' lines after its header). The
+  # lib runs the awk itself (its command form) and renames the result only when awk succeeded, so a
+  # refusal or a failed awk (one line either way) changes nothing: exit 1.
+  keel_write_through "$INSTANCE" awk -v row="$row" '
     /^\| *Project *\| *Path *\|/ && !seen { seen=1; intab=1 }
     { lines[NR]=$0 }
     intab && /^\|/ { last=NR }
     intab && seen && !/^\|/ { intab=0 }
     END { for (i=1;i<=NR;i++) { print lines[i]; if (i==last) print row } }
-  ' "$INSTANCE" > "$INSTANCE.regtmp.$$" && mv -f "$INSTANCE.regtmp.$$" "$INSTANCE"
+  ' "$INSTANCE" || exit 1
   echo "  +    registered: $name -> $abs"
   added=$((added + 1))
 done

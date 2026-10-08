@@ -124,6 +124,17 @@ else
   echo "install-pre-pr-gate: tools/lib/hook-install (the settings-merge lib) is missing or corrupted — this checkout is incomplete and cannot safely edit settings.json; re-clone or re-download Keel" >&2
   exit 1
 fi
+# safe-write (dir #679) — REQUIRED: the settings.json write and its backup go through it (the
+# hook-install wrappers above), so a symlinked settings.json is written through and a hard-linked one
+# refused. Loaded right after hook-install, so a checkout missing both still names hook-install first.
+if [ -s "$here/lib/safe-write.sh" ] && bash -n "$here/lib/safe-write.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/safe-write.sh
+  . "$here/lib/safe-write.sh"
+else
+  echo "install-pre-pr-gate: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
+  exit 1
+fi
+KEEL_SAFE_WRITE_CHECKOUT="$repo_root"
 
 usage() {
   cat <<'EOF'

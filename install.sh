@@ -380,12 +380,12 @@ if [ -f "$manifest_file" ] && [ ! -r "$manifest_file" ]; then
 fi
 
 # Run-duration lock (dir #350, Fork 2 — locking, chosen over plain pid-liveness-on-the-sweep because
-# that direction alone leaves the pre-existing last-writer-wins race on the final atomic_write open).
+# that direction alone leaves the pre-existing last-writer-wins race on the final manifest write's open).
 # A portable mkdir-based lock directory: `mkdir` is atomic everywhere this script runs, so this needs no
 # `flock` dependency (not POSIX, not guaranteed present on a minimal BusyBox image, not built into
 # macOS's shell). Acquired here, immediately after the gate above passes (only reached when the manifest
 # is readable or absent — an unreadable manifest needs no mutual exclusion at all, nothing runs after
-# it), held through the final atomic_write far below, bracketing the stale-scratch sweep and the
+# it), held through the final manifest write far below, bracketing the stale-scratch sweep and the
 # prior_manifest snapshot region without rewriting either.
 #
 # Lives at $HOME_DIR/.install.lock, a SIBLING of $manifest_dir ($HOME_DIR/.keel) — deliberately NOT
@@ -488,7 +488,7 @@ while :; do
     exit 1
   fi
   # Stale lock — the recorded holder is gone (or never recorded, per the retry above). No EXIT trap
-  # released it (see the release site far below, right after the final atomic_write, for why: the
+  # released it (see the release site far below, right after the final manifest write, for why: the
   # prior_manifest snapshot's own comment further down this file already measured live, on this repo's
   # own bash 3.2.57, that a bare EXIT trap masks a genuine crash — an unset-variable abort — into a false
   # exit 0, which is worse than a leftover lock). Reclaim it and retry. Named residual, not fixed: two
@@ -558,6 +558,19 @@ else
   echo "install: tools/lib/artifact-cksum.sh is missing or corrupted — this checkout is incomplete and cannot safely record what it installs; re-clone or re-download Keel and re-run '$advise_install'" >&2
   exit 1
 fi
+# safe-write (dir #679) — REQUIRED, like artifact-cksum: every temp-and-rename write below goes through
+# it (the rule it carries — a write through a symlink, a kept mode, a refused hard link, a backup that
+# never overwrites one — is stated once, in its header). A degrade-and-continue fallback would be the
+# detaching write it exists to remove, so a missing or corrupt copy refuses the whole run. It loads
+# stat-portable itself; the one sourced above is reused, not re-read.
+if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/safe-write.sh
+  . "$root/tools/lib/safe-write.sh"
+else
+  echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
+  exit 1
+fi
+KEEL_SAFE_WRITE_CHECKOUT="$root"
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
@@ -641,15 +654,12 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # idiom as the `manifest_usable` line right above: exempt from `set -e` the same way.
 [ "${KEEL_TEST_DROP_PRIOR_MANIFEST:-}" = 1 ] && rm -f "$prior_manifest"
 
-# force_backup DEST [LABEL] — DEST's current bytes to DEST.<UTC>.bak via plain cp (follows a symlink, so what's
-# preserved is the content the adopter actually saw at that path). A fresh timestamp every call — never
-# a fixed name — so a LATER --force run can't clobber an EARLIER run's backup (dir #323's idempotence
-# requirement). The guarantee is second-granularity and nothing finer: `ts` is `%Y%m%dT%H%M%SZ` and the
-# write is a plain `cp`, so two backups of the same dest within one second would collide. That is not
-# reachable today and no counter suffix is warranted for it — after run 1's `place`, DEST matches the
-# source, so run 2 takes the in_sync branch and backs nothing up; within a single run the three call
-# sites and the alias recursion each address a distinct path. Second-granularity is a claim about
-# SEPARATE runs, which is the case dir #323 actually needed. Never recorded in the manifest: a backup is
+# force_backup DEST [LABEL] — DEST's current bytes (read through a symlink, so what's preserved is the
+# content the adopter actually saw at that path) to a NEW file beside it, through tools/lib/safe-write.sh's
+# keel_backup (dir #679): `DEST.<UTC>.bak`, then `.2.bak`, … when that name is taken, the name claimed by
+# an exclusive create. So no backup ever overwrites another — a LATER --force run can't clobber an
+# EARLIER run's backup (dir #323), and neither can a second backup in the same second (a --force and a
+# block refresh, two runs) or a file someone left at that name. Never recorded in the manifest: a backup is
 # adopter data, so uninstall.sh (which removes by manifest, never by heuristic) must leave it behind —
 # a backup uninstall removes is not a backup.
 # Guarded against a non-regular DEST (dir #349): a plain `cp` hangs on a FIFO and fails outright on a
@@ -680,46 +690,41 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # THE SAME "test position suspends set -e" FACT CUTS BOTH WAYS (found live by a fresh /code-review
 # pass, on the very draft that added the bullets above): testing this function's return value at the
 # bin/keel site doesn't just exempt the non-regular-dest `return 1` from `set -e` — it suspends
-# errexit for EVERY command in this function's body for that invocation, including the `cp` below. A
+# errexit for EVERY command in this function's body for that invocation, including the backup below. A
 # function relying on ambient `set -e` to catch ITS OWN internal failures is only safe when every
 # caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
-# failure — which is exactly what the `cp` below now does.
+# failure — which is exactly what the backup check below now does.
 # LABEL (default "--force") is only the word in the success line's closing parentheses; the block-refresh
 # ladder (dir #650) passes "block refresh".
 force_backup() {
-  local dest="$1" label="${2:---force}" ts
+  local dest="$1" label="${2:---force}"
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
     echo "  !    $(basename "$dest"): $NON_REGULAR_MSG"
     return 1
   fi
-  ts="$(date -u +%Y%m%dT%H%M%SZ)"
   # Explicit check, not ambient `set -e` (dir #349, found live by a fresh /code-review pass): the
   # bin/keel call site below tests this function's own return value (`elif force_backup ...; then`),
   # and bash suspends errexit for the WHOLE body of a command invoked in test position — not just its
-  # final exit status. Without this check, a real `cp` failure (permission denied, disk full, a
+  # final exit status. Without this check, a real copy failure (permission denied, disk full, a
   # transient I/O error) would silently fall through to the success echo below and return 0: the
   # caller would then believe the backup happened and proceed to overwrite the adopter's real file
   # with nothing actually backed up — reproduced live. Checking explicitly makes the failure mode the
   # same regardless of how the caller invokes this function: a bare-statement caller (sync_product's
   # two call sites) still aborts under `set -e` on a `return 1` here, same as before, but now with a
-  # clear message first instead of a bare `cp` stderr line.
-  if ! cp "$dest" "$dest.$ts.bak"; then
+  # clear message first (keel_backup's line saying why, then this one) instead of a bare stderr line.
+  if ! keel_backup "$dest"; then
     echo "  !    $(basename "$dest"): backup failed — left untouched" >&2
     return 1
   fi
-  echo "  ~    $(basename "$dest") backed up → $(basename "$dest").$ts.bak ($label)"
+  echo "  ~    $(basename "$dest") backed up → $(basename "$KEEL_BACKUP") ($label)"
 }
 
 # 1. Durable core.
-# atomic_write DEST — stdin lands via a temp sibling + rename, so a dest is never left half-written.
-# The ONE spelling of the atomicity protocol; every file write below routes through it (or make_link).
-atomic_write() {
-  cat > "$1.keeltmp.$$" && mv -f "$1.keeltmp.$$" "$1"
-}
-atomic_copy() {
-  atomic_write "$2" < "$1"
-}
+# Every file write below goes through tools/lib/safe-write.sh (dir #679), by the shape of the write:
+# keel_write_replace / keel_link_replace for a whole file or link of Keel content (a temp sibling renamed
+# onto the path, so a dest is never left half-written), keel_write_through for an edit of a file whose
+# new bytes depend on its current ones (the rails block, the manifest, the foreign-core marker).
 
 # _keel_test_checkpoint NAME — test-only crash-simulation checkpoint (dir #235): exits immediately
 # when KEEL_TEST_CRASH_AFTER equals NAME, letting the test suite prove the ordering of two
@@ -733,12 +738,6 @@ atomic_copy() {
 _keel_test_checkpoint() {
   [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
   return 0
-}
-
-# make_link — same temp-sibling + rename discipline for a symlink, so a dest is replaced, never
-# left dangling mid-write.
-make_link() {
-  ln -s "$1" "$2.keeltmp.$$" && mv -f "$2.keeltmp.$$" "$2"
 }
 
 # manifest_artifacts — every Keel-owned artifact CONFIRMED in place this run (dir #125), one
@@ -755,7 +754,7 @@ record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
 # record it relative to $HOME_DIR. The one call every write/up-to-date site below routes through.
 #
 # dir #369: a symlink's EXTRA is now `readlink DEST` — the target THIS run actually wired, always an
-# absolute path into $root (every make_link call site passes one) — not the literal `-` placeholder
+# absolute path into $root (every keel_link_replace call site passes one) — not the literal `-` placeholder
 # record_placed used to write. uninstall.sh reads this back and compares it against the live link's
 # current target, instead of hand-mirroring install.sh's own wiring in a table to re-derive what the
 # target SHOULD be. No manifest version bump: the field's position/format is unchanged (still a plain
@@ -831,8 +830,8 @@ prior_file_cksum() {
 # below is what closes that gap — the predicate cannot see the re-forming, so it refuses to answer for
 # a dest whose CURRENT form disagrees with the recorded one. Same for mode/ownership/xattr changes: not
 # observed, and not claimed. A HARD link IS observed, by the nlink clause below — and it had to be:
-# a hard link is a regular file, so `[ ! -L ]` passes it, its cksum matches, and `atomic_copy`'s
-# `mv -f` breaks the link exactly as the symlink case severs one. Same never-clobber harm, reached
+# a hard link is a regular file, so `[ ! -L ]` passes it, its cksum matches, and `keel_write_replace`'s
+# rename breaks the link exactly as the symlink case severs one. Same never-clobber harm, reached
 # through `ln` instead of `ln -s`, and NOT pre-existing: v0.8.0 has no keel_own_untouched at all (the
 # whole dir #323 machinery is unreleased), and there the hard link survives — measured link count
 # 2 -> 2 with the alias fork, against 2 -> 1 and "refreshed (Keel's own copy, unedited)" before this
@@ -916,7 +915,7 @@ keel_own_untouched() {
   [ -f "$dest" ] || return 1
   cmp -s "$src" "$dest" 2>/dev/null && return 1
   # …and neither is a HARD link, which `[ ! -L ]` cannot see: it IS a regular file, so its bytes match
-  # and `atomic_copy`'s `mv -f` would sever it just as silently. Same rejection, same reason. An empty
+  # and `keel_write_replace`'s rename would sever it just as silently. Same rejection, same reason. An empty
   # count means the probe could not answer (no tools/lib, an unstattable dest) and is treated as
   # UNKNOWN, not as 1 — fail closed on the rail whose job is to fail closed.
   # LAST because it is the only remaining clause that forks: every up-to-date dest is already rejected
@@ -1039,7 +1038,12 @@ record_readme_if_unclobbered() {
 # fixing drift by hand. Everything else (never-clobber, collision aliases, tty/non-tty behavior)
 # is shared, so the two modes can't drift apart in semantics.
 place() {
-  if [ "$LINK" = 1 ]; then make_link "$1" "$2"; else atomic_copy "$1" "$2"; fi
+  # A refusal here means the path changed under the run (a REPLACE never refuses an ordinary path): exit.
+  if [ "$LINK" = 1 ]; then
+    keel_link_replace "$1" "$2" || exit 1
+  else
+    keel_write_replace "$2" < "$1" || exit 1
+  fi
   record_placed "$2"
 }
 in_sync() {
@@ -1069,20 +1073,14 @@ strip_core_block() {
     !skip
   ' "$1"
 }
-# resolve_file FILE — follow symlinks (≤10 hops) to the real file, so an in-place rewrite lands in
-# the file's true home instead of severing the link (a dotfiles-managed CLAUDE.md is a symlink).
-resolve_file() {
-  local f="$1" t i=0
-  while [ -L "$f" ] && [ "$i" -lt 10 ]; do
-    t="$(readlink "$f")"
-    case "$t" in /*) f="$t" ;; *) f="$(dirname "$f")/$t" ;; esac
-    i=$((i + 1))
-  done
-  printf '%s' "$f"
-}
-replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
-  local real; real="$(resolve_file "$1")"
-  strip_core_block "$1" ${2+"$2"} > "$real.keeltmp.$$" && mv -f "$real.keeltmp.$$" "$real"
+# replace_core_block FILE [REPLACEMENT] — FILE's KEEL-CORE block swapped in place (REPLACEMENT forwarded
+# to strip_core_block), as an EDIT through tools/lib/safe-write.sh: a dotfiles-managed CLAUDE.md is a
+# symlink, so the write goes through it to the real file (the link stays a link) and keeps its mode.
+# The lib runs strip_core_block itself (its command form), so a failed strip leaves FILE untouched.
+# Returns 1 when the lib refuses (its one line already said why); each caller then prints a
+# "left untouched" line and the run continues.
+replace_core_block() {
+  keel_write_through "$1" strip_core_block "$1" ${2+"$2"}
 }
 # (core_block, the former "lines between the markers" helper here, is now keel_core_block_text in
 # tools/lib/core-ownership.sh — dir #650 absorbed it into the shared block comparator.)
@@ -1092,26 +1090,25 @@ replace_core_block() {  # $1=file, optional $2 forwarded to strip_core_block
 # it" pair depends on, not two kept in sync only by test_core_wrapper_sync.sh's byte-equality pin.
 # The copy-mode analog of replace_core_block: that one migrates an embedded block to an @import line
 # (linked mode); this one keeps the block embedded, just refreshed (--codex currency — see header).
-# resolve_file first, same as replace_core_block: a dotfiles-managed FILE is a symlink, and writing
-# straight to it (atomic_write's mv would replace the link itself) would sever it instead of updating
-# the real target through the link.
+# Written as an EDIT through tools/lib/safe-write.sh, same as replace_core_block: a dotfiles-managed
+# FILE is a symlink, so the write goes through it to the real file and keeps that file's mode (S4-2).
 # ENVIRON, not -v: a -v value goes through awk's own escape processing, which would mangle a
 # multi-line block containing backslashes (same reason strip_git_blocks uses ENVIRON below).
 # Optional second argument "trimmed" (dir #650): write the git-rails-trimmed reference form instead —
 # the shipped block through strip_git_blocks (crumb included), so a later run recognizes the trim
 # mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
 refresh_core_block() {
-  local file="$1" real fresh
-  real="$(resolve_file "$file")"
+  local file="$1" fresh
   fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
   if [ "${2-}" = trimmed ]; then
     fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
   fi
-  KEEL_FRESH_BLOCK="$fresh" awk '
+  # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
+  keel_write_through "$file" env KEEL_FRESH_BLOCK="$fresh" awk '
     /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
     /KEEL-CORE-END/   { skip=0; next }
     !skip
-  ' "$file" | atomic_write "$real"
+  ' "$file"
 }
 # core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
 # --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
@@ -1204,7 +1201,7 @@ copy_gap() {
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
   elif [ -f "$src" ]; then
-    atomic_copy "$src" "$dest"
+    keel_write_replace "$dest" < "$src" || exit 1
     echo "  +    $(basename "$dest")"
   else
     echo "  !    source missing: $src" >&2
@@ -1247,7 +1244,7 @@ sync_product() {
   # those — `-L` and that shape are mutually exclusive at the dentry level, so dropping `! -L` changes
   # nothing for that case) AND for a symlink whose TARGET is one of those (found by this same review
   # pass: every earlier guard in this diff explicitly excluded symlinks, so a dest that reaches Keel via
-  # `~/.claude/commands/wrap.md -> /some/fifo` fell through every check and reached `place()`'s `mv -f`,
+  # `~/.claude/commands/wrap.md -> /some/fifo` fell through every check and reached `place()`'s rename,
   # which replaces whatever dentry sits at $dest — symlink or not — silently destroying the adopter's
   # link with none of this same predicate's own decline message). A dangling symlink (a moved/reaped
   # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
@@ -1456,7 +1453,7 @@ if [ "$LINK" = 1 ]; then
       record_placed "$core_dest"
     else
       if [ -L "$core_dest" ]; then was_link=1; else was_link=0; fi
-      printf '%s\n' "$trimmed" | atomic_write "$core_dest"
+      printf '%s\n' "$trimmed" | keel_write_replace "$core_dest" || exit 1
       record_placed "$core_dest"
       if [ "$was_link" = 1 ]; then
         echo "  ^    CORE.md — linked full rails replaced by a trimmed copy (--no-git: code/git rails removed)"
@@ -1466,7 +1463,7 @@ if [ "$LINK" = 1 ]; then
     fi
   elif keel_core_is_nogit_trim "$core_dest"; then
     # --with-git: the generated trimmed copy goes back to the canonical symlink (full rails restored).
-    make_link "$root/CORE.md" "$core_dest"
+    keel_link_replace "$root/CORE.md" "$core_dest" || exit 1
     record_placed "$core_dest"
     echo "  ^    CORE.md — trimmed --no-git copy replaced by the full linked rails (git rails restored)"
   else
@@ -1480,7 +1477,7 @@ if [ "$LINK" = 1 ]; then
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
   if [ ! -f "$link_dir/README.md" ]; then
-    atomic_write "$link_dir/README.md" <<EOF
+    keel_write_replace "$link_dir/README.md" <<EOF || exit 1
 # keel/ — the Keel consumption point (linked install)
 
 Everything here is a symlink into the Keel checkout — \`readlink CORE.md\` shows where that is.
@@ -1525,15 +1522,18 @@ EOF
       | strip_template_prose \
       | sed -e 's|\*\*`FRAMEWORK\.md`\*\*|**`keel/FRAMEWORK.md`**|' \
             -e 's|\*\*`PRINCIPLES\.md`\*\*|**`keel/PRINCIPLES.md`**|' \
-      | atomic_write "$gclaude"
+      | keel_write_replace "$gclaude" || exit 1
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
     if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
       if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
-        replace_core_block "$gclaude" ""
-        echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
+        if replace_core_block "$gclaude" ""; then
+          echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
+        else
+          echo "  =    CLAUDE.md left untouched (the rails still load twice — remove the embedded block by hand)"
+        fi
       else
         echo "  !    CLAUDE.md has BOTH the import line and an embedded KEEL-CORE block that differs from the shipped core."
         echo "       The rails load twice each session — remove the block (or the import line) by hand."
@@ -1543,16 +1543,25 @@ EOF
     fi
   elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
     if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
-      replace_core_block "$gclaude"
-      echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
+      if replace_core_block "$gclaude"; then
+        echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
+      else
+        echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+      fi
     elif [ -t 0 ]; then
       echo "  ~    CLAUDE.md embeds rails that differ from the shipped core — an older release, or your edits inside the block."
       printf "       Replace the embedded block with the import line (adopts the CURRENT shipped rails)? [y/N] "
       read -r reply || reply=""
       case "$reply" in
-        [yY]|[yY][eE][sS]) replace_core_block "$gclaude"; echo "  +    CLAUDE.md now imports the linked core" ;;
-        *) echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)" ;;
+        [yY]|[yY][eE][sS]) migrate=1 ;;
+        *) migrate=0 ;;
       esac
+      # A "no" and a refused write (the lib's one line already said why) end the same way.
+      if [ "$migrate" = 1 ] && replace_core_block "$gclaude"; then
+        echo "  +    CLAUDE.md now imports the linked core"
+      else
+        echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+      fi
     else
       echo "  !    CLAUDE.md embeds rails that differ from the shipped core — left untouched (your edits may live in the block)."
       echo "       Compare, then migrate by hand: replace the KEEL-CORE block with the line  $import_line"
@@ -1606,7 +1615,7 @@ else
     # copy-mode Claude gets today, but never a silent auto-refresh.
     dest="$HOME_DIR/$CONTEXT_FILE"
     if [ ! -f "$dest" ]; then
-      strip_template_prose < "$root/templates/CLAUDE.md" | atomic_write "$dest"
+      strip_template_prose < "$root/templates/CLAUDE.md" | keel_write_replace "$dest" || exit 1
       echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
     elif [ "$foreign_core" = 1 ]; then
       echo "  =    $CONTEXT_FILE exists (left untouched — predates Keel, see Verify below)"
@@ -1694,7 +1703,7 @@ elif [ -f "$root/keel" ]; then
     record_placed "$keel_link"
   elif [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
     # Absent, or a dangling/stale symlink — nothing of the adopter's to preserve.
-    make_link "$root/keel" "$keel_link"
+    keel_link_replace "$root/keel" "$keel_link" || exit 1
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help')"
   elif [ "$FORCE" != 1 ]; then
@@ -1719,11 +1728,11 @@ elif [ -f "$root/keel" ]; then
     # /code-review pass on this ticket caught the double message live and this split is the fix). So
     # --force never reaches a non-regular file, mirroring sync_product's own $dest_nonregular guard
     # (dir #351): unconditional decline, --force included — and there is exactly one message either way.
-    make_link "$root/keel" "$keel_link"
+    keel_link_replace "$root/keel" "$keel_link" || exit 1
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
   fi
-  # else: $FORCE=1 and force_backup declined — either a non-regular $keel_link, or a genuine `cp`
+  # else: $FORCE=1 and force_backup declined — either a non-regular $keel_link, or a genuine copy
   # failure backing up a regular one; its own message above already said which, so nothing more to
   # print here.
 fi
@@ -1994,7 +2003,8 @@ rm -f "$prior_manifest"
 # already tells the truth for whichever mode/state this run ended in.
 foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
 if [ "$foreign_core" = 1 ]; then
-  printf '' | atomic_write "$foreign_core_marker"
+  # A state EDIT: a refused write (the lib's one line) means the run cannot record what it did — exit.
+  keel_write_through "$foreign_core_marker" printf '' || exit 1
 else
   rm -f "$foreign_core_marker"
 fi
@@ -2079,7 +2089,11 @@ while IFS=$'\t' read -r rel kind extra; do
 done < "$merge_tmp"
 rm -f "$merge_tmp"
 
-{
+# manifest_body — the manifest's content on stdout. A function, so the lib's command form runs it: a
+# body whose LAST command fails, or that aborts (`set -u`), leaves the previous manifest in place. A
+# write error on an earlier line is NOT caught — the command form runs CMD where errexit is off, so
+# only the last status counts (a known residual of dir #679, recorded in its PR).
+manifest_body() {
   echo "keel_manifest_version=1"
   echo "mode=$manifest_mode"
   echo "layout=$manifest_layout"
@@ -2094,7 +2108,8 @@ rm -f "$merge_tmp"
   if [ "${#manifest_artifact_lines[@]}" -gt 0 ]; then
     printf '%s\n' "${manifest_artifact_lines[@]}"
   fi
-} | atomic_write "$manifest_file"
+}
+keel_write_through "$manifest_file" manifest_body || exit 1   # a state EDIT: refused → exit, as for the marker
 echo "  +    install manifest ($manifest_file)"
 
 # dir #381: crash-simulation checkpoint right in the window the comment below already names — "if this
@@ -2120,7 +2135,7 @@ if [ -s "$root/tools/state-root-migrate.sh" ]; then
 fi
 
 # Release the run-duration lock (dir #350, Fork 2) — the SUCCESS path only, one explicit `rmdir`-shaped
-# `rm -rf`, right after the final atomic_write above completes. No `trap ... EXIT`, of any kind: the
+# `rm -rf`, right after the final manifest write above completes. No `trap ... EXIT`, of any kind: the
 # prior_manifest snapshot's own comment further up this file already measured, live, on this repo's own
 # bash (3.2.57), that a bare EXIT trap masks a genuine crash — e.g. an unset-variable abort under
 # `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
