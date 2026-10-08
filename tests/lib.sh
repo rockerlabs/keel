@@ -562,6 +562,24 @@ run_in() {
   cd "$prev" || true
 }
 
+# tty_run ANSWER CMD… — run CMD on a pseudo-terminal that answers one prompt with ANSWER: for an offer
+# behind `[ -t 0 ]`. Sets OUT (merged, pty-echoed) and STATUS. Hold stdin open past the prompt — a bare
+# `printf 'y\n' |` loses the answer at EOF; the hold is a process substitution nothing waits on, so a call
+# returns as soon as CMD exits. macOS `script -q /dev/null CMD…`; util-linux `script -qc "CMD" /dev/null`.
+# Called directly, not through run() (it forces </dev/null). The caller skips, with a printed reason, when
+# `script` is absent (the alpine leg has neither script nor python). Promoted here (dir #716) once a
+# second test file (tests/test_core_marker_anchor.sh) needed the same driver.
+tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed)
+  local ans="$1"; shift
+  case "$(uname -s)" in
+    Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
+    *)      OUT="$(script -qc "$(printf '%q ' "$@")" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
+  esac
+}
+
+# alter_block FILE — change one line INSIDE FILE's KEEL-CORE block (an older release, or an edit).
+alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
+
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
 check_contains() { case "$2" in *"$3"*) pass "$1" ;; *) fail "$1" "output missing: $3" ;; esac; }
 check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3" ;; *) pass "$1" ;; esac; }

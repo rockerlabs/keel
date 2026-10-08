@@ -99,6 +99,14 @@ _keel_sw_inside() {
   return 1
 }
 
+# keel_dir_is_checkouts_own DIR HOME — true when DIR is really the Keel checkout's own directory (B7 and
+# B8 of the spec): its physical path is the checkout's, or below it, while HOME's is not (a home that
+# itself lies inside the checkout is excluded from the rule). install.sh's product-directory helper and
+# uninstall.sh's take() ask it, so the whole decision lives here, once.
+keel_dir_is_checkouts_own() {
+  _keel_sw_inside "$1" && ! _keel_sw_inside "$2"
+}
+
 # keel_write_through FILE [CMD ARGS...] — the new content → FILE, as an EDIT (header). The content is
 # CMD's stdout when a command is given, else stdin. Prefer the command form whenever the content is
 # computed (an awk or grep over the file): a pipe hides its producer's exit status from the function, so
