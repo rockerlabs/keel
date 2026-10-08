@@ -47,7 +47,8 @@
 # Orchestrated checks (logic lives in the named file/job; this only runs it and reports):
 #   GAP   tests/test_doc_figures.sh fails (docs token figures drifted from reality)
 #   GAP   tests/test_core_wrapper_sync.sh fails (CORE.md / templates/CLAUDE.md embed diverged)
-#   GAP   shellcheck -x --severity=warning fails on any tracked shell script (mirrors ci.yml)
+#   GAP   shellcheck -x --severity=warning fails on any tracked shell script (mirrors ci.yml);
+#         KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 skips it with a WARN (dir #678)
 #   GAP   tools/self/prose-drift.sh finds a dead relative markdown link
 #   WARN  tools/self/prose-drift.sh finds a line running well past its own wrapped block's
 #         neighbors (advisory lead, dir #169 — never fails this script on its own)
@@ -1871,7 +1872,11 @@ say "● orchestrated checks (logic lives in these files; not duplicated here)"
 run_check "docs token figures accurate (tests/test_doc_figures.sh)" bash "$repo_root/tests/test_doc_figures.sh"
 run_check "CORE.md / wrapper embed in sync (tests/test_core_wrapper_sync.sh)" bash "$repo_root/tests/test_core_wrapper_sync.sh"
 
-if command -v shellcheck >/dev/null 2>&1; then
+if [ "${KEEL_SELF_DOCTOR_SKIP_SHELLCHECK:-}" = 1 ]; then
+  # dir #678: opt-in only (a test file that already runs this audit many times over, with the shellcheck
+  # job and the doctor job both running the full leg in CI). Visible, never silent; any value but 1 runs it.
+  warn "shellcheck skipped (KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1) — CI still enforces it"
+elif command -v shellcheck >/dev/null 2>&1; then
   sc_files=()
   # This checkout's own copy, not $repo_root's — $repo_root is the AUDITED target (a sandbox in
   # tests, or possibly a different checkout entirely) and may not ship the selector script at all.
