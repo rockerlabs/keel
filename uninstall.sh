@@ -1000,14 +1000,15 @@ if [ "$this_has_rails" = 1 ]; then
     # file is a symlink, so the strip goes through it to the real file and keeps its mode (S5-3). A
     # refusal (a hard link, or a link into this checkout — its tracked template must never lose its
     # rails) leaves the file as it was, with the lib's one line, and the run goes on.
-    if KEEL_IMPORT_RE="$core_import_re" awk '
+    # The lib runs the awk itself (its command form): an awk that fails leaves the file untouched.
+    if keel_write_through "$gclaude" env KEEL_IMPORT_RE="$core_import_re" awk '
       BEGIN             { re = ENVIRON["KEEL_IMPORT_RE"] }
       /KEEL-CORE-BEGIN/ { skip=1; next }
       /KEEL-CORE-END/   { skip=0; next }
       skip              { next }
       $0 ~ re           { next }
       { print }
-    ' "$gclaude" | keel_write_through "$gclaude"; then
+    ' "$gclaude"; then
       echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
       removed=$((removed + 1))
     else

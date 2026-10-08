@@ -370,7 +370,7 @@ fi
 say ""
 say "● tool wiring (reference + test coverage)"
 # 'keel' is added as one more pathspec below, alongside the tools/*.sh glob: the one executable
-# install.sh itself INSTALLS (a symlink, via make_link) rather than a tools/*.sh glob match. dir #142
+# install.sh itself INSTALLS (a symlink, via keel_link_replace) rather than a tools/*.sh glob match. dir #142
 # defines "shipped executable" as install.sh's own installs plus tools/*.sh, so the ratchet further
 # down must see it too. ls-files never lists an untracked file regardless of pathspec, so a REPO_ARG
 # sandbox with a stray untracked file of that name is still correctly excluded, with one git

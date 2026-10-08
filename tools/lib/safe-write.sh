@@ -99,10 +99,15 @@ _keel_sw_inside() {
   return 1
 }
 
-# keel_write_through FILE — stdin → FILE, as an EDIT (header). Returns 1, with one line on stderr and
-# nothing written, on any refusal or a failed write.
+# keel_write_through FILE [CMD ARGS...] — the new content → FILE, as an EDIT (header). The content is
+# CMD's stdout when a command is given, else stdin. Prefer the command form whenever the content is
+# computed (an awk or grep over the file): a pipe hides its producer's exit status from the function, so
+# a producer that dies halfway would get its partial output renamed onto FILE, while a failing CMD
+# leaves FILE untouched. Returns 1, with one line on stderr and nothing written, on any refusal, a
+# failing CMD or a failed write.
 keel_write_through() {
   local file="$1" target="$1" tdir nl tmp
+  shift
   if [ -L "$file" ] && ! target="$(_keel_sw_resolve "$file")"; then
     echo "safe-write: $file is a symlink loop — nothing was written." >&2
     return 1
@@ -135,7 +140,23 @@ keel_write_through() {
   # The temp starts as a `cp -p` of the target, and `>` onto an existing file keeps its mode, so the
   # rename carries the target's permission bits. A read-only target (its mode now on the temp too)
   # fails here, as it should.
-  if ! { { [ ! -f "$target" ] || cp -p "$target" "$tmp"; } && cat > "$tmp" && mv -f "$tmp" "$target"; } 2>/dev/null; then
+  if ! { [ ! -f "$target" ] || cp -p "$target" "$tmp"; } 2>/dev/null; then
+    rm -f "$tmp"
+    echo "safe-write: could not write $target (its directory is not writable) — nothing was written." >&2
+    return 1
+  fi
+  if [ "$#" -gt 0 ]; then
+    if ! "$@" > "$tmp"; then
+      rm -f "$tmp"
+      echo "safe-write: the new content for $target could not be produced ($1 failed) — nothing was written." >&2
+      return 1
+    fi
+  elif ! cat > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "safe-write: could not write $target (read-only, or its directory is not writable) — nothing was written." >&2
+    return 1
+  fi
+  if ! mv -f "$tmp" "$target" 2>/dev/null; then
     rm -f "$tmp"
     echo "safe-write: could not write $target (read-only, or its directory is not writable) — nothing was written." >&2
     return 1
@@ -193,10 +214,18 @@ keel_backup() {
   fi
   base="$1.${KEEL_TEST_NOW:-$(date -u +%Y%m%dT%H%M%SZ)}"
   b="$base.bak"
-  until (set -C; umask 077; : > "$b") 2>/dev/null && [ -f "$b" ] && [ ! -L "$b" ]; do
+  while :; do
+    # A name that is already taken is skipped before any claim: a claim opens the name for writing, and
+    # opening a link to a FIFO nobody reads would block forever. The checks after the claim still catch
+    # a name that appears in between.
     if [ ! -e "$b" ] && [ ! -L "$b" ]; then
-      echo "safe-write: cannot create a backup beside $1 (is its directory writable?) — nothing was written." >&2
-      return 1
+      if (set -C; umask 077; : > "$b") 2>/dev/null && [ -f "$b" ] && [ ! -L "$b" ]; then
+        break
+      fi
+      if [ ! -e "$b" ] && [ ! -L "$b" ]; then
+        echo "safe-write: cannot create a backup beside $1 (is its directory writable?) — nothing was written." >&2
+        return 1
+      fi
     fi
     n=$((n + 1))
     if [ "$n" -gt 99 ]; then

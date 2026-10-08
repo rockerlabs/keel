@@ -55,15 +55,15 @@ for dir in "$@"; do
   fi
   row="| $name | $abs | $abs/CLAUDE.md | - |"
   # Insert the row at the end of the FIRST Projects table (the run of '|' lines after its header). The
-  # lib writes a temp copy and renames it only once awk is done, so a refusal (its one line) changes
-  # nothing: exit 1.
-  awk -v row="$row" '
+  # lib runs the awk itself (its command form) and renames the result only when awk succeeded, so a
+  # refusal or a failed awk (one line either way) changes nothing: exit 1.
+  keel_write_through "$INSTANCE" awk -v row="$row" '
     /^\| *Project *\| *Path *\|/ && !seen { seen=1; intab=1 }
     { lines[NR]=$0 }
     intab && /^\|/ { last=NR }
     intab && seen && !/^\|/ { intab=0 }
     END { for (i=1;i<=NR;i++) { print lines[i]; if (i==last) print row } }
-  ' "$INSTANCE" | keel_write_through "$INSTANCE" || exit 1
+  ' "$INSTANCE" || exit 1
   echo "  +    registered: $name -> $abs"
   added=$((added + 1))
 done

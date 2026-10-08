@@ -246,6 +246,17 @@ check_status "A2 a path given inside the checkout is written (its own ledger)" 0
 mkdir -p "$w/ck-dots"; printf 'sib\n' > "$w/ck-dots/S.md"; ln -s "$w/ck-dots/S.md" "$w/h/S.md"
 run bash -c ". '$lib'; KEEL_SAFE_WRITE_CHECKOUT='$w/ck'; printf 'x\n' | keel_write_through '$w/h/S.md'"
 check_status "A2 a sibling dir sharing the checkout's name prefix is not inside it" 0 "$STATUS"
+# the command form: CMD's stdout is the content, and a CMD that fails leaves the file untouched (a pipe
+# would hide the producer's exit and rename its partial output onto the file).
+printf 'whole\nfile\n' > "$w/cmd"; chmod 600 "$w/cmd"
+run bash -c ". '$lib'; keel_write_through '$w/cmd' sh -c 'echo partial; exit 3'"
+check_status "A2 write_through CMD: a failing CMD → rc 1" 1 "$STATUS"
+check_contains "A2 …named as content that could not be produced" "$OUT" "could not be produced"
+check_eq "A2 …the file is untouched" "$(printf 'whole\nfile')" "$(cat "$w/cmd")"
+check_eq "A2 …and no temp is left" 0 "$(keeltmp_count "$w")"
+keel_write_through "$w/cmd" sed 's/whole/edited/' "$w/cmd" </dev/null
+check_eq "A2 write_through CMD: a succeeding CMD's output lands" "$(printf 'edited\nfile')" "$(cat "$w/cmd")"
+check_eq "A2 …mode 0600 kept" 600 "$(stat_portable_mode "$w/cmd")"
 # keel_write_replace over a hard link: rc 0, the other name keeps its bytes.
 printf 'orig\n' > "$w/r-a"; ln "$w/r-a" "$w/r-b"
 run bash -c ". '$lib'; printf 'placed\n' | keel_write_replace '$w/r-a'"
@@ -279,6 +290,27 @@ printf 'n\n' > "$w/n"; ln -s /dev/null "$w/n.20260101T000000Z.bak"
 KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/n"
 check_eq "A2 backup: a link to /dev/null at the name → .2.bak" "$w/n.20260101T000000Z.2.bak" "$KEEL_BACKUP"
 check_eq "A2 backup: …holding the content" n "$(cat "$KEEL_BACKUP")"
+# a link to a FIFO nobody reads, pre-placed at the .bak name, is skipped before any claim (opening it
+# for the claim would block forever) → .2.bak. Backgrounded with a bounded wait, so a regression fails
+# instead of hanging the suite.
+if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; then
+  printf 'q\n' > "$w/q"; ln -s "$w/nobody-reads" "$w/q.20260101T000000Z.bak"
+  ( KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/q" && printf '%s' "$KEEL_BACKUP" > "$w/q.result" ) &
+  qpid=$!; qwait=0
+  while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt 10 ]; do sleep 1; qwait=$((qwait + 1)); done
+  if kill -0 "$qpid" 2>/dev/null; then
+    : > "$w/nobody-reads" &   # release the blocked open before reaping, so nothing is orphaned
+    qrel=$!
+    kill -9 "$qpid" 2>/dev/null || true; wait "$qpid" 2>/dev/null || true
+    kill -9 "$qrel" 2>/dev/null || true; wait "$qrel" 2>/dev/null || true
+    fail "A2 backup: a link to an unread FIFO at the name does not hang" "still blocked after ${qwait}s"
+  else
+    wait "$qpid" 2>/dev/null || true
+    check_eq "A2 backup: a link to an unread FIFO at the name → .2.bak, no hang" \
+      "$w/q.20260101T000000Z.2.bak" "$(cat "$w/q.result" 2>/dev/null)"
+  fi
+  rm -f "$w/nobody-reads" "$w/q.20260101T000000Z.bak"
+fi
 # a non-regular path (a FIFO would block the copy forever) is refused before any name is claimed.
 if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/fifo" 2>/dev/null; then
   run bash -c ". '$lib'; keel_backup '$w/fifo'"

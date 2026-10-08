@@ -1076,10 +1076,11 @@ strip_core_block() {
 # replace_core_block FILE [REPLACEMENT] — FILE's KEEL-CORE block swapped in place (REPLACEMENT forwarded
 # to strip_core_block), as an EDIT through tools/lib/safe-write.sh: a dotfiles-managed CLAUDE.md is a
 # symlink, so the write goes through it to the real file (the link stays a link) and keeps its mode.
+# The lib runs strip_core_block itself (its command form), so a failed strip leaves FILE untouched.
 # Returns 1 when the lib refuses (its one line already said why); each caller then prints a
 # "left untouched" line and the run continues.
 replace_core_block() {
-  strip_core_block "$1" ${2+"$2"} | keel_write_through "$1"
+  keel_write_through "$1" strip_core_block "$1" ${2+"$2"}
 }
 # (core_block, the former "lines between the markers" helper here, is now keel_core_block_text in
 # tools/lib/core-ownership.sh — dir #650 absorbed it into the shared block comparator.)
@@ -1102,11 +1103,12 @@ refresh_core_block() {
   if [ "${2-}" = trimmed ]; then
     fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
   fi
-  KEEL_FRESH_BLOCK="$fresh" awk '
+  # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
+  keel_write_through "$file" env KEEL_FRESH_BLOCK="$fresh" awk '
     /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
     /KEEL-CORE-END/   { skip=0; next }
     !skip
-  ' "$file" | keel_write_through "$file"
+  ' "$file"
 }
 # core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
 # --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
