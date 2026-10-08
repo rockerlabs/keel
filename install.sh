@@ -2125,8 +2125,9 @@ fi
 # `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
 # aborts for any reason before this line, the lock is simply left behind; the NEXT install's own
 # mkdir-retry loop above reclaims it via the same `kill -0` stale-pid check used for ordinary contention.
-# This is the ONLY cleanup mechanism — do not "improve" this with an EXIT trap, that is the exact
-# mechanism this script's own history already ruled out at the citation above.
+# This is the cleanup mechanism (the one other release, the linked keel/ refusal's `rm -rf` right after the
+# libs load, is a deliberate early exit with nothing to record) — do not "improve" this with an EXIT trap,
+# that is the exact mechanism this script's own history already ruled out at the citation above.
 # `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
 # pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
 # knows how to reclaim, exactly as an abort-before-this-line would. No acquired-flag guard needed: the
