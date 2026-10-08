@@ -170,9 +170,9 @@ pin "publishing-checklist.md §4 states the notes-file is composed at that step,
 pin "release-audit.md phase 7 names the CHANGELOG section as a source with two derivatives" \
   "$audit" 'is a source with two derivatives' \
   "expected phase 7 to name the release-notes file and the PR narrative as the CHANGELOG section's two derivatives (dir #206)"
-pin "release-audit.md phase 7 cites §4 and polish.md step 9 rather than restating either rule" \
+pin "release-audit.md phase 7 cites §4 and polish-guide.md § Step 9 rather than restating either rule" \
   "$audit" 'this phase doesn'"'"'t restate either' \
-  "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish.md step 9, not restate them"
+  "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish-guide.md § Step 9, not restate them"
 
 # --- dir #249: phase 8 enforces that a delta-audit run is recorded, or the enforcement decays the
 # same way the ticket's own felt incident did — pin the phase so a later edit can't silently drop or

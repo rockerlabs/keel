@@ -31,6 +31,7 @@ sections real content going forward — see that page for exactly when each one 
   through `jq --rawfile` instead of argv (S2-6). This change is tests only, plus the self check's check-10
   wording; it alters no shipped behaviour. (dir #721)
 
+- **Code comments that cited `/polish` text moved into the guide now point at it (dir #710).** About 45 comments in `tools/pre-pr-gate.sh` and four in `tests/` (two test headers, one pin's label and message) named `commands/polish.md` step 4, 5(a)/(b)/(c), 8 or 9 for prose that dir #670's split moved into `commands/polish-guide.md`; each now reads `polish-guide.md § Step N`, and the `step 5(a)` spellings no plain `polish.md step` grep could find are covered too. Comments only: no behaviour, deny text or receipt changes.
 - **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
   push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,
   `--config-env core.hooksPath=…` in either spelling, or an inline `GIT_CONFIG_KEY_<n>=core.hooksPath` /
@@ -67,7 +68,6 @@ sections real content going forward — see that page for exactly when each one 
   strip or the block refresh delete every line after it, and a file with two blocks, or a BEGIN without an
   END, is left byte-identical with one line saying why. `install.sh` now requires `tools/lib/core-ownership.sh`
   like the other scripts do; its inline copy of those functions is gone.
-
 - **`install-secret-guard.sh --global` no longer silently overrides a `core.hooksPath` a conditional
   `[includeIf]` include sets** (dir #717, S5-1). Appending Keel's `[core] hooksPath` after such an include
   used to take over every tree its condition matched, with exit 0. The installer now walks the conditional
@@ -81,7 +81,6 @@ sections real content going forward — see that page for exactly when each one 
   with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
   and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
   next to the guard hook, which is a copy: re-running `./install.sh --link` refreshes it (dir #717, R1-3).
-
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
