@@ -26,6 +26,19 @@ sections real content going forward — see that page for exactly when each one 
   caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text,
   and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
 
+- **`install-secret-guard.sh --global` no longer silently overrides a `core.hooksPath` a conditional
+  `[includeIf]` include sets** (dir #717, S5-1). Appending Keel's `[core] hooksPath` after such an include
+  used to take over every tree its condition matched, with exit 0. The installer now walks the conditional
+  includes from its scratch dir: the global, XDG and system files and anything `[include]`d, nested
+  `includeIf`s too, but never a command-scope one. When one sets a different, empty or valueless
+  `core.hooksPath`, it refuses with exit 3, naming the condition, the file, the target and the value. A walk it
+  cannot finish (include depth over 10, a path holding a TAB or newline, a target it cannot read or reach, a
+  `~user/` target, a failed `git config`, a scratch dir inside a repository) refuses too, where it used to fall
+  back to a narrow read in silence; `install.sh`'s Verify then says why a plain re-run would be refused again. `--force` wires
+  anyway, prints a NOTE per conflict and records nothing, since the conditional line is left as it is. A re-run
+  with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
+  and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
+  next to the guard hook, which is a copy: re-running `./install.sh --link` refreshes it (dir #717, R1-3).
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
@@ -80,6 +93,23 @@ sections real content going forward — see that page for exactly when each one 
   stale. A `.claude/` whose every file is ignored no longer raises `G-GITIGNORE-CONTEXT`. A corrupt
   `tools/lib/agent-floor.sh` no longer kills every plain run: it loads only for `--install`'s reviewer-agent
   check and, if it does not parse, that check warns `W-REVIEW-AGENT-FLOOR` instead (dir #718).
+- **`polish-guide.md`: the inline-review fallback's precondition names both cases.** "Fallback within a
+  fallback" said only "the Agent tool itself unavailable/refuses" while the agent-type-not-found branch
+  sends a run there, so the two sentences disagreed; it now names both, and
+  `tests/test_polish_command.sh` pins it (dir #714).
+- **`session-cost.sh tail` opens a window on `init`'s output as well as on the `polish` Skill, and binds each
+  window to one branch.** A run that follows `/polish`'s text without re-invoking the Skill now gets its own
+  window (its PR was invisible before), and an abandoned start can no longer swallow the next branch's PR;
+  the JSON gains `opened_by` (`skill` | `init`) (dir #707).
+- **The SIGPIPE static guard now flags any producer before `grep -q`/`-m`.** `tests/test_no_pipe_sigpipe_race.sh`
+  knew only `printf`/`echo`/`sed`/`tr` producers, so a shell function, `awk` or `git` piped into an early-exiting
+  `grep` under `pipefail` re-introduced the dir #280 race unseen. It now flags every producer in front of
+  `grep -q`/`-m` (the `head` consumer stays tied to its fixed producer list: `x="$(… | head -1)"` captures are
+  never branched on), with an explicit `# sigpipe-ok: <reason>` same-line allow-comment for the rare safe case;
+  fixtures pin the function, `awk` and `git` shapes. The nine real hits were piped straight into the early-exit
+  reader; each now captures first, then matches (`tests/test_machine_watch.sh`,
+  `tests/test_install_machine_watch.sh`, `tests/test_delegation_doc.sh`, `tests/test_git_env_guard.sh`,
+  `tools/self/shellcheck-targets.sh`, `tools/drydock/inventory.sh`) (dir #708).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
@@ -108,6 +138,17 @@ sections real content going forward — see that page for exactly when each one 
   surviving mutants (a killed mutant's are deleted in the iteration that kills it), uses one shared build
   cache per leg, checks a `df` floor before it starts, and its report states what it left and hands the
   operator the `rm -rf` (dir #724). Pinned by `tests/test_delta_audit_doc.sh`.
+- **Three scripts no longer write outside their sandbox.** `tools/pipeline-canary.sh setup` refuses when
+  `mktemp -d` fails (it used to write the canary identity into the invoking repo's git config, exit 0);
+  `demo-bypass` runs the gate under a sandbox HOME with every impact-store override unset (it left a
+  receipt sentinel under the real HOME); `examples/tour.sh` and `docs/demo/record-demo.sh` unset the
+  same overrides, so an exported `KEEL_IMPACT_STORE`/`KEEL_IMPACT_LOG` no longer receives their events
+  (dir #720).
+- **`tools/self/archive-sweep-check.sh` stops counting swept stubs.** A swept ticket leaves its heading plus
+  one "Full body → archive" line; counting those as closed lines kept the check WARNing after a full sweep
+  (dir #671's ended at 54%, with ~400 stubs). Pure stubs now get their own `swept stubs:` line and are left out
+  of the closed count, the share and the undated count; a closed ticket with content appended after its stub
+  still counts. dir #734.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
@@ -117,6 +158,18 @@ sections real content going forward — see that page for exactly when each one 
   ticket whose defect a standing-list line already names moves that line into the ticket and deletes it
   from the list, so the list stops carrying defects that are already scheduled; the release manager's filing
   rule in `docs/release-management.md` points at it.
+- **`public-audit.sh` no longer reads clean over a binary holding a personal literal, a file after an
+  invalid-byte name, or a missing personal file.** The working-tree binary pass now also hunts the personal
+  literals, so `--no-history` and an untracked or staged binary GAP once per pass instead of printing "no
+  publication blockers found". The working-tree reads and `scan_binary_blobs`' line read run under `LC_ALL=C`,
+  so a name ending in an invalid byte no longer hides the next file under bash 5 and UTF-8. A set
+  `SECRET_SCAN_PERSONAL_FILE` that is not a regular file is a GAP (`/dev/null` still switches the personal half
+  off on purpose); the suite default moves to `/dev/null` to match (dir #719).
+- **A drift check on the leak gate's path-variable list.** `tests/test_leak_gate_env_drift.sh` derives every
+  read of the scanner's variable family (`SECRET_SCAN_*`, `KEEL_*`, `HOME`, `TMPDIR`) in the secret scanner and `range-lib.sh` and asserts
+  `tools/lib/leak-gate.sh`'s `_LEAK_GATE_PATH_ENV` is exactly those reads minus a named non-path flag, so a new
+  path-valued read the list does not name turns it red (dir #726). It pins all six names, three of which
+  (`KEEL_IMPACT_STORE`, `KEEL_HOME`, `TMPDIR`) no test pinned before.
 
 ## [0.14.0] — 2026-10-07
 
