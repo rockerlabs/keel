@@ -571,7 +571,8 @@ product_dir() {
 # anything is placed or edited, so the refusal is atomic (exit 2, like the self-link guard above) —
 # rather than skipping: a skipped keel/ would leave the import line aimed at a CORE.md never placed.
 if [ "$LINK" = 1 ]; then
-  product_dir "$link_dir" "Keel's linked core" >&2 || exit 2
+  # (The run lock taken above is released first: this exit would otherwise leave it on disk.)
+  product_dir "$link_dir" "Keel's linked core" >&2 || { rm -rf "$install_lock_dir" 2>/dev/null || true; exit 2; }
 fi
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
@@ -1174,7 +1175,7 @@ core_block_currency() {
   # Markers that are not exactly one BEGIN followed by one END: no offer, no backup — a refresh would only
   # be refused after the adopter said yes (keel_core_block_check printed why).
   if ! keel_core_block_check "$dest"; then
-    echo "  =    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
+    echo "  !    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
     return 0
   fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
@@ -1610,7 +1611,9 @@ EOF
     if keel_core_has_block "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
-      if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+      if ! keel_core_block_check "$gclaude"; then
+        echo "  !    CLAUDE.md has the import line and a malformed KEEL-CORE block — left untouched (the rails may load twice; fix the markers by hand)"
+      elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
         if replace_core_block "$gclaude" ""; then
           echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
         else
@@ -1625,7 +1628,7 @@ EOF
     fi
   elif keel_core_has_block "$gclaude"; then
     if ! keel_core_block_check "$gclaude"; then
-      echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+      echo "  !    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
     elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
@@ -2229,8 +2232,9 @@ fi
 # `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
 # aborts for any reason before this line, the lock is simply left behind; the NEXT install's own
 # mkdir-retry loop above reclaims it via the same `kill -0` stale-pid check used for ordinary contention.
-# This is the ONLY cleanup mechanism — do not "improve" this with an EXIT trap, that is the exact
-# mechanism this script's own history already ruled out at the citation above.
+# This is the cleanup mechanism (the one other release, the linked keel/ refusal's `rm -rf` right after the
+# libs load, is a deliberate early exit with nothing to record) — do not "improve" this with an EXIT trap,
+# that is the exact mechanism this script's own history already ruled out at the citation above.
 # `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
 # pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
 # knows how to reclaim, exactly as an abort-before-this-line would. No acquired-flag guard needed: the
