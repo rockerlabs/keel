@@ -117,14 +117,30 @@ check_eq "C1 no test captures \$(command -v git) — use \$(type -P git)" "" \
 # would have written into whatever repository the suite stood in). Structural, per file: collect every
 # `NAME="$(type -P git)"` and flag a `$NAME -C` use. A `$NAME config --global …` under a redirected HOME
 # (no -C) is a different, legitimate shape and is not matched.
+# type_p_bypass FILE — `file:line` of every `-C` use of a variable assigned from `$(type -P git)` in FILE
+# (also behind `local`/`export`, unquoted, braced, or after other flags such as `-c k=v`).
+type_p_bypass() {
+  local tf="$1" tvars tv
+  tvars="$(grep -oE '(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=("?)\$\(type -P git\)' "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly )?([A-Za-z_0-9]+)=.*/\2/' || true)"
+  for tv in $tvars; do
+    grep -nE "\\\$\\{?$tv\\}?\"?[^|;&]* -C " "$tf" | sed "s|^|${tf##*/} ($tv): |" || true
+  done
+}
+# The checker must be able to fail: planted files in each bypass shape are flagged, a `config --global`
+# use (no -C) is not. A grep dialect that matched nothing would otherwise leave C2 green on an empty scan.
+planted="$SANDBOX/c2-planted"; mkdir -p "$planted"
+printf '%s\n' 'gitt="$(type -P git)"' '"$gitt" -C "$d" add f' > "$planted/plain.sh"
+printf '%s\n' 'f() { local g=$(type -P git); "${g}" -c k=v -C "$1" commit; }' > "$planted/local-flags.sh"
+printf '%s\n' 'export GB="$(type -P git)"' 'env X=1 "$GB" -C "$d" status' > "$planted/export.sh"
+printf '%s\n' 'gitt="$(type -P git)"' 'env H=1 "$gitt" config --global core.hooksPath "$d"' > "$planted/no-C.sh"
+for pf in plain local-flags export; do
+  check_ne "C2 control: the checker flags the $pf bypass shape" "" "$(type_p_bypass "$planted/$pf.sh")"
+done
+check_eq "C2 control: a \$(type -P git) variable without -C is not flagged" "" "$(type_p_bypass "$planted/no-C.sh")"
 bypass=""
 for tf in "$TESTS_DIR"/test_*.sh; do
   [ "$tf" = "$TESTS_DIR/test_lib_git_c_guard.sh" ] && continue
-  tvars="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*="\$\(type -P git\)"' "$tf" | sed -E 's/^[[:space:]]*([A-Za-z_0-9]+)=.*/\1/' || true)"
-  for tv in $tvars; do
-    hits="$(grep -nE "\\\$\\{?$tv\\}?\"? +-C" "$tf" || true)"
-    [ -z "$hits" ] || bypass="${bypass}${tf##*/} ($tv): ${hits%%$'\n'*}"$'\n'
-  done
+  bypass="${bypass}$(type_p_bypass "$tf")"
 done
 check_eq "C2 no test runs git writes through a \$(type -P git) variable with -C (the guard-bypass shape)" "" "$bypass"
 

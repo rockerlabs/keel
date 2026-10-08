@@ -28,8 +28,8 @@ sections real content going forward — see that page for exactly when each one 
   `init-project`'s `/.keel/secrets-accept` ignore line (S6-4), `ship_docs`'s not-a-directory arms and linked
   never-clobber (S4-6), the `no_bare_mktemp` allow-list count (S8-6), the machine-global drift reported once
   (S6-13), and a positive control for the "quoted guide mints no trace" test, whose question now travels
-  through `jq --rawfile` instead of argv (S2-6). Tests only, plus the self check's check-10 wording; no
-  shipped behaviour changes. (dir #721)
+  through `jq --rawfile` instead of argv (S2-6). This change is tests only, plus the self check's check-10
+  wording; it alters no shipped behaviour. (dir #721)
 
 - **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
   push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,

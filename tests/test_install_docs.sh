@@ -211,8 +211,8 @@ check_file "A9: the other docs still land" "$nc_home/docs/delegation.md"
 # linked-mode never-clobber, none of which any test held. Each shape installs to exit 0 (a bare `mkdir -p`
 # failure would abort before the manifest is written), names the blocker, leaves it byte-identical, and
 # still places the rest of the install. The "could not create" arm needs an unwritable parent: chmod is a
-# no-op for root on the alpine leg and the run would fail in sync_product first on macOS, so it is not pinned
-# (recorded in dir #721's PR). The agents-as-file shape is S4-1's defect (a bare mkdir aborts the run), not a
+# no-op for root on the alpine leg and the run would fail in sync_product first on macOS, so it is not
+# pinned, and deleting that arm turns no test red. The agents-as-file shape is S4-1's defect (a bare mkdir aborts the run), not a
 # behaviour to pin here.
 nd_home="$SANDBOX/docs-is-file-home"; mkdir -p "$nd_home"
 printf 'I am a file, not a directory\n' > "$nd_home/docs"
