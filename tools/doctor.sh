@@ -1830,9 +1830,11 @@ EOF
       else
         sx_plain="${sx_plain:+$sx_plain$'\n'}$sx_rel"
       fi
+    # The `sed` collapses repeated slashes: a BSD find given a trailing-slash dir prints "dir//file", which
+    # would make the same tracked file two different strings for `sort -u` (and a wrong relative path below).
     done <<EOF
 $({ fp_find "$d" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) -print
-    sx_tracked_envs "$sx_dd"; } | LC_ALL=C sort -u)
+    sx_tracked_envs "$sx_dd"; } | sed 's#//*#/#g' | LC_ALL=C sort -u)
 EOF
     # sx_names LIST — "p1, p2, p3 (+k more)" for the first 3 paths of a sorted list; sx_n = the count.
     sx_names() {
