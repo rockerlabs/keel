@@ -15,6 +15,10 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`session-cost.sh tail` opens a window on `init`'s output as well as on the `polish` Skill, and binds each
+  window to one branch.** A run that follows `/polish`'s text without re-invoking the Skill now gets its own
+  window (its PR was invisible before), and an abandoned start can no longer swallow the next branch's PR;
+  the JSON gains `opened_by` (`skill` | `init`) (dir #707).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist

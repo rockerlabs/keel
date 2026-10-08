@@ -133,7 +133,11 @@ cut when nothing changed, and a subagent's turns after its own `Skill` call carr
 which would make a review run by a subagent read as free.
 
 - **A window** opens at the first primary turn attributed to `polish` that follows a turn attributed
-  otherwise, and closes at the primary turn whose `gh pr create` call has a *non-error* result naming a
+  otherwise, or at a turn whose Bash call's result carries `tools/pre-pr-gate.sh init`'s own output line
+  (`pre-pr-gate: receipt started (nonce …)`, alone on a line of the result, error or not): a run that
+  follows `/polish`'s text never re-invokes the Skill, and `init` is the step every run executes (dir
+  #707). A `grep` that prints the line behind a `file:line:` prefix opens nothing. It closes at the
+  primary turn whose `gh pr create` call has a *non-error* result naming a
   `github.com/<owner>/<repo>/pull/<n>` URL. A gate-denied attempt and a `grep` that merely mentions
   `gh pr create` leave it open. A turn is one `requestId`, and its tool calls are read across every
   record carrying that id: the harness writes one record per content block, so a reader that keeps only
@@ -142,16 +146,19 @@ which would make a review run by a subagent read as free.
   first record falls inside it. `wrap` and `keel-score` turns are never in a window. A second `/polish`
   invocation before the PR exists extends the window (one PR's tail includes its rounds); one on a branch
   whose window already closed is a re-run on an open PR (`gh pr create` fails there by design), so its
-  window never closes — it ends, still `open`, at the first turn on a different branch.
+  window never closes — it ends, still `open`, at the first turn on a different branch. A window
+  belongs to the branch it opened on: an opening signal on another branch abandons it (`open`, ending
+  at that signal), and a `gh pr create` on another branch does not close it. A detached `HEAD` or an
+  unknown branch never counts as another branch.
 - **Not comparable with `ticket`/`table`.** Those report `cost_tokens` (cache-read plus output) for a
   whole ticket's primary session; a `tail` window's `cost` is cache-read only, over the tail alone.
-- **An `open` window** (a session that never opened its PR, or a re-run) is listed with its cost and is
+- **An `open` window** (a session that never opened its PR, an abandoned start, or a re-run) is listed with its cost and is
   never a closed window: take a median over the `closed` ones only.
 - **`review_cost`** is the cost of the subagent whose prompt's first line is `/polish` step 5's fixed
   line, plus every subagent in the window whose parent chain reaches one (the `code-review` skill's fork
   and its children). It is zero where no review subagent ran.
 
-`--json` prints one object per window per line: `session`, `start`, `end`, `status`, `primary_turns`,
+`--json` prints one object per window per line: `session`, `start`, `end`, `status`, `opened_by` (`skill` or `init`), `primary_turns`,
 `subagent_turns`, `cost`, `review_cost` and a `subagents` array (`agent_id`, `parent_agent_id`, `depth`,
 `first_line`, `turns`, `cost`, `review`). Over the ten sessions behind 0.13.0's slate PRs it finds 11
 closed windows with a median of 5,620,765 cache-read tokens (about 5.62M), the baseline dir #670's value
