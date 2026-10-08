@@ -27,7 +27,9 @@ run "$sd" /no/such/dir
 check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 
 # --- smoke test: the real keel checkout is clean --------------------------------------------------
-run "$sd" --quiet
+# dir #678: the shellcheck leg over every tracked script is ~40% of this file's CPU and CI runs it anyway
+# (the doctor job + the shellcheck job), so the smoke skips it via the documented knob.
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" --quiet
 check_status "the real keel checkout is clean (no GAP)" 0 "$STATUS"
 
 # --- synthetic sandbox: a minimal, fully-passing mini-repo; each test mutates a fresh copy --------
@@ -2176,6 +2178,21 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   chmod 755 "$h4/keel-alpine-verify-unreadable/sub"   # restore so cleanup can remove the sandbox
   check_status "an unreadable stray subdirectory does not abort the run -> exit 0" 0 "$STATUS"
   check_contains "still reports the stray (size just undercounts the unreadable part)" "$OUT" "1 stray"
+fi
+
+# --- dir #678: KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 skips ONLY the shellcheck leg, loudly --------------
+if command -v shellcheck >/dev/null 2>&1; then
+  d="$(mk_clean_repo)"
+  printf '#!/usr/bin/env bash\necho "$never_assigned_var"\n' > "$d/tests/planted_sc.sh"
+  ( cd "$d" && git add -A && git commit -qm "a shellcheck-warning script" )
+  run "$sd" "$d" --quiet
+  check_status "a shellcheck warning is a GAP by default -> exit 1" 1 "$STATUS"
+  check_contains "…and the leg names itself" "$OUT" "shellcheck clean"
+  run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d" --quiet
+  check_status "the knob skips the shellcheck leg -> exit 0" 0 "$STATUS"
+  check_contains "the skip is advisory-visible, never silent" "$OUT" "shellcheck skipped"
+  run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=0 "$sd" "$d" --quiet
+  check_status "only the value 1 skips -> 0 still runs the leg -> exit 1" 1 "$STATUS"
 fi
 
 summary

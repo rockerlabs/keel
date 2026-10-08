@@ -27,6 +27,13 @@ sections real content going forward — see that page for exactly when each one 
   typo silently disabled the personal-data half of every commit and push gate (dir #725). Unset and empty keep
   the default file, a missing default is still clean, and `/dev/null` is still the clean opt-out CI uses.
   `public-audit.sh` resolves the same variable itself and is unchanged by this entry.
+- **`/polish` step 3 backgrounds the suite with an explicit timeout; a cut-short run is not green** (dir #678).
+  A full `tests/run.sh` outlasted the harness's 30-minute background cap and was killed with 100 of 101 files
+  green. The step now says to give the run an explicit timeout past the suite's runtime and to re-run the
+  remainder after a cut-short run, never report it as green. `tools/self/doctor.sh` gains
+  `KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1` (a visible WARN, off by default), which `tests/test_self_doctor.sh`'s
+  real-checkout smoke uses: the shellcheck leg over every tracked script was ~40% of that file's CPU, and
+  CI runs it in two other jobs.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
