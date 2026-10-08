@@ -60,6 +60,10 @@ sections real content going forward — see that page for exactly when each one 
   false reds in 0.14.0 built in: `--no-hardlinks`, no `.DS_Store` under `.git`, and a branch, never a detached
   HEAD. It refuses a path that is not a clone of the source (stale origin) and never deletes; `--run` hands the
   clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
+- **`docs/delta-audit.md`: a mutation leg carries a size rule.** A leg keeps only the artifacts of
+  surviving mutants (a killed mutant's are deleted in the iteration that kills it), uses one shared build
+  cache per leg, checks a `df` floor before it starts, and its report states what it left and hands the
+  operator the `rm -rf` (dir #724). Pinned by `tests/test_delta_audit_doc.sh`.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
