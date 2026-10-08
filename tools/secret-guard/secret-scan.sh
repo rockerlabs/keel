@@ -175,6 +175,18 @@ personal=""
 # here (dir #680): a personal file we cannot trust must fail CLOSED — silently scanning with fewer (or no)
 # literals is the fail-open this gate must never have.
 _personal_rc=0
+# dir #725: the parser takes a path, so it cannot tell a path the operator SET from the built-in default —
+# and to it a non-regular file means "no literals" (right for the default, which most machines lack, and
+# for /dev/null, the explicit opt-out CI uses). A SET, non-empty variable naming anything else is a typo
+# (or a path made wrong by a cwd change): scanning on would switch the personal half off without a word.
+# Unset or empty keeps the default. A dangling symlink lands here too (it was already exit 2, from the parser).
+if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$SECRET_SCAN_PERSONAL_FILE" != /dev/null ] \
+   && [ ! -f "$SECRET_SCAN_PERSONAL_FILE" ]; then
+  echo "secret-scan: SECRET_SCAN_PERSONAL_FILE is set to $SECRET_SCAN_PERSONAL_FILE, which is not a regular file" >&2
+  echo "(missing, a directory, ...) — personal-data detection would be silently disabled. Fix the path, unset the" >&2
+  echo "variable to use the default, or set it to /dev/null to switch the personal half off on purpose." >&2
+  exit 2
+fi
 _personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _personal_rc=$?
 case "$_personal_rc" in
   0) ;;

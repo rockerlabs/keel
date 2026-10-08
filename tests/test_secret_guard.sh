@@ -6,10 +6,11 @@
 
 scan="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 
-# Point the personal-literals file at a nonexistent sandbox path by default, so a real
+# Point the personal-literals file at /dev/null (the explicit opt-out; a set-but-missing path is exit 2,
+# dir #725) by default, so a real
 # ~/.claude/secret-scan-personal on the dev machine can never leak into these tests even if
 # HOME isolation ever regresses. Personal-class tests override this per-invocation with env.
-export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent"
+export SECRET_SCAN_PERSONAL_FILE=/dev/null
 
 # --- block: every key-shaped pattern, scanned as a FILE -----------------------------------------
 block_file() {  # desc content
@@ -230,9 +231,42 @@ run env SECRET_SCAN_PERSONAL_FILE="$pfile" "$scan" "$d/f.txt"
 check_status "personal literal (case-insensitive) → exit 1" 1 "$STATUS"
 check_contains "personal literal → BLOCKED" "$OUT" "BLOCKED"
 
-# the same content with NO personal file → only the key class runs → clean
-run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/absent.rx" "$scan" "$d/f.txt"
-check_status "absent personal file → keys-only, exit 0" 0 "$STATUS"
+# the same content with the personal file deliberately switched off (/dev/null — the CI shape) → only
+# the key class runs → clean
+run env SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" "$d/f.txt"
+check_status "personal file /dev/null → keys-only, exit 0" 0 "$STATUS"
+
+# dir #725: a SET variable naming something that is not a regular file is a typo, not an opt-out — it must
+# fail CLOSED (exit 2, the cause named) in every mode, even when there is nothing to scan. Only the
+# variable being unset or empty means "use the default", and /dev/null stays the explicit opt-out.
+absent="$SANDBOX/typo/secret-scan-personal"
+run env SECRET_SCAN_PERSONAL_FILE="$absent" "$scan" "$d/f.txt"
+check_status "set-but-missing personal file → exit 2 (fail closed)" 2 "$STATUS"
+check_contains "set-but-missing → names the variable" "$OUT" "SECRET_SCAN_PERSONAL_FILE"
+check_contains "set-but-missing → names the path" "$OUT" "$absent"
+check_contains "set-but-missing → names the cause" "$OUT" "not a regular file"
+check_absent "set-but-missing → is not reported as a scan result" "$OUT" "BLOCKED"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX" "$scan" "$d/f.txt"
+check_status "personal file is a directory → exit 2" 2 "$STATUS"
+repo="$(new_repo)"
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$absent" "$scan"
+check_status "set-but-missing, nothing staged to scan → still exit 2" 2 "$STATUS"
+printf 'ok\n' > "$repo/clean.txt"; git -C "$repo" add clean.txt
+run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$absent" "$scan"
+check_status "set-but-missing, staged clean text → exit 2" 2 "$STATUS"
+# unset and empty keep the default ($HOME/.claude/secret-scan-personal); a missing DEFAULT is not an error
+nohome="$(mktemp -d "$SANDBOX/nohome.XXXXXX")"
+run env -u SECRET_SCAN_PERSONAL_FILE HOME="$nohome" "$scan" "$d/f.txt"
+check_status "unset variable, missing default file → exit 0" 0 "$STATUS"
+run env SECRET_SCAN_PERSONAL_FILE= HOME="$nohome" "$scan" "$d/f.txt"
+check_status "empty variable, missing default file → exit 0" 0 "$STATUS"
+mkdir -p "$nohome/.claude"; printf 'Jane[[:space:]]+Q[[:space:]]+Public\n' > "$nohome/.claude/secret-scan-personal"
+run env SECRET_SCAN_PERSONAL_FILE= HOME="$nohome" "$scan" "$d/f.txt"
+check_status "empty variable still reads the default file → exit 1" 1 "$STATUS"
+# a symlink to a regular file is a regular file; a dangling link was already exit 2 (now this check's)
+ln -s "$pfile" "$SANDBOX/personal.lnk"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal.lnk" "$scan" "$d/f.txt"
+check_status "symlink to a regular personal file → read, exit 1" 1 "$STATUS"
 
 # a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection.
 # Only observable where the host grep actually REJECTS the ERE — busybox grep accepts an
@@ -342,7 +376,7 @@ imp_dir="$(mktemp -d "$SANDBOX/imp.XXXXXX")"; imp_log="$imp_dir/events.log"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$imp_dir/leak.txt"
 
 # (a) explicit override
-run env KEEL_IMPACT_LOG="$imp_log" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" "$imp_dir/leak.txt"
+run env KEEL_IMPACT_LOG="$imp_log" SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" "$imp_dir/leak.txt"
 check_status "block still exits 1 with impact log on" 1 "$STATUS"
 check_file "block records an impact event" "$imp_log"
 check_contains "event is a guard/secret-guard line" "$(cat "$imp_log")" "	guard	secret-guard	blocked"
@@ -354,7 +388,7 @@ check_absent "event log never contains the secret" "$(cat "$imp_log")" "AKIA"
 mrepo="$(new_repo)"; mkdir "$mrepo/.keel"
 printf '/.keel/impact-events.log\n' >> "$mrepo/.gitignore"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$mrepo/leak.txt"
-run_in "$mrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+run_in "$mrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" leak.txt
 check_status "block exits 1 with only a .keel/ marker" 1 "$STATUS"
 check_file "marker alone records the event (no env)" "$mrepo/.keel/impact-events.log"
 check_contains "marker event is a guard/secret-guard line" "$(cat "$mrepo/.keel/impact-events.log" 2>/dev/null)" "	guard	secret-guard	blocked"
@@ -366,7 +400,7 @@ mwt="$SANDBOX/mrepo-wt"
 git -C "$mrepo" worktree add -q -b wt-guard "$mwt" >/dev/null 2>&1
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$mwt/leak.txt"
 wt_events_before="$(wc -l < "$mrepo/.keel/impact-events.log" | tr -d ' ')"
-run_in "$mwt" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+run_in "$mwt" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" leak.txt
 check_status "block in a worktree still exits 1" 1 "$STATUS"
 check_contains "worktree block records to the MAIN checkout's log" "$(wc -l < "$mrepo/.keel/impact-events.log" | tr -d ' ')" "$((wt_events_before + 1))"
 check_nofile "no worktree-local event log appears" "$mwt/.keel/impact-events.log"
@@ -374,7 +408,7 @@ check_nofile "no worktree-local event log appears" "$mwt/.keel/impact-events.log
 # (c) no override AND no marker → nothing written
 nrepo="$(new_repo)"                                  # a repo WITHOUT .keel/
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$nrepo/leak.txt"
-run_in "$nrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+run_in "$nrepo" env -u KEEL_IMPACT_LOG SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" leak.txt
 check_status "block still exits 1 with tracking off" 1 "$STATUS"
 check_nofile "no event written without override or marker" "$nrepo/.keel/impact-events.log"
 
@@ -385,7 +419,7 @@ sstore_root="$SANDBOX/secret-guard-store"
 sstore="$sstore_root/$(cd "$srepo" && pwd -P | tr '/' '-')"
 mkdir -p "$sstore"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$srepo/leak.txt"
-run_in "$srepo" env -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$sstore_root" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+run_in "$srepo" env -u KEEL_IMPACT_LOG KEEL_IMPACT_STORE="$sstore_root" SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" leak.txt
 check_status "block exits 1 with only an external store entry" 1 "$STATUS"
 check_file "store entry alone records the event (no marker, no override)" "$sstore/impact-events.log"
 check_contains "store event is a guard/secret-guard line" "$(cat "$sstore/impact-events.log" 2>/dev/null)" "	guard	secret-guard	blocked"
@@ -398,7 +432,7 @@ printf '/.keel/impact-events.log\n' >> "$gonerepo/.gitignore"
 git -C "$gonerepo" add .gitignore
 git -C "$gonerepo" commit -qm "gitignore only, no .keel/ dir"
 printf '%s\n' "aws = $(key 'AKIA' "$(rep A 16)")" > "$gonerepo/leak.txt"
-run_in "$gonerepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent" "$scan" leak.txt
+run_in "$gonerepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_STORE SECRET_SCAN_PERSONAL_FILE=/dev/null "$scan" leak.txt
 check_status "block exits 1 with a gitignore-only marker (no .keel/ dir yet)" 1 "$STATUS"
 check_file "the event is recorded, creating .keel/ on demand" "$gonerepo/.keel/impact-events.log"
 check_absent "no leaked bash redirect error on stderr" "$OUT" "No such file or directory"
