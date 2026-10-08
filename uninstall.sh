@@ -159,6 +159,17 @@ else
   echo "uninstall: tools/lib/core-ownership.sh is missing or corrupted — refusing to remove anything without it, since an ownership decision needs a real predicate; re-clone or re-download Keel and re-run uninstall.sh" >&2
   exit 1
 fi
+# safe-write (dir #679) — REQUIRED, same guarded posture: the rails strip below and the ledger prune
+# (tools/lib/ledger.sh) write through it, so a dotfiles-managed CLAUDE.md stays a link and keeps its
+# mode, and one linked into this checkout is never edited.
+if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/safe-write.sh
+  . "$root/tools/lib/safe-write.sh"
+else
+  echo "uninstall: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
+  exit 1
+fi
+KEEL_SAFE_WRITE_CHECKOUT="$root"
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
 # artifact in the OTHER mode's manifest at this SAME home. Presence, not cksum agreement — the question
 # is "does the other install still need this file to exist", not "do the two installs agree on its
@@ -985,17 +996,24 @@ if [ "$this_has_rails" = 1 ]; then
     # Drop the embedded block (markers inclusive) and any line carrying the core import. The regex
     # arrives through ENVIRON, not -v: awk applies escape processing to a -v assignment, which would
     # eat the `\.` and quietly widen the pattern — the exact class of drift this shared definition exists
-    # to prevent.
-    KEEL_IMPORT_RE="$core_import_re" awk '
+    # to prevent. Written as an EDIT through tools/lib/safe-write.sh (dir #679): a dotfiles-managed
+    # file is a symlink, so the strip goes through it to the real file and keeps its mode (S5-3). A
+    # refusal (a hard link, or a link into this checkout — its tracked template must never lose its
+    # rails) leaves the file as it was, with the lib's one line, and the run goes on.
+    # The lib runs the awk itself (its command form): an awk that fails leaves the file untouched.
+    if keel_write_through "$gclaude" env KEEL_IMPORT_RE="$core_import_re" awk '
       BEGIN             { re = ENVIRON["KEEL_IMPORT_RE"] }
       /KEEL-CORE-BEGIN/ { skip=1; next }
       /KEEL-CORE-END/   { skip=0; next }
       skip              { next }
       $0 ~ re           { next }
       { print }
-    ' "$gclaude" > "$gclaude.keeltmp.$$" && mv -f "$gclaude.keeltmp.$$" "$gclaude"
-    echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
-    removed=$((removed + 1))
+    ' "$gclaude"; then
+      echo "  stripped the Keel rails from $CONTEXT_FILE (backup: $backup/$CONTEXT_FILE; the rest of your file is untouched)"
+      removed=$((removed + 1))
+    else
+      echo "  left $CONTEXT_FILE untouched — the Keel rails are still in it (remove them by hand)"
+    fi
   fi
 fi
 

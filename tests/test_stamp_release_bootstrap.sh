@@ -73,10 +73,12 @@ check_contains "explains the refusal" "$OUT" "already-stamped"
 fixture="$SANDBOX/fixture-repo"
 mkdir -p "$fixture/templates" "$fixture/tools/lib"
 cp "$REPO_ROOT/install.sh" "$fixture/install.sh"
-# tools/lib/artifact-cksum.sh (dir #362) is REQUIRED, not optional, unlike manifest.sh/stat-portable.sh
-# — install.sh refuses outright without it, so this fixture (otherwise deliberately tools/-lib-less)
-# must carry this one file for the end-to-end install below to succeed at all.
+# tools/lib/artifact-cksum.sh (dir #362) and tools/lib/safe-write.sh (dir #679) are REQUIRED, not
+# optional, unlike manifest.sh/stat-portable.sh — install.sh refuses outright without either, so this
+# fixture (otherwise deliberately tools/-lib-less) must carry them for the end-to-end install below to
+# succeed at all. stat-portable.sh rides along because safe-write.sh loads it for its hard-link check.
 cp "$REPO_ROOT/tools/lib/artifact-cksum.sh" "$fixture/tools/lib/artifact-cksum.sh"
+cp "$REPO_ROOT/tools/lib/safe-write.sh" "$REPO_ROOT/tools/lib/stat-portable.sh" "$fixture/tools/lib/"
 cp "$REPO_ROOT/CORE.md" "$REPO_ROOT/FRAMEWORK.md" "$REPO_ROOT/PRINCIPLES.md" "$fixture/"
 cp "$REPO_ROOT/templates/CLAUDE.md" "$REPO_ROOT/templates/INSTANCE.md" \
    "$REPO_ROOT/templates/LEARNINGS.md" "$REPO_ROOT/templates/IDEAS.md" "$fixture/templates/"

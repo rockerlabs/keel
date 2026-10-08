@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
+  `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
+  `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
+  slice 1 of the dir #685 symlink policy). An edit of a symlinked file — a dotfiles `CLAUDE.md`, `INSTANCE.md`
+  or ledger — writes through the link instead of replacing it, and keeps a 0600 file at 0600: the block
+  refresh and the `--link` migration no longer loosen it to 0644, and `uninstall.sh` strips the rails from
+  the real file instead of detaching the link (dir #716's S4-2 and S5-3). An edit refuses, with one line, a
+  hard-linked file and a link that resolves into the Keel checkout, so a home `CLAUDE.md` linked to the
+  checkout's own template is left alone. A `--force` backup never overwrites an earlier one: a second backup
+  in the same second is `<file>.<ts>.2.bak`. A checkout missing the library refuses to install, uninstall or
+  register a project, with one message naming it.
 - **`secret-scan.sh` never reports clean over content it did not read.** Every file list and object read
   is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
   clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed

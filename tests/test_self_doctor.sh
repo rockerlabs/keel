@@ -372,7 +372,7 @@ check_status "a listed legacy-debt tool is advisory only -> exit 0" 0 "$STATUS"
 check_contains "flags it as listed debt" "$OUT" "listed debt (dir #142, tools/self/legacy-untested.txt): $fake_orphan"
 check_absent "not also raised as a fresh ratchet GAP" "$OUT" "ratchet (dir #142): $fake_orphan"
 
-# the installed `keel` CLI (install.sh's own make_link target) is part of the ratchet's inventory too
+# the installed `keel` CLI (install.sh's own keel_link_replace target) is part of the ratchet's inventory too
 # per dir #142's definition ("what install.sh itself installs" plus tools/*.sh) — not just the
 # tools/*.sh glob.
 d="$(mk_clean_repo)"
