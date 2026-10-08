@@ -15,6 +15,10 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`polish-guide.md`: the inline-review fallback's precondition names both cases.** "Fallback within a
+  fallback" said only "the Agent tool itself unavailable/refuses" while the agent-type-not-found branch
+  sends a run there, so the two sentences disagreed; it now names both, and
+  `tests/test_polish_command.sh` pins it (dir #714).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
