@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test_conveyor_stages.sh — dir #78: pins the two conveyor stages keel's own pipeline was missing
-# (acceptance-tests-before-code in /go, and a spec-fed conformance mandate for /polish step 5(a)'s
+# (acceptance-tests-before-code in /go, and a spec-fed conformance mandate for polish-guide.md § Step 5 (a)'s
 # independent reviewer), plus the FRAMEWORK.md cross-link. Grep-based, same idiom as
 # test_doc_figures.sh's droppable-heading pins — a later edit that silently drops this prose should
 # fail loudly instead of just being unnoticed.
@@ -38,7 +38,7 @@ else
     "expected an 'infeasible' clause referencing /polish's skipped:<reason> receipts"
 fi
 
-# (B) /polish step 5(a)'s subagent prompt carries the ticket/spec + a two-way conformance mandate,
+# (B) polish-guide.md § Step 5 (a)'s subagent prompt carries the ticket/spec + a two-way conformance mandate,
 # with an explicit no-ticket fallback.
 if grep -qi 'two-way conformance' "$guide"; then
   pass "polish-guide.md: step 5(a) prompt carries a two-way conformance mandate"
