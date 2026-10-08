@@ -2050,27 +2050,21 @@ check_status "a next-line-brace hand-copy is caught, not waved through -> exit 1
 check_contains "names the shared lib" "$OUT" "tools/lib/manifest.sh"
 check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
 
-# NEGATIVE PROOF (dir #380's pre-decision: both halves move together or neither does) — a
-# next-line-brace definition, when it's the CANONICAL (only) copy, must not itself misfire. Applied
-# to the ownership-predicate pair specifically because that's the one is_fallback=1 body-compares:
-# widening detection alone (without extract_fn_body) would make it return an empty body for this
-# shape and fire a false "drifted" GAP against the real, unchanged fallback below.
+# NEGATIVE PROOF (dir #380's pre-decision) — a next-line-brace definition, when it's the CANONICAL
+# (only) copy, must be recognized as that one definition and not misfire.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" nextline
-( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both next-line-brace, identical bodies" )
+( cd "$d" && git add -A && git commit -qm "canonical definitions, next-line-brace shape" )
 run "$sd" "$d" --quiet
-check_status "next-line-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
-check_absent "widening detection and body-comparison together doesn't misfire" "$OUT" "GAP"
+check_status "next-line-brace canonical definition alone -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "a next-line-brace canonical definition doesn't misfire" "$OUT" "GAP"
 
 # Same negative proof, one line further: a BLANK line between `fn()` and `{` — also valid bash, and
-# confirmed live (this ticket's own review) to disagree with extract_fn_body before it was widened to
-# tolerate it: cksum_def_re/def_re's bare-`fn()` branch detects this shape as a definition regardless
-# of what follows it, so a body-comparison that returns empty for it (instead of the real body) would
-# fire the exact false "drifted" GAP this whole check exists to avoid.
+# detected as a definition by def_re's bare-`fn()` branch regardless of what follows it.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" blankline
-( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both blank-line-before-brace, identical bodies" )
+( cd "$d" && git add -A && git commit -qm "canonical definitions, blank-line-before-brace shape" )
 run "$sd" "$d" --quiet
-check_status "blank-line-before-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
-check_absent "extract_fn_body tolerates a blank line before the brace" "$OUT" "GAP"
+check_status "blank-line-before-brace canonical definition alone -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "a blank line before the brace doesn't misfire" "$OUT" "GAP"
 
 # a hand-copy of keel_core_is_link reappears in tools/doctor.sh — same drift, the ownership predicate
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"

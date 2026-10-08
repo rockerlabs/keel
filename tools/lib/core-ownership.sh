@@ -16,10 +16,7 @@
 # REQUIRED for all three consumers — install.sh, uninstall.sh and tools/doctor.sh — each GUARDED
 # (`[ -s ] && bash -n` pre-check, one actionable message, exit 1), matching tools/lib/manifest.sh's own
 # contract. Refusing outright on a missing or corrupted copy is the right failure mode, not a silent
-# degrade: an ownership decision needs a real predicate. (install.sh used to keep a byte-identical inline
-# fallback so a tools/-less checkout behaved as before; dir #716 deleted it — one definition, not two
-# to keep in step, and a tools/-less checkout cannot install anyway since tools/lib/safe-write.sh is
-# REQUIRED too.)
+# degrade: an ownership decision needs a real predicate, and there is exactly one definition of it.
 #
 # dir #716 (B12 of docs/specs/685-symlink-policy.md) adds the in-file marker definition below: the ONE
 # anchored way to find the embedded KEEL-CORE block, for every reader, writer and presence check.
@@ -30,9 +27,10 @@
 # (trailing whitespace allowed, so a CRLF file still matches); the END line is `<!-- KEEL-CORE-END -->`
 # at column 0. Both shipped forms match (CORE.md's `<!-- KEEL-CORE-BEGIN -->` and templates/CLAUDE.md's
 # `<!-- KEEL-CORE-BEGIN — rails below … -->`). POSIX ERE: the same strings go to grep -E and, through
-# ENVIRON (never -v, whose escape processing would mangle them), to awk.
+# ENVIRON (never -v, whose escape processing would mangle them), to awk — hence exported.
 KEEL_CORE_BEGIN_RE='^<!-- KEEL-CORE-BEGIN.*-->[[:space:]]*$'
 KEEL_CORE_END_RE='^<!-- KEEL-CORE-END -->[[:space:]]*$'
+export KEEL_CORE_BEGIN_RE KEEL_CORE_END_RE
 
 # keel_core_has_block FILE — true iff FILE holds a BEGIN marker line: the one presence check.
 keel_core_has_block() {
@@ -45,7 +43,7 @@ keel_core_has_block() {
 # block calls this first and changes nothing on a 1 — it cannot tell which lines the user meant.
 keel_core_block_check() {
   local seq
-  seq="$(KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
+  seq="$(awk '
     BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
     $0 ~ b { seq = seq (seq == "" ? "" : ",") "BEGIN"; next }
     $0 ~ e { seq = seq (seq == "" ? "" : ",") "END" }
@@ -60,10 +58,13 @@ keel_core_block_check() {
 
 # keel_core_block_replace FILE [REPLACEMENT] — FILE on stdout with its KEEL-CORE block (markers
 # included) swapped for REPLACEMENT (multi-line allowed; empty or absent = the block removed). A file
-# with no BEGIN line passes through unchanged. Meant as the CMD of keel_write_through's command form,
-# after keel_core_block_check has said the markers are balanced.
+# with no BEGIN line passes through unchanged. Returns 1 (printing nothing) on markers that are not one
+# balanced block, so a writer that forgot keel_core_block_check still cannot rewrite such a file; callers
+# run the check first to get its one-line explanation. Meant as the CMD of keel_write_through's command
+# form, where a failing CMD leaves the file untouched.
 keel_core_block_replace() {
-  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" KEEL_CORE_REPL="${2-}" awk '
+  keel_core_block_check "$1" 2>/dev/null || return 1
+  KEEL_CORE_REPL="${2-}" awk '
     BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"]; r = ENVIRON["KEEL_CORE_REPL"] }
     !skip && $0 ~ b { if (r != "") print r; skip = 1; next }
     skip && $0 ~ e  { skip = 0; next }
@@ -90,17 +91,12 @@ keel_core_is_nogit_trim() {
 # absorbs install.sh's former core_block(), itself a mirror of block_of() in
 # tests/test_core_wrapper_sync.sh — that test's own copy is the byte-identity pin and stays.
 keel_core_block_text() {
-  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
-    BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
-    !inb && !done && $0 ~ b { inb = 1; next }
-    inb && $0 ~ e           { inb = 0; done = 1; next }
-    inb
-  ' "$1"
+  keel_core_block_full "$1" | sed '1d;$d'
 }
 
 # keel_core_block_full FILE — the block WITH its marker lines (the first BEGIN through the next END).
 keel_core_block_full() {
-  KEEL_CORE_BEGIN_RE="$KEEL_CORE_BEGIN_RE" KEEL_CORE_END_RE="$KEEL_CORE_END_RE" awk '
+  awk '
     BEGIN { b = ENVIRON["KEEL_CORE_BEGIN_RE"]; e = ENVIRON["KEEL_CORE_END_RE"] }
     !inb && !done && $0 ~ b { inb = 1; print; next }
     inb && $0 ~ e           { print; inb = 0; done = 1; next }

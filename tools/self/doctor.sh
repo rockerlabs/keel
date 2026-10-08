@@ -1702,10 +1702,8 @@ say "● manifest_field/manifest_usable/core-ownership-predicate single-definiti
 # check exists to catch — install.sh's own optional-source pattern keeps exactly one:
 # manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
 # manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared:
-# it isn't claimed to match anything). install.sh's inline fallback of the core-ownership predicates,
-# the other exemption this check once carried (with a body comparison to hold it to the lib), is gone
-# (dir #716): core-ownership.sh is REQUIRED there like everywhere else, so those functions have exactly
-# one definition and no exemption.
+# it isn't claimed to match anything). The core-ownership functions carry no exemption: core-ownership.sh
+# is REQUIRED by every consumer (dir #716), so they have exactly one definition.
 # Scoped away from tests/ (`:!tests/`, unlike check 9's plain `'*.sh' 'keel'`): a test fixture
 # legitimately keeps its OWN small, independent reader for isolation from production code under test
 # (e.g. tests/test_install_manifest.sh's own manifest_field(), pre-existing this ticket) — a real,

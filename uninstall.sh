@@ -150,7 +150,7 @@ else
 fi
 # core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim) — REQUIRED, same
 # guarded-and-required posture as tools/lib/manifest.sh above (see its own comment for why bare would
-# be wrong here); install.sh requires it the same way since dir #716 (its inline fallback is gone).
+# be wrong here); install.sh requires it the same way.
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
@@ -754,14 +754,13 @@ take() {
   # (`<home>/docs` symlinked into it, as an install before this fix recorded it) — the dentry is only
   # ours to remove when its parent directory is not the checkout's. A home that itself lies inside the
   # checkout is excluded from the rule, as at install.
-  if keel_dir_inside_checkout "$(dirname "$p")" && ! keel_dir_inside_checkout "$HOME_DIR"; then
-    case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
+  case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
+  if keel_dir_is_checkouts_own "${p%/*}" "$HOME_DIR"; then
     echo "  !    not removed: $rel — it lies inside the Keel checkout"
     return 0
   fi
   if [ "$DRY_RUN" = 1 ]; then echo "  would remove  ${p#"$HOME_DIR"/}"; removed=$((removed + 1)); return 0; fi
   _ensure_backup
-  case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
   dest="$backup/$rel"
   mkdir -p "$(dirname "$dest")"
   mv "$p" "$dest"

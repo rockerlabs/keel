@@ -21,8 +21,6 @@ fresh_home() {
   [ "$STATUS" = 0 ] || echo "fixture install failed: $OUT" >&2
   printf '%s' "$h"
 }
-# alter_block FILE — change one line INSIDE the KEEL-CORE block (an older release, or an edit).
-alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
 # real_markers FILE — count of anchored marker lines (BEGIN or END) in FILE.
 real_markers() { grep -c -E '^<!-- KEEL-CORE-(BEGIN.*-->|END -->)[[:space:]]*$' "$1" || true; }
 
@@ -47,13 +45,6 @@ check_contains "A21 uninstall (prose above): the lines between the prose and the
 check_eq "A21 uninstall (prose above): the real block is gone" 0 "$(real_markers "$h/CLAUDE.md")"
 
 # --- A21: a refresh `y` keeps the prose line and the lines between, refreshes only the real block -------
-tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed)
-  local ans="$1"; shift
-  case "$(uname -s)" in
-    Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-    *)      OUT="$(script -qc "$*" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-  esac
-}
 if ! command -v script >/dev/null 2>&1; then
   printf '  SKIP  A21 refresh: no `script` binary on this host — the tty branch is not exercised here\n'
 else

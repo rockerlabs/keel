@@ -252,8 +252,7 @@ echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
 # Self-link guard (linked mode only), hoisted here — before anything below sources tools/lib/manifest.sh
-# (dir #323), so it still fires with the optional libs absent (a checkout with no tools/ dir at all now
-# stops at the core-ownership guard above, exit 1, writing nothing — dir #716). This is
+# (dir #323), so it still fires with the optional libs absent. This is
 # the earliest sane point either way: if the consumption dir IS this checkout — e.g. --home "$HOME"
 # while the checkout sits at $HOME/keel, bootstrap's default — sync_product would see src -ef dest and
 # "upgrade" the checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves,
@@ -1026,8 +1025,8 @@ if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
 # Linked-mode helpers (used by the --link branch below AND its Verify section; $import_line is set
 # by the --link branch before any call).
 # strip_core_block FILE [REPLACEMENT] → stdout, with the KEEL-CORE block replaced by REPLACEMENT
-# (default: the import line; "" = block removed). The ONE definition of the marker transform;
-# callers own the destination (in-place migration or a pipe).
+# (default: the import line; "" = block removed). The marker transform itself is core-ownership's
+# keel_core_block_replace; callers own the destination (in-place migration or a pipe).
 strip_core_block() {
   keel_core_block_replace "$1" "${2-$import_line}"
 }
@@ -1340,8 +1339,8 @@ sync_product() {
 #     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
 #     anywhere else is followed — the operator's own commands/ and agents/ are such links.
 # Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
-# "Inside" is core-ownership's/safe-write's one definition (keel_dir_inside_checkout: the checkout's path
-# or below it, with the slash — a sibling `<checkout>-dots` is not inside).
+# "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
+# with the slash — a sibling `<checkout>-dots` is not inside — while the home's is not).
 product_dir() {
   local d="$1" what="$2" a="$1"
   if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
@@ -1352,7 +1351,7 @@ product_dir() {
     case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
     [ -n "$a" ] || a="/"
   done
-  if keel_dir_inside_checkout "$a" && ! keel_dir_inside_checkout "$HOME_DIR"; then
+  if keel_dir_is_checkouts_own "$a" "$HOME_DIR"; then
     echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
     return 1
   fi
