@@ -77,6 +77,15 @@ sections real content going forward — see that page for exactly when each one 
   window to one branch.** A run that follows `/polish`'s text without re-invoking the Skill now gets its own
   window (its PR was invisible before), and an abandoned start can no longer swallow the next branch's PR;
   the JSON gains `opened_by` (`skill` | `init`) (dir #707).
+- **The SIGPIPE static guard now flags any producer before `grep -q`/`-m`.** `tests/test_no_pipe_sigpipe_race.sh`
+  knew only `printf`/`echo`/`sed`/`tr` producers, so a shell function, `awk` or `git` piped into an early-exiting
+  `grep` under `pipefail` re-introduced the dir #280 race unseen. It now flags every producer in front of
+  `grep -q`/`-m` (the `head` consumer stays tied to its fixed producer list: `x="$(… | head -1)"` captures are
+  never branched on), with an explicit `# sigpipe-ok: <reason>` same-line allow-comment for the rare safe case;
+  fixtures pin the function, `awk` and `git` shapes. The nine real hits were piped straight into the early-exit
+  reader; each now captures first, then matches (`tests/test_machine_watch.sh`,
+  `tests/test_install_machine_watch.sh`, `tests/test_delegation_doc.sh`, `tests/test_git_env_guard.sh`,
+  `tools/self/shellcheck-targets.sh`, `tools/drydock/inventory.sh`) (dir #708).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist

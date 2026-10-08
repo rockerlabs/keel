@@ -328,7 +328,8 @@ mw
 check_status "W20 no subcommand -> exit 2" 2 "$STATUS"
 
 # --- W21: never writes a deny rule (prevention is a documented recipe only, MW9) ---------------------
-if grep -v '^[[:space:]]*#' "$mw" | grep -q 'permissions'; then
+mw_code="$(grep -v '^[[:space:]]*#' "$mw" || true)"
+if match "$mw_code" -q 'permissions'; then
   fail "W21 the watcher never touches permissions" "tools/machine-watch.sh mentions permissions outside a comment"
 else
   pass "W21 the watcher never touches permissions"
@@ -503,7 +504,8 @@ printf 'w\n' > "$WEIRD"
 hook PostToolUse
 wait_log CALL; check_status "W30 a quote-bearing path still raises the notification" 0 "$?"
 check_contains "W30 the path arrives verbatim" "$(cat "$NLOG")" "$WEIRD: content changed"
-if grep -E '^ARG:(on run|display notification|end run)' "$NLOG" | grep -qF "ird'name"; then
+nlog_args="$(grep -E '^ARG:(on run|display notification|end run)' "$NLOG" || true)"
+if match "$nlog_args" -qF "ird'name"; then
   fail "W30 the fixed script text never embeds the message" "a path fragment leaked into an osascript -e line"
 else
   pass "W30 the fixed script text never embeds the message"
