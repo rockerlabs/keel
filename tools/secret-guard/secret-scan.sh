@@ -9,7 +9,9 @@
 #      personal emails) loaded as EREs, matched case-INSENSITIVELY, from a LOCAL file that is never
 #      committed:
 #        default path: ~/.claude/secret-scan-personal   (override with $SECRET_SCAN_PERSONAL_FILE)
-#        one ERE per line; blank lines and `# comments` ignored; absent file → only class 1 runs.
+#        one ERE per line; blank lines and `# comments` ignored; absent DEFAULT file → only class 1 runs.
+#        A SET $SECRET_SCAN_PERSONAL_FILE that is not a regular file is exit 2 (dir #725); /dev/null is the
+#        deliberate opt-out.
 #      Put ONLY literals that must never appear in ANY repo. Do NOT list your bare home username —
 #      it is a legitimate path component in a private knowledge base and would flag every home-path
 #      reference. Starter: tools/secret-guard/secret-scan-personal.example
@@ -175,6 +177,20 @@ personal=""
 # here (dir #680): a personal file we cannot trust must fail CLOSED — silently scanning with fewer (or no)
 # literals is the fail-open this gate must never have.
 _personal_rc=0
+# dir #725: the parser takes a path, so it cannot tell a path the operator SET from the built-in default —
+# and to it a non-regular file means "no literals" (right for the default, which most machines lack, and
+# for /dev/null, the explicit opt-out CI uses). A SET, non-empty variable naming anything else is a typo
+# (or a path made wrong by a cwd change): scanning on would switch the personal half off without a word.
+# Unset or empty keeps the default. A dangling symlink is left to the parser: it already exits 2 with its own,
+# more specific message (a symlink to nothing, dir #680).
+# (PERSONAL_FILE above equals the variable whenever it is set and non-empty.)
+if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$PERSONAL_FILE" != /dev/null ] && [ ! -f "$PERSONAL_FILE" ] \
+   && ! { [ -L "$PERSONAL_FILE" ] && [ ! -e "$PERSONAL_FILE" ]; }; then
+  echo "secret-scan: SECRET_SCAN_PERSONAL_FILE is set to $PERSONAL_FILE, which is not a regular file" >&2
+  echo "(missing, a directory, ...) — personal-data detection would be silently disabled. Fix the path, unset the" >&2
+  echo "variable to use the default, or set it to /dev/null to switch the personal half off on purpose." >&2
+  exit 2
+fi
 _personal_lines="$(_personal_literals_parse_inline "$PERSONAL_FILE")" || _personal_rc=$?
 case "$_personal_rc" in
   0) ;;

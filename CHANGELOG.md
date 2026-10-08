@@ -20,6 +20,13 @@ sections real content going forward — see that page for exactly when each one 
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
   only there (dir #711). `tests/test_polish_command.sh` builds its over-budget copy from scratch, so its
   `head -n` count cannot go negative once the core passes 3,001 words (dir #709).
+- **`secret-scan.sh` fails closed on a mistyped `SECRET_SCAN_PERSONAL_FILE`.** A variable that is set and
+  non-empty, is not `/dev/null` and does not name a regular file now stops the scan with exit 2 and a message
+  naming the variable, the path and the way out (fix the path, unset the variable, or set it to `/dev/null` to
+  switch the personal half off on purpose). Before, a missing or wrong path read as "no personal literals", so a
+  typo silently disabled the personal-data half of every commit and push gate (dir #725). Unset and empty keep
+  the default file, a missing default is still clean, and `/dev/null` is still the clean opt-out CI uses.
+  `public-audit.sh` resolves the same variable itself and is unchanged by this entry.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and

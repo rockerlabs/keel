@@ -9,7 +9,7 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 scan="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
-export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal-absent"
+export SECRET_SCAN_PERSONAL_FILE=/dev/null
 
 # scan_text TEXT — scans TEXT as a file; sets OUT/STATUS through run().
 scan_text() {
