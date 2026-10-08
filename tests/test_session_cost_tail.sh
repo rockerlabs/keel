@@ -365,7 +365,7 @@ check_eq "(x1) the first window is Skill-opened, the second init-opened" "skill 
 mk_session x2
 {
   rec_turn R1 10:00:00 "" b1 100 "$(bash_use toolu_g "grep -n 'receipt started' tools/pre-pr-gate.sh")"
-  rec_result 10:00:05 toolu_g false "tools/pre-pr-gate.sh:1581:    printf 'pre-pr-gate: receipt started (nonce %s)\\n' \"\$nonce\"
+  rec_result 10:00:05 toolu_g false "gate.sh:12:    printf 'pre-pr-gate: receipt started (nonce %s)\\n' \"\$nonce\"
 pre-pr-gate: receipt started (nonce %s)"
   rec_turn R3 10:02:00 "" b1 100 '[{"type":"tool_use","id":"toolu_r","name":"Read","input":{"file_path":"/x/log.txt"}}]'
   rec_result 10:02:05 toolu_r false "$INIT_OUT"
