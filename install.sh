@@ -2078,7 +2078,9 @@ done < "$merge_tmp"
 rm -f "$merge_tmp"
 
 # manifest_body — the manifest's content on stdout. A function, so the lib's command form runs it: a
-# body that fails partway leaves the previous manifest in place instead of a truncated one.
+# body whose LAST command fails, or that aborts (`set -u`), leaves the previous manifest in place. A
+# write error on an earlier line is NOT caught — the command form runs CMD where errexit is off, so
+# only the last status counts (a known residual of dir #679, recorded in its PR).
 manifest_body() {
   echo "keel_manifest_version=1"
   echo "mode=$manifest_mode"
