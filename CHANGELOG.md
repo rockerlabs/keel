@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`install-secret-guard.sh --global` no longer silently overrides a `core.hooksPath` a conditional
+  `[includeIf]` include sets** (dir #717, S5-1). Appending Keel's `[core] hooksPath` after such an include
+  used to take over every tree its condition matched, with exit 0. The installer now walks the conditional
+  includes from its scratch dir: the global, XDG and system files and anything `[include]`d, nested
+  `includeIf`s too, but never a command-scope one. When one sets a different, empty or valueless
+  `core.hooksPath`, it refuses with exit 3, naming the condition, the file, the target and the value. A walk it
+  cannot finish (include depth over 10, a path holding a TAB or newline, a target it cannot read or reach, a
+  `~user/` target, a failed `git config`, a scratch dir inside a repository) refuses too, where it used to fall
+  back to a narrow read in silence; `install.sh`'s Verify then says why a plain re-run would be refused again. `--force` wires
+  anyway, prints a NOTE per conflict and records nothing, since the conditional line is left as it is. A re-run
+  with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
+  and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
+  next to the guard hook, which is a copy: re-running `./install.sh --link` refreshes it (dir #717, R1-3).
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
