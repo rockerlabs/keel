@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
+  docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
+  (dir #685, slice 3 of the symlink policy). Keel's own link left stale by a moved checkout is re-pointed, as
+  before. A link whose content already equals Keel's is left as is ("up to date — your link"), and is no longer
+  recorded as Keel's, so neither the next run nor `uninstall.sh` can mistake it for one; an older manifest's record
+  of such a link is dropped. Any other link, live or dangling, is declined with its target named and "remove the
+  link and re-run to let Keel place it" as the remedy: `--force`, a terminal "y" and the command alias prompt's
+  `[u]pdate` no longer replace it (before, `--force` swapped the link for a file and a "y" did so with no backup),
+  and a command whose link is yours still gets Keel's version alongside it as `keel-<name>` in copy mode. A seed
+  (`LEARNINGS.md`, `IDEAS.md`, `INSTANCE.md`, `CLAUDE.md`/`AGENTS.md`, `keel/README.md`, and a project's `CLAUDE.md`
+  from `tools/init-project.sh`) that is a dangling link is left alone with one line, instead of being replaced or
+  written through. `docs/getting-started.md` states the rule once for adopters, `docs/reference.md` points at it,
+  and the three `tools/doctor.sh` link warnings now say to remove a link Keel did not make before re-running.
 - **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
   the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
   symlink into the Keel checkout, `install.sh` now skips it with one line instead of recording the

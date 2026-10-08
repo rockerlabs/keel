@@ -798,7 +798,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         case "$b" in FRAMEWORK.md|PRINCIPLES.md) tgt="$repo_root/$b" ;; *) tgt="" ;; esac ;;
     esac
     if [ -n "$tgt" ] && [ -f "$tgt" ] && [ ! "$l" -ef "$tgt" ]; then
-      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; re-run install.sh$this_relink$ihome_flag from here if this is the live one"
+      warn W-LINK-FOREIGN "$b resolves outside this checkout (an older keel clone?) — it will not refresh when THIS checkout pulls; if this is the live one, remove the link first (install never replaces a link Keel did not make, --force included), then re-run install.sh$this_relink$ihome_flag from here"
     fi
   done
 
@@ -961,7 +961,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md: its tool floor cannot be judged — $tools_dir/lib/agent-floor.sh is missing or does not load; update this Keel checkout, then re-run the audit"
       fi
       if [ -n "$floor_problem" ]; then
-        warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md is not the shipped read-only floor: $floor_problem — the review subagent could act, not just read; restore the shipped file: re-run install.sh --force$ihome_flag (backed up first; a linked install is the checkout's own file)"
+        warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md is not the shipped read-only floor: $floor_problem — the review subagent could act, not just read; restore the shipped file: re-run install.sh --force$ihome_flag (backed up first; a linked install is the checkout's own file; if it is a link Keel did not make, remove the link first — --force never replaces one)"
       fi
     fi
   fi
@@ -1000,7 +1000,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
       else
-        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — re-run install.sh$imode_flag$ihome_flag from here if this is the live one"
+        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — if this is the live one, remove the link first (install never replaces a link Keel did not make, --force included), then re-run install.sh$imode_flag$ihome_flag from here"
       fi
     else
       warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$imode_flag$ihome_flag (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand"
