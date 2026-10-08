@@ -577,7 +577,7 @@ run_bounded() {
 # repo (A5's shim, made one-shot): that call is the install's machine read; every later mktemp goes to the
 # real one, so the install's own selftest (which makes temp dirs of its own) still runs.
 s2_shim() {
-  local r; r="$(mk_repo)"; s2_shim="$H/shim"; mkdir -p "$s2_shim"
+  local r; r="$(mk_repo)"; s2_shim="$H/shim"; s2_shim_repo="$r"; mkdir -p "$s2_shim"
   printf '#!/bin/sh\nif [ "$*" = -d ] && [ ! -e "%s/used" ]; then : > "%s/used"; mkdir -p "%s/probe" && printf "%%s\\n" "%s/probe"; else exec "%s" "$@"; fi\n' \
     "$s2_shim" "$s2_shim" "$r" "$r" "$(type -P mktemp)" > "$s2_shim/mktemp"
   chmod +x "$s2_shim/mktemp"
@@ -716,8 +716,36 @@ s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --global
 check_status "A13: the scratch probe inside a repo → refused (exit 3)" 3 "$STATUS"
 check_contains "A13 scratch probe inside a repo: ...named" "$OUT" "$incomplete (the scratch dir mktemp gives sits inside a repository"
 check_nodir "A13 scratch probe inside a repo: ...nothing written" "$H/$kh_rel"
+check_nodir "A13 scratch probe inside a repo: ...and the scratch dir mktemp gave is removed, not left in the repo" "$s2_shim_repo/probe"
 s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --global --force
 check_status "A13 scratch probe inside a repo, --force → proceeds (exit 0)" 0 "$STATUS"
+
+# Review findings (polish step 5): shapes the walk must not pass as clean, or refuse needlessly.
+# An unreadable target: git warns and exits 1 — the same exit as "not set". It carries a foreign value, so a
+# root run (chmod 000 is a no-op for root, CLAUDE.md Linux-leg trap 2) refuses too, as a plain conflict.
+s2_home a13-unread; s2_inc
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"; chmod 000 "$H/work.cfg"
+run genv "$isg" --global
+check_status "A13: an unreadable conditional target → refused (exit 3)" 3 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "A13 unreadable target: ...as an incomplete walk" "$OUT" "$incomplete (git config failed on $H/work.cfg (unreadable))"
+fi
+chmod 600 "$H/work.cfg"
+# `./work.cfg` names the same file as work.cfg: a self-include spelled that way is complete, not depth 11.
+s2_home a13-dotself; s2_inc
+printf '[core]\n\thooksPath = ~/%s\n[includeIf "onbranch:x"]\n\tpath = ./work.cfg\n' "$kh_rel" > "$H/work.cfg"
+run_bounded genv "$isg" --global
+check_status "A13: a conditional self-include spelled ./work.cfg → complete, exit 0" 0 "$STATUS"
+# A `~user/` target is one the walk does not resolve: incomplete, never skipped as missing.
+s2_home a13-tildeuser; printf '[includeIf "gitdir:~/work/"]\n\tpath = ~alice/work.cfg\n' > "$H/.gitconfig"
+s2_refused "a ~user/ target" "$incomplete (an include path this walk cannot resolve: ~alice/work.cfg)"
+# install.sh's Verify names the refusal's cause instead of advising a --global run that is refused again.
+s2_home a13-verify; s2_inc
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
+run genv "$install" --home "$H/claude-home"
+check_contains "A13 install.sh Verify: names the conditional include" "$OUT" "a conditional [includeIf] include sets its own core.hooksPath"
+check_contains "A13 install.sh Verify: ...and the --force way out" "$OUT" "install-secret-guard.sh --global --force to wire anyway"
+check_absent "A13 install.sh Verify: ...never the generic advice that is refused again" "$OUT" "secret-guard not wired — run tools/install-secret-guard.sh --global"
 
 # --- A14: `conditional=` and doctor's disclosure ----------------------------------------------------------------
 s2_home a14; mkdir -p "$H/claude"; s2_inc

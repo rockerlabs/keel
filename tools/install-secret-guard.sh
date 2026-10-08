@@ -59,6 +59,8 @@ isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources 
 isg_displaced_key="keel.displacedHooksPath"
 # Keel's machine-wide hooks dir, relative to $HOME — what --global writes and --where recognises.
 isg_keel_hooks_rel=".config/git/keel-hooks"
+# dir #717: how many conditional [includeIf] levels the walk follows before it calls itself incomplete.
+isg_include_depth_max=10
 
 # --force and --uninstall may sit anywhere on the line; strip them, keep the single subcommand/positional
 # (busybox/bash-3.2 safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
@@ -428,7 +430,6 @@ _isg_machine_read() {
       else
         c_cause="mktemp -d gave no scratch dir"
       fi
-      probe=""   # inside a repo: leave whatever it is alone
     fi
   fi
   [ -z "$probe" ] || { rm -f "$probe/.isg-list" "$probe/.isg-value"; rmdir "$probe" 2>/dev/null; } || true
@@ -443,9 +444,11 @@ _isg_machine_read() {
 #     count; only `file:` origins — a command-scope include (`git -c`, GIT_CONFIG_COUNT; tests/lib.sh arms one
 #     for every test) applies to one command, not to the machine;
 #   - a relative target resolves beside the file that names it (git's rule), a leading ~/ to $HOME; a
-#     missing target is skipped, as git skips it, and so is a valueless `path` key;
+#     missing target is skipped, as git skips it, and so is a valueless `path` key; a `~user/` or
+#     `%(prefix)/` target, which this walk does not resolve, and an unreadable one make it incomplete;
 #   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
-#     before is skipped (a conditional self-include is complete), and depth stops at 10;
+#     before (compared by its real path, so `./work.cfg` is work.cfg) is skipped — a conditional
+#     self-include is complete — and depth stops at $isg_include_depth_max;
 #   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
 #     hook off in its trees, and a valueless `hooksPath` makes git fail there.
 # Every `-z` read goes to a FILE in the scratch dir and is read back with `read -d ''`: bash 3.2 drops NUL
@@ -484,10 +487,13 @@ _isg_cond_list() {
     # shellcheck disable=SC2088  # matching a literal ~ on purpose
     case "$raw" in
       "~/"*) raw="$(_isg_norm_path "$raw")" ;;
+      "~"*|"%("*) c_cause="an include path this walk cannot resolve: $raw"; return 1 ;;
       /*) ;;
       *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
          raw="$base/$raw" ;;
     esac
+    # git resolved a relative origin from the scratch dir it ran in, so a relative path is relative to it
+    case "$raw" in /*) ;; *) raw="$c_probe/$raw" ;; esac
     [ -z "$outer" ] || cond="$outer and $cond"
     c_next="$c_next$cond"$'\t'"$origin"$'\t'"$raw"$'\n'
   done < "$out"
@@ -496,18 +502,22 @@ _isg_cond_list() {
 
 # The walk itself, from scratch dir $1 (fresh, not inside a repo). Sets c_list and c_cause (see above).
 _isg_conditional_reads() {
-  local depth=1 cur cond origin tgt rc kv kind val vout visited=$'\n'
+  local depth=1 cur cond origin tgt rc kv kind val vout key d visited=$'\n'
   c_probe="$1" c_list="" c_cause="" c_next=""
   vout="$c_probe/.isg-value"
   _isg_cond_list "" || return 0
   while [ -n "$c_next" ]; do
-    if [ "$depth" -gt 10 ]; then c_cause="include depth over 10"; return 0; fi
+    if [ "$depth" -gt "$isg_include_depth_max" ]; then c_cause="include depth over $isg_include_depth_max"; return 0; fi
     cur="$c_next" c_next=""
     while IFS=$'\t' read -r cond origin tgt; do
       [ -n "$tgt" ] || continue
-      case "$visited" in *$'\n'"$tgt"$'\n'*) continue ;; esac
-      visited="$visited$tgt"$'\n'
       [ -e "$tgt" ] || continue   # a missing include: git skips it
+      # git reports an unreadable include as a warning and exit 1 — the same exit as "not set" — so test it here
+      [ -r "$tgt" ] || { c_cause="git config failed on $tgt (unreadable)"; return 0; }
+      d="${tgt%/*}"; [ -n "$d" ] || d=/
+      key="$(cd "$d" 2>/dev/null && pwd -P)" && key="$key/${tgt##*/}" || key="$tgt"
+      case "$visited" in *$'\n'"$key"$'\n'*) continue ;; esac
+      visited="$visited$key"$'\n'
       rc=0
       git -C "$c_probe" config --file "$tgt" --includes -z --get-regexp '^core\.hookspath$' > "$vout" 2>/dev/null || rc=$?
       case "$rc" in
