@@ -31,16 +31,11 @@ ledger_append() {
 # behind its own REQUIRED guard); a caller that did not load it gets one line and a 1, never a write
 # of its own. Returns 1 when the write is refused (the caller exits: it cannot record what it did).
 ledger_remove() {
-  local ledger="$1" home="$2" kept
+  local ledger="$1" home="$2"
   [ -f "$ledger" ] || return 0
   if ! command -v keel_write_through >/dev/null 2>&1; then
     echo "ledger: tools/lib/safe-write.sh is not loaded — the caller must source it first; nothing was written." >&2
     return 1
   fi
-  kept="$(grep -vxF "$home" "$ledger" 2>/dev/null)" || :
-  if [ -n "$kept" ]; then
-    printf '%s\n' "$kept" | keel_write_through "$ledger"
-  else
-    keel_write_through "$ledger" < /dev/null
-  fi
+  { grep -vxF "$home" "$ledger" 2>/dev/null || :; } | keel_write_through "$ledger"
 }

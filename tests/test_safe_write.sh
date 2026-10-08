@@ -14,8 +14,7 @@ uninstall="$REPO_ROOT/uninstall.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$REPO_ROOT/tools/lib/stat-portable.sh"
 
-# mode_of FILE — octal permission bits; inode_of FILE — the inode number (a rename changes it).
-mode_of() { stat_portable_mode "$1"; }
+# inode_of FILE — the inode number (a rename changes it).
 # (`read` drops the leading blanks busybox `ls -i` pads the number with.)
 inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # keeltmp_count DIR... — leftover temp siblings under DIR.
@@ -43,7 +42,7 @@ run bash -c ". '$lib'; . '$REPO_ROOT/tools/lib/ledger.sh'; ledger_remove '$w/led
 check_status "A6 ledger_remove through a link → rc 0" 0 "$STATUS"
 check_link "A6 …the ledger link is kept" "$w/ledger"
 check_eq "A6 …the line is gone from the real file" /h2 "$(cat "$w/real")"
-check_eq "A6 …mode 0600 kept" 600 "$(mode_of "$w/real")"
+check_eq "A6 …mode 0600 kept" 600 "$(stat_portable_mode "$w/real")"
 check_ne "A6 …the real file was renamed over (inode changed)" "$ino" "$(inode_of "$w/real")"
 run bash -c ". '$REPO_ROOT/tools/lib/ledger.sh'; ledger_remove '$w/ledger' /h2"
 check_status "A6 ledger_remove with no safe-write lib loaded → rc 1 (never falls back)" 1 "$STATUS"
@@ -58,7 +57,7 @@ run env KEEL_INSTANCE="$w/INSTANCE.md" "$REPO_ROOT/tools/register-project.sh" "$
 check_status "A7 register-project through a link → exit 0" 0 "$STATUS"
 check_link "A7 …the INSTANCE.md link is kept" "$w/INSTANCE.md"
 check_contains "A7 …the row is in the real file" "$(cat "$w/real.md")" "| proj | "
-check_eq "A7 …mode 0600 kept" 600 "$(mode_of "$w/real.md")"
+check_eq "A7 …mode 0600 kept" 600 "$(stat_portable_mode "$w/real.md")"
 check_ne "A7 …the real file was renamed over (inode changed)" "$ino" "$(inode_of "$w/real.md")"
 printf '| Project | Path | CLAUDE.md | Tag |\n' > "$w/hl.md"; ln "$w/hl.md" "$w/hl2.md"
 run env KEEL_INSTANCE="$w/hl.md" "$REPO_ROOT/tools/register-project.sh" "$w/proj"
@@ -72,7 +71,7 @@ check_status "A4 fixture: copy install → exit 0" 0 "$STATUS"
 chmod 600 "$h/CLAUDE.md"
 run "$install" --link --home "$h" --no-hooks
 check_status "A4 --link migration over a 0600 CLAUDE.md → exit 0" 0 "$STATUS"
-check_eq "A4 …CLAUDE.md is still 0600" 600 "$(mode_of "$h/CLAUDE.md")"
+check_eq "A4 …CLAUDE.md is still 0600" 600 "$(stat_portable_mode "$h/CLAUDE.md")"
 check_status "A4 …and holds the import line" 1 "$(grep -c '@.*keel/CORE\.md' "$h/CLAUDE.md" || true)"
 
 # --- A5: the uninstall strip writes through a symlinked 0600 CLAUDE.md (the EDIT round-trip) ---------
@@ -84,7 +83,7 @@ run "$uninstall" --home "$h" --yes
 check_status "A5 uninstall over a symlinked CLAUDE.md → exit 0" 0 "$STATUS"
 check_link "A5 …<home>/CLAUDE.md is still a link" "$h/CLAUDE.md"
 check_status "A5 …the dotfiles file no longer holds the block" 0 "$(grep -c 'KEEL-CORE-BEGIN' "$dots/CLAUDE.md" || true)"
-check_eq "A5 …and is still 0600" 600 "$(mode_of "$dots/CLAUDE.md")"
+check_eq "A5 …and is still 0600" 600 "$(stat_portable_mode "$dots/CLAUDE.md")"
 check_eq "A5 …a backup of it exists" 1 "$(find "$h" -path '*/.keel-uninstall-*' -name CLAUDE.md | grep -c . || true)"
 check_eq "A5 …no temp is left in either dir" 0 "$(keeltmp_count "$h" "$dots")"
 
@@ -102,9 +101,13 @@ check_contains "A10 …the drifted content went to the next name" "$(cat "$h/doc
 check_contains "A10 …and the output names it" "$OUT" "delegation.md.$ts.2.bak"
 
 # --- scratch checkout for A11 / A24: a copy of this tree, committed, so `git status` can tell -------
-ck="$SANDBOX/ck"
-cp -R "$REPO_ROOT" "$ck"
-rm -rf "$ck/.git"
+# Only the tracked top-level entries are copied (uncommitted edits to them included): a run from the
+# main checkout would otherwise drag its .git/, private/ and nested worktrees along.
+ck="$SANDBOX/ck"; mkdir -p "$ck"
+tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
+while IFS= read -r e; do
+  [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$ck/"
+done <<<"$tops"
 git -C "$ck" init -q
 git -C "$ck" add -A
 git -C "$ck" commit -qm base
@@ -185,14 +188,14 @@ check_status "A2 write_through a 2-hop link → rc 0" 0 "$STATUS"
 check_link "A2 …the first hop is still a link" "$w/hop2"
 check_link "A2 …the second hop is still a link" "$w/proj/hop1"
 check_eq "A2 …the target holds the new content" new "$(cat "$w/dots/real")"
-check_eq "A2 …the target's 0600 is kept" 600 "$(mode_of "$w/dots/real")"
+check_eq "A2 …the target's 0600 is kept" 600 "$(stat_portable_mode "$w/dots/real")"
 check_ne "A2 …written by a rename (the inode changed)" "$ino" "$(inode_of "$w/dots/real")"
 # a plain 0600 file stays 0600; a new file gets the umask.
 printf 'x\n' > "$w/plain"; chmod 600 "$w/plain"
 printf 'y\n' | keel_write_through "$w/plain"
-check_eq "A2 a plain 0600 file stays 0600" 600 "$(mode_of "$w/plain")"
+check_eq "A2 a plain 0600 file stays 0600" 600 "$(stat_portable_mode "$w/plain")"
 ( umask 022; printf 'z\n' | keel_write_through "$w/fresh" )
-check_eq "A2 a new file is created with the umask's mode" 644 "$(mode_of "$w/fresh")"
+check_eq "A2 a new file is created with the umask's mode" 644 "$(stat_portable_mode "$w/fresh")"
 # a hard-linked target → rc 1, both names unchanged, the refusal names the hard link.
 printf 'shared\n' > "$w/hl-a"; ln "$w/hl-a" "$w/hl-b"
 run bash -c ". '$lib'; printf 'new\n' | keel_write_through '$w/hl-a'"
@@ -200,7 +203,8 @@ check_status "A2 a hard-linked target → rc 1" 1 "$STATUS"
 check_contains "A2 …the refusal names the hard link" "$OUT" "hard link"
 check_eq "A2 …the name written to keeps its bytes" shared "$(cat "$w/hl-a")"
 check_eq "A2 …the other name keeps its bytes" shared "$(cat "$w/hl-b")"
-if [ "$w/hl-a" -ef "$w/hl-b" ]; then pass "A2 …the hard link is not split"; else fail "A2 …the hard link is not split" "split"; fi
+run test "$w/hl-a" -ef "$w/hl-b"
+check_status "A2 …the hard link is not split" 0 "$STATUS"
 # a symlink to a hard-linked file is refused too (the count is read on the resolved target).
 ln -s hl-a "$w/hl-link"
 run bash -c ". '$lib'; printf 'new\n' | keel_write_through '$w/hl-link'"
@@ -252,7 +256,8 @@ check_eq "A2 …the other name keeps its bytes" orig "$(cat "$w/r-b")"
 printf 'src\n' > "$w/src"; printf 'was\n' > "$w/lnk"
 keel_link_replace "$w/src" "$w/lnk"
 check_link "A2 link_replace leaves a link at the path" "$w/lnk"
-if [ "$w/lnk" -ef "$w/src" ]; then pass "A2 …pointing at the target"; else fail "A2 …pointing at the target" "$(readlink "$w/lnk")"; fi
+run test "$w/lnk" -ef "$w/src"
+check_status "A2 …pointing at the target" 0 "$STATUS"
 # keel_backup: two calls in one second → .bak and .2.bak, both 0600, neither overwritten.
 printf 'first\n' > "$w/b"; chmod 644 "$w/b"
 KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/b"; b1="$KEEL_BACKUP"
@@ -262,8 +267,8 @@ check_eq "A2 backup: the first is <path>.<ts>.bak" "$w/b.20260101T000000Z.bak" "
 check_eq "A2 backup: the second in the same second is <path>.<ts>.2.bak" "$w/b.20260101T000000Z.2.bak" "$b2"
 check_eq "A2 backup: …the first still holds the first content" first "$(cat "$b1")"
 check_eq "A2 backup: …the second holds the second" second "$(cat "$b2")"
-check_eq "A2 backup: the first is 0600" 600 "$(mode_of "$b1")"
-check_eq "A2 backup: the second is 0600" 600 "$(mode_of "$b2")"
+check_eq "A2 backup: the first is 0600" 600 "$(stat_portable_mode "$b1")"
+check_eq "A2 backup: the second is 0600" 600 "$(stat_portable_mode "$b2")"
 # a dangling link pre-placed at the .bak name → claimed as .2.bak, the link's target never written.
 printf 'c\n' > "$w/d"; ln -s "$w/d-target" "$w/d.20260101T000000Z.bak"
 KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/d"
@@ -274,6 +279,13 @@ printf 'n\n' > "$w/n"; ln -s /dev/null "$w/n.20260101T000000Z.bak"
 KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/n"
 check_eq "A2 backup: a link to /dev/null at the name → .2.bak" "$w/n.20260101T000000Z.2.bak" "$KEEL_BACKUP"
 check_eq "A2 backup: …holding the content" n "$(cat "$KEEL_BACKUP")"
+# a non-regular path (a FIFO would block the copy forever) is refused before any name is claimed.
+if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/fifo" 2>/dev/null; then
+  run bash -c ". '$lib'; keel_backup '$w/fifo'"
+  check_status "A2 backup: a FIFO → rc 1, no hang" 1 "$STATUS"
+  check_eq "A2 backup: …and no name was claimed" 0 "$(find "$w" -maxdepth 1 -name 'fifo.*' | grep -c . || true)"
+  rm -f "$w/fifo"
+fi
 run bash -c ". '$lib'; keel_backup '$w/no-such'"
 check_status "A2 backup: a failed copy → rc 1" 1 "$STATUS"
 check_eq "A2 backup: …and leaves no claimed .bak behind" 0 "$(find "$w" -maxdepth 1 -name 'no-such.*' | grep -c . || true)"

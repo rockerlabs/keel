@@ -690,11 +690,11 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # THE SAME "test position suspends set -e" FACT CUTS BOTH WAYS (found live by a fresh /code-review
 # pass, on the very draft that added the bullets above): testing this function's return value at the
 # bin/keel site doesn't just exempt the non-regular-dest `return 1` from `set -e` — it suspends
-# errexit for EVERY command in this function's body for that invocation, including the `cp` below. A
+# errexit for EVERY command in this function's body for that invocation, including the backup below. A
 # function relying on ambient `set -e` to catch ITS OWN internal failures is only safe when every
 # caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
-# failure — which is exactly what the `cp` below now does.
+# failure — which is exactly what the backup check below now does.
 # LABEL (default "--force") is only the word in the success line's closing parentheses; the block-refresh
 # ladder (dir #650) passes "block refresh".
 force_backup() {
@@ -706,13 +706,13 @@ force_backup() {
   # Explicit check, not ambient `set -e` (dir #349, found live by a fresh /code-review pass): the
   # bin/keel call site below tests this function's own return value (`elif force_backup ...; then`),
   # and bash suspends errexit for the WHOLE body of a command invoked in test position — not just its
-  # final exit status. Without this check, a real `cp` failure (permission denied, disk full, a
+  # final exit status. Without this check, a real copy failure (permission denied, disk full, a
   # transient I/O error) would silently fall through to the success echo below and return 0: the
   # caller would then believe the backup happened and proceed to overwrite the adopter's real file
   # with nothing actually backed up — reproduced live. Checking explicitly makes the failure mode the
   # same regardless of how the caller invokes this function: a bare-statement caller (sync_product's
   # two call sites) still aborts under `set -e` on a `return 1` here, same as before, but now with a
-  # clear message first instead of a bare `cp` stderr line.
+  # clear message first (keel_backup's line saying why, then this one) instead of a bare stderr line.
   if ! keel_backup "$dest"; then
     echo "  !    $(basename "$dest"): backup failed — left untouched" >&2
     return 1
@@ -1551,14 +1551,15 @@ EOF
       printf "       Replace the embedded block with the import line (adopts the CURRENT shipped rails)? [y/N] "
       read -r reply || reply=""
       case "$reply" in
-        [yY]|[yY][eE][sS])
-          if replace_core_block "$gclaude"; then
-            echo "  +    CLAUDE.md now imports the linked core"
-          else
-            echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
-          fi ;;
-        *) echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)" ;;
+        [yY]|[yY][eE][sS]) migrate=1 ;;
+        *) migrate=0 ;;
       esac
+      # A "no" and a refused write (the lib's one line already said why) end the same way.
+      if [ "$migrate" = 1 ] && replace_core_block "$gclaude"; then
+        echo "  +    CLAUDE.md now imports the linked core"
+      else
+        echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+      fi
     else
       echo "  !    CLAUDE.md embeds rails that differ from the shipped core — left untouched (your edits may live in the block)."
       echo "       Compare, then migrate by hand: replace the KEEL-CORE block with the line  $import_line"
@@ -1729,7 +1730,7 @@ elif [ -f "$root/keel" ]; then
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help') — real file backed up first (--force)"
   fi
-  # else: $FORCE=1 and force_backup declined — either a non-regular $keel_link, or a genuine `cp`
+  # else: $FORCE=1 and force_backup declined — either a non-regular $keel_link, or a genuine copy
   # failure backing up a regular one; its own message above already said which, so nothing more to
   # print here.
 fi

@@ -51,16 +51,19 @@ if ! declare -F stat_portable_nlink >/dev/null 2>&1; then
   if [ -s "$_keel_sw_libdir/stat-portable.sh" ] && bash -n "$_keel_sw_libdir/stat-portable.sh" 2>/dev/null; then
     # shellcheck source=tools/lib/stat-portable.sh
     . "$_keel_sw_libdir/stat-portable.sh"
+    # Probe the stat flavor once, here: keel_write_through reads the count inside a `$( )`, where a
+    # lazily-probed flavor would be cached in a subshell that dies (stat-portable.sh's header).
+    _stat_portable_ensure_flavor
   else
     stat_portable_nlink() { :; }
   fi
   unset _keel_sw_libdir
 fi
 
-# keel_resolve_path PATH — prints PATH with every symlink hop followed (one `readlink` per hop, the
+# _keel_sw_resolve PATH — prints PATH with every symlink hop followed (one `readlink` per hop, the
 # portable form: no `-f`, which BSD readlink lacks before macOS 12.3). Returns 1 on a loop (more than
 # 40 hops). A path that is not a link prints as given.
-keel_resolve_path() {
+_keel_sw_resolve() {
   local p="$1" l n=0
   while [ -L "$p" ]; do
     n=$((n + 1))
@@ -100,7 +103,7 @@ _keel_sw_inside() {
 # nothing written, on any refusal or a failed write.
 keel_write_through() {
   local file="$1" target="$1" tdir nl tmp
-  if [ -L "$file" ] && ! target="$(keel_resolve_path "$file")"; then
+  if [ -L "$file" ] && ! target="$(_keel_sw_resolve "$file")"; then
     echo "safe-write: $file is a symlink loop — nothing was written." >&2
     return 1
   fi
@@ -177,30 +180,36 @@ keel_link_replace() {
 # the claimed file's mode everywhere (busybox `cp` onto an existing file gives it the source's mode).
 # noclobber is not exclusive for a link at the name that resolves to an existing non-regular file
 # (`/dev/null`), so a claim also has to leave a regular, non-link file behind, or the next name is
-# tried. Returns 1, with one line and nothing claimed left behind, when no name can be claimed or the
-# copy fails. KEEL_TEST_NOW (tests only) fixes the timestamp, so a collision can be staged.
+# tried. A PATH that exists but is not a regular file (a FIFO would block the copy forever) is refused
+# before any name is claimed. Returns 1, with one line and nothing claimed left behind, when the path is
+# refused, no name can be claimed or the copy fails; $KEEL_BACKUP is set only on success. KEEL_TEST_NOW
+# (tests only) fixes the timestamp, so a collision can be staged.
 keel_backup() {
-  local base n=1
+  local base b n=1
+  KEEL_BACKUP=""
+  if [ -e "$1" ] && [ ! -f "$1" ]; then
+    echo "safe-write: $1 is not a regular file — no backup was taken." >&2
+    return 1
+  fi
   base="$1.${KEEL_TEST_NOW:-$(date -u +%Y%m%dT%H%M%SZ)}"
-  KEEL_BACKUP="$base.bak"
-  until (set -C; umask 077; : > "$KEEL_BACKUP") 2>/dev/null && [ -f "$KEEL_BACKUP" ] && [ ! -L "$KEEL_BACKUP" ]; do
-    if [ ! -e "$KEEL_BACKUP" ] && [ ! -L "$KEEL_BACKUP" ]; then
+  b="$base.bak"
+  until (set -C; umask 077; : > "$b") 2>/dev/null && [ -f "$b" ] && [ ! -L "$b" ]; do
+    if [ ! -e "$b" ] && [ ! -L "$b" ]; then
       echo "safe-write: cannot create a backup beside $1 (is its directory writable?) — nothing was written." >&2
-      KEEL_BACKUP=""
       return 1
     fi
     n=$((n + 1))
     if [ "$n" -gt 99 ]; then
       echo "safe-write: no free backup name beside $1 (.bak through .99.bak are taken) — nothing was written." >&2
-      KEEL_BACKUP=""
       return 1
     fi
-    KEEL_BACKUP="$base.$n.bak"
+    b="$base.$n.bak"
   done
-  if ! cat "$1" 2>/dev/null > "$KEEL_BACKUP"; then
-    rm -f "$KEEL_BACKUP"
+  if ! cat "$1" 2>/dev/null > "$b"; then
+    rm -f "$b"
     echo "safe-write: could not copy $1 to its backup — nothing was written." >&2
-    KEEL_BACKUP=""
     return 1
   fi
+  # shellcheck disable=SC2034  # read by the caller right after this call (header)
+  KEEL_BACKUP="$b"
 }

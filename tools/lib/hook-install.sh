@@ -13,8 +13,9 @@
 #
 # The hook-specs JSON is an array of {event, matcher, command}. Every function below takes it as an
 # argument and never reads a global. The one global it WRITES is $HOOK_INSTALL_BACKUP (set by
-# hook_install_backup, read by the caller right after the call), so two installers sourced into one
-# shell cannot cross-talk on inputs.
+# hook_install_backup, read by the caller right after the call; safe-write.sh's keel_backup, which it
+# wraps, sets its own $KEEL_BACKUP the same way), so two installers sourced into one shell cannot
+# cross-talk on inputs.
 #
 # REQUIRED, not optional, by every caller — the same contract as tools/lib/artifact-cksum.sh, for the
 # same reason: a degrade-and-continue stub here would make an installer write a settings.json merge it

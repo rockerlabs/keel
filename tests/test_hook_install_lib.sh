@@ -218,11 +218,8 @@ check_ne "atomic_write: a hard-linked settings.json → rc ≠ 0" 0 "$STATUS"
 check_contains "atomic_write: …the refusal names the hard link" "$OUT" "hard link"
 check_status "atomic_write: …the name written to still holds {}" '{}' "$(cat "$SANDBOX/hl.json")"
 check_status "atomic_write: …the other name still holds {}" '{}' "$(cat "$SANDBOX/hl-other.json")"
-if [ "$SANDBOX/hl.json" -ef "$SANDBOX/hl-other.json" ]; then
-  pass "atomic_write: …the hard link is not split"
-else
-  fail "atomic_write: …the hard link is not split" "the two names are now different files"
-fi
+run test "$SANDBOX/hl.json" -ef "$SANDBOX/hl-other.json"
+check_status "atomic_write: …the hard link is not split" 0 "$STATUS"
 
 # Same-second collision (S3-5), made deterministic: a `date` function shadows the binary inside the lib's
 # $(date …), so both backups read one clock second — without the fix the second cp overwrote the first.
