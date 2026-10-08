@@ -123,7 +123,7 @@ for tf in "$TESTS_DIR"/test_*.sh; do
   tvars="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*="\$\(type -P git\)"' "$tf" | sed -E 's/^[[:space:]]*([A-Za-z_0-9]+)=.*/\1/' || true)"
   for tv in $tvars; do
     hits="$(grep -nE "\\\$\\{?$tv\\}?\"? +-C" "$tf" || true)"
-    [ -z "$hits" ] || bypass="${bypass}${tf##*/} ($tv): $(printf '%s' "$hits" | head -n1)"$'\n'
+    [ -z "$hits" ] || bypass="${bypass}${tf##*/} ($tv): ${hits%%$'\n'*}"$'\n'
   done
 done
 check_eq "C2 no test runs git writes through a \$(type -P git) variable with -C (the guard-bypass shape)" "" "$bypass"
