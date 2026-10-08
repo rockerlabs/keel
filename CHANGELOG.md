@@ -19,13 +19,14 @@ sections real content going forward — see that page for exactly when each one 
   is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
   clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed
   `secret-scan: clean`: a staged or tracked name holding a tab, a quote, a backslash or a newline (both lists now
-  use `-z`); a `diff.*` config git cannot read, or a corrupt index; a missing `sort` or `grep`; a corrupt object
-  in a pushed range; a failing `git log`, `cat-file` or `readlink`; a staged binary named like `1:x.bin`; and
-  `--staged` run from a subdirectory. Under bash 5 with a UTF-8 locale, a name or a line ending in an invalid
-  byte also made the NEXT record vanish (staged, tracked, in a pushed range, and in the allowlist filter), so
-  every `read` now runs under `LC_ALL=C` (dir #715, absorbing dir #698). `--selftest` gains a `--staged` probe
-  that runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a
-  broken `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
+  use `-z`, and a newline in a name prints as `\n`); a `diff.*` config git cannot read, or a corrupt index; a
+  missing `sort` or `grep`; a corrupt object in a pushed range; a failing `git log`, `cat-file` or `readlink`; a
+  staged binary named like `1:x.bin`; and `--staged` run from a subdirectory. An unreadable file named on the
+  command line now exits 2, not 1. Under bash 5 with a UTF-8 locale, a name or a line ending in an invalid byte
+  also made the NEXT record vanish (staged, tracked, in a pushed range, and in the allowlist filter), so every
+  `read` now runs under `LC_ALL=C` (dir #715, absorbing dir #698). `--selftest` gains a `--staged` probe that
+  runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
+  `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
   substitution or locale-bound `read` in the scanner.
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a

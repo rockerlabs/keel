@@ -146,7 +146,9 @@ trap 'exit 143' TERM
 # returns a status, and its caller hands it here — `cmd > "$spool" 2>"$err" || _fail_closed STEP $? "$err"`.
 _fail_closed() {
   local l=""
-  printf 'secret-scan: could not %s%s — refusing to report it clean\n' "$1" "${2:+ (exit $2)}" >&2
+  # a newline in STEP (it can embed a file name) is written as `\n`, so no continuation line can start with
+  # two spaces
+  printf 'secret-scan: could not %s%s — refusing to report it clean\n' "${1//$'\n'/\\n}" "${2:+ (exit $2)}" >&2
   if [ -n "${3:-}" ] && [ -r "$3" ]; then
     while LC_ALL=C IFS= read -r l || [ -n "$l" ]; do
       printf 'secret-scan:   %s\n' "$l" >&2
@@ -663,10 +665,14 @@ selftest() {
 # below (one definition, dir #495 code review's own reuse finding on the first cut, which typed this
 # loop out twice).
 scan_file_args() {
-  local f
+  local f fspool ferr
+  fspool="$(spool)"; ferr="$(spool)"
   for f in "$@"; do
     [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-    emit_stream "$f" < "$f"
+    # a checked read into a spool (dir #715 review): an unreadable file exits 2 naming it, not 1 (the
+    # "found" status, with no hit line for a caller to parse); the name never reaches cmp/grep
+    cat < "$f" > "$fspool" 2>"$ferr" || _fail_closed "read '$f'" $? "$ferr"
+    emit_file "$f" "$fspool"
   done
 }
 

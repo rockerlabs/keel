@@ -2531,7 +2531,17 @@ for n715 in -v -b -l -; do
   printf 'tok = %s\n' "$k715" > "$d715/$n715"
   run_in "$d715" "$scan" -- "$n715"
   check_status "dir #715: FILE mode scans a file named '$n715' → BLOCKED" 1 "$STATUS"
+  check_contains "dir #715: ...as text, its line numbered ('$n715')" "$OUT" "$n715:1:tok = "
 done
+# ...and an unreadable FILE-mode argument exits 2 naming it, never 1 with no hit line (root reads it anyway)
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  printf 'tok = %s\n' "$k715" > "$d715/unreadable.txt"
+  chmod 000 "$d715/unreadable.txt"
+  run_in "$d715" "$scan" -- unreadable.txt
+  check_status "dir #715: an unreadable FILE-mode argument → exit 2" 2 "$STATUS"
+  check_contains "dir #715: ...naming the read" "$OUT" "could not read 'unreadable.txt'"
+  chmod 644 "$d715/unreadable.txt"
+fi
 
 # A25 (B4): --staged from a subdirectory scans the root-relative paths and applies the root allowlist.
 r715="$(new_repo)"
