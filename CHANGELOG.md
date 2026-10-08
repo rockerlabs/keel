@@ -30,7 +30,7 @@ sections real content going forward — see that page for exactly when each one 
   from the list, so the list stops carrying defects that are already scheduled; the release manager's filing
   rule in `docs/release-management.md` points at it.
 - **A drift check on the leak gate's path-variable list.** `tests/test_leak_gate_env_drift.sh` derives every
-  environment read (`SECRET_SCAN_*`, `KEEL_*`, `HOME`, `TMPDIR`) in the secret scanner and `range-lib.sh` and asserts
+  read of the scanner's variable family (`SECRET_SCAN_*`, `KEEL_*`, `HOME`, `TMPDIR`) in the secret scanner and `range-lib.sh` and asserts
   `tools/lib/leak-gate.sh`'s `_LEAK_GATE_PATH_ENV` is exactly those reads minus a named non-path flag, so a new
   path-valued read the list does not name turns it red (dir #726). It pins all six names, three of which
   (`KEEL_IMPACT_STORE`, `KEEL_HOME`, `TMPDIR`) no test pinned before.

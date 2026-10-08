@@ -4,7 +4,7 @@
 # against the caller's cwd before the scanner's neutral-cwd `cd` (0.14.0 delta audit S7-5: an unlisted
 # relative path variable silently fails the gate OPEN). The list was enumerated by hand, so a new
 # path-valued read in the scanner re-opened that class with nothing red. This file derives the scanner's
-# environment reads (SECRET_SCAN_* / KEEL_* / HOME / TMPDIR, comments excluded) and asserts the list is
+# reads of its variable family (SECRET_SCAN_* / KEEL_* / HOME / TMPDIR, comments excluded) and asserts the list is
 # EXACTLY them minus a named non-path set: every read is listed (new read -> red), every listed name is
 # still read (dead entry -> red), and all six current names are pinned by that equality (before this,
 # KEEL_IMPACT_STORE, KEEL_HOME and TMPDIR were pinned by no test).
@@ -12,7 +12,9 @@
 # A read that is deliberately NOT a path (a flag) goes in NON_PATH_ENV below with its reason; adding
 # there is the explicit decision a new variable forces. TMPDIR is read implicitly by a bare `mktemp`
 # (no template argument), which is how the scanner reads it, so that shape counts as a TMPDIR read.
-# Scope: the scanner and the vendored libs beside it that it may run (range-lib.sh) — the hooks run in the
+# Known limits: a variable outside that family (XDG_*, GIT_*), a `~` path or an indirect `${!name}` read is not
+# seen; a name that only appears in quoted message text counts as a read, so it can hide a dead list entry (it
+# never demands a false entry). Scope: the scanner and the vendored libs beside it that it may run (range-lib.sh) — the hooks run in the
 # caller's cwd, not the scanner's neutral one, so they are out of scope.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
@@ -31,7 +33,7 @@ env_reads() {
     body="$(grep -vE '^[[:space:]]*#' "$f" || true)"
     names="$(grep -oE '\$\{?(SECRET_SCAN_[A-Z0-9_]+|KEEL_[A-Z0-9_]+|HOME|TMPDIR)\b' <<<"$body" | tr -d '${' || true)"
     [ -z "$names" ] || printf '%s\n' "$names"
-    if grep -qE 'mktemp( -[A-Za-z]+)*\)' <<<"$body"; then echo TMPDIR; fi
+    if grep -qE 'mktemp( -[A-Za-z]+)*[[:space:]]*([)|>&;]|$)' <<<"$body"; then echo TMPDIR; fi
   done | sort -u
 }
 
@@ -63,16 +65,24 @@ check_file "tools/secret-guard/range-lib.sh exists" "$range_lib"
 
 # --- the real tree: quiet ---------------------------------------------------------------------------
 have="$(listed)"
-check_eq "the lib lists exactly six path variables" "6" "$(grep -c . <<<"$have")"
+check_ne "the lib's list parses to a non-empty set" "0" "$(grep -c . <<<"$have")"
 check_eq "real tree: _LEAK_GATE_PATH_ENV equals the scanner's path-valued reads (no drift)" "" \
   "$(drift "$have" "$scanner" "$range_lib")"
 
+reads="$(env_reads "$scanner" "$range_lib")"
 # Each of the six is pinned individually, so a failure names the one that fell out of step.
 for v in SECRET_SCAN_PERSONAL_FILE KEEL_IMPACT_LOG KEEL_IMPACT_STORE KEEL_HOME HOME TMPDIR; do
-  check_contains "$v is listed" "$have" "$v"
-  check_contains "$v is read by the scanner" "$(env_reads "$scanner" "$range_lib")" "$v"
+  if grep -qx "$v" <<<"$have"; then pass "$v is listed"; else fail "$v is listed" "missing from _LEAK_GATE_PATH_ENV"; fi
+  if grep -qx "$v" <<<"$reads"; then pass "$v is read by the scanner"; else fail "$v is read by the scanner" "no read found"; fi
 done
-check_absent "the non-path flag is not listed" "$have" "SECRET_SCAN_LOCAL_PUSH"
+for v in $NON_PATH_ENV; do
+  if grep -qx "$v" <<<"$reads"; then pass "non-path exemption $v is still read"; else fail "non-path exemption $v is still read" "stale NON_PATH_ENV entry: drop it"; fi
+  if grep -qx "$v" <<<"$have"; then fail "non-path $v is not listed" "listed but exempted"; else pass "non-path $v is not listed"; fi
+done
+
+# The scope is the scanner plus range-lib.sh; the scanner sourcing anything else would widen it unseen.
+check_eq "the scanner sources no file (scope = scanner + range-lib.sh)" "" \
+  "$(grep -E '^[[:space:]]*(\.|source)[[:space:]]' "$scanner" || true)"
 
 # --- mutations: the check must go red ---------------------------------------------------------------
 mut="$SANDBOX/mut"
@@ -114,6 +124,7 @@ check_contains "mutation: a listed name the scanner no longer reads -> red" "$ou
 
 # TMPDIR read implicitly: a scanner whose bare `mktemp -d` is gone no longer reads it.
 sed 's/mktemp -d)/mktemp -d "\/x\/y.XXXXXX")/' "$scanner" > "$mut/no-tmpdir.sh"
+if cmp -s "$scanner" "$mut/no-tmpdir.sh"; then fail "mutation precondition: sed changed the scanner" "mktemp -d) text moved; update the mutation"; else pass "mutation precondition: sed changed the scanner"; fi
 out="$(drift "$have" "$mut/no-tmpdir.sh" "$range_lib")"
 check_contains "mutation: no bare mktemp left -> TMPDIR entry reported dead" "$out" "TMPDIR"
 
