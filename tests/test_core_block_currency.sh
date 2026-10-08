@@ -13,6 +13,8 @@ git config --global --add safe.directory '*'
 
 install="$REPO_ROOT/install.sh"
 doctor="$REPO_ROOT/tools/doctor.sh"
+# shellcheck source=tools/lib/stat-portable.sh
+. "$REPO_ROOT/tools/lib/stat-portable.sh"
 
 # alter_block FILE — change one line INSIDE the KEEL-CORE block (an older release, or an edit).
 alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
@@ -143,6 +145,20 @@ else
   tty_run y "$install" --codex --home "$h" --no-hooks
   check_eq "A13e: --codex yes → the AGENTS.md block equals the shipped block" "$core_block" "$(block_of "$h/AGENTS.md")"
   check_eq "A13e: --codex yes → a backup of AGENTS.md exists" 1 "$(find "$h" -maxdepth 1 -name 'AGENTS.md.*.bak' | wc -l | tr -d ' ')"
+
+  # dir #679 A3 (S4-2): a dotfiles-managed 0600 CLAUDE.md, symlinked into the home, answered y — the
+  # refresh writes THROUGH the link and the file keeps its 0600 (it used to take the umask's 0644).
+  h="$(fresh_home e-link)"
+  mkdir -p "$SANDBOX/e-link-dots"
+  mv "$h/CLAUDE.md" "$SANDBOX/e-link-dots/CLAUDE.md"
+  alter_block "$SANDBOX/e-link-dots/CLAUDE.md"   # (rewrites the file, so the chmod comes after it)
+  chmod 600 "$SANDBOX/e-link-dots/CLAUDE.md"
+  ln -s "$SANDBOX/e-link-dots/CLAUDE.md" "$h/CLAUDE.md"
+  tty_run y "$install" --home "$h" --no-hooks
+  check_contains "A3: a symlinked drifted CLAUDE.md is refreshed" "$OUT" "CLAUDE.md core block refreshed"
+  check_link "A3: …the link is kept" "$h/CLAUDE.md"
+  check_eq "A3: …the block in the dotfiles file now equals the shipped block" "$core_block" "$(block_of "$SANDBOX/e-link-dots/CLAUDE.md")"
+  check_eq "A3: …and the dotfiles file is still 0600" 600 "$(stat_portable_mode "$SANDBOX/e-link-dots/CLAUDE.md")"
 fi
 
 # --- A14 doctor (D10) ------------------------------------------------------------------------------

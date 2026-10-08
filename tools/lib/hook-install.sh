@@ -27,77 +27,36 @@
 
 # hook_install_backup SETTINGS — a timestamped copy before any destructive edit; sets
 # $HOOK_INSTALL_BACKUP to the new file's path. Shared by the merge path's --force overwrite and the
-# --uninstall removal path. The name is `<file>.<UTC %Y%m%dT%H%M%SZ>.bak`; when that is taken (a
-# --force and an --uninstall in the same second used to share it, and the second cp overwrote the
-# first backup — dir #660), `<file>.<ts>.2.bak`, `.3.bak`, … The name is CLAIMED, not just checked:
-# a noclobber `>` is an exclusive create, so two runs racing on one second still get two names. The
-# claim is made under umask 077 and cp keeps an existing destination's mode, so a backup is 0600 —
-# never looser than a 0600 settings.json it copies (a settings file can carry `env` secrets).
-# Returns 1 (nothing claimed is left behind, one line on stderr) if no name can be claimed or the copy
-# fails; a claim that fails on a name nobody holds is an unwritable directory, not a collision.
+# --uninstall removal path. A thin wrapper over tools/lib/safe-write.sh's keel_backup (dir #679), which
+# owns the contract dir #660 first shipped here: `<file>.<UTC %Y%m%dT%H%M%SZ>.bak`, then `.2.bak`, … on
+# a collision, the name CLAIMED by an exclusive create, the backup 0600. Returns 1 (one line on stderr,
+# nothing claimed left behind) when no name can be claimed or the copy fails.
 hook_install_backup() {
-  local base n=1
-  base="$1.$(date -u +%Y%m%dT%H%M%SZ)"
-  HOOK_INSTALL_BACKUP="$base.bak"
-  until (set -C; umask 077; : > "$HOOK_INSTALL_BACKUP") 2>/dev/null; do
-    if [ ! -e "$HOOK_INSTALL_BACKUP" ] && [ ! -L "$HOOK_INSTALL_BACKUP" ]; then
-      echo "hook-install: cannot create a backup beside $1 (is its directory writable?) — nothing was written." >&2
-      return 1
-    fi
-    n=$((n + 1))
-    [ "$n" -le 99 ] || return 1
-    HOOK_INSTALL_BACKUP="$base.$n.bak"
-  done
-  cp "$1" "$HOOK_INSTALL_BACKUP" || { rm -f "$HOOK_INSTALL_BACKUP"; return 1; }
+  _hook_install_need_safe_write || return 1
+  keel_backup "$1" || return 1
+  # shellcheck disable=SC2034  # read by the calling installer right after this call (header)
+  HOOK_INSTALL_BACKUP="$KEEL_BACKUP"
 }
 
-# hook_install_resolve PATH — prints PATH with every symlink hop followed (one `readlink` per hop,
-# the portable form: no `-f`, which BSD readlink lacks before macOS 12.3). Returns 1 on a loop.
-hook_install_resolve() {
-  local p="$1" l n=0
-  while [ -L "$p" ]; do
-    n=$((n + 1))
-    [ "$n" -le 40 ] || return 1
-    l="$(readlink "$p")" || return 1
-    case "$l" in
-      /*) p="$l" ;;
-      *) case "$p" in */*) p="${p%/*}/$l" ;; *) p="$l" ;; esac ;;
-    esac
-  done
-  printf '%s\n' "$p"
+# _hook_install_need_safe_write — the wrappers' call-time check that the caller loaded
+# tools/lib/safe-write.sh. This lib does not source it (every installer does, behind its own REQUIRED
+# guard), so a mis-wired caller fails loudly here and never falls back to a write of its own.
+_hook_install_need_safe_write() {
+  command -v keel_write_through >/dev/null 2>&1 && return 0
+  echo "hook-install: tools/lib/safe-write.sh is not loaded — the caller must source it first; nothing was written." >&2
+  return 1
 }
 
-# hook_install_atomic_write FILE CONTENT — write CONTENT to FILE via a same-dir temp file + rename, so
-# a reader never observes a partially-written file. Two properties of the file it replaces survive
-# (dir #660):
-#   a symlink — the write goes THROUGH it, to the file it resolves to, and the link stays a link. The
-#     installers already READ settings through the link (`jq . "$settings"` follows it), so the merge
-#     was computed from the target's content; writing a fresh regular file at the link's path instead
-#     detached it from a dotfiles-managed target the adopter chose.
-#   the mode — the temp file starts as a `cp -p` of the target, and a `>` onto an existing file keeps
-#     its mode, so a 0600 settings.json stays 0600 (a bare `>` + `mv` took the umask's 0644).
-# A FILE that does not exist yet is created with the umask's mode, as before. Refused, with one line on
-# stderr and nothing written: a symlink loop; a target that exists but is not a regular file (a `mv`
-# onto a directory would nest the temp file inside it and report success); a write that fails — a
-# read-only target (its mode now carries to the temp file, where the old rename replaced it anyway), or
-# a dangling link into a directory that does not exist.
+# hook_install_atomic_write FILE CONTENT — write CONTENT (plus a newline) to FILE as an EDIT, through
+# tools/lib/safe-write.sh's keel_write_through (dir #679): a symlinked settings.json is written THROUGH
+# (the installers read it through the link, so the merge was computed from the target's content), and
+# the file keeps its mode, so a 0600 settings.json stays 0600 (dir #660). Refused, with one line on
+# stderr and nothing written: a symlink loop, a target that is not a regular file, a hard-linked target
+# (a rename would split it), a write that fails (read-only, or a link into a missing directory), and a
+# link into the Keel checkout from outside it.
 hook_install_atomic_write() {
-  local target="$1" tmp
-  if [ -L "$1" ] && ! target="$(hook_install_resolve "$1")"; then
-    echo "hook-install: $1 is a symlink loop — nothing was written." >&2
-    return 1
-  fi
-  if [ -e "$target" ] && [ ! -f "$target" ]; then
-    echo "hook-install: $target is not a regular file — nothing was written." >&2
-    return 1
-  fi
-  tmp="$target.keeltmp.$$"
-  if ! { { [ ! -f "$target" ] || cp -p "$target" "$tmp"; } &&
-         printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$target"; } 2>/dev/null; then
-    rm -f "$tmp"
-    echo "hook-install: could not write $target (read-only, or its directory is missing or not writable) — nothing was written." >&2
-    return 1
-  fi
+  _hook_install_need_safe_write || return 1
+  printf '%s\n' "$2" | keel_write_through "$1"
 }
 
 # hook_install_check_shape PREFIX SETTINGS_PATH SPECS CURRENT — valid JSON is not the same as the
