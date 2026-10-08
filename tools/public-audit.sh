@@ -19,7 +19,9 @@
 # If the secret-guard's local personal file exists (~/.claude/secret-scan-personal, override with
 # $SECRET_SCAN_PERSONAL_FILE — one ERE per line, never committed), its literals are hunted as
 # case-insensitive private tokens in the tree, git history, and binary blobs: they are precisely
-# what must not ship when a repo goes public.
+# what must not ship when a repo goes public. A SET $SECRET_SCAN_PERSONAL_FILE that is not a regular
+# file is a GAP (dir #719; personal-literal coverage would be ZERO); /dev/null switches the personal
+# half off on purpose.
 #
 # Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) — per-blob cap for the binary decode pass;
 #      oversized blobs are skipped but SURFACED as un-audited.
@@ -56,7 +58,8 @@ Usage:
   public-audit.sh -h | --help
 
 If ~/.claude/secret-scan-personal exists (override with $SECRET_SCAN_PERSONAL_FILE), its literals
-are hunted as case-insensitive private tokens in the tree, git history, and binary blobs.
+are hunted as case-insensitive private tokens in the tree, git history, and binary blobs. A set
+$SECRET_SCAN_PERSONAL_FILE that is not a regular file is a GAP; /dev/null switches the personal half off.
 
 Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) caps the binary-blob decode pass;
      oversized blobs are skipped but surfaced as un-audited.
@@ -249,7 +252,9 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
     warn "binary-blob scan of $label SKIPPED — no usable temp dir (mktemp failed); result is INCOMPLETE"
     return 0
   fi
-  while IFS='|' read -r otype osha osize opath; do
+  # LC_ALL=C (dir #719 B13): under bash >= 5 + UTF-8 a committed name ending in an invalid byte makes `read`
+  # drop the NEXT record, so a blob after it would never be decoded.
+  while IFS='|' LC_ALL=C read -r otype osha osize opath; do
     [ "$otype" = "blob" ] && [ -n "$osha" ] || continue
     if [ "${osize:-0}" -gt "$max" ]; then skipped=$((skipped + 1)); continue; fi
     git -C "$DIR" cat-file blob "$osha" > "$tmp" 2>/dev/null || continue
@@ -311,6 +316,14 @@ fi
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
+# dir #719 B14 (dir #725's predicate): the parser reads a missing/non-regular file as "no literals", so a SET
+# override naming one (a typo, a cwd change) would print "no publication blockers found" with ZERO personal
+# coverage. Unset/empty keeps the default; /dev/null is the deliberate opt-out; a dangling symlink is left to
+# the parser's own, more specific "could not be read or parsed" GAP below (one GAP, not two).
+if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$PERSONAL_FILE" != /dev/null ] && [ ! -f "$PERSONAL_FILE" ] \
+   && ! { [ -L "$PERSONAL_FILE" ] && [ ! -e "$PERSONAL_FILE" ]; }; then
+  gap "SECRET_SCAN_PERSONAL_FILE is set to $PERSONAL_FILE, which is not a regular file — personal-literal coverage is ZERO; fix the path, unset it to use the default, or set it to /dev/null to switch it off on purpose"
+fi
 case "$personal_rc" in
   0) ;;
   3) gap "one or more lines in $PERSONAL_FILE end in a backslash and were ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run" ;;
@@ -345,7 +358,9 @@ EOF
 fi
 
 # --- 2. declared-private tokens, in tree AND history (GAP) ---------------------------------------
-if [ "${#tokens[@]}" -gt 0 ]; then
+# The block also runs for personal literals alone (dir #719 B12): a binary holding one used to read clean.
+# Each token loop keeps its own non-empty test — bash 3.2 under `set -u` aborts on "${tokens[@]}" when empty.
+if [ "${#tokens[@]}" -gt 0 ] || [ -n "$personal_re" ]; then
   # F6 (dir #509): tree_grep's `git grep -I` skips binary files entirely, so a token only present in a
   # binary file's DECODED bytes is invisible to the loop below. Not gated on NO_HISTORY: this is a TREE
   # check, same altitude as tree_grep, not a history one. In default mode, scoped to files the history
@@ -356,6 +371,7 @@ if [ "${#tokens[@]}" -gt 0 ]; then
   # unscoped, text-check coverage) — narrowing it to "dirty" files there would leave a long-committed,
   # untouched binary's token invisible under --no-history the way a text token never is.
   wt_bin_reported=""
+  wt_personal_reported=""
   wt_bin_skipped=0
   if [ "$is_git" = 1 ]; then
     if [ ! -d "$audit_tmp" ]; then
@@ -380,44 +396,57 @@ if [ "${#tokens[@]}" -gt 0 ]; then
       else
         wt_src() {
           git -C "$DIR" diff --name-only -z --diff-filter=ACMR HEAD -- . "${excludes[@]}" 2>/dev/null \
-            | while IFS= read -r -d '' _wp; do printf '%s\0' "${_wp#"$wt_prefix"}"; done
+            | while IFS= LC_ALL=C read -r -d '' _wp; do printf '%s\0' "${_wp#"$wt_prefix"}"; done
           git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" 2>/dev/null
         }
       fi
-      while IFS= read -r -d '' f; do
+      # LC_ALL=C on both NUL reads (dir #719 B13): see scan_binary_blobs' read.
+      while IFS= LC_ALL=C read -r -d '' f; do
         [ -L "$DIR/$f" ] && continue          # a symlink's tracked content is its link-text, not its target
         [ -f "$DIR/$f" ] || continue
         fsize="$(wc -c < "$DIR/$f" 2>/dev/null | tr -d ' ')"
         if [ "${fsize:-0}" -gt "$wt_max" ]; then wt_bin_skipped=$((wt_bin_skipped + 1)); continue; fi
         LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && continue
         decode_binary "$DIR/$f" "$audit_tmp/wt.dec"
-        for t in "${tokens[@]}"; do
-          [ -z "$t" ] && continue
-          case "$wt_bin_reported" in *"|$t|"*) continue ;; esac
-          if [ -n "$(grep -aE -- "$t" "$audit_tmp/wt.dec" 2>/dev/null | head -n1 || true)" ]; then
-            gap "private token /$t/ in a binary file in the working tree — $f"
-            wt_bin_reported="$wt_bin_reported|$t|"
+        if [ "${#tokens[@]}" -gt 0 ]; then
+          for t in "${tokens[@]}"; do
+            [ -z "$t" ] && continue
+            case "$wt_bin_reported" in *"|$t|"*) continue ;; esac
+            if [ -n "$(grep -aE -- "$t" "$audit_tmp/wt.dec" 2>/dev/null | head -n1 || true)" ]; then
+              gap "private token /$t/ in a binary file in the working tree — $f"
+              wt_bin_reported="$wt_bin_reported|$t|"
+            fi
+          done
+        fi
+        if [ -n "$personal_re" ] && [ -z "$wt_personal_reported" ]; then
+          h="$(grep -aoiE -- "$personal_re" "$audit_tmp/wt.dec" 2>/dev/null)"   # no `| head` under pipefail
+          h="${h%%$'\n'*}"
+          if [ -n "$h" ]; then
+            gap "personal literal (secret-scan-personal) in a binary file in the working tree — $f: $h"
+            wt_personal_reported=1
           fi
-        done
+        fi
       done < <(wt_src)
       [ "$wt_bin_skipped" -gt 0 ] && warn "$wt_bin_skipped binary file(s) over KEEL_AUDIT_BLOB_MAX (${wt_max}B) skipped in the working tree — UN-audited; raise the cap to cover them"
     fi
   fi
 
-  for t in "${tokens[@]}"; do
-    [ -z "$t" ] && continue
-    hit="$(tree_grep "$t" | head -1 || true)"
-    [ -n "$hit" ] && gap "private token /$t/ in tracked tree — e.g. $hit"
-    if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-      c="$(git -C "$DIR" log --all --oneline -G"$t" 2>/dev/null | head -1 || true)"
-      m="$(git -C "$DIR" log --all --oneline --grep="$t" -E 2>/dev/null | head -1 || true)"
-      [ -n "$c$m" ] && gap "private token /$t/ in git history — e.g. ${c:-$m}"
-      # F7 (dir #509): an annotated-tag message body is neither a commit message nor a diff, so the
-      # -G/--grep pair above never sees it; $tag_msgs was captured for this purpose.
-      tg="$(printf '%s\n' "$tag_msgs" | grep -aE -- "$t" | head -1 || true)"
-      [ -n "$tg" ] && gap "private token /$t/ in an annotated-tag message — e.g. $tg"
-    fi
-  done
+  if [ "${#tokens[@]}" -gt 0 ]; then
+    for t in "${tokens[@]}"; do
+      [ -z "$t" ] && continue
+      hit="$(tree_grep "$t" | head -1 || true)"
+      [ -n "$hit" ] && gap "private token /$t/ in tracked tree — e.g. $hit"
+      if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+        c="$(git -C "$DIR" log --all --oneline -G"$t" 2>/dev/null | head -1 || true)"
+        m="$(git -C "$DIR" log --all --oneline --grep="$t" -E 2>/dev/null | head -1 || true)"
+        [ -n "$c$m" ] && gap "private token /$t/ in git history — e.g. ${c:-$m}"
+        # F7 (dir #509): an annotated-tag message body is neither a commit message nor a diff, so the
+        # -G/--grep pair above never sees it; $tag_msgs was captured for this purpose.
+        tg="$(printf '%s\n' "$tag_msgs" | grep -aE -- "$t" | head -1 || true)"
+        [ -n "$tg" ] && gap "private token /$t/ in an annotated-tag message — e.g. $tg"
+      fi
+    done
+  fi
 fi
 
 # --- 2b. personal literals (local secret-scan-personal), in tree text (GAP) ----------------------

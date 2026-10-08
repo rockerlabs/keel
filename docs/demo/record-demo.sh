@@ -33,6 +33,12 @@ fi
 sandbox="$(mktemp -d /tmp/keel-demo.XXXX)"
 trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
+# dir #720 S10-3: HOME alone is not enough — tools/lib/impact-store.sh resolves these overrides BEFORE
+# HOME, so an exported one would send this demo's impact events into the operator's REAL store.
+# shellcheck source=tools/lib/impact-store.sh
+. "$root/tools/lib/impact-store.sh"
+# shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is a space-separated list of NAMES
+unset $IMPACT_ISOLATION_VARS
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"
