@@ -27,6 +27,8 @@
 # operator's. The path is under $HOME/.keel/tmp (Docker cannot mount the scratchpad), outside the
 # `$HOME/keel*alpine*` shape tools/self/doctor.sh's stray-clone advisory looks for.
 set -euo pipefail
+# shellcheck source=tools/lib/repo-top.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/repo-top.sh"
 # drop an inherited repo selector before any git call (the dir #647 convention shared by tools/).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
@@ -50,7 +52,7 @@ esac
 [ -n "${HOME:-}" ] || die "HOME is not set"
 
 if [ -z "$source_dir" ]; then
-  source_dir="$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')"
+  source_dir="$(keel_repo_main_top .)"
   [ -n "$source_dir" ] || die "not inside a git checkout — pass --source DIR"
 fi
 source_dir="$(cd "$source_dir" 2>/dev/null && pwd)" || die "--source is not a directory"
