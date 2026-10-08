@@ -71,6 +71,31 @@ check_contains "demo-bypass under an ambient GIT_DIR → still reports PASS" "$O
 check_block_equal "demo-bypass under an ambient GIT_DIR → the decoy repo is byte-identical before/after" \
   "$decoy644_before" "$(snapshot_tree_cksum "$decoy644/.git")"
 
+# --- dir #720 S8-1: `setup` with mktemp failing must refuse, not write into the invoking repo ---------
+# Same path_farm technique as above. `setup` used to carry on with sandbox="" and reach
+# `git -C "$repo" config user.email ...` with an empty $repo — which git resolves to the cwd, so the
+# invoking repo's own config got the canary identity (exit 0). Run from a throwaway repo and assert its
+# config stayed untouched.
+s8_cwd="$(new_repo)"
+run_in "$s8_cwd" env PATH="$mktemp_farm" KEEL_CANARY_STATE="$STATE" bash "$canary" setup
+check_status "setup with mktemp missing → non-zero (refuses, not a silent exit 0)" 1 "$STATUS"
+check_contains "setup with mktemp missing → names the mktemp failure" "$OUT" "mktemp -d failed"
+s8_email="$(git -C "$s8_cwd" config --local --get user.email 2>/dev/null || true)"
+check_eq "setup with mktemp missing → the invoking repo's config got no canary identity" "" "$s8_email"
+
+# --- dir #720 DS-D7-CV3: demo-bypass runs the gate under a sandbox HOME, not the real one --------------
+# The gate writes its receipt sentinel under $HOME/.keel/tmp/pre-pr-gate/ and an impact event to
+# $KEEL_IMPACT_LOG; the header promises the real HOME is never touched. Hand it a stand-in "real" HOME and
+# an ambient impact log/store and assert nothing landed in any of them.
+cv3_home="$SANDBOX/cv3-home"; cv3_store="$SANDBOX/cv3-store"; cv3_log="$SANDBOX/cv3-log.tsv"
+mkdir -p "$cv3_home"
+run env HOME="$cv3_home" KEEL_IMPACT_STORE="$cv3_store" KEEL_IMPACT_LOG="$cv3_log" \
+  KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
+check_status "demo-bypass with a stand-in real HOME → still exit 0" 0 "$STATUS"
+check_eq "demo-bypass leaves nothing under the real HOME" "" "$(find "$cv3_home" -type f 2>/dev/null)"
+check_nodir "demo-bypass does not create the ambient impact store" "$cv3_store"
+check_nofile "demo-bypass does not write the ambient impact log" "$cv3_log"
+
 # --- setup: builds the sandbox -----------------------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" setup
 check_status "setup → exit 0" 0 "$STATUS"
