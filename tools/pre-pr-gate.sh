@@ -23,7 +23,10 @@
 # the one place a bypass actually leaks and the one place its command is visible, so this gate, otherwise only
 # a workflow reminder, also carries this rule — still not the secret boundary (that is secret-guard). Named
 # residuals, caught only by the CI scan on the PR: a variable exported earlier, an alias or wrapper, `sh -c
-# '…'`, quoted text, a missing jq, another harness, the operator's own terminal. Spec B15, docs/specs/717.
+# '…'`, quoted text (also a QUOTED bypass argument — `git push '--no-verify'` — the lexer strips it), a bypass
+# split off by a backslash-newline continuation, a `git config` write in an earlier segment, a leading word
+# outside the skip set (`sudo`, `env -C`, a redirect), a missing jq, another harness, the operator's own
+# terminal. Spec B15, docs/specs/717.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
