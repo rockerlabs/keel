@@ -548,4 +548,208 @@ check_eq "A3: doctor.sh has no _expand_hookspath_tilde" "0" "$(grep -c _expand_h
 check_eq "A3: doctor.sh keeps no -ef bridge against a machine-wide value" "0" \
   "$(grep -cE -- '-ef "\$(global_hooks_eff|g_dir)"' "$REPO_ROOT/tools/doctor.sh" || true)"
 
+# =================================================================================================
+# 8. dir #717 S5-1 — a core.hooksPath delivered by a conditional [includeIf] include. `--global` used to
+#    append its own [core] hooksPath after it and silently take over every tree the condition matched.
+#    The installer now walks the conditional includes (file origins only), refuses a foreign or empty
+#    one unless --force, and refuses an incomplete walk (spec 717 B6–B8, A10–A16).
+# =================================================================================================
+kh_rel=".config/git/keel-hooks"
+# s2_home NAME — mk_home plus a repo under ~/work/, the tree `gitdir:~/work/` matches.
+s2_home() { mk_home "$1"; mkdir -p "$H/work" "$H/work-hooks"; git init -q "$H/work/proj"; }
+s2_inc() { printf '[includeIf "gitdir:~/work/"]\n\tpath = work.cfg\n' >> "$H/.gitconfig"; }
+tree_hp() { genv git -C "$H/work/proj" config core.hooksPath || true; }
+# run_bounded CMD… — `run`, in the background with a bounded wait: a walk that loops on a self-include
+# fails here instead of hanging the suite (`timeout` is absent on macOS; tests/test_install.sh's T14f).
+run_bounded() {
+  local out="$SANDBOX/bounded.out" pid waited=0
+  "$@" >"$out" 2>&1 </dev/null &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 30 ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    STATUS=124; OUT="(still running after 30 s — killed)"; return 0
+  fi
+  STATUS=0; wait "$pid" || STATUS=$?
+  OUT="$(cat "$out")"
+}
+# s2_shim — a PATH dir ($s2_shim) whose FIRST bare `mktemp -d` after s2_shim_arm hands out a dir inside a
+# repo (A5's shim, made one-shot): that call is the install's machine read; every later mktemp goes to the
+# real one, so the install's own selftest (which makes temp dirs of its own) still runs.
+s2_shim() {
+  local r; r="$(mk_repo)"; s2_shim="$H/shim"; mkdir -p "$s2_shim"
+  printf '#!/bin/sh\nif [ "$*" = -d ] && [ ! -e "%s/used" ]; then : > "%s/used"; mkdir -p "%s/probe" && printf "%%s\\n" "%s/probe"; else exec "%s" "$@"; fi\n' \
+    "$s2_shim" "$s2_shim" "$r" "$r" "$(type -P mktemp)" > "$s2_shim/mktemp"
+  chmod +x "$s2_shim/mktemp"
+}
+s2_shim_arm() { rm -f "$s2_shim/used"; }
+
+# --- A10: a foreign conditional hooksPath → refused, nothing written ----------------------------------------
+s2_home a10; s2_inc
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
+check_eq "A10 setup: the includeIf governs the work tree" "$H/work-hooks" "$(tree_hp)"
+cp "$H/.gitconfig" "$H/gitconfig.before"
+run genv "$isg" --global
+check_status "A10: --global over a foreign conditional hooksPath → refused (exit 3)" 3 "$STATUS"
+a10err="$(genv "$isg" --global 2>&1 >/dev/null || true)"
+check_contains "A10: stderr names the condition" "$a10err" "gitdir:~/work/"
+check_contains "A10: ...the file holding the includeIf" "$a10err" "$H/.gitconfig"
+check_contains "A10: ...the target file" "$a10err" "$H/work.cfg"
+check_contains "A10: ...and the value" "$a10err" "$H/work-hooks"
+if cmp -s "$H/.gitconfig" "$H/gitconfig.before"; then pass "A10: ~/.gitconfig unchanged"; else fail "A10: ~/.gitconfig unchanged" "it was written"; fi
+check_nodir "A10: no keel-hooks dir created" "$H/$kh_rel"
+check_eq "A10: the work tree's hooksPath is unchanged" "$H/work-hooks" "$(tree_hp)"
+mk_home a10-ctl; printf '[user]\n\tname = Alice\n' > "$H/.gitconfig"
+run genv "$isg" --global
+check_status "A10 control: the same home without the includeIf → exit 0" 0 "$STATUS"
+
+# --- A11: --force wires anyway, with a NOTE and no record; --uninstall gives the tree its value back --------
+H="$SANDBOX/fx-a10"
+cp "$H/work.cfg" "$H/work.cfg.before"
+run genv "$isg" --global --force
+check_status "A11: --global --force over a conditional conflict → exit 0" 0 "$STATUS"
+check_contains "A11: ...prints a NOTE naming the condition" "$OUT" "NOTE — in trees matching gitdir:~/work/"
+check_eq "A11: ...and records nothing (the conditional line is not displaced)" "" "$(genv git config --global keel.displacedHooksPath || true)"
+run genv "$isg" --global --uninstall
+check_status "A11: --uninstall afterwards → exit 0" 0 "$STATUS"
+check_eq "A11: ...the work tree's hooksPath is back to its own" "$H/work-hooks" "$(tree_hp)"
+if cmp -s "$H/work.cfg" "$H/work.cfg.before"; then pass "A11: work.cfg never written"; else fail "A11: work.cfg never written" "it changed"; fi
+
+# --- A12: no false conflict --------------------------------------------------------------------------------
+for sp in tilde slash; do   # Keel's dir spelled ~/… (a literal ~, git's to expand), then with a trailing slash
+  s2_home "a12a-$sp"; s2_inc
+  # shellcheck disable=SC2088  # a LITERAL ~/ as a user writes it into git config
+  if [ "$sp" = tilde ]; then v="~/$kh_rel"; else v="$H/$kh_rel/"; fi
+  printf '[core]\n\thooksPath = %s\n' "$v" > "$H/work.cfg"
+  run genv "$isg" --global
+  check_status "A12(a): a conditional hooksPath naming Keel's dir as '$v' → exit 0" 0 "$STATUS"
+  check_absent "A12(a): ...and no NOTE" "$OUT" "in trees matching"
+done
+mk_home a12b; mkdir -p "$H/work"
+printf '[core]\n\thooksPath = %s/foreign\n' "$H" > "$H/foreign.cfg"
+n=${GIT_CONFIG_COUNT:-0}
+run genv "GIT_CONFIG_KEY_$n=includeIf.gitdir:$H/work/.path" "GIT_CONFIG_VALUE_$n=$H/foreign.cfg" "GIT_CONFIG_COUNT=$((n + 1))" "$isg" --global
+check_status "A12(b): a command-scope includeIf (tests/lib.sh's shape) is ignored → exit 0" 0 "$STATUS"
+s2_home a12c
+run genv "$isg" --global
+check_status "A12(c) setup: Keel wired" 0 "$STATUS"
+s2_inc; printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
+run genv "$isg" --global
+check_status "A12(c): a re-run with Keel wired plus a conditional conflict → exit 0, no refusal" 0 "$STATUS"
+check_contains "A12(c): ...prints the NOTE" "$OUT" "NOTE — in trees matching gitdir:~/work/"
+s2_shim
+s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --global
+check_status "A12(c): a re-run with an incomplete walk → exit 0" 0 "$STATUS"
+check_contains "A12(c): ...one NOTE naming the cause" "$OUT" "NOTE — conditional [includeIf] includes could not all be read (the scratch dir mktemp gives sits inside a repository"
+
+# --- A13: the walk's shapes ----------------------------------------------------------------------------------
+s2_refused() {  # label needle — `--global` in $H: exit 3, the needle named, nothing written
+  run_bounded genv "$isg" --global
+  check_status "A13 $1 → refused (exit 3)" 3 "$STATUS"
+  check_contains "A13 $1: ...named" "$OUT" "$2"
+  check_nodir "A13 $1: ...nothing written" "$H/$kh_rel"
+}
+s2_home a13-nest; s2_inc
+printf '[includeIf "onbranch:rel"]\n\tpath = nested.cfg\n' > "$H/work.cfg"
+printf '[core]\n\thooksPath = %s/nested-hooks\n' "$H" > "$H/nested.cfg"
+s2_refused "nested onbranch: inside the target" "gitdir:~/work/ and onbranch:rel"
+mk_home a13-sys
+printf '[includeIf "gitdir:/srv/"]\n\tpath = srv.cfg\n' > "$H/system.cfg"
+printf '[core]\n\thooksPath = %s/srv-hooks\n' "$H" > "$H/srv.cfg"
+s2_refused "an includeIf in the SYSTEM file" "$H/srv.cfg"
+mk_home a13-incd; mkdir -p "$H/sub"
+printf '[include]\n\tpath = sub/extra.cfg\n' > "$H/.gitconfig"
+printf '[includeIf "gitdir:~/x/"]\n\tpath = hc.cfg\n' > "$H/sub/extra.cfg"
+printf '[core]\n\thooksPath = %s/hc-hooks\n' "$H" > "$H/sub/hc.cfg"
+s2_refused "an includeIf inside an [include]d file, relative target resolved beside that file" "$H/sub/hc.cfg"
+s2_home a13-empty; s2_inc; printf '[core]\n\thooksPath =\n' > "$H/work.cfg"
+s2_refused "an EMPTY conditional hooksPath" "core.hooksPath = '' (every hook off)"
+s2_home a13-novalue; s2_inc; printf '[core]\n\thooksPath\n' > "$H/work.cfg"
+s2_refused "a VALUELESS conditional hooksPath" "(no value — git fails in those trees)"
+s2_home a13-both
+printf '[core]\n\thooksPath = %s/mine\n' "$H" > "$H/.gitconfig"; mkdir -p "$H/mine"; s2_inc
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
+s2_refused "a foreign machine-wide hooksPath AND a conditional conflict: the existing refusal first" "already set to '$H/mine'"
+check_absent "A13 both: ...the conditional check is not reached" "$OUT" "in trees matching"
+run genv "$isg" --global --force
+check_status "A13 both, --force → exit 0" 0 "$STATUS"
+check_eq "A13 both, --force: the displaced value is recorded" "$H/mine" "$(genv git config --global keel.displacedHooksPath || true)"
+check_contains "A13 both, --force: ...and the NOTE printed" "$OUT" "NOTE — in trees matching gitdir:~/work/"
+
+s2_home a13-nopath; printf '[includeIf "gitdir:~/work/"]\n\tpath\n' > "$H/.gitconfig"
+run genv "$isg" --global
+check_status "A13: a valueless includeIf path key is skipped, as git skips it → exit 0" 0 "$STATUS"
+s2_home a13-missing; s2_inc
+run genv "$isg" --global
+check_status "A13: a missing target is skipped, as git skips it → exit 0" 0 "$STATUS"
+s2_home a13-selfc; s2_inc
+printf '[core]\n\thooksPath = ~/%s\n[includeIf "onbranch:x"]\n\tpath = work.cfg\n' "$kh_rel" > "$H/work.cfg"
+run_bounded genv "$isg" --global
+check_status "A13: a conditional self-include whose value is Keel's dir → complete, exit 0" 0 "$STATUS"
+
+incomplete="could not read every conditional [includeIf] include"
+s2_home a13-selfu; s2_inc; printf '[include]\n\tpath = work.cfg\n' > "$H/work.cfg"
+s2_refused "an unconditional self-[include] in a target (git's own depth error)" "$incomplete (git config failed on $H/work.cfg)"
+run_bounded genv "$isg" --global --force
+check_status "A13 unconditional self-[include], --force → proceeds (exit 0)" 0 "$STATUS"
+s2_chain() {  # depth — ~/.gitconfig → c1.cfg → … → c<depth>.cfg, each a conditional include of the next
+  local i=1
+  printf '[includeIf "gitdir:~/c0/"]\n\tpath = c1.cfg\n' > "$H/.gitconfig"
+  while [ "$i" -lt "$1" ]; do
+    printf '[includeIf "gitdir:~/c%s/"]\n\tpath = c%s.cfg\n' "$i" "$((i + 1))" > "$H/c$i.cfg"; i=$((i + 1))
+  done
+  : > "$H/c$1.cfg"
+}
+mk_home a13-d10; s2_chain 10
+run genv "$isg" --global
+check_status "A13: a chain 10 deep → complete, exit 0" 0 "$STATUS"
+mk_home a13-d11; s2_chain 11
+s2_refused "a chain 11 deep" "$incomplete (include depth over 10)"
+run genv "$isg" --global --force
+check_status "A13 chain 11 deep, --force → proceeds (exit 0)" 0 "$STATUS"
+mk_home a13-tab; printf '[includeIf "gitdir:~/work/"]\n\tpath = "a\\tb.cfg"\n' > "$H/.gitconfig"
+s2_refused "a target path holding a TAB" "$incomplete (a path holding a TAB or newline:"
+run genv "$isg" --global --force
+check_status "A13 TAB path, --force → proceeds (exit 0)" 0 "$STATUS"
+mk_home a13-shim; s2_shim
+s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --global
+check_status "A13: the scratch probe inside a repo → refused (exit 3)" 3 "$STATUS"
+check_contains "A13 scratch probe inside a repo: ...named" "$OUT" "$incomplete (the scratch dir mktemp gives sits inside a repository"
+check_nodir "A13 scratch probe inside a repo: ...nothing written" "$H/$kh_rel"
+s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --global --force
+check_status "A13 scratch probe inside a repo, --force → proceeds (exit 0)" 0 "$STATUS"
+
+# --- A14: `conditional=` and doctor's disclosure ----------------------------------------------------------------
+s2_home a14; mkdir -p "$H/claude"; s2_inc
+printf '[include]\n\tpath = ~/extra.cfg\n' >> "$H/.gitconfig"
+printf '[core]\n\thooksPath = %s/work-hooks\n[includeIf "onbranch:rel"]\n\tpath = nested.cfg\n' "$H" > "$H/work.cfg"
+printf '[core]\n\thooksPath = %s/nested-hooks\n' "$H" > "$H/nested.cfg"
+printf '[includeIf "hasconfig:remote.*.url:https://example.com/**"]\n\tpath = hc.cfg\n' > "$H/extra.cfg"
+printf '[core]\n\thooksPath = %s/hc-hooks\n' "$H" > "$H/hc.cfg"
+run genv "$isg" --where --global
+check_eq "A14: --where --global counts three conditional hooksPath settings" "3" "$(wkey conditional)"
+a14line="3 conditional [includeIf] core.hooksPath setting(s) may apply instead of the machine-wide one"
+run genv "$doctor" --install "$H/claude"
+check_eq "A14: doctor --install discloses them once" "1" "$(grep -cF "$a14line" <<< "$OUT" || true)"
+run genv "$doctor" "$H/work/proj"
+check_eq "A14: doctor <repo> discloses them once" "1" "$(grep -cF "$a14line" <<< "$OUT" || true)"
+s2_shim
+s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$isg" --where --global
+check_eq "A14: an incomplete walk → conditional=unknown" "unknown" "$(wkey conditional)"
+s2_shim_arm; run genv "PATH=$s2_shim:$PATH" "$doctor" --install "$H/claude"
+check_contains "A14: ...and doctor says so" "$OUT" "(conditional [includeIf] includes could not all be read — tools/doctor.sh <repo> judges each repo)"
+mk_home a14-none; mkdir -p "$H/claude"
+run genv "$isg" --where --global
+check_eq "A14 control: no conditional include → no key" "" "$(wkey conditional)"
+run genv "$doctor" --install "$H/claude"
+check_absent "A14 control: ...and no doctor line" "$OUT" "conditional [includeIf]"
+
+# --- A15 / A16: the prose ------------------------------------------------------------------------------------
+check_eq "A15: README no longer says a pull 'refreshes what is already wired'" "0" \
+  "$(grep -c 'refreshes what is already wired' "$REPO_ROOT/README.md" || true)"
+check_eq "A15: README says the secret-guard hook is a copy (one line)" "1" \
+  "$(grep -cF 'the secret-guard hook is a copy' "$REPO_ROOT/README.md" || true)"
+check_eq "A16: docs/reference.md names the conditional-include refusal (one line)" "1" \
+  "$(grep -cF 'a conditional `[includeIf]` include sets elsewhere' "$REPO_ROOT/docs/reference.md" || true)"
+
 summary
