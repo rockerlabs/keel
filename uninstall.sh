@@ -1109,19 +1109,26 @@ other_mode_hint
 
 # The machine-global secret-guard is deliberately NOT removed: it's a shared safety net that may guard
 # repos beyond Keel, and dropping it silently would weaken protection. Report it as an opt-in manual step.
-hp="$(git config --global core.hooksPath 2>/dev/null || true)"
-case "$hp" in
-  *keel-hooks)
-    echo "  • The machine-global secret-guard is still wired (core.hooksPath=$hp) — kept on purpose."
-    # Through the installer's own --uninstall, not a bare `--unset`: it restores the hooksPath a
-    # --global --force displaced (recorded in keel.displacedHooksPath, dir #659), which `--unset` would lose.
-    # A literal leading ~/ (git expands it itself) is expanded here too: inside the printed double
-    # quotes it would not be, and `rm -rf "~/…"` names a `~` directory under the current one.
-    # shellcheck disable=SC2088  # matching a literal ~ on purpose
-    case "$hp" in "~/"*) hp_dir="$HOME/${hp#\~/}" ;; *) hp_dir="$hp" ;; esac
-    echo "    To remove it too:  \"$root/tools/install-secret-guard.sh\" --global --uninstall && rm -rf \"$hp_dir\""
-    ;;
-esac
+# dir #688: the hint reads the installer's own resolver (`--where --global`), not a plain `git config
+# --global` — that read is a scope selector collapsing to ONE file, blind to the XDG file behind an existing
+# ~/.gitconfig, an [include] and SYSTEM scope (dir #643 closed the same blind spot in both installers). It
+# prints iff the producer says the machine-wide hooksPath is Keel's own dir (`keel-dir=1`); the dir it names
+# for `rm -rf` is the producer's `dir=` — absolute, `~/` expanded, trailing slash dropped — so no step of the
+# hint needs its own path rule. No answer (the installer missing or silent) means no hint, as for unset.
+hp_dir="" hp_origin="" hp_keel=""
+while IFS='=' read -r hp_k hp_v; do   # one key per line, once each (the producer's grammar)
+  case "$hp_k" in dir) hp_dir="$hp_v" ;; origin) hp_origin="$hp_v" ;; keel-dir) hp_keel="$hp_v" ;; esac
+done < <("$root/tools/install-secret-guard.sh" --where --global 2>/dev/null || true)
+if [ "$hp_keel" = 1 ] && [ -n "$hp_dir" ]; then
+  hp_set_in=""; [ -z "$hp_origin" ] || hp_set_in=", set in $hp_origin"
+  echo "  • The machine-global secret-guard is still wired (core.hooksPath=$hp_dir$hp_set_in) — kept on purpose."
+  # Through the installer's own --uninstall, not a bare `--unset`: it restores the hooksPath a
+  # --global --force displaced (recorded in keel.displacedHooksPath, dir #659), which `--unset` would lose.
+  # Where the setting lives in a file `git config --global` does not edit (the XDG file behind ~/.gitconfig,
+  # an [include], SYSTEM), `--global --uninstall` refuses and prints the by-hand step — the `&&` then skips
+  # the `rm -rf`, so no step of the hint misleads.
+  echo "    To remove it too:  \"$root/tools/install-secret-guard.sh\" --global --uninstall && rm -rf \"$hp_dir\""
+fi
 
 gate_hooks_hint
 # Explicit, not a fall-off-the-end: every OTHER exit in this script (0 and 2 alike) says so with an

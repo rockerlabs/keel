@@ -13,8 +13,8 @@
 #                                            displaced, or unset it (the hook files stay on disk)
 #   install-secret-guard.sh --where <repo>   read-only: print where a <repo> install writes (own), where git
 #                                            reads this repo's hooks (effective), and the core.hooksPath
-#                                            scope that decides it — the ONE resolver tools/doctor.sh and
-#                                            install.sh read (dir #643)
+#                                            scope that decides it — the ONE resolver tools/doctor.sh,
+#                                            install.sh and uninstall.sh read (dir #643, dir #688)
 #   install-secret-guard.sh --where --global read-only: the machine-wide core.hooksPath as git resolves it
 #
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
@@ -375,9 +375,13 @@ _isg_same_dir() {
 #   scope=      none | local | worktree | global | system | command | unknown  — where core.hooksPath is set
 #   value=      the raw setting          origin=  the config file it was read from
 #   keel-dir=1  effective is Keel's machine-wide hooks dir
+#   machine-dir=1  effective is the machine-wide hooksPath dir (what `--where --global` prints as `dir=`);
+#               how a consumer decides "this repo's hooks ARE the machine-wide ones" without comparing paths
+#               itself (dir #688)
 #   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | foreign, `-link` suffixed
 #               when it is a symlink — "keel" means the exact marker line, the same test an install uses
-# `--where --global` prints the machine-wide view (value/scope/origin/dir/keel-dir/pre-commit/pre-push).
+# `--where --global` prints the machine-wide view (value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
+#   fallback=1  the machine-wide read took its narrow `git config --global` branch (no usable scratch dir)
 # When own and effective differ, a copy written to own is inert: git never reads it.
 
 # One read of core.hooksPath as git sees it from directory $1: sets m_scope m_origin m_value (all empty
@@ -400,13 +404,16 @@ _isg_cfg_read() {
 # nothing at LOCAL scope can leak in, and with no --global restriction so the XDG file behind an
 # existing ~/.gitconfig, an [include] and SYSTEM scope all count. If the scratch dir turns out to sit
 # inside a repo (an odd TMPDIR) it falls back to the narrower `git config --global` read rather than
-# risk reading that repo's local scope.
+# risk reading that repo's local scope — and sets m_fallback=1, which `--where --global` prints, so no
+# consumer reads the narrow answer as the full one.
 _isg_machine_read() {
   local probe
+  m_fallback=0
   probe="$(mktemp -d 2>/dev/null)" || probe=""
   if [ -n "$probe" ] && ! git -C "$probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     _isg_cfg_read "$probe"
   else
+    m_fallback=1
     m_scope="" m_origin="" m_value="$(git config --global core.hooksPath 2>/dev/null || true)"
     [ -z "$m_value" ] || m_scope="global"
   fi
@@ -472,6 +479,17 @@ _isg_where_states() {
   echo "pre-push=$(_isg_hook_state "$d" pre-push)"
 }
 
+# Is directory $1 the machine-wide absolute hooksPath dir (the `dir=` `--where --global` prints)? Prints
+# nothing and returns 1 when no machine-wide absolute hooksPath is set (or HOME is). Reads through
+# _isg_machine_read, so it clobbers the m_* variables.
+_isg_is_machine_dir() {
+  local d
+  [ -n "${HOME:-}" ] || return 1
+  _isg_machine_read
+  d="$(_isg_norm_path "$m_value")"
+  case "$d" in /*) _isg_same_dir "$1" "$d" ;; *) return 1 ;; esac
+}
+
 _isg_where_repo() {
   local repo="$1" own eff
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
@@ -487,6 +505,11 @@ _isg_where_repo() {
   echo "scope=${m_scope:-none}"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
+  # machine-dir: the one place that decides "this repo's hooks are the machine-wide ones" (dir #688); a
+  # consumer must not re-derive it with a path compare of its own (dir #659's class). A repo that no scope
+  # sets a hooksPath for reads its own hooks dir, so the machine-wide read is skipped for it — nearly all of
+  # them. (The test of m_scope comes first: _isg_is_machine_dir clobbers the m_* variables.)
+  [ -z "$m_scope" ] || ! _isg_is_machine_dir "$eff" || echo "machine-dir=1"
   _isg_where_states "$eff"
 }
 
@@ -497,6 +520,7 @@ _isg_where_machine() {
   echo "scope=${m_scope:-none}"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
+  [ "$m_fallback" != 1 ] || echo "fallback=1"
   d="$(_isg_norm_path "$m_value")"
   case "$d" in /*) echo "dir=$d"; _isg_where_states "$d" ;; esac
 }

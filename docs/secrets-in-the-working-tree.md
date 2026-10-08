@@ -222,6 +222,10 @@ a fresh clone warns again until you recreate it.
   variable all stay open: this is encryption at rest, not context hygiene.
 - **Transcripts.** Retention of past transcripts is out of scope here; a value that was ever in plaintext
   and ever read by an agent may already be in one.
+- **Build and dependency trees.** `doctor` does not walk `dist/`, `build/`, `out/`, `vendor/`, `target/`,
+  `node_modules/`, `.build/`, `.gradle/` or `.claude/` looking for env-shaped files, so a plaintext one
+  that is untracked there is not reported. A file **git tracks** is judged wherever it sits, those
+  directories included.
 - **Names, not content.** `doctor` checks file names and git state, never what a file holds — a secret in
   a file with an ordinary name is invisible to it.
 - **Read deny covers Read only.** The deny globs stop the Read tool; shell verbs such as `cat` stay open,

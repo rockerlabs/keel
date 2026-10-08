@@ -1350,4 +1350,42 @@ unin --home "$B37" --yes
 check_status "B37 uninstall (via the REAL, un-aliased checkout path) exits 0" 0 "$STATUS"
 check_nolink "B37 the legacy-recorded symlink is still correctly removed despite the path-spelling drift" "$B37/commands/go.md"
 
+# --- A6: dir #688 — the machine-global secret-guard hint reads the installer's resolver (`--where --global`),
+# not a plain `git config --global` (which cannot see the XDG file behind an existing ~/.gitconfig, an
+# [include] or SYSTEM scope). The dir it prints for `rm -rf` is the producer's: absolute, ~/ expanded, no
+# trailing slash; the file it was set in is named.
+a6_home() {  # a6_home <name> → H6 (a throwaway HOME with a ~/.gitconfig, so the XDG file sits BEHIND it)
+  H6="$SANDBOX/a6-$1"; mkdir -p "$H6/.config/git" "$H6/claude"
+  printf '[user]\n\tname = Alice\n' > "$H6/.gitconfig"
+}
+a6_run() {  # a6_run <uninstall-script> — install, then uninstall, with git reading ~/.gitconfig AND the XDG file
+  local script="$1"
+  run env -u GIT_CONFIG_GLOBAL "HOME=$H6" "XDG_CONFIG_HOME=$H6/.config" "$INSTALL" --home "$H6/claude" --no-hooks
+  check_status "A6 fixture: install into the sandbox home succeeds" 0 "$STATUS"
+  run env -u GIT_CONFIG_GLOBAL "HOME=$H6" "XDG_CONFIG_HOME=$H6/.config" "$script" --home "$H6/claude" --yes
+}
+a6_home xdg
+printf '[core]\n\thooksPath = %s/.config/git/keel-hooks/\n' "$H6" > "$H6/.config/git/config"
+a6_run "$UNINSTALL"
+check_status "A6: uninstall exits 0" 0 "$STATUS"
+check_contains "A6: Keel's dir set only in the XDG file (trailing slash) → the hint prints" "$OUT" "machine-global secret-guard is still wired"
+check_contains "A6: ...with the producer's dir — absolute, no trailing slash" "$OUT" "rm -rf \"$H6/.config/git/keel-hooks\""
+check_contains "A6: ...and names the file it was set in" "$OUT" "$H6/.config/git/config"
+a6_home foreign
+printf '[core]\n\thooksPath = %s/their-hooks\n' "$H6" > "$H6/.config/git/config"
+a6_run "$UNINSTALL"
+check_status "A6: a foreign hooksPath → uninstall exits 0" 0 "$STATUS"
+check_absent "A6: ...and no hint" "$OUT" "machine-global secret-guard is still wired"
+a6_home unset
+a6_run "$UNINSTALL"
+check_absent "A6: nothing set → no hint" "$OUT" "machine-global secret-guard is still wired"
+# a resolver that prints nothing → no hint, and uninstall still exits 0 (a copy of the checkout, stubbed)
+a6ck="$SANDBOX/a6-checkout"; cp -r "$REPO_ROOT" "$a6ck"; rm -rf "$a6ck/.git"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$a6ck/tools/install-secret-guard.sh"; chmod +x "$a6ck/tools/install-secret-guard.sh"
+a6_home stub
+printf '[core]\n\thooksPath = %s/.config/git/keel-hooks\n' "$H6" > "$H6/.config/git/config"
+a6_run "$a6ck/uninstall.sh"
+check_status "A6: a silent resolver → uninstall still exits 0" 0 "$STATUS"
+check_absent "A6: ...and prints no hint" "$OUT" "machine-global secret-guard is still wired"
+
 summary
