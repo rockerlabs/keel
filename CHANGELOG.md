@@ -15,6 +15,17 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Code comments that cited `/polish` text moved into the guide now point at it (dir #710).** About 45 comments in `tools/pre-pr-gate.sh` and four in `tests/` (two test headers, one pin's label and message) named `commands/polish.md` step 4, 5(a)/(b)/(c), 8 or 9 for prose that dir #670's split moved into `commands/polish-guide.md`; each now reads `polish-guide.md § Step N`, and the `step 5(a)` spellings no plain `polish.md step` grep could find are covered too. Comments only: no behaviour, deny text or receipt changes.
+- **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
+  push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,
+  `--config-env core.hooksPath=…` in either spelling, or an inline `GIT_CONFIG_KEY_<n>=core.hooksPath` /
+  `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` / `GIT_CONFIG_NOSYSTEM` / `GIT_CONFIG_PARAMETERS` / `HOME` /
+  `XDG_CONFIG_HOME` prefix is denied in any repo, behind `env`, `/usr/bin/git`, `if`, `{`, `!`, `time` and the
+  other shell words the rule skips; a bypassed *commit* is still left to pre-push. The gate runs from the main
+  checkout, so this is live for every Claude Code session on the machine after the next pull there. Not
+  caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text,
+  and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
+
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
   (dir #685, slice 3 of the symlink policy). Keel's own link left stale by a moved checkout is re-pointed, as
