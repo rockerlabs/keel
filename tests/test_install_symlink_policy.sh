@@ -85,6 +85,11 @@ for mode in plain force; do
   check_eq "A14 $mode: no backup" 0 "$(bak_count "$h/bin")"
 done
 check_eq "A14 bin/keel is not recorded as Keel's" 0 "$(symlink_records "$h" bin/keel)"
+check_contains "A14 Verify says it is a link Keel did not make (no --force remedy)" "$out14" "it is a link Keel did not make"
+# …and an older manifest's record of that link is dropped by the decline, so uninstall leaves it too.
+printf 'artifact=symlink\tbin/keel\t%s\n' "$mine/keel" >> "$(manifest_of "$h")"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_eq "A14 a legacy record of the adopter's bin/keel is dropped" 0 "$(symlink_records "$h" bin/keel)"
 
 # --- A15: T3 — Keel's own stale links follow a moved checkout ---------------------------------------------
 ckA="$(mk_ck a15-ckA)"; h="$SANDBOX/a15-h"; mkdir -p "$h"
@@ -258,6 +263,7 @@ run "$ck/install.sh" --home "$h" --no-hooks --link
 cp -L "$h/keel/CORE.md" "$dots/CORE.md"; rm -f "$h/keel/CORE.md"; ln -s "$dots/CORE.md" "$h/keel/CORE.md"
 before="$(sum_of "$dots/CORE.md")"
 run "$ck/install.sh" --home "$h" --no-hooks --link --no-git
+check_absent "CORE.md: Verify does not report the trimmed core it did not place" "$OUT" "keel/CORE.md is the trimmed --no-git core"
 check_link "CORE.md: the adopter's link survives --no-git" "$h/keel/CORE.md"
 check_eq "CORE.md: the dotfiles file is byte-identical" "$before" "$(sum_of "$dots/CORE.md")"
 check_contains "CORE.md: declined, with the remedy" "$OUT" "remove the link and re-run"
@@ -270,6 +276,12 @@ check_link "B5: a link to a directory at a seed path is untouched" "$h/LEARNINGS
 check_contains "B5: …with one line naming it" "$OUT" "LEARNINGS.md is not a regular file"
 check_contains "B5: …and Verify reports the missing seed (the run fails loudly, it does not crash on a rename)" "$OUT" "MISS LEARNINGS.md"
 check_absent "B5: …no safe-write refusal aborted the run" "$OUT" "safe-write:"
+
+# --- init-project: a CLAUDE.md that is a directory is left alone, named honestly -------------------------------
+proj="$SANDBOX/b5-proj-dir"; mkdir -p "$proj/CLAUDE.md"
+run "$ck_shared/tools/init-project.sh" --no-register --no-impact "$proj"
+check_dir "B5 init-project: a directory at CLAUDE.md is untouched" "$proj/CLAUDE.md"
+check_contains "B5 init-project: …named as not a regular file" "$OUT" "CLAUDE.md is not a regular file"
 
 # --- doctor: the three remedy lines tell the adopter to remove a link Keel did not make first ----------------
 doc="$(cat "$REPO_ROOT/tools/doctor.sh")"

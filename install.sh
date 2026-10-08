@@ -1959,7 +1959,7 @@ if [ "$LINK" = 1 ]; then
     echo "  WARN CLAUDE.md does not import the linked core — the always-on rails will NOT load."
     echo "       Add the line:  $import_line"
   fi
-  if [ "$NOGIT" = 1 ]; then
+  if [ "$NOGIT" = 1 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
     echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
     echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
   fi

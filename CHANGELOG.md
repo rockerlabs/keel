@@ -23,10 +23,11 @@ sections real content going forward — see that page for exactly when each one 
   of such a link is dropped. Any other link, live or dangling, is declined with its target named and "remove the
   link and re-run to let Keel place it" as the remedy: `--force`, a terminal "y" and the command alias prompt's
   `[u]pdate` no longer replace it (before, `--force` swapped the link for a file and a "y" did so with no backup),
-  and a command whose link is yours still gets Keel's version alongside it as `keel-<name>` in copy mode. A seed
-  (`LEARNINGS.md`, `IDEAS.md`, `INSTANCE.md`, `CLAUDE.md`/`AGENTS.md`, `keel/README.md`, and a project's `CLAUDE.md`
-  from `tools/init-project.sh`) that is a dangling link is left alone with one line, instead of being replaced or
-  written through. `docs/getting-started.md` states the rule once for adopters, `docs/reference.md` points at it,
+  and a command whose link is yours still gets Keel's version alongside it as `keel-<name>` in copy mode. The `--no-git`
+  trimmed `keel/CORE.md` is held to the same rule, and every decline also drops an older manifest's record of that
+  link, so `uninstall.sh` leaves it alone too. A seed (`LEARNINGS.md`, `IDEAS.md`, `INSTANCE.md`, `CLAUDE.md`/`AGENTS.md`,
+  `keel/README.md`, and a project's `CLAUDE.md` from `tools/init-project.sh`) that is a dangling link, a link to a
+  folder or a folder is left alone with one line, instead of being replaced, written through, or aborting the run. `docs/getting-started.md` states the rule once for adopters, `docs/reference.md` points at it,
   and the three `tools/doctor.sh` link warnings now say to remove a link Keel did not make before re-running.
 - **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
   the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
