@@ -87,6 +87,9 @@ for h in 'Preamble' 'Step 1' 'Step 2' 'Step 3' 'Step 4' 'Step 5' 'Step 6' 'Step 
 done
 
 # --- K1: what a normal run needs stays in the CORE (B8b) -----------------------------------------------------
+# dir #678: step 3 backgrounds the suite with an explicit timeout and never reports a cut-short run as green.
+pinf "core: step 3 backgrounds the suite with an explicit timeout" 'backgrounded with an explicit timeout past the suite'
+pinf "core: step 3 says a cut-short run is not green" 'A cut-short run is not green: re-run the remainder.'
 pinf "core: step 9 requires --head" '`gh pr create --head <branch>` — `--head` is mandatory'
 pinf "core: step 9 writes every receipt in its own Bash call" 'Write every receipt in its own Bash call and invoke `gh pr create` alone in the next'
 pinf "core: step 8 pushes before it unlocks" 'Push the branch first'

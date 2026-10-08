@@ -3,11 +3,11 @@ description: Pre-PR polish pass — simplify + tests + depth-matched code-review
 argument-hint: [--no-test]
 ---
 <!-- Installed by default (dir #68) — pairs with tools/pre-pr-gate.sh, a Claude-Code-specific hook that
-install.sh never auto-wires (a hook changes what a session can do without asking each time): run
-tools/install-pre-pr-gate.sh <repo> once, per project, to turn the gate below on. Without it, every
-step here still runs and is worth doing — only the gh pr create block is inert. -->
+install.sh never auto-wires: run
+tools/install-pre-pr-gate.sh <repo> once per project to turn the gate on. Without it, every
+step here still runs — only the gh pr create block is inert. -->
 
-The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` has wired the gate, it also blocks
+The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` wires the gate, it also blocks
 `gh pr create` until this command has run cleanly on the current HEAD. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
@@ -38,8 +38,8 @@ Steps, in order:
    Otherwise invoke `/simplify` and wait; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
    Refused or unavailable → § Step 2. Guide unreachable → stop and report.
 
-3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) and show the real
-   output; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
+3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`), backgrounded with an explicit timeout past the suite's runtime, and show the real
+   output; never claim "passed" without it. A cut-short run is not green: re-run the remainder. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
    the gate unlocks only on a test run bound to the commit being shipped.
 
