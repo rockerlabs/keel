@@ -426,9 +426,7 @@ gate_any_reference() {
 # dir #688: this file keeps NO machine-scope read of core.hooksPath of its own. The machine-wide hooksPath
 # (and the dir #120/#121/#97 provenance notes below) come from ONE call to the producer,
 # `install-secret-guard.sh --where --global`, made further down; the per-repo block reads the same producer
-# with `--where <repo>`. (This block used to carry a hand-copied twin — its own `~/` expansion, a plain
-# `git config --global` read and an effective-config probe from a scratch dir — which could drift from the
-# installer's answer, and a `-ef` bridge between the two.)
+# with `--where <repo>`.
 
 # dir #97: the machine-global half below resolves through whatever global git config the environment
 # points at. Under a REDIRECTED one — an audit probe isolating itself, a test harness, a container — a
@@ -518,21 +516,18 @@ shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
 # NO ANSWER is its own state: no `scope=` line (the installer is missing, crashed, or printed nothing), or a
 # `dir=` with no `pre-commit=` after it (the resolver runs `set -euo pipefail` and died between the two —
 # reading that half-answer would print a false OK by another route). Every g_* is cleared then.
-g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback=""
-g_has_scope=0 g_has_pc=0
+g_reset() { g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback=""; }
+g_reset
 while IFS='=' read -r g_k g_v; do   # one key per line, once each (the producer's grammar)
   case "$g_k" in
-    scope) g_scope="$g_v"; g_has_scope=1 ;; value) g_value="$g_v" ;; origin) g_origin="$g_v" ;;
+    scope) g_scope="$g_v" ;; value) g_value="$g_v" ;; origin) g_origin="$g_v" ;;
     dir) g_dir="$g_v" ;; keel-dir) g_keeldir="$g_v" ;; fallback) g_fallback="$g_v" ;;
-    pre-commit) g_pc="$g_v"; g_has_pc=1 ;; pre-push) g_pp="$g_v" ;;
+    pre-commit) g_pc="$g_v" ;; pre-push) g_pp="$g_v" ;;
   esac
 done < <("$tools_dir/install-secret-guard.sh" --where --global 2>/dev/null || true)
+# (the producer always prints a non-empty `scope=`, and a non-empty `pre-commit=` after any `dir=`)
 g_answered=0
-if [ "$g_has_scope" = 1 ] && { [ -z "$g_dir" ] || [ "$g_has_pc" = 1 ]; }; then
-  g_answered=1
-else
-  g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback=""
-fi
+if [ -n "$g_scope" ] && { [ -z "$g_dir" ] || [ -n "$g_pc" ]; }; then g_answered=1; else g_reset; fi
 if [ "$g_fallback" = 1 ]; then
   say "  (effective core.hooksPath probe unavailable this run — falling back to the narrower --global-only read; a hooksPath set only behind an existing ~/.gitconfig would go undetected)"
 fi
@@ -1085,9 +1080,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
     warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($g_value) is Keel's machine-wide hooks dir, but a hook in it (pre-commit or pre-push) is not Keel's (its marker line differs), so Keel's scan may not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_eff_note"
   elif [ -n "$g_dir" ] && [ -x "$g_dir/pre-commit" ]; then
     say "  OK   secret-guard: machine-global ($g_dir)"
-    case "$g_pc" in
-      keel-link) say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
-    esac
+    if [ "$g_pc" = keel-link ]; then
+      say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)"
+    fi
   elif [ -n "$g_value" ] && [ -z "$g_dir" ]; then
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$g_value', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_eff_note"
   elif [ -n "$g_value" ]; then
@@ -1557,38 +1552,25 @@ for d in "${DIRS[@]}"; do
         # A WIRED copy that drifted from the shipped engine runs old detection. Reported by whichever
         # check can fix it: the machine-wide dir (`machine-dir=1`) once, above (its remedy re-runs
         # --global); everything else here, with the remedy that actually works for it.
-        if [ -f "$w_eff/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$w_eff/secret-scan.sh" "$shipped_scan"; then
+        # The machine-wide dir (`machine-dir=1`, the producer's call — dir #688) is reported once, above, as
+        # W-GUARD-GLOBAL-STALE whatever scope arrives at it (local, global, system, command, worktree, or a
+        # pre-2.26 git's `unknown`), so it is skipped here; a dir that is NOT the machine-wide one — e.g. a
+        # hooksPath a conditional [includeIf] delivers, scope `global` — is reported by this check or by none
+        # (dir #717, A19).
+        if [ -f "$w_eff/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$w_eff/secret-scan.sh" "$shipped_scan" \
+           && [ "$w_machinedir" != 1 ]; then
           case "$w_scope" in
             none)
               warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
               ;;
             local)
-              # dir #122: a LOCAL hooksPath pinned to the very same dir the machine-global one names is one
-              # drifted file, not two — the machine-wide W-GUARD-GLOBAL-STALE check above already reports it,
-              # with the remedy that fixes both (this override just points at the same shared dir;
-              # re-vendoring per-repo would write a second, unshared copy or clobber the shared one). Whether
-              # it IS the same dir is the producer's call (`machine-dir=1`, dir #688): the effective machine-
-              # wide value (dir #121), path-normalised once, in the installer — never a compare of our own.
-              # Only a different dir is a genuine separate vendored copy.
-              if [ "$w_machinedir" != 1 ]; then
-                warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
-              fi
+              warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
               ;;
             global|system)
-              # The machine-wide dir is reported once, above, as W-GUARD-GLOBAL-STALE — and ONLY that dir.
-              # A hooksPath at global scope that is NOT the machine-wide one (a conditional [includeIf]
-              # delivers one with scope `global` and an absolute value) is reported by neither check
-              # unless it is reported here (dir #717, A19). A relative value is never the machine-wide dir.
-              if [ "$w_machinedir" != 1 ]; then
-                warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
-              fi
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
               ;;
             *)
-              # `unknown` (a git before 2.26), `worktree` and `command` scope: the same machine-dir skip, or a
-              # drifted machine-wide dir is reported twice (dir #688's second W9 residual).
-              if [ "$w_machinedir" != 1 ]; then
-                warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
-              fi
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
               ;;
           esac
         fi

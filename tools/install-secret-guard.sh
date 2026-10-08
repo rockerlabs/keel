@@ -491,7 +491,7 @@ _isg_is_machine_dir() {
 }
 
 _isg_where_repo() {
-  local repo="$1" own eff r_scope r_value r_origin
+  local repo="$1" own eff
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
   # `own` and `effective` are documented as absolute: a relative $repo (doctor's default is ".") would
   # otherwise print "./.git/hooks", which means something else to a consumer standing elsewhere.
@@ -500,15 +500,16 @@ _isg_where_repo() {
   eff="$(_isg_repo_effective_dir "$repo")" \
     || { echo "install-secret-guard.sh: git -C $repo rev-parse --git-path hooks returned nothing" >&2; exit 2; }
   _isg_cfg_read "$repo"
-  r_scope="$m_scope" r_value="$m_value" r_origin="$m_origin"
   echo "own=$own"
   echo "effective=$eff"
-  echo "scope=${r_scope:-none}"
-  [ -z "$r_value" ] || echo "value=$r_value"
-  [ -z "$r_origin" ] || echo "origin=$r_origin"
+  echo "scope=${m_scope:-none}"
+  [ -z "$m_value" ] || echo "value=$m_value"
+  [ -z "$m_origin" ] || echo "origin=$m_origin"
   # machine-dir: the one place that decides "this repo's hooks are the machine-wide ones" (dir #688); a
-  # consumer must not re-derive it with a path compare of its own (dir #659's class).
-  ! _isg_is_machine_dir "$eff" || echo "machine-dir=1"
+  # consumer must not re-derive it with a path compare of its own (dir #659's class). A repo that no scope
+  # sets a hooksPath for reads its own hooks dir, so the machine-wide read is skipped for it — nearly all of
+  # them. (The test of m_scope comes first: _isg_is_machine_dir clobbers the m_* variables.)
+  [ -z "$m_scope" ] || ! _isg_is_machine_dir "$eff" || echo "machine-dir=1"
   _isg_where_states "$eff"
 }
 
