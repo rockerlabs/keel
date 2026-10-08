@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`secret-scan.sh` never reports clean over content it did not read.** Every file list and object read
+  is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
+  clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed
+  `secret-scan: clean`: a staged or tracked name holding a tab, a quote, a backslash or a newline (both lists now
+  use `-z`, and a newline in a name prints as `\n`); a `diff.*` config git cannot read, or a corrupt index; a
+  missing `sort` or `grep`; a corrupt object in a pushed range; a failing `git log`, `cat-file` or `readlink`; a
+  staged binary named like `1:x.bin`; and `--staged` run from a subdirectory. An unreadable file named on the
+  command line now exits 2, not 1. Under bash 5 with a UTF-8 locale, a name or a line ending in an invalid byte
+  also made the NEXT record vanish (staged, tracked, in a pushed range, and in the allowlist filter), so every
+  `read` now runs under `LC_ALL=C` (dir #715, absorbing dir #698). `--selftest` gains a `--staged` probe that
+  runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
+  `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
+  substitution or locale-bound `read` in the scanner.
 - **`doctor.sh --install` no longer prints `OK` over a foreign hook, and doctor, `uninstall.sh` and the
   watcher agree on the machine-wide hooks dir.** `--install` holds Keel's own machine hooks dir to the same
   marker line as the per-repo audit and `install.sh` Verify: a non-Keel `pre-commit` or `pre-push` there is

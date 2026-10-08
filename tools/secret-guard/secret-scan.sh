@@ -55,7 +55,8 @@
 #     path:<glob>    exclude a path
 #   or an inline  secret-scan:allow  comment on the offending line.
 #
-# Exit 0 = clean; 1 = a secret-shaped string or personal data found; 2 = usage/config error.
+# Exit 0 = clean; 1 = a secret-shaped string or personal data found; 2 = usage/config error, or a read
+# the scan could not complete (fails closed: `secret-scan: could not <step> … — refusing to report it clean`).
 
 set -euo pipefail
 
@@ -129,9 +130,34 @@ _scan_exit() {
   exit "$_scan_rc"
 }
 SCRATCH="$(mktemp -d)"
+# absolute (dir #715): GNU/busybox mktemp returns a relative path under a relative $TMPDIR, and --staged
+# changes to the top level before its later spools
+case "$SCRATCH" in ''|/*) ;; *) SCRATCH="$PWD/$SCRATCH" ;; esac
 trap _scan_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# _fail_closed STEP [STATUS [ERRFILE]] — dir #715: the one exit for a read the scan could not complete. A
+# producer that failed, or a read that lost a record, must never look like a clean input ("nothing came
+# back" read as "nothing found" — the class behind dir #508 (b), #693, #697, #680, #682, #280 and #715).
+# ERRFILE lines get the `secret-scan:   ` prefix, never a bare two-space indent: kb-doctor and
+# leak_gate_run read those as hit lines. Builtins only: a missing tool may be the very failure reported.
+# Main shell only (an `exit` inside `$(…)` ends just that subshell): a function that runs inside one
+# returns a status, and its caller hands it here — `cmd > "$spool" 2>"$err" || _fail_closed STEP $? "$err"`.
+_fail_closed() {
+  local l=""
+  # a newline in STEP (it can embed a file name) is written as `\n`, so no continuation line can start with
+  # two spaces
+  printf 'secret-scan: could not %s%s — refusing to report it clean\n' "${1//$'\n'/\\n}" "${2:+ (exit $2)}" >&2
+  if [ -n "${3:-}" ] && [ -r "$3" ]; then
+    while LC_ALL=C IFS= read -r l || [ -n "$l" ]; do
+      printf 'secret-scan:   %s\n' "$l" >&2
+    done < "$3"
+  fi
+  exit 2
+}
+# a fresh spool file in $SCRATCH (removed with it on any exit)
+spool() { mktemp "$SCRATCH/blob.XXXXXX"; }
 
 # --- dir #148: the personal-literals parser, a small INLINE copy of tools/lib/personal-literals.sh --
 # This file is VENDORED and may only source files vendored beside it, so it cannot source the shared
@@ -207,7 +233,7 @@ esac
 # match everything, so an empty capture is skipped). `tr` (byte-wise, LC_ALL=C), not ${var//$'\n'/|}: that
 # expansion is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
 if [ -n "$_personal_lines" ]; then
-  personal="$(printf '%s' "$_personal_lines" | LC_ALL=C tr '\n' '|')"
+  personal="$(printf '%s' "$_personal_lines" | LC_ALL=C tr '\n' '|')" || _fail_closed "join the personal literals" $?
 fi
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
@@ -227,16 +253,25 @@ records=""
 # a file (or blob) is binary if it contains a NUL byte
 is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
 
-# match a text FILE against both classes; optional extra grep flag (e.g. -n) via $1
-match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
-  local flags="$1" f="$2"
+# match a text FILE against both classes; optional extra grep flag (e.g. -n) via $1, and an optional
+# extra case-sensitive ERE OR'd into class 1 via $3 (e.g. $SESSION_META for messages, as count_matches).
+# dir #715 (B7): a grep exit of 1 is "no match", >= 2 a failure (a bad pattern, an unreadable file, 127 = no
+# grep at all) — the old `|| true` read every one of those as "no match". Each grep's status is captured
+# on its own, and the group ends by exiting with a failing one: the group is a pipeline element, so a
+# subshell (a variable set inside it never reaches this function), and `pipefail` carries its status —
+# or a failed `sort` — out as this function's own. Callers spool the output and check that status.
+match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = extra ERE ('' for none)
+  local flags="$1" f="$2" extra="${3:-}"
   {
+    rc1=0; rc2=0
     # shellcheck disable=SC2086  # $flags intentionally word-split ('' → no extra flag)
-    grep -aE $flags "$joined" "$f" 2>/dev/null || true
+    grep -aE $flags "${extra:+$extra|}$joined" "$f" 2>/dev/null || rc1=$?
     if [ -n "$personal" ]; then
       # shellcheck disable=SC2086
-      grep -aiE $flags "$personal" "$f" 2>/dev/null || true
+      grep -aiE $flags "$personal" "$f" 2>/dev/null || rc2=$?
     fi
+    [ "$rc1" -le 1 ] || exit "$rc1"
+    [ "$rc2" -le 1 ] || exit "$rc2"
   } | LC_ALL=C sort -u
 }
 
@@ -246,14 +281,37 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan
 # grep over class 2 (personal literals). `grep -c` (count), NEVER `-q`: -q exits on the first match and
 # SIGPIPEs the still-writing producer, which under `pipefail` reads as failure and drops the hit — a
 # real intermittent scanner hole (flaked on macOS CI). -c consumes the whole stream → deterministic.
-# Prints the count on stdout.
+# Prints the count on stdout. dir #715 (B7): grep's exit 1 is a zero count; >= 2 (127 = no grep) is
+# returned, never read as zero — the caller captures the count into a variable and checks the status.
 count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 ('' for none)
-  local f="$1" extra="${2:-}" n
-  n="$(grep -acE "${extra:+$extra|}$joined" "$f" || true)"
+  local f="$1" extra="${2:-}" n rc=0
+  n="$(grep -acE "${extra:+$extra|}$joined" "$f")" || rc=$?
+  [ "$rc" -le 1 ] || return "$rc"
   if [ "${n:-0}" -eq 0 ] && [ -n "$personal" ]; then
-    n="$(grep -aciE "$personal" "$f" || true)"
+    n="$(grep -aciE "$personal" "$f")" || rc=$?
+    [ "$rc" -le 1 ] || return "$rc"
   fi
   printf '%s' "${n:-0}"
+}
+
+# collect_matches LABEL PREFIX FILE FLAGS [EXTRA] — the one path from a match pass to records (dir #715):
+# match_text FILE (FLAGS, EXTRA as there), fail closed on its status (STEP `match 'LABEL'`), and append
+# each hit as a "PREFIX<hit>" record. Main shell only, so the records+= appends land here. Records are
+# newline-separated, so a newline inside a name is written as the two characters `\n`: a raw one split the
+# record, and a `path:` allowlist glob matching the tail fragment exempted the hit (dir #715 review).
+# dir #693 — the read carries `|| [ -n "$hit" ]`: under a UTF-8 locale bash 5.x `read -r` returns 1 for a
+# FINAL line whose last byte is an invalid multibyte lead byte (the newline is swallowed into the incomplete
+# sequence), though it did fill the variable — a bare `while read` dropped exactly the record carrying the
+# key (found by CI's ubuntu leg: bash 5.2 + a key line ending in a stray 0xE9).
+# dir #715 (B3) — the same swallow mid-stream drops or merges the NEXT record (a NUL-delimited name list
+# too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
+# never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
+collect_matches() {
+  local label="$1" prefix="${2//$'\n'/\\n}" f="$3" m="$SCRATCH/matches" hit=""
+  match_text "$4" "$f" "${5:-}" > "$m" || _fail_closed "match '$label'" $?
+  while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
+    [ -z "$hit" ] || records+="$prefix$hit"$'\n'
+  done < "$m"
 }
 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
@@ -270,7 +328,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
 # pass — covers any pass added here later for free, with no line to remember to re-append.
 emit_blob() {  # $1 = record label (path)
-  local label="$1" tmp dec hits
+  local label="$1" tmp dec
   tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"
   cat > "$tmp"
   {
@@ -285,48 +343,37 @@ emit_blob() {  # $1 = record label (path)
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo            # raw printable runs
   } | LC_ALL=C tr -d '\000' > "$dec"
-  hits="$( { grep -aoE "$joined" "$dec" 2>/dev/null || true
-             if [ -n "$personal" ]; then grep -aoiE "$personal" "$dec" 2>/dev/null || true; fi
-           } | LC_ALL=C sort -u )"
+  collect_matches "$label" "$label:(binary) " "$dec" -o
   rm -f "$tmp" "$dec"
-  [ -z "$hits" ] && return 0
-  # dir #693 — every `read` loop that collects match output carries `|| [ -n "$var" ]` (the record-filter
-  # loop at the bottom needs none: its here-string always adds one more newline): under a UTF-8
-  # locale bash 5.x `read -r` returns 1 for a FINAL line whose last byte is an invalid multibyte lead byte
-  # (the newline is swallowed into the incomplete sequence), though it did fill the variable — so a bare
-  # `while read` dropped exactly the record carrying the key and the scan ended `clean` (found by CI's
-  # ubuntu leg: bash 5.2 + a key line ending in a stray 0xE9). The tail test keeps that last record (the
-  # variable then ends in the swallowed newline, harmless for a content line — records are newline-split and
-  # blank lines skipped). The file-NAME loops are deliberately left bare: there the stray newline would reach
-  # git as part of a pathspec, so a tail alone would not rescue them.
-  while IFS= read -r hit || [ -n "$hit" ]; do
-    [ -n "$hit" ] && records+="$label:(binary) $hit"$'\n'
-  done <<< "$hits"
 }
 
-# route one unit of content (stdin) by type: binary → the decode pass, text → line matching with
-# line numbers. Spools stdin to a temp file; callers must feed it via redirection or process
-# substitution (NOT a pipe) so the records+= appends run in this shell.
-emit_stream() {  # $1 = record label (path)
-  local label="$1" stmp
-  stmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-  cat > "$stmp"
-  if is_binary_file "$stmp"; then
-    emit_blob "$label" < "$stmp"
+# route one unit of content by type: binary → the decode pass, text → line matching with line numbers.
+# emit_file reads a spool file this script made; emit_stream spools stdin first — the path for anything
+# else. A caller's own path never reaches cmp/grep: a name like `-v` would be read as an option there, and
+# the spool is one snapshot of a file that may change mid-scan. Both run in this shell (never in a pipe or
+# a `$(…)`), so the records+= appends land here.
+emit_file() {  # $1 = record label (path), $2 = a spool file under $SCRATCH
+  if is_binary_file "$2"; then
+    emit_blob "$1" < "$2"
   else
-    while IFS= read -r line || [ -n "$line" ]; do   # dir #693: see emit_blob's loop
-      records+="$label:$line"$'\n'
-    done < <(match_text -n "$stmp")
+    collect_matches "$1" "$1:" "$2" -n
   fi
+}
+emit_stream() {  # $1 = record label (path); the content on stdin
+  local stmp
+  stmp="$(spool)"
+  cat > "$stmp"
+  emit_file "$1" "$stmp"
   rm -f "$stmp"
 }
 
-# an annotated tag's message body — everything after the first blank line of the raw tag object
-tag_body() { git cat-file tag "$1" 2>/dev/null | sed '1,/^$/d'; }
+# an annotated tag's message body — everything after the first blank line of the raw tag object. Its
+# status (`pipefail`: git's, or sed's) is checked at both call sites, git's stderr kept in $2 (dir #715).
+tag_body() { git cat-file tag "$1" 2>"$2" | sed '1,/^$/d'; }
 
 # require_git_repo CALLER_LABEL — exit 2 (caller error) when not inside a git repo. Modes that scan
-# repo state (--staged, --tracked) must fail CLOSED here: the `|| true` guards further down would
-# otherwise read "not a repo" as "nothing found" and pass clean.
+# repo state (--staged, --tracked) must fail CLOSED here: every later read is status-checked (dir
+# #715), but a non-repo must exit with its own message first.
 require_git_repo() {
   git rev-parse --git-dir >/dev/null 2>&1 \
     || { echo "secret-scan: $1 needs a git repo" >&2; exit 2; }
@@ -353,8 +400,8 @@ _impact_log_path_inline() {
   local dir="${1:-.}" klog="${KEEL_IMPACT_LOG:-}" store_root legacy_root top store
   if [ -n "$klog" ]; then printf '%s' "$klog"; return; fi
   top="$(git -C "$dir" worktree list --porcelain 2>/dev/null |
-    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
-  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+    awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"  # fail-open-ok: impact-log metadata, never the verdict
+  [ -n "$top" ] || top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"  # fail-open-ok: impact-log metadata, never the verdict
   [ -n "$top" ] || top="$(cd "$dir" 2>/dev/null && pwd -P)" || top="$dir"
   # A file still physically present at its legacy in-tree location wins outright — mirrors
   # tools/lib/impact-store.sh's own fix (dir #251 review): the store DIRECTORY existing is not proof
@@ -387,7 +434,7 @@ _impact_log_path_inline() {
     printf '%s/.keel/impact-events.log' "$top"
   return 0
 }
-_impact_claim_key_inline() { git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true; }
+_impact_claim_key_inline() { git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true; }  # fail-open-ok: impact-log metadata
 
 # scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
@@ -422,24 +469,18 @@ emit_diff() {
   # any such file. Bytes are what the scanner wants; `match_text` reads the spooled records with `grep -a`.
   # (2) a failed leg (git diff, awk or sed — `pipefail` folds all three into one status) is no longer
   # swallowed: it exits 2 (this file's "cannot scan" status) naming the path. This runs in the main shell
-  # (a `done < <(...)` loop body, not a `$(...)`), so the `exit` reaches the EXIT trap, which keeps it.
+  # (a loop body reading a spool file, not a `$(...)`), so the `exit` reaches the EXIT trap, which keeps it.
   # dir #697 — `--no-ext-diff --no-textconv`: `git diff` otherwise runs the USER'S configured drivers. A
   # `diff.external` program replaces the patch with its own output (no `@@` header, so awk emits nothing)
   # and a `textconv` filter replaces the file's content with the converter's output — either one hid a
   # staged key (`clean`, exit 0). The scanner reads the staged bytes, whatever the git config says.
-  local diff_rc=0
-  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>/dev/null | LC_ALL=C awk '
+  local derr="$dtmp.err"
+  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>"$derr" | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
-  ' | LC_ALL=C sed 's/^+//' > "$dtmp" || diff_rc=$?
-  if [ "$diff_rc" -ne 0 ]; then
-    echo "secret-scan: could not parse the staged diff of '$path' (exit $diff_rc) — refusing to report it clean" >&2
-    exit 2
-  fi
-  while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
-    records+="$path:$hit"$'\n'
-  done < <(match_text '' "$dtmp")
-  rm -f "$dtmp"
+  ' | LC_ALL=C sed 's/^+//' > "$dtmp" || _fail_closed "parse the staged diff of '$path'" $? "$derr"
+  collect_matches "$path" "$path:" "$dtmp" ''
+  rm -f "$dtmp" "$derr"
 }
 
 # selftest — end-to-end verification via child runs of this same script in FILE mode, from a neutral
@@ -448,16 +489,15 @@ emit_diff() {
 #
 # Scope (dir #524): this covers what an ADOPTER'S install needs re-verified on THEIR host — the two
 # detector classes actually catch a shape (key/personal, text/binary/UTF-16/UTF-32, inline-allow,
-# fail-closed-on-bad-regex) plus, below, the --range message/tag/allowlist-baseline passes. It does
-# NOT re-run dir #508's four --staged diff-PARSING fixtures (a renamed binary, a hunk-header anchor,
-# a literal-pathspec glob, a same-change allowlist entry): those are properties of THIS SCRIPT'S OWN
-# CODE against git's diff format, not of the host it runs on — nothing about a given install could
-# make emit_diff parse a hunk header differently. They already have full, mutation-proved regression
-# coverage in tests/test_secret_guard.sh (dev-time, every change), and duplicating them here would
-# tax EVERY adopter install (install-secret-guard.sh runs --selftest before copying, dir #250) for a
-# host-independent property that install can never actually change.
+# fail-closed-on-bad-regex) plus, below, the --range message/tag/allowlist-baseline passes and (dir
+# #715) one --staged probe: the commit hook's own path, whose name parse depends on the host's bash
+# version and locale (bash >= 5 under UTF-8 dropped the record after a name ending in an invalid byte).
+# It does NOT re-run dir #508's four --staged diff-PARSING fixtures (a renamed binary, a hunk-header
+# anchor, a literal-pathspec glob, a same-change allowlist entry): they already have full, mutation-proved
+# regression coverage in tests/test_secret_guard.sh (dev-time, every change), and duplicating them here
+# would tax EVERY adopter install (install-secret-guard.sh runs --selftest before copying, dir #250).
 selftest() {
-  local script dir rc=0 fake greprc trailer mrepo trepo arepo arbase
+  local script dir rc=0 fake greprc trailer mrepo trepo arepo arbase srepo bad _v
   # shared git identity for every probe repo's commits/tags below — a probe repo must not depend on
   # host config (max-review reuse finding: this pair used to be re-typed at each of 4 call sites).
   local id_flags=(-c user.name=keel -c user.email=keel@keel.invalid)
@@ -467,6 +507,16 @@ selftest() {
   # GIT_DIR/GIT_INDEX_FILE for the commit being scanned, and dropping GIT_INDEX_FILE there scans nothing
   # (tests/test_git_env_guard.sh B4, tests/test_secret_guard.sh A6).
   unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+  # dir #715 (B10): every probe repo below, and every child run, is isolated from the user's git config —
+  # a broken `diff.*` there made the --range probes WARN-skip, and would fail the --staged probe at its
+  # enumeration (which, by design, exits 2 on a config git cannot read). GIT_CONFIG_GLOBAL wins over
+  # $HOME on git >= 2.32 (HOME/XDG cover older git); GIT_CONFIG_COUNT/KEY_*/VALUE_* and
+  # GIT_CONFIG_PARAMETERS inject config straight through, so they go too. The host's locale is kept on
+  # purpose: it is what the --staged probe verifies.
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 HOME="$SCRATCH/selftest" XDG_CONFIG_HOME="$SCRATCH/selftest"
+  export SECRET_SCAN_PERSONAL_FILE=/dev/null KEEL_IMPACT_LOG=''
+  for _v in ${!GIT_CONFIG_KEY_@} ${!GIT_CONFIG_VALUE_@}; do unset "$_v"; done
+  unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -478,7 +528,7 @@ selftest() {
 
   probe() {  # $1 = expected exit, $2 = label, $3 = personal file, $4 = fixture path
     local want="$1" label="$2" pfile="$3" fixture="$4" got=0
-    (cd "$dir" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
+    (cd "$dir" && SECRET_SCAN_PERSONAL_FILE="$pfile" "$script" "$fixture" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq "$want" ]; then
       echo "selftest: OK   — $label"
     else
@@ -539,19 +589,19 @@ selftest() {
         commit -q --no-verify --allow-empty -m probe 2>/dev/null
     fi
   }
-  range_probe() {  # $1 = repo, $2 = full --range argument, $3 = label — expects the scan to BLOCK
-    local got=0
-    (cd "$1" && KEEL_IMPACT_LOG='' SECRET_SCAN_PERSONAL_FILE=/dev/null \
-       "$script" --range "$2" >/dev/null 2>&1) || got=$?
+  repo_probe() {  # $1 = repo, $2 = label, remaining = the scan's arguments — expects the scan to BLOCK
+    local repo="$1" label="$2" got=0
+    shift 2
+    (cd "$repo" && "$script" "$@" >/dev/null 2>&1) || got=$?
     if [ "$got" -eq 1 ]; then
-      echo "selftest: OK   — $3"
+      echo "selftest: OK   — $label"
     else
-      echo "selftest: FAIL — $3 (exit $got, want 1)" >&2; rc=1
+      echo "selftest: FAIL — $label (exit $got, want 1)" >&2; rc=1
     fi
   }
   mrepo="$dir/msgrepo"
   if probe_repo "$mrepo" "$trailer"; then
-    range_probe "$mrepo" "HEAD --not --remotes" "caught a session trailer in a pushed commit message"
+    repo_probe "$mrepo" "caught a session trailer in a pushed commit message" --range "HEAD --not --remotes"
   else
     echo "selftest: WARN — could not create the message-probe repo; the commit-message pass is unverified on this host" >&2
   fi
@@ -560,7 +610,7 @@ selftest() {
   if probe_repo "$trepo" \
      && git -C "$trepo" "${id_flags[@]}" -c tag.gpgsign=false \
           tag -a probe-tag -m "$(printf 'release\n\n%s' "$trailer")" 2>/dev/null; then
-    range_probe "$trepo" "probe-tag --not --remotes" "caught a session trailer in a pushed annotated-tag message"
+    repo_probe "$trepo" "caught a session trailer in a pushed annotated-tag message" --range "probe-tag --not --remotes"
   else
     echo "selftest: WARN — could not create the tag-probe repo; the tag-message pass is unverified on this host" >&2
   fi
@@ -587,9 +637,25 @@ selftest() {
   }
   arepo="$dir/rangeallow"
   if probe_repo "$arepo" && plant_range_allow "$arepo"; then
-    range_probe "$arepo" "$arbase..HEAD" "caught a same-pushed-range allowlist entry ('A..B' baseline resolution)"
+    repo_probe "$arepo" "caught a same-pushed-range allowlist entry ('A..B' baseline resolution)" --range "$arbase..HEAD"
   else
     echo "selftest: WARN — could not create the range-allowlist probe repo; the --range baseline pass is unverified on this host" >&2
+  fi
+  # dir #715 (B10): the commit hook's own path. A staged key file b-key.txt, and — where the filesystem
+  # accepts the name — a clean a-caf<0xE9> sorting IMMEDIATELY before it: a name read that swallows the
+  # delimiter after an invalid byte (bash >= 5 under UTF-8, without LC_ALL=C on the read) loses the key's
+  # record, and this probe FAILs on that host. On a filesystem that refuses the name the plain probe runs.
+  srepo="$dir/stagedrepo"
+  bad="a-caf$(printf '\351')"
+  if git init -q --template= "$srepo" 2>/dev/null \
+     && printf '%s\n' "$fake" > "$srepo/b-key.txt" \
+     && git -C "$srepo" add b-key.txt 2>/dev/null; then
+    if (printf 'clean\n' > "$srepo/$bad") 2>/dev/null; then
+      git -C "$srepo" add -- "$bad" 2>/dev/null || rm -f "$srepo/$bad"
+    fi
+    repo_probe "$srepo" "caught a staged key (--staged, this host's bash and locale)" --staged
+  else
+    echo "selftest: WARN — could not create the staged-probe repo; the --staged pass is unverified on this host" >&2
   fi
   _scan_done=1
   return $rc
@@ -599,10 +665,14 @@ selftest() {
 # below (one definition, dir #495 code review's own reuse finding on the first cut, which typed this
 # loop out twice).
 scan_file_args() {
-  local f
+  local f fspool ferr
+  fspool="$(spool)"; ferr="$(spool)"
   for f in "$@"; do
     [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-    emit_stream "$f" < "$f"
+    # a checked read into a spool (dir #715 review): an unreadable file exits 2 naming it, not 1 (the
+    # "found" status, with no hit line for a caller to parse); the name never reaches cmp/grep
+    cat < "$f" > "$fspool" 2>"$ferr" || _fail_closed "read '$f'" $? "$ferr"
+    emit_file "$f" "$fspool"
   done
 }
 
@@ -654,7 +724,13 @@ case "$mode" in
       exit 2
     fi
     rm -f "$rangeerr"
-    blobs="$(printf '%s\n' "$objs" | awk '$1=="blob"')"
+    # dir #715 (B6 (a)): a corrupt or absent object prints `<sha> missing` here with rc 0 — read as an
+    # object of no type, it was silently skipped and the push scanned clean. Every line must be one of
+    # the four object types. (A partial clone prints no such line: lazy fetch fills the blob.)
+    bad_obj="$(awk 'NF && $1 != "commit" && $1 != "tree" && $1 != "blob" && $1 != "tag" { print $1 }' <<< "$objs")" \
+      || _fail_closed "list the range's objects" $?
+    [ -z "$bad_obj" ] || _fail_closed "read object ${bad_obj%%$'\n'*} (missing or corrupt)"
+    blobs="$(awk '$1=="blob"' <<< "$objs")" || _fail_closed "list the range's blobs" $?
     range_hits=1                                    # default: run the detailed scan
     if [ -z "$blobs" ]; then
       range_hits=0
@@ -664,19 +740,23 @@ case "$mode" in
                             # the NUL-strip fast view of UTF-16 bytes — skip the fast path and let
                             # the detailed scan's iconv pass see it
         *)
-          rtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-          printf '%s\n' "$blobs" | awk '{print $2}' \
-            | git cat-file --batch 2>/dev/null | LC_ALL=C tr -d '\000' > "$rtmp"
-          range_hits="$(count_matches "$rtmp")"
-          rm -f "$rtmp"
+          rtmp="$(spool)"; rerr="$(spool)"
+          awk '{print $2}' <<< "$blobs" \
+            | git cat-file --batch 2>"$rerr" | LC_ALL=C tr -d '\000' > "$rtmp" \
+            || _fail_closed "read the range's blobs" $? "$rerr"
+          range_hits="$(count_matches "$rtmp")" || _fail_closed "count matches in the range's blobs" $?
+          rm -f "$rtmp" "$rerr"
           ;;
       esac
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
-      while IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693: see emit_blob's loop
+      btmp="$(spool)"; berr="$(spool)"
+      while LC_ALL=C IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693/#715: see emit_blob's loop
         [ -n "$osha" ] || continue
-        emit_stream "$opath" < <(git cat-file blob "$osha" 2>/dev/null)
+        git cat-file blob "$osha" > "$btmp" 2>"$berr" || _fail_closed "read blob $osha ('$opath')" $? "$berr"
+        emit_file "$opath" "$btmp"
       done <<< "$blobs"
+      rm -f "$btmp" "$berr"
     fi
     # The push also introduces the commits' MESSAGES, which no blob pass sees. Felt (2026-07-10
     # audit): seven harness-appended session trailers reached the public main through merged PRs,
@@ -686,78 +766,89 @@ case "$mode" in
     # pass below already scans all three; a commit message must not be the weaker sibling. Same
     # fast-path shape as the blob/tag scans (`count_matches`, `-c` not `-q`), then re-walk per
     # commit on a hit to attribute the exact sha.
+    msgtmp="$(spool)"; merr="$(spool)"
     # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
-    msgtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-    git log --format=%B $rng > "$msgtmp" 2>/dev/null || true
-    if [ "$(count_matches "$msgtmp" "$SESSION_META")" -gt 0 ]; then
-      while IFS= read -r csha; do
+    git log --format=%B $rng > "$msgtmp" 2>"$merr" || _fail_closed "read the range's commit messages" $? "$merr"
+    msg_hits="$(count_matches "$msgtmp" "$SESSION_META")" \
+      || _fail_closed "count matches in the range's commit messages" $?
+    if [ "$msg_hits" -gt 0 ]; then
+      clist="$(spool)"; ctmp="$(spool)"
+      # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+      git rev-list $rng > "$clist" 2>"$merr" || _fail_closed "list the range's commits" $? "$merr"
+      while LC_ALL=C IFS= read -r csha; do
         [ -n "$csha" ] || continue
-        ctmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-        git log -1 --format=%B "$csha" > "$ctmp" 2>/dev/null || true
-        while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
-          [ -n "$hit" ] && records+="commit ${csha:0:7} message:$hit"$'\n'
-        done < <({ match_text '' "$ctmp"
-                   grep -aE "$SESSION_META" "$ctmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
-        rm -f "$ctmp"
-      done < <(git rev-list $rng 2>/dev/null || true)
+        git log -1 --format=%B "$csha" > "$ctmp" 2>"$merr" \
+          || _fail_closed "read the message of commit ${csha:0:7}" $? "$merr"
+        collect_matches "commit ${csha:0:7} message" "commit ${csha:0:7} message:" "$ctmp" '' "$SESSION_META"
+      done < "$clist"
+      rm -f "$clist" "$ctmp"
     fi
-    rm -f "$msgtmp"
+    rm -f "$msgtmp" "$merr"
     # An annotated TAG's own message is neither a blob nor a commit message, so both passes above
     # are blind to it — a pushed tag (pre-push passes "<tagsha> --not --remotes") would carry a
     # key, a personal literal, or a session trailer to the remote unscanned. The tag objects are
     # already in the batch-check stream captured above; scan each tag's message body against all
     # three matchers via the same `count_matches` fast-path shared with the blob/commit passes.
-    tagshas="$(printf '%s\n' "$objs" | awk '$1=="tag"{print $2}')"
+    tagshas="$(awk '$1=="tag"{print $2}' <<< "$objs")" || _fail_closed "list the range's tags" $?
     if [ -n "$tagshas" ]; then
-      tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-      while IFS= read -r tsha; do
+      tagtmp="$(spool)"; terr="$(spool)"
+      while LC_ALL=C IFS= read -r tsha; do
         [ -n "$tsha" ] || continue
-        tag_body "$tsha"
+        tag_body "$tsha" "$terr" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
       done <<< "$tagshas" > "$tagtmp"
-      tag_hits="$(count_matches "$tagtmp" "$SESSION_META")"
-      rm -f "$tagtmp"
+      tag_hits="$(count_matches "$tagtmp" "$SESSION_META")" || _fail_closed "count matches in the range's tag messages" $?
       if [ "${tag_hits:-0}" -gt 0 ]; then
-        while IFS= read -r tsha; do
+        while LC_ALL=C IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
-          tagtmp="$(mktemp "$SCRATCH/blob.XXXXXX")"
-          tag_body "$tsha" > "$tagtmp"
-          while IFS= read -r hit || [ -n "$hit" ]; do   # dir #693: see emit_blob's loop
-            [ -n "$hit" ] && records+="tag ${tsha:0:7} message:$hit"$'\n'
-          done < <({ match_text '' "$tagtmp"
-                     grep -aE "$SESSION_META" "$tagtmp" 2>/dev/null || true; } | LC_ALL=C sort -u)
-          rm -f "$tagtmp"
+          tag_body "$tsha" "$terr" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
+          collect_matches "tag ${tsha:0:7} message" "tag ${tsha:0:7} message:" "$tagtmp" '' "$SESSION_META"
         done <<< "$tagshas"
       fi
+      rm -f "$tagtmp"
     fi
     ;;
   staged|--staged|"")
     require_git_repo --staged
+    # dir #715 (B4): from the repository's top level — numstat paths are root-relative, but emit_diff's
+    # pathspec resolves against the cwd, so a run from a subdirectory read `clean` over a staged key; the
+    # cwd-relative allowlist becomes the root one too, as for HEAD:.secret-scan-allow and --tracked. A no-op
+    # for the pre-commit hook, which git runs at the top level.
+    serr="$(spool)"
+    top="$(git rev-parse --show-toplevel 2>"$serr")" || _fail_closed "find the repository's top level" $? "$serr"
+    cd "$top" || _fail_closed "find the repository's top level" $?
     ALLOW_BASELINE_REF=HEAD
-    # Both staged enumerations below share one flag set, kept in ONE place on purpose: before this
-    # fix, core.quotePath=false sat on the numstat call only, and that exact asymmetry (dir #508
-    # (b)) is how a C-quoted non-ASCII path escaped the name-only scan — a second hand-kept copy
-    # is how that class of drift recurs. --diff-filter=d (dir #508 (c), an EXCLUDE-list: only
-    # Deleted is dropped, everything else — Added/Copied/Modified/Renamed/Type-changed — passes):
-    # a positive allow-list like the prior "ACM" (or even "ACMR") reproduces this exact bug one
-    # status letter at a time as git adds more; a deleted file can never introduce an added line
-    # worth scanning, so excluding only D is complete by construction. --no-renames: a renamed
-    # BINARY file lands in the numstat loop below as "-\t-\t<old> => <new>" (one combined field,
-    # no -z), which a plain `awk -F'\t' '{print $3}'` can't parse into a real path — git-showing
-    # that bogus string then silently fails (2>/dev/null) and the file's secret content is never
-    # decoded. --no-renames instead reports a rename as a plain Delete (excluded by -d above) plus
-    # an Add of the new path (a clean single-field path either loop can use); the name-only
-    # enumeration's own emit_diff call is untouched (still default rename detection), so a TEXT
-    # rename's content-diff still resolves exactly as fixture (c) already proves.
-    staged_diff_flags=(-c core.quotePath=false diff --cached --no-renames --diff-filter=d)
-    while IFS= read -r f; do
-      [ -n "$f" ] && emit_diff "$f" --cached
-    done < <(git "${staged_diff_flags[@]}" --name-only 2>/dev/null || true)
-    # binary staged files have no text diff (numstat shows "- -") — decode and scan their staged blobs
-    while IFS= read -r f; do
+    # ONE enumeration, its flag set kept in ONE place on purpose: a second hand-kept copy of the flags is
+    # how the dir #508 (b) class of drift recurs. --diff-filter=d (dir #508 (c), an
+    # EXCLUDE-list: only Deleted is dropped, everything else — Added/Copied/Modified/Renamed/Type-changed —
+    # passes): a positive allow-list like the prior "ACM" (or even "ACMR") reproduces this exact bug one
+    # status letter at a time as git adds more; a deleted file can never introduce an added line worth
+    # scanning, so excluding only D is complete by construction. --no-renames: a renamed BINARY file
+    # would otherwise land here as "<old> => <new>", one combined field no path read can use; with it a
+    # rename is a plain Delete (excluded above) plus an Add of the new path.
+    # dir #715 (S7-1, S7-2): `-z` — git emits raw paths, never C-quoted, every record NUL-terminated, so a
+    # name holding a tab, a quote, a backslash or a newline is read whole (the old newline-delimited
+    # `--name-only` and `--numstat` passes skipped each such file). The status is checked: a `diff.*` config
+    # git cannot read, or a corrupt index, exits 2 naming git's error — it used to empty the list → `clean`.
+    slist="$(spool)"
+    git diff --cached --no-renames --diff-filter=d --no-ext-diff --no-textconv --numstat -z \
+      > "$slist" 2>"$serr" || _fail_closed "list the staged files" $? "$serr"
+    sblob="$(spool)"
+    tab=$'\t'
+    while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
+      # "<added>TAB<deleted>TAB<path>": the path is everything after the FIRST two tabs — a name may itself
+      # begin or end with a tab, so never `IFS=$'\t' read`.
+      f="${rec#*"$tab"*"$tab"}"
       [ -n "$f" ] || continue
-      emit_stream "$f" < <(git show ":$f" 2>/dev/null)
-    done < <(git "${staged_diff_flags[@]}" --numstat 2>/dev/null \
-             | awk -F'\t' '$1=="-" && $2=="-"{print $3}')
+      case "$rec" in
+        "-$tab-$tab"*)
+          # a binary file has no text diff — decode and scan its staged blob. `cat-file blob :0:<path>`, not
+          # `git show :<path>`: show reads `1:x.bin` as stage 1 of `x.bin` (that file was silently skipped),
+          # and only show can apply a textconv driver.
+          git cat-file blob ":0:$f" > "$sblob" 2>"$serr" || _fail_closed "read the staged blob of '$f'" $? "$serr"
+          emit_file "$f" "$sblob" ;;
+        *) emit_diff "$f" --cached ;;
+      esac
+    done < "$slist"
     ;;
   --tracked)
     # Detective audit: scan ALL tracked content as it sits in the working tree — text with line
@@ -766,12 +857,19 @@ case "$mode" in
     # never silently audit only that subtree; the allowlist is the root one for the same reason.
     top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "secret-scan: --tracked needs a git repo" >&2; exit 2; }
     ALLOW_FILE="$top/.secret-scan-allow"
-    while IFS= read -r f; do
+    # dir #715 (B5): `-z` (raw, NUL-terminated names — a tab, quote or newline in a name no longer skips
+    # the file), the status checked (a corrupt index exits 2 instead of auditing zero files), every read
+    # under LC_ALL=C (B3, emit_blob's loop).
+    tlist="$(spool)"; terr="$(spool)"
+    git -C "$top" ls-files -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
+    while LC_ALL=C IFS= read -r -d '' f || [ -n "$f" ]; do
       [ -n "$f" ] || continue
       if [ -L "$top/$f" ]; then
         # a tracked symlink's committed content IS its target string — scan that (it can carry a
-        # personal path); the target file itself, if tracked, is scanned as its own entry
-        emit_stream "$f" < <(readlink "$top/$f")
+        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
+        # readlink read as an empty target, i.e. `clean` (dir #715).
+        target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+        emit_stream "$f" <<< "$target"
       elif [ -f "$top/$f" ]; then
         if [ -r "$top/$f" ]; then
           emit_stream "$f" < "$top/$f"
@@ -780,7 +878,7 @@ case "$mode" in
           echo "secret-scan: WARN unreadable, skipped: $f" >&2
         fi
       fi
-    done < <(git -C "$top" -c core.quotePath=false ls-files 2>/dev/null)
+    done < "$tlist"
     ;;
   --selftest)
     selftest; exit $?
@@ -887,7 +985,7 @@ if [ -n "${rng:-}" ] && [ -f "$ALLOW_FILE" ]; then
     rm -f "$boundary_err"
   else
     rm -f "$boundary_err"
-    while IFS= read -r _bl; do
+    while LC_ALL=C IFS= read -r _bl; do
       case "$_bl" in
         -*) ALLOW_BASELINE_REFS+=("${_bl#-}") ;;
       esac
@@ -921,21 +1019,21 @@ if [ -f "$ALLOW_FILE" ]; then
     # `|| [ -n "$hl" ]`: without it, a baseline file with no trailing newline loses its LAST line —
     # `read` fails on the final unterminated line, so that entry never joins the array and reads as
     # "new this change", false-blocking a legitimate commit over a pre-existing entry.
-    while IFS= read -r hl || [ -n "$hl" ]; do
+    while LC_ALL=C IFS= read -r hl || [ -n "$hl" ]; do
       head_allow_lines+=("${hl%$'\r'}")
-    done < <(git show "$ALLOW_BASELINE_REF:$ALLOW_FILE" 2>/dev/null || true)
+    done < <(git show "$ALLOW_BASELINE_REF:$ALLOW_FILE" 2>/dev/null || true)  # fail-open-ok: a failed read makes every entry new — it over-blocks (dir #715 B8)
   elif [ "$ALLOW_BASELINE_MODE" = "range" ]; then
     for _bref in "${ALLOW_BASELINE_REFS[@]:-}"; do
       [ -n "$_bref" ] || continue
-      while IFS= read -r hl || [ -n "$hl" ]; do
+      while LC_ALL=C IFS= read -r hl || [ -n "$hl" ]; do
         head_allow_lines+=("${hl%$'\r'}")
-      done < <(git show "$_bref:$ALLOW_FILE" 2>/dev/null || true)
+      done < <(git show "$_bref:$ALLOW_FILE" 2>/dev/null || true)  # fail-open-ok: a failed read makes every entry new — it over-blocks (dir #715 B8)
     done
   fi
   # `|| [ -n "$entry" ]`: same reason as head_allow_lines above — an allowlist with no trailing
   # newline on its last line would otherwise silently lose that entry entirely (dropped from
   # drop_res/path_globs, not merely "new this change"), disabling it with no diagnostic at all.
-  while IFS= read -r entry || [ -n "$entry" ]; do
+  while LC_ALL=C IFS= read -r entry || [ -n "$entry" ]; do
     entry="${entry%$'\r'}"                 # tolerate a CRLF-saved allowlist (strip trailing CR)
     [ -z "$entry" ] && continue
     case "$entry" in
@@ -956,7 +1054,9 @@ if [ -f "$ALLOW_FILE" ]; then
 fi
 
 found=0
-while IFS= read -r rec; do
+# LC_ALL=C (dir #715, B3): a key record ending in an invalid byte was merged with the NEXT record under
+# bash >= 5 + UTF-8, and an allowlist hit on that second record dropped both.
+while LC_ALL=C IFS= read -r rec; do
   [ -z "$rec" ] && continue
   # inline allow
   case "$rec" in *secret-scan:allow*) continue ;; esac
@@ -997,7 +1097,7 @@ if [ "$found" = 1 ]; then
   # — aborting the whole script before the remediation guidance below ever prints, even though a real
   # secret WAS already found and reported. Degrading to empty (this metadata step's own "not enabled"
   # signal) instead keeps the block's actual job — stopping the commit, showing remediation — intact.
-  _klog="$(_impact_log_path_inline .)" || true
+  _klog="$(_impact_log_path_inline .)" || true  # fail-open-ok: metadata only, after the block is decided
   if [ -n "$_klog" ]; then
     _kclaim="$(_impact_claim_key_inline .)"
     # dir #251 review: the resolver's legacy-marker fallback (a genuine old-style-`enable`d repo, proven
@@ -1006,9 +1106,9 @@ if [ "$found" = 1 ]; then
     # this, the append's own failed redirect leaks a raw "No such file or directory" onto stderr (NOT
     # suppressed by the `2>/dev/null` below — that only covers the command's own stderr, not a failed
     # redirection setup) and silently drops the guard event.
-    mkdir -p "$(dirname "$_klog")" 2>/dev/null || true
+    mkdir -p "$(dirname "$_klog")" 2>/dev/null || true  # fail-open-ok: impact-log metadata
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard secret-guard blocked "$_kclaim" \
-      >> "$_klog" 2>/dev/null || true
+      >> "$_klog" 2>/dev/null || true  # fail-open-ok: impact-log metadata
   fi
   echo "" >&2
   # Say WHAT to do (remove the secret), not HOW to bypass the check: the exact allowlist syntax is
