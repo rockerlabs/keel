@@ -111,6 +111,17 @@ pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every s
 pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
 pinf "core: step 4's auto rule" '`low`/`medium`/`high` clearly inside one bucket → run it automatically'
 pinf "core: step 4's dialog marker" 'ended by the literal line `KEEL-DEPTH-DIALOG`'
+# dir #721 S3-2 (the audit's #528 finding): the honesty / dialog / step-9 rails a NORMAL run reads ONLY in the
+# core. tests/test_rails_honesty.sh pins the guide's copy of the same paragraphs — a copy a normal run never
+# loads — so each clause below is held on the core itself, in the step that owns it (step_text N), and each
+# was shown red by deleting exactly that clause from polish.md.
+check_contains "core S3-2: step 2's refused-or-unavailable pointer" "$(step_text 2)" 'Refused or unavailable → § Step 2.'
+check_contains "core S3-2: step 4's dialog is ALWAYS raised for skip, max and ultra" "$(step_text 4)" 'ALWAYS for `skip`, `max` and `ultra`'
+check_contains "core S3-2: step 5 says ultra stops for real, with its guide pointer" "$(step_text 5)" '`ultra` cannot be launched from here → guide § Step 5 (b).'
+check_contains "core S3-2: step 9's body names every review mechanism that ACTUALLY RAN" "$(step_text 9)" 'The body names every review mechanism that ACTUALLY RAN, not only the receipt'
+check_contains "core S3-2: step 9 — invoking /polish IS the authorization; the merge stays the operator's" "$(step_text 9)" 'Invoking `/polish` IS the authorization to push and open the PR; the merge stays the operator'
+check_contains "core S3-2: step 10 reports the review depth with its exact mechanism" "$(step_text 10)" 'the review depth with its exact mechanism, never the depth alone'
+pinfg "guide S3-2: step 5's (b) label — the target of the core's ultra pointer" '**(b) Stop for real** — `ultra`'
 
 # --- K2 (slice 2): the spawn line and dir #413's needle ------------------------------------------------------
 # Of the lines carrying `subagent_type: "general-purpose"`, at least one has the needle on it or on the

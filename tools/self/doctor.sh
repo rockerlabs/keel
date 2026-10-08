@@ -1700,17 +1700,19 @@ else
   say "  OK   artifact_cksum() has exactly one definition, in tools/lib/artifact-cksum.sh"
 fi
 
-# --- 10. manifest_field/manifest_usable and the CORE.md ownership predicate have exactly one real
-# definition tree-wide (dir #363) -------------------------------------------------------------------
+# --- 10. manifest_field/manifest_usable, the CORE.md ownership predicate and the embedded-block comparator
+# have exactly one real definition tree-wide (dir #363, dir #650) ----------------------------------------
 # dir #363 made uninstall.sh/tools/doctor.sh consumers of the existing tools/lib/manifest.sh
 # (manifest_field/manifest_usable, previously hand-copied in both) instead of hand-copying it, and gave
 # the keel/CORE.md ownership predicate (keel_core_is_link/keel_core_is_nogit_trim) its own new
 # tools/lib/core-ownership.sh, sourced by all three of install.sh/uninstall.sh/tools/doctor.sh. Same
 # class as check 9: a promise that the non-owning consumers keep no local copy, verified instead of
 # trusted, so a future hand-copy is caught structurally the moment it's added rather than waiting for
-# behaviour to drift apart.
+# behaviour to drift apart. dir #650 added the block-currency comparator to the same lib — the four
+# keel_core_block_* functions (text, is_trimmed, norm, state), each with the same byte-identical install.sh
+# fallback — so the function list below is six core-ownership functions long, not two.
 say ""
-say "● manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363)"
+say "● manifest_field/manifest_usable/core-ownership-predicate/core-block-comparator single-definition (dir #363, dir #650)"
 
 # extract_fn_body FILE FN — FN's body, one normalized line per statement (each line's own
 # leading/trailing whitespace stripped, so a difference in INDENTATION alone — install.sh's fallback
@@ -1750,7 +1752,8 @@ extract_fn_body() {
 # manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared
 # below: it isn't claimed to match anything) and keel_core_is_link/keel_core_is_nogit_trim's
 # byte-identical fallback copies (dir #363's own documented degradation contract — see
-# tools/lib/core-ownership.sh's own header for why install.sh, alone of the three consumers, keeps one).
+# tools/lib/core-ownership.sh's own header for why install.sh, alone of the three consumers, keeps one),
+# and the same for dir #650's four keel_core_block_* functions.
 # **The "byte-identical" half of that contract is itself checked here, not merely asserted in a
 # comment** (found by this ticket's own altitude review: an earlier draft counted copies and locations
 # only, so the one duplicate the design deliberately permits was exactly the one whose invariant went

@@ -77,11 +77,55 @@ check_eq "M2 without the guard, an outside -C writes into the outside repo" "yes
 check_ne "M3 without the guard, the helper wires a remote into the cwd repo" "" "$(git -C "$CWD_REPO" config --get remote.origin.url)"
 check_contains "M4 without the guard, summary() passes the file" "$OUT" "summary-rc=0"
 
+# G7 (dir #721 S8-10): the empty-`-C` clause must be the ONLY thing refusing. In the probe above the
+# child's cwd is outside the child's own $SANDBOX/$REPO_ROOT, so an empty `-C` (= the caller's cwd)
+# falls to the "temp dir outside $SANDBOX" clause and is refused with 97 even with the empty clause
+# deleted — G1 passes for the wrong clause. The felt incident stood INSIDE the allow-list (cwd =
+# $REPO_ROOT), where the empty clause is all that stands. So: a stand-in checkout whose tests/lib.sh is a
+# copy of the real one (REPO_ROOT derives from lib.sh's own location), a child with cwd = that stand-in,
+# and a mutant copy with the clause deleted (sed on the copy only) as the positive control that this
+# fixture can tell the clause from its neighbours. Every write still lands under our $SANDBOX.
+standin="$(new_repo)"
+mkdir -p "$standin/tests"
+cp "$TESTS_DIR/lib.sh" "$standin/tests/lib.sh"
+sed '/^[[:space:]]*\[ -n "\$_gc_a" \] || { _gc_bad="an empty -C/d' "$TESTS_DIR/lib.sh" > "$standin/tests/lib-mutant.sh"
+check_ne "G7 setup: the mutant copy really lacks the empty-clause line" "$(wc -l < "$TESTS_DIR/lib.sh")" "$(wc -l < "$standin/tests/lib-mutant.sh")"
+probe_inside="$SANDBOX/git-c-probe-inside.sh"
+cat > "$probe_inside" <<'EOF'
+#!/usr/bin/env bash
+# $1 = the lib.sh to source (cwd = the stand-in checkout, inside that lib's own $REPO_ROOT).
+. "$1" || exit 1
+git -C "" config probe.inside yes 2>/dev/null; echo "rc-inside-empty=$?"
+EOF
+run_in "$standin" bash "$probe_inside" "$standin/tests/lib.sh"
+check_contains "G7 an empty -C is refused with cwd INSIDE \$REPO_ROOT, where only the empty clause stands" "$OUT" "rc-inside-empty=97"
+check_eq "G7 nothing landed in the stand-in checkout" "" "$(git -C "$standin" config --get probe.inside)"
+run_in "$standin" bash "$probe_inside" "$standin/tests/lib-mutant.sh"
+check_contains "M5 with the empty clause deleted, the same probe is NOT refused (control: G7 binds that clause)" "$OUT" "rc-inside-empty=0"
+check_eq "M5 ... and the write really landed in the cwd repo" "yes" "$(git -C "$standin" config --get probe.inside)"
+
 # C1: with the function defined, `$(command -v git)` yields the word "git", not a path — a symlink farm
 # or a shim's `exec` built from it breaks (felt while measuring this ticket: test_self_doctor.sh linked a
 # dangling `git`; git_var_stub_dir()'s stub would `exec git` back through PATH into itself). This file
 # names the shape, so it is skipped.
 check_eq "C1 no test captures \$(command -v git) — use \$(type -P git)" "" \
   "$(grep -nE '\$\(command -v git[) ]' "$TESTS_DIR"/*.sh | grep -v '/test_lib_git_c_guard\.sh:')"
+
+# C2 (dir #721 S6-12): `type -P git` is for a symlink farm or a shim's `exec` — the binary's PATH — never
+# a command for fixture writes. A variable assigned from it and then used as `"$var" -C <repo> …` steps
+# around the guard above (tests/test_doctor_secrets.sh once routed 16 writes that way; an empty `$d` there
+# would have written into whatever repository the suite stood in). Structural, per file: collect every
+# `NAME="$(type -P git)"` and flag a `$NAME -C` use. A `$NAME config --global …` under a redirected HOME
+# (no -C) is a different, legitimate shape and is not matched.
+bypass=""
+for tf in "$TESTS_DIR"/test_*.sh; do
+  [ "$tf" = "$TESTS_DIR/test_lib_git_c_guard.sh" ] && continue
+  tvars="$(grep -oE '^[[:space:]]*[A-Za-z_][A-Za-z_0-9]*="\$\(type -P git\)"' "$tf" | sed -E 's/^[[:space:]]*([A-Za-z_0-9]+)=.*/\1/' || true)"
+  for tv in $tvars; do
+    hits="$(grep -nE "\\\$\\{?$tv\\}?\"? +-C" "$tf" || true)"
+    [ -z "$hits" ] || bypass="${bypass}${tf##*/} ($tv): $(printf '%s' "$hits" | head -n1)"$'\n'
+  done
+done
+check_eq "C2 no test runs git writes through a \$(type -P git) variable with -C (the guard-bypass shape)" "" "$bypass"
 
 summary

@@ -28,7 +28,7 @@ fixture() {
 d="$(fixture)"
 put "$d/dist/.env" "SENTINEL_S61=hunter2"; put "$d/node_modules/pkg/prod.env"
 put "$d/vendor/.env.example"; put "$d/out/.env.local"; put "$d/target/.env"
-"$gitt" -C "$d" add -f dist/.env node_modules/pkg/prod.env vendor/.env.example out/.env.local target/.env
+git -C "$d" add -f dist/.env node_modules/pkg/prod.env vendor/.env.example out/.env.local target/.env
 run "$doctor" "$d"
 line="$(id_line W-SECRETS-EXPOSED)"
 check_contains "S6-1: a tracked env file under dist/ → EXPOSED" "$line" "dist/.env"
@@ -38,22 +38,22 @@ check_absent  "S6-1: a tracked template inside a pruned dir stays quiet" "$line"
 check_absent  "S6-1: no file content in the output" "$OUT" "SENTINEL_S61"
 
 # git quotes a non-ASCII path in plain `ls-files` output; the floor must still find it
-d="$(fixture)"; put "$d/dist/café/.env"; "$gitt" -C "$d" add -f dist
+d="$(fixture)"; put "$d/dist/café/.env"; git -C "$d" add -f dist
 run "$doctor" "$d"
 check_contains "S6-1: a tracked env file under a non-ASCII path in a pruned dir → EXPOSED" "$(id_line W-SECRETS-EXPOSED)" "dist/café/.env"
 # a trailing slash on the audited dir must not double-count a tracked file find and git both report
-d="$(fixture)"; put "$d/.env"; put "$d/dist/.env"; "$gitt" -C "$d" add -f .env dist/.env
+d="$(fixture)"; put "$d/.env"; put "$d/dist/.env"; git -C "$d" add -f .env dist/.env
 run "$doctor" "$d/"
 check_contains "S6-1: a trailing-slash dir argument counts each tracked file once" "$(id_line W-SECRETS-EXPOSED)" " 2 env-shaped"
 
 # a tracked file deleted from the work tree is not a file on disk: quiet, no crash
-d="$(fixture)"; put "$d/dist/.env"; "$gitt" -C "$d" add -f dist/.env; rm "$d/dist/.env"
+d="$(fixture)"; put "$d/dist/.env"; git -C "$d" add -f dist/.env; rm "$d/dist/.env"
 run "$doctor" "$d"
 check_status  "S6-1: a tracked-but-deleted env file does not crash the audit" 0 "$STATUS"
 check_absent  "S6-1: ...and is not reported (no file there to expose)" "$OUT" "W-SECRETS-EXPOSED"
 
 # the path-level accept list reaches a pruned-dir path too
-d="$(fixture)"; put "$d/dist/.env"; "$gitt" -C "$d" add -f dist/.env
+d="$(fixture)"; put "$d/dist/.env"; git -C "$d" add -f dist/.env
 mkdir -p "$d/.keel"; printf 'dist/.env\n' > "$d/.keel/secrets-accept"
 run "$doctor" "$d"
 check_absent  "S6-1: an accepted pruned-dir path is hidden" "$OUT" "W-SECRETS-EXPOSED"
@@ -76,7 +76,7 @@ vend() {  # vend DIR — a dir holding the four shipped files, byte-identical
 }
 repo718() {  # a repo with a local hooksPath at vhooks/, prints it
   local r; r="$(fixture)"
-  vend "$r/vhooks"; "$gitt" -C "$r" config core.hooksPath vhooks
+  vend "$r/vhooks"; git -C "$r" config core.hooksPath vhooks
   printf '%s' "$r"
 }
 d="$(repo718)"
@@ -111,7 +111,7 @@ run "$doctor" "$d"
 check_absent  "S7-9: a foreign pre-push / pre-commit is the user's data → no drift finding" "$OUT" "[W-GUARD-STALE]"
 # a dir that holds no Keel guard files at all is not "stale"
 d="$(fixture)"; mkdir -p "$d/vhooks"; printf '#!/bin/sh\nexit 0\n' > "$d/vhooks/pre-commit"; chmod +x "$d/vhooks/pre-commit"
-"$gitt" -C "$d" config core.hooksPath vhooks
+git -C "$d" config core.hooksPath vhooks
 run "$doctor" "$d"
 check_absent  "S7-9: a hooks dir with only the user's own pre-commit → no drift finding" "$OUT" "[W-GUARD-STALE]"
 
@@ -133,6 +133,13 @@ check_absent  "S7-9: a machine-global dir with four identical files → no drift
 printf '\n# drifted\n' >> "$gdir/range-lib.sh"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
 check_contains "S7-9: machine-global range-lib.sh drifted → W-GUARD-GLOBAL-STALE" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+# dir #721 S6-13: ...and reported ONCE, machine-wide. The dir here carries an executable Keel pre-commit, so
+# doctor reaches the per-repo drift arm that must stay silent for a machine-wide dir (`machine-dir=1`); the
+# earlier "reported ONCE" fixture in test_doctor.sh has no executable pre-commit and never gets there. A
+# regression that lets the per-repo arm report it too adds a second finding with a remedy that exits 3 here.
+check_eq "S6-13: the machine-global drift is exactly ONE finding" 1 "$(printf '%s\n' "$OUT" | grep -cF '[W-GUARD-GLOBAL-STALE]')"
+check_absent  "S6-13: ...and the per-repo arm does not report it again as W-GUARD-STALE" "$OUT" "[W-GUARD-STALE]"
+check_absent  "S6-13: ...nor does the fixture drift into W-GUARD-UNWIRED (the executable pre-commit is what reaches the arm)" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "S7-9: ...and the finding names the drifted file" "$(id_line W-GUARD-GLOBAL-STALE)" "range-lib.sh"
 vend "$gdir"; printf '\n# drifted\n' >> "$gdir/pre-push"
 run env "${FRESH_HOME_ENV[@]}" "$doctor" "$d"
