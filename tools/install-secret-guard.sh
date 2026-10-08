@@ -25,7 +25,8 @@
 # same never-overwrite rule). A hook is Keel's only when its line 2 is exactly the shipped hook's
 # marker line. A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
-# is written into, by design). Bypass a single commit/push deliberately with `git ... --no-verify`.
+# is written into, by design). Bypass a single commit/push deliberately with `git ... --no-verify`;
+# a commit made that way is still scanned by pre-push, which scans every commit it sends.
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
