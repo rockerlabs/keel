@@ -2232,28 +2232,25 @@ function config_redirect(name) {
   return (name == "GIT_CONFIG_GLOBAL" || name == "GIT_CONFIG_SYSTEM" || name == "GIT_CONFIG_NOSYSTEM" ||
           name == "GIT_CONFIG_PARAMETERS" || name == "HOME" || name == "XDG_CONFIG_HOME")
 }
-function check_push(   i,j,t,lt,nm,eq,bypass,found_push) {
+# An assignment that turns the hooks off (a core.hooksPath key) or redirects/silences the git config the guard
+# is wired from: returns 1.
+function assign_bypass(t,   eq, nm) {
+  eq = index(t, "=")
+  nm = substr(t, 1, eq - 1)
+  if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(t, eq + 1)) == "core.hookspath") return 1
+  return config_redirect(nm)
+}
+function check_push(   i,j,t,lt,nx,bypass,found_push) {
   i = 1; bypass = 0
   while (i <= ntok) {
     t = tok[i]
-    if (is_assign(t)) {
-      eq = index(t, "=")
-      nm = substr(t, 1, eq - 1)
-      if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(t, eq + 1)) == "core.hookspath") bypass = 1
-      if (config_redirect(nm)) bypass = 1
-      i++; continue
-    }
+    if (is_assign(t)) { if (assign_bypass(t)) bypass = 1; i++; continue }
     if (is_shellword(t)) { i++; continue }
     if (t == "env") {
       i++
       while (i <= ntok && (substr(tok[i], 1, 1) == "-" || is_assign(tok[i]))) {
-        if (is_assign(tok[i])) {
-          eq = index(tok[i], "=")
-          nm = substr(tok[i], 1, eq - 1)
-          if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(tok[i], eq + 1)) == "core.hookspath") bypass = 1
-          if (config_redirect(nm)) bypass = 1
-          i++
-        } else if (tok[i] == "-u" || tok[i] == "--unset") i += 2
+        if (is_assign(tok[i])) { if (assign_bypass(tok[i])) bypass = 1; i++ }
+        else if (tok[i] == "-u" || tok[i] == "--unset") i += 2
         else i++
       }
       continue
@@ -2273,12 +2270,10 @@ function check_push(   i,j,t,lt,nm,eq,bypass,found_push) {
     t = tok[j]; lt = tolower(t)
     if (t == "push") found_push = 1
     if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1
-    if (t == "-c" && j + 1 <= ntok) {
-      lt = tolower(tok[j + 1])
-      if (lt == "core.hookspath" || index(lt, "core.hookspath=") == 1) bypass = 1
-    }
+    nx = (j + 1 <= ntok) ? tolower(tok[j + 1]) : ""
+    if (t == "-c" && (nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)) bypass = 1
     if (index(lt, "--config-env=core.hookspath=") == 1) bypass = 1
-    if (t == "--config-env" && j + 1 <= ntok && index(tolower(tok[j + 1]), "core.hookspath=") == 1) bypass = 1
+    if (t == "--config-env" && index(nx, "core.hookspath=") == 1) bypass = 1
   }
   if (found_push && bypass) pushbypass = 1
 }
