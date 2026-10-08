@@ -36,17 +36,19 @@
 # never spells this shape with a literal producer-pipe-consumer sequence (found in review: an
 # earlier draft's own pass/fail strings self-matched this exact regex, which would have made the
 # test fail on its own source the moment it became in-scope of its own scan).
-QMHEAD_RE='grep (-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
+QMHEAD_RE='(e|f)?grep( +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
 # dir #708 widened the q/m consumer to ANY producer. Measured @0a99412: `| grep -q/-m` after any
 # command was 9 hits tree-wide (all fixed), while `| head` after any command was ~97 — nearly all
 # `x="$(... | head -1)"` captures whose pipeline status nobody reads, so a SIGPIPE there changes no
 # result. grep -q/-m is branched on, which is what makes the race real; `head` stays bounded to the
 # fixed producer list above. `(^|[^|])` keeps `|| grep -q ...` (an OR list, not a pipe) out.
+# The consumer also takes egrep/fgrep and flag clusters before the q/m one (`grep -F -q`); a flag that
+# takes an argument ahead of it (`grep -e pat -q`) stays a known gap, like the others in the header.
 ANY_QM_RE="(^|[^|])\\|[[:space:]]*$QMHEAD_RE"
 RACE_RE="(^|[^a-zA-Z0-9_])(printf|echo|sed|tr)[[:space:]][^|]*\\|[[:space:]]*($QMHEAD_RE|head)|$ANY_QM_RE"
 # The rare safe case (e.g. a producer that is a single fixed short line, proven by the reason):
-# a trailing `# sigpipe-ok: <reason>` on the SAME line exempts it. The reason is required.
-ALLOW_RE='#[[:space:]]*sigpipe-ok:[[:space:]]*[^[:space:]]'
+# a trailing `# sigpipe-ok: <reason>` on the SAME line exempts it. A reason (3+ alphanumerics) is required.
+ALLOW_RE='#[[:space:]]*sigpipe-ok:[[:space:]]*[[:alnum:]]{3}'
 
 # A file runs under pipefail if it has its own qualifying `set` line, OR — every tests/*.sh and
 # tools/lib/*.sh file, regardless of whether it sets `set -` itself — if it's SOURCED rather than
@@ -127,13 +129,16 @@ fx="$SANDBOX/race-fixture.sh"
   echo "func_prod $P grep -q x   # sigpipe-ok: one fixed short line"
   echo "false || grep -q x f"
   echo "x=\"\$(func_prod $P head -1)\""
+  echo "func_prod $P grep -F -q x || true"
+  echo "  $P grep -qE 'x'"
+  echo "func_prod $P grep -q x   # sigpipe-ok: x"
 } > "$fx"
 got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
-if [ "$got" = "1 2 3 " ]; then
+if [ "$got" = "1 2 3 7 8 9 " ]; then
   pass "guard flags function/awk/git producers; skips allow-comment, OR list, head capture"
 else
   fail "guard flags function/awk/git producers; skips allow-comment, OR list, head capture" \
-    "flagged lines: '$got' (want '1 2 3 ')"
+    "flagged lines: '$got' (want '1 2 3 7 8 9 ')"
 fi
 
 summary

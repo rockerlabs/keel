@@ -150,7 +150,7 @@ census_files() { (cd "$1" && git ls-files --cached --others --exclude-standard);
 # lib_candidates ROOT — every lib the census may derive: tools/lib/*.sh, range-lib.sh, and every other
 # tracked shebang-less `.sh` (dir #661: a lib outside tools/lib), except tests/lib.sh and tests/test_*.sh.
 lib_candidates() {
-  local root="$1" f
+  local root="$1" f first_line
   {
     (cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh 2>/dev/null)
     while IFS= read -r f; do
