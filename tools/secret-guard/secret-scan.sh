@@ -130,6 +130,9 @@ _scan_exit() {
   exit "$_scan_rc"
 }
 SCRATCH="$(mktemp -d)"
+# absolute (dir #715): GNU/busybox mktemp returns a relative path under a relative $TMPDIR, and --staged
+# changes to the top level before its later spools
+case "$SCRATCH" in ''|/*) ;; *) SCRATCH="$PWD/$SCRATCH" ;; esac
 trap _scan_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -291,7 +294,9 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 
 # collect_matches LABEL PREFIX FILE FLAGS [EXTRA] — the one path from a match pass to records (dir #715):
 # match_text FILE (FLAGS, EXTRA as there), fail closed on its status (STEP `match 'LABEL'`), and append
-# each hit as a "PREFIX<hit>" record. Main shell only, so the records+= appends land here.
+# each hit as a "PREFIX<hit>" record. Main shell only, so the records+= appends land here. Records are
+# newline-separated, so a newline inside a name is written as the two characters `\n`: a raw one split the
+# record, and a `path:` allowlist glob matching the tail fragment exempted the hit (dir #715 review).
 # dir #693 — the read carries `|| [ -n "$hit" ]`: under a UTF-8 locale bash 5.x `read -r` returns 1 for a
 # FINAL line whose last byte is an invalid multibyte lead byte (the newline is swallowed into the incomplete
 # sequence), though it did fill the variable — a bare `while read` dropped exactly the record carrying the
@@ -300,7 +305,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
 # never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
 collect_matches() {
-  local label="$1" prefix="$2" f="$3" m="$SCRATCH/matches" hit=""
+  local label="$1" prefix="${2//$'\n'/\\n}" f="$3" m="$SCRATCH/matches" hit=""
   match_text "$4" "$f" "${5:-}" > "$m" || _fail_closed "match '$label'" $?
   while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
     [ -z "$hit" ] || records+="$prefix$hit"$'\n'
@@ -341,9 +346,11 @@ emit_blob() {  # $1 = record label (path)
 }
 
 # route one unit of content by type: binary → the decode pass, text → line matching with line numbers.
-# emit_file reads a FILE the caller already holds (a spool, a scanned file); emit_stream spools stdin
-# first. Both run in this shell (never in a pipe or a `$(…)`), so the records+= appends land here.
-emit_file() {  # $1 = record label (path), $2 = file
+# emit_file reads a spool file this script made; emit_stream spools stdin first — the path for anything
+# else. A caller's own path never reaches cmp/grep: a name like `-v` would be read as an option there, and
+# the spool is one snapshot of a file that may change mid-scan. Both run in this shell (never in a pipe or
+# a `$(…)`), so the records+= appends land here.
+emit_file() {  # $1 = record label (path), $2 = a spool file under $SCRATCH
   if is_binary_file "$2"; then
     emit_blob "$1" < "$2"
   else
@@ -359,8 +366,8 @@ emit_stream() {  # $1 = record label (path); the content on stdin
 }
 
 # an annotated tag's message body — everything after the first blank line of the raw tag object. Its
-# status (`pipefail`: git's, or sed's) is checked at both call sites (dir #715).
-tag_body() { git cat-file tag "$1" 2>/dev/null | sed '1,/^$/d'; }
+# status (`pipefail`: git's, or sed's) is checked at both call sites, git's stderr kept in $2 (dir #715).
+tag_body() { git cat-file tag "$1" 2>"$2" | sed '1,/^$/d'; }
 
 # require_git_repo CALLER_LABEL — exit 2 (caller error) when not inside a git repo. Modes that scan
 # repo state (--staged, --tracked) must fail CLOSED here: every later read is status-checked (dir
@@ -659,7 +666,7 @@ scan_file_args() {
   local f
   for f in "$@"; do
     [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
-    emit_file "$f" "$f"
+    emit_stream "$f" < "$f"
   done
 }
 
@@ -778,16 +785,16 @@ case "$mode" in
     # three matchers via the same `count_matches` fast-path shared with the blob/commit passes.
     tagshas="$(awk '$1=="tag"{print $2}' <<< "$objs")" || _fail_closed "list the range's tags" $?
     if [ -n "$tagshas" ]; then
-      tagtmp="$(spool)"
+      tagtmp="$(spool)"; terr="$(spool)"
       while LC_ALL=C IFS= read -r tsha; do
         [ -n "$tsha" ] || continue
-        tag_body "$tsha" || _fail_closed "read tag ${tsha:0:7}" $?
+        tag_body "$tsha" "$terr" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
       done <<< "$tagshas" > "$tagtmp"
       tag_hits="$(count_matches "$tagtmp" "$SESSION_META")" || _fail_closed "count matches in the range's tag messages" $?
       if [ "${tag_hits:-0}" -gt 0 ]; then
         while LC_ALL=C IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
-          tag_body "$tsha" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $?
+          tag_body "$tsha" "$terr" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
           collect_matches "tag ${tsha:0:7} message" "tag ${tsha:0:7} message:" "$tagtmp" '' "$SESSION_META"
         done <<< "$tagshas"
       fi
@@ -804,9 +811,8 @@ case "$mode" in
     top="$(git rev-parse --show-toplevel 2>"$serr")" || _fail_closed "find the repository's top level" $? "$serr"
     cd "$top" || _fail_closed "find the repository's top level" $?
     ALLOW_BASELINE_REF=HEAD
-    # ONE enumeration, its flag set kept in ONE place on purpose: before dir #508 (b), core.quotePath=false
-    # sat on one of two calls only, and that asymmetry is how a C-quoted non-ASCII path escaped a scan — a
-    # second hand-kept copy is how that class of drift recurs. --diff-filter=d (dir #508 (c), an
+    # ONE enumeration, its flag set kept in ONE place on purpose: a second hand-kept copy of the flags is
+    # how the dir #508 (b) class of drift recurs. --diff-filter=d (dir #508 (c), an
     # EXCLUDE-list: only Deleted is dropped, everything else — Added/Copied/Modified/Renamed/Type-changed —
     # passes): a positive allow-list like the prior "ACM" (or even "ACMR") reproduces this exact bug one
     # status letter at a time as git adds more; a deleted file can never introduce an added line worth
@@ -860,7 +866,7 @@ case "$mode" in
         emit_stream "$f" <<< "$target"
       elif [ -f "$top/$f" ]; then
         if [ -r "$top/$f" ]; then
-          emit_file "$f" "$top/$f"
+          emit_stream "$f" < "$top/$f"
         else
           # skip-and-warn, never abort: one unreadable file must not void the rest of the audit
           echo "secret-scan: WARN unreadable, skipped: $f" >&2

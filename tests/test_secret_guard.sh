@@ -2218,6 +2218,19 @@ for n715 in $'tab\tname.txt' 'quote"name.txt' 'back\slash.txt' $'new\nline.txt' 
   check_contains "dir #715 A1: ...and its key is reported ($q715)" "$OUT" "$k715"
 done
 
+# ...and a newline in a name never splits the record: a committed `path:README.md` must not exempt a key in
+# a file named README.md<LF>README.md (a split record's tail fragment matched the glob; dir #715 review).
+r715="$(new_repo)"
+printf 'path:README.md\n' > "$r715/.secret-scan-allow"
+git -C "$r715" add .secret-scan-allow
+git -C "$r715" commit -q -m allow
+printf 'tok = %s\n' "$k715" > "$r715/README.md
+README.md"
+git -C "$r715" add -A
+run_in "$r715" "$scan" --staged
+check_status "dir #715 A1: a path: glob cannot exempt a name holding a newline → BLOCKED" 1 "$STATUS"
+check_contains "dir #715 A1: ...the record names it with an escaped newline" "$OUT" 'README.md\nREADME.md:'
+
 # A2 (S7-1 binary + F5): the same for a staged binary — and `1:x.bin` is read as `:0:1:x.bin`, never as
 # stage 1 of `x.bin` (a `git show ":$f"` read skipped it).
 for n715 in $'tab\tname.bin' 'quote"name.bin' '1:x.bin'; do
@@ -2509,6 +2522,15 @@ check_absent "dir #715 A14(b2): ...and no probe is skipped" "$OUT" "selftest: WA
 # A15 (B10/B11): the comments the design falsified are gone
 for s715 in 'deliberately left bare' 'host-independent' 'needs none: its here-string'; do
   check_eq "dir #715 A15: no '$s715' left in secret-scan.sh" 0 "$(grep -c -- "$s715" "$scan")"
+done
+
+# FILE mode (`--`, dir #495) must read a file named like an option as a file: a name such as `-v` passed
+# raw to cmp/grep was read as a flag and scanned clean (dir #715 review). The path goes through a spool.
+d715="$(mktemp -d "$SANDBOX/dash715.XXXXXX")"
+for n715 in -v -b -l -; do
+  printf 'tok = %s\n' "$k715" > "$d715/$n715"
+  run_in "$d715" "$scan" -- "$n715"
+  check_status "dir #715: FILE mode scans a file named '$n715' → BLOCKED" 1 "$STATUS"
 done
 
 # A25 (B4): --staged from a subdirectory scans the root-relative paths and applies the root allowlist.
