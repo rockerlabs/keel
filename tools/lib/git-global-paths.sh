@@ -1,12 +1,13 @@
 # shellcheck shell=bash
 # tools/lib/git-global-paths.sh — which files git itself reads as machine-global config, and which
 # directory its machine-wide `core.hooksPath` names (dir #437 PR2, MW1 a-c). One definition for the
-# machine-global watcher (tools/machine-watch.sh); tools/doctor.sh carries a hand-copied twin of the
-# hooksPath resolution (its `_expand_hookspath_tilde` and effective-hooksPath probe) that a follow-up
-# migrates onto this file — a named duplicate, not a silent one. Three more named copies of the `~/`
-# expansion (dir #659): install.sh's `keel_hooks_is`, uninstall.sh's hint path (`hp_dir`), and
-# tools/install-secret-guard.sh's `_isg_norm_path` — the last ships standalone and can never source
-# this file.
+# machine-global watcher (tools/machine-watch.sh). `git_global_hooks_dir` is a named twin of
+# `tools/install-secret-guard.sh --where --global`'s `dir=` (that script ships standalone and cannot
+# source this file): the watcher keeps the twin for its hot path (one scratch-dir read per watched tool
+# call), and `tests/test_git_global_paths.sh` pins the two to the same answer for every shape a hooksPath
+# can arrive in. Two more named copies of the `~/` expansion (dir #659): install.sh's `keel_hooks_is` and
+# tools/install-secret-guard.sh's `_isg_norm_path` — the last ships standalone and can never source this
+# file.
 #
 # Sourced, not executed: no shebang, no set -e (inherits the caller's), no set -u assumption.
 #
@@ -68,7 +69,8 @@ git_global_system_config_file() {
 # --global restriction (git's own effective resolution merges the XDG file in behind an existing
 # ~/.gitconfig; `--global` collapses to one file) from a fresh non-repo scratch dir, so nothing at LOCAL
 # scope — a repo the hook happens to run in — can leak into what must be a machine-wide read. `~/` is
-# expanded. Prints nothing when unset or RELATIVE (a relative path names a different directory in every
+# expanded and one trailing slash dropped (`/` stays `/`), as the installer's `_isg_norm_path` does. Prints
+# nothing when unset or RELATIVE (a relative path names a different directory in every
 # repo, so it is no machine-global location). If the scratch dir turns out to sit inside a repo (an odd
 # TMPDIR), falls back to the narrower `git config --global` read rather than risk reading that repo's
 # local scope.
@@ -82,5 +84,6 @@ git_global_hooks_dir() {
   fi
   [ -z "$probe" ] || rmdir "$probe" 2>/dev/null || true
   val="$(git_global_expand_tilde "$val")"
+  [ "$val" = / ] || val="${val%/}"
   case "$val" in /*) printf '%s\n' "$val" ;; esac
 }
