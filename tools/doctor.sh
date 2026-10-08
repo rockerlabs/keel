@@ -55,7 +55,9 @@
 #   WARN  W-GUARD-STALE        a wired per-repo secret-guard copy differs from the engine this checkout
 #                              ships — vendored, or reached through a RELATIVE global core.hooksPath,
 #                              which names a different dir in every repo (dir #97). An ABSOLUTE
-#                              machine-global copy is W-GUARD-GLOBAL-STALE instead, checked once
+#                              machine-global copy is W-GUARD-GLOBAL-STALE instead, checked once. Both
+#                              compare secret-scan.sh and range-lib.sh, plus pre-commit / pre-push while
+#                              they carry Keel's marker line (dir #718); the message names the files
 #   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
@@ -67,7 +69,10 @@
 #                              pull refreshes the script, not the installed settings). Both scopes
 #   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env; templates excluded) that git
 #                              tracks or would commit — a plaintext secrets file one `cat` from a
-#                              permanent transcript (dir #631; names and git state only, no content read)
+#                              permanent transcript (dir #631; names and git state only, no content read).
+#                              The scan skips build/vendor trees (dist build out vendor target node_modules
+#                              .build .gradle .claude), so an UNTRACKED file there is never seen; a TRACKED
+#                              one is judged wherever it sits (dir #718)
 #   WARN  W-SECRETS-PLAINTEXT  an env-shaped file resting gitignored and untracked — still plaintext in
 #                              the tree; "migration unfinished" when .sops.yaml says the project adopted
 #                              SOPS. Both: path-level accept in .keel/secrets-accept (exact paths)
@@ -117,8 +122,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/gate-paths.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$_doctor_dir/lib/stat-portable.sh"
-# shellcheck source=tools/lib/agent-floor.sh
-. "$_doctor_dir/lib/agent-floor.sh"
+# tools/lib/agent-floor.sh is NOT sourced here (dir #718 S6-9): only --install's reviewer-agent check reads it,
+# and a corrupt copy used to kill every plain run at load. It is loaded where it is used, behind a syntax check.
 # dir #631: the secrets recipe's absolute path, resolved from THIS checkout (`keel doctor` execs it), so
 # the pointer in a finding works from any cwd and does not depend on docs/ being shipped to the install.
 secrets_doc="$(cd "$_doctor_dir/.." && pwd)/docs/secrets-in-the-working-tree.md"
@@ -372,6 +377,22 @@ fp_any() {
   [ -n "$(fp_find "$@" | head -n1)" ]
 }
 
+# dir #718 (S6-1): fp_find prunes build/vendor trees (dist build out vendor target node_modules .build
+# .gradle .claude), so an env-shaped file sitting there was never seen — including a TRACKED one, which is
+# already in git history and is exactly what this floor exists to catch. sx_tracked_envs DIR prints the
+# TRACKED env-shaped regular files under DIR, absolute, wherever they sit; the secrets floor then judges
+# them like any other (templates, nested repos, the accept list). The prune itself stays: UNTRACKED files in
+# those trees (a dependency's fixtures, build output) are still not scanned — disclosed in the header and
+# in docs/secrets-in-the-working-tree.md, pinned by tests/test_doctor_floor_gaps.sh.
+sx_tracked_envs() {
+  local rel
+  # -z: without it git quotes a non-ASCII / quote / tab path ("dist/caf\303\251/..."), which no -f test finds.
+  git -C "$1" ls-files -z -- ':(glob)**/.env' ':(glob)**/.env.*' ':(glob)**/*.env' 2>/dev/null \
+    | while IFS= read -r -d '' rel; do
+        if [ -f "$1/$rel" ] && [ ! -L "$1/$rel" ]; then printf '%s\n' "$1/$rel"; fi
+      done
+}
+
 # gate_hook_wired SETTINGS_JSON — true iff the /polish pre-PR gate's load-bearing hook (PreToolUse
 # matcher "Bash" running pre-pr-gate.sh) is wired in SETTINGS_JSON. Shared by the --install-mode check
 # (machine-global scope) and the per-project loop (project scope) below, so the two structural checks
@@ -501,7 +522,38 @@ tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # scanned project, so re-sourcing it inside the loop would just rebuild the same regex N times.
 # shellcheck source=tools/lib/safe-emails.sh
 . "$tools_dir/lib/safe-emails.sh"
-shipped_scan="$tools_dir/secret-guard/secret-scan.sh"
+# dir #718 (S7-9): the stale-guard compare reads EVERY engine file install-secret-guard.sh copies (its
+# `isg_files`; tests/test_doctor_floor_gaps.sh pins the two lists equal), not just secret-scan.sh —
+# range-lib.sh is the engine pre-push sources, so a drifted or deleted copy ran old range logic (or none) behind
+# an in-sync scanner. guard_drift_files DIR prints the files in DIR that differ from the shipped ones, ", "-joined
+# (nothing when DIR is in sync, or holds no Keel guard file); an engine file that is ABSENT from a dir holding
+# a Keel pre-push prints as "range-lib.sh (missing — …)". secret-scan.sh and range-lib.sh are always Keel's
+# own; pre-commit and pre-push are compared ONLY while they carry Keel's marker line (line 2 of the shipped
+# hook — the same test install-secret-guard.sh's _isg_is_keel_hook applies), so a user's own hook in a wired
+# dir is never called "stale". Both W-GUARD-GLOBAL-STALE and W-GUARD-STALE read it. NOT covered (recorded in
+# dir #718's PR as a residual, as before this ticket): a secret-scan.sh ABSENT beside Keel's hooks stays silent.
+guard_is_keel_hook() {  # guard_is_keel_hook DIR HOOK — DIR/HOOK exists and carries the shipped marker line
+  local marker
+  marker="$(sed -n 2p "$tools_dir/secret-guard/$2" 2>/dev/null)"
+  [ -f "$1/$2" ] && [ -n "$marker" ] && [ "$(sed -n 2p "$1/$2" 2>/dev/null)" = "$marker" ]
+}
+guard_drift_files() {
+  local dir="$1" f src out="" keel_push=0
+  guard_is_keel_hook "$dir" pre-push && keel_push=1
+  for f in secret-scan.sh range-lib.sh pre-commit pre-push; do
+    src="$tools_dir/secret-guard/$f"
+    [ -f "$src" ] || continue
+    if [ ! -f "$dir/$f" ]; then
+      # only Keel's own pre-push sources range-lib.sh (and aborts without it). A missing secret-scan.sh is NOT
+      # reported here (verified: doctor stays silent on it, as it did before this ticket) — a residual
+      if [ "$f" = range-lib.sh ] && [ "$keel_push" = 1 ]; then out="${out:+$out, }$f (missing — pre-push sources it)"; fi
+      continue
+    fi
+    case "$f" in pre-commit|pre-push) guard_is_keel_hook "$dir" "$f" || continue ;; esac
+    cmp -s "$dir/$f" "$src" || out="${out:+$out, }$f"
+  done
+  printf '%s' "$out"
+}
 
 # dir #121 / dir #688: the machine-wide hooksPath as git EFFECTIVELY resolves it — `git config --global` is
 # a SCOPE SELECTOR (see the note above $guard_cfg_src) that collapses to exactly ONE file, so it cannot see
@@ -545,9 +597,10 @@ if [ -n "$g_origin" ] && [ "$g_origin" != "$guard_global_file" ]; then
   guard_eff_note=" [resolved via git's effective config: $g_scope scope, $g_origin — a plain \`git config --global\` read would have missed it]"
 fi
 
-if [ -n "$g_dir" ] && [ -f "$g_dir/secret-scan.sh" ] && [ -f "$shipped_scan" ] \
-   && ! cmp -s "$g_dir/secret-scan.sh" "$shipped_scan"; then
-  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($g_dir/secret-scan.sh) differs from the engine this Keel checkout ships — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
+g_stale_files=""
+if [ -n "$g_dir" ]; then g_stale_files="$(guard_drift_files "$g_dir")"; fi
+if [ -n "$g_stale_files" ]; then
+  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($g_dir) differs from the engine this Keel checkout ships ($g_stale_files) — an older install, or a stale checkout; update the repo, then re-run install-secret-guard.sh --global (or re-copy the hooks)"
 elif [ "$g_answered" != 1 ]; then
   say "  (machine-wide secret-guard state unknown: install-secret-guard.sh --where --global gave no answer)"
 elif [ -z "$g_value" ]; then
@@ -896,8 +949,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
     reviewer_src="$repo_root/agents/keel-polish-reviewer.md"
     reviewer_inst="$ihome/agents/keel-polish-reviewer.md"
     if [ -f "$reviewer_src" ] && [ -f "$reviewer_inst" ]; then
-      shipped_tools="$(agent_fm_value "$reviewer_src" tools)"
-      floor_problem="$(agent_floor_problem "$reviewer_inst" "${shipped_tools:-Read, Grep, Glob}")"
+      # `bash -n` first: a syntax error in a sourced file exits the shell even inside `. file || …` (verified,
+      # bash 3.2 and 5), so the only way to survive a corrupt lib is to never source one that does not parse.
+      floor_problem=""
+      # shellcheck source=tools/lib/agent-floor.sh
+      if bash -n "$tools_dir/lib/agent-floor.sh" 2>/dev/null && . "$tools_dir/lib/agent-floor.sh" 2>/dev/null \
+         && declare -F agent_floor_problem >/dev/null; then
+        shipped_tools="$(agent_fm_value "$reviewer_src" tools)"
+        floor_problem="$(agent_floor_problem "$reviewer_inst" "${shipped_tools:-Read, Grep, Glob}")"
+      else
+        warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md: its tool floor cannot be judged — $tools_dir/lib/agent-floor.sh is missing or does not load; update this Keel checkout, then re-run the audit"
+      fi
       if [ -n "$floor_problem" ]; then
         warn W-REVIEW-AGENT-FLOOR "agents/keel-polish-reviewer.md is not the shipped read-only floor: $floor_problem — the review subagent could act, not just read; restore the shipped file: re-run install.sh --force$ihome_flag (backed up first; a linked install is the checkout's own file)"
       fi
@@ -1350,6 +1412,10 @@ for d in "${DIRS[@]}"; do
   # rule covers — so a team that commits .claude/settings.json and ignores the rest is not flagged. The
   # pathspec has no trailing slash, so a .claude that is a symlink or a file counts too (`git add -A`
   # stages those as well), and a failing git call counts as exposed: this half fails closed, as _ignored does.
+  # dir #718 S6-3: without --no-empty-directory, git lists a .claude/ whose every file is ignored (`.claude/*`)
+  # as an untracked DIRECTORY — a false GAP, since `git add -A` would stage nothing from it. A .claude/ with
+  # NOTHING in it (no addable file, no ignored one) is still exposed: the first settings file would land
+  # unprotected (dir #473's pin), so that case is added back below.
   claude_tracked=0
   _tracked "$d" CLAUDE.md && claude_tracked=1
   exposed=""
@@ -1359,7 +1425,16 @@ for d in "${DIRS[@]}"; do
     exposed="CLAUDE.md"
   fi
   if [ -e "$d/.claude" ] || [ -L "$d/.claude" ]; then
-    claude_dir_open="$(git -C "$d" ls-files --others --exclude-standard --directory -- .claude 2>/dev/null)" || claude_dir_open="git-failed"
+    claude_dir_open="$(git -C "$d" ls-files --others --exclude-standard --directory --no-empty-directory -- .claude 2>/dev/null)" || claude_dir_open="git-failed"
+    if [ -z "$claude_dir_open" ]; then
+      # Each probe fails closed like the first: a failing git call reads "git-failed", which is non-empty for
+      # claude_dir_any (go on) and counts as "nothing ignored in it" for claude_dir_ign (exposed).
+      claude_dir_any="$(git -C "$d" ls-files --others --exclude-standard --directory -- .claude 2>/dev/null)" || claude_dir_any="git-failed"
+      claude_dir_ign="$(git -C "$d" ls-files --others --ignored --exclude-standard --directory -- .claude 2>/dev/null)" || claude_dir_ign="git-failed"
+      if [ -n "$claude_dir_any" ] && { [ -z "$claude_dir_ign" ] || [ "$claude_dir_ign" = git-failed ]; }; then
+        claude_dir_open=".claude/"
+      fi
+    fi
     if [ -n "$claude_dir_open" ]; then
       exposed="${exposed:+$exposed, }.claude/"
     fi
@@ -1557,20 +1632,20 @@ for d in "${DIRS[@]}"; do
         # pre-2.26 git's `unknown`), so it is skipped here; a dir that is NOT the machine-wide one — e.g. a
         # hooksPath a conditional [includeIf] delivers, scope `global` — is reported by this check or by none
         # (dir #717, A19).
-        if [ -f "$w_eff/secret-scan.sh" ] && [ -f "$shipped_scan" ] && ! cmp -s "$w_eff/secret-scan.sh" "$shipped_scan" \
-           && [ "$w_machinedir" != 1 ]; then
+        w_stale_files="$(guard_drift_files "$w_eff")"
+        if [ -n "$w_stale_files" ] && [ "$w_machinedir" != 1 ]; then
           case "$w_scope" in
             none)
-              warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+              warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: install-secret-guard.sh <this repo>"
               ;;
             local)
-              warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships — re-vendor: install-secret-guard.sh <this repo>"
+              warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: install-secret-guard.sh <this repo>"
               ;;
             global|system)
-              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
               ;;
             *)
-              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
               ;;
           esac
         fi
@@ -1756,7 +1831,8 @@ EOF
         sx_plain="${sx_plain:+$sx_plain$'\n'}$sx_rel"
       fi
     done <<EOF
-$(fp_find "$d" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) -print | LC_ALL=C sort)
+$({ fp_find "$d" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) -print
+    sx_tracked_envs "$sx_dd"; } | LC_ALL=C sort -u)
 EOF
     # sx_names LIST — "p1, p2, p3 (+k more)" for the first 3 paths of a sorted list; sx_n = the count.
     sx_names() {

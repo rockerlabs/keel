@@ -27,6 +27,15 @@ sections real content going forward — see that page for exactly when each one 
   `~/.gitconfig`, an `[include]` or the system config. `git_global_hooks_dir` stays, as a named twin of the
   resolver pinned by a parity test, and now drops one trailing slash like it: a watcher user whose hooksPath
   ends in `/` sees one extra alert per hooks-dir file, once (dir #688).
+- **`doctor`'s secrets and guard floor stop reading clean over four holes.** The env-file floor prunes
+  `dist/`, `build/`, `out/`, `vendor/`, `target/`, `node_modules/`, `.build/`, `.gradle/` and `.claude/`; a
+  TRACKED env-shaped file inside them now draws `W-SECRETS-EXPOSED` like any other, while an untracked one
+  there stays unscanned and the recipe's Limits now say so. The stale-guard checks (`W-GUARD-STALE`,
+  `W-GUARD-GLOBAL-STALE`) compare `range-lib.sh` as well as `secret-scan.sh`, and `pre-commit` / `pre-push`
+  while they carry Keel's marker line, and name the files that differ; a user's own hook is never called
+  stale. A `.claude/` whose every file is ignored no longer raises `G-GITIGNORE-CONTEXT`. A corrupt
+  `tools/lib/agent-floor.sh` no longer kills every plain run: it loads only for `--install`'s reviewer-agent
+  check and, if it does not parse, that check warns `W-REVIEW-AGENT-FLOOR` instead (dir #718).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
