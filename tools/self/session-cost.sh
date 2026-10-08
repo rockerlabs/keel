@@ -273,8 +273,13 @@ cmd_table() {
 # and sees subagent turns (a subagent's turns after its own Skill call carry no attributionSkill, so an
 # attribution-based total would read the review subagent as free).
 #
-# A window opens at the first primary turn attributed to `polish` that follows a turn attributed
-# otherwise (the chain's own later turns open nothing) while none is open; it closes at the primary turn
+# A window opens, while none is open, at the first primary turn attributed to `polish` that follows a
+# turn attributed otherwise (the chain's own later turns open nothing) OR at a turn whose Bash call's
+# result carries `tools/pre-pr-gate.sh init`'s own output line (SC_INIT_LINE_RE: the second signal, dir
+# #707 — a run that follows /polish's text never re-invokes the Skill); both on one turn: `opened_by` is
+# `skill`. A window belongs to the branch it opened on (a real one: not null, not `HEAD`): an opening
+# signal on another real branch abandons it (status `open`, ending there), and a `gh pr create` on
+# another real branch does not close it. It closes at the primary turn
 # whose `gh pr create` Bash call has a NON-error result naming a github.com/<owner>/<repo>/pull/<n> URL.
 # A turn is one requestId, and its tool calls are read across EVERY record carrying that id (the harness
 # writes one record per content block, so the tool_use often sits in a later record than the first).
@@ -284,7 +289,7 @@ cmd_table() {
 # /polish invocation while a window is open EXTENDS it (one PR's tail includes its rounds); one that
 # follows a window closed on the same branch is a re-run on an already-open PR — `gh pr create` fails
 # there by design — so its window never closes (it ends, still `open`, at the first turn on a different
-# branch, so the next PR gets its own window). A window still open at the end of the file is reported
+# real branch, so the next PR gets its own window). A window still open at the end of the file is reported
 # `open` and is never a closed window; a consumer's median takes the closed ones only.
 #
 # The review cost (B10, the Outcome's M2) is the subagent whose prompt's FIRST line is /polish step 5's
@@ -292,6 +297,7 @@ cmd_table() {
 # fork, depth 2, and its children). SC_REVIEW_FIRST_LINE is that fixed line; polish.md's step 5 (B2)
 # writes it, and tests/test_session_cost_tail.sh pins this side.
 SC_REVIEW_FIRST_LINE="You are /polish step 5's review subagent."
+SC_INIT_LINE_RE='(^|\n)pre-pr-gate: receipt started \(nonce [0-9]{8}T[0-9]{6}-[0-9]+-[0-9]+\)(\n|$)'
 
 # _sc_tail_agent_row META_JSON — stdin: one subagent's tu_turns lines; stdout: that agent's meta plus its
 # turn count and cache-read cost, as one compact JSON object.
@@ -306,33 +312,51 @@ _sc_tail_pr_results() {
   jq -c 'select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+"))) | {tool_use_id}'
 }
 
-# _sc_tail_windows SESSION_ID TURNS CALLS PR_RESULTS AGENTS — the window walk (see the block comment above)
+# _sc_tail_init_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per result (error or not: an
+# init chained with a failing command still ran) that carries `tools/pre-pr-gate.sh init`'s own output line.
+_sc_tail_init_results() {
+  jq -c --arg re "$SC_INIT_LINE_RE" 'select(.text | test($re)) | {tool_use_id}'
+}
+
+# _sc_tail_windows SESSION_ID TURNS CALLS PR_RESULTS INIT_RESULTS AGENTS — the window walk (see the block comment above)
 # over the four derived streams cmd_tail wrote; one compact JSON object per window on stdout.
 _sc_tail_windows() {
   jq -n -c --arg session "$1" --arg fixed "$SC_REVIEW_FIRST_LINE" \
-    --slurpfile turns "$2" --slurpfile calls "$3" --slurpfile prs "$4" --slurpfile agents "$5" '
+    --slurpfile turns "$2" --slurpfile calls "$3" --slurpfile prs "$4" --slurpfile inits "$5" --slurpfile agents "$6" '
     def closure($ag; $seed):
       ($seed | unique) as $s
       | ($s + [$ag[] | select(.parentAgentId != null and (.parentAgentId | IN($s[]))) | .agentId] | unique) as $n
       | if ($n | length) == ($s | length) then $s else closure($ag; $n) end;
+    def real($b): $b != null and $b != "HEAD";
+    def foreign($t; $w): real($t.gitBranch) and real($w.branch) and $t.gitBranch != $w.branch;
     ($prs | map(.tool_use_id)) as $okids
+    | ($inits | map(.tool_use_id)) as $initids
     | (reduce ($calls[] | select(.name == "Bash" and ((.command // "") | contains("gh pr create"))
                                  and .requestId != null and (.id as $i | ($okids | index($i)) != null))) as $c
         ({}; .[$c.requestId] = true)) as $closers
+    | (reduce ($calls[] | select(.name == "Bash" and .requestId != null
+                                 and (.id as $i | ($initids | index($i)) != null))) as $c
+        ({}; .[$c.requestId] = true)) as $inittrn
     | (reduce range(0; ($turns | length)) as $i (
         {cur: null, wins: [], closed_on: [], prev: null};
         $turns[$i] as $t
         | $t.attributionSkill as $sk
-        | (if .cur != null and .cur.rerun and $t.gitBranch != null and $t.gitBranch != .cur.branch then
+        | (($sk == "polish" and .prev != "polish") or ($inittrn[$t.requestId // ""] // false)) as $sig
+        | (if .cur != null and .cur.rerun and foreign($t; .cur) then
              .wins += [.cur + {end: $t.timestamp, status: "open"}] | .cur = null
            else . end)
-        | (if .cur == null and $sk == "polish" and .prev != "polish" then
-             .cur = {start: $t.timestamp, branch: $t.gitBranch, cost: 0, turns: 0,
-                     rerun: ($t.gitBranch != null and ((.closed_on | index($t.gitBranch)) != null))}
+        | (if .cur != null and $sig and foreign($t; .cur) then
+             .wins += [.cur + {end: $t.timestamp, status: "open"}] | .cur = null
+           else . end)
+        | (if .cur == null and $sig then
+             .cur = {start: $t.timestamp, branch: (if real($t.gitBranch) then $t.gitBranch else null end),
+                     cost: 0, turns: 0, opened_by: (if $sk == "polish" and .prev != "polish" then "skill" else "init" end),
+                     rerun: (real($t.gitBranch) and ((.closed_on | index($t.gitBranch)) != null))}
            else . end)
         | (if .cur != null and $sk != "wrap" and $sk != "keel-score" then
              .cur.cost += $t.cache_read_input_tokens | .cur.turns += 1
-             | (if ($t.requestId != null and ($closers[$t.requestId] // false)) and (.cur.rerun | not) then
+             | (if ($t.requestId != null and ($closers[$t.requestId] // false)) and (.cur.rerun | not)
+                    and (foreign($t; .cur) | not) then
                   .wins += [.cur + {end: $t.timestamp, status: "closed"}]
                   | .closed_on += [.cur.branch] | .cur = null
                 else . end)
@@ -344,7 +368,7 @@ _sc_tail_windows() {
                           and ($win.end == null or .firstTimestamp <= $win.end))] as $in
     | closure($in; [$in[] | select(.firstLine == $fixed) | .agentId]) as $rev
     | ([$in[] | .cost] | add // 0) as $sub_cost
-    | {session: $session, start: $win.start, end: $win.end, status: $win.status,
+    | {session: $session, start: $win.start, end: $win.end, status: $win.status, opened_by: $win.opened_by,
        primary_turns: $win.turns, subagent_turns: ([$in[] | .turns] | add // 0),
        cost: ($win.cost + $sub_cost),
        review_cost: ([$in[] | select(.agentId | IN($rev[])) | .cost] | add // 0),
@@ -384,7 +408,9 @@ cmd_tail() {
     # Everything about the transcript comes through the shared reader (dir #313's rule; dir #670 A1b).
     tu_turns primary "$f" > "$d/turns" || ok=1
     tu_tool_calls primary "$f" > "$d/calls" || ok=1
-    tu_tool_results primary "$f" | _sc_tail_pr_results > "$d/prs" || ok=1
+    tu_tool_results primary "$f" > "$d/results" || ok=1
+    _sc_tail_pr_results < "$d/results" > "$d/prs" || ok=1
+    _sc_tail_init_results < "$d/results" > "$d/inits" || ok=1
     : > "$d/agents"
     while IFS= read -r s; do
       [ -n "$s" ] || continue
@@ -393,9 +419,9 @@ cmd_tail() {
     done < <(tu_subagent_files "$f")
     [ "$ok" -eq 0 ] || break
     if [ "$json" -eq 1 ]; then
-      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/agents" || ok=1
+      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" || ok=1
     else
-      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/agents" | jq -r "$human" || ok=1
+      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" | jq -r "$human" || ok=1
     fi
     [ "$ok" -eq 0 ] || break
   done
