@@ -16,7 +16,8 @@ uninstall="$REPO_ROOT/uninstall.sh"
 
 # mode_of FILE — octal permission bits; inode_of FILE — the inode number (a rename changes it).
 mode_of() { stat_portable_mode "$1"; }
-inode_of() { local i; i="$(ls -i "$1")"; printf '%s' "${i%% *}"; }
+# (`read` drops the leading blanks busybox `ls -i` pads the number with.)
+inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # keeltmp_count DIR... — leftover temp siblings under DIR.
 keeltmp_count() { find "$@" -name '*.keeltmp.*' 2>/dev/null | grep -c . || true; }
 

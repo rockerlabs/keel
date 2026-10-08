@@ -173,7 +173,8 @@ keel_link_replace() {
 # keel_backup PATH — a copy of what PATH shows (read through a link) to a NEW file beside it:
 # `<path>.<UTC %Y%m%dT%H%M%SZ>.bak`, then `<path>.<ts>.2.bak` … `.99.bak` when that is taken. Sets
 # $KEEL_BACKUP to the claimed name. The name is CLAIMED by a noclobber `>` under umask 077, so two runs
-# in one second still get two names, and a backup is 0600 (cp keeps an existing destination's mode).
+# in one second still get two names, and a backup is 0600: the content goes in by `cat >`, which keeps
+# the claimed file's mode everywhere (busybox `cp` onto an existing file gives it the source's mode).
 # noclobber is not exclusive for a link at the name that resolves to an existing non-regular file
 # (`/dev/null`), so a claim also has to leave a regular, non-link file behind, or the next name is
 # tried. Returns 1, with one line and nothing claimed left behind, when no name can be claimed or the
@@ -196,7 +197,7 @@ keel_backup() {
     fi
     KEEL_BACKUP="$base.$n.bak"
   done
-  if ! cp "$1" "$KEEL_BACKUP" 2>/dev/null; then
+  if ! cat "$1" 2>/dev/null > "$KEEL_BACKUP"; then
     rm -f "$KEEL_BACKUP"
     echo "safe-write: could not copy $1 to its backup — nothing was written." >&2
     KEEL_BACKUP=""
