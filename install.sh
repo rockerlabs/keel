@@ -875,30 +875,15 @@ prior_file_cksum() {
 # and there it does exactly the harm this whole check exists to stop: `place` would re-point an
 # adopter's dotfiles link at the checkout, silently, with no backup, under the same "unedited" message
 # — the resulting form being a symlink is not the same thing as no wiring having been destroyed. With
-# the check unconditional, such a dest falls instead to the linked-mode symlink branch further down,
-# which declines it by name and prints a re-point hint — NON-TTY only: that branch sits after both
-# `[ -t 0 ]` branches, so an interactive run gets the generic overwrite prompt instead, which never
-# mentions that the dest is a link. (Reproduced both ways before this was written.)
+# the check unconditional, such a dest falls instead to sync_product's link classification, which runs
+# before every prompt (dir #685, B3): an adopter's link is declined by name, terminal or not.
+# (Before dir #685 that decline was a non-tty branch placed after both `[ -t 0 ]` branches, so an
+# interactive run got the generic overwrite prompt, which never mentioned that the dest is a link.)
 #
-# What that does NOT reach, stated because the sentence above invites the wrong inference: a symlinked
-# dest whose content is byte-IDENTICAL to the source is rejected here too (by the same clause), and
-# then sync_product routes it by MODE, neither route being this predicate's doing:
-#   - linked mode -> the `cmp -s` migration branch, which converges it to a checkout link and so
-#     re-points the very dotfiles wiring this predicate protects in the drifted case;
-#   - copy mode -> in_sync, which prints "up to date" and leaves the link ON DISK untouched — but
-#     calls record_placed, which classifies by CURRENT form and so rewrites the manifest record from
-#     `file <cksum>` to `symlink <readlink target>` (dir #369: the target is now the adopter's OWN
-#     current link target, captured at the moment record_placed runs here — no longer the `-`
-#     placeholder this comment used to describe). uninstall.sh's removal loop still ends up matching
-#     it: the recorded extra IS exactly what the live link currently points to, since both were read
-#     from the same symlink moments apart, so the adopter's link is swept on uninstall with no release
-#     drift needed at all — dir #369 changed HOW uninstall.sh decides ownership (exact match against a
-#     real recorded target, not unconditional trust of any `symlink`-kind record) but not THIS outcome.
-#     "The link is untouched" is true of this run and false of the next uninstall; an earlier draft of
-#     this comment called that outcome "correct", which it is not.
-# Both are pre-existing, unchanged since v0.8.0 (reproduced there: identical outcomes) and outside this
-# batch's findings — so do not read this predicate as closing the symlinked-dest case in general. It
-# closes the path that runs THROUGH it, not every path a symlinked dest can take.
+# What that does NOT reach: a symlinked dest whose content is byte-IDENTICAL to the source is rejected
+# here too (by the same clause). sync_product's link classification handles it before it gets here
+# (dir #685, B3): Keel's own stale link is re-pointed (T3), an adopter's link is left as is and NOT
+# recorded (T3a) — so, unlike before, uninstall never sweeps it as Keel's.
 #
 # Two deliberate non-behaviours:
 #   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink <target>` there (dir
@@ -1354,11 +1339,12 @@ sync_product() {
     # for it (neither the [y] overwrite nor the alias prompt's [u]pdate). Not an error: the run goes on.
     # A command still gets Keel's version alongside it in copy mode (the per-mode alias creation is
     # unchanged); linked mode makes no alias for a link, but keeps one that already exists fresh.
-    if [ -n "$alias_dest" ]; then
-      echo "  ~    $name is your own command — it is a symlink to a different target ($(readlink "$dest")); left untouched, whatever the flags. To let Keel place it, remove the link and re-run."
-      if [ "$LINK" != 1 ] || [ "$alias_exists" = 1 ]; then sync_product "$src" "$alias_dest"; fi
+    if [ -n "$alias_dest" ] && [ "$LINK" != 1 ]; then
+      echo "  ~    $name is your own command — a symlink to a different target ($(readlink "$dest")); left untouched, whatever the flags. To let Keel place it, remove the link and re-run. Keel's version goes alongside it:"
+      sync_product "$src" "$alias_dest"
     else
       echo "  !    $name is a symlink to a different target ($(readlink "$dest")) — your own wiring; left untouched, whatever the flags. To let Keel place it, remove the link and re-run."
+      if [ -n "$alias_dest" ] && [ "$alias_exists" = 1 ]; then sync_product "$src" "$alias_dest"; fi
     fi
   elif keel_own_untouched "$src" "$dest"; then
     place "$src" "$dest"

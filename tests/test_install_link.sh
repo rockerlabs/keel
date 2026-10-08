@@ -88,7 +88,14 @@ rm "$HOME/.claude/commands/wrap.md"
 run "$doctor" --install "$HOME/.claude"
 check_status "a missing (declinable) command stays advisory → exit 0" 0 "$STATUS"
 check_contains "doctor names the missing command" "$OUT" "wrap.md"
-ln -sfn /nonexistent-keel-target "$HOME/.claude/commands/go.md"
+# A dangling link Keel made: the checkout it pointed into moved. The manifest records the very target the
+# link holds (inside the checkout it names), which is what lets the re-run below re-point it (dir #685, T3)
+# — an arbitrary dangling link nobody recorded is an adopter's wiring and is declined (T4).
+gone="$REPO_ROOT/commands/moved-away-go.md"
+ln -sfn "$gone" "$HOME/.claude/commands/go.md"
+awk -F'\t' -v OFS='\t' -v t="$gone" '$1 == "artifact=symlink" && $2 == "commands/go.md" { $3 = t } { print }' \
+  "$HOME/.claude/.keel/install-manifest.claude" > "$SANDBOX/go-manifest.new" \
+  && cat "$SANDBOX/go-manifest.new" > "$HOME/.claude/.keel/install-manifest.claude"
 run "$doctor" --install "$HOME/.claude"
 check_status "a dangling symlink is a HARD failure → exit 1" 1 "$STATUS"
 check_contains "doctor names the dangling link" "$OUT" "dangling symlink"
