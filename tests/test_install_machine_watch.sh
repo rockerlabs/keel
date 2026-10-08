@@ -147,7 +147,8 @@ run bash -n "$SANDBOX/apostrophe-mw-command.sh"
 check_status "the generated command parses (bash -n)" 0 "$STATUS"
 
 # --- the installer never writes a deny rule (prevention is a documented recipe only, MW9) --------------
-if grep -v '^[[:space:]]*#' "$installer" | grep -q 'permissions'; then
+installer_code="$(grep -v '^[[:space:]]*#' "$installer" || true)"
+if match "$installer_code" -q 'permissions'; then
   fail "the installer never writes permissions.deny" "tools/install-machine-watch.sh mentions permissions outside a comment"
 else
   pass "the installer never writes permissions.deny"

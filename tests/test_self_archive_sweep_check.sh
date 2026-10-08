@@ -110,4 +110,47 @@ f="$(mk_backlog "$backlog_legacy")"
 run "$sc" --threshold 1 "$f"
 check_contains "legacy numbered heading counted closed too" "$OUT" "closed tickets:    1"
 
+# --- dir #734: a swept stub (heading + blank + one "Full body → archive" line) is the archive's
+# index entry, not backlog weight — it must not count toward the closed-line share, nor as an
+# undated closure (it is already swept, so datability can no longer block anything). A closed
+# ticket that carries the archive line PLUS later-appended content is not a pure stub and still
+# counts. MUTATION-PROOF: dir #20 (pure stub, undated) is excluded; dir #21 (stub + appended
+# body) is counted; dir #22 (plain closed, unswept) is counted. ------------------------------------
+backlog_stubs="### dir #20 — a swept closed ticket, undated — R2 — ✅ DONE (see PR)
+
+Full body → archive (\`CLAUDE-archive.md\`), swept 2026-10-08 (dir #734).
+
+### dir #21 — swept once, then appended to — R2 — ✅ DONE (2026-08-01, done)
+
+Full body → archive (\`CLAUDE-archive.md\`), swept 2026-09-03 (dir #353).
+
+Log: a later line appended after the sweep.
+
+### dir #22 — an unswept closed ticket — R2 — ✅ DONE (2026-08-01, done)
+
+body
+
+### dir #23 — open — R2 — → 0.9.0
+
+still open
+"
+f="$(mk_backlog "$backlog_stubs")"
+run "$sc" --threshold 1 "$f"
+check_contains "MUTATION-PROOF (dir #734): pure stubs are not counted as closed (only #21 and #22 are)" "$OUT" "closed tickets:    2"
+check_contains "the stub is reported on its own line" "$OUT" "swept stubs:       1 (4 lines, not counted)"
+check_contains "an undated pure stub is not an undated closure" "$OUT" "undated closures:  0"
+
+backlog_only_stubs="### dir #24 — swept — R2 — ✅ DONE (2026-08-01, done)
+
+Full body → archive (\`CLAUDE-archive.md\`), swept 2026-10-08 (dir #734).
+
+### dir #25 — open — R2 — → 0.9.0
+
+still open
+"
+f="$(mk_backlog "$backlog_only_stubs")"
+run "$sc" --threshold 40 "$f"
+check_contains "a file of stubs plus an open ticket reports 0% closed" "$OUT" "closed tickets:    0 (0 lines, 0%)"
+check_absent "no WARN when only stubs remain" "$OUT" "WARN"
+
 summary

@@ -25,7 +25,8 @@
 # same never-overwrite rule). A hook is Keel's only when its line 2 is exactly the shipped hook's
 # marker line. A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
-# is written into, by design). Bypass a single commit/push deliberately with `git ... --no-verify`.
+# is written into, by design). Bypass a single commit/push deliberately with `git ... --no-verify`;
+# a commit made that way is still scanned by pre-push, which scans every commit it sends.
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
@@ -59,6 +60,8 @@ isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources 
 isg_displaced_key="keel.displacedHooksPath"
 # Keel's machine-wide hooks dir, relative to $HOME — what --global writes and --where recognises.
 isg_keel_hooks_rel=".config/git/keel-hooks"
+# dir #717: how many conditional [includeIf] levels the walk follows before it calls itself incomplete.
+isg_include_depth_max=10
 
 # --force and --uninstall may sit anywhere on the line; strip them, keep the single subcommand/positional
 # (busybox/bash-3.2 safe — no arrays). At most one non-flag arg is expected (--global, --help, or a repo path).
@@ -382,6 +385,9 @@ _isg_same_dir() {
 #               when it is a symlink — "keel" means the exact marker line, the same test an install uses
 # `--where --global` prints the machine-wide view (value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
 #   fallback=1  the machine-wide read took its narrow `git config --global` branch (no usable scratch dir)
+#   conditional=<n>|unknown  n ≥ 1 conditional [includeIf] includes set a core.hooksPath that is empty,
+#               valueless or not the same dir as value= (it may win in the trees they match); unknown = the
+#               walk could not read them all (dir #717); omitted when n = 0
 # When own and effective differ, a copy written to own is inert: git never reads it.
 
 # One read of core.hooksPath as git sees it from directory $1: sets m_scope m_origin m_value (all empty
@@ -405,19 +411,188 @@ _isg_cfg_read() {
 # existing ~/.gitconfig, an [include] and SYSTEM scope all count. If the scratch dir turns out to sit
 # inside a repo (an odd TMPDIR) it falls back to the narrower `git config --global` read rather than
 # risk reading that repo's local scope — and sets m_fallback=1, which `--where --global` prints, so no
-# consumer reads the narrow answer as the full one.
+# consumer reads the narrow answer as the full one. With `walk` as $1 it also runs the conditional-include
+# walk (_isg_conditional_reads) from the same scratch dir, or — with no usable one — sets c_cause.
 _isg_machine_read() {
   local probe
   m_fallback=0
   probe="$(mktemp -d 2>/dev/null)" || probe=""
   if [ -n "$probe" ] && ! git -C "$probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     _isg_cfg_read "$probe"
+    [ "${1:-}" != walk ] || _isg_conditional_reads "$probe"
   else
     m_fallback=1
     m_scope="" m_origin="" m_value="$(git config --global core.hooksPath 2>/dev/null || true)"
     [ -z "$m_value" ] || m_scope="global"
+    if [ "${1:-}" = walk ]; then
+      c_list=""
+      if [ -n "$probe" ]; then
+        c_cause="the scratch dir mktemp gives sits inside a repository (on Linux, set TMPDIR outside any repo; macOS mktemp ignores TMPDIR)"
+      else
+        c_cause="mktemp -d gave no scratch dir"
+      fi
+    fi
   fi
-  [ -z "$probe" ] || rmdir "$probe" 2>/dev/null || true
+  [ -z "$probe" ] || { rm -f "$probe/.isg-list" "$probe/.isg-value"; rmdir "$probe" 2>/dev/null; } || true
+}
+
+# --- dir #717 (S5-1): the conditional [includeIf] includes ---------------------------------------------------
+# A core.hooksPath that an [includeIf "gitdir:…"] (or onbranch:, hasconfig:…) include sets applies only in the
+# trees its condition matches, so the scratch-dir read above never sees it — and `--global` used to append its
+# own [core] hooksPath after it and silently take those trees over. The walk lists every conditional include
+# git would consider and reads what each target sets, without evaluating any condition:
+#   - listed from the scratch dir, so global, the XDG file, SYSTEM and unconditionally [include]d files all
+#     count; only `file:` origins — a command-scope include (`git -c`, GIT_CONFIG_COUNT; tests/lib.sh arms one
+#     for every test) applies to one command, not to the machine;
+#   - a relative target resolves beside the file that names it (git's rule), a leading ~/ to $HOME; a
+#     missing target is skipped, as git skips it, and so is a valueless `path` key; a `~user/` or
+#     `%(prefix)/` target, which this walk does not resolve, an unreadable one and one under a dir that
+#     cannot be searched make it incomplete;
+#   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
+#     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is skipped — a conditional
+#     self-include is complete — and depth stops at $isg_include_depth_max;
+#   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
+#     hook off in its trees, and a valueless `hooksPath` makes git fail there.
+# Every `-z` read goes to a FILE in the scratch dir and is read back with `read -d ''`: bash 3.2 drops NUL
+# bytes from a $(…) without a warning, and `< <(git …)` alone would lose the exit code the incomplete check
+# needs. Output: c_list — one line per target that sets a hooksPath,
+#   <kind> TAB <condition> TAB <file holding the include> TAB <target> TAB <value>   (kind v = valued, n = no value;
+#   the value last, so an empty one is never collapsed by `read`'s IFS)
+# and c_cause — non-empty when the walk could not see everything (the install then fails closed).
+c_list="" c_cause="" c_next="" c_probe=""
+
+# _isg_tab_nl_free S — 0 when S holds neither a TAB nor a newline (the c_list and queue field separators).
+_isg_tab_nl_free() { case "$1" in *$'\t'*|*$'\n'*) return 1 ;; esac; return 0; }
+
+# Queue onto c_next (one `<condition> TAB <origin> TAB <target>` line each) the includeIf entries git lists for
+# the whole machine config ($2 empty) or for one target file ($2), each condition prefixed `$1 and `. Returns 1
+# with c_cause set when the listing cannot be trusted.
+_isg_cond_list() {
+  local outer="$1" f="${2:-}" out="$c_probe/.isg-list" rc=0 origin kv key cond raw base x
+  git -C "$c_probe" config ${f:+--file} ${f:+"$f"} ${f:+--includes} --show-origin -z \
+    --get-regexp '^includeif\..+\.path$' > "$out" 2>/dev/null || rc=$?
+  case "$rc" in
+    0) ;;
+    1) return 0 ;;   # no includeIf at all
+    *) c_cause="git config failed on ${f:-the machine-wide config}"; return 1 ;;
+  esac
+  # A record is `origin NUL key LF value NUL`, or `origin NUL key NUL` for a valueless `path` key.
+  while IFS= read -r -d '' origin && IFS= read -r -d '' kv; do
+    case "$origin" in file:*) origin="${origin#file:}" ;; *) continue ;; esac
+    case "$kv" in *$'\n'*) ;; *) continue ;; esac   # valueless `path`: git skips it
+    key="${kv%%$'\n'*}"; raw="${kv#*$'\n'}"
+    cond="${key#includeif.}"; cond="${cond%.path}"
+    for x in "$origin" "$cond" "$raw"; do
+      _isg_tab_nl_free "$x" || { c_cause="a path holding a TAB or newline: $x"; return 1; }
+    done
+    [ -n "$raw" ] || continue
+    # shellcheck disable=SC2088  # matching a literal ~ on purpose
+    case "$raw" in
+      "~/"*) raw="$(_isg_norm_path "$raw")" ;;
+      "~"[!/]*|"%(prefix)/"*) c_cause="an include path this walk cannot resolve: $raw"; return 1 ;;
+      /*) ;;
+      *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
+         raw="$base/$raw" ;;
+    esac
+    # git resolved a relative origin from the scratch dir it ran in, so a relative path is relative to it
+    case "$raw" in /*) ;; *) raw="$c_probe/$raw" ;; esac
+    [ -z "$outer" ] || cond="$outer and $cond"
+    c_next="$c_next$cond"$'\t'"$origin"$'\t'"$raw"$'\n'
+  done < "$out"
+  return 0
+}
+
+# Is file $1 one of the newline-separated files in $2? Compared with `-ef`, so `./work.cfg`, a symlink to a file
+# and the file itself are one (both exist: the caller tested $1).
+_isg_seen() {
+  local v
+  while IFS= read -r v; do
+    [ -n "$v" ] && [ "$v" -ef "$1" ] && return 0
+  done <<< "$2"
+  return 1
+}
+
+# 0 when absent path $1 is absent for certain: its deepest existing ancestor dir could be searched. A dir
+# without search permission hides what is under it, and git fails reading an include there.
+_isg_absent_for_sure() {
+  local p="${1%/*}"
+  while [ -n "$p" ] && [ ! -e "$p" ]; do p="${p%/*}"; done
+  [ -z "$p" ] || [ -x "$p" ]
+}
+
+# The walk itself, from scratch dir $1 (fresh, not inside a repo). Sets c_list and c_cause (see above).
+_isg_conditional_reads() {
+  local depth=1 cur cond origin tgt rc kv kind val vout visited=""
+  c_probe="$1" c_list="" c_cause="" c_next=""
+  vout="$c_probe/.isg-value"
+  _isg_cond_list "" || return 0
+  while [ -n "$c_next" ]; do
+    if [ "$depth" -gt "$isg_include_depth_max" ]; then c_cause="include depth over $isg_include_depth_max"; return 0; fi
+    cur="$c_next" c_next=""
+    while IFS=$'\t' read -r cond origin tgt; do
+      [ -n "$tgt" ] || continue
+      if [ ! -e "$tgt" ]; then
+        # a missing include: git skips it — unless a dir on its path could not be searched, so "missing" is a guess
+        _isg_absent_for_sure "$tgt" || { c_cause="git config failed on $tgt (a directory on its path cannot be searched)"; return 0; }
+        continue
+      fi
+      # git reports an unreadable include as a warning and exit 1 — the same exit as "not set" — so test it here
+      [ -r "$tgt" ] || { c_cause="git config failed on $tgt (unreadable)"; return 0; }
+      _isg_seen "$tgt" "$visited" && continue
+      visited="$visited$tgt"$'\n'
+      rc=0
+      git -C "$c_probe" config --file "$tgt" --includes -z --get-regexp '^core\.hookspath$' > "$vout" 2>/dev/null || rc=$?
+      case "$rc" in
+        0) # the last record is the value git ends up with; `key LF value NUL`, or `key NUL` when valueless
+           kind="" val=""
+           while IFS= read -r -d '' kv; do
+             case "$kv" in *$'\n'*) kind=v val="${kv#*$'\n'}" ;; *) kind=n val="" ;; esac
+           done < "$vout"
+           _isg_tab_nl_free "$val" || { c_cause="a path holding a TAB or newline: $val"; return 0; }
+           [ -z "$kind" ] || c_list="$c_list$kind"$'\t'"$cond"$'\t'"$origin"$'\t'"$tgt"$'\t'"$val"$'\n' ;;
+        1) ;;   # sets no hooksPath
+        *) c_cause="git config failed on $tgt"; return 0 ;;
+      esac
+      _isg_cond_list "$cond" "$tgt" || return 0
+    done <<< "$cur"
+    depth=$((depth + 1))
+  done
+}
+
+# The c_list entries that may override hooksPath dir $1 in their trees — a value that is empty, valueless or
+# not the same dir (an empty value is never the same dir, though `_isg_same_dir "" ""` would say so). Sets
+# c_conf (c_list's line format) and c_n.
+_isg_conditional_conflicts() {
+  local ref="$1" kind cond origin tgt val
+  c_conf="" c_n=0
+  while IFS=$'\t' read -r kind cond origin tgt val; do
+    [ -n "$kind" ] || continue
+    if [ "$kind" = v ] && [ -n "$val" ] && _isg_same_dir "$val" "$ref"; then continue; fi
+    c_conf="$c_conf$kind"$'\t'"$cond"$'\t'"$origin"$'\t'"$tgt"$'\t'"$val"$'\n'
+    c_n=$((c_n + 1))
+  done <<< "$c_list"
+}
+
+# How a conflict's setting reads in a message: kind $1, value $2.
+_isg_cond_setting() {
+  if [ "$1" = n ]; then
+    echo "core.hooksPath (no value — git fails in those trees)"
+  elif [ -z "$2" ]; then
+    echo "core.hooksPath = '' (every hook off)"
+  else
+    echo "core.hooksPath = '$2'"
+  fi
+}
+
+# One NOTE per c_conf entry, plus one for an incomplete walk — what a run that wires anyway must still say.
+_isg_conditional_notes() {
+  local kind cond origin tgt val
+  while IFS=$'\t' read -r kind cond origin tgt val; do
+    [ -n "$kind" ] || continue
+    echo "secret-guard: NOTE — in trees matching $cond, $tgt sets $(_isg_cond_setting "$kind" "$val"); whether it or"
+    echo "  Keel's wins there depends on its position in $origin: check with git -C <a repo there> config --show-origin core.hooksPath"
+  done <<< "$c_conf"
+  [ -z "$c_cause" ] || echo "secret-guard: NOTE — conditional [includeIf] includes could not all be read ($c_cause)"
 }
 
 # Where a `<repo>` install writes — the single definition both the install and `--where` use. A LOCAL
@@ -516,11 +691,13 @@ _isg_where_repo() {
 _isg_where_machine() {
   local d
   [ -n "${HOME:-}" ] || { echo "scope=none"; return 0; }
-  _isg_machine_read
+  _isg_machine_read walk
   echo "scope=${m_scope:-none}"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   [ "$m_fallback" != 1 ] || echo "fallback=1"
+  _isg_conditional_conflicts "$m_value"
+  if [ -n "$c_cause" ]; then echo "conditional=unknown"; elif [ "$c_n" -gt 0 ]; then echo "conditional=$c_n"; fi
   d="$(_isg_norm_path "$m_value")"
   case "$d" in /*) echo "dir=$d"; _isg_where_states "$d" ;; esac
 }
@@ -552,7 +729,9 @@ case "${1:-}" in
     # governs every commit while `--global` reports "unset" (so this used to overwrite it, or say
     # "nothing to unwire"). m_scope/m_origin name where $existing came from.
     existing_global="$(git config --global core.hooksPath 2>/dev/null || true)"
-    _isg_machine_read
+    # The install also walks the conditional [includeIf] includes (dir #717); --uninstall never reads or
+    # writes one — its --unset gives a conditional setting its trees back on its own.
+    if [ "$uninstall" = 1 ]; then _isg_machine_read; else _isg_machine_read walk; fi
     existing="$m_value"
     recorded="$(git config --global "$isg_displaced_key" 2>/dev/null || true)"
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
@@ -652,6 +831,32 @@ case "${1:-}" in
         exit 3
       fi
     fi
+    # dir #717 (S5-1): a conditional [includeIf] include that sets its own core.hooksPath. Writing Keel's
+    # [core] hooksPath next to it decides, by position in the file, which of the two governs the trees it
+    # matches — so refuse unless --force, the same never-clobber rule as the refusal above, which runs first.
+    # An incomplete walk counts as a conflict (fail closed). Only when this run writes core.hooksPath: with
+    # Keel already wired the NOTEs below are still printed, and nothing is refused. --force records nothing
+    # in $isg_displaced_key — the conditional line is left as it is, not displaced.
+    _isg_conditional_conflicts "$dir"
+    if [ "$is_ours" != 1 ] && [ "$force" != 1 ] && { [ "$c_n" -gt 0 ] || [ -n "$c_cause" ]; }; then
+      if [ "$c_n" -gt 0 ]; then
+        echo "secret-guard: a conditional [includeIf] include sets its own core.hooksPath — in the trees it matches," >&2
+        echo "  Keel's machine-wide one would either take it over or be overridden by it:" >&2
+        while IFS=$'\t' read -r c_kind c_cond c_origin c_tgt c_val; do
+          [ -n "$c_kind" ] || continue
+          echo "    in trees matching $c_cond: $c_tgt (included from $c_origin) sets $(_isg_cond_setting "$c_kind" "$c_val")" >&2
+        done <<< "$c_conf"
+        echo "  Point that setting at Keel's dir ($dir) or remove it; or give a repo its own hooks dir" >&2
+        echo "  (git -C <repo> config --local core.hooksPath <repo>/.git/hooks)." >&2
+      fi
+      if [ -n "$c_cause" ]; then
+        echo "secret-guard: could not read every conditional [includeIf] include ($c_cause) — a hooksPath there may override this one. Nothing was changed." >&2
+      else
+        echo "  Nothing was changed." >&2
+      fi
+      echo "  Re-run with --force to wire anyway." >&2
+      exit 3
+    fi
     install_into "$dir"
     # The record goes in BEFORE core.hooksPath is repointed: if the repoint then fails, the record still
     # equals the live value, which a re-run accepts. A stale record (nothing displaced, Keel not wired
@@ -681,6 +886,7 @@ case "${1:-}" in
       echo "  recorded in git config --global $isg_displaced_key — install-secret-guard.sh --global --uninstall restores it"
     fi
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"
+    _isg_conditional_notes
     echo "Note: a repo with its own core.hooksPath overrides this — vendor into it directly."
     echo "Optional: block YOUR personal data (name/drives/emails) too — copy"
     echo "  $src/secret-scan-personal.example → ~/.claude/secret-scan-personal and fill it in."

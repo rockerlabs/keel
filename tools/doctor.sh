@@ -565,15 +565,18 @@ guard_drift_files() {
 # section further down:
 #   g_scope g_value g_origin  where core.hooksPath is set and its raw value   g_dir  its absolute dir
 #   g_keeldir g_pc g_pp       is it Keel's dir, and each hook's state there   g_fallback  1 = narrow read
+#   g_conditional             <n> conditional [includeIf] hooksPath settings that may win in their trees, or
+#                             `unknown` (the producer could not read them all) — dir #717
 # NO ANSWER is its own state: no `scope=` line (the installer is missing, crashed, or printed nothing), or a
 # `dir=` with no `pre-commit=` after it (the resolver runs `set -euo pipefail` and died between the two —
 # reading that half-answer would print a false OK by another route). Every g_* is cleared then.
-g_reset() { g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback=""; }
+g_reset() { g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback="" g_conditional=""; }
 g_reset
 while IFS='=' read -r g_k g_v; do   # one key per line, once each (the producer's grammar)
   case "$g_k" in
     scope) g_scope="$g_v" ;; value) g_value="$g_v" ;; origin) g_origin="$g_v" ;;
     dir) g_dir="$g_v" ;; keel-dir) g_keeldir="$g_v" ;; fallback) g_fallback="$g_v" ;;
+    conditional) g_conditional="$g_v" ;;
     pre-commit) g_pc="$g_v" ;; pre-push) g_pp="$g_v" ;;
   esac
 done < <("$tools_dir/install-secret-guard.sh" --where --global 2>/dev/null || true)
@@ -583,6 +586,14 @@ if [ -n "$g_scope" ] && { [ -z "$g_dir" ] || [ -n "$g_pc" ]; }; then g_answered=
 if [ "$g_fallback" = 1 ]; then
   say "  (effective core.hooksPath probe unavailable this run — falling back to the narrower --global-only read; a hooksPath set only behind an existing ~/.gitconfig would go undetected)"
 fi
+# dir #717: a conditional [includeIf] include can set its own core.hooksPath for the trees it matches. Which
+# setting wins in such a tree depends on where each sits in the config file, so this says "may" and points at
+# the per-repo audit, which reads each tree's effective dir. Once per run, in every mode.
+case "$g_conditional" in
+  unknown) say "  (conditional [includeIf] includes could not all be read — tools/doctor.sh <repo> judges each repo)" ;;
+  ''|*[!0-9]*) ;;
+  *) say "  ($g_conditional conditional [includeIf] core.hooksPath setting(s) may apply instead of the machine-wide one in the trees they match — tools/doctor.sh <repo> judges each such repo)" ;;
+esac
 
 # guard_eff_note — the $guard_home_note-style provenance clause, but honest about WHICH file produced the
 # value: $guard_cfg_src (and $guard_home_note, built from it) name the ONE file `git config --global`

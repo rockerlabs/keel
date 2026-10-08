@@ -31,6 +31,10 @@
 # tools/self/doctor.sh's check 5 does (dir #135) — this repo's own convention: BACKLOG.md lives
 # only at the main checkout root, never in a linked worktree.
 #
+# Swept stubs (dir #734) — a closed ticket reduced to its heading plus one "Full body → archive"
+# line — are reported on their own line and excluded from the closed count, the share and the
+# undated count: they are already swept.
+#
 # Env override: KEEL_ARCHIVE_SWEEP_THRESHOLD — closed-line-share percentage (default 40) at or
 # above which this script WARNs. Always exits 0 (advisory only, per dir #359's own "warns" — not
 # "fails" — shape); a missing/unreadable BACKLOG.md is a silent skip, not an error, the same as
@@ -92,9 +96,30 @@ total_lines="$(awk 'END{print NR}' "$backlog_file")"
 closed_count=0
 closed_lines=0
 undated_closed=0
+stub_count=0
+stub_lines=0
+
+# dir #734: a swept ticket's stub is its heading block, a blank line, and the one "Full body →
+# archive" line the sweep leaves behind. It is the archive's index entry, not backlog weight: a
+# full sweep of every eligible ticket still leaves one stub per closed ticket (dir #671's ended at
+# 54% with ~400 of them), so counting stubs as closed lines kept the check WARNing after the work
+# it asks for was finished. A block carrying that line PLUS anything else (content appended after
+# the sweep) is not a pure stub and still counts.
+is_swept_stub() {
+  awk -v s="$1" -v e="$2" '
+    NR < s || NR > e { next }
+    !past_heading { if ($0 == "") past_heading = 1; next }
+    $0 != "" { n++; if ($0 !~ /^Full body → archive/) other = 1 }
+    END { exit !(n == 1 && !other) }' "$backlog_file"
+}
 
 while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] || continue
+  if is_swept_stub "$start" "$end"; then
+    stub_count=$((stub_count + 1))
+    stub_lines=$((stub_lines + end - start + 1))
+    continue
+  fi
   closed_count=$((closed_count + 1))
   closed_lines=$((closed_lines + end - start + 1))
   # dir #420 (fixed here via the dir #426 shared helper): this grep used to share
@@ -121,6 +146,7 @@ pct=0
 echo "archive-sweep-check: $backlog_file"
 echo "  total lines:       $total_lines"
 echo "  closed tickets:    $closed_count ($closed_lines lines, ${pct}%)"
+echo "  swept stubs:       $stub_count ($stub_lines lines, not counted)"
 echo "  undated closures:  $undated_closed (trap 1's datability half — would block an actual sweep on those; verify by hand)"
 echo "  threshold:         ${threshold}%"
 

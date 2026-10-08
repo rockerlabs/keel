@@ -6,10 +6,11 @@
 
 pa="$REPO_ROOT/tools/public-audit.sh"
 
-# Pin the personal-literals file to a nonexistent sandbox path by default, so a real
+# Pin the personal-literals file to /dev/null by default (dir #719 B14: a set-but-missing path is now a
+# GAP, so the old nonexistent sandbox path would turn every exit-0 check red), so a real
 # ~/.claude/secret-scan-personal on the dev machine can never leak into these tests.
 # Personal-literal tests below override this per-invocation with env.
-export SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-absent"
+export SECRET_SCAN_PERSONAL_FILE=/dev/null
 
 # a repo with one commit authored+committed by $1
 repo_by() {
@@ -576,7 +577,7 @@ else
   pass "personal-literal regex tolerated by this grep (busybox) → nothing to flag"
 fi
 
-# no personal file at all (the sandbox default) → no personal-literal hunting, no note
+# no personal file at all (the sandbox default, /dev/null) → no personal-literal hunting, no note
 d="$(repo_by dev@example.com)"
 run bash "$pa" --no-history "$d"
 check_absent "no personal file → no personal-literal note" "$OUT" "secret-scan-personal literals"
@@ -623,5 +624,115 @@ run env GIT_DIR="$a647/.git" bash "$pa" --token 'ZETA-647' "$l647"
 check_status "dir #647 A4: a history-only leak under GIT_DIR=<clean decoy> -> GAP exit 1 (not a false clean)" 1 "$STATUS"
 check_contains "dir #647 A4: names the token found in history" "$OUT" "ZETA-647"
 check_eq "dir #647 A4: the decoy's refs (incl. refs/keel-pr-audit/head-99) are byte-identical" "$a647_refs_before" "$(git -C "$a647" for-each-ref)"
+
+# --- dir #719: personal literals in the working-tree binary pass (B12), invalid-byte names (B13), a
+# set-but-unusable SECRET_SCAN_PERSONAL_FILE (B14) ---------------------------------------------------
+p719="$SANDBOX/pa-personal-719.rx"
+printf 'SeekritPersonName\n' > "$p719"
+
+# A18 (S7-4, --no-history): a committed UTF-16LE binary holding the literal → GAP naming the file.
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/fix.bin"
+commit_in "$d" "add fix.bin"
+run env SECRET_SCAN_PERSONAL_FILE="$p719" bash "$pa" --no-history "$d"
+check_status "dir #719 A18: personal literal in a committed binary, --no-history → GAP exit 1" 1 "$STATUS"
+check_contains "dir #719 A18: names the file in the working tree" "$OUT" \
+  "personal literal (secret-scan-personal) in a binary file in the working tree — fix.bin"
+
+# A19 (default mode): an untracked binary, and (separate repo) a staged-only one → the same GAP.
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/new.bin"      # never git add-ed
+run env SECRET_SCAN_PERSONAL_FILE="$p719" bash "$pa" "$d"
+check_status "dir #719 A19: personal literal in an untracked binary, default mode → GAP exit 1" 1 "$STATUS"
+check_contains "dir #719 A19: names the untracked binary" "$OUT" \
+  "personal literal (secret-scan-personal) in a binary file in the working tree — new.bin"
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/staged.bin"
+git -C "$d" add staged.bin                                    # staged, never committed
+run env SECRET_SCAN_PERSONAL_FILE="$p719" bash "$pa" "$d"
+check_status "dir #719 A19: personal literal in a staged-only binary, default mode → GAP exit 1" 1 "$STATUS"
+check_contains "dir #719 A19: names the staged binary" "$OUT" \
+  "personal literal (secret-scan-personal) in a binary file in the working tree — staged.bin"
+
+# A20: two binaries holding the literal → exactly ONE working-tree personal-literal GAP per pass.
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/one.bin"
+{ utf16le "also SeekritPersonName"; } > "$d/two.bin"
+commit_in "$d" "add two binaries"
+run env SECRET_SCAN_PERSONAL_FILE="$p719" bash "$pa" --no-history "$d"
+check_eq "dir #719 A20: exactly one working-tree personal-literal GAP for two binaries" "1" \
+  "$(grep -c 'personal literal (secret-scan-personal) in a binary file in the working tree' <<< "$OUT")"
+
+# A21 (no false GAP): (a) a clean binary beside a personal file; (b) /dev/null + no tokens + a binary
+# holding the literal → the working-tree personal GAP must not appear.
+d="$(repo_by dev@example.com)"
+{ utf16le "nothing personal here"; } > "$d/clean.bin"
+commit_in "$d" "add clean.bin"
+run env SECRET_SCAN_PERSONAL_FILE="$p719" bash "$pa" --no-history "$d"
+check_status "dir #719 A21a: personal file + clean binary → exit 0" 0 "$STATUS"
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/fix.bin"
+commit_in "$d" "add fix.bin"
+run env SECRET_SCAN_PERSONAL_FILE=/dev/null bash "$pa" --no-history "$d"
+check_absent "dir #719 A21b: /dev/null + no tokens → no working-tree binary GAP" "$OUT" \
+  "in a binary file in the working tree"
+
+# A22 / A26 (B13, Linux): a committed name ending in an invalid UTF-8 byte (0xE9) must not hide the NEXT
+# record from the NUL read (A22a), the default-mode `_wp` read (A22b) or scan_binary_blobs' line read
+# (A26) under bash >= 5 + UTF-8. The filesystem may refuse such a name (APFS) → one pass line.
+bad_locale="$(pick_utf8_locale)" || bad_locale="C.UTF-8"
+d="$(repo_by dev@example.com)"
+badname="$d/$(printf 'a-caf\351')"
+if { printf 'x\000clean\000' > "$badname"; } 2>/dev/null && [ -e "$badname" ]; then
+  { utf16le "SeekritTok"; } > "$d/b.bin"
+  commit_in "$d" "invalid-byte name + b.bin"
+  run env LC_ALL="$bad_locale" bash "$pa" --no-history --token SeekritTok "$d"
+  check_status "dir #719 A22a: name ending in an invalid byte does not hide the next binary (--no-history)" 1 "$STATUS"
+  check_contains "dir #719 A22a: names b.bin" "$OUT" "private token /SeekritTok/ in a binary file in the working tree — b.bin"
+  run env LC_ALL="$bad_locale" bash "$pa" --token SeekritTok "$d"
+  check_contains "dir #719 A26: scan_binary_blobs keeps b.bin after the invalid-byte name" "$OUT" \
+    "private token /SeekritTok/ in a binary blob in git history — b.bin"
+  printf '\000' >> "$badname"; printf '\000' >> "$d/b.bin"      # modified after commit, both stay binary
+  run env LC_ALL="$bad_locale" bash "$pa" --token SeekritTok "$d"
+  check_contains "dir #719 A22b: default-mode _wp read keeps b.bin after the invalid-byte name" "$OUT" \
+    "private token /SeekritTok/ in a binary file in the working tree — b.bin"
+else
+  pass "dir #719 A22/A26 skipped (this filesystem refuses a name ending in an invalid byte)"
+fi
+
+# A23: decode_binary is untouched (the dir #681 twin) — byte-identical to origin/main's.
+extract_decode() { awk '/^decode_binary\(\) \{/{p=1} p{print} p&&/^\}$/{exit}'; }
+if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  base_dec="$(git -C "$REPO_ROOT" show origin/main:tools/public-audit.sh | extract_decode)"
+  here_dec="$(extract_decode < "$pa")"
+  check_eq "dir #719 A23: decode_binary is byte-identical to origin/main's (the dir #681 twin)" \
+    "$base_dec" "$here_dec"
+else
+  pass "dir #719 A23 skipped (no origin/main to compare against)"
+fi
+
+# A27 (B14): SECRET_SCAN_PERSONAL_FILE set to a missing path / a directory / a symlink to a directory →
+# one GAP naming the variable; a dangling symlink → only the existing could-not-be-parsed GAP; /dev/null
+# and empty → no such line.
+d="$(repo_by dev@example.com)"
+mkdir "$SANDBOX/pa-personal-dir719"
+ln -s "$SANDBOX/pa-personal-dir719" "$SANDBOX/pa-personal-dirlink719"
+ln -s "$SANDBOX/pa-personal-nowhere719" "$SANDBOX/pa-personal-dangling719"
+for p in "$SANDBOX/pa-personal-missing719" "$SANDBOX/pa-personal-dir719" "$SANDBOX/pa-personal-dirlink719"; do
+  run env SECRET_SCAN_PERSONAL_FILE="$p" bash "$pa" --no-history "$d"
+  check_status "dir #719 A27: set-but-unusable personal file ($(basename "$p")) → GAP exit 1" 1 "$STATUS"
+  check_contains "dir #719 A27: names the variable ($(basename "$p"))" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
+  check_contains "dir #719 A27: says coverage is ZERO ($(basename "$p"))" "$OUT" "personal-literal coverage is ZERO"
+done
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-dangling719" bash "$pa" --no-history "$d"
+check_status "dir #719 A27: a dangling symlink → GAP exit 1" 1 "$STATUS"
+check_contains "dir #719 A27: the dangling symlink gets the existing could-not-be-parsed GAP" "$OUT" "could not be read or parsed"
+check_absent "dir #719 A27: ...and not the B14 GAP too" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
+run env SECRET_SCAN_PERSONAL_FILE=/dev/null bash "$pa" --no-history "$d"
+check_status "dir #719 A27: /dev/null switches the personal half off → exit 0" 0 "$STATUS"
+check_absent "dir #719 A27: /dev/null → no B14 GAP" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
+run env SECRET_SCAN_PERSONAL_FILE= bash "$pa" --no-history "$d"
+check_status "dir #719 A27: set-but-empty reads the (absent) default → exit 0" 0 "$STATUS"
+check_absent "dir #719 A27: empty → no B14 GAP" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
 
 summary

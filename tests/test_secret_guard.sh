@@ -1015,6 +1015,26 @@ OUT="$(cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$(
 check_status "the INSTALLED pre-push hook blocks a first-push secret" 1 "$STATUS"
 check_contains "installed hook reports BLOCKED (not a missing-dependency crash)" "$OUT" "BLOCKED"
 
+# --- dir #731 A17 (docs/specs/717-machine-guard-truth.md B14): a commit made with the hooks switched off
+# (`-c core.hooksPath=`) lands, but a PLAIN `git push` of it is still refused — pre-push scans every pushed
+# commit, whether or not pre-commit saw it — and the remote's ref does not move. The wrong build is a
+# pre-push that skips commits pre-commit "saw"; it fails the refusal and the unmoved-ref checks. ---------
+r731="$(new_repo_with_origin)"
+"$isg" "$r731" >/dev/null
+b731="$(git -C "$r731" remote get-url origin)"
+br731="$(git -C "$r731" symbolic-ref --short HEAD)"
+before731="$(git -C "$b731" rev-parse "refs/heads/$br731")"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$r731/bypassed.txt"
+git -C "$r731" add bypassed.txt
+run git -C "$r731" -c core.hooksPath= commit -m "bypassed commit"
+check_status "dir #731 A17: a commit made with core.hooksPath emptied lands (the hook never ran)" 0 "$STATUS"
+run git -C "$r731" push origin "$br731"
+check_status "dir #731 A17: a plain push of the bypassed commit is refused" 1 "$STATUS"
+check_contains "dir #731 A17: ...by the secret scan" "$OUT" "BLOCKED"
+check_eq "dir #731 A17: the remote's branch did not move" "$before731" "$(git -C "$b731" rev-parse "refs/heads/$br731")"
+check_eq "dir #731 A17: install-secret-guard.sh's header says pre-push still scans a bypassed commit" \
+  1 "$(grep -cF 'a commit made that way is still scanned by pre-push' "$isg")"
+
 # --- never clobber the user's own hook (SEC1): refuse by default, --force backs up ------------------
 frepo="$(new_repo)"
 mkdir -p "$frepo/.git/hooks"

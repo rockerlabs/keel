@@ -15,6 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
   (dir #685, slice 3 of the symlink policy). Keel's own link left stale by a moved checkout is re-pointed, as

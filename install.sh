@@ -2019,6 +2019,18 @@ elif [ "$DO_HOOKS" = 0 ]; then
   echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
 else
   echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
+  # dir #717: that run refuses over a conditional [includeIf] include that sets its own core.hooksPath, or when
+  # it cannot read them all — a plain re-run is refused again. `conditional=` is counted against the current
+  # value, not Keel's dir, so this says "if": the installer's own message above names the actual cause.
+  if [ "$hp_is_keel" != 1 ]; then
+    case "$(wm_get conditional)" in
+      '') ;;
+      unknown) echo "       If it refused because it could not read every conditional [includeIf] include, its message"
+               echo "       above names why (a TMPDIR inside a repository, say); fix that, or add --force to wire anyway." ;;
+      *) echo "       If it refused over a conditional [includeIf] include that sets its own core.hooksPath, its"
+         echo "       message above names it; point that setting at Keel's dir or remove it, or add --force." ;;
+    esac
+  fi
 fi
 
 # The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral

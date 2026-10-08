@@ -142,7 +142,7 @@ add_off() { C_OFF="${C_OFF:+$C_OFF
 }$1"; }
 
 # is_script FILE — a B1 script: first line is a `#!` naming sh, bash, dash, ash, ksh or zsh.
-is_script() { head -1 "$1" | grep -Eq '^#!.*(^|[^A-Za-z0-9_])(ba|da|a|k|z)?sh([^A-Za-z0-9_]|$)'; }
+is_script() { local first; first="$(head -1 "$1")"; match "$first" -Eq '^#!.*(^|[^A-Za-z0-9_])(ba|da|a|k|z)?sh([^A-Za-z0-9_]|$)'; }
 
 # census_files ROOT — every tracked or not-yet-tracked, not ignored, file of the tree.
 census_files() { (cd "$1" && git ls-files --cached --others --exclude-standard); }
@@ -150,14 +150,15 @@ census_files() { (cd "$1" && git ls-files --cached --others --exclude-standard);
 # lib_candidates ROOT — every lib the census may derive: tools/lib/*.sh, range-lib.sh, and every other
 # tracked shebang-less `.sh` (dir #661: a lib outside tools/lib), except tests/lib.sh and tests/test_*.sh.
 lib_candidates() {
-  local root="$1" f
+  local root="$1" f first_line
   {
     (cd "$root" && ls tools/lib/*.sh tools/secret-guard/range-lib.sh 2>/dev/null)
     while IFS= read -r f; do
       case "$f" in *.sh) ;; *) continue ;; esac
       case "$f" in tests/test_*.sh | tests/lib.sh) continue ;; esac
       [ -f "$root/$f" ] || continue
-      head -1 "$root/$f" | grep -q '^#!' && continue
+      first_line="$(head -1 "$root/$f")"
+      match "$first_line" -q '^#!' && continue
       printf '%s\n' "$f"
     done <<< "$(census_files "$root")"
   } | sort -u
