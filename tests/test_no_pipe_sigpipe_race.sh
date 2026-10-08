@@ -37,7 +37,16 @@
 # earlier draft's own pass/fail strings self-matched this exact regex, which would have made the
 # test fail on its own source the moment it became in-scope of its own scan).
 QMHEAD_RE='grep (-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
-RACE_RE="(^|[^a-zA-Z0-9_])(printf|echo|sed|tr)[[:space:]][^|]*\\|[[:space:]]*($QMHEAD_RE|head)"
+# dir #708 widened the q/m consumer to ANY producer. Measured @0a99412: `| grep -q/-m` after any
+# command was 9 hits tree-wide (all fixed), while `| head` after any command was ~97 — nearly all
+# `x="$(... | head -1)"` captures whose pipeline status nobody reads, so a SIGPIPE there changes no
+# result. grep -q/-m is branched on, which is what makes the race real; `head` stays bounded to the
+# fixed producer list above. `(^|[^|])` keeps `|| grep -q ...` (an OR list, not a pipe) out.
+ANY_QM_RE="(^|[^|])\\|[[:space:]]*$QMHEAD_RE"
+RACE_RE="(^|[^a-zA-Z0-9_])(printf|echo|sed|tr)[[:space:]][^|]*\\|[[:space:]]*($QMHEAD_RE|head)|$ANY_QM_RE"
+# The rare safe case (e.g. a producer that is a single fixed short line, proven by the reason):
+# a trailing `# sigpipe-ok: <reason>` on the SAME line exempts it. The reason is required.
+ALLOW_RE='#[[:space:]]*sigpipe-ok:[[:space:]]*[^[:space:]]'
 
 # A file runs under pipefail if it has its own qualifying `set` line, OR — every tests/*.sh and
 # tools/lib/*.sh file, regardless of whether it sets `set -` itself — if it's SOURCED rather than
@@ -59,9 +68,10 @@ runs_under_pipefail() {
   grep -qE '^set .*pipefail' "$1" 2>/dev/null
 }
 
-hits=""
-while IFS= read -r -d '' f; do
-  runs_under_pipefail "$f" || continue
+# race_lines FILE — prints "N:line" for each unsafe-shape line of FILE (comments, allow-commented
+# lines and the `|| true` head idiom excluded).
+race_lines() {
+  local n line trimmed
   while IFS=: read -r n line; do
     [ -n "$n" ] || continue
     trimmed="${line#"${line%%[![:space:]]*}"}"
@@ -71,28 +81,31 @@ while IFS= read -r -d '' f; do
     case "$trimmed" in
       '#'*) continue ;;
     esac
+    match "$trimmed" -qE "$ALLOW_RE" && continue
     # A `head`-consumer line ending in `|| true` is this codebase's own established idiom for
     # "capture only, exit code discarded, content unaffected by an early consumer close" (e.g.
     # tools/lib/manifest.sh's `manifest_field()`: `sed ... | head -n1 || true`) — `head` must
     # actually read a line before it can close, so a real match's captured value survives an early
-    # close even though the pipeline's own exit status doesn't, and `|| true` is exactly this
-    # codebase's own documented reason for that suffix (see tools/self/doctor.sh's own comment on
-    # the identical idiom). Any `grep -q`/`grep -m` variant gets no such exception: their early
-    # exit needs no output consumed at all, so the race is real regardless of a trailing `|| true`
-    # — and pairing one directly with `|| true` in a boolean test would itself be a broken
-    # tautology, not a safe idiom, so a line matching that shape is still worth flagging either
-    # way. Reuses $QMHEAD_RE (via match(), not a bare pipe — dir #280) rather than a separate
-    # literal substring list, so this stays in sync with whatever RACE_RE's own consumer group
-    # considers a q/m-flagged grep (found in review: a hardcoded `grep -q`/`grep -m` substring
-    # check here went stale the moment RACE_RE's own consumer alternation was broadened past a
-    # bare `-q`/`-m`, silently exempting every other flag form too).
+    # close even though the pipeline's own exit status doesn't. Any `grep -q`/`grep -m` variant
+    # gets no such exception: their early exit needs no output consumed at all, so the race is
+    # real regardless of a trailing `|| true`. Reuses $QMHEAD_RE (via match(), not a bare pipe —
+    # dir #280) so this stays in sync with RACE_RE's own consumer group.
     case "$trimmed" in
       *'|| true')
         match "$trimmed" -qE "$QMHEAD_RE" || continue
         ;;
     esac
+    printf '%s:%s\n' "$n" "$trimmed"
+  done < <(grep -nE "$RACE_RE" "$1" 2>/dev/null)
+}
+
+hits=""
+while IFS= read -r -d '' f; do
+  runs_under_pipefail "$f" || continue
+  while IFS=: read -r n _; do
+    [ -n "$n" ] || continue
     hits="${hits:+$hits }$f:$n"
-  done < <(grep -nE "$RACE_RE" "$f" 2>/dev/null)
+  done < <(race_lines "$f")
 done < <(find "$REPO_ROOT/tools" "$REPO_ROOT/tests" -name '*.sh' -print0)
 
 if [ -z "$hits" ]; then
@@ -100,6 +113,27 @@ if [ -z "$hits" ]; then
 else
   fail "no unsafe pipe-into-grep/head race under pipefail" \
     "found (SIGPIPE race, dir #280): $hits"
+fi
+
+# dir #708 fixtures: the guard must flag a shell-function producer (the PR #526 shape) and an awk
+# producer, and must stay quiet for an allow-commented line, an OR list and a head capture. Built
+# with a $P variable so this file's own source never spells the shape (it is in its own scan scope).
+P='|'
+fx="$SANDBOX/race-fixture.sh"
+{
+  echo "func_prod \"\$n\" $P grep -qF -- \"\$needle\""
+  echo "awk '{print}' f $P grep -q x"
+  echo "git log $P grep -m1 x"
+  echo "func_prod $P grep -q x   # sigpipe-ok: one fixed short line"
+  echo "false || grep -q x f"
+  echo "x=\"\$(func_prod $P head -1)\""
+} > "$fx"
+got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
+if [ "$got" = "1 2 3 " ]; then
+  pass "guard flags function/awk/git producers; skips allow-comment, OR list, head capture"
+else
+  fail "guard flags function/awk/git producers; skips allow-comment, OR list, head capture" \
+    "flagged lines: '$got' (want '1 2 3 ')"
 fi
 
 summary

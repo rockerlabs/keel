@@ -194,13 +194,15 @@ pin "the doc names the model's relay as the guaranteed channel" "$doc" 'that rel
 pin "the doc documents the OS notification and its off switch" "$doc" 'KEEL_MACHINE_WATCH_NOTIFY=0' \
   "expected the detector paragraph to document the OS notification's off switch (dir #657)"
 # the subsection sits OUTSIDE the verbatim block (the block-extract drift tests read only the block)
-if extract_rails_block "$doc" | grep -qF 'machine-watch'; then
+rails_block="$(extract_rails_block "$doc")"
+if match "$rails_block" -qF 'machine-watch'; then
   fail "the recipe sits outside the verbatim rails block" "the verbatim block names machine-watch — the recipe leaked into the block copied to ten places"
 else
   pass "the recipe sits outside the verbatim rails block"
 fi
 # a recipe, never wiring: no installed script may write a deny rule
-if git -C "$REPO_ROOT" grep -n 'permissions.deny' -- tools install.sh 2>/dev/null | grep -v ':[0-9]*:[[:space:]]*#' | grep -q .; then
+deny_hits="$(git -C "$REPO_ROOT" grep -n 'permissions.deny' -- tools install.sh 2>/dev/null | grep -v ':[0-9]*:[[:space:]]*#' || true)"
+if [ -n "$deny_hits" ]; then
   fail "no keel script writes permissions.deny" "$(git -C "$REPO_ROOT" grep -n 'permissions.deny' -- tools install.sh | head -3)"
 else
   pass "no keel script writes permissions.deny"

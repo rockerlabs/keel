@@ -290,8 +290,8 @@ default_shell_files() {
     [ -n "$f" ] || continue
     case "$f" in
       *.sh) printf '%s\0' "$f" ;;
-      *) if head -1 -- "$f" 2>/dev/null \
-              | grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)'; then
+      *) shebang="$(head -1 -- "$f" 2>/dev/null || true)"
+         if grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)' <<< "$shebang"; then
            printf '%s\0' "$f"
          fi ;;
     esac

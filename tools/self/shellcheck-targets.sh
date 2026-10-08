@@ -31,8 +31,8 @@ repo_dir="${1:-.}"
 git -C "$repo_dir" ls-files -z | while IFS= read -r -d '' f; do
   case "$f" in
     *.sh) printf '%s\n' "$f" ;;
-    *) if head -1 -- "$repo_dir/$f" 2>/dev/null \
-            | grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)'; then
+    *) shebang="$(head -1 -- "$repo_dir/$f" 2>/dev/null || true)"
+       if grep -qE '^#!.*[ /](ba|da|k)?sh([[:space:]]|$)' <<< "$shebang"; then
          printf '%s\n' "$f"
        fi ;;
   esac
