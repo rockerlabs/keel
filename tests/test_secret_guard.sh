@@ -248,6 +248,14 @@ check_contains "set-but-missing → names the cause" "$OUT" "not a regular file"
 check_absent "set-but-missing → is not reported as a scan result" "$OUT" "BLOCKED"
 run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX" "$scan" "$d/f.txt"
 check_status "personal file is a directory → exit 2" 2 "$STATUS"
+# a FIFO is not a regular file either (and must not block the check)
+mkfifo "$SANDBOX/personal.fifo"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal.fifo" "$scan" "$d/f.txt"
+check_status "personal file is a FIFO → exit 2" 2 "$STATUS"
+# the check sits above the mode dispatch, so a bad ambient variable also stops --selftest (and with it
+# install-secret-guard.sh, which self-tests before copying) — accepted: the same variable would break the hook
+run env SECRET_SCAN_PERSONAL_FILE="$absent" "$scan" --selftest
+check_status "set-but-missing, --selftest → exit 2 (pinned)" 2 "$STATUS"
 repo="$(new_repo)"
 run_in "$repo" env SECRET_SCAN_PERSONAL_FILE="$absent" "$scan"
 check_status "set-but-missing, nothing staged to scan → still exit 2" 2 "$STATUS"

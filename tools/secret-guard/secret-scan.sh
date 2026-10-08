@@ -9,7 +9,9 @@
 #      personal emails) loaded as EREs, matched case-INSENSITIVELY, from a LOCAL file that is never
 #      committed:
 #        default path: ~/.claude/secret-scan-personal   (override with $SECRET_SCAN_PERSONAL_FILE)
-#        one ERE per line; blank lines and `# comments` ignored; absent file → only class 1 runs.
+#        one ERE per line; blank lines and `# comments` ignored; absent DEFAULT file → only class 1 runs.
+#        A SET $SECRET_SCAN_PERSONAL_FILE that is not a regular file is exit 2 (dir #725); /dev/null is the
+#        deliberate opt-out.
 #      Put ONLY literals that must never appear in ANY repo. Do NOT list your bare home username —
 #      it is a legitimate path component in a private knowledge base and would flag every home-path
 #      reference. Starter: tools/secret-guard/secret-scan-personal.example
