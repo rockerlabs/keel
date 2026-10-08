@@ -44,6 +44,6 @@ ledger_remove() {
 # the last home pruned) is success here; only a real read error (exit 2) fails, so keel_write_through
 # never renames a half-read ledger over the whole one.
 _ledger_kept_lines() {
-  grep -vxF "$1" "$2"
+  grep -vxF "$1" "$2" 2>/dev/null
   [ "$?" -le 1 ]
 }

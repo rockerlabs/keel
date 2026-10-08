@@ -255,6 +255,21 @@ check_contains "A2 …named as content that could not be produced" "$OUT" "could
 check_eq "A2 …the file is untouched" "$(printf 'whole\nfile')" "$(cat "$w/cmd")"
 check_eq "A2 …and no temp is left" 0 "$(keeltmp_count "$w")"
 keel_write_through "$w/cmd" sed 's/whole/edited/' "$w/cmd" </dev/null
+# a read-only target is reported as read-only — never blamed on CMD — in ONE line (no raw shell error),
+# and a CMD that calls `exit` stays a failed CMD instead of ending the caller. Root writes through 0444,
+# so the read-only rows are guarded (CLAUDE.md "Linux-leg traps" 2).
+printf 'ro\n' > "$w/ro"; chmod 444 "$w/ro"
+run bash -c ". '$lib'; keel_write_through '$w/ro' sed s/ro/rw/ '$w/ro'"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "A2 write_through CMD on a read-only target → rc 1" 1 "$STATUS"
+  check_contains "A2 …reported as read-only" "$OUT" "read-only"
+  check_absent "A2 …never blamed on CMD" "$OUT" "could not be produced"
+  check_eq "A2 …in exactly one stderr line" 1 "$(grep -c . <<<"$OUT" || true)"
+fi
+check_eq "A2 …no temp is left beside it" 0 "$(keeltmp_count "$w")"
+run bash -c "set -u; . '$lib'; exits() { exit 7; }; keel_write_through '$w/cmd' exits; echo caller-continued rc=\$?"
+check_contains "A2 write_through CMD: an exit inside CMD does not end the caller" "$OUT" "caller-continued rc=1"
+check_eq "A2 …and the file is untouched" "$(printf 'edited\nfile')" "$(cat "$w/cmd")"
 check_eq "A2 write_through CMD: a succeeding CMD's output lands" "$(printf 'edited\nfile')" "$(cat "$w/cmd")"
 check_eq "A2 …mode 0600 kept" 600 "$(stat_portable_mode "$w/cmd")"
 # keel_write_replace over a hard link: rc 0, the other name keeps its bytes.
@@ -299,10 +314,12 @@ if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; th
   qpid=$!; qwait=0
   while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt 10 ]; do sleep 1; qwait=$((qwait + 1)); done
   if kill -0 "$qpid" 2>/dev/null; then
-    : > "$w/nobody-reads" &   # release the blocked open before reaping, so nothing is orphaned
+    # A READER releases the claim blocked in open() (a second writer would block too); the claim then
+    # runs to its end, so no process is left orphaned in open() for the rest of the suite.
+    cat "$w/nobody-reads" > /dev/null 2>&1 &
     qrel=$!
-    kill -9 "$qpid" 2>/dev/null || true; wait "$qpid" 2>/dev/null || true
-    kill -9 "$qrel" 2>/dev/null || true; wait "$qrel" 2>/dev/null || true
+    wait "$qpid" 2>/dev/null || true
+    kill "$qrel" 2>/dev/null || true; wait "$qrel" 2>/dev/null || true
     fail "A2 backup: a link to an unread FIFO at the name does not hang" "still blocked after ${qwait}s"
   else
     wait "$qpid" 2>/dev/null || true

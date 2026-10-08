@@ -138,29 +138,39 @@ keel_write_through() {
   fi
   tmp="$target.keeltmp.$$"
   # The temp starts as a `cp -p` of the target, and `>` onto an existing file keeps its mode, so the
-  # rename carries the target's permission bits. A read-only target (its mode now on the temp too)
-  # fails here, as it should.
-  if ! { [ ! -f "$target" ] || cp -p "$target" "$tmp"; } 2>/dev/null; then
-    rm -f "$tmp"
-    echo "safe-write: could not write $target (its directory is not writable) — nothing was written." >&2
+  # rename carries the target's permission bits. The temp is opened for writing on its own first, so a
+  # read-only target (its mode now on the temp too) is reported as that, never blamed on CMD.
+  if [ -f "$target" ] && ! cp -p "$target" "$tmp" 2>/dev/null; then
+    _keel_sw_fail "$tmp" "could not write $target (it cannot be read, or its directory is not writable)"
+    return 1
+  fi
+  if ! { : > "$tmp"; } 2>/dev/null; then
+    _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)"
     return 1
   fi
   if [ "$#" -gt 0 ]; then
-    if ! "$@" > "$tmp"; then
-      rm -f "$tmp"
-      echo "safe-write: the new content for $target could not be produced ($1 failed) — nothing was written." >&2
+    # In a subshell: an `exit` or a `set -u` abort inside a shell-function CMD stays a failed CMD
+    # instead of ending the caller with a temp left beside the file.
+    if ! ( "$@" ) > "$tmp"; then
+      _keel_sw_fail "$tmp" "the new content for $target could not be produced"
       return 1
     fi
-  elif ! cat > "$tmp" 2>/dev/null; then
-    rm -f "$tmp"
-    echo "safe-write: could not write $target (read-only, or its directory is not writable) — nothing was written." >&2
+  elif ! { cat > "$tmp"; } 2>/dev/null; then
+    _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)"
     return 1
   fi
   if ! mv -f "$tmp" "$target" 2>/dev/null; then
-    rm -f "$tmp"
-    echo "safe-write: could not write $target (read-only, or its directory is not writable) — nothing was written." >&2
+    _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)"
     return 1
   fi
+}
+
+# _keel_sw_fail TMP MSG — the one refusal path after a temp may exist: remove TMP, print MSG as the
+# lib's one line on stderr, return 1.
+_keel_sw_fail() {
+  rm -f "$1"
+  echo "safe-write: $2 — nothing was written." >&2
+  return 1
 }
 
 # keel_write_replace PATH — stdin → PATH, as a REPLACE (header): a temp sibling of PATH (never of a
@@ -216,8 +226,9 @@ keel_backup() {
   b="$base.bak"
   while :; do
     # A name that is already taken is skipped before any claim: a claim opens the name for writing, and
-    # opening a link to a FIFO nobody reads would block forever. The checks after the claim still catch
-    # a name that appears in between.
+    # opening a link to a FIFO nobody reads would block forever. The checks after the claim catch an
+    # ordinary file or link that appears in between; a link to an unread FIFO planted in that instant
+    # can still block the claim — a residual race, named here, not handled (no lock: the spec's K19).
     if [ ! -e "$b" ] && [ ! -L "$b" ]; then
       if (set -C; umask 077; : > "$b") 2>/dev/null && [ -f "$b" ] && [ ! -L "$b" ]; then
         break

@@ -1992,7 +1992,7 @@ rm -f "$prior_manifest"
 foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
 if [ "$foreign_core" = 1 ]; then
   # A state EDIT: a refused write (the lib's one line) means the run cannot record what it did — exit.
-  printf '' | keel_write_through "$foreign_core_marker" || exit 1
+  keel_write_through "$foreign_core_marker" printf '' || exit 1
 else
   rm -f "$foreign_core_marker"
 fi
@@ -2077,7 +2077,9 @@ while IFS=$'\t' read -r rel kind extra; do
 done < "$merge_tmp"
 rm -f "$merge_tmp"
 
-{
+# manifest_body — the manifest's content on stdout. A function, so the lib's command form runs it: a
+# body that fails partway leaves the previous manifest in place instead of a truncated one.
+manifest_body() {
   echo "keel_manifest_version=1"
   echo "mode=$manifest_mode"
   echo "layout=$manifest_layout"
@@ -2092,7 +2094,8 @@ rm -f "$merge_tmp"
   if [ "${#manifest_artifact_lines[@]}" -gt 0 ]; then
     printf '%s\n' "${manifest_artifact_lines[@]}"
   fi
-} | keel_write_through "$manifest_file" || exit 1   # a state EDIT: refused → exit, as for the marker
+}
+keel_write_through "$manifest_file" manifest_body || exit 1   # a state EDIT: refused → exit, as for the marker
 echo "  +    install manifest ($manifest_file)"
 
 # dir #381: crash-simulation checkpoint right in the window the comment below already names — "if this
