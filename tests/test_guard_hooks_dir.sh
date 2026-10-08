@@ -447,4 +447,105 @@ inst_run genv --no-hooks
 check_contains "install.sh Verify: a symlinked Keel pre-commit is disclosed" "$OUT" "symlink"
 check_contains "install.sh Verify: ...the guard itself still reads as wired (it runs)" "$OUT" "OK   secret-guard"
 
+# =================================================================================================
+# 7. dir #688 / dir #717 S5-2 — doctor's machine-wide reads go through the producer (`--where --global`),
+#    and the producer says what doctor used to compare by hand: `machine-dir=1` (the dir #122 dedup) and
+#    `fallback=1` (the narrow-read branch).
+# =================================================================================================
+
+# --- A1 (S5-2): the `--install` twin of DT4 — a foreign hook in Keel's own machine dir is not "wired" ----
+mk_home a1; mkdir -p "$H/claude"
+run genv "$isg" --global
+check_status "A1 setup: wire Keel's machine-global guard" 0 "$STATUS"
+a1dir="$H/.config/git/keel-hooks"
+run genv "$doctor" --install "$H/claude"
+check_contains "A1 control: an intact Keel dir → OK" "$OUT" "OK   secret-guard: machine-global ($a1dir)"
+check_absent "A1 control: ...and no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+mv "$a1dir/pre-commit" "$a1dir/pre-commit.keel"
+printf '#!/bin/sh\n# a wrapper that runs lint and mentions Keel secret-guard\nexit 0\n' > "$a1dir/pre-commit"; chmod +x "$a1dir/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "A1: --install over a non-Keel pre-commit in Keel's dir → W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "A1: ...and says why" "$OUT" "not Keel's"
+check_absent "A1: ...never the OK line over it" "$OUT" "OK   secret-guard: machine-global"
+rm -f "$a1dir/pre-commit"; mv "$a1dir/pre-commit.keel" "$a1dir/pre-commit"
+printf '#!/bin/sh\n# my own pre-push that mentions Keel secret-guard\nexit 0\n' > "$a1dir/pre-push"
+run genv "$doctor" --install "$H/claude"
+check_contains "A1: a foreign PRE-PUSH in Keel's dir → W-GUARD-UNWIRED too" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "A1: ...and says why" "$OUT" "not Keel's"
+check_absent "A1: ...never the OK line over it" "$OUT" "OK   secret-guard: machine-global"
+cp "$shipped/pre-push" "$a1dir/pre-push"
+mv "$a1dir/pre-commit" "$a1dir/pre-commit.keel"; ln -s "$a1dir/pre-commit.keel" "$a1dir/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "A1: a symlinked Keel pre-commit → still the OK line" "$OUT" "OK   secret-guard: machine-global ($a1dir)"
+check_contains "A1: ...plus the symlink disclosure" "$OUT" "secret-guard: the pre-commit at $a1dir is a symlink"
+check_absent "A1: ...and no W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+# a user's own hooks dir (not Keel's) holding an executable plain pre-commit: the per-repo bar — no marker test
+mk_home a1-own; mkdir -p "$H/claude" "$H/own-hooks"
+printf '#!/bin/sh\nexit 0\n' > "$H/own-hooks/pre-commit"; chmod +x "$H/own-hooks/pre-commit"
+genv git config --global core.hooksPath "$H/own-hooks"
+run genv "$doctor" --install "$H/claude"
+check_contains "A1: a user's own hooks dir with an executable pre-commit → OK" "$OUT" "OK   secret-guard: machine-global ($H/own-hooks)"
+check_absent "A1: ...held to no marker" "$OUT" "not Keel's"
+
+# --- A4: `--where <repo>` prints machine-dir=1 when it resolves to the machine-wide dir -------------------
+mk_home a4; a4repo="$(mk_repo)"; mkdir -p "$H/mh" "$H/other"
+genv git config --global core.hooksPath "$H/mh"
+git -C "$a4repo" config --local core.hooksPath "$H/mh"
+run genv "$isg" --where "$a4repo"
+check_eq "A4: a local hooksPath equal to the global dir → machine-dir=1" "1" "$(wkey machine-dir)"
+check_eq "A4: ...the scope is still local (machine-dir is not a scope)" "local" "$(wkey scope)"
+git -C "$a4repo" config --local core.hooksPath "$H/other"
+run genv "$isg" --where "$a4repo"
+check_eq "A4: a different local dir → no machine-dir key" "" "$(wkey machine-dir)"
+# a tilde spelling on either side, and a trailing slash
+# shellcheck disable=SC2088  # the point is a LITERAL ~/ as a user writes it into git config
+genv git config --global core.hooksPath '~/mh'
+git -C "$a4repo" config --local core.hooksPath "$H/mh"
+run genv "$isg" --where "$a4repo"
+check_eq "A4: global spelled ~/mh, local absolute → machine-dir=1" "1" "$(wkey machine-dir)"
+genv git config --global core.hooksPath "$H/mh/"
+git -C "$a4repo" config --local core.hooksPath "$H/mh"
+run genv "$isg" --where "$a4repo"
+check_eq "A4: global spelled with a trailing slash → machine-dir=1" "1" "$(wkey machine-dir)"
+genv git config --global core.hooksPath "$H/mh"
+git -C "$a4repo" config --local core.hooksPath "$H/mh/"
+run genv "$isg" --where "$a4repo"
+check_eq "A4: local spelled with a trailing slash → machine-dir=1" "1" "$(wkey machine-dir)"
+# a repo with no local override, under the global one: effective IS the machine-wide dir
+a4plain="$(mk_repo)"
+run genv "$isg" --where "$a4plain"
+check_eq "A4: no local override, global governs → machine-dir=1" "1" "$(wkey machine-dir)"
+# nothing machine-wide set: never
+mk_home a4-none; a4nrepo="$(mk_repo)"
+run genv "$isg" --where "$a4nrepo"
+check_eq "A4: no machine-wide hooksPath → no machine-dir key" "" "$(wkey machine-dir)"
+# the XDG variant: the machine-wide value set ONLY in the XDG file behind an existing ~/.gitconfig
+mk_home a4-xdg; a4xrepo="$(mk_repo)"; mkdir -p "$H/xh"
+printf '[user]\n\tname = Alice\n' > "$H/.gitconfig"
+printf '[core]\n\thooksPath = %s\n' "$H/xh" > "$H/xdg/git/config"
+git -C "$a4xrepo" config --local core.hooksPath "$H/xh"
+run xenv "$isg" --where "$a4xrepo"
+check_eq "A4: machine-wide dir only in the XDG file, local pins the same dir → machine-dir=1" "1" "$(wkey machine-dir)"
+
+# --- A5: `fallback=1` — the scratch probe sat inside a repo, so the narrow read ran -------------------------
+mk_home a5; a5repo="$(mk_repo)"; mkdir -p "$H/claude" "$H/shim" "$H/gh"
+printf '#!/bin/sh\nmkdir -p "%s/probe" && printf "%%s\\n" "%s/probe"\n' "$a5repo" "$a5repo" > "$H/shim/mktemp"; chmod +x "$H/shim/mktemp"
+genv git config --global core.hooksPath "$H/gh"
+run genv "$isg" --where --global
+check_eq "A5 control: a normal probe → no fallback key" "" "$(wkey fallback)"
+run genv "PATH=$H/shim:$PATH" "$isg" --where --global
+check_eq "A5: the probe inside a repo → fallback=1" "1" "$(wkey fallback)"
+check_eq "A5: ...the narrow read still answers" "$H/gh" "$(wkey value)"
+run genv "$doctor" --install "$H/claude"
+check_absent "A5 control: doctor without the shim → no degraded line" "$OUT" "effective core.hooksPath probe unavailable"
+run genv "PATH=$H/shim:$PATH" "$doctor" --install "$H/claude"
+check_contains "A5: doctor discloses the degraded read" "$OUT" "effective core.hooksPath probe unavailable"
+
+# --- A3 (static): doctor and uninstall keep no machine-scope hooksPath read of their own ---------------------
+check_eq "A3: no \$(git … config … core.hooksPath) read left in doctor.sh / uninstall.sh" "0" \
+  "$(grep -cE '\$\(git[^)]*config[^)]*core\.hooksPath' "$REPO_ROOT/tools/doctor.sh" "$REPO_ROOT/uninstall.sh" | awk -F: '{n+=$NF} END{print n+0}')"
+check_eq "A3: doctor.sh has no _expand_hookspath_tilde" "0" "$(grep -c _expand_hookspath_tilde "$REPO_ROOT/tools/doctor.sh" || true)"
+check_eq "A3: doctor.sh keeps no -ef bridge against a machine-wide value" "0" \
+  "$(grep -cE -- '-ef "\$(global_hooks_eff|g_dir)"' "$REPO_ROOT/tools/doctor.sh" || true)"
+
 summary

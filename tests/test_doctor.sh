@@ -1390,6 +1390,78 @@ check_absent   "...and hooksPath being set means the staleness check ran → no 
   "staleness check: no core.hooksPath resolved"
 
 # =================================================================================================
+# dir #688 / dir #717 S5-2 — doctor reads the machine-wide hooksPath from ONE producer
+# (`install-secret-guard.sh --where --global`), never from git itself.
+# =================================================================================================
+# A2: a copy of the checkout's tools/ (+ commands/ docs/ agents/, which --install mode reads relative to
+# its own root) whose installer is a STUB, while git config says something else. doctor must name the stub's
+# answer and never git's — and treat silence, or an answer cut off mid-way, as "no answer", never as OK.
+a2="$SANDBOX/a2-copy"; mkdir -p "$a2"
+cp -R "$REPO_ROOT/tools" "$REPO_ROOT/commands" "$REPO_ROOT/docs" "$REPO_ROOT/agents" "$a2/"
+a2_stub() {  # a2_stub <body> — replace the copy's installer with a script running <body>
+  printf '#!/usr/bin/env bash\n%s\n' "$1" > "$a2/tools/install-secret-guard.sh"; chmod +x "$a2/tools/install-secret-guard.sh"
+}
+a2h="$SANDBOX/a2-home"; mkdir -p "$a2h/claude" "$a2h/stub" "$a2h/gitdir"
+printf '#!/bin/sh\nexit 0\n' > "$a2h/stub/pre-commit"; chmod +x "$a2h/stub/pre-commit"
+printf '#!/bin/sh\nexit 0\n' > "$a2h/gitdir/pre-commit"; chmod +x "$a2h/gitdir/pre-commit"
+fresh_home_env "$a2h"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$a2h/gitdir" >/dev/null 2>&1
+a2_stub "printf 'scope=global\nvalue=$a2h/stub\ndir=$a2h/stub\npre-commit=keel\npre-push=keel\n'"
+run env "${FRESH_HOME_ENV[@]}" bash "$a2/tools/doctor.sh" --install "$a2h/claude"
+check_contains "A2: --install names the producer's dir" "$OUT" "OK   secret-guard: machine-global ($a2h/stub)"
+check_absent "A2: ...and never the dir git's own config names" "$OUT" "$a2h/gitdir"
+a2_stub ":"
+run env "${FRESH_HOME_ENV[@]}" bash "$a2/tools/doctor.sh" --install "$a2h/claude"
+check_contains "A2: a silent resolver → 'state unknown'" "$OUT" "state unknown"
+check_contains "A2: ...as a W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+check_absent "A2: ...never the OK line" "$OUT" "OK   secret-guard: machine-global"
+a2_stub "printf 'scope=global\nvalue=$a2h/stub\ndir=$a2h/stub\n'"
+run env "${FRESH_HOME_ENV[@]}" bash "$a2/tools/doctor.sh" --install "$a2h/claude"
+check_contains "A2: a resolver that died after dir= but before pre-commit= → 'state unknown'" "$OUT" "state unknown"
+check_absent "A2: ...never the OK line" "$OUT" "OK   secret-guard: machine-global"
+
+# A9: guard_eff_note names the FILE a value actually came from (when that is not the file `git config
+# --global` reads), instead of comparing the value two ways.
+hn="$SANDBOX/guardhome.note-xdg.$$"; mkdir -p "$hn/xdg/git" "$hn/hooks" "$hn/claude"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hn" > "$hn/xdg/git/config"
+printf '[user]\n\tname = Keel Test\n' > "$hn/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hn/xdg" "HOME=$hn" "$doctor" --install "$hn/claude"
+check_contains "A9: --install, XDG-only hookless hooksPath → the finding is raised" "$OUT" "core.hooksPath is set to $hn/hooks"
+check_contains "A9: ...and names the XDG file it came from" "$OUT" "$hn/xdg/git/config"
+hn2="$SANDBOX/guardhome.note-inc.$$"; mkdir -p "$hn2/xdg/git" "$hn2/hooks" "$hn2/claude"
+printf '[user]\n\tname = Keel Test\n[include]\n\tpath = %s/inc.cfg\n' "$hn2" > "$hn2/.gitconfig"
+printf '[core]\n\thooksPath = %s/hooks\n' "$hn2" > "$hn2/inc.cfg"
+printf '[user]\n\temail = nobody@example.com\n' > "$hn2/xdg/git/config"
+run env -u GIT_CONFIG_GLOBAL "XDG_CONFIG_HOME=$hn2/xdg" "HOME=$hn2" "$doctor" --install "$hn2/claude"
+check_contains "A9: a hookless value pulled in by an [include] → names THAT file" "$OUT" "$hn2/inc.cfg"
+check_absent "A9: ...not the XDG file just because the values differ" "$OUT" "$hn2/xdg/git/config"
+
+# A19: a stale guard copy reached through ANY scope arm is reported once — never twice, never by neither.
+a19_stale() {  # a19_stale <dir> — a copy of the shipped hooks whose secret-scan.sh differs, with an executable pre-commit
+  mkdir -p "$1"; cp -R "$REPO_ROOT/tools/secret-guard/." "$1/"; printf '\n# stale\n' >> "$1/secret-scan.sh"; chmod +x "$1/pre-commit"
+}
+a19_count() { printf '%s\n' "$OUT" | grep -c -F "$1" || true; }
+# (a) a conditional [includeIf] delivers the dir; no machine-wide hooksPath is set
+ha="$SANDBOX/guardhome.a19a.$$"; mkdir -p "$ha/work/proj"; git -C "$ha/work/proj" init -q
+a19_stale "$ha/stale"
+# gitdir: matches against the repo's REAL path (macOS's $TMPDIR sits behind a /var -> /private/var symlink)
+printf '[includeIf "gitdir:%s/work/"]\n\tpath = work.cfg\n' "$(cd "$ha" && pwd -P)" > "$ha/.gitconfig"
+printf '[core]\n\thooksPath = %s/stale\n' "$ha" > "$ha/work.cfg"
+fresh_home_env "$ha"
+run env "${FRESH_HOME_ENV[@]}" "$doctor" "$ha/work/proj"
+check_eq "A19(a): a conditional-include stale copy → exactly one [W-GUARD-STALE]" "1" "$(a19_count '[W-GUARD-STALE]')"
+check_eq "A19(a): ...and no [W-GUARD-GLOBAL-STALE] (no machine-wide hooksPath exists)" "0" "$(a19_count '[W-GUARD-GLOBAL-STALE]')"
+# (b) the machine-wide dir, ALSO named by a command-scope GIT_CONFIG_KEY_n for this run (the `*)` arm)
+hb="$SANDBOX/guardhome.a19b.$$"; mkdir -p "$hb"; git -C "$hb" init -q
+a19_stale "$hb/stale"
+fresh_home_env "$hb"
+env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$hb/stale" >/dev/null 2>&1
+n="${GIT_CONFIG_COUNT:-0}"
+run env "${FRESH_HOME_ENV[@]}" "GIT_CONFIG_COUNT=$((n+1))" "GIT_CONFIG_KEY_$n=core.hooksPath" "GIT_CONFIG_VALUE_$n=$hb/stale" "$doctor" "$hb"
+check_eq "A19(b): command-scope hooksPath == the machine-wide dir → exactly one [W-GUARD-GLOBAL-STALE]" "1" "$(a19_count '[W-GUARD-GLOBAL-STALE]')"
+check_eq "A19(b): ...and no [W-GUARD-STALE]" "0" "$(a19_count '[W-GUARD-STALE]')"
+
+# =================================================================================================
 # dir #413 A4 — doctor --install audits the shipped read-only review agent (agents/keel-polish-reviewer.md):
 # wired (X of Y), its link liveness, and the tool FLOOR of the installed copy (copy mode lets an adopter
 # edit it; a floor that silently grows Bash is no floor).

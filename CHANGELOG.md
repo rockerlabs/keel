@@ -28,6 +28,18 @@ sections real content going forward — see that page for exactly when each one 
   runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
   `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
   substitution or locale-bound `read` in the scanner.
+- **`doctor.sh --install` no longer prints `OK` over a foreign hook, and doctor, `uninstall.sh` and the
+  watcher agree on the machine-wide hooks dir.** `--install` holds Keel's own machine hooks dir to the same
+  marker line as the per-repo audit and `install.sh` Verify: a non-Keel `pre-commit` or `pre-push` there is
+  `W-GUARD-UNWIRED`, not `OK` (dir #717, S5-2); a user's own hooks dir with an executable `pre-commit` still
+  passes. doctor's machine-wide hooksPath probe, its `-ef` bridge and its `~/` helper are gone: it asks
+  `install-secret-guard.sh --where --global` (new keys: `fallback=1`, and `machine-dir=1` on `--where
+  <repo>`), so a stale copy is reported once through every scope arm, including a hooksPath a conditional
+  `[includeIf]` delivers, and a finding names the config file the value came from (dir #688). The
+  `uninstall.sh` hint reads the same resolver, so it now sees a hooksPath set in the XDG file behind
+  `~/.gitconfig`, an `[include]` or the system config. `git_global_hooks_dir` stays, as a named twin of the
+  resolver pinned by a parity test, and now drops one trailing slash like it: a watcher user whose hooksPath
+  ends in `/` sees one extra alert per hooks-dir file, once (dir #688).
 - **`/polish` step 6 names both skip receipts, and the budget test no longer hangs.** Step 6 now writes
   `skipped:no-file-changes` or `skipped:--no-test`, so a `--no-test` run whose review changed a file has a
   truthful receipt (dir #709); its fallback pointer names the guide's (a) and (b) instead of letters that exist
@@ -47,6 +59,11 @@ sections real content going forward — see that page for exactly when each one 
   `KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1` (a visible WARN, off by default), which `tests/test_self_doctor.sh`'s
   real-checkout smoke uses: the shellcheck leg over every tracked script was ~40% of that file's CPU, and
   CI runs it in two other jobs.
+- **`tools/self/alpine-clone.sh <Wn|solo> <sha>`: one command for the per-worker Alpine-leg clone** (dir #728).
+  Cuts or refreshes `$HOME/.keel/tmp/alpine-clone-<Wn>` from the main checkout with the three traps that gave
+  false reds in 0.14.0 built in: `--no-hardlinks`, no `.DS_Store` under `.git`, and a branch, never a detached
+  HEAD. It refuses a path that is not a clone of the source (stale origin) and never deletes; `--run` hands the
+  clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
