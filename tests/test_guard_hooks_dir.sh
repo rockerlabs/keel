@@ -739,13 +739,32 @@ check_status "A13: a conditional self-include spelled ./work.cfg → complete, e
 # A `~user/` target is one the walk does not resolve: incomplete, never skipped as missing.
 s2_home a13-tildeuser; printf '[includeIf "gitdir:~/work/"]\n\tpath = ~alice/work.cfg\n' > "$H/.gitconfig"
 s2_refused "a ~user/ target" "$incomplete (an include path this walk cannot resolve: ~alice/work.cfg)"
-# install.sh's Verify names the refusal's cause instead of advising a --global run that is refused again.
+# A target under a dir that cannot be searched: `-e` is false, but it is not known to be missing (git fails
+# there). Foreign-valued, so a root run (which searches anything) refuses too, as a plain conflict.
+s2_home a13-locked; mkdir -p "$H/locked"
+printf '[includeIf "gitdir:~/work/"]\n\tpath = locked/work.cfg\n' > "$H/.gitconfig"
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/locked/work.cfg"; chmod 000 "$H/locked"
+run genv "$isg" --global
+check_status "A13: a target under an unsearchable dir → refused (exit 3)" 3 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "A13 unsearchable dir: ...as an incomplete walk" "$OUT" "$incomplete (git config failed on $H/locked/work.cfg (a directory on its path cannot be searched))"
+fi
+chmod 700 "$H/locked"
+# A symlink to a target already read is that target: counted once, never a depth step.
+s2_home a14-alias; s2_inc
+printf '[core]\n\thooksPath = %s/work-hooks\n[includeIf "onbranch:x"]\n\tpath = alias.cfg\n' "$H" > "$H/work.cfg"
+ln -s "$H/work.cfg" "$H/alias.cfg"
+run genv "$isg" --where --global
+check_eq "A14: a symlinked self-include is counted once" "1" "$(wkey conditional)"
+# install.sh's Verify: after a refusal over a conditional include, its advice says why a plain re-run would be
+# refused again; under --no-hooks it blames the flag, as before.
 s2_home a13-verify; s2_inc
 printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
 run genv "$install" --home "$H/claude-home"
-check_contains "A13 install.sh Verify: names the conditional include" "$OUT" "a conditional [includeIf] include sets its own core.hooksPath"
-check_contains "A13 install.sh Verify: ...and the --force way out" "$OUT" "install-secret-guard.sh --global --force to wire anyway"
-check_absent "A13 install.sh Verify: ...never the generic advice that is refused again" "$OUT" "secret-guard not wired — run tools/install-secret-guard.sh --global"
+check_contains "A13 install.sh Verify: names the conditional include as the likely refusal" "$OUT" "If it refused over a conditional [includeIf] include that sets its own core.hooksPath"
+run genv "$install" --home "$H/claude-home" --no-hooks
+check_contains "A13 install.sh Verify --no-hooks: blames the flag" "$OUT" "secret-guard not wired (--no-hooks"
+check_absent "A13 install.sh Verify --no-hooks: ...not the conditional include" "$OUT" "If it refused over a conditional"
 
 # --- A14: `conditional=` and doctor's disclosure ----------------------------------------------------------------
 s2_home a14; mkdir -p "$H/claude"; s2_inc

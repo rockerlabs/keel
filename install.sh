@@ -1906,18 +1906,22 @@ elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   echo "       A copy vendored into a repo would be ignored while it stands. Replace it machine-wide with"
   echo "       tools/install-secret-guard.sh --global --force, or give one repo its own hooks dir:"
   echo "       git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then   tools/install-secret-guard.sh <repo>"
-elif [ -n "$(wm_get conditional)" ]; then
-  # dir #717: a conditional [includeIf] include sets its own core.hooksPath (or the walk could not read them
-  # all), so install-secret-guard.sh --global refuses on every run — the generic arm's advice would be refused
-  # again. Same ordering reason as the foreign arm above.
-  echo "  WARN secret-guard NOT wired — a conditional [includeIf] include sets its own core.hooksPath, or could"
-  echo "       not be read ('conditional=$(wm_get conditional)'), so install-secret-guard.sh --global refuses to"
-  echo "       wire over it. Its message names the file; point that setting at Keel's dir or remove it, or run"
-  echo "       tools/install-secret-guard.sh --global --force to wire anyway."
 elif [ "$DO_HOOKS" = 0 ]; then
   echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
 else
   echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
+  # dir #717: that run refuses over a conditional [includeIf] include that sets its own core.hooksPath, or when
+  # it cannot read them all — a plain re-run is refused again. `conditional=` is counted against the current
+  # value, not Keel's dir, so this says "if": the installer's own message above names the actual cause.
+  if [ "$hp_is_keel" != 1 ]; then
+    case "$(wm_get conditional)" in
+      '') ;;
+      unknown) echo "       If it refused because it could not read every conditional [includeIf] include, its message"
+               echo "       above names why (a TMPDIR inside a repository, say); fix that, or add --force to wire anyway." ;;
+      *) echo "       If it refused over a conditional [includeIf] include that sets its own core.hooksPath, its"
+         echo "       message above names it; point that setting at Keel's dir or remove it, or add --force." ;;
+    esac
+  fi
 fi
 
 # The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral

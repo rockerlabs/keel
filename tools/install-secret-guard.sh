@@ -445,9 +445,10 @@ _isg_machine_read() {
 #     for every test) applies to one command, not to the machine;
 #   - a relative target resolves beside the file that names it (git's rule), a leading ~/ to $HOME; a
 #     missing target is skipped, as git skips it, and so is a valueless `path` key; a `~user/` or
-#     `%(prefix)/` target, which this walk does not resolve, and an unreadable one make it incomplete;
+#     `%(prefix)/` target, which this walk does not resolve, an unreadable one and one under a dir that
+#     cannot be searched make it incomplete;
 #   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
-#     before (compared by its real path, so `./work.cfg` is work.cfg) is skipped — a conditional
+#     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is skipped — a conditional
 #     self-include is complete — and depth stops at $isg_include_depth_max;
 #   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
 #     hook off in its trees, and a valueless `hooksPath` makes git fail there.
@@ -487,7 +488,7 @@ _isg_cond_list() {
     # shellcheck disable=SC2088  # matching a literal ~ on purpose
     case "$raw" in
       "~/"*) raw="$(_isg_norm_path "$raw")" ;;
-      "~"*|"%("*) c_cause="an include path this walk cannot resolve: $raw"; return 1 ;;
+      "~"[!/]*|"%(prefix)/"*) c_cause="an include path this walk cannot resolve: $raw"; return 1 ;;
       /*) ;;
       *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
          raw="$base/$raw" ;;
@@ -500,9 +501,27 @@ _isg_cond_list() {
   return 0
 }
 
+# Is file $1 one of the newline-separated files in $2? Compared with `-ef`, so `./work.cfg`, a symlink to a file
+# and the file itself are one (both exist: the caller tested $1).
+_isg_seen() {
+  local v
+  while IFS= read -r v; do
+    [ -n "$v" ] && [ "$v" -ef "$1" ] && return 0
+  done <<< "$2"
+  return 1
+}
+
+# 0 when absent path $1 is absent for certain: its deepest existing ancestor dir could be searched. A dir
+# without search permission hides what is under it, and git fails reading an include there.
+_isg_absent_for_sure() {
+  local p="${1%/*}"
+  while [ -n "$p" ] && [ ! -e "$p" ]; do p="${p%/*}"; done
+  [ -z "$p" ] || [ -x "$p" ]
+}
+
 # The walk itself, from scratch dir $1 (fresh, not inside a repo). Sets c_list and c_cause (see above).
 _isg_conditional_reads() {
-  local depth=1 cur cond origin tgt rc kv kind val vout key d visited=$'\n'
+  local depth=1 cur cond origin tgt rc kv kind val vout visited=""
   c_probe="$1" c_list="" c_cause="" c_next=""
   vout="$c_probe/.isg-value"
   _isg_cond_list "" || return 0
@@ -511,13 +530,15 @@ _isg_conditional_reads() {
     cur="$c_next" c_next=""
     while IFS=$'\t' read -r cond origin tgt; do
       [ -n "$tgt" ] || continue
-      [ -e "$tgt" ] || continue   # a missing include: git skips it
+      if [ ! -e "$tgt" ]; then
+        # a missing include: git skips it — unless a dir on its path could not be searched, so "missing" is a guess
+        _isg_absent_for_sure "$tgt" || { c_cause="git config failed on $tgt (a directory on its path cannot be searched)"; return 0; }
+        continue
+      fi
       # git reports an unreadable include as a warning and exit 1 — the same exit as "not set" — so test it here
       [ -r "$tgt" ] || { c_cause="git config failed on $tgt (unreadable)"; return 0; }
-      d="${tgt%/*}"; [ -n "$d" ] || d=/
-      key="$(cd "$d" 2>/dev/null && pwd -P)" && key="$key/${tgt##*/}" || key="$tgt"
-      case "$visited" in *$'\n'"$key"$'\n'*) continue ;; esac
-      visited="$visited$key"$'\n'
+      _isg_seen "$tgt" "$visited" && continue
+      visited="$visited$tgt"$'\n'
       rc=0
       git -C "$c_probe" config --file "$tgt" --includes -z --get-regexp '^core\.hookspath$' > "$vout" 2>/dev/null || rc=$?
       case "$rc" in

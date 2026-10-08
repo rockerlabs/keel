@@ -21,10 +21,9 @@ sections real content going forward — see that page for exactly when each one 
   includes from its scratch dir: the global, XDG and system files and anything `[include]`d, nested
   `includeIf`s too, but never a command-scope one. When one sets a different, empty or valueless
   `core.hooksPath`, it refuses with exit 3, naming the condition, the file, the target and the value. A walk it
-  cannot finish (include depth over 10, a path holding a TAB or newline, an unreadable target, a `~user/`
-  target, a failed `git config`, a scratch dir inside a repository) refuses too, where it used to fall back to
-  a narrow read in silence; `install.sh`'s Verify then names that cause instead of advising a run that is
-  refused again. `--force` wires
+  cannot finish (include depth over 10, a path holding a TAB or newline, a target it cannot read or reach, a
+  `~user/` target, a failed `git config`, a scratch dir inside a repository) refuses too, where it used to fall
+  back to a narrow read in silence; `install.sh`'s Verify then says why a plain re-run would be refused again. `--force` wires
   anyway, prints a NOTE per conflict and records nothing, since the conditional line is left as it is. A re-run
   with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
   and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
