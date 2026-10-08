@@ -125,6 +125,13 @@ sections real content going forward — see that page for exactly when each one 
   ticket whose defect a standing-list line already names moves that line into the ticket and deletes it
   from the list, so the list stops carrying defects that are already scheduled; the release manager's filing
   rule in `docs/release-management.md` points at it.
+- **`public-audit.sh` no longer reads clean over a binary holding a personal literal, a file after an
+  invalid-byte name, or a missing personal file.** The working-tree binary pass now also hunts the personal
+  literals, so `--no-history` and an untracked or staged binary GAP once per pass instead of printing "no
+  publication blockers found". The working-tree reads and `scan_binary_blobs`' line read run under `LC_ALL=C`,
+  so a name ending in an invalid byte no longer hides the next file under bash 5 and UTF-8. A set
+  `SECRET_SCAN_PERSONAL_FILE` that is not a regular file is a GAP (`/dev/null` still switches the personal half
+  off on purpose); the suite default moves to `/dev/null` to match (dir #719).
 
 ## [0.14.0] — 2026-10-07
 
