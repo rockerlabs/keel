@@ -1635,29 +1635,14 @@ done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
 # `fn()` cannot be valid bash outside a function definition, so the widened alternative is unambiguous
 # (dir #380 — a hand-copy with the brace on its own line was invisible to this check before the
 # widening). Used by both check 9's cksum_def_re and check 10's single_def_check below, so the two
-# checks' definition of "a real function opener" can't drift apart the way check 10's OWN def_re once
-# drifted from extract_fn_body's opening-line pattern (found by this ticket's own /code-review max
-# pass, reproduced live: a purely cosmetic reformat, `fn () {` instead of `fn() {`, matched one but not
-# the other) — one function, one place to widen the DETECTION shape both `grep -E` call sites share.
-# **`extract_fn_body` below deliberately does NOT call this** (an earlier draft of this comment claimed
-# it did, which this ticket's own /code-review high pass found false by reading the code): a regex
-# string built for `grep -E` uses single-backslash ERE escaping (`\(`, `\{`), while a dynamic regex
-# handed to `awk` via `-v` goes through awk's OWN escape processing first, which collapses an
-# unrecognized `\(` into a bare `(` — verified live, this silently breaks the match rather than
-# erroring. `extract_fn_body`'s own literals use the double-backslash form awk's `-v` needs, which is a
-# genuinely different string than this function returns, not a copy of it. So the two must still be
-# widened BY HAND, together, whenever either changes (dir #380's own pre-decision, restated: both
-# halves move together or neither does) — this function unifies only the two grep-E call sites, and
-# `single_def_check` additionally treats an unrecognized opener in the body-comparison half as
-# unverifiable rather than a silent match (see its own comment), so a shape this function detects but
-# `extract_fn_body` can't parse fails LOUD, never quietly OK.
+# checks' definition of "a real function opener" can't drift apart — one function, one place to widen
+# the DETECTION shape both `grep -E` call sites share.
 # **Known residual (dir #490, never observed in this tree):** the `^[[:space:]]*` anchor rules out a
 # `#`-comment, but nothing here distinguishes a real function opener from a bare `fn()` line that
 # merely APPEARS at line start inside a heredoc body or a multi-line string literal — that would still
 # match. The failure direction is a false "drifted"/duplicate GAP (loud, safe side), never a silent
 # false OK, and no file in the tree today has such a literal. The honest fix (tracking heredoc/quote
-# state in a bash-3.2 `grep -E`/`awk` pipeline) costs more than the residual, and dir #380's own
-# pre-decision means any change here must move `extract_fn_body` in step — left alone until a real
+# state in a bash-3.2 `grep -E`/`awk` pipeline) costs more than the residual — left alone until a real
 # instance appears.
 fn_open_re() {
   printf -v "$2" '^[[:space:]]*%s[[:space:]]*\\(\\)[[:space:]]*(\\{|$)' "$1"
@@ -1712,53 +1697,13 @@ fi
 say ""
 say "● manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363)"
 
-# extract_fn_body FILE FN — FN's body, one normalized line per statement (each line's own
-# leading/trailing whitespace stripped, so a difference in INDENTATION alone — install.sh's fallback
-# copies live inside an `else` block, the lib files' own copies don't — never counts as a difference).
-# Assumes the shape every copy this check compares actually uses: a bare `}` alone on its closing
-# line, no nested braces (both functions here are one test expression). The opening line may be either
-# `fn() {` (brace same line) OR a bare `fn()` with the brace on a LATER line, any number of blank
-# lines after it (both are valid bash — the parser just keeps reading until the compound command
-# appears) — the same shapes `fn_open_re` above makes `def_re`/`cksum_def_re` detect. **Both halves
-# must recognize the same shapes, or a detected definition can compare as an empty body and fire a
-# false "drifted" GAP** (dir #380's own pre-decision) — confirmed live for the blank-line case: before
-# this tolerance, `fn_open_re`'s bare-`fn()` branch detects `fn()\n\n{` as a definition (it doesn't
-# look past the opening line at all), but this awk reset `pending` on the blank line and returned an
-# empty body for it, an argument-for-argument repeat of the whitespace-tolerance mismatch dir #363's
-# own `/code-review max` pass already found once (a purely cosmetic `fn () {` vs `fn() {` reformat).
-# **Residual, deliberately not chased further**: a COMMENT line between `fn()` and `{` is also valid
-# bash and is NOT tolerated here — closing that gap needs either enumerating more shapes indefinitely
-# (the exact failure mode this comment's own history warns about) or replacing this regex/awk pair with
-# real bash introspection (e.g. `declare -f` after sourcing), which is a redesign beyond this ticket's
-# proven mutation shape, not a widening of it.
-extract_fn_body() {
-  awk -v fn="$2" '
-    pending && $0 ~ /^[[:space:]]*\{[[:space:]]*$/ { infn = 1; pending = 0; next }
-    pending && $0 ~ /^[[:space:]]*$/ { next }
-    pending { pending = 0 }
-    $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*\\{[[:space:]]*$" { infn = 1; next }
-    $0 ~ "^[[:space:]]*" fn "[[:space:]]*\\(\\)[[:space:]]*$" { pending = 1; next }
-    infn && $0 ~ /^[[:space:]]*\}[[:space:]]*$/ { infn = 0; next }
-    infn { line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); print line }
-  ' "$1"
-}
-
 # single_def_check FN HOME [EXEMPT] — GAP unless FN's only real definition tree-wide is in HOME, with
-# at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub or fallback copy,
-# not a hand-copy this check exists to catch — install.sh's own optional-source pattern keeps exactly
-# one of each: manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
-# manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared
-# below: it isn't claimed to match anything) and keel_core_is_link/keel_core_is_nogit_trim's
-# byte-identical fallback copies (dir #363's own documented degradation contract — see
-# tools/lib/core-ownership.sh's own header for why install.sh, alone of the three consumers, keeps one).
-# **The "byte-identical" half of that contract is itself checked here, not merely asserted in a
-# comment** (found by this ticket's own altitude review: an earlier draft counted copies and locations
-# only, so the one duplicate the design deliberately permits was exactly the one whose invariant went
-# unverified — a future edit to core-ownership.sh's real predicate could silently drift out of sync
-# with install.sh's fallback and this check would still say OK). `is_fallback` distinguishes the two
-# EXEMPT shapes: a body worth diffing (keel_core_is_link/keel_core_is_nogit_trim) from a stub that
-# isn't (manifest_usable's `return 1`) — passed explicitly rather than inferred, since inferring it from
-# body content would be exactly the kind of guess this check exists to replace with a real comparison.
+# at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub, not a hand-copy this
+# check exists to catch — install.sh's own optional-source pattern keeps exactly one:
+# manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
+# manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared:
+# it isn't claimed to match anything). The core-ownership functions carry no exemption: core-ownership.sh
+# is REQUIRED by every consumer (dir #716), so they have exactly one definition.
 # Scoped away from tests/ (`:!tests/`, unlike check 9's plain `'*.sh' 'keel'`): a test fixture
 # legitimately keeps its OWN small, independent reader for isolation from production code under test
 # (e.g. tests/test_install_manifest.sh's own manifest_field(), pre-existing this ticket) — a real,
@@ -1766,8 +1711,7 @@ extract_fn_body() {
 # Absence graded the same way check 9 grades an absent artifact_cksum: a repo defining FN nowhere
 # simply doesn't have the rule to keep in sync.
 single_def_check() {
-  local fn="$1" home="$2" exempt="${3-}" is_fallback="${4-0}" def_re defs rest note=""
-  local home_body exempt_body unread
+  local fn="$1" home="$2" exempt="${3-}" def_re defs rest note=""
   fn_open_re "$fn" def_re
   # `-c color.grep=never` (dir #587): same false-GAP class as check 9's own `cksum_defs` above —
   # see that call site's comment for the full mechanism and why this is per-call, not file-wide.
@@ -1776,44 +1720,27 @@ single_def_check() {
   rest="$defs"
   if [ -n "$exempt" ]; then
     rest="$(printf '%s\n' "$defs" | grep -vxF "$exempt" || true)"
-    note=" ($exempt carries a documented fallback/stub, not a hand-copy)"
+    note=" ($exempt carries a documented stub, not a hand-copy)"
   fi
   if [ "$rest" != "$home" ]; then
-    gap "${fn}() is defined in {$defs} — expected exactly one real definition, in $home$( [ -n "$exempt" ] && printf ' (plus its documented %s fallback/stub)' "$exempt" ) (dir #363: source it, never hand-copy it)"
-  elif [ "$is_fallback" = 1 ]; then
-    home_body="$(extract_fn_body "$repo_root/$home" "$fn")"
-    exempt_body="$(extract_fn_body "$repo_root/$exempt" "$fn")"
-    # `def_re` (fn_open_re) detects a real definition from its OPENING line alone — it has no way to
-    # look past it, so it also matches an opener `def_re` is confident is real but whose FOLLOWING
-    # lines (e.g. a comment between `fn()` and `{`, also valid bash) `extract_fn_body` doesn't
-    # recognize; extract_fn_body then returns "". Comparing two empty strings as equal would silently
-    # report OK on a genuinely drifted pair — the exact failure this check exists to catch, and WORSE
-    # than the false "drifted" GAP dir #380's own pre-decision names: a false OK on real drift is
-    # silent, where a false GAP is at least loud (found live by this ticket's own /code-review high
-    # pass, reproducing it with mismatched bodies behind a comment-line opener on both sides). Never
-    # let "both came back empty" read as "matched" — treat it as un-verified instead.
-    unread=""
-    [ -z "$home_body" ] && unread="$home"
-    [ -z "$exempt_body" ] && unread="${unread:+$unread, }$exempt"
-    if [ -n "$unread" ]; then
-      gap "${fn}()'s byte-identical-fallback contract could not be verified: this check's body-extraction pattern didn't recognize the opening-line shape used in {$unread} — reformat to \`${fn}() {\` or a bare \`${fn}()\` with \`{\` alone on a later line, or verify the byte-identical contract by hand"
-    elif [ "$home_body" != "$exempt_body" ]; then
-      gap "${fn}()'s fallback copy in $exempt has drifted from the canonical definition in $home — the documented contract is a byte-identical fallback, not a stub; keep them in sync or degrade the contract explicitly"
-    else
-      say "  OK   ${fn}() has exactly one real definition, in $home$note"
-    fi
+    gap "${fn}() is defined in {$defs} — expected exactly one real definition, in $home$( [ -n "$exempt" ] && printf ' (plus its documented %s stub)' "$exempt" ) (dir #363: source it, never hand-copy it)"
   else
     say "  OK   ${fn}() has exactly one real definition, in $home$note"
   fi
 }
 single_def_check manifest_field          tools/lib/manifest.sh
-single_def_check manifest_usable         tools/lib/manifest.sh       install.sh   0
-single_def_check keel_core_is_link       tools/lib/core-ownership.sh install.sh   1
-single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh install.sh   1
-single_def_check keel_core_block_text       tools/lib/core-ownership.sh install.sh   1
-single_def_check keel_core_block_is_trimmed tools/lib/core-ownership.sh install.sh   1
-single_def_check keel_core_block_norm       tools/lib/core-ownership.sh install.sh   1
-single_def_check keel_core_block_state      tools/lib/core-ownership.sh install.sh   1
+single_def_check manifest_usable         tools/lib/manifest.sh       install.sh
+single_def_check keel_core_is_link       tools/lib/core-ownership.sh
+single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh
+single_def_check keel_core_block_text       tools/lib/core-ownership.sh
+single_def_check keel_core_block_is_trimmed tools/lib/core-ownership.sh
+single_def_check keel_core_block_norm       tools/lib/core-ownership.sh
+single_def_check keel_core_block_state      tools/lib/core-ownership.sh
+single_def_check keel_core_block_full       tools/lib/core-ownership.sh
+single_def_check keel_core_block_replace    tools/lib/core-ownership.sh
+single_def_check keel_core_has_block        tools/lib/core-ownership.sh
+single_def_check keel_core_block_check      tools/lib/core-ownership.sh
+single_def_check keel_dir_is_checkouts_own  tools/lib/safe-write.sh
 
 # --- 11. stray $HOME/keel*alpine*-shaped clones (dir #397's doctor-advisory half, handed to
 # dir #399's design pass) ---------------------------------------------------------------------

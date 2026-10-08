@@ -16,8 +16,6 @@ doctor="$REPO_ROOT/tools/doctor.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$REPO_ROOT/tools/lib/stat-portable.sh"
 
-# alter_block FILE — change one line INSIDE the KEEL-CORE block (an older release, or an edit).
-alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
 # hand_trim FILE — what a /keel-setup no-git trim leaves: both droppable sections gone, no markers.
 hand_trim() {
   awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' "$1" > "$1.new" && mv "$1.new" "$1"
@@ -90,18 +88,8 @@ check_eq "A13c: foreign file content unchanged" "# My own notes
 nothing keel here" "$(cat "$h/CLAUDE.md")"
 
 # --- (e) the tty branch, answering y ------------------------------------------------------------------
-# A pty is needed: install.sh's offer is behind `[ -t 0 ]`. Hold stdin open past the prompt — a bare
-# `printf 'y\n' |` loses the answer at EOF; the hold is a process substitution nothing waits on, so a call
-# returns as soon as install.sh exits. macOS `script -q /dev/null CMD…`; util-linux
-# `script -qc "CMD" /dev/null`. Called directly, not through lib.sh's run() (it forces </dev/null).
+# A pty is needed: install.sh's offer is behind `[ -t 0 ]` — lib.sh's tty_run drives it.
 # SKIPPED, with a printed reason, when `script` is absent (the alpine leg has neither script nor python).
-tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed)
-  local ans="$1"; shift
-  case "$(uname -s)" in
-    Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-    *)      OUT="$(script -qc "$*" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-  esac
-}
 if ! command -v script >/dev/null 2>&1; then
   printf '  SKIP  A13e: no `script` binary on this host — the tty branch is not exercised here\n'
 else

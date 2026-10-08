@@ -79,6 +79,8 @@ cp "$REPO_ROOT/install.sh" "$fixture/install.sh"
 # succeed at all. stat-portable.sh rides along because safe-write.sh loads it for its hard-link check.
 cp "$REPO_ROOT/tools/lib/artifact-cksum.sh" "$fixture/tools/lib/artifact-cksum.sh"
 cp "$REPO_ROOT/tools/lib/safe-write.sh" "$REPO_ROOT/tools/lib/stat-portable.sh" "$fixture/tools/lib/"
+# tools/lib/core-ownership.sh (dir #716) is REQUIRED too: install.sh no longer carries an inline fallback.
+cp "$REPO_ROOT/tools/lib/core-ownership.sh" "$fixture/tools/lib/"
 cp "$REPO_ROOT/CORE.md" "$REPO_ROOT/FRAMEWORK.md" "$REPO_ROOT/PRINCIPLES.md" "$fixture/"
 cp "$REPO_ROOT/templates/CLAUDE.md" "$REPO_ROOT/templates/INSTANCE.md" \
    "$REPO_ROOT/templates/LEARNINGS.md" "$REPO_ROOT/templates/IDEAS.md" "$fixture/templates/"

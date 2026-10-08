@@ -171,59 +171,20 @@ advise_uninstall="keel uninstall$mode_flag$home_flag" # reverse THIS install
 CONTEXT_FILE="CLAUDE.md"
 [ "$CODEX" = 1 ] && CONTEXT_FILE="AGENTS.md"
 
-# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim), hoisted here — before the
-# linked-mode sticky-detect just below, this file's first call site — same reasoning as the self-link
-# guard further down: the earliest sane point either way, so the sticky-detect still fires from a
-# checkout that hasn't got a tools/ dir at all. OPTIONAL, unlike tools/lib/manifest.sh's REQUIRED
-# treatment for uninstall.sh/tools/doctor.sh: every call site below is a pure filesystem check with
-# zero tools/ dependency today, driving only this run's own LINK/NOGIT control flow and a printed
-# message — never a manifest record another script later trusts for a destructive decision, so there's
-# no cross-script poisoning risk to refuse outright over (contrast tools/lib/artifact-cksum.sh below).
-# Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see tools/lib/manifest.sh's
-# own guard further down for why; a bare `.` can't be guarded against a parse-time syntax-error abort
-# under `set -e`); the fallback is today's inline logic moved verbatim —
-# byte-identical to tools/lib/core-ownership.sh's own copy, not a stub, so a tools/-less checkout keeps
-# today's exact behaviour.
+# core-ownership (dir #363: keel_core_is_link/keel_core_is_nogit_trim; dir #650: the block comparator;
+# dir #716: the anchored KEEL-CORE marker definition every reader and writer of the embedded block
+# shares), hoisted here — before the linked-mode sticky-detect just below, this file's first call site.
+# REQUIRED, like uninstall.sh and tools/doctor.sh: one definition in the lib, no inline copy to keep in
+# step with it. Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see
+# tools/lib/manifest.sh's own guard further down for why; a bare `.` can't be guarded against a
+# parse-time syntax-error abort under `set -e`). A checkout without tools/ stops here, with nothing
+# written (tools/lib/safe-write.sh is REQUIRED further down too, so it could not install anyway).
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
-  keel_core_is_link() {
-    [ -L "$1" ]
-  }
-  keel_core_is_nogit_trim() {
-    [ -f "$1" ] && [ ! -L "$1" ] && grep -q 'KEEL-NOGIT' "$1" 2>/dev/null
-  }
-  # dir #650: the block-currency comparator — byte-identical bodies to tools/lib/core-ownership.sh's
-  # keel_core_block_* (tools/self/doctor.sh's single-definition check compares them). core_block(), this
-  # file's former mirror of block_of() in tests/test_core_wrapper_sync.sh, is absorbed by
-  # keel_core_block_text.
-  keel_core_block_text() {
-    sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'
-  }
-  keel_core_block_is_trimmed() {
-    local block
-    block="$(keel_core_block_text "$1")"
-    case "$block" in
-      *'## Git — mandatory rails'*|*'## Before writing code — reconcile first'*) return 1 ;;
-    esac
-    return 0
-  }
-  keel_core_block_norm() {
-    awk '/KEEL-(NO)?GIT-(BEGIN|END)/ { next } NF { blank = 0; print; next } !blank { print; blank = 1 }'
-  }
-  keel_core_block_state() {
-    local inst ref
-    inst="$(keel_core_block_text "$1")"
-    ref="$(keel_core_block_text "$2")"
-    if ! keel_core_block_is_trimmed "$1"; then
-      if [ "$inst" = "$ref" ]; then echo current; else echo drift; fi
-      return 0
-    fi
-    inst="$(printf '%s\n' "$inst" | sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' | keel_core_block_norm)"
-    ref="$(printf '%s\n' "$ref" | awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' | keel_core_block_norm)"
-    if [ "$inst" = "$ref" ]; then echo current-trimmed; else echo drift; fi
-  }
+  echo "install: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely tell Keel's own files from yours; re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
 fi
 
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
@@ -291,11 +252,11 @@ echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
 # Self-link guard (linked mode only), hoisted here — before anything below sources tools/lib/manifest.sh
-# (dir #323) — so the refusal still fires from a checkout that hasn't got a tools/ dir at all (this is
+# (dir #323), so it still fires with the optional libs absent (core-ownership.sh, REQUIRED, loads above it). This is
 # the earliest sane point either way: if the consumption dir IS this checkout — e.g. --home "$HOME"
 # while the checkout sits at $HOME/keel, bootstrap's default — sync_product would see src -ef dest and
 # "upgrade" the checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves,
-# corrupting every file the links resolve to). -ef, not a string compare: different spellings of the
+# corrupting every file the links resolve to. -ef, not a string compare: different spellings of the
 # same dir still collide. Refuse rather than no-op — the invocation is nonsensical (home is ~/.claude,
 # not the checkout). $link_dir is referenced again inside the LINK-mode block further down.
 if [ "$LINK" = 1 ]; then
@@ -572,6 +533,48 @@ else
 fi
 KEEL_SAFE_WRITE_CHECKOUT="$root"
 
+# product_dir DIR WHAT — ready DIR to receive Keel's WHAT (B7 of docs/specs/685-symlink-policy.md): make it
+# if it is missing, and return 0. Return 1 after ONE skip line, having written nothing, when:
+#   - DIR exists but is not a directory (a file, a dangling link) — a bare `mkdir -p` there used to abort
+#     the whole run before the manifest was written (S4-1);
+#   - `mkdir -p` cannot make it;
+#   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
+#     Keel checkout while the home's does not: `<home>/docs` symlinked into the checkout made install
+#     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
+#     anywhere else is followed — the operator's own commands/ and agents/ are such links.
+# Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
+# "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
+# with the slash — a sibling `<checkout>-dots` is not inside — while the home's is not).
+product_dir() {
+  local d="$1" what="$2" a="$1"
+  if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
+    echo "  !    $d exists and is not a directory — $what were not placed there"
+    return 1
+  fi
+  while [ ! -d "$a" ]; do
+    case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
+    [ -n "$a" ] || a="/"
+  done
+  if keel_dir_is_checkouts_own "$a" "$HOME_DIR"; then
+    echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
+    return 1
+  fi
+  mkdir -p "$d" 2>/dev/null || {
+    echo "  !    could not create $d — $what were not placed there"
+    return 1
+  }
+  return 0
+}
+
+# The linked layout lives or dies by keel/: every file placed later, and the import line, point into it.
+# So unlike the other product directories, one that cannot be used refuses the run — here, before
+# anything is placed or edited, so the refusal is atomic (exit 2, like the self-link guard above) —
+# rather than skipping: a skipped keel/ would leave the import line aimed at a CORE.md never placed.
+if [ "$LINK" = 1 ]; then
+  # (The run lock taken above is released first: this exit would otherwise leave it on disk.)
+  product_dir "$link_dir" "Keel's linked core" >&2 || { rm -rf "$install_lock_dir" 2>/dev/null || true; exit 2; }
+fi
+
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
 # reads THIS, never $manifest_file directly, so a future reordering of the write block below can never
 # make the provenance check observe this run's own placement instead of the run before it.
@@ -749,6 +752,28 @@ _keel_test_checkpoint() {
 # foreign/edited file is never claimed as ours.
 manifest_artifacts=()
 record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
+# keel_path_inside PATH CHECKOUT — PATH is CHECKOUT or below it (B7's "inside": the checkout's path or a
+# path under it, with the slash, so a sibling `<checkout>-dots` is not inside): on the strings, or — when
+# PATH still resolves — on the physical paths, so a record that spells the checkout through another link
+# (`~/.keel/engine/...` for `~/pet-projects/keel/...`) still counts. A PATH that no longer resolves
+# (its checkout moved) is judged on the strings alone.
+keel_path_inside() {
+  local p="$1" ck="${2%/}" pd ckp
+  [ -n "$ck" ] || return 1
+  case "$p" in "$ck"|"$ck"/*) return 0 ;; esac
+  [ -e "$p" ] || return 1
+  pd="$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  ckp="$(cd -P "$ck" 2>/dev/null && pwd -P)" || return 1
+  case "$pd/$(basename "$p")" in "$ckp"|"$ckp"/*) return 0 ;; esac
+  return 1
+}
+# keel_link_is_ours LINK — LINK points into the checkout this run installs from. Keel's links are always
+# absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not.
+keel_link_is_ours() {
+  local t
+  t="$(readlink "$1")" || return 1
+  case "$t" in /*) keel_path_inside "$t" "$root" ;; *) return 1 ;; esac
+}
 # CKSUM_UNREADABLE/artifact_cksum — sourced from tools/lib/artifact-cksum.sh above (dir #362).
 # record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
 # record it relative to $HOME_DIR. The one call every write/up-to-date site below routes through.
@@ -769,7 +794,11 @@ record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
 record_placed() {
   local dest="$1" cksum="${2:-}" rel
   rel="${dest#"$HOME_DIR"/}"
-  if [ -L "$dest" ]; then record_artifact "$rel" symlink "$(readlink "$dest")"
+  if [ -L "$dest" ]; then
+    # Only a link into THIS checkout is Keel's: an adopter's own link (a dotfiles copy of a doc, their
+    # own program at bin/keel) is never recorded, so neither the next run's T3 nor uninstall can take it
+    # for ours (B3, T3a). Every link Keel makes points at an absolute path under $root.
+    if keel_link_is_ours "$dest"; then record_artifact "$rel" symlink "$(readlink "$dest")"; fi
   elif [ -f "$dest" ]; then record_artifact "$rel" file "${cksum:-$(artifact_cksum "$dest")}"
   fi
 }
@@ -846,30 +875,15 @@ prior_file_cksum() {
 # and there it does exactly the harm this whole check exists to stop: `place` would re-point an
 # adopter's dotfiles link at the checkout, silently, with no backup, under the same "unedited" message
 # — the resulting form being a symlink is not the same thing as no wiring having been destroyed. With
-# the check unconditional, such a dest falls instead to the linked-mode symlink branch further down,
-# which declines it by name and prints a re-point hint — NON-TTY only: that branch sits after both
-# `[ -t 0 ]` branches, so an interactive run gets the generic overwrite prompt instead, which never
-# mentions that the dest is a link. (Reproduced both ways before this was written.)
+# the check unconditional, such a dest falls instead to sync_product's link classification, which runs
+# before every prompt (dir #685, B3): an adopter's link is declined by name, terminal or not.
+# (Before dir #685 that decline was a non-tty branch placed after both `[ -t 0 ]` branches, so an
+# interactive run got the generic overwrite prompt, which never mentioned that the dest is a link.)
 #
-# What that does NOT reach, stated because the sentence above invites the wrong inference: a symlinked
-# dest whose content is byte-IDENTICAL to the source is rejected here too (by the same clause), and
-# then sync_product routes it by MODE, neither route being this predicate's doing:
-#   - linked mode -> the `cmp -s` migration branch, which converges it to a checkout link and so
-#     re-points the very dotfiles wiring this predicate protects in the drifted case;
-#   - copy mode -> in_sync, which prints "up to date" and leaves the link ON DISK untouched — but
-#     calls record_placed, which classifies by CURRENT form and so rewrites the manifest record from
-#     `file <cksum>` to `symlink <readlink target>` (dir #369: the target is now the adopter's OWN
-#     current link target, captured at the moment record_placed runs here — no longer the `-`
-#     placeholder this comment used to describe). uninstall.sh's removal loop still ends up matching
-#     it: the recorded extra IS exactly what the live link currently points to, since both were read
-#     from the same symlink moments apart, so the adopter's link is swept on uninstall with no release
-#     drift needed at all — dir #369 changed HOW uninstall.sh decides ownership (exact match against a
-#     real recorded target, not unconditional trust of any `symlink`-kind record) but not THIS outcome.
-#     "The link is untouched" is true of this run and false of the next uninstall; an earlier draft of
-#     this comment called that outcome "correct", which it is not.
-# Both are pre-existing, unchanged since v0.8.0 (reproduced there: identical outcomes) and outside this
-# batch's findings — so do not read this predicate as closing the symlinked-dest case in general. It
-# closes the path that runs THROUGH it, not every path a symlinked dest can take.
+# What that does NOT reach: a symlinked dest whose content is byte-IDENTICAL to the source is rejected
+# here too (by the same clause). sync_product's link classification handles it before it gets here
+# (dir #685, B3): Keel's own stale link is re-pointed (T3), an adopter's link is left as is and NOT
+# recorded (T3a) — so, unlike before, uninstall never sweeps it as Keel's.
 #
 # Two deliberate non-behaviours:
 #   - A dest a LINKED run recorded is unaffected: record_placed writes `symlink <target>` there (dir
@@ -946,6 +960,64 @@ keel_own_untouched() {
   # decision riding on telling it apart from "no prior record" (see record_readme_if_unclobbered's own
   # docstring for the one caller that does).
   [ -n "$prior_extra" ] && [ "$prior_extra" != "$CKSUM_UNREADABLE" ] && [ "$prior_extra" = "$(artifact_cksum "$dest")" ]
+}
+
+# prior_symlink_extra REL — the target the PRIOR manifest recorded for the `symlink` artifact at REL
+# (dir #369; `-` in a manifest older than that ticket); empty when there is no usable prior manifest or
+# no such record.
+prior_symlink_extra() {
+  [ "$prior_manifest_usable" = 1 ] || return 0
+  awk -F'\t' -v rel="$1" '$1 == "artifact=symlink" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null || true
+}
+# prior_checkout — the `checkout=` header of the PRIOR manifest: the checkout that wrote its records,
+# which is the OLD one when the checkout has moved. Empty when there is no usable prior manifest.
+prior_checkout() {
+  [ "$prior_manifest_usable" = 1 ] || return 0
+  manifest_field "$prior_manifest" checkout
+}
+# keel_own_stale_link DEST (B3, T3) — DEST is a link Keel made in an earlier run and that has gone stale
+# (the checkout moved): its target is the one the prior manifest recorded for it, AND that recorded target
+# lies inside the checkout the prior manifest names (the checkout that wrote the record, not the running
+# one). The second test is what keeps an adopter's link that an older install recorded as Keel's from being
+# re-placed. A dangling link whose record carries the pre-dir-#369 `-` is Keel's too: that record never
+# named a target. Anything else — no usable prior manifest included — fails closed (T4 declines it).
+keel_own_stale_link() {
+  local dest="$1" rec cur
+  [ -L "$dest" ] || return 1
+  rec="$(prior_symlink_extra "${dest#"$HOME_DIR"/}")"
+  [ -n "$rec" ] || return 1
+  if [ "$rec" = "-" ]; then
+    [ ! -e "$dest" ]
+    return
+  fi
+  cur="$(readlink "$dest")" || return 1
+  [ "$cur" = "$rec" ] || return 1
+  keel_path_inside "$rec" "$(prior_checkout)"
+}
+
+# keel_link_class DEST SRC — what a link at DEST is, for SRC the Keel file that belongs there (B3): prints
+# T3 (Keel's own link gone stale), T3a (an adopter's link whose content already equals SRC) or T4 (any other
+# link, live or dangling). The caller has already ruled out T2 (DEST -ef SRC) and a link to a non-regular file.
+keel_link_class() {
+  if keel_own_stale_link "$1"; then echo T3
+  elif [ -f "$1" ] && cmp -s "$2" "$1"; then echo T3a
+  else echo T4
+  fi
+}
+
+# seed_blocked DEST [LABEL] — B5: a SEED writes only where there is no dentry at all. DEST is not a regular
+# file (a regular file is the caller's own "exists" case) yet something sits there — a dangling link, a link to
+# a directory, a directory: it is someone's wiring, and a write would replace it or abort the run. Prints the one
+# "left untouched" line and returns 0 for such a path; returns 1 otherwise.
+seed_blocked() {
+  [ ! -f "$1" ] || return 1
+  if [ -L "$1" ] && [ ! -e "$1" ]; then
+    echo "  =    ${2:-$(basename "$1")} is a dangling link (left untouched — remove it to let Keel seed one)"
+  elif [ -e "$1" ] || [ -L "$1" ]; then
+    echo "  =    ${2:-$(basename "$1")} is not a regular file (left untouched — move it aside to let Keel seed one)"
+  else
+    return 1
+  fi
 }
 
 # record_readme_if_unclobbered DEST (dir #512) — record_placed's own variant for a WRITE-ONCE artifact
@@ -1064,14 +1136,10 @@ if [ "$LINK" = 1 ]; then FIX="ln -sf"; else FIX="cp"; fi
 # Linked-mode helpers (used by the --link branch below AND its Verify section; $import_line is set
 # by the --link branch before any call).
 # strip_core_block FILE [REPLACEMENT] → stdout, with the KEEL-CORE block replaced by REPLACEMENT
-# (default: the import line; "" = block removed). The ONE definition of the marker transform;
-# callers own the destination (in-place migration or a pipe).
+# (default: the import line; "" = block removed). The marker transform itself is core-ownership's
+# keel_core_block_replace; callers own the destination (in-place migration or a pipe).
 strip_core_block() {
-  awk -v imp="${2-$import_line}" '
-    /KEEL-CORE-BEGIN/ {if (imp != "") print imp; skip=1; next}
-    /KEEL-CORE-END/   {skip=0; next}
-    !skip
-  ' "$1"
+  keel_core_block_replace "$1" "${2-$import_line}"
 }
 # replace_core_block FILE [REPLACEMENT] — FILE's KEEL-CORE block swapped in place (REPLACEMENT forwarded
 # to strip_core_block), as an EDIT through tools/lib/safe-write.sh: a dotfiles-managed CLAUDE.md is a
@@ -1080,6 +1148,7 @@ strip_core_block() {
 # Returns 1 when the lib refuses (its one line already said why); each caller then prints a
 # "left untouched" line and the run continues.
 replace_core_block() {
+  keel_core_block_check "$1" || return 1
   keel_write_through "$1" strip_core_block "$1" ${2+"$2"}
 }
 # (core_block, the former "lines between the markers" helper here, is now keel_core_block_text in
@@ -1099,16 +1168,13 @@ replace_core_block() {
 # mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
 refresh_core_block() {
   local file="$1" fresh
-  fresh="$(sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$root/CORE.md")"
+  keel_core_block_check "$file" || return 1
+  fresh="$(keel_core_block_full "$root/CORE.md")"
   if [ "${2-}" = trimmed ]; then
     fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
   fi
   # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
-  keel_write_through "$file" env KEEL_FRESH_BLOCK="$fresh" awk '
-    /KEEL-CORE-BEGIN/ { print ENVIRON["KEEL_FRESH_BLOCK"]; skip=1; next }
-    /KEEL-CORE-END/   { skip=0; next }
-    !skip
-  ' "$file"
+  keel_write_through "$file" keel_core_block_replace "$file" "$fresh"
 }
 # core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
 # --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
@@ -1130,6 +1196,12 @@ core_block_currency() {
     current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
     current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
   esac
+  # Markers that are not exactly one BEGIN followed by one END: no offer, no backup — a refresh would only
+  # be refused after the adopter said yes (keel_core_block_check printed why).
+  if ! keel_core_block_check "$dest"; then
+    echo "  !    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
+    return 0
+  fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
   if [ -t 0 ]; then
     echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
@@ -1200,6 +1272,8 @@ copy_gap() {
   local src="$1" dest="$2"
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
+  elif seed_blocked "$dest"; then
+    :   # B5: a SEED writes only where there is no dentry at all
   elif [ -f "$src" ]; then
     keel_write_replace "$dest" < "$src" || exit 1
     echo "  +    $(basename "$dest")"
@@ -1246,15 +1320,51 @@ sync_product() {
   # pass: every earlier guard in this diff explicitly excluded symlinks, so a dest that reaches Keel via
   # `~/.claude/commands/wrap.md -> /some/fifo` fell through every check and reached `place()`'s rename,
   # which replaces whatever dentry sits at $dest — symlink or not — silently destroying the adopter's
-  # link with none of this same predicate's own decline message). A dangling symlink (a moved/reaped
-  # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
-  # both still correctly excluded: `-e`/`-f` are false for the former (nothing to follow to) and true
-  # for the latter, so neither trips this flag.
+  # link with none of this same predicate's own decline message). A dangling symlink and a
+  # symlink-to-regular-file leave this flag at 0: `lclass` below classifies them.
   local dest_nonregular=0
   [ -e "$dest" ] && [ ! -f "$dest" ] && dest_nonregular=1
+  # lclass (B3 of docs/specs/685-symlink-policy.md) — what a LINK at $dest is, decided BEFORE
+  # keel_own_untouched, the alias branch and every prompt, so none of them can ever reach a link Keel did
+  # not make. Empty for anything that is not a link, a link to Keel's own file (T2: in_sync below) and a
+  # link to a non-regular file (T6: $dest_nonregular below). T3 Keel's own link gone stale; T3a an
+  # adopter's link whose content already equals Keel's; T4 any other link, live or dangling.
+  local lclass=""
+  if [ -L "$dest" ] && [ "$dest_nonregular" = 0 ] && [ ! "$dest" -ef "$src" ]; then
+    lclass="$(keel_link_class "$dest" "$src")"
+  fi
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
     return 1
+  elif [ "$lclass" = T3 ]; then
+    # Keel's own link, left stale by a moved checkout: placed again, no backup (nothing of the adopter's).
+    place "$src" "$dest"
+    if [ "$LINK" = 1 ]; then
+      echo "  ^    $name re-pointed (Keel's own link — the checkout it pointed into moved)"
+    else
+      echo "  ^    $name replaced (Keel's own stale link)"
+    fi
+    if [ "$alias_exists" = 1 ]; then
+      echo "       $(basename "$alias_dest") is now redundant ($name is Keel's own place again) — remove it: rm \"$alias_dest\""
+      sync_product "$src" "$alias_dest"
+    fi
+  elif [ "$lclass" = T3a ]; then
+    # Nothing to write, and NOT recorded: the prior record (an older install recorded such a link as
+    # Keel's) is dropped, so neither the next run nor uninstall ever treats the adopter's link as ours.
+    echo "  =    $name (up to date — your link, left as is)"
+    record_artifact "${dest#"$HOME_DIR"/}" forget -
+  elif [ "$lclass" = T4 ]; then
+    # A link Keel did not make: declined — with or without --force, and with no terminal prompt offered
+    # for it (neither the [y] overwrite nor the alias prompt's [u]pdate). Not an error: the run goes on.
+    # A command still gets Keel's version alongside it in copy mode (the per-mode alias creation is
+    # unchanged); linked mode makes no alias for a link, but keeps one that already exists fresh.
+    record_artifact "${dest#"$HOME_DIR"/}" forget -   # an older manifest's record of it is not Keel's either
+    if [ -n "$alias_dest" ] && [ "$LINK" != 1 ]; then
+      echo "  ~    $name is your own command — a symlink to a different target ($(readlink "$dest")); left untouched, whatever the flags. To let Keel place it, remove the link and re-run. Keel's version goes alongside it:"
+    else
+      echo "  !    $name is a symlink to a different target ($(readlink "$dest")) — your own wiring; left untouched, whatever the flags. To let Keel place it, remove the link and re-run."
+    fi
+    if [ -n "$alias_dest" ] && { [ "$LINK" != 1 ] || [ "$alias_exists" = 1 ]; }; then sync_product "$src" "$alias_dest"; fi
   elif keel_own_untouched "$src" "$dest"; then
     place "$src" "$dest"
     echo "  ^    $name refreshed (Keel's own copy, unedited)"
@@ -1308,14 +1418,14 @@ sync_product() {
     # explicitly out of scope; an adopter who genuinely wants this dest reclaimed removes it by hand.
     echo "  !    $name: $NON_REGULAR_MSG"
   elif [ ! -f "$dest" ]; then
-    # absent — or a dangling symlink (a moved/reaped checkout): place() replaces it atomically either way.
+    # absent. (A dangling link is T3 or T4 above, never here.)
     place "$src" "$dest"
     echo "  +    $name"
   elif cmp -s "$src" "$dest"; then
     # content equals the shipped version but isn't in the mode's canonical form. In copy mode the
     # canonical form IS identical content (absorbed by in_sync above), so this only fires in linked
-    # mode — for a real file (the copy→linked migration) or a same-content symlink into another
-    # checkout (a re-link after a move or re-clone): converge to the canonical link either way.
+    # mode, for a real file (the copy→linked migration): converge to the canonical link. A same-content
+    # LINK never gets here — T3 re-points Keel's own and T3a leaves an adopter's (lclass above).
     place "$src" "$dest"
     echo "  ^    $name — identical copy upgraded to a symlink (now updates with git pull)"
   elif [ "$FORCE" = 1 ] && [ -z "$alias_dest" ]; then
@@ -1349,13 +1459,6 @@ sync_product() {
       [yY]|[yY][eE][sS]) place "$src" "$dest"; echo "  +    $name updated" ;;
       *)                 echo "  =    $name left untouched (update later:  $FIX \"$src\" \"$dest\", or: $advise_refresh_force)" ;;
     esac
-  elif [ "$LINK" = 1 ] && [ -L "$dest" ]; then
-    # non-tty, and dest is a symlink resolving to a different target with different content: far
-    # more likely a stale link into an old/moved keel checkout than the user's own wiring. Never
-    # fork it into a keel-<name> alias here — that would cede the real name to the stale link
-    # forever (resolved-state semantics). Flag it and let a human decide (a tty re-run offers [u]).
-    echo "  !    $name is a symlink to a different target — an old Keel checkout, or your own wiring. Left untouched."
-    echo "       If it's a stale Keel link, re-point it:  $FIX \"$src\" \"$dest\""
   elif [ -n "$alias_dest" ]; then
     # no TTY to ask which way to resolve the collision — but creating the alias is non-destructive (a
     # brand-new file; the user's $name is untouched), so converge to the resolved state instead of
@@ -1385,21 +1488,15 @@ sync_product() {
 # `place()` picks copy vs symlink by mode. Guarded like the commands loop: skipped whole when the source
 # has no docs/ (tests/test_stamp_release_bootstrap.sh builds such a fixture), and per glob result
 # (an unmatched glob must not reach sync_product's `source missing … return 1` under set -e).
-# A dest dir that exists but is not a directory (or cannot be made) prints one skip line and moves on:
-# a bare `mkdir -p` failure here would abort the run before the manifest is written.
+# A dest dir that exists but is not a directory, cannot be made, or is really the checkout's own docs/
+# (a symlink into it) prints one skip line and moves on (product_dir): a bare `mkdir -p` failure here
+# would abort the run before the manifest is written, and a write there would land in the checkout.
 ship_docs() {
   local docs_dir="$1" doc rel sub subdir
   [ -d "$root/docs" ] || return 0
   for sub in "" drydock; do
     subdir="$docs_dir${sub:+/$sub}"
-    if { [ -e "$subdir" ] || [ -L "$subdir" ]; } && [ ! -d "$subdir" ]; then
-      echo "  !    $subdir exists and is not a directory — Keel's docs${sub:+/$sub} were not placed there"
-      continue
-    fi
-    mkdir -p "$subdir" 2>/dev/null || {
-      echo "  !    could not create $subdir — Keel's docs${sub:+/$sub} were not placed there"
-      continue
-    }
+    product_dir "$subdir" "Keel's docs${sub:+/$sub}" || continue
     for doc in "$root/docs${sub:+/$sub}"/*.md; do
       [ -f "$doc" ] || continue
       rel="${doc#"$root"/docs/}"
@@ -1421,7 +1518,7 @@ foreign_core=0
 if [ "$LINK" = 0 ] && [ -f "$HOME_DIR/$CONTEXT_FILE" ]; then
   if ! grep -q 'always-loaded core' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
     foreign_core=1
-  elif ! grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+  elif ! keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then
     foreign_core=1
   fi
 fi
@@ -1440,15 +1537,17 @@ if [ "$LINK" = 1 ]; then
   if [ -n "${HOME:-}" ]; then
     case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
   fi
-  mkdir -p "$link_dir"
-
   core_dest="$link_dir/CORE.md"
   if [ "$NOGIT" = 1 ]; then
     # A generated trimmed copy instead of the symlink. keel/ is Keel-owned and the KEEL-NOGIT token
     # marks the file as generated — regenerate without asking: a re-run after `git pull` is exactly
     # how a stale trim heals (doctor --install carries the matching staleness check).
     trimmed="$(strip_git_blocks "$root/CORE.md")"
-    if [ ! -L "$core_dest" ] && [ -f "$core_dest" ] && [ "$trimmed" = "$(cat "$core_dest")" ]; then
+    if [ -L "$core_dest" ] && [ ! "$core_dest" -ef "$root/CORE.md" ] && ! keel_own_stale_link "$core_dest"; then
+      # B3, T4: not Keel's own link (current or stale) — never replaced by the trimmed copy, whatever the flags.
+      echo "  !    CORE.md is a symlink to a different target ($(readlink "$core_dest")) — your own wiring; left untouched, whatever the flags. To let Keel place its trimmed copy, remove the link and re-run."
+      record_artifact "${core_dest#"$HOME_DIR"/}" forget -
+    elif [ ! -L "$core_dest" ] && [ -f "$core_dest" ] && [ "$trimmed" = "$(cat "$core_dest")" ]; then
       echo "  =    CORE.md (up to date — trimmed --no-git copy)"
       record_placed "$core_dest"
     else
@@ -1476,7 +1575,9 @@ if [ "$LINK" = 1 ]; then
   # A short README so the dir explains itself later (written once; yours to edit after).
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
-  if [ ! -f "$link_dir/README.md" ]; then
+  if seed_blocked "$link_dir/README.md" keel/README.md; then
+    :
+  elif [ ! -f "$link_dir/README.md" ]; then
     keel_write_replace "$link_dir/README.md" <<EOF || exit 1
 # keel/ — the Keel consumption point (linked install)
 
@@ -1515,7 +1616,9 @@ EOF
   #                       zero information loss), asked/flagged when it drifted (your edits may live there)
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
-  if [ ! -f "$gclaude" ]; then
+  if seed_blocked "$gclaude" CLAUDE.md; then
+    :   # B5: the whole seed / import / migrate chain is skipped, so no later branch's `>>` append can write through it
+  elif [ ! -f "$gclaude" ]; then
     # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
     # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
     strip_core_block "$root/templates/CLAUDE.md" \
@@ -1525,10 +1628,12 @@ EOF
       | keel_write_replace "$gclaude" || exit 1
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
-    if grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
+    if keel_core_has_block "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
-      if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+      if ! keel_core_block_check "$gclaude"; then
+        echo "  !    CLAUDE.md has the import line and a malformed KEEL-CORE block — left untouched (the rails may load twice; fix the markers by hand)"
+      elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
         if replace_core_block "$gclaude" ""; then
           echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
         else
@@ -1541,8 +1646,10 @@ EOF
     else
       echo "  =    CLAUDE.md already imports the linked core"
     fi
-  elif grep -q 'KEEL-CORE-BEGIN' "$gclaude"; then
-    if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+  elif keel_core_has_block "$gclaude"; then
+    if ! keel_core_block_check "$gclaude"; then
+      echo "  !    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+    elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
       else
@@ -1614,7 +1721,9 @@ else
     # install); the KEEL-CORE block itself gets a currency check on re-run — strictly better than
     # copy-mode Claude gets today, but never a silent auto-refresh.
     dest="$HOME_DIR/$CONTEXT_FILE"
-    if [ ! -f "$dest" ]; then
+    if seed_blocked "$dest" "$CONTEXT_FILE"; then
+      :
+    elif [ ! -f "$dest" ]; then
       strip_template_prose < "$root/templates/CLAUDE.md" | keel_write_replace "$dest" || exit 1
       echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
     elif [ "$foreign_core" = 1 ]; then
@@ -1649,8 +1758,7 @@ copy_gap "$root/templates/IDEAS.md"     "$HOME_DIR/IDEAS.md"
 # This is what makes /wrap, /go, /init-project, … real slash commands without a manual copy.
 # Skipped under --codex: commands/ is Claude-format files in a dir Codex never reads (its skills live
 # at ~/.codex/skills/<name>/SKILL.md and convert per ADAPTING.md's note — not mechanized here).
-if [ "$CODEX" = 0 ] && [ -d "$root/commands" ]; then
-  mkdir -p "$HOME_DIR/commands"
+if [ "$CODEX" = 0 ] && [ -d "$root/commands" ] && product_dir "$HOME_DIR/commands" "Keel's commands"; then
   for cmd in "$root"/commands/*.md; do
     [ -f "$cmd" ] || continue
     name="$(basename "$cmd")"; alias_dest="$HOME_DIR/commands/keel-$name"
@@ -1671,8 +1779,7 @@ fi
 # differently-named agent) and NO separate record_placed: sync_product already records what it places
 # or confirms, and a second unconditional call would record an adopter's own declined file as Keel
 # content (the dir #512 defect class). Skipped under --codex: a Claude-format dir Codex never reads.
-if [ "$CODEX" = 0 ] && [ -d "$root/agents" ]; then
-  mkdir -p "$HOME_DIR/agents"
+if [ "$CODEX" = 0 ] && [ -d "$root/agents" ] && product_dir "$HOME_DIR/agents" "Keel's agents"; then
   for agent_src in "$root"/agents/*.md; do
     [ -f "$agent_src" ] || continue
     sync_product "$agent_src" "$HOME_DIR/agents/$(basename "$agent_src")"
@@ -1684,25 +1791,40 @@ fi
 # BOTH modes: the dispatcher resolves its siblings (install.sh, tools/*) relative to its real path, so
 # a copy severed from the checkout couldn't dispatch. Refuse-to-clobber, with an explicit opt-out
 # (dir #324): a real FILE you put at bin/keel is left untouched by a plain run — the refusal below
-# names the remedy — and --force takes it over, backing the file up first. A SYMLINK is replaced either
-# way, and the branch does not ask whose it is: a stale one, a dangling one, and an ADOPTER'S OWN live
-# link all get re-pointed with no backup and no --force (verified live; the backup arm runs only for
-# `[ ! -L ] && [ -e ]`). Keel's own correctly-wired link is the exception, and only because the branch
-# above catches it first on `-ef` and returns without writing. That is pre-existing and outside this
-# batch, but it is what the code does, so it is what this comment says.
+# names the remedy — and --force takes it over, backing the file up first. A SYMLINK is classified by
+# whose it is (B3 of docs/specs/685-symlink-policy.md, the same table sync_product uses): Keel's own
+# correctly-wired link is left alone (`-ef`); Keel's own link gone stale (its checkout moved) is
+# re-pointed; an adopter's link whose content already equals Keel's is left as is; ANY OTHER link — a live
+# or dangling one, an ADOPTER'S OWN program — is declined, --force included, with its target named and
+# "remove the link and re-run" as the remedy.
 # $HOME_DIR/bin keeps Keel's whole footprint under one
 # root (clean uninstall) at the cost of a PATH line the summary prints if the dir isn't already on PATH.
 # Ephemeral bootstrap run (see header): $root is reaped right after — a symlink would dangle.
 if [ "$EPHEMERAL" = 1 ]; then
   echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
-elif [ -f "$root/keel" ]; then
-  mkdir -p "$HOME_DIR/bin"
+elif [ -f "$root/keel" ] && product_dir "$HOME_DIR/bin" "the keel CLI link"; then
   keel_link="$HOME_DIR/bin/keel"
   if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
     echo "  =    bin/keel already wired"
     record_placed "$keel_link"
-  elif [ -L "$keel_link" ] || [ ! -e "$keel_link" ]; then
-    # Absent, or a dangling/stale symlink — nothing of the adopter's to preserve.
+  elif [ -L "$keel_link" ]; then
+    # Classified like sync_product's links (B3): T3 Keel's own link gone stale (the checkout moved) is
+    # re-pointed; T3a an adopter's link whose content already equals Keel's is left as is and not
+    # recorded; T4 any other link is the adopter's own wiring and is declined, --force included.
+    case "$(keel_link_class "$keel_link" "$root/keel")" in
+      T3)
+        keel_link_replace "$root/keel" "$keel_link" || exit 1
+        record_placed "$keel_link"
+        echo "  ^    bin/keel re-pointed → $root/keel  (Keel's own link — the checkout it pointed into moved)" ;;
+      T3a)
+        echo "  =    bin/keel (up to date — your link, left as is)"
+        record_artifact "bin/keel" forget - ;;
+      *)
+        record_artifact "bin/keel" forget -
+        echo "  !    bin/keel is a symlink to a different target ($(readlink "$keel_link")) — your own program; left untouched, whatever the flags. To let Keel wire it, remove the link and re-run." ;;
+    esac
+  elif [ ! -e "$keel_link" ]; then
+    # Absent — nothing of the adopter's to preserve.
     keel_link_replace "$root/keel" "$keel_link" || exit 1
     record_placed "$keel_link"
     echo "  +    bin/keel → $root/keel  (run 'keel help')"
@@ -1824,20 +1946,20 @@ done
 # to doctor it's legitimate copy mode (OK).)
 if [ "$LINK" = 1 ]; then
   if has_core_import "$HOME_DIR/CLAUDE.md"; then
-    if grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+    if keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
       echo "       Remove the block (or the import line) by hand."
     else
       echo "  OK   CLAUDE.md imports keel/CORE.md"
     fi
-  elif grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/CLAUDE.md" 2>/dev/null; then
+  elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
     echo "       Migrate when ready: replace the KEEL-CORE block with the line  $import_line"
   else
     echo "  WARN CLAUDE.md does not import the linked core — the always-on rails will NOT load."
     echo "       Add the line:  $import_line"
   fi
-  if [ "$NOGIT" = 1 ]; then
+  if [ "$NOGIT" = 1 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
     echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
     echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
   fi
@@ -1950,7 +2072,12 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     # branch's own comment for the mechanics. Same $advise_install-not-$advise_refresh_force reasoning
     # as the refusal above (bin/keel wiring block) applies to this WARN too — see there for why.
     # EPHEMERAL never reaches this block, so $advise_install is always reachable here.
-    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
+    if [ -L "$HOME_DIR/bin/keel" ]; then
+      # A link here is not Keel's (a stale own link was re-pointed above): install declined it, --force included.
+      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — it is a link Keel did not make: remove it and re-run '$advise_install' to let Keel wire it, or add an alias by hand."
+    else
+      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
+    fi
   fi
 fi
 
@@ -2031,7 +2158,7 @@ if [ "$foreign_core" != 1 ]; then
     if has_core_import "$gclaude" 2>/dev/null; then
       context_created=1; edit_kind=edit; edit_extra=import-line
     fi
-  elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && grep -q 'KEEL-CORE-BEGIN' "$HOME_DIR/$CONTEXT_FILE" 2>/dev/null; then
+  elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then
     context_created=1; edit_kind=edit; edit_extra=core-block
   fi
 fi
@@ -2083,6 +2210,9 @@ if [ ! -f "$merge_tmp" ]; then
 fi
 while IFS=$'\t' read -r rel kind extra; do
   [ -n "$rel" ] || continue
+  # `forget` (T3a): this run found the adopter's own link where an older manifest recorded one as Keel's —
+  # the prior record is dropped, not carried forward.
+  [ "$kind" = forget ] && continue
   if [ -e "$HOME_DIR/$rel" ] || [ -L "$HOME_DIR/$rel" ]; then
     manifest_artifact_lines+=("artifact=$kind	$rel	$extra")
   fi
@@ -2141,8 +2271,9 @@ fi
 # `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
 # aborts for any reason before this line, the lock is simply left behind; the NEXT install's own
 # mkdir-retry loop above reclaims it via the same `kill -0` stale-pid check used for ordinary contention.
-# This is the ONLY cleanup mechanism — do not "improve" this with an EXIT trap, that is the exact
-# mechanism this script's own history already ruled out at the citation above.
+# This is the cleanup mechanism (the one other release, the linked keel/ refusal's `rm -rf` right after the
+# libs load, is a deliberate early exit with nothing to record) — do not "improve" this with an EXIT trap,
+# that is the exact mechanism this script's own history already ruled out at the citation above.
 # `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
 # pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
 # knows how to reclaim, exactly as an abort-before-this-line would. No acquired-flag guard needed: the
