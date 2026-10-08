@@ -571,7 +571,8 @@ product_dir() {
 # anything is placed or edited, so the refusal is atomic (exit 2, like the self-link guard above) —
 # rather than skipping: a skipped keel/ would leave the import line aimed at a CORE.md never placed.
 if [ "$LINK" = 1 ]; then
-  product_dir "$link_dir" "Keel's linked core" >&2 || exit 2
+  # (The run lock taken above is released first: this exit would otherwise leave it on disk.)
+  product_dir "$link_dir" "Keel's linked core" >&2 || { rm -rf "$install_lock_dir" 2>/dev/null || true; exit 2; }
 fi
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
@@ -1129,7 +1130,7 @@ core_block_currency() {
   # Markers that are not exactly one BEGIN followed by one END: no offer, no backup — a refresh would only
   # be refused after the adopter said yes (keel_core_block_check printed why).
   if ! keel_core_block_check "$dest"; then
-    echo "  =    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
+    echo "  !    $CONTEXT_FILE left untouched (fix the KEEL-CORE markers by hand, then re-run)"
     return 0
   fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
@@ -1522,7 +1523,9 @@ EOF
     if keel_core_has_block "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
-      if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+      if ! keel_core_block_check "$gclaude"; then
+        echo "  !    CLAUDE.md has the import line and a malformed KEEL-CORE block — left untouched (the rails may load twice; fix the markers by hand)"
+      elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
         if replace_core_block "$gclaude" ""; then
           echo "  ^    CLAUDE.md — removed the embedded rails block (the import line already delivers it; it was loading twice)"
         else
@@ -1537,7 +1540,7 @@ EOF
     fi
   elif keel_core_has_block "$gclaude"; then
     if ! keel_core_block_check "$gclaude"; then
-      echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
+      echo "  !    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
     elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"

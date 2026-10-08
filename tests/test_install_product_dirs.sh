@@ -94,6 +94,12 @@ lk() {  # lk NAME KIND — KIND is file | into-checkout
   if [ "$kind" = file ]; then printf 'mine\n' > "$h/keel"; else ln -s "$ck/docs" "$h/keel"; fi
   run "$ck/install.sh" --link --home "$h" --no-hooks
   check_status "linked keel/ $name: install refuses (exit 2)" 2 "$STATUS"
+  if [ "$kind" = file ]; then
+    check_contains "linked keel/ $name: …by the new product-directory guard" "$OUT" "is not a directory"
+  else
+    check_contains "linked keel/ $name: …by the new product-directory guard" "$OUT" "lands inside the Keel checkout"
+  fi
+  check_nodir "linked keel/ $name: the run lock is released" "$h/.install.lock"
   check_nofile "linked keel/ $name: nothing was edited — no CLAUDE.md" "$h/CLAUDE.md"
   check_nofile "linked keel/ $name: no manifest was written" "$h/.keel/install-manifest.claude"
   [ "$kind" = file ] || check_eq "linked keel/ $name: the checkout's docs are untouched" "" "$(porcelain "$ck" docs)"

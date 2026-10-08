@@ -278,7 +278,8 @@ has_keel_rails() {
 # strip_rails FILE — FILE on stdout without Keel's rails: the embedded KEEL-CORE block (core-ownership's
 # anchored markers) and every line carrying the core import. The CMD of keel_write_through's command form.
 strip_rails() {
-  set -o pipefail   # a failed first stage must fail the whole function (it is the CMD of a subshell)
+  # (pipefail is on script-wide: a failed first stage fails the function, and keel_write_through then
+  # leaves the file untouched instead of renaming an empty result over it.)
   keel_core_block_replace "$1" "" | KEEL_IMPORT_RE="$core_import_re" awk '
     BEGIN { re = ENVIRON["KEEL_IMPORT_RE"] }
     $0 ~ re { next }
