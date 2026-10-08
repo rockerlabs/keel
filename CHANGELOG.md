@@ -34,6 +34,11 @@ sections real content going forward — see that page for exactly when each one 
   `KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1` (a visible WARN, off by default), which `tests/test_self_doctor.sh`'s
   real-checkout smoke uses: the shellcheck leg over every tracked script was ~40% of that file's CPU, and
   CI runs it in two other jobs.
+- **`tools/self/alpine-clone.sh <Wn|solo> <sha>`: one command for the per-worker Alpine-leg clone** (dir #728).
+  Cuts or refreshes `$HOME/.keel/tmp/alpine-clone-<Wn>` from the main checkout with the three traps that gave
+  false reds in 0.14.0 built in: `--no-hardlinks`, no `.DS_Store` under `.git`, and a branch, never a detached
+  HEAD. It refuses a path that is not a clone of the source (stale origin) and never deletes; `--run` hands the
+  clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
 - **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
   the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
   records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
