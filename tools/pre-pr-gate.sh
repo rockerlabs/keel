@@ -15,6 +15,16 @@
 # bare `touch` (empty file), a partial run, or a sentinel from an earlier commit all fail.
 # Unlock: run /polish — it writes the receipt automatically as it completes each step.
 #
+# One secret-adjacent rule (dir #731): the same hook also DENIES a `git … push` segment that carries a bypass
+# of the pre-push secret scan the lexer can see — `--no-verify` (and its accepted prefixes), `-c
+# core.hooksPath…`, `--config-env core.hooksPath=…`, or an inline `GIT_CONFIG_*` / `HOME` / `XDG_CONFIG_HOME`
+# prefix that disables or redirects the config the guard is wired from. A bypassed COMMIT is not denied: the
+# plain push that follows it is refused by pre-push itself. Why here: the agent's push to a public remote is
+# the one place a bypass actually leaks and the one place its command is visible, so this gate, otherwise only
+# a workflow reminder, also carries this rule — still not the secret boundary (that is secret-guard). Named
+# residuals, caught only by the CI scan on the PR: a variable exported earlier, an alias or wrapper, `sh -c
+# '…'`, quoted text, a missing jq, another harness, the operator's own terminal. Spec B15, docs/specs/717.
+#
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
 #   nonce\t<run-id>                     (line 1, written by `init`)
@@ -2173,8 +2183,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Fast-exit: only care about `gh pr create` in real command position (backlog dir #58 — replaces the
-# earlier substring match, S6/backlog dir #4, which false-fired on any command merely CONTAINING the
+# Fast-exit: only care about `gh pr create` — and, since dir #731, a bypassed `git push` (check_push below) —
+# in real command position (backlog dir #58 — replaces the earlier substring match, S6/backlog dir #4, which false-fired on any command merely CONTAINING the
 # phrase: a KB write whose heredoc/quoted TEXT mentioned it, a commit message, a grep for the phrase
 # itself). A small lexer over $cmd: strips heredoc bodies, strips quoted spans, splits on command
 # separators (`;` `&` `|` `&&` `||` `(` `)` backtick, `$(`, newline), then per segment skips leading
@@ -2211,6 +2221,66 @@ function flush_tok() {
 }
 function is_assign(t) {
   return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
+}
+# dir #731 (b'): a `git ... push` segment carrying a bypass the lexer can see. Its own skip set, wider than
+# check_segment's (the shell words below, `env -u NAME`); returns after setting pushbypass.
+function is_shellword(t) {
+  return (t == "if" || t == "then" || t == "elif" || t == "else" || t == "do" || t == "while" ||
+          t == "until" || t == "!" || t == "{" || t == "time" || t == "nohup" || t == "exec" || t == "xargs")
+}
+function config_redirect(name) {
+  return (name == "GIT_CONFIG_GLOBAL" || name == "GIT_CONFIG_SYSTEM" || name == "GIT_CONFIG_NOSYSTEM" ||
+          name == "GIT_CONFIG_PARAMETERS" || name == "HOME" || name == "XDG_CONFIG_HOME")
+}
+function check_push(   i,j,t,lt,nm,eq,bypass,found_push) {
+  i = 1; bypass = 0
+  while (i <= ntok) {
+    t = tok[i]
+    if (is_assign(t)) {
+      eq = index(t, "=")
+      nm = substr(t, 1, eq - 1)
+      if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(t, eq + 1)) == "core.hookspath") bypass = 1
+      if (config_redirect(nm)) bypass = 1
+      i++; continue
+    }
+    if (is_shellword(t)) { i++; continue }
+    if (t == "env") {
+      i++
+      while (i <= ntok && (substr(tok[i], 1, 1) == "-" || is_assign(tok[i]))) {
+        if (is_assign(tok[i])) {
+          eq = index(tok[i], "=")
+          nm = substr(tok[i], 1, eq - 1)
+          if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(tok[i], eq + 1)) == "core.hookspath") bypass = 1
+          if (config_redirect(nm)) bypass = 1
+          i++
+        } else if (tok[i] == "-u" || tok[i] == "--unset") i += 2
+        else i++
+      }
+      continue
+    }
+    if (t == "command") {
+      i++
+      while (i <= ntok && substr(tok[i], 1, 1) == "-") i++
+      continue
+    }
+    break
+  }
+  if (i > ntok) return
+  t = tok[i]
+  if (t != "git" && !(length(t) > 4 && substr(t, length(t) - 3) == "/git")) return
+  found_push = 0
+  for (j = i + 1; j <= ntok; j++) {
+    t = tok[j]; lt = tolower(t)
+    if (t == "push") found_push = 1
+    if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1
+    if (t == "-c" && j + 1 <= ntok) {
+      lt = tolower(tok[j + 1])
+      if (lt == "core.hookspath" || index(lt, "core.hookspath=") == 1) bypass = 1
+    }
+    if (index(lt, "--config-env=core.hookspath=") == 1) bypass = 1
+    if (t == "--config-env" && j + 1 <= ntok && index(tolower(tok[j + 1]), "core.hookspath=") == 1) bypass = 1
+  }
+  if (found_push && bypass) pushbypass = 1
 }
 function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes,has_field,method) {
   i = 1
@@ -2279,7 +2349,7 @@ function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes,has_field,met
 }
 function end_segment() {
   flush_tok()
-  if (ntok > 0) check_segment()
+  if (ntok > 0) { check_push(); check_segment() }
   ntok = 0
 }
 {
@@ -2352,7 +2422,7 @@ function end_segment() {
   }
   end_segment()
 }
-END { if (matched) { print head_out; exit 0 }; exit 1 }
+END { if (matched || pushbypass) { print (pushbypass ? "1" : "0") ":" head_out; exit 0 }; exit 1 }
 PPG_AWK_EOF
 
 awk_out="$(awk "$PPG_AWK_PROG" <<< "$cmd")"
@@ -2360,7 +2430,17 @@ awk_status=$?
 if [ "$awk_status" -ne 0 ]; then
   exit 0
 fi
-head_branch="$awk_out"
+# dir #731 (b'): the awk output is "<push-bypass 0|1>:<head branch>". A bypassed push is denied here, BEFORE
+# the `gh pr create` machinery below: `deny()` and the real $cwd are defined further down and the script runs
+# under `set -u`, so this emits its own deny JSON (the same jq shape `deny()` uses) and exits 0 — calling
+# `deny` while it is undefined would exit non-2, which Claude Code treats as a non-blocking error, i.e. ALLOW.
+head_branch="${awk_out#*:}"
+if [ "${awk_out%%:*}" = 1 ]; then
+  push_cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+  log_event guard blocked "${push_cwd:-$PWD}"
+  jq -cn --arg r "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
+fi
 
 # dir #61: resolve the sentinel by the REPO's main checkout, not the raw event cwd — a receipt written
 # from inside a worktree and a hook event reporting a different checkout of the same repo (the

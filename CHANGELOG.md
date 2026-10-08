@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
+  push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,
+  `--config-env core.hooksPath=…` in either spelling, or an inline `GIT_CONFIG_KEY_<n>=core.hooksPath` /
+  `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` / `GIT_CONFIG_NOSYSTEM` / `GIT_CONFIG_PARAMETERS` / `HOME` /
+  `XDG_CONFIG_HOME` prefix is denied in any repo, behind `env`, `/usr/bin/git`, `if`, `{`, `!`, `time` and the
+  other shell words the rule skips; a bypassed *commit* is still left to pre-push. The gate runs from the main
+  checkout, so this is live for every Claude Code session on the machine after the next pull there. Not
+  caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text,
+  and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
+
 - **Installer writes keep your links, your file modes and your earlier backups.** A new required library,
   `tools/lib/safe-write.sh`, now carries every temp-and-rename write in `install.sh`, `uninstall.sh`,
   `tools/register-project.sh`, the install ledger and the hook installers' `settings.json` edits (dir #679,
