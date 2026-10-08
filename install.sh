@@ -1005,11 +1005,19 @@ keel_link_class() {
   fi
 }
 
-# seed_dangling DEST [LABEL] — B5: a SEED writes only where there is no dentry at all, so a dangling link is
-# someone's wiring. Prints the one "left untouched" line and returns 0 for one; returns 1 for anything else.
-seed_dangling() {
-  [ -L "$1" ] && [ ! -e "$1" ] || return 1
-  echo "  =    ${2:-$(basename "$1")} is a dangling link (left untouched — remove it to let Keel seed one)"
+# seed_blocked DEST [LABEL] — B5: a SEED writes only where there is no dentry at all. DEST is not a regular
+# file (a regular file is the caller's own "exists" case) yet something sits there — a dangling link, a link to
+# a directory, a directory: it is someone's wiring, and a write would replace it or abort the run. Prints the one
+# "left untouched" line and returns 0 for such a path; returns 1 otherwise.
+seed_blocked() {
+  [ ! -f "$1" ] || return 1
+  if [ -L "$1" ] && [ ! -e "$1" ]; then
+    echo "  =    ${2:-$(basename "$1")} is a dangling link (left untouched — remove it to let Keel seed one)"
+  elif [ -e "$1" ] || [ -L "$1" ]; then
+    echo "  =    ${2:-$(basename "$1")} is not a regular file (left untouched — move it aside to let Keel seed one)"
+  else
+    return 1
+  fi
 }
 
 # record_readme_if_unclobbered DEST (dir #512) — record_placed's own variant for a WRITE-ONCE artifact
@@ -1264,7 +1272,7 @@ copy_gap() {
   local src="$1" dest="$2"
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
-  elif seed_dangling "$dest"; then
+  elif seed_blocked "$dest"; then
     :   # B5: a SEED writes only where there is no dentry at all
   elif [ -f "$src" ]; then
     keel_write_replace "$dest" < "$src" || exit 1
@@ -1350,6 +1358,7 @@ sync_product() {
     # for it (neither the [y] overwrite nor the alias prompt's [u]pdate). Not an error: the run goes on.
     # A command still gets Keel's version alongside it in copy mode (the per-mode alias creation is
     # unchanged); linked mode makes no alias for a link, but keeps one that already exists fresh.
+    record_artifact "${dest#"$HOME_DIR"/}" forget -   # an older manifest's record of it is not Keel's either
     if [ -n "$alias_dest" ] && [ "$LINK" != 1 ]; then
       echo "  ~    $name is your own command — a symlink to a different target ($(readlink "$dest")); left untouched, whatever the flags. To let Keel place it, remove the link and re-run. Keel's version goes alongside it:"
     else
@@ -1534,7 +1543,11 @@ if [ "$LINK" = 1 ]; then
     # marks the file as generated — regenerate without asking: a re-run after `git pull` is exactly
     # how a stale trim heals (doctor --install carries the matching staleness check).
     trimmed="$(strip_git_blocks "$root/CORE.md")"
-    if [ ! -L "$core_dest" ] && [ -f "$core_dest" ] && [ "$trimmed" = "$(cat "$core_dest")" ]; then
+    if [ -L "$core_dest" ] && [ ! "$core_dest" -ef "$root/CORE.md" ] && ! keel_own_stale_link "$core_dest"; then
+      # B3, T4: not Keel's own link (current or stale) — never replaced by the trimmed copy, whatever the flags.
+      echo "  !    CORE.md is a symlink to a different target ($(readlink "$core_dest")) — your own wiring; left untouched, whatever the flags. To let Keel place its trimmed copy, remove the link and re-run."
+      record_artifact "${core_dest#"$HOME_DIR"/}" forget -
+    elif [ ! -L "$core_dest" ] && [ -f "$core_dest" ] && [ "$trimmed" = "$(cat "$core_dest")" ]; then
       echo "  =    CORE.md (up to date — trimmed --no-git copy)"
       record_placed "$core_dest"
     else
@@ -1562,7 +1575,7 @@ if [ "$LINK" = 1 ]; then
   # A short README so the dir explains itself later (written once; yours to edit after).
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
-  if seed_dangling "$link_dir/README.md" keel/README.md; then
+  if seed_blocked "$link_dir/README.md" keel/README.md; then
     :
   elif [ ! -f "$link_dir/README.md" ]; then
     keel_write_replace "$link_dir/README.md" <<EOF || exit 1
@@ -1603,7 +1616,7 @@ EOF
   #                       zero information loss), asked/flagged when it drifted (your edits may live there)
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
-  if seed_dangling "$gclaude" CLAUDE.md; then
+  if seed_blocked "$gclaude" CLAUDE.md; then
     :   # B5: the whole seed / import / migrate chain is skipped, so no later branch's `>>` append can write through it
   elif [ ! -f "$gclaude" ]; then
     # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
@@ -1708,7 +1721,7 @@ else
     # install); the KEEL-CORE block itself gets a currency check on re-run — strictly better than
     # copy-mode Claude gets today, but never a silent auto-refresh.
     dest="$HOME_DIR/$CONTEXT_FILE"
-    if seed_dangling "$dest" "$CONTEXT_FILE"; then
+    if seed_blocked "$dest" "$CONTEXT_FILE"; then
       :
     elif [ ! -f "$dest" ]; then
       strip_template_prose < "$root/templates/CLAUDE.md" | keel_write_replace "$dest" || exit 1
@@ -1807,6 +1820,7 @@ elif [ -f "$root/keel" ] && product_dir "$HOME_DIR/bin" "the keel CLI link"; the
         echo "  =    bin/keel (up to date — your link, left as is)"
         record_artifact "bin/keel" forget - ;;
       *)
+        record_artifact "bin/keel" forget -
         echo "  !    bin/keel is a symlink to a different target ($(readlink "$keel_link")) — your own program; left untouched, whatever the flags. To let Keel wire it, remove the link and re-run." ;;
     esac
   elif [ ! -e "$keel_link" ]; then
@@ -2058,7 +2072,12 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
     # branch's own comment for the mechanics. Same $advise_install-not-$advise_refresh_force reasoning
     # as the refusal above (bin/keel wiring block) applies to this WARN too — see there for why.
     # EPHEMERAL never reaches this block, so $advise_install is always reachable here.
-    echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
+    if [ -L "$HOME_DIR/bin/keel" ]; then
+      # A link here is not Keel's (a stale own link was re-pointed above): install declined it, --force included.
+      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — it is a link Keel did not make: remove it and re-run '$advise_install' to let Keel wire it, or add an alias by hand."
+    else
+      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
+    fi
   fi
 fi
 

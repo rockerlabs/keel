@@ -183,7 +183,10 @@ for mode in plain force; do
   check_eq "A25 copy $mode: the dotfiles bytes are unchanged" "$before" "$(sum_of "$dots/delegation.md")"
   check_eq "A25 copy $mode: no backup" 0 "$(bak_count "$h")"
   check_contains "A25 copy $mode: declined (T4)" "$OUT" "remove the link and re-run"
+  check_eq "A25 copy $mode: the older manifest's record of the adopter's link is dropped" 0 "$(symlink_records "$h" docs/delegation.md)"
 done
+run "$ck/uninstall.sh" --home "$h" --yes
+check_link "A25 copy: uninstall leaves the adopter's link where it is" "$h/docs/delegation.md"
 # Linked mode. The home entry is itself a link into the checkout, so the adopter makes a real copy first.
 ck="$(mk_ck a25-ck-link)"; h="$SANDBOX/a25-h-link"; dots="$SANDBOX/a25-dots-link"; mkdir -p "$h" "$dots"
 run "$ck/install.sh" --home "$h" --no-hooks --link
@@ -208,6 +211,7 @@ for mode in plain force; do
   check_eq "A25 linked $mode: the dotfiles bytes are unchanged" "$before" "$(sum_of "$dots/delegation.md")"
   check_eq "A25 linked $mode: no backup" 0 "$(bak_count "$h")"
   check_contains "A25 linked $mode: declined (T4)" "$OUT" "remove the link and re-run"
+  check_eq "A25 linked $mode: the older manifest's record of the adopter's link is dropped" 0 "$(symlink_records "$h" keel/docs/delegation.md)"
 done
 
 # --- A26: T4 runs before the alias branch and the prompts ----------------------------------------------------
@@ -247,6 +251,25 @@ if [ "$have_script" = 1 ]; then
 else
   echo "  skip  A26(2) (script absent)"
 fi
+
+# --- B3 at the --no-git trimmed copy of keel/CORE.md: a link that is not Keel's is declined too -------------
+ck="$ck_shared"; h="$SANDBOX/core-h"; dots="$SANDBOX/core-dots"; mkdir -p "$h" "$dots"
+run "$ck/install.sh" --home "$h" --no-hooks --link
+cp -L "$h/keel/CORE.md" "$dots/CORE.md"; rm -f "$h/keel/CORE.md"; ln -s "$dots/CORE.md" "$h/keel/CORE.md"
+before="$(sum_of "$dots/CORE.md")"
+run "$ck/install.sh" --home "$h" --no-hooks --link --no-git
+check_link "CORE.md: the adopter's link survives --no-git" "$h/keel/CORE.md"
+check_eq "CORE.md: the dotfiles file is byte-identical" "$before" "$(sum_of "$dots/CORE.md")"
+check_contains "CORE.md: declined, with the remedy" "$OUT" "remove the link and re-run"
+
+# --- B5: a seed path holding something that is not a regular file never aborts the run --------------------
+h="$SANDBOX/seed-dir-h"; mkdir -p "$h" "$SANDBOX/seed-dir-target"
+ln -s "$SANDBOX/seed-dir-target" "$h/LEARNINGS.md"
+run "$ck_shared/install.sh" --home "$h" --no-hooks
+check_link "B5: a link to a directory at a seed path is untouched" "$h/LEARNINGS.md"
+check_contains "B5: …with one line naming it" "$OUT" "LEARNINGS.md is not a regular file"
+check_contains "B5: …and Verify reports the missing seed (the run fails loudly, it does not crash on a rename)" "$OUT" "MISS LEARNINGS.md"
+check_absent "B5: …no safe-write refusal aborted the run" "$OUT" "safe-write:"
 
 # --- doctor: the three remedy lines tell the adopter to remove a link Keel did not make first ----------------
 doc="$(cat "$REPO_ROOT/tools/doctor.sh")"

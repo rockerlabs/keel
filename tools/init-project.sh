@@ -117,10 +117,15 @@ fi
 # 3. project CLAUDE.md from template
 if [ -f CLAUDE.md ]; then
   echo "  = CLAUDE.md already exists (left untouched)"
-elif [ -L CLAUDE.md ]; then
+elif [ -e CLAUDE.md ] || [ -L CLAUDE.md ]; then
   # A seed writes only where there is no dentry at all (B5 of docs/specs/685-symlink-policy.md): a dangling
-  # link is someone's wiring, and the `>` below would write through it and create its target.
-  echo "  = CLAUDE.md is a dangling link (left untouched — remove it to let Keel seed one)"
+  # link, a link to a directory or a directory is someone's wiring, and the `>` below would write through the
+  # link (creating its target) or fail.
+  if [ -L CLAUDE.md ] && [ ! -e CLAUDE.md ]; then
+    echo "  = CLAUDE.md is a dangling link (left untouched — remove it to let Keel seed one)"
+  else
+    echo "  = CLAUDE.md is not a regular file (left untouched — move it aside to let Keel seed one)"
+  fi
 elif [ -f "$tpl_project" ]; then
   # dir #85 (code audit, finding 20): NOT `sed "s/<Project name>/$name/"`. $name is a directory
   # basename, so it can legally contain sed's replacement metacharacters — `&` splices the whole match
