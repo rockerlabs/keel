@@ -24,7 +24,7 @@ sections real content going forward — see that page for exactly when each one 
   installer's "STALE refusal changes nothing" with a legacy entry present are held (S2-3, S2-4); the
   pre-push hook's branch- and tag-deletion skip is held (S7-10). `test_polish_command.sh` now pins, on the core
   `commands/polish.md` itself, the rails a normal run reads only there (S3-2). Passengers pinned in the same
-  pass: the four `keel_core_block_*` single-definition lines in the self check (S10-1, with its prose, S10-2),
+  pass: the `keel_core_block_*` single-definition lines in the self check (S10-1, with its prose, S10-2),
   `init-project`'s `/.keel/secrets-accept` ignore line (S6-4), `ship_docs`'s not-a-directory arms and linked
   never-clobber (S4-6), the `no_bare_mktemp` allow-list count (S8-6), the machine-global drift reported once
   (S6-13), and a positive control for the "quoted guide mints no trace" test, whose question now travels
@@ -40,6 +40,33 @@ sections real content going forward — see that page for exactly when each one 
   checkout, so this is live for every Claude Code session on the machine after the next pull there. Not
   caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text,
   and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
+
+- **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
+  docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
+  (dir #685, slice 3 of the symlink policy). Keel's own link left stale by a moved checkout is re-pointed, as
+  before. A link whose content already equals Keel's is left as is ("up to date — your link"), and is no longer
+  recorded as Keel's, so neither the next run nor `uninstall.sh` can mistake it for one; an older manifest's record
+  of such a link is dropped. Any other link, live or dangling, is declined with its target named and "remove the
+  link and re-run to let Keel place it" as the remedy: `--force`, a terminal "y" and the command alias prompt's
+  `[u]pdate` no longer replace it (before, `--force` swapped the link for a file and a "y" did so with no backup),
+  and a command whose link is yours still gets Keel's version alongside it as `keel-<name>` in copy mode. The `--no-git`
+  trimmed `keel/CORE.md` is held to the same rule, and every decline also drops an older manifest's record of that
+  link, so `uninstall.sh` leaves it alone too. A seed (`LEARNINGS.md`, `IDEAS.md`, `INSTANCE.md`, `CLAUDE.md`/`AGENTS.md`,
+  `keel/README.md`, and a project's `CLAUDE.md` from `tools/init-project.sh`) that is a dangling link, a link to a
+  folder or a folder is left alone with one line, instead of being replaced, written through, or aborting the run. `docs/getting-started.md` states the rule once for adopters, `docs/reference.md` points at it,
+  and the three `tools/doctor.sh` link warnings now say to remove a link Keel did not make before re-running.
+- **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
+  the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
+  symlink into the Keel checkout, `install.sh` now skips it with one line instead of recording the
+  checkout's own files, and `uninstall.sh` leaves them where they are — including for a manifest an earlier
+  release wrote (dir #716, slice 2 of the dir #685 symlink policy). A folder that is a file or a dangling
+  link is skipped with one line instead of aborting the install before it writes its manifest; a symlinked
+  folder anywhere else is still followed. The embedded rails block in `CLAUDE.md`/`AGENTS.md` is now found
+  by one anchored definition in `tools/lib/core-ownership.sh` (a line that starts with `<!-- KEEL-CORE-BEGIN`
+  and ends with `-->`), so a note of yours that merely mentions the marker no longer makes the uninstall
+  strip or the block refresh delete every line after it, and a file with two blocks, or a BEGIN without an
+  END, is left byte-identical with one line saying why. `install.sh` now requires `tools/lib/core-ownership.sh`
+  like the other scripts do; its inline copy of those functions is gone.
 
 - **`install-secret-guard.sh --global` no longer silently overrides a `core.hooksPath` a conditional
   `[includeIf]` include sets** (dir #717, S5-1). Appending Keel's `[core] hooksPath` after such an include

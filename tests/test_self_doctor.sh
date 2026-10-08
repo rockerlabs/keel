@@ -1977,30 +1977,17 @@ check_absent "and reports no GAP over it" "$OUT" "GAP"
 # --- 12. manifest_field/manifest_usable/core-ownership-predicate/core-block-comparator single-definition (dir #363, dir #650) ---
 # Same class as check 11 (dir #362) just above, for the OTHER hand-copy families dir #363 removed:
 # manifest_field/manifest_usable (uninstall.sh/tools/doctor.sh, now consumers of tools/lib/manifest.sh)
-# and keel_core_is_link/keel_core_is_nogit_trim (all three scripts, now consumers of the new
-# tools/lib/core-ownership.sh) — plus install.sh's own documented, EXEMPT fallback/stub copies of
-# manifest_usable (dir #323, predates this ticket) and both ownership-predicate functions (dir #363's
-# own degradation contract), which must NOT themselves trigger a GAP — that exemption is the one part
-# of this check that isn't a copy of check 11's own shape. The ownership-predicate pair's fallback copy
-# is additionally BODY-compared against the canonical one (found by this ticket's own altitude review:
-# an earlier draft of this check verified only count/location, so the one duplicate the design
-# deliberately permits — install.sh's fallback — was exactly the one whose "byte-identical" contract
-# went unverified) — the fixture below therefore uses the SAME real predicate text in both copies for
-# keel_core_is_link/keel_core_is_nogit_trim, not a `:` placeholder, so the clean case genuinely proves
-# the comparison passes rather than never running it.
+# and the core-ownership functions (all three scripts, consumers of tools/lib/core-ownership.sh) — plus
+# install.sh's own documented, EXEMPT stub of manifest_usable (dir #323, predates this ticket), which
+# must NOT itself trigger a GAP. install.sh's inline fallback of the core-ownership functions, and the
+# body comparison that held it to the lib, are gone (dir #716): those functions now have exactly one
+# definition and no exemption.
 # plant_manifest_and_ownership_libs DIR [BRACE] — BRACE selects the opening-brace shape used for the
-# ownership-predicate pair (keel_core_is_link/keel_core_is_nogit_trim) in BOTH tools/lib/core-
-# ownership.sh and install.sh's fallback copy: "same" (default) for `fn() {`, "nextline" for `fn ()`
-# with `{` alone on the line right after (dir #380's proven shape), "blankline" for `fn ()` with a
-# BLANK line then `{` (also valid bash — the parser just keeps reading — and the shape extract_fn_body
-# was found to disagree with def_re/cksum_def_re on before it was widened to tolerate it too),
-# "comment" for `fn ()` with a COMMENT line then `{` (also valid bash, and the one shape this check's
-# own comments document as a deliberately-not-chased residual — def_re still detects it as a real
-# definition, so single_def_check must never let extract_fn_body's empty-on-both-sides result read as
-# "matched") — the two copies always share whichever shape is chosen, since the fixture's whole point
-# is a body-identical canonical + fallback pair. manifest_field/manifest_usable stay same-line either
-# way; they aren't body-compared by this check.
-BLOCK_FNS='keel_core_block_text keel_core_block_is_trimmed keel_core_block_norm keel_core_block_state'
+# ownership-predicate pair (keel_core_is_link/keel_core_is_nogit_trim) in tools/lib/core-ownership.sh:
+# "same" (default) for `fn() {`, "nextline" for `fn ()` with `{` alone on the line right after
+# (dir #380's proven shape), "blankline" for `fn ()` with a BLANK line then `{` (also valid bash — the
+# parser just keeps reading).
+BLOCK_FNS='keel_core_block_text keel_core_block_is_trimmed keel_core_block_norm keel_core_block_state keel_core_block_full keel_core_block_replace keel_core_has_block keel_core_block_check'   # dir #721 S10-1: the block comparator's functions, one distinct body each
 plant_manifest_and_ownership_libs() {
   local dir="$1" brace="${2:-same}" open_link open_trim
   # ANSI-C quoting ($'...') gives open_link/open_trim REAL newlines up front, so they can be passed to
@@ -2012,8 +1999,6 @@ plant_manifest_and_ownership_libs() {
   case "$brace" in
     nextline)  open_link=$'keel_core_is_link ()\n{';    open_trim=$'keel_core_is_nogit_trim ()\n{' ;;
     blankline) open_link=$'keel_core_is_link ()\n\n{';  open_trim=$'keel_core_is_nogit_trim ()\n\n{' ;;
-    comment)   open_link=$'keel_core_is_link ()\n# real predicate\n{'
-               open_trim=$'keel_core_is_nogit_trim ()\n# real predicate\n{' ;;
     *)         open_link='keel_core_is_link() {';      open_trim='keel_core_is_nogit_trim() {' ;;
   esac
   mkdir -p "$dir/tools/lib"
@@ -2024,46 +2009,37 @@ plant_manifest_and_ownership_libs() {
   printf '%s\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\n' \
     '#!/usr/bin/env bash' "$open_link" "$open_trim" > "$dir/tools/lib/core-ownership.sh"
   printf '%b' "$blocks" >> "$dir/tools/lib/core-ownership.sh"
-  # install.sh's own documented, exempt fallback/stub copies — proving these don't themselves trip
-  # the check, same shape as its real optional-source else branch (manifest_field is NOT among them:
-  # install.sh's real code never calls it, so it carries no stub of that one). The ownership-predicate
-  # pair is body-identical to tools/lib/core-ownership.sh's own copy above (modulo indentation, which
-  # extract_fn_body normalizes away) — manifest_usable's stub is deliberately NOT (a `return 1;` stub
-  # is never claimed to match anything, so it carries no body check).
-  printf '%s\nmanifest_usable() { return 1; }\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
-    '#!/usr/bin/env bash' "$open_link" "$open_trim" > "$dir/install.sh"
-  printf '%b' "$blocks" >> "$dir/install.sh"
+  # install.sh's own documented, exempt stub of manifest_usable — proving it doesn't itself trip the
+  # check, same shape as its real optional-source else branch (manifest_field is NOT among them:
+  # install.sh's real code never calls it, so it carries no stub of that one). It carries NO copy of the
+  # core-ownership functions: core-ownership.sh is REQUIRED there (dir #716).
+  printf '%s\nmanifest_usable() { return 1; }\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
+    '#!/usr/bin/env bash' > "$dir/install.sh"
   printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
     "$fake_widget" > "$dir/tests/test_tools.sh"
 }
 
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh fallbacks" )
+( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh stub" )
 run "$sd" "$d" --quiet
-check_status "manifest/core-ownership: single defs + exempt install.sh fallbacks -> exit 0" 0 "$STATUS"
-check_absent "no GAP for the correct shape (install.sh's documented fallbacks are not a hand-copy)" "$OUT" "GAP"
+check_status "manifest/core-ownership: single defs + the exempt install.sh manifest_usable stub -> exit 0" 0 "$STATUS"
+check_absent "no GAP for the correct shape (install.sh's documented stub is not a hand-copy)" "$OUT" "GAP"
 
-# dir #721 S10-1 (dir #513's four single_def_check keel_core_block_* lines): a deleted or mistyped line
-# turned no test red. Two bindings per function. (1) the clean tree, run WITHOUT --quiet, prints the OK line
-# naming it — a deleted `single_def_check` line prints nothing; (2) a drift in install.sh's fallback copy
-# of exactly that function is a GAP naming it — a deleted line (or a wrong home/exempt/is_fallback argument)
-# lets the drift through with exit 0.
+# dir #721 S10-1 (dir #513's keel_core_block_* single_def_check lines): a deleted or mistyped line turned no
+# test red. Two bindings per function. (1) the clean tree, run WITHOUT --quiet, prints the OK line naming
+# it — a deleted `single_def_check` line prints nothing; (2) a hand-copy of exactly that function in another
+# file is a GAP naming it — a line with a wrong home argument, or an exemption added back, lets it through
+# with exit 0. (The drift-of-install.sh's-fallback half this ticket first pinned went with dir #716, which
+# removed the fallback copies and the body comparison: there is no fallback path left to pin.)
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "block comparator quartet, canonical + exempt fallback" )
+( cd "$d" && git add -A && git commit -qm "block comparator functions, one definition each" )
 run "$sd" "$d"
-check_status "S10-1: the block-comparator quartet, canonical + matching fallback -> exit 0" 0 "$STATUS"
+check_status "S10-1: the block-comparator functions, one definition each -> exit 0" 0 "$STATUS"
 for blk_fn in $BLOCK_FNS; do
-  check_contains "S10-1: the clean run reports $blk_fn() checked, in the lib, with install.sh's fallback" "$OUT" \
-    "OK   ${blk_fn}() has exactly one real definition, in tools/lib/core-ownership.sh (install.sh carries a documented fallback/stub, not a hand-copy)"
+  check_contains "S10-1: the clean run reports $blk_fn() checked, with its one definition in the lib" "$OUT" \
+    "OK   ${blk_fn}() has exactly one real definition, in tools/lib/core-ownership.sh"
 done
 for blk_fn in $BLOCK_FNS; do
-  d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-  sed -i.bak "s/echo ${blk_fn}-body/echo ${blk_fn}-DRIFT/" "$d/install.sh" && rm -f "$d/install.sh.bak"
-  ( cd "$d" && git add -A && git commit -qm "install.sh fallback of $blk_fn drifts" )
-  run "$sd" "$d" --quiet
-  check_status "S10-1: a drifted install.sh fallback of $blk_fn -> exit 1" 1 "$STATUS"
-  check_contains "S10-1: ...naming $blk_fn() and the byte-identical contract" "$OUT" "${blk_fn}()'s fallback copy in install.sh has drifted"
-  # and a hand-copy of it in a third file is a GAP naming the lib (one real definition tree-wide)
   d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
   printf '\n%s() {\n  :\n}\n' "$blk_fn" >> "$d/uninstall.sh"
   ( cd "$d" && git add -A && git commit -qm "$blk_fn hand-copy in uninstall.sh" )
@@ -2076,7 +2052,7 @@ done
 # separate `git grep -l` call site (single_def_check, shared by all four calls below it) — set on
 # the fixture repo's own local config, not globally.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh fallbacks" \
+( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh stub" \
     && git config color.grep always && git config color.ui always )
 run "$sd" "$d" --quiet
 check_status "manifest/core-ownership under color.grep=always -> exit 0, not a false GAP" 0 "$STATUS"
@@ -2101,48 +2077,21 @@ check_status "a next-line-brace hand-copy is caught, not waved through -> exit 1
 check_contains "names the shared lib" "$OUT" "tools/lib/manifest.sh"
 check_contains "…and the hand-copy" "$OUT" "uninstall.sh"
 
-# NEGATIVE PROOF (dir #380's pre-decision: both halves move together or neither does) — a
-# next-line-brace definition, when it's the CANONICAL (only) copy, must not itself misfire. Applied
-# to the ownership-predicate pair specifically because that's the one is_fallback=1 body-compares:
-# widening detection alone (without extract_fn_body) would make it return an empty body for this
-# shape and fire a false "drifted" GAP against the real, unchanged fallback below.
+# NEGATIVE PROOF (dir #380's pre-decision) — a next-line-brace definition, when it's the CANONICAL
+# (only) copy, must be recognized as that one definition and not misfire.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" nextline
-( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both next-line-brace, identical bodies" )
+( cd "$d" && git add -A && git commit -qm "canonical definitions, next-line-brace shape" )
 run "$sd" "$d" --quiet
-check_status "next-line-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
-check_absent "widening detection and body-comparison together doesn't misfire" "$OUT" "GAP"
+check_status "next-line-brace canonical definition alone -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "a next-line-brace canonical definition doesn't misfire" "$OUT" "GAP"
 
 # Same negative proof, one line further: a BLANK line between `fn()` and `{` — also valid bash, and
-# confirmed live (this ticket's own review) to disagree with extract_fn_body before it was widened to
-# tolerate it: cksum_def_re/def_re's bare-`fn()` branch detects this shape as a definition regardless
-# of what follows it, so a body-comparison that returns empty for it (instead of the real body) would
-# fire the exact false "drifted" GAP this whole check exists to avoid.
+# detected as a definition by def_re's bare-`fn()` branch regardless of what follows it.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" blankline
-( cd "$d" && git add -A && git commit -qm "canonical + exempt fallback, both blank-line-before-brace, identical bodies" )
+( cd "$d" && git add -A && git commit -qm "canonical definitions, blank-line-before-brace shape" )
 run "$sd" "$d" --quiet
-check_status "blank-line-before-brace canonical + matching fallback -> exit 0, no false GAP" 0 "$STATUS"
-check_absent "extract_fn_body tolerates a blank line before the brace" "$OUT" "GAP"
-
-# REGRESSION PROOF (found by this ticket's own /code-review high pass): a COMMENT line between `fn()`
-# and `{` — a shape def_re detects as a real definition (it only reads the opening line) but
-# extract_fn_body does NOT recognize (a deliberately-not-chased residual, see the shape comment above)
-# — must never let two extraction failures (both "") compare as "matched". Before this ticket's own
-# fix, an unrecognized shape like this one was silently reported OK regardless of whether the two
-# bodies actually matched; now it's always named unverifiable instead. What this fixture guards: the
-# check reports "could not be verified" for a comment-line opener UNCONDITIONALLY, because
-# extract_fn_body returns an empty body on both sides regardless of whether the two real bodies match
-# or drift — so there is nothing for a mutated/drifted body to prove here that the identical-body case
-# below doesn't already prove (dir #492: an earlier version of this fixture sed-mutated install.sh's
-# fallback to "genuinely drift" it, but that mutation never moved the outcome, since the comparison
-# never reaches the point of comparing bodies at all — decorative, not a second case). The
-# canonical + fallback pair stays body-identical, same as the "same"/"nextline"/"blankline" fixtures
-# above; only the opening shape differs.
-d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d" comment
-( cd "$d" && git add -A && git commit -qm "comment-line opener, canonical + fallback pair" )
-run "$sd" "$d" --quiet
-check_status "comment-line opener -> exit 1, unverifiable, never a false OK" 1 "$STATUS"
-check_contains "names it unverifiable rather than falsely matched" "$OUT" "could not be verified"
-check_contains "names both locations it couldn't extract from" "$OUT" "tools/lib/core-ownership.sh"
+check_status "blank-line-before-brace canonical definition alone -> exit 0, no false GAP" 0 "$STATUS"
+check_absent "a blank line before the brace doesn't misfire" "$OUT" "GAP"
 
 # a hand-copy of keel_core_is_link reappears in tools/doctor.sh — same drift, the ownership predicate
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
@@ -2153,17 +2102,16 @@ check_status "keel_core_is_link hand-copy in tools/doctor.sh -> exit 1" 1 "$STAT
 check_contains "names the shared lib" "$OUT" "tools/lib/core-ownership.sh"
 check_contains "…and the hand-copy location" "$OUT" "tools/doctor.sh"
 
-# install.sh's fallback copy drifts from the canonical body — the gap this check's altitude review
-# found: counting copies/locations alone would say OK here, since there's still exactly one canonical
-# definition plus one exempt one. The body comparison is what catches it.
+# install.sh re-grows an inline fallback of the core-ownership predicate (what dir #716 deleted) — no
+# longer an exempt, body-compared copy: any second definition is a GAP.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-sed -i.bak 's/\[ -L "\$1" \]$/[ -f "$1" ]/' "$d/install.sh" && rm -f "$d/install.sh.bak"
-( cd "$d" && git add -A && git commit -qm "install.sh fallback drifts from the canonical body" )
+printf '\nkeel_core_is_link() {\n  [ -L "$1" ]\n}\n' >> "$d/install.sh"
+( cd "$d" && git add -A && git commit -qm "install.sh inline fallback of keel_core_is_link returns" )
 run "$sd" "$d" --quiet
-check_status "fallback body drift -> exit 1" 1 "$STATUS"
-check_contains "names the drifted function" "$OUT" "keel_core_is_link()"
+check_status "an inline keel_core_is_link fallback in install.sh -> exit 1 (no exemption)" 1 "$STATUS"
+check_contains "names the function" "$OUT" "keel_core_is_link()"
 check_contains "names the canonical location" "$OUT" "tools/lib/core-ownership.sh"
-check_contains "states the contract, not just the mismatch" "$OUT" "byte-identical fallback"
+check_contains "…and the hand-copy location" "$OUT" "install.sh"
 
 # a repo that defines none of these has no rule to keep in sync — silent, not a GAP (baseline coverage
 # already exercised by the plain "clean sandbox" case near the top of this file)
