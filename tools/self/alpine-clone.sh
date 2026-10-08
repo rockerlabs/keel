@@ -27,10 +27,10 @@
 # operator's. The path is under $HOME/.keel/tmp (Docker cannot mount the scratchpad), outside the
 # `$HOME/keel*alpine*` shape tools/self/doctor.sh's stray-clone advisory looks for.
 set -euo pipefail
-# shellcheck source=tools/lib/repo-top.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/repo-top.sh"
 # drop an inherited repo selector before any git call (the dir #647 convention shared by tools/).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# shellcheck source=tools/lib/repo-top.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/repo-top.sh"
 
 usage() { printf 'usage: alpine-clone.sh <Wn|solo> <sha> [--source DIR] [--run]\n' >&2; exit 2; }
 die() { printf 'alpine-clone: %s\n' "$*" >&2; exit 1; }
