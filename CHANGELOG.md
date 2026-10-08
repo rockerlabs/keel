@@ -39,6 +39,15 @@ sections real content going forward — see that page for exactly when each one 
   checkout's own template is left alone. A `--force` backup never overwrites an earlier one: a second backup
   in the same second is `<file>.<ts>.2.bak`. A checkout missing the library refuses to install, uninstall or
   register a project, with one message naming it.
+
+- **A commit made with the hooks switched off is pinned to be caught at push.** `git -c core.hooksPath=
+  commit` skips pre-commit, but a plain `git push` of that commit is still refused, because pre-push scans
+  every commit it sends; `tests/test_secret_guard.sh` now holds that end to end (a bypassed commit lands, the
+  push exits non-zero and the remote's branch does not move), and `install-secret-guard.sh`'s header says so
+  beside the `--no-verify` note. This corrects dir #731's premise ("nothing detects it"): only a bypassed
+  *push* leaks, and the gate rule that denies it is a separate change under the same ticket. No shipped hook
+  file changes, so no re-vendor. (dir #731, dir #717)
+
 - **`secret-scan.sh` never reports clean over content it did not read.** Every file list and object read
   is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
   clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed
