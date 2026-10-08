@@ -257,8 +257,14 @@ unflagged "a value that merely spells mktemp (u=mktemp) is not a call" 'u=mktemp
 flagged   "a call after && inside a substitution is flagged" 'v="$(true && mktemp -d)"'
 # allow-list: exact text AND count
 check_absent "an allow-listed line is not flagged" "$out" "test_planted.sh:$(ln_of 'archive_dir="$(mktemp -d)"'):"
-check_eq "an allow-list entry with count 1 excuses ONE of two identical lines; the second is flagged" 1 \
-  "$(printf '%s\n' "$out" | grep -cF 'w="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"')"
+# dir #721 S8-6: the count must be bound as an OFFENDER line (`file:line: text`), not by the text alone — with
+# the count guard ignored, both duplicates are excused and the resulting `STALE … (1 short): <key>` line embeds
+# the very same text, so a bare `grep -cF` still counted 1 and the mutant stayed green.
+w_text='w="$(mktemp -d "${TMPDIR:-/tmp}/keel.XXXXXX")"'
+check_eq "an allow-list entry with count 1 excuses ONE of two identical lines; the second is flagged as an offender line" 1 \
+  "$(printf '%s\n' "$out" | grep '^test_planted\.sh:[0-9]*: ' | grep -cF "$w_text")"
+check_eq "... and no STALE line is reported for the duplicate (the count was honoured, not ignored)" 0 \
+  "$(printf '%s\n' "$out" | grep '^STALE' | grep -cF "$w_text")"
 check_contains "an entry that matches nothing is reported stale" "$out" "STALE allow-list entry"
 check_contains "... naming it" "$out" "this line matches nothing"
 # every offending line, exactly (the count binds the whole detector at once)

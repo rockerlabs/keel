@@ -1099,6 +1099,40 @@ write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
 check_absent "A10: matcher wired at user scope → the installer sentence is omitted" "$OUT" "$review_hint"
 rm -f "$HOME/.claude/settings.json"
+# dir #721 S2-3: the match-all clauses of _gate_settings_has_review_hook. An entry with NO matcher, an
+# empty one or "*" fires on every agent type, so it wires the reviewer — each shape is its own fixture,
+# because deleting any ONE clause (.matcher == null / "" / "*") must turn exactly its case red. The two
+# negatives bind the other half: a matcher naming another agent, and the right matcher whose command is
+# not this gate, still get the sentence (a clause widened to match everything would drop it).
+for shape in absent empty star; do
+  d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+  mkdir -p "$d/.claude"
+  case "$shape" in
+    absent) entry='{hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}' ;;
+    empty)  entry='{matcher:"", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}' ;;
+    star)   entry='{matcher:"*", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}' ;;
+  esac
+  jq -n --arg gate "$gate" "{hooks:{SubagentStop:[$entry]}}" > "$d/.claude/settings.json"
+  write_full_receipt_review "$d" "agent:high"
+  gate "gh pr create --fill" "$d"
+  check_contains "A10 S2-3: matcher shape [$shape] → still denied for the trace" "$OUT" "no trace matching"
+  check_absent "A10 S2-3: matcher shape [$shape] fires on every agent type → the installer sentence is omitted" "$OUT" "$review_hint"
+done
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"Explore", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$d/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "A10 S2-3: a matcher naming ANOTHER agent type → the installer sentence is present" "$OUT" "$review_hint"
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n '{hooks:{SubagentStop:[{matcher:"keel-polish-reviewer", hooks:[{type:"command", command:"bash /somewhere/else.sh"}]}]}}' \
+  > "$d/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "A10 S2-3: the right matcher running a command that is not this gate → the installer sentence is present" "$OUT" "$review_hint"
 # a bare-level (non-agent) outcome never carries the sentence
 d="$(mkrepo)"; rm -f "$(trace_for "$d")"
 write_full_receipt_review "$d" "high"
@@ -1753,6 +1787,19 @@ check_contains "denied naming the malformed --head, not silently falling back to
 askuserquestion_trace() {
   local d="$1" question="$2" json
   json="$(jq -n --arg cwd "$d" --arg q "$question" \
+    '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+      tool_input:{questions:[{question:$q, header:"Review", options:[{label:"proceed"},{label:"run /code-review too"}]}]}}')"
+  OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
+  STATUS=$?
+}
+
+# dir #721 S2-6: askuserquestion_trace with the question text in a FILE ($2), read by `jq --rawfile`, never
+# through argv. A whole command file quoted as one `--arg` element passes Linux's 128 KiB per-argument cap
+# once the file grows (polish-guide.md is ~85 KB; busybox's jq then cannot be exec'd, `json` comes back empty,
+# nothing reaches the gate, and a "mints NO trace" assertion passes vacuously — a macOS run never shows it).
+askuserquestion_trace_file() {
+  local d="$1" qfile="$2" json
+  json="$(jq -n --arg cwd "$d" --rawfile q "$qfile" \
     '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
       tool_input:{questions:[{question:$q, header:"Review", options:[{label:"proceed"},{label:"run /code-review too"}]}]}}')"
   OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"
@@ -2963,8 +3010,16 @@ check_absent "dir #116: ...because the deny never spells the composed marker" "$
 for polish_file in polish.md polish-guide.md; do   # dir #670: the guide holds the dialog rules this fixture keeps inert
   d="$(mkrepo)"
   tf="$(trace_for "$d")"; rm -f "$tf"
-  askuserquestion_trace "$d" "Per the instructions: $(cat "$REPO_ROOT/commands/$polish_file")"
+  qf="$SANDBOX/quoted-$polish_file"
+  { printf 'Per the instructions: '; cat "$REPO_ROOT/commands/$polish_file"; } > "$qf"
+  askuserquestion_trace_file "$d" "$qf"
   check_nofile "dir #116: all of $polish_file quoted into a dialog mints NO trace" "$tf"
+  # dir #721 S2-6 positive control: the SAME text with one real marker appended DOES mint a trace. Without it
+  # the nofile check above is vacuous whenever the event never reaches the gate (an argv too long to exec).
+  printf ' KEEL-REVIEW-DIALOG: level=high Run /code-review too?' >> "$qf"
+  askuserquestion_trace_file "$d" "$qf"
+  check_file "dir #721 S2-6: ...and the same $polish_file text plus a real marker DOES mint a trace (the event reaches the gate)" "$tf"
+  rm -f "$tf"
 done
 # The mechanized floor for the whole class: NO tracked file outside tests/ may contain a composed
 # marker (token + ': level=' + an accepted word) — any such string, quoted into a dialog, is a minted

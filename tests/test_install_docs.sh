@@ -207,6 +207,43 @@ check_eq "A9: the foreign docs/grooming.md survives byte-for-byte" "FOREIGN groo
 check_contains "A9: the refusal is reported, not silent" "$OUT" "grooming.md"
 check_file "A9: the other docs still land" "$nc_home/docs/delegation.md"
 
+# dir #721 S4-6: ship_docs's "exists and is not a directory" arm (install.sh, one line per skipped dir) and
+# linked-mode never-clobber, none of which any test held. Each shape installs to exit 0 (a bare `mkdir -p`
+# failure would abort before the manifest is written), names the blocker, leaves it byte-identical, and
+# still places the rest of the install. The "could not create" arm needs an unwritable parent: chmod is a
+# no-op for root on the alpine leg and the run would fail in sync_product first on macOS, so it is not
+# pinned, and deleting that arm turns no test red. The agents-as-file shape is S4-1's defect (a bare mkdir aborts the run), not a
+# behaviour to pin here.
+nd_home="$SANDBOX/docs-is-file-home"; mkdir -p "$nd_home"
+printf 'I am a file, not a directory\n' > "$nd_home/docs"
+run "$install" --home "$nd_home" --no-hooks
+check_status "S4-6: <home>/docs is a regular file -> install exits 0" 0 "$STATUS"
+check_contains "S4-6: ...and names it as not a directory" "$OUT" "$nd_home/docs exists and is not a directory"
+check_eq "S4-6: ...the blocking file is untouched" "I am a file, not a directory" "$(cat "$nd_home/docs")"
+check_file "S4-6: ...and the rest of the install still lands (FRAMEWORK.md)" "$nd_home/FRAMEWORK.md"
+nl_home="$SANDBOX/docs-dangling-home"; mkdir -p "$nl_home"
+ln -s "$SANDBOX/no-such-target-721" "$nl_home/docs"
+run "$install" --home "$nl_home" --no-hooks
+check_status "S4-6: <home>/docs is a dangling symlink -> install exits 0" 0 "$STATUS"
+check_contains "S4-6: ...and names it as not a directory" "$OUT" "$nl_home/docs exists and is not a directory"
+check_link "S4-6: ...the dangling link is left as it was" "$nl_home/docs"
+ns_home="$SANDBOX/drydock-is-file-home"; mkdir -p "$ns_home/docs"
+printf 'a file named drydock\n' > "$ns_home/docs/drydock"
+run "$install" --home "$ns_home" --no-hooks
+check_status "S4-6: <home>/docs/drydock is a regular file -> install exits 0" 0 "$STATUS"
+check_contains "S4-6: ...and names the drydock subdir as not a directory" "$OUT" "$ns_home/docs/drydock exists and is not a directory"
+check_eq "S4-6: ...the blocking file is untouched" "a file named drydock" "$(cat "$ns_home/docs/drydock")"
+check_file "S4-6: ...while the top-level docs still land" "$ns_home/docs/grooming.md"
+# linked mode: a foreign file already at <home>/keel/docs/<name> is never replaced by Keel's symlink.
+lf_home="$SANDBOX/link-foreign-home"; mkdir -p "$lf_home/keel/docs"
+printf 'FOREIGN linked grooming\n' > "$lf_home/keel/docs/grooming.md"
+run "$install" --link --home "$lf_home" --no-hooks
+check_status "S4-6: linked install over a foreign keel/docs/grooming.md exits 0" 0 "$STATUS"
+check_nolink "S4-6: ...the foreign file is not replaced by a symlink" "$lf_home/keel/docs/grooming.md"
+check_eq "S4-6: ...and survives byte-for-byte" "FOREIGN linked grooming" "$(cat "$lf_home/keel/docs/grooming.md")"
+check_contains "S4-6: ...the refusal is reported, not silent" "$OUT" "grooming.md"
+check_link "S4-6: ...the other linked docs still land" "$lf_home/keel/docs/delegation.md"
+
 # A copy home re-run with --link prints D6's stale-docs line and deletes nothing.
 mig_home="$SANDBOX/migrate-home"
 run "$install" --home "$mig_home" --no-hooks

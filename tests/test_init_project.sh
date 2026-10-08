@@ -25,6 +25,8 @@ check_contains ".gitignore ignores CLAUDE.md" "$gi" "CLAUDE.md"
 check_contains ".gitignore ignores AGENTS.md" "$gi" "AGENTS.md"
 check_contains ".gitignore ignores .claude/" "$gi" ".claude/"
 check_contains ".gitignore ignores the map-drift baseline" "$gi" "/.keel/map-drift-baseline"
+# dir #721 S6-4: committing the accept file would publish a list of plaintext-secret paths (docs/secrets-in-the-working-tree.md)
+check_contains ".gitignore ignores the secrets accept file" "$gi" "/.keel/secrets-accept"
 
 # impact tracking is on by default (dir #251): an EXTERNAL store entry is created, nothing inside the
 # project's own tree — no .keel/ marker, no impact-related .gitignore line beyond the map-drift one above

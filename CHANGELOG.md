@@ -15,6 +15,22 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **Guard clauses the tests could not see are now pinned.** Each of these was shown to stay green with the
+  clause deleted; each now has a test that goes red under that deletion. The empty-`-C` refusal in
+  `tests/lib.sh` is exercised from a working directory inside the allow-list, where it is the only thing
+  standing (dir #721's S8-10), and a new check fails any test that runs git writes through a
+  `$(type -P git)` variable with `-C`: `test_doctor_secrets.sh` and `test_doctor_floor_gaps.sh` now use the
+  guarded `git` (S6-12). The gate's match-all hook matchers (absent, `""`, `"*"`, one case each) and the
+  installer's "STALE refusal changes nothing" with a legacy entry present are held (S2-3, S2-4); the
+  pre-push hook's branch- and tag-deletion skip is held (S7-10). `test_polish_command.sh` now pins, on the core
+  `commands/polish.md` itself, the rails a normal run reads only there (S3-2). Passengers pinned in the same
+  pass: the `keel_core_block_*` single-definition lines in the self check (S10-1, with its prose, S10-2),
+  `init-project`'s `/.keel/secrets-accept` ignore line (S6-4), `ship_docs`'s not-a-directory arms and linked
+  never-clobber (S4-6), the `no_bare_mktemp` allow-list count (S8-6), the machine-global drift reported once
+  (S6-13), and a positive control for the "quoted guide mints no trace" test, whose question now travels
+  through `jq --rawfile` instead of argv (S2-6). This change is tests only, plus the self check's check-10
+  wording; it alters no shipped behaviour. (dir #721)
+
 - **Code comments that cited `/polish` text moved into the guide now point at it (dir #710).** About 45 comments in `tools/pre-pr-gate.sh` and four in `tests/` (two test headers, one pin's label and message) named `commands/polish.md` step 4, 5(a)/(b)/(c), 8 or 9 for prose that dir #670's split moved into `commands/polish-guide.md`; each now reads `polish-guide.md § Step N`, and the `step 5(a)` spellings no plain `polish.md step` grep could find are covered too. Comments only: no behaviour, deny text or receipt changes.
 - **The pre-PR gate denies a `git push` that switches off the pre-push secret scan.** In hook mode, a `git …
   push` segment carrying `--no-verify` (or an accepted prefix such as `--no-veri`), `-c core.hooksPath…`,

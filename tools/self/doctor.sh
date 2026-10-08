@@ -1685,17 +1685,19 @@ else
   say "  OK   artifact_cksum() has exactly one definition, in tools/lib/artifact-cksum.sh"
 fi
 
-# --- 10. manifest_field/manifest_usable and the CORE.md ownership predicate have exactly one real
-# definition tree-wide (dir #363) -------------------------------------------------------------------
+# --- 10. manifest_field/manifest_usable, the CORE.md ownership predicate and the embedded-block comparator
+# have exactly one real definition tree-wide (dir #363, dir #650) ----------------------------------------
 # dir #363 made uninstall.sh/tools/doctor.sh consumers of the existing tools/lib/manifest.sh
 # (manifest_field/manifest_usable, previously hand-copied in both) instead of hand-copying it, and gave
 # the keel/CORE.md ownership predicate (keel_core_is_link/keel_core_is_nogit_trim) its own new
 # tools/lib/core-ownership.sh, sourced by all three of install.sh/uninstall.sh/tools/doctor.sh. Same
 # class as check 9: a promise that the non-owning consumers keep no local copy, verified instead of
 # trusted, so a future hand-copy is caught structurally the moment it's added rather than waiting for
-# behaviour to drift apart.
+# behaviour to drift apart. dir #650 added the block-currency comparator to the same lib (the keel_core_block_*
+# functions), and dir #716 made the lib REQUIRED and removed install.sh's fallback copies — so every
+# core-ownership function below has exactly one definition, no exemption.
 say ""
-say "● manifest_field/manifest_usable/core-ownership-predicate single-definition (dir #363)"
+say "● manifest_field/manifest_usable/core-ownership-predicate/core-block-comparator single-definition (dir #363, dir #650)"
 
 # single_def_check FN HOME [EXEMPT] — GAP unless FN's only real definition tree-wide is in HOME, with
 # at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub, not a hand-copy this

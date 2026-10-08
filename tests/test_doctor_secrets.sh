@@ -11,8 +11,7 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doctor="$REPO_ROOT/tools/doctor.sh"
-gitt="$(type -P git)"
-commit() { "$gitt" -C "$1" -c user.name=t -c user.email=t@example.com commit -qm "$2"; }
+commit() { git -C "$1" -c user.name=t -c user.email=t@example.com commit -qm "$2"; }
 
 # The recipe's ignore snippet (docs/secrets-in-the-working-tree.md) — the four B3 probes pass under it.
 SNIP=('.env' '.env.*' '*.env' '!.env.example' '!.env.sample' '!.env.template' '!.env.dist' '!.env.tpl' '!*.example.env')
@@ -38,7 +37,7 @@ check_absent "A1: no file content in the output" "$OUT" "SENTINEL_A1"
 
 # --- A1b: tracked, although .gitignore lists it → EXPOSED (tracked wins) -----------------------------
 d="$(fixture '.env')"; put "$d/.env"
-"$gitt" -C "$d" add -f .env
+git -C "$d" add -f .env
 run "$doctor" "$d"
 check_contains "A1b: a tracked env file that .gitignore also lists → EXPOSED" "$OUT" "[W-SECRETS-EXPOSED]"
 check_absent "A1b: not also reported as resting-ignored" "$OUT" "W-SECRETS-PLAINTEXT"
@@ -84,7 +83,7 @@ check_contains "A2: adopted (.sops.yaml) → says 'migration unfinished'" "$(id_
 # --- A3: templates are never flagged -------------------------------------------------------------------
 d="$(fixture)"
 for f in .env.example .env.sample .env.template .env.dist .env.tpl config.example.env; do put "$d/$f"; done
-"$gitt" -C "$d" add -f .
+git -C "$d" add -f .
 run "$doctor" "$d"
 check_absent "A3: tracked templates → no EXPOSED" "$OUT" "W-SECRETS-EXPOSED"
 check_absent "A3: tracked templates → no PLAINTEXT" "$OUT" "W-SECRETS-PLAINTEXT"
@@ -94,19 +93,19 @@ check_absent "A3: untracked templates → no EXPOSED" "$OUT" "W-SECRETS-EXPOSED"
 
 # --- A4 / A4b: ciphertext secrets.enc.yaml is quiet; a dotenv ciphertext is not --------------------------
 d="$(fixture)"; put "$d/secrets.enc.yaml" "KEY: ENC[AES256_GCM,data:x]"
-"$gitt" -C "$d" add -f secrets.enc.yaml
+git -C "$d" add -f secrets.enc.yaml
 run "$doctor" "$d"
 check_absent "A4: tracked secrets.enc.yaml → no EXPOSED" "$OUT" "W-SECRETS-EXPOSED"
 check_absent "A4: tracked secrets.enc.yaml → no PLAINTEXT" "$OUT" "W-SECRETS-PLAINTEXT"
 d="$(fixture)"; put "$d/secrets.enc.env" "KEY=ENC[x]"
-"$gitt" -C "$d" add -f secrets.enc.env
+git -C "$d" add -f secrets.enc.env
 run "$doctor" "$d"
 check_contains "A4b: a tracked dotenv ciphertext named *.env → EXPOSED (D-7: unsupported)" "$OUT" "[W-SECRETS-EXPOSED]"
 
 # --- A5: the path-level accept file ------------------------------------------------------------------
 d="$(fixture '.env.local')"
 put "$d/.env.development"; put "$d/.env.production"; put "$d/sub/.env.development"; put "$d/.env.local"
-"$gitt" -C "$d" add .env.development .env.production sub/.env.development
+git -C "$d" add .env.development .env.production sub/.env.development
 mkdir -p "$d/.keel"
 printf '%s\n' '# a note' '.env.development   # the dev defaults, committed on purpose' '.env.local' > "$d/.keel/secrets-accept"
 run "$doctor" "$d"
@@ -135,22 +134,22 @@ check_contains "A6d: .gitignore = .env only → names .env.local" "$line" ".env.
 check_contains "A6d: … and secrets.env" "$line" "secrets.env"
 
 d="$(fixture "${SNIP[@]}" '*.yaml')"; put "$d/.sops.yaml" "creation_rules: []"; put "$d/secrets.enc.yaml" "K: ENC[x]"
-"$gitt" -C "$d" add -f secrets.enc.yaml
+git -C "$d" add -f secrets.enc.yaml
 run "$doctor" "$d"
 check_contains "A6b: *.yaml ignored, secrets.enc.yaml TRACKED → W-SECRETS-IGNORE names the ciphertext" "$(id_line W-SECRETS-IGNORE)" "secrets.enc.yaml"
 
 d="$(fixture "${SNIP[@]}")"; put "$d/.sops.yaml" "creation_rules: []"; put "$d/.env"
-"$gitt" -C "$d" add -f .env
+git -C "$d" add -f .env
 run "$doctor" "$d"
 check_contains "A6e: adopted + tracked .env + full snippet → EXPOSED" "$OUT" "[W-SECRETS-EXPOSED]"
 check_absent "A6e: … and NO W-SECRETS-IGNORE (--no-index reads the rules, not the index)" "$OUT" "W-SECRETS-IGNORE"
 d="$(fixture '!.env.example' '.env.*')"; put "$d/.sops.yaml" "creation_rules: []"; put "$d/.env"   # the snippet minus .env and *.env
-"$gitt" -C "$d" add -f .env
+git -C "$d" add -f .env
 run "$doctor" "$d"
 check_contains "A6e bad sample: the rule line removed → W-SECRETS-IGNORE names .env" "$(id_line W-SECRETS-IGNORE)" ".env"
 
 d="$(fixture "${SNIP[@]}")"; put "$d/.sops.yaml" "creation_rules: []"; put "$d/secrets.enc.yaml" "K: ENC[x]"
-"$gitt" -C "$d" add -f secrets.enc.yaml
+git -C "$d" add -f secrets.enc.yaml
 run "$doctor" "$d"
 check_absent "A6c: .sops.yaml + the full snippet + tracked ciphertext → no W-SECRETS-IGNORE" "$OUT" "W-SECRETS-IGNORE"
 check_absent "A6c: … no EXPOSED" "$OUT" "W-SECRETS-EXPOSED"
@@ -158,7 +157,7 @@ check_absent "A6c: … no PLAINTEXT" "$OUT" "W-SECRETS-PLAINTEXT"
 
 # --- A7: each file yields exactly one of EXPOSED / PLAINTEXT ---------------------------------------------
 d="$(fixture "${SNIP[@]}")"; put "$d/.sops.yaml" "creation_rules: []"; put "$d/.env"
-"$gitt" -C "$d" add -f .env
+git -C "$d" add -f .env
 run "$doctor" "$d"
 check_contains "A7: adopted + tracked .env → EXPOSED" "$OUT" "[W-SECRETS-EXPOSED]"
 check_absent "A7: … and not PLAINTEXT" "$OUT" "W-SECRETS-PLAINTEXT"
@@ -188,9 +187,9 @@ check_absent "A9: … and no W-SECRETS-* at all" "$OUT" "W-SECRETS-"
 
 # --- A9b: an env file inside a submodule is that repo's to judge ------------------------------------------------------
 src="$(new_repo)"; printf '%s\n' '.env' > "$src/.gitignore"; put "$src/readme" "x"
-"$gitt" -C "$src" add -A; commit "$src" init
-d="$(fixture)"; put "$d/readme" "x"; "$gitt" -C "$d" add readme; commit "$d" init
-"$gitt" -C "$d" -c protocol.file.allow=always submodule add -q "$src" sub >/dev/null 2>&1 || true
+git -C "$src" add -A; commit "$src" init
+d="$(fixture)"; put "$d/readme" "x"; git -C "$d" add readme; commit "$d" init
+git -C "$d" -c protocol.file.allow=always submodule add -q "$src" sub >/dev/null 2>&1 || true
 put "$d/sub/.env"
 if [ -f "$d/.gitmodules" ]; then
   run "$doctor" "$d"
@@ -204,9 +203,9 @@ check_contains "A9b: the same file in the project proper fires" "$OUT" "[W-SECRE
 
 # --- A9c: a linked worktree is judged against its own top, not skipped ----------------------------------------------------
 d="$(fixture)"; put "$d/.env"; put "$d/readme" "x"
-"$gitt" -C "$d" add -f .env readme; commit "$d" init
+git -C "$d" add -f .env readme; commit "$d" init
 wt="$SANDBOX/wt-a9c"
-"$gitt" -C "$d" worktree add -q "$wt" -b wt-a9c
+git -C "$d" worktree add -q "$wt" -b wt-a9c
 run "$doctor" "$wt"
 check_contains "A9c: a tracked plaintext .env in a linked worktree → EXPOSED" "$OUT" "[W-SECRETS-EXPOSED]"
 

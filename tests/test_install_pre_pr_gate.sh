@@ -235,6 +235,27 @@ check_status "A6(b3): our SubagentStop command is wired exactly once" 1 \
 check_status "A6(b3): ...and it sits under the new matcher" '["keel-polish-reviewer"]' \
   "$(jq -c --arg l "$legacy_cmd" '[.hooks.SubagentStop[] | select(any(.hooks[]; .command==$l)) | .matcher]' "$m_repo/.claude/settings.json")"
 
+# (b4) dir #721 S2-4: the STALE refusal "changes nothing" must hold when a LEGACY slot is also present — the
+# retire is computed in memory first, so a write/backup that slipped in before the refusal would leave a
+# half-migrated file and a .bak behind a message that says "Nothing was changed". Legacy general-purpose
+# entry (our command) + our PreToolUse hook at a stale path, no --force: exit 3, byte-identical, no .bak.
+# Then --force over the same shape: ONE backup, byte-equal to the pre-run file, naming both reasons.
+s_repo="$(new_repo)"; mkdir -p "$s_repo/.claude"
+jq -n --arg l "$legacy_cmd" --arg s "bash '/old/checkout/tools/pre-pr-gate.sh'" \
+  '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$l}]}],PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$s}]}]}}' > "$s_repo/.claude/settings.json"
+s_before="$(cat "$s_repo/.claude/settings.json")"
+run "$installer" "$s_repo"
+check_status "A6(b4): legacy + stale-path hook, no --force -> refused (exit 3)" 3 "$STATUS"
+check_contains "A6(b4): the refusal says nothing was changed" "$OUT" "Nothing was changed"
+check_status "A6(b4): settings.json is byte-for-byte untouched (the legacy entry is NOT retired)" "$s_before" "$(cat "$s_repo/.claude/settings.json")"
+check_status "A6(b4): no .bak was written before the refusal" 0 "$(find "$s_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+run "$installer" --force "$s_repo"
+check_status "A6(b4): --force over the same shape -> exit 0" 0 "$STATUS"
+check_contains "A6(b4): --force names both reasons for the one backup" "$OUT" "(--force, retiring the legacy SubagentStop/general-purpose entry)"
+check_status "A6(b4): exactly one .bak" 1 "$(find "$s_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+s_bak="$(find "$s_repo/.claude" -name 'settings.json.*.bak' | head -n1)"
+check_status "A6(b4): the .bak is byte-equal to the settings BEFORE the run" "$s_before" "$(cat "${s_bak:-/dev/null}")"
+
 # (d) --uninstall on a settings holding ONLY the legacy entry removes it and does not exit "nothing to remove".
 u_repo="$(new_repo)"; mkdir -p "$u_repo/.claude"
 jq -n --arg l "$legacy_cmd" '{hooks:{SubagentStop:[{matcher:"general-purpose",hooks:[{type:"command",command:$l}]}]}}' > "$u_repo/.claude/settings.json"

@@ -119,6 +119,27 @@ OUT="$(cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$sha" "$(
 check_status "pre-push blocks a first-push (root-commit) secret" 1 "$STATUS"
 check_contains "pre-push reports BLOCKED on first push" "$OUT" "BLOCKED"
 
+# dir #721 S7-10: a branch/tag DELETION push hands the hook a ZERO LOCAL sha (`<ref> 000… <ref> <remote sha>`;
+# every `rep 0 40` above sits in the REMOTE position). With the hook's `secret_guard_is_zero_sha "$localsha"
+# && continue` line deleted, the range becomes `<remote>..0000…`, unresolvable, and every deletion push is
+# refused. The same repo holds a secret commit, so the second case also binds that a deletion line is
+# skipped WITHOUT ending the loop: the secret-carrying ref pushed on the next stdin line still blocks.
+repo_del="$(new_repo)"
+printf 'hello\n' > "$repo_del/a.txt"; git -C "$repo_del" add a.txt; git -C "$repo_del" commit -qm base
+del_remote="$(git -C "$repo_del" rev-parse HEAD)"
+OUT="$(cd "$repo_del" && printf 'refs/heads/gone %s refs/heads/gone %s\n' "$(rep 0 40)" "$del_remote" | bash "$prepush" 2>&1)"; STATUS=$?
+check_status "pre-push lets a branch deletion (zero LOCAL sha) through" 0 "$STATUS"
+check_absent "pre-push does not try to resolve a range ending at the zero sha" "$OUT" "bad range"
+OUT="$(cd "$repo_del" && printf 'refs/tags/v0 %s refs/tags/v0 %s\n' "$(rep 0 40)" "$del_remote" | bash "$prepush" 2>&1)"; STATUS=$?
+check_status "pre-push lets a tag deletion (zero LOCAL sha) through" 0 "$STATUS"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo_del/del.txt"
+git -C "$repo_del" add del.txt; git -C "$repo_del" commit -qm withkey
+del_sha="$(git -C "$repo_del" rev-parse HEAD)"
+OUT="$(cd "$repo_del" && printf 'refs/heads/gone %s refs/heads/gone %s\nrefs/heads/main %s refs/heads/main %s\n' \
+  "$(rep 0 40)" "$del_remote" "$del_sha" "$del_remote" | bash "$prepush" 2>&1)"; STATUS=$?
+check_status "pre-push: a deletion line then a secret-carrying push on the next line -> BLOCKED" 1 "$STATUS"
+check_contains "pre-push: ...and says so" "$OUT" "BLOCKED"
+
 # --- a secret ADDED then REMOVED within the pushed range still ships its blob, so --range must catch
 # it — a net endpoint diff (git diff A..B) would see neither endpoint and pass clean -----------------
 repo="$(new_repo)"
