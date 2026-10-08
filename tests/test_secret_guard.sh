@@ -263,7 +263,7 @@ check_status "empty variable, missing default file → exit 0" 0 "$STATUS"
 mkdir -p "$nohome/.claude"; printf 'Jane[[:space:]]+Q[[:space:]]+Public\n' > "$nohome/.claude/secret-scan-personal"
 run env SECRET_SCAN_PERSONAL_FILE= HOME="$nohome" "$scan" "$d/f.txt"
 check_status "empty variable still reads the default file → exit 1" 1 "$STATUS"
-# a symlink to a regular file is a regular file; a dangling link was already exit 2 (now this check's)
+# a symlink to a regular file is a regular file; a dangling link was already exit 2 (the parser's own check, tested under dir #680)
 ln -s "$pfile" "$SANDBOX/personal.lnk"
 run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal.lnk" "$scan" "$d/f.txt"
 check_status "symlink to a regular personal file → read, exit 1" 1 "$STATUS"

@@ -179,9 +179,11 @@ _personal_rc=0
 # and to it a non-regular file means "no literals" (right for the default, which most machines lack, and
 # for /dev/null, the explicit opt-out CI uses). A SET, non-empty variable naming anything else is a typo
 # (or a path made wrong by a cwd change): scanning on would switch the personal half off without a word.
-# Unset or empty keeps the default. A dangling symlink lands here too (it was already exit 2, from the parser).
+# Unset or empty keeps the default. A dangling symlink is left to the parser: it already exits 2 with its own,
+# more specific message (a symlink to nothing, dir #680).
 if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$SECRET_SCAN_PERSONAL_FILE" != /dev/null ] \
-   && [ ! -f "$SECRET_SCAN_PERSONAL_FILE" ]; then
+   && [ ! -f "$SECRET_SCAN_PERSONAL_FILE" ] \
+   && ! { [ -L "$SECRET_SCAN_PERSONAL_FILE" ] && [ ! -e "$SECRET_SCAN_PERSONAL_FILE" ]; }; then
   echo "secret-scan: SECRET_SCAN_PERSONAL_FILE is set to $SECRET_SCAN_PERSONAL_FILE, which is not a regular file" >&2
   echo "(missing, a directory, ...) — personal-data detection would be silently disabled. Fix the path, unset the" >&2
   echo "variable to use the default, or set it to /dev/null to switch the personal half off on purpose." >&2
