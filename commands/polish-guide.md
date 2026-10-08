@@ -568,8 +568,9 @@ Steps, in order:
      cross-model add-on above follows the same discipline by extending this dialog's options rather than
      opening a second one.
 
-     **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses (establish this
-     the same attempt-don't-infer way) does the pre-dir-#70 behavior apply — one inline review pass of the
+     **Fallback within a fallback:** only if the Agent tool ITSELF is unavailable/refuses, or the Agent call
+     answers that the type `keel-polish-reviewer` was not found (establish this the same
+     attempt-don't-infer way), does the pre-dir-#70 behavior apply — one inline review pass of the
      step-1 diff yourself (correctness-focused, same single-terminal-pass rule as below), say what you
      checked and found the way step 3 has to show real test output (an assertion with nothing to inspect
      is indistinguishable from a pass that didn't happen), then go to (b) below for real: no independent

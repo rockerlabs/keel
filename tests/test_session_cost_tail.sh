@@ -338,4 +338,218 @@ for fn in tu_turns tu_tool_calls tu_tool_results tu_subagent_meta; do
 done
 check_absent "A1b: cmd_tail never hands a transcript file to jq itself" "$body" 'jq -c -s'
 
+# --- dir #707: the second open signal (init's own output line) and the branch-bound window ---------
+# INIT_OUT is the shape `tools/pre-pr-gate.sh init` prints; case (x7) below runs the real one.
+INIT_OUT="$(printf 'pre-pr-gate: receipt %s (nonce %s)' started "$(date -u +%Y%m%dT%H%M%S)-4242-17")"   # built at run time: no tracked line looks like init's output
+
+# --- (x1) a window opens on the init output when the Skill was not re-invoked ---------------------
+mk_session x1
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:01:00 polish b1 200 "$(bash_use toolu_p1 'gh pr create --title t')"
+  rec_result 10:01:05 toolu_p1 false "$PRURL"
+  rec_turn R3 10:10:00 "" b2 5000 '[{"type":"text","text":"next ticket, no Skill call"}]'
+  rec_turn R4 10:20:00 "" b2 400 "$(bash_use toolu_i 'B=tools/pre-pr-gate.sh; bash $B init 2>&1|tail -1')"
+  rec_result 10:20:05 toolu_i false "$INIT_OUT"
+  rec_turn R5 10:30:00 "" b2 600 "$(bash_use toolu_p2 'gh pr create --title t2')"
+  rec_result 10:30:05 toolu_p2 false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x1) Skill once + init by text: two windows" "2" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(x1) both closed" "closed closed" "$(field 1 .status) $(field 2 .status)"
+check_eq "(x1) the init-opened window starts at the init turn" "$(T 10:20:00)" "$(field 2 .start)"
+check_eq "(x1) its cost is its own two turns (400 + 600)" "1000" "$(field 2 .cost)"
+check_eq "(x1) the first window is Skill-opened, the second init-opened" "skill init" "$(field 1 .opened_by) $(field 2 .opened_by)"
+
+# --- (x2) the init signal needs init's own output line, in a Bash call's result -------------
+mk_session x2
+{
+  rec_turn R1 10:00:00 "" b1 100 "$(bash_use toolu_g "grep -n 'receipt started' tools/pre-pr-gate.sh")"
+  rec_result 10:00:05 toolu_g false "gate.sh:12:    printf 'pre-pr-gate: receipt started (nonce %s)\\n' \"\$nonce\"
+pre-pr-gate: receipt started (nonce %s)"
+  rec_turn R3 10:02:00 "" b1 100 '[{"type":"tool_use","id":"toolu_r","name":"Read","input":{"file_path":"/x/log.txt"}}]'
+  rec_result 10:02:05 toolu_r false "$INIT_OUT"
+  rec_turn R4 10:03:00 "" b1 100 "$(bash_use toolu_d 'tools/pre-pr-gate.sh init')"
+  rec_result 10:03:05 toolu_d false "pre-pr-gate: cannot key the receipt — detached HEAD; check out the PR branch first"
+  rec_turn R5 10:04:00 "" b1 100 "$(bash_use toolu_c 'gh pr create --title t')"
+  rec_result 10:04:05 toolu_c false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x2) no real init output anywhere (grep of the source, a Read result, init's failure message): no window" "" "$OUT"
+
+# --- (x3) S11-2 — an abandoned start does not swallow another branch's PR (Skill re-invoked) -------
+mk_session x3
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"polish started, then abandoned"}]'
+  rec_turn R2 10:05:00 "" b1 50 '[{"type":"text","text":"x"}]'
+  rec_turn R3 10:10:00 "" b2 90000 '[{"type":"text","text":"another ticket entirely"}]'
+  rec_turn R4 10:50:00 polish b2 300 '[{"type":"text","text":"x"}]'
+  rec_turn R5 10:55:00 polish b2 400 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:55:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x3) two windows, not one mixed window" "2" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(x3) the abandoned one is open and ends where the other branch's signal fires" \
+  "open $(T 10:50:00)" "$(field 1 .status) $(field 1 .end)"
+check_eq "(x3) the abandoned window keeps its own turns only (100 + 50 + 90000)" "90150" "$(field 1 .cost)"
+check_eq "(x3) the second branch's window is closed with its own turns (300 + 400)" "closed 700" "$(field 2 .status) $(field 2 .cost)"
+
+# --- (x3b) the same with init as the second branch's signal -------------------------------------------
+mk_session x3b
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"polish started, then abandoned"}]'
+  rec_turn R3 10:10:00 "" b2 90000 '[{"type":"text","text":"another ticket entirely"}]'
+  rec_turn R4 10:50:00 "" b2 300 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init')"
+  rec_result 10:50:05 toolu_i false "$INIT_OUT"
+  rec_turn R5 10:55:00 "" b2 400 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:55:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x3b) init on the other branch also ends the abandoned window: open then closed" "open closed" "$(field 1 .status) $(field 2 .status)"
+check_eq "(x3b) the second window is init-opened with its own cost" "init 700" "$(field 2 .opened_by) $(field 2 .cost)"
+
+# --- (x4) a PR created on another branch neither closes nor ends this branch's window --------------------
+mk_session x4
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:10:00 "" b2 5000 "$(bash_use toolu_p 'gh pr create --title other')"
+  rec_result 10:10:05 toolu_p false "$PRURL"
+  rec_turn R3 10:20:00 "" b1 400 "$(bash_use toolu_q 'gh pr create --title mine')"
+  rec_result 10:20:05 toolu_q false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x4) one window: the foreign PR closed nothing and did not end the window" "1" "$(printf '%s\n' "$OUT" | grep -c .)"
+check_eq "(x4) b1's own PR then closes it, the b2 turn counted (100 + 5000 + 400)" "closed 5500 3" "$(field 1 .status) $(field 1 .cost) $(field 1 .primary_turns)"
+
+# --- (x5) a detached HEAD turn and unsignalled foreign-branch turns do not end a window -------------
+mk_session x5
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:01:00 "" HEAD 200 '[{"type":"text","text":"mid-rebase"}]'
+  rec_turn R3 10:02:00 "" b2 300 '[{"type":"text","text":"a turn from another worktree"}]'
+  rec_turn R4 10:03:00 "" b1 400 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:03:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x5) one closed window holding all four turns" "closed 1000 4" "$(field 1 .status) $(field 1 .cost) $(field 1 .primary_turns)"
+
+mk_session x5b
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R2 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R3 10:06:00 polish b1 300 '[{"type":"text","text":"re-run on the open PR"}]'
+  rec_turn R4 10:07:00 "" HEAD 50 '[{"type":"text","text":"mid-rebase"}]'
+  rec_turn R5 10:08:00 "" b1 70 '[{"type":"text","text":"x"}]'
+} > "$SF"
+tail_json
+check_eq "(x5b) a re-run window survives a detached-HEAD turn (300 + 50 + 70), still open to the end" \
+  "open 420 null" "$(field 2 .status) $(field 2 .cost) $(field 2 .end)"
+
+# --- (x6) opened_by: attribution wins when both signals share a turn ------------------------------------
+mk_session x6
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init')"
+  rec_result 10:00:05 toolu_i false "$INIT_OUT"
+  rec_turn R2 10:01:00 polish b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:01:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x6) one window, opened by the Skill when both fire on one turn" "1 skill" "$(printf '%s\n' "$OUT" | grep -c .) $(field 1 .opened_by)"
+
+# --- (x7) the predicate matches what the real `init` prints (the shared contract) ---------------------
+cr="$SANDBOX/init-coupling-repo"; mkdir -p "$cr"; git -C "$cr" init -q
+real_init="$(cd "$cr" && bash "$REPO_ROOT/tools/pre-pr-gate.sh" init 2>&1)"
+mk_session x7
+{
+  rec_turn R1 10:00:00 "" b1 100 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init')"
+  rec_result 10:00:05 toolu_i false "$real_init"
+  rec_turn R2 10:01:00 "" b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:01:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x7) the real init's output opens a window" "closed init 300" "$(field 1 .status) $(field 1 .opened_by) $(field 1 .cost)"
+
+
+# --- (x11) an init chained with a failing command (is_error result) still ran: it opens the window --------
+mk_session x11
+{
+  rec_turn R1 10:00:00 "" b1 100 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init && tools/pre-pr-gate.sh receipt --recover')"
+  rec_result 10:00:05 toolu_i true "Exit code 1
+$INIT_OUT
+pre-pr-gate: nothing to recover — no receipt was retired since the last init"
+  rec_turn R2 10:01:00 "" b1 200 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:01:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x11) an init whose call errored afterwards opens a window" "closed init 300" "$(field 1 .status) $(field 1 .opened_by) $(field 1 .cost)"
+
+# --- (x12) a grep/diff/cat that PRINTS the line inside other text opens nothing; init's own whole line does ---------
+mk_session x12
+{
+  rec_turn R1 10:00:00 "" b1 100 "$(bash_use toolu_g "grep -n 'receipt' tests/test_session_cost_tail.sh")"
+  rec_result 10:00:05 toolu_g false "343:INIT_OUT='$INIT_OUT'
+344:+  rec_turn R1 10:00:00 \"\" b1 100 \"$INIT_OUT\""
+  rec_turn R2 10:10:00 "" b1 50000 '[{"type":"text","text":"implementing"}]'
+  rec_turn R3 10:20:00 polish b1 300 '[{"type":"text","text":"x"}]'
+  rec_turn R4 10:30:00 "" b1 400 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:30:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x12) a printed look-alike opens nothing: the Skill turn opens the window (300 + 400)" "closed skill 700" \
+  "$(field 1 .status) $(field 1 .opened_by) $(field 1 .cost)"
+
+# --- (x8) a window opened on a turn with no real branch is unbound: it adopts no branch, so a signal on b3 after a b2 turn abandons nothing ----
+mk_session x8
+{
+  rec_turn R1 10:00:00 polish "" 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:10:00 "" b2 5000 '[{"type":"text","text":"x"}]'
+  rec_turn R3 10:20:00 polish b3 300 '[{"type":"text","text":"x"}]'
+  rec_turn R4 10:30:00 polish b3 400 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:30:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x8) an unbound window is never abandoned: one closed window of all four turns" "1 closed 5800" \
+  "$(printf '%s\n' "$OUT" | grep -c .) $(field 1 .status) $(field 1 .cost)"
+
+# --- (x9) an init inside an open window (a convergence round's re-init) does not restart it ----------------
+mk_session x9
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:10:00 "" b1 200 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init')"
+  rec_result 10:10:05 toolu_i false "$INIT_OUT"
+  rec_turn R3 10:20:00 "" b1 300 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:20:05 toolu_p false "$PRURL"
+} > "$SF"
+tail_json
+check_eq "(x9) one window from the Skill turn, holding the re-init round" "1 closed $(T 10:00:00) 600 skill" \
+  "$(printf '%s\n' "$OUT" | grep -c .) $(field 1 .status) $(field 1 .start) $(field 1 .cost) $(field 1 .opened_by)"
+
+# --- (x10) an init after a window closed on the same branch is a re-run: its window never closes ---------
+mk_session x10
+{
+  rec_turn R1 10:00:00 polish b1 100 "$(bash_use toolu_p 'gh pr create --title t')"
+  rec_result 10:00:05 toolu_p false "$PRURL"
+  rec_turn R2 10:05:00 "" b1 10 '[{"type":"text","text":"operator prompt"}]'
+  rec_turn R3 10:06:00 "" b1 300 "$(bash_use toolu_i 'tools/pre-pr-gate.sh init')"
+  rec_result 10:06:05 toolu_i false "$INIT_OUT"
+  rec_turn R4 10:07:00 "" b1 400 "$(bash_use toolu_q 'gh pr create --title t')"
+  rec_result 10:07:05 toolu_q true "a pull request for branch b1 already exists"
+} > "$SF"
+tail_json
+check_eq "(x10) closed, then an init-opened re-run window that stays open" "closed open init 700" \
+  "$(field 1 .status) $(field 2 .status) $(field 2 .opened_by) $(field 2 .cost)"
+
+
+# --- dir #707 (A6): the doc and the tool's header comment state the second signal and the branch binding ---
+doc_folded="$(tr '\n' ' ' < "$REPO_ROOT/docs/session-cost.md" | tr -s ' ')"
+check_contains "A6: the doc names the init line as the second signal" "$doc_folded" "receipt started"
+check_contains "A6: the doc lists opened_by in the --json fields" "$doc_folded" "opened_by"
+check_contains "A6: the doc's open-window bullet names an abandoned start" "$doc_folded" "abandoned"
+check_absent "A6: the doc no longer states the Skill-only window rule" "$doc_folded" "attributed to \`polish\` that follows a turn attributed otherwise, and closes at the primary turn"
+hdr="$(sed -n '/^# --- tail/,/^SC_REVIEW_FIRST_LINE=/p' "$tool" | grep '^#')"
+check_contains "A6: the header comment names SC_INIT_LINE_RE" "$hdr" "SC_INIT_LINE_RE"
+check_contains "A6: the header comment binds a window to its branch" "$hdr" "branch it opened on"
+check_absent "A6: the header comment no longer states the Skill-only open rule" "$hdr" "A window opens at the first primary turn attributed"
+
 summary

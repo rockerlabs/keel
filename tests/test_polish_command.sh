@@ -284,4 +284,8 @@ check_contains "guide: § Step 2's unavailable-skill fallback covers /simplify's
   'over the angles `/simplify` covers (duplication, dead code, over-complication, naming)'
 check_contains "guide: § Step 2 says the fallback is not the prose-only pass" "$g2" 'not the prose-only pass above'
 
+# dir #714: the fallback-within-a-fallback precondition names B4's agent-type-not-found case too.
+pinfg "guide: 'Fallback within a fallback' precondition names the agent-type-not-found case" \
+  'unavailable/refuses, or the Agent call answers that the type `keel-polish-reviewer` was not found'
+
 summary
