@@ -13,7 +13,7 @@
 # there is the explicit decision a new variable forces. TMPDIR is read implicitly by a bare `mktemp`
 # (no template argument), which is how the scanner reads it, so that shape counts as a TMPDIR read.
 # Known limits: a variable outside that family (XDG_*, GIT_*), a `~` path or an indirect `${!name}` read is not
-# seen; a name that only appears in quoted message text counts as a read, so it can hide a dead list entry (it
+# seen, nor is `mktemp -t PREFIX`; a name that only appears in quoted message text counts as a read, so it can hide a dead list entry (it
 # never demands a false entry). Scope: the scanner and the vendored libs beside it that it may run (range-lib.sh) — the hooks run in the
 # caller's cwd, not the scanner's neutral one, so they are out of scope.
 # shellcheck source=tests/lib.sh
@@ -33,7 +33,7 @@ env_reads() {
     body="$(grep -vE '^[[:space:]]*#' "$f" || true)"
     names="$(grep -oE '\$\{?(SECRET_SCAN_[A-Z0-9_]+|KEEL_[A-Z0-9_]+|HOME|TMPDIR)\b' <<<"$body" | tr -d '${' || true)"
     [ -z "$names" ] || printf '%s\n' "$names"
-    if grep -qE 'mktemp( -[A-Za-z]+)*[[:space:]]*([)|>&;]|$)' <<<"$body"; then echo TMPDIR; fi
+    if grep -qE '[$(`]mktemp( -[A-Za-z]+)*[[:space:]]*([)`|>&;]|$)' <<<"$body"; then echo TMPDIR; fi
   done | sort -u
 }
 
@@ -81,8 +81,10 @@ for v in $NON_PATH_ENV; do
 done
 
 # The scope is the scanner plus range-lib.sh; the scanner sourcing anything else would widen it unseen.
+src_re='(^|[;&{(]|then|do|else)[[:space:]]*(\.|source)[[:space:]]+[^[:space:]]'
 check_eq "the scanner sources no file (scope = scanner + range-lib.sh)" "" \
-  "$(grep -E '^[[:space:]]*(\.|source)[[:space:]]' "$scanner" || true)"
+  "$(grep -vE '^[[:space:]]*#' "$scanner" | grep -E "$src_re" || true)"
+check_eq "range-lib.sh sources no file" "" "$(grep -vE '^[[:space:]]*#' "$range_lib" | grep -E "$src_re" || true)"
 
 # --- mutations: the check must go red ---------------------------------------------------------------
 mut="$SANDBOX/mut"
