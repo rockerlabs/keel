@@ -289,7 +289,8 @@ incidental and has already broken mid-release once.
 ## R7 — the cost line
 
 At release close, the manager derives the run's token/cost figure from whatever on-disk usage data
-your project already has, reads it against [`docs/loading-and-cost.md`](loading-and-cost.md), and
+your project already has — summed at the weights the groom's estimate names (`docs/grooming.md` G5) — reads it against
+[`docs/loading-and-cost.md`](loading-and-cost.md), and
 **completes** the run's row in the releases cross-run record — **which now exists and has a path**, the
 one [`docs/grooming.md`](grooming.md)'s G7 names (keel's own instance: `private/releases/RUNS.md`,
 gitignored; per-project for adopters, per G9). **Completes, not creates:** the groom OPENS the row at
@@ -362,7 +363,8 @@ brief](#the-worker-brief--one-shape-whether-launched-or-handed-over) — state t
 the PR→ticket→surface map, the manager's own seam suspicions marked "leads, not findings," and a
 "Handed to you" line below which every judgment is the auditor's own. File a finding that clears
 [`docs/verification-economics.md`](verification-economics.md) §4's filing bar as a ticket promptly
-rather than only when asked — below the bar it's a standing-list line, not a ticket; the non-delegable
+rather than only when asked — below the bar it's a standing-list line, not a ticket, and a ticket whose
+defect a standing line already names takes that line with it (§4); the non-delegable
 set is unchanged from [`docs/delegation.md`](delegation.md) — merges, the release itself, and deletions
 stay the operator's.
 

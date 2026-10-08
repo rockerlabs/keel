@@ -244,6 +244,15 @@ own G6 pass happen only after a "yes" given against that price. A rule of the pr
 compensation. It holds for any set the operator opts into wholesale, a parked file included (keel's
 0.14.0 groom took "full groom" before the parked file had a price, then priced it and asked again).
 
+**A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
+grooms).** At 0.14.0 two of three pains were labels the groom wrote and the operator chose; at 0.15.0
+all three were. Offering labels is fair, since an operator recognizes a pain faster than they phrase
+one, but it gives the groom the pen this section reserves for the operator. Three constraints follow.
+Every offered label names the tickets behind it, so the operator chooses a set they can check, not a
+theme. A "no new pain" option sits beside the labels, so declining costs the same click as accepting.
+And the plan records each as a picked label, never as the operator's words. A rule of the procedure,
+not a compensation.
+
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
 wording. It has nothing for a *whole plan* with no per-row pains — which is what you get when the
@@ -419,6 +428,15 @@ the audit's subagent fan-out, one rebase per PR queued behind a shared changelog
 measured release total by the build tickets it actually DELIVERED (not its planned slate) and scale
 that; a per-item figure is a floor only. A rule of the procedure, not a compensation — no ticket
 removes it.
+
+**An estimate names its weighting, and the actual is read at that weighting (the 0.15.0 groom, reading
+the 0.14.0 row).** The 0.14.0 estimate was built on `keel tokens`' default weights
+([`docs/token-economy.md`](token-economy.md)); the actual was summed with a lighter cache-write weight —
+about 203M against 225M for the same transcripts — and the two cells were then compared. So the
+estimate cell names its weights, the completing half
+([`docs/release-management.md`](release-management.md) R7) sums the actual at the same weights, and a
+row whose actual cannot be re-summed labels each figure with its weighting and does not compare them. A
+rule of the procedure, not a compensation.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not

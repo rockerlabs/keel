@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`docs/grooming.md`: picked pains and one weighting.** G1: when the operator picks a pain from labels
+  the groom offered, every label names its tickets, a "no new pain" option sits beside them, and the plan
+  records the pain as a picked label, not as the operator's words. G5: an estimate names its weights, and
+  the release's actual is summed at the same weights before the two are compared; `docs/release-management.md`
+  R7 says so where the actual is summed.
+- **`docs/verification-economics.md` §4: a ticket takes its standing line with it.** Whoever files a
+  ticket whose defect a standing-list line already names moves that line into the ticket and deletes it
+  from the list, so the list stops carrying defects that are already scheduled; the release manager's filing
+  rule in `docs/release-management.md` points at it.
+
 ## [0.14.0] — 2026-10-07
 
 **Known issues, disclosed at the cut.** These things from the 0.14.0 delta audit ship known-imperfect; none

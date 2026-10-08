@@ -222,6 +222,13 @@ defect. The standing list is what makes "no action" a persist. An aside in an un
 is neither a list nor a ticket. **A second independent sighting promotes a standing-list line to a
 ticket** — [`docs/grooming.md`](grooming.md) G4(a)'s existing mechanics, not restated here.
 
+**The link also runs the other way: whoever files a ticket — an audit, a worker's escape, a wrap —
+for a defect a standing-list line already names moves that line into the ticket's body and deletes it
+from the list, in the same edit** (the edit discipline [`docs/triage.md`](triage.md) T3 already sets
+for a promotion, extended to every filing route). Otherwise the next reader triages, as open, a defect
+that is already scheduled. (One groom found three such lines — dir #688, #723, #734 — two of them
+covered only in part, so the tickets had to be widened first.)
+
 **"The standing list" is not a new artifact to create** — same answer as the class registry in §8. It
 is whichever durable, *re-read* list your project already keeps and actually works from: a `KNOWN
 ISSUES` section, a "papercuts" ticket, a `LEARNINGS`-style staging file. The two properties that
