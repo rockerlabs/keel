@@ -767,13 +767,12 @@ keel_path_inside() {
   case "$pd/$(basename "$p")" in "$ckp"|"$ckp"/*) return 0 ;; esac
   return 1
 }
-# keel_link_is_ours LINK — LINK points into the checkout this run installs from (one hop, relative targets
-# read from the link's own directory). Keel's links always do; an adopter's link to a dotfiles copy does not.
+# keel_link_is_ours LINK — LINK points into the checkout this run installs from. Keel's links are always
+# absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not.
 keel_link_is_ours() {
   local t
   t="$(readlink "$1")" || return 1
-  case "$t" in /*) ;; *) t="${1%/*}/$t" ;; esac
-  keel_path_inside "$t" "$root"
+  case "$t" in /*) keel_path_inside "$t" "$root" ;; *) return 1 ;; esac
 }
 # CKSUM_UNREADABLE/artifact_cksum — sourced from tools/lib/artifact-cksum.sh above (dir #362).
 # record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
@@ -974,7 +973,7 @@ prior_symlink_extra() {
 # which is the OLD one when the checkout has moved. Empty when there is no usable prior manifest.
 prior_checkout() {
   [ "$prior_manifest_usable" = 1 ] || return 0
-  awk 'index($0, "checkout=") == 1 { print substr($0, 10); exit }' "$prior_manifest" 2>/dev/null || true
+  manifest_field "$prior_manifest" checkout
 }
 # keel_own_stale_link DEST (B3, T3) — DEST is a link Keel made in an earlier run and that has gone stale
 # (the checkout moved): its target is the one the prior manifest recorded for it, AND that recorded target
@@ -994,6 +993,23 @@ keel_own_stale_link() {
   cur="$(readlink "$dest")" || return 1
   [ "$cur" = "$rec" ] || return 1
   keel_path_inside "$rec" "$(prior_checkout)"
+}
+
+# keel_link_class DEST SRC — what a link at DEST is, for SRC the Keel file that belongs there (B3): prints
+# T3 (Keel's own link gone stale), T3a (an adopter's link whose content already equals SRC) or T4 (any other
+# link, live or dangling). The caller has already ruled out T2 (DEST -ef SRC) and a link to a non-regular file.
+keel_link_class() {
+  if keel_own_stale_link "$1"; then echo T3
+  elif [ -f "$1" ] && cmp -s "$2" "$1"; then echo T3a
+  else echo T4
+  fi
+}
+
+# seed_dangling DEST [LABEL] — B5: a SEED writes only where there is no dentry at all, so a dangling link is
+# someone's wiring. Prints the one "left untouched" line and returns 0 for one; returns 1 for anything else.
+seed_dangling() {
+  [ -L "$1" ] && [ ! -e "$1" ] || return 1
+  echo "  =    ${2:-$(basename "$1")} is a dangling link (left untouched — remove it to let Keel seed one)"
 }
 
 # record_readme_if_unclobbered DEST (dir #512) — record_placed's own variant for a WRITE-ONCE artifact
@@ -1248,9 +1264,8 @@ copy_gap() {
   local src="$1" dest="$2"
   if [ -f "$dest" ]; then
     echo "  =    $(basename "$dest") exists (left untouched)"
-  elif [ -L "$dest" ]; then
-    # A seed writes only where there is no dentry at all (B5): a dangling link is someone's wiring.
-    echo "  =    $(basename "$dest") is a dangling link (left untouched — remove it to let Keel seed one)"
+  elif seed_dangling "$dest"; then
+    :   # B5: a SEED writes only where there is no dentry at all
   elif [ -f "$src" ]; then
     keel_write_replace "$dest" < "$src" || exit 1
     echo "  +    $(basename "$dest")"
@@ -1297,10 +1312,8 @@ sync_product() {
   # pass: every earlier guard in this diff explicitly excluded symlinks, so a dest that reaches Keel via
   # `~/.claude/commands/wrap.md -> /some/fifo` fell through every check and reached `place()`'s rename,
   # which replaces whatever dentry sits at $dest — symlink or not — silently destroying the adopter's
-  # link with none of this same predicate's own decline message). A dangling symlink (a moved/reaped
-  # checkout) and a symlink-to-regular-file (dir #323's own, unrelated, already-settled territory) are
-  # both still correctly excluded: `-e`/`-f` are false for the former (nothing to follow to) and true
-  # for the latter, so neither trips this flag.
+  # link with none of this same predicate's own decline message). A dangling symlink and a
+  # symlink-to-regular-file leave this flag at 0: `lclass` below classifies them.
   local dest_nonregular=0
   [ -e "$dest" ] && [ ! -f "$dest" ] && dest_nonregular=1
   # lclass (B3 of docs/specs/685-symlink-policy.md) — what a LINK at $dest is, decided BEFORE
@@ -1310,10 +1323,7 @@ sync_product() {
   # adopter's link whose content already equals Keel's; T4 any other link, live or dangling.
   local lclass=""
   if [ -L "$dest" ] && [ "$dest_nonregular" = 0 ] && [ ! "$dest" -ef "$src" ]; then
-    if keel_own_stale_link "$dest"; then lclass=T3
-    elif [ -f "$dest" ] && cmp -s "$src" "$dest"; then lclass=T3a
-    else lclass=T4
-    fi
+    lclass="$(keel_link_class "$dest" "$src")"
   fi
   if [ ! -f "$src" ]; then
     echo "  !    source missing: $src" >&2
@@ -1342,11 +1352,10 @@ sync_product() {
     # unchanged); linked mode makes no alias for a link, but keeps one that already exists fresh.
     if [ -n "$alias_dest" ] && [ "$LINK" != 1 ]; then
       echo "  ~    $name is your own command — a symlink to a different target ($(readlink "$dest")); left untouched, whatever the flags. To let Keel place it, remove the link and re-run. Keel's version goes alongside it:"
-      sync_product "$src" "$alias_dest"
     else
       echo "  !    $name is a symlink to a different target ($(readlink "$dest")) — your own wiring; left untouched, whatever the flags. To let Keel place it, remove the link and re-run."
-      if [ -n "$alias_dest" ] && [ "$alias_exists" = 1 ]; then sync_product "$src" "$alias_dest"; fi
     fi
+    if [ -n "$alias_dest" ] && { [ "$LINK" != 1 ] || [ "$alias_exists" = 1 ]; }; then sync_product "$src" "$alias_dest"; fi
   elif keel_own_untouched "$src" "$dest"; then
     place "$src" "$dest"
     echo "  ^    $name refreshed (Keel's own copy, unedited)"
@@ -1553,8 +1562,8 @@ if [ "$LINK" = 1 ]; then
   # A short README so the dir explains itself later (written once; yours to edit after).
   # Path-neutral on purpose: a baked-in checkout path would silently go stale if the checkout ever
   # moves — the symlinks themselves are the live pointer (readlink shows where).
-  if [ -L "$link_dir/README.md" ] && [ ! -e "$link_dir/README.md" ]; then
-    echo "  =    keel/README.md is a dangling link (left untouched — remove it to let Keel seed one)"
+  if seed_dangling "$link_dir/README.md" keel/README.md; then
+    :
   elif [ ! -f "$link_dir/README.md" ]; then
     keel_write_replace "$link_dir/README.md" <<EOF || exit 1
 # keel/ — the Keel consumption point (linked install)
@@ -1594,10 +1603,8 @@ EOF
   #                       zero information loss), asked/flagged when it drifted (your edits may live there)
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
-  if [ -L "$gclaude" ] && [ ! -e "$gclaude" ]; then
-    # B5: a dangling link is someone's wiring — the whole seed / import / migrate chain is skipped, so no
-    # later branch's `>>` append can write through it and create its target.
-    echo "  =    CLAUDE.md is a dangling link (left untouched — remove it to let Keel seed one)"
+  if seed_dangling "$gclaude" CLAUDE.md; then
+    :   # B5: the whole seed / import / migrate chain is skipped, so no later branch's `>>` append can write through it
   elif [ ! -f "$gclaude" ]; then
     # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
     # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
@@ -1701,8 +1708,8 @@ else
     # install); the KEEL-CORE block itself gets a currency check on re-run — strictly better than
     # copy-mode Claude gets today, but never a silent auto-refresh.
     dest="$HOME_DIR/$CONTEXT_FILE"
-    if [ -L "$dest" ] && [ ! -e "$dest" ]; then
-      echo "  =    $CONTEXT_FILE is a dangling link (left untouched — remove it to let Keel seed one)"
+    if seed_dangling "$dest" "$CONTEXT_FILE"; then
+      :
     elif [ ! -f "$dest" ]; then
       strip_template_prose < "$root/templates/CLAUDE.md" | keel_write_replace "$dest" || exit 1
       echo "  +    $CONTEXT_FILE (generated — embedded core, refreshed on drift)"
@@ -1791,16 +1798,17 @@ elif [ -f "$root/keel" ] && product_dir "$HOME_DIR/bin" "the keel CLI link"; the
     # Classified like sync_product's links (B3): T3 Keel's own link gone stale (the checkout moved) is
     # re-pointed; T3a an adopter's link whose content already equals Keel's is left as is and not
     # recorded; T4 any other link is the adopter's own wiring and is declined, --force included.
-    if keel_own_stale_link "$keel_link"; then
-      keel_link_replace "$root/keel" "$keel_link" || exit 1
-      record_placed "$keel_link"
-      echo "  ^    bin/keel re-pointed → $root/keel  (Keel's own link — the checkout it pointed into moved)"
-    elif [ -f "$keel_link" ] && cmp -s "$root/keel" "$keel_link"; then
-      echo "  =    bin/keel (up to date — your link, left as is)"
-      record_artifact "bin/keel" forget -
-    else
-      echo "  !    bin/keel is a symlink to a different target ($(readlink "$keel_link")) — your own program; left untouched, whatever the flags. To let Keel wire it, remove the link and re-run."
-    fi
+    case "$(keel_link_class "$keel_link" "$root/keel")" in
+      T3)
+        keel_link_replace "$root/keel" "$keel_link" || exit 1
+        record_placed "$keel_link"
+        echo "  ^    bin/keel re-pointed → $root/keel  (Keel's own link — the checkout it pointed into moved)" ;;
+      T3a)
+        echo "  =    bin/keel (up to date — your link, left as is)"
+        record_artifact "bin/keel" forget - ;;
+      *)
+        echo "  !    bin/keel is a symlink to a different target ($(readlink "$keel_link")) — your own program; left untouched, whatever the flags. To let Keel wire it, remove the link and re-run." ;;
+    esac
   elif [ ! -e "$keel_link" ]; then
     # Absent — nothing of the adopter's to preserve.
     keel_link_replace "$root/keel" "$keel_link" || exit 1

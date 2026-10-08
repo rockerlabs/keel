@@ -26,10 +26,13 @@ manifest_of() { printf '%s/.keel/install-manifest.claude' "$1"; }
 symlink_records() { grep -c -F "$(printf 'artifact=symlink\t%s\t' "$2")" "$(manifest_of "$1")" || true; }
 # line_of OUT NEEDLE — the first line of OUT containing NEEDLE (one line, so a pin cannot span two).
 line_of() { local o="$1"; grep -F -m1 -- "$2" <<<"$o" || true; }
+# One checkout shared by every scenario that only READS it as an install source; A15 moves its checkout and
+# A25 drifts its source, so those build their own.
+ck_shared="$(mk_ck shared-ck)"
 have_script=1; command -v script >/dev/null 2>&1 || have_script=0
 
 # --- A12: T4 under --force — a link Keel did not make over a whole-file doc is declined -------------------
-ck="$(mk_ck a12-ck)"; h="$SANDBOX/a12-h"; dots="$SANDBOX/a12-dots"; mkdir -p "$h" "$dots"
+ck="$ck_shared"; h="$SANDBOX/a12-h"; dots="$SANDBOX/a12-dots"; mkdir -p "$h" "$dots"
 run "$ck/install.sh" --home "$h" --no-hooks
 check_status "A12 fixture install exits 0" 0 "$STATUS"
 mv "$h/docs/delegation.md" "$dots/delegation.md"
@@ -48,7 +51,7 @@ check_contains "A12 …and says what to do" "$OUT" "remove the link and re-run"
 
 # --- A13: T4 on a terminal — no overwrite prompt is offered for a link Keel did not make -----------------
 if [ "$have_script" = 1 ]; then
-  ck="$(mk_ck a13-ck)"; h="$SANDBOX/a13-h"; dots="$SANDBOX/a13-dots"; mkdir -p "$h" "$dots"
+  ck="$ck_shared"; h="$SANDBOX/a13-h"; dots="$SANDBOX/a13-dots"; mkdir -p "$h" "$dots"
   run "$ck/install.sh" --home "$h" --no-hooks
   mv "$h/docs/delegation.md" "$dots/delegation.md"
   printf '\n# MY DOTFILES EDIT\n' >> "$dots/delegation.md"
@@ -65,7 +68,7 @@ else
 fi
 
 # --- A14: bin/keel T4 — an adopter's live link to their own program ---------------------------------------
-ck="$(mk_ck a14-ck)"; h="$SANDBOX/a14-h"; mine="$SANDBOX/a14-mine"; mkdir -p "$h/bin" "$mine"
+ck="$ck_shared"; h="$SANDBOX/a14-h"; mine="$SANDBOX/a14-mine"; mkdir -p "$h/bin" "$mine"
 printf '#!/bin/sh\necho mine\n' > "$mine/keel"; chmod +x "$mine/keel"
 ln -s "$mine/keel" "$h/bin/keel"
 before="$(sum_of "$mine/keel")"
@@ -97,7 +100,7 @@ check_absent "A15 no decline line for a link Keel made" "$OUT" "remove the link 
 check_absent "A15 …and no 'your own command' line" "$OUT" "is your own command"
 
 # --- A16: T5 hard link under --force — backed up, renamed over, the other name keeps its bytes ------------
-ck="$(mk_ck a16-ck)"; h="$SANDBOX/a16-h"; dots="$SANDBOX/a16-dots"; mkdir -p "$h" "$dots"
+ck="$ck_shared"; h="$SANDBOX/a16-h"; dots="$SANDBOX/a16-dots"; mkdir -p "$h" "$dots"
 run "$ck/install.sh" --home "$h" --no-hooks
 mv "$h/docs/delegation.md" "$dots/delegation.md"
 ln "$dots/delegation.md" "$h/docs/delegation.md"
@@ -111,7 +114,7 @@ check_eq "A16 the other name keeps its bytes" "$before" "$(sum_of "$dots/delegat
 check_eq "A16 a backup of the edited content was taken" 1 "$(find "$h/docs" -name 'delegation.md.*.bak' | wc -l | tr -d ' ')"
 
 # --- A18: SEED — a dangling link is someone's wiring, left alone ------------------------------------------
-ck="$(mk_ck a18-ck)"
+ck="$ck_shared"
 # (1) a dangling LEARNINGS.md in copy mode
 h="$SANDBOX/a18-h1"; gone="$SANDBOX/a18-nowhere-1"; mkdir -p "$h"
 ln -s "$gone" "$h/LEARNINGS.md"
@@ -209,7 +212,7 @@ done
 
 # --- A26: T4 runs before the alias branch and the prompts ----------------------------------------------------
 # (1) an alias already exists, then --force
-ck="$(mk_ck a26-ck1)"; h="$SANDBOX/a26-h1"; dots="$SANDBOX/a26-dots1"; mkdir -p "$h" "$dots"
+ck="$ck_shared"; h="$SANDBOX/a26-h1"; dots="$SANDBOX/a26-dots1"; mkdir -p "$h" "$dots"
 run "$ck/install.sh" --home "$h" --no-hooks
 mv "$h/commands/wrap.md" "$dots/wrap.md"
 printf '\n# MY OWN WRAP\n' >> "$dots/wrap.md"
@@ -228,7 +231,7 @@ check_absent "A26(1) …with no --force remedy in it" "$ln1" "--force"
 check_absent "A26(1) …and no 'Reclaim it' line for the name" "$OUT" "wrap.md left untouched (yours"
 # (2) no alias yet, a terminal answers 'u' to the alias prompt
 if [ "$have_script" = 1 ]; then
-  ck="$(mk_ck a26-ck2)"; h="$SANDBOX/a26-h2"; dots="$SANDBOX/a26-dots2"; mkdir -p "$h" "$dots"
+  ck="$ck_shared"; h="$SANDBOX/a26-h2"; dots="$SANDBOX/a26-dots2"; mkdir -p "$h" "$dots"
   run "$ck/install.sh" --home "$h" --no-hooks
   mv "$h/commands/wrap.md" "$dots/wrap.md"
   printf '\n# MY OWN WRAP\n' >> "$dots/wrap.md"
