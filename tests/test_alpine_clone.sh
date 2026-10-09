@@ -3,8 +3,10 @@
 # group per trap that cost a false red in 0.14.0: hard-linked packs (--no-hardlinks), a copied
 # .DS_Store under .git (git clone exits 128 inside the container), and a detached HEAD (bootstrap
 # --link exits 128). Plus the reuse guards: a path whose .git is not the expected clone is refused,
-# and the tool never deletes. Every clone here comes from a sandbox repo via --source, never from the
-# real checkout; HOME is the sandbox HOME lib.sh pins, so the canonical $HOME/.keel/tmp path is sandboxed.
+# and the tool never removes a clone directory (a reused clone is reset and cleaned back to the requested
+# commit, which the reuse group below pins). Every clone here comes from a sandbox repo via --source, never
+# from the real checkout; HOME is the sandbox HOME lib.sh pins, so the canonical $HOME/.keel/tmp path is
+# sandboxed.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -90,7 +92,7 @@ check_status "--run exits like docker (0 from the shim)" 0 "$STATUS"
 check_contains "--run mounts the clone" "$(cat "$SANDBOX/docker.args")" "-v $want:/keel"
 check_contains "--run runs the suite on alpine" "$(cat "$SANDBOX/docker.args")" "alpine:3.21"
 
-# the tool must never delete: sessions are denied rm -rf, and a helper that needs it is the wrong shape
+# the tool must never call rm: sessions are denied rm -rf, and a helper that needs it is the wrong shape
 rm_hits="$(grep -nE '(^|[^[:alnum:]_-])rm[[:space:]]' "$tool" | grep -v '^[0-9]*:[[:space:]]*#' || true)"
 check_eq "the tool never calls rm" "" "$rm_hits"
 

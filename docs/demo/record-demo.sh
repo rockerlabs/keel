@@ -30,7 +30,8 @@ fi
 
 # ---- inner mode: the scenes ---------------------------------------------------------
 
-sandbox="$(mktemp -d /tmp/keel-demo.XXXX)"
+# six X: busybox mktemp (Alpine) refuses fewer and exits before any scene runs
+sandbox="$(mktemp -d /tmp/keel-demo.XXXXXX)"
 trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
 # dir #720 S10-3: HOME alone is not enough — tools/lib/impact-store.sh resolves these overrides BEFORE
@@ -39,6 +40,11 @@ export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
 . "$root/tools/lib/impact-store.sh"
 # shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is a space-separated list of NAMES
 unset $IMPACT_ISOLATION_VARS
+# dir #725: the scanner reads this machine-wide override too, and a set-but-missing value now fails it closed
+# (exit 2) — including in install-secret-guard.sh's selftest, so an operator's stale ambient one leaves the
+# guard NOT installed below and the key-shaped commit goes through. Unset, it falls back to
+# $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
+unset SECRET_SCAN_PERSONAL_FILE
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"
