@@ -25,7 +25,8 @@
 # (its `.git` is not at its root, or its origin differs); an unknown <sha>. This tool never removes a clone
 # directory — a session cannot `rm -rf` — so removing one stays the release manager's wrap or the
 # operator's. A REUSED clone is reset to the requested commit (`checkout -f -B`), cleaned (`clean -ffdx`) and
-# stripped of `.DS_Store` files under `.git` (`find -delete`): keep nothing in it. The path is under $HOME/.keel/tmp (Docker cannot mount the scratchpad), outside the
+# stripped of `.DS_Store` files under `.git` (`find -delete`): keep nothing in it. The path is under
+# $HOME/.keel/tmp (Docker cannot mount the scratchpad), outside the
 # `$HOME/keel*alpine*` shape tools/self/doctor.sh's stray-clone advisory looks for.
 set -euo pipefail
 # drop an inherited repo selector before any git call (the dir #647 convention shared by tools/).

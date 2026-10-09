@@ -29,10 +29,12 @@
 # skipped), the closing line of a heredoc commit message (a `git commit -m "$(cat` with a heredoc body, then
 # `)" && git push --no-verify` on the line after the terminator: the `)"` opens a quote the lexer never
 # closes, so the push after it is not seen; the same push on its own line IS), a stray heredoc operator
-# earlier in the command (an arithmetic shift inside `$(( ))` reads as a heredoc opener and swallows what
-# follows), a partly quoted prefix assignment (`VAR="x"y git push …` splits into `VAR=` and `y`, so the
-# command word is never `git`; it hides a `gh pr create` the same way), a missing jq, another harness, the
-# operator's own terminal. Each of these was fed through this hook and allowed (0.15.0 audit); the lexer fix
+# earlier in the command (the shift in `$(( ))` arithmetic reads as a heredoc opener: a push after it
+# separated by `;`, or on a later line, is swallowed as heredoc text; one after `&&` or `|` is still seen),
+# a partly quoted prefix assignment (`VAR="x"y git push …` splits into `VAR=` and `y`, so the command word
+# is never `git`; it hides a `gh pr create` the same way), a missing jq, another harness, the operator's own
+# terminal. The four forms the 0.15.0 audit added (`/usr/bin/env`, the heredoc closing line, the stray
+# heredoc operator, the partly quoted assignment) were each fed through this hook and allowed; the lexer fix
 # is dir #745.
 # Spec B15, docs/specs/717.
 #

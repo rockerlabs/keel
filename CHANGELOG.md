@@ -29,13 +29,13 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   release rewrote the scanner that is copied to every place the guard is wired (dir #715, dir #725). Re-vendor
   each repo that carries a copy (`tools/install-secret-guard.sh <repo-path>`) AND, if you use the machine-wide
   guard, re-run `tools/install-secret-guard.sh --global`; `doctor` reports a stale copy as `W-GUARD-STALE` /
-  `W-GUARD-GLOBAL-STALE`. (2) A copy-mode install (the default `./install.sh`): re-run `./install.sh` to refresh
-  the commands and docs in your harness home — `/polish` and its guide and `docs/reference.md` changed, and
-  `doctor --install` still prints `OK` for the old copies after a plain pull. A linked install
-  (`./install.sh --link`) reads the checkout and needs nothing. (3) Nothing else needs a re-run: the new required
-  library `tools/lib/safe-write.sh` is read from the checkout, so a pull delivers it; the hook installers changed
-  only in how they write `settings.json`, so wired hooks stay wired; and the gate's new push rule (dir #731) is
-  live after the pull.
+  `W-GUARD-GLOBAL-STALE`. (2) A copy-mode install (the default `./install.sh`): re-run `./install.sh` to
+  refresh the commands and docs in your harness home — two commands (`/polish` and its guide) and eight docs,
+  `docs/reference.md` among them, changed, and `doctor --install` still prints `OK` for the old copies after a
+  plain pull. A linked install (`./install.sh --link`) reads the checkout and needs nothing. (3) Nothing else
+  needs a re-run: the new required library `tools/lib/safe-write.sh` is read from the checkout, so a pull
+  delivers it; the hook installers changed only in how they write `settings.json`, so wired hooks stay wired;
+  and the gate's new push rule (dir #731) is live after the pull.
 
 - **Guard clauses the tests could not see are now pinned.** Each of these was shown to stay green with the
   clause deleted; each now has a test that goes red under that deletion. The empty-`-C` refusal in
@@ -63,9 +63,11 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   checkout, so this is live for every Claude Code session on the machine after the next pull there. Not
   caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text
   (a quoted bypass argument included), a backslash-newline continuation, a `git config` write in an earlier
-  segment, a leading word the rule does not skip (`sudo`, `env -C`, `/usr/bin/env`, a redirect), the closing line
-  of a heredoc commit message (`)" && git push --no-verify`), a stray `<<` such as `$((1<<2))`, a partly quoted
-  prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`), and a missing `jq`. The lexer fix is dir #745. `docs/reference.md` names the new job. (dir #731)
+  segment, a leading word the rule does not skip (`sudo`, `env -C`, `/usr/bin/env`, a redirect), the closing
+  line of a heredoc commit message (`)" && git push --no-verify`), a stray heredoc operator such as the shift
+  in `$((1<<2))` (a push after it separated by `;`, or on a later line, is swallowed; one after `&&` or `|` is
+  still seen), a partly quoted prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`),
+  and a missing `jq`. The lexer fix is dir #745. `docs/reference.md` names the new job. (dir #731)
 
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
@@ -124,7 +126,7 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   push exits non-zero and the remote's branch does not move), and `install-secret-guard.sh`'s header says so
   beside the `--no-verify` note. This corrects dir #731's premise ("nothing detects it"): only a bypassed
   *push* leaks, and the gate rule that denies it is a separate change under the same ticket. No shipped hook
-  file changes, so no re-vendor. (dir #731, dir #717)
+  file changes, so this change needs no re-vendor. (dir #731, dir #717)
 
 - **`secret-scan.sh` exits 2, not clean, when a file list or object read fails.** Every file list and object read
   is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it

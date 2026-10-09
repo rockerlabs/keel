@@ -92,7 +92,7 @@ check_status "--run exits like docker (0 from the shim)" 0 "$STATUS"
 check_contains "--run mounts the clone" "$(cat "$SANDBOX/docker.args")" "-v $want:/keel"
 check_contains "--run runs the suite on alpine" "$(cat "$SANDBOX/docker.args")" "alpine:3.21"
 
-# the tool must never delete: sessions are denied rm -rf, and a helper that needs it is the wrong shape
+# the tool must never call rm: sessions are denied rm -rf, and a helper that needs it is the wrong shape
 rm_hits="$(grep -nE '(^|[^[:alnum:]_-])rm[[:space:]]' "$tool" | grep -v '^[0-9]*:[[:space:]]*#' || true)"
 check_eq "the tool never calls rm" "" "$rm_hits"
 

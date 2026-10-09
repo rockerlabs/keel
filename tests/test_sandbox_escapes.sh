@@ -20,7 +20,6 @@ check_nodir "record-demo.sh --scenes leaves the ambient KEEL_IMPACT_STORE untouc
 check_nofile "record-demo.sh --scenes leaves the ambient KEEL_IMPACT_LOG untouched" "$log"
 check_nodir "record-demo.sh --scenes leaves the ambient KEEL_HOME untouched" "$khome"
 
-
 # dir #725 made a set-but-missing SECRET_SCAN_PERSONAL_FILE fail the scanner closed (exit 2), also inside
 # install-secret-guard.sh's selftest, so a stale ambient value in the operator's shell left the tour's guard
 # uninstalled and its step 6 ended "commit succeeded — that should not happen". Both demos must neutralize it
