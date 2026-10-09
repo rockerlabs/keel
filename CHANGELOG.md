@@ -26,9 +26,11 @@ four `iconv` decode passes stop at the first invalid unit; an ASCII literal is n
 hook is missing or not executable; git then skips the hook, so a commit made with the hooks switched off is
 not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #747). (3) After a
 linked install whose `.keel/` manifest was lost and whose checkout was then moved, `install.sh --link` labels
-Keel's own dangling `keel/CORE.md`, `keel/FRAMEWORK.md` and `keel/PRINCIPLES.md` links as yours, leaves them
-dangling and exits 0 without saying that the always-on rails will not load; `doctor --install` flags the
-dangling links as `G-LINK-DANGLING` (dir #751). (1) and (2) reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
+every one of Keel's own links into the old checkout — `keel/CORE.md`, `keel/FRAMEWORK.md`, `keel/PRINCIPLES.md`
+and the command, doc, agent and `bin/keel` links — as yours, leaves them dangling and exits 0 without saying
+that the always-on rails will not load; `doctor --install` flags them as `G-LINK-DANGLING` and
+`G-RAILS-IMPORT-BROKEN`; remove the dangling links it lists and re-run `install.sh --link` from the new location
+(dir #751). (1) and (2) reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
 
 - **Upgrading from 0.14.0 — a `git pull` alone does not refresh the copies Keel made.** (1) Secret guard: this
   release rewrote the scanner that is copied to every place the guard is wired (dir #715, dir #725). Re-vendor
@@ -94,8 +96,9 @@ dangling links as `G-LINK-DANGLING` (dir #751). (1) and (2) reproduce on v0.14.0
   remedy** (dir #685 follow-up, from the 0.15.0 release-candidate audit). A dangling link, a link to another
   file, or a folder at a path the installer checks at the end (`INSTANCE.md`, `LEARNINGS.md`, `IDEAS.md`,
   `CLAUDE.md`/`AGENTS.md`, `FRAMEWORK.md`, `PRINCIPLES.md`, and the linked `keel/` core files) is declined with
-  one line, and the run now exits 0, writes its manifest and releases its lock. Before, a dangling link or a
-  folder there printed `MISS … re-run install.sh --link … from its new home`, failed, and left nothing for `uninstall.sh` to read.
+  one line, and the run now exits 0, writes its manifest and releases its lock. Before, a dangling link there
+  printed `MISS … re-run install.sh --link … from its new home` and a folder a bare `MISS`; either way it failed
+  and left nothing for `uninstall.sh` to read.
   Verify now names a path the manifest cannot show is Keel's as yours and says to remove it, then re-run (when
   the manifest is lost and the checkout moved, that includes Keel's own dangling links — dir #751); a file that is truly absent still fails
   Verify. `tools/doctor.sh`'s `G-LINK-DANGLING` tells you to remove a dangling link that no manifest record

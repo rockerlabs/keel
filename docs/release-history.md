@@ -32,9 +32,10 @@ were never recorded in this comparable shape.
 
 A managed release built from three operator pains, groomed the day of the v0.14.0 tag: the secret guard's
 fail-opens that 0.14.0 disclosed, the weight of the review machinery, and installer writes that damage files.
-The secret scanner now exits 2, not clean, when a file list or object read fails, and reads every list and object
-NUL-separated in the C locale (dir #715); a mistyped `SECRET_SCAN_PERSONAL_FILE` fails closed (dir #725);
-`public-audit.sh` stops reading clean over a binary that holds a personal literal (dir #719); and a drift check
+The secret scanner now exits 2, not clean, when a file list or object read fails, and reads the staged and tracked file
+lists NUL-separated and every record under the C locale (dir #715); a mistyped `SECRET_SCAN_PERSONAL_FILE` fails closed (dir #725);
+`public-audit.sh` stops reading clean over a binary that holds a personal literal (dir #719; a non-ASCII literal
+behind an invalid UTF-16 or UTF-32 unit still reads clean — a known issue); and a drift check
 pins the leak gate's path-variable list to the scanner's reads (dir #726). `install-secret-guard.sh --global`
 refuses a `core.hooksPath` that a conditional `[includeIf]` include sets (dir #717); `doctor.sh --install` no
 longer prints `OK` over a foreign hook and reads the machine-wide hooks directory through the installer's own
@@ -49,8 +50,7 @@ sandbox (dir #720). For the review machinery, `/polish` backgrounds the suite wi
 and names both skip receipts (dir #709), its guide's fallback precondition names both cases (dir #714), the gate's
 comments point at the guide (dir #710), the SIGPIPE static guard flags any producer before `grep -q` (dir #708),
 `session-cost.sh tail` opens a window on a second signal (dir #707), and a one-command helper cuts the per-worker
-Alpine clone (dir #728); a measurement found `/polish` still heavy, so its next step is a design, not a change in
-this release. The audit's fix round made a declined link a completed install again and corrected four CHANGELOG
+Alpine clone (dir #728). The audit's fix round made a declined link a completed install again and corrected four CHANGELOG
 claims. Twenty-three merged slate PRs, #539–#556 and #558–#562 (seven of them through the release-train PR #557),
 plus the groom PR #538 and two audit-fix PRs, #563 and #564. Three known issues ship disclosed in the CHANGELOG
 section, and its upgrade note says which copies to refresh.
@@ -66,8 +66,8 @@ verifier (Sonnet) returned NO-GO at `e74bff7`; two Fixer sessions — real sessi
 manager — fixed all six fix-before-tag findings, in #563 and #564. The Clause A re-check was scoped to the fix
 round's new surface: a pair read `cf216c8` in parallel and blind to each other, a fresh-context reader (a 24-row
 install matrix and 16 mutants) and a blind claim-falsifier. A second verifier pass, fresh from the written record,
-returned NO-GO with a stated route to GO: one residual behavioural finding, waived by the operator in so many
-words and filed, plus three CHANGELOG corrections made in the cut. **Coverage:** pass 1, 82 ledger rows, exactly
+returned NO-GO with a stated route to GO: one residual behavioural finding, left unfixed, disclosed and filed, plus
+three CHANGELOG corrections made in the cut. **Coverage:** pass 1, 82 ledger rows, exactly
 one verdict each — 38 clean, 8 mechanical-only, 36 finding, 0 waived; pass 2, 85 rows — 12 re-verdicted, 3 added
 for files the fix round touched, 70 carried byte-identical. CI 6/6 by commit on the candidate (run 37834380984)
 and on the audited tree (run 37879483776), including the Alpine/busybox leg. Suite evidence from sandboxed clones
@@ -76,8 +76,9 @@ and CI only, never the operator's own checkout: 10,562 passed, 0 failed, 127 fil
 fix-before-tag findings were fixed in the release: `install.sh` failing an install, writing no manifest and
 leaving its lock when it declined a link (introduced in this range), `doctor`'s dead-end advice for that link, a
 missing upgrade note for the re-vendored scanner, a false "never deletes" for the Alpine-clone helper, an
-over-claiming scanner headline, and an incomplete list of what the gate's push rule does not catch. Three
-CHANGELOG sentences the fix round wrote were corrected in the cut. Open at the tag: 27 pass-1 findings and 10
+over-claiming scanner headline, and an incomplete list of what the gate's push rule does not catch. Five
+CHANGELOG sentences the fix round wrote were corrected in the cut (three owed by the verdict, two optional), and a
+sixth was scoped to its ticket. Open at the cut: 27 pass-1 findings and 10
 pass-2 findings ticketed, the rest recorded as no-action, all filed in the backlog or on the standing list; three
 known issues are disclosed in the CHANGELOG section. **Behavioural defects:** pass 1 accepted 27 behavioural
 findings (23 in shipped code, 4 in maintainer-only tools); among them, range-introduced: the declined-link install
@@ -87,20 +88,21 @@ two false push denials, and two Alpine-clone helper edges (a symlinked clone pat
 refusal); the two medium baseline fail-opens (binary decode stops at
 the first invalid unit; `doctor` OK with Keel's pre-push missing) ship disclosed. Pass 2 accepted 5 behavioural
 findings: 2 on the fix surface (one counting — Keel's own dangling links labelled as yours and the install ending
-0 after a lost manifest and a moved checkout, waived and disclosed; one carved out — a test-only hook reachable
+0 after a lost manifest and a moved checkout, left unfixed and disclosed; one carved out — a test-only hook reachable
 from an exported variable) and 3 older ones off it. **Which layer found what:** the whole-read legs found four of
 the six fix-before-tag findings and two of the four mediums; the method-diverse leg found six findings no other
 leg did, including the other two mediums (the heredoc-commit push bypass and `doctor` OK over a missing pre-push),
 and independently found the declined-link install failure. In the re-check pair, the reader found the counting
-finding, which the falsifier could not construct because it kept the manifest; the falsifier found three older
-behavioural findings and explained an Ubuntu CI residue from the job log instead of closing it on a green re-run.
+finding, which the falsifier could not construct because it kept the manifest; the falsifier found two older
+behavioural findings (a named pipe that hangs the installer, an ambient git config that lets the tour commit past
+the guard) and explained an Ubuntu CI residue from the job log instead of closing it on a green re-run.
 No new class was named in pass 2; pass 1 named one candidate, an all-unchanged installer run that still writes.
 **What was NOT checked:** Clause A on the whole state — the re-check pair read only what the fix round newly
-reached, and the counting finding was waived rather than fixed. The verifier ran macOS only; Linux, busybox and
+reached, and the counting finding ships unfixed, disclosed in the CHANGELOG, rather than fixed. The verifier ran macOS only; Linux, busybox and
 dash behaviour of the fix code rests on CI's Ubuntu and Alpine legs and on the legs' own container runs, which one
 leg's container kill on the shared Docker daemon interrupted once; the Ubuntu teardown flake is explained from
-one CI log, not reproduced; the cut itself adds this entry and three CHANGELOG corrections that no verifier pass
-read; and the standing-list lines were not re-read by the verifier. **Induced-defect rate:** 10 / 74 — the
+one CI log, not reproduced; the cut itself adds this entry, a third known issue and seven CHANGELOG wording edits (the three the
+verifier specified, four more), which no verifier pass read — a separate cut-diff leg is the only read of them; and the standing-list lines were not re-read by the verifier. **Induced-defect rate:** 10 / 74 — the
 verifier's per-finding tally, pass 1 0 / 58 and pass 2 10 / 16: eight are not behavioural (five are CHANGELOG
 sentences the fix round wrote), and two are behavioural, the counting finding and the carved-out test hook.
 **Records:** the run's own audit directory, gitignored.
