@@ -23,15 +23,17 @@
 # the one place a bypass actually leaks and the one place its command is visible, so this gate, otherwise only
 # a workflow reminder, also carries this rule — still not the secret boundary (that is secret-guard). Named
 # residuals, caught only by the CI scan on the PR: a variable exported earlier, an alias or wrapper, `sh -c
-# '…'`, quoted text (also a QUOTED bypass argument — `git push '--no-verify'` — the lexer strips it), a bypass
-# split off by a backslash-newline continuation, a `git config` write in an earlier segment, a leading word
-# outside the skip set (`sudo`, `env -C`, a redirect, `/usr/bin/env …` — only a bare `env` is skipped), the
-# closing line of a heredoc commit message (`git commit -m "$(cat <<'X' … X`, newline, `)" && git push
-# --no-verify`: the `)"` line opens a quote the lexer never closes, so the push after it is not seen; the same
-# push on its own line IS), a stray `<<` earlier in the command (`$((1<<2))` reads as a heredoc and swallows
-# what follows), a partly quoted prefix assignment (`VAR="x"y git push …` splits into `VAR=` and `y`, so the
+# '…'`, quoted text (also a QUOTED bypass argument — `git push '--no-verify'` — the lexer strips it), a
+# bypass split off by a backslash-newline continuation, a `git config` write in an earlier segment, a
+# leading word outside the skip set (`sudo`, `env -C`, a redirect, `/usr/bin/env …` — only a bare `env` is
+# skipped), the closing line of a heredoc commit message (a `git commit -m "$(cat` with a heredoc body, then
+# `)" && git push --no-verify` on the line after the terminator: the `)"` opens a quote the lexer never
+# closes, so the push after it is not seen; the same push on its own line IS), a stray heredoc operator
+# earlier in the command (an arithmetic shift inside `$(( ))` reads as a heredoc opener and swallows what
+# follows), a partly quoted prefix assignment (`VAR="x"y git push …` splits into `VAR=` and `y`, so the
 # command word is never `git`; it hides a `gh pr create` the same way), a missing jq, another harness, the
-# operator's own terminal. Each of these was fed through this hook and allowed (dir #731, 0.15.0 audit).
+# operator's own terminal. Each of these was fed through this hook and allowed (0.15.0 audit); the lexer fix
+# is dir #745.
 # Spec B15, docs/specs/717.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------

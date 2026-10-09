@@ -19,10 +19,10 @@ sections real content going forward — see that page for exactly when each one 
 fixed in this release, and each is filed. (1) A non-ASCII personal literal inside a binary file reads clean in
 `secret-scan.sh` and in `public-audit.sh` when an invalid UTF-16 or UTF-32 unit comes before it, because the
 four `iconv` decode passes stop at the first invalid unit; an ASCII literal is not affected, and
-`docs/going-public.md` states the binary-blob coverage without this exception (dir #T2). (2) `doctor.sh
+`docs/going-public.md` states the binary-blob coverage without this exception (dir #746). (2) `doctor.sh
 --install` prints `OK` for the secret guard, and the per-repo audit raises no finding, when Keel's `pre-push`
 hook is missing or not executable; git then skips the hook, so a commit made with the hooks switched off is
-not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #T3). Both
+not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #747). Both
 reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
 
 - **Upgrading from 0.14.0 — a `git pull` alone does not refresh the copies Keel made.** (1) Secret guard: this
@@ -65,7 +65,7 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   (a quoted bypass argument included), a backslash-newline continuation, a `git config` write in an earlier
   segment, a leading word the rule does not skip (`sudo`, `env -C`, `/usr/bin/env`, a redirect), the closing line
   of a heredoc commit message (`)" && git push --no-verify`), a stray `<<` such as `$((1<<2))`, a partly quoted
-  prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`), and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
+  prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`), and a missing `jq`. The lexer fix is dir #745. `docs/reference.md` names the new job. (dir #731)
 
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
@@ -139,7 +139,7 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
   `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
   substitution or locale-bound `read` in the scanner. Three gaps of the same kind are older than this change and
-  stay open (dir #T2): the UTF-16/32 decode passes stop at the first invalid unit, so a non-ASCII personal
+  stay open (dir #746): the UTF-16/32 decode passes stop at the first invalid unit, so a non-ASCII personal
   literal after one still reads clean; `--staged` drops the rest of a line after a NUL byte in a file git still
   diffs as text; and `--tracked` skips an unreadable tracked file with a `WARN` and exits 0.
 - **`doctor.sh --install` no longer prints `OK` over a foreign hook, and doctor, `uninstall.sh` and the
