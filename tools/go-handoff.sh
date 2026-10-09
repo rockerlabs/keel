@@ -48,7 +48,8 @@
 # No override for the root: tests redirect $HOME (tests/lib.sh), as gate-paths.sh documents.
 #
 # Adopter note: like every tools/ script this lives in the Keel checkout, not in the project being worked
-# on. A copy-mode install (`KEEL_EPHEMERAL`) has no kept checkout and so no note — a named non-goal.
+# on. A copy-mode install (`KEEL_EPHEMERAL`) has no kept checkout and so no note — a decided limit
+# (dir #691).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -127,6 +128,10 @@ clear)
 
 # --- write -------------------------------------------------------------------------------------------
 write)
+  # dir #691: a closed stdin (`<&-`) would hang the `$(head …)` below — with fd 0 closed the substitution's own
+  # pipe takes fd 0 and `head` waits on itself (bash 3.2 and 5.2 alike). `: 3<&0` fails on a closed fd 0 (`<&0`
+  # alone is a no-op for bash); the guard turns it into an empty stdin, which the three-fields rule then refuses.
+  if ! : 3<&0; then exec </dev/null; fi
   # stdin: at most max_bytes+1 bytes are read, so an endless stream cannot hang or fill memory. The
   # trailing `x` keeps the final newlines through the command substitution.
   body="$(head -c "$((max_bytes + 1))"; printf x)"; body="${body%x}"

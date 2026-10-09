@@ -221,7 +221,7 @@ trend.
   indefinitely.
 - L4's mid-task checkpoint (`tools/go-handoff.sh`) exists only where keel's tools are available from a kept
   checkout; an adopter in copy mode has none, so a long-running ticket they interrupt mid-session still
-  loses its plan state.
+  loses its plan state — a decided limit (dir #691), not a candidate.
 
 **When any of these loops' work is bulk read-only analysis over many independent units** (an audit, a
 grooming wave, a recon dossier), fan it out to stateless subagent workers behind a file contract instead
