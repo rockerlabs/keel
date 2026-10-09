@@ -335,7 +335,7 @@ bucket1=(); bucket2=(); bucket3=()
 # dir #744 B32: every changelog.d/ fragment is ONE unit, never a row each — a release carries ~30, and 30
 # prose rows would bury the real prose in the ledger. They fold into a single prose-historical row
 # `changelog.d/ (N files)` carrying the union of their PRs, appended after the other prose rows.
-frag_files=0; frag_prs=""
+frag_files=0; frag_prs=""; frag_n=0
 while IFS="$TAB" read -r f n exe prs; do
   [ -n "$f" ] || continue
   class="$(classify "$f" "$exe")"
@@ -345,7 +345,7 @@ while IFS="$TAB" read -r f n exe prs; do
       changelog.d/*.md)
         frag_files=$((frag_files + 1))
         for pr in $prs; do
-          case " $frag_prs " in *" $pr "*) ;; *) frag_prs="$frag_prs${frag_prs:+ }$pr" ;; esac
+          case " $frag_prs " in *" $pr "*) ;; *) frag_prs="$frag_prs${frag_prs:+ }$pr"; frag_n=$((frag_n + 1)) ;; esac
         done
         continue ;;
     esac
@@ -364,8 +364,6 @@ while IFS="$TAB" read -r f n exe prs; do
   fi
 done < "$joined"
 if [ "$frag_files" -gt 0 ]; then
-  frag_n=0
-  for pr in $frag_prs; do frag_n=$((frag_n + 1)); done
   bucket3+=("changelog.d/ ($frag_files files)${TAB}prose-historical${TAB}${frag_n}${TAB}${frag_prs}")
 fi
 

@@ -1403,8 +1403,8 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     # dir #744 (B34): once the newest section is cut, changelog.d/ must be empty — the cut deletes every
     # fragment. One that is still listed merged after the cut ran (in the queue, its merge group carries it
     # ahead of the cut PR), and a plain `[Unreleased]`-style check cannot see it: it is in no section.
-    late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null | tr '\n' ' ' || true)"
-    late_fragments="${late_fragments% }"
+    late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null || true)"
+    late_fragments="${late_fragments//$'\n'/ }"
     if [ -n "$late_fragments" ]; then
       gap "fragments merged after the cut ($late_fragments) — run tools/self/changelog-cut.sh again to sort them, or move them into [$pending]"
       changelog_bad=1

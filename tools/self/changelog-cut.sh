@@ -115,13 +115,11 @@ trap 'rm -f "$tmp"' EXIT
 # Line numbers (on the blanked copy, same numbering as the file): the Unreleased heading, the next `## `
 # heading after it (or end of file), and the last non-blank line of the body between them.
 u_line="$(grep -n '^## \[Unreleased\]' <<< "$blanked" | head -n 1 | cut -d: -f1)"
-total="$(wc -l < "$changelog" | tr -d ' ')"
-# A file whose last line lacks a newline: wc undercounts by one.
-[ -n "$(tail -c 1 "$changelog")" ] && total=$((total + 1))
+# awk's NR counts an unterminated last line too (wc -l would undercount it).
+total="$(awk 'END { print NR }' "$changelog")"
 next_line="$(awk -v u="$u_line" 'NR > u && /^## / { print NR; exit }' <<< "$blanked")"
 [ -n "$next_line" ] || next_line=$((total + 1))
-last_body="$(awk -v u="$u_line" -v e="$next_line" 'NR > u && NR < e && /[^[:space:]]/ { last = NR } END { print last + 0 }' <<< "$blanked")"
-[ "$last_body" -gt "$u_line" ] || last_body="$u_line"
+last_body="$(awk -v u="$u_line" -v e="$next_line" 'BEGIN { last = u } NR > u && NR < e && /[^[:space:]]/ { last = NR } END { print last }' <<< "$blanked")"
 
 {
   # Everything above the heading, then the fresh empty section.
@@ -147,8 +145,6 @@ last_body="$(awk -v u="$u_line" -v e="$next_line" 'NR > u && NR < e && /[^[:spac
 
 # Written over the existing file, so its mode survives (see the header).
 cat "$tmp" > "$changelog"
-rm -f "$tmp"
-trap - EXIT
 echo "changelog-cut.sh: CHANGELOG.md: appended ${frag_files:+fragments ($frag_files) and }renamed [Unreleased] to [$version] — $date_str, opened a fresh empty [Unreleased]"
 
 for f in $frag_files; do

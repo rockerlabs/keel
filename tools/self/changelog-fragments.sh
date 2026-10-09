@@ -120,6 +120,7 @@ if [ "$check" = 0 ]; then
 fi
 
 bad=0
+backtick_dir_re='`[^`]*dir #[0-9]+[^`]*`'
 fail() { printf 'changelog.d/%s:%s: %s\n' "$1" "$2" "$3"; bad=1; }
 
 while IFS= read -r name; do
@@ -142,13 +143,14 @@ while IFS= read -r name; do
     *) fail "$name" 1 "not a .md file — changelog.d/ holds only README.md and *.md fragments"; continue ;;
   esac
   stem="${name%.md}"
-  if ! grep -qE '^[a-z0-9]+(-[a-z0-9]+)*$' <<< "$stem"; then
+  if ! [[ $stem =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
     fail "$name" 1 "name is not kebab-case — use <ticket>-<slug>.md (lowercase, digits and hyphens only)"
   fi
-  if ! grep -q '[^[:space:]]' "$path"; then
-    fail "$name" 1 "empty file — a fragment holds at least one bullet"
-    continue
-  fi
+  content="$(<"$path")"
+  case "$content" in
+    *[![:space:]]*) ;;
+    *) fail "$name" 1 "empty file — a fragment holds at least one bullet"; continue ;;
+  esac
   # Fence- and inline-code-blanked copy, line-aligned with the file: links are judged on this, the rest
   # on the raw lines.
   fenced="$(blank_fenced_blocks "$path")"
@@ -179,7 +181,7 @@ while IFS= read -r name; do
   ln=0
   while IFS= read -r line || [ -n "$line" ]; do
     ln=$((ln + 1))
-    if grep -qE '`[^`]*dir #[0-9]+[^`]*`' <<< "$line"; then
+    if [[ $line =~ $backtick_dir_re ]]; then
       fail "$name" "$ln" "dir #N inside backticks — cite it in full, unwrapped, or doctor never sees the ticket"
     fi
   done <<< "$fenced"
