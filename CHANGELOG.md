@@ -23,6 +23,13 @@ sections real content going forward — see that page for exactly when each one 
   dir #735: the age was read off the heading's first date, which can be a later status annotation (a `⏸` or
   `⏳` date) or absent, so a pool holding an old ticket reported a young age. The oldest entry is now the
   earliest of the heading's dates and the first `Found`/`Filed` date in the ticket's body.
+- **`docs/delta-audit.md` §9: two leg rails, and `docs/release-audit.md`'s cut step names the third (dir #759).** The
+  0.15.0 audit felt all three: a re-check leg's `docker ps -q | xargs -r docker kill` killed every container on the
+  shared daemon, parallel legs overwrote each other's generically named probe scripts in one scratchpad, and the
+  release-history draft stated the operator's waiver before it was given. Every delta-audit prompt now carries, after
+  the verbatim Worker rails block, a leg writes only under its own scratch subdirectory and never stops, kills or
+  removes a container, process or file it did not create; the cut-and-land step says a history entry states only
+  events already on record. `tests/test_delta_audit_doc.sh` pins the leg rails byte-identical across the five copies.
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
   together, and that total comes off the release total before the per-unit division. Where the operator's

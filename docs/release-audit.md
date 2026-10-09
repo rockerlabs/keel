@@ -168,6 +168,11 @@ just cut. This is the pre-tag side of dir #299's allowance: a `## [x.y.z]` headi
 writable here precisely because the tag hasn't landed; write it now, not in `publishing-checklist.md`
 §4, which only starts once the tag is already cut.
 
+**The entry states only events already on record.** A waiver, a GO verdict or a tag that has not yet been
+recorded (in the run record, the audit's verdict file or the repository) is written as pending, never as done —
+the 0.15.0 draft stated the operator's Clause A waiver before it was given, and only the cut-diff leg caught it
+(dir #759).
+
 **Before that PR lands, re-check `docs/loading-and-cost.md`'s open-ended figures** — run
 `tests/test_doc_figures.sh` and read its output, not just its exit code: an open-FLOOR row
 (`CHANGELOG.md`, `commands/polish.md`) passes by design once actual size is above the floor (dir #105),
