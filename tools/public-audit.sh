@@ -10,7 +10,8 @@
 #        a human decides.
 #
 # Usage:
-#   public-audit.sh [DIR]            audit DIR (default: .); reads DIR/.public-audit if present
+#   public-audit.sh [DIR]            audit DIR (default: .; DIR must be a git repository); reads
+#                                    DIR/.public-audit if present
 #   public-audit.sh --token ERE ...  add a private token to hunt (repeatable; CLI, not committed)
 #   public-audit.sh --no-history ... tree only (skip the git-history + PR-ref scan)
 #   public-audit.sh --config FILE    use a specific config file
@@ -25,6 +26,10 @@
 #
 # Env: KEEL_AUDIT_BLOB_MAX (bytes, default 10485760) — per-blob cap for the binary decode pass;
 #      oversized blobs are skipped but SURFACED as un-audited.
+#
+# A git read or grep this audit could not complete is never read as "nothing found" (dir #738): it is a
+# GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit goes
+# on, and the exit is 1. DIR must be a git repository: anything else exits 2.
 #
 # Config (.public-audit) — ERE values, '#' comments:
 #   token: <ERE>         a private string to flag in tree + history (an internal name, host, ...)
@@ -50,7 +55,8 @@ public-audit — is this repo safe to publish? Scan the tree AND git history (an
 for personal / instance-specific leakage before a private->public flip.
 
 Usage:
-  public-audit.sh [DIR]            audit DIR (default: .); reads DIR/.public-audit if present
+  public-audit.sh [DIR]            audit DIR (default: .; DIR must be a git repository); reads
+                                   DIR/.public-audit if present
   public-audit.sh --token ERE ...  add a private token to hunt (repeatable; CLI, not committed)
   public-audit.sh --no-history     tree only (skip the git-history + PR-ref scan)
   public-audit.sh --config FILE    use a specific config file
@@ -79,11 +85,21 @@ while [ "$#" -gt 0 ]; do
 done
 DIR="${DIR:-.}"
 [ -d "$DIR" ] || { echo "public-audit: not a directory: $DIR" >&2; exit 2; }
+# dir #738 B13: every check below reads git, so a DIR that is not a git repository (or that git cannot read)
+# is refused up front — it used to scan nothing and print "no publication blockers found". `rev-parse`, not a
+# `.git` directory test: a linked worktree's `.git` is a file.
+gd_rc=0
+gd_err="$(git -C "$DIR" rev-parse --git-dir 2>&1 >/dev/null)" || gd_rc=$?
+if [ "$gd_rc" -ne 0 ]; then
+  echo "public-audit: $DIR is not a git repository (or git cannot read it) — this audit reads the tracked files and git history; run it on the repository" >&2
+  [ -n "$gd_err" ] && echo "public-audit:   ${gd_err%%$'\n'*}" >&2
+  exit 2
+fi
 
 # Built-in public-safe email patterns (ERE). Real personal/corporate emails are deliberately absent.
 # dir #106: the set lives in tools/lib/safe-emails.sh — doctor.sh sources the same file for its
 # advisory commit-email nudge, so the two can't silently re-diverge.
-_pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # fail-open-ok: a failed cd makes the next `.` fail loudly
 # shellcheck source=tools/lib/safe-emails.sh
 . "$_pa_dir/lib/safe-emails.sh"
 # EMAIL_RE / HOME_RE: the leaked-identifier content patterns, shared with self/doctor.sh's narrower
@@ -98,6 +114,140 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_pa_dir/lib/personal-literals.sh"
 unset _pa_dir
 
+# Temp refs from the host-PR-ref scan (section 6) must never outlive the run. Clean them on EXIT/INT/TERM
+# so a Ctrl-C mid-fetch — or a run against a repo with no GitHub remote — leaves nothing behind, and any
+# orphan a prior interrupted run left is reaped on the next run's exit.
+cleanup_pr_refs() {
+  git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
+    | while IFS= LC_ALL=C read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done   # fail-open-ok: teardown — an orphan is reaped by the next run
+}
+# dir #738 B13: no usable temp dir means no spools, so no audit — refuse rather than run with an empty one.
+audit_tmp="$(mktemp -d)" && [ -n "$audit_tmp" ] || { echo "public-audit: could not create a temp dir" >&2; exit 2; }
+# absolute (dir #738 B3): GNU/busybox mktemp returns a relative path under a relative $TMPDIR, and
+# `git -C "$DIR" grep -f "$audit_tmp/…"` would then open the wrong file.
+case "$audit_tmp" in /*) ;; *) audit_tmp="$PWD/$audit_tmp" ;; esac
+# dir #85 (code audit, finding 11): the INT/TERM handler must EXIT. Bash runs a trap handler for a
+# caught signal and then RESUMES the script — so Ctrl-C used to tear down the fetched PR refs and the
+# tmpdir and then keep auditing against the state it had just deleted, while the operator believed the
+# run was cancelled. `exit 130` is the conventional 128+SIGINT status; the EXIT trap still fires after
+# it (that is what actually performs cleanup), so the teardown is written once, not per-signal.
+trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# --- reporting -----------------------------------------------------------------------------------
+exit_code=0
+say()  { [ "$QUIET" = 1 ] || echo "$@"; }
+gap()  { echo "  GAP  $1"; exit_code=1; }
+warn() { echo "  WARN $1"; }
+
+# --- the producer rule (dir #738 B14) ------------------------------------------------------------
+# A git read or a grep whose output a check reads runs in the MAIN shell, spools its output under
+# $audit_tmp and has its status checked: a non-zero status is a GAP `could not <step> (exit N) — the audit
+# is INCOMPLETE`, and the check that read fed is skipped (no verdict from partial output). Status-blind
+# forms — a process substitution, `2>/dev/null`, `|| true`, `| head` — are what let a corrupt index or a
+# failing `git log` print "no publication blockers found"; tests/test_public_audit.sh holds the register.
+personal_pat="$audit_tmp/personal.pat"
+has_personal=0
+personal_nonascii=0
+pa_line=""
+pa_hit=""
+pa_u8=""
+# pa_first FILE — pa_line = FILE's first line, or empty. No `| head`: a closed pipe would turn a match into
+# a SIGPIPE status (dir #280).
+pa_first() { pa_line=""; { IFS= LC_ALL=C read -r pa_line || [ -n "$pa_line" ]; } < "$1" || pa_line=""; }
+# pa_fail STEP RC OUT CMD… — the GAP for a failed read, plus the first line of OUT.err beneath it. A step
+# whose command reads the personal-literal file prints the GAP WITHOUT that line: git and busybox grep quote
+# the offending pattern in their error, and this audit never echoes a literal.
+pa_fail() {
+  local step="$1" rc="$2" out="$3" a quiet=0
+  shift 3
+  gap "could not $step (exit $rc) — the audit is INCOMPLETE"
+  for a in "$@"; do [ "$a" = "$personal_pat" ] && quiet=1; done
+  if [ "$quiet" = 0 ]; then
+    pa_first "$out.err"
+    [ -n "$pa_line" ] && echo "         $pa_line"
+  fi
+  return 1
+}
+# pa_read STEP OUT CMD… — run CMD, stdout → OUT, stderr → OUT.err. A non-zero status is a GAP and returns 1.
+pa_read() {
+  local step="$1" out="$2" rc=0
+  shift 2
+  "$@" </dev/null > "$out" 2> "$out.err" || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  pa_fail "$step" "$rc" "$out" "$@"
+}
+# pa_match STEP OUT CMD… — the same for a command whose exit 1 means "no match" (grep, git grep).
+pa_match() {
+  local step="$1" out="$2" rc=0
+  shift 2
+  "$@" </dev/null > "$out" 2> "$out.err" || rc=$?
+  [ "$rc" -le 1 ] && return 0
+  pa_fail "$step" "$rc" "$out" "$@"
+}
+# pa_c CMD… — CMD under LC_ALL=C, so a byte-class grep reads every byte (dir #740: BSD grep and busybox stop
+# matching at an invalid byte under a UTF-8 locale). A function, so it can sit after pa_read/pa_match.
+pa_c() { LC_ALL=C "$@"; }
+# pa_sanitize FILE — pa_u8 = a copy of FILE with invalid UTF-8 dropped (the caller-locale passes read it, so a
+# non-ASCII literal is still found after an invalid byte), or FILE itself where iconv is absent or fails. The
+# four trailing newlines are load-bearing: a file ending in an incomplete sequence makes `iconv -c` stop.
+pa_sanitize() {
+  local f="$1" u8="$audit_tmp/u8"
+  pa_u8="$f"
+  command -v iconv >/dev/null 2>&1 || return 0
+  { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null && pa_u8="$u8"
+  return 0
+}
+# pa_token_first STEP TOKEN FILE — pa_hit = the first line of FILE a declared token matches, or empty; 1 when
+# the grep itself failed. A token is a user ERE and may be non-ASCII: one pass under LC_ALL=C (every byte),
+# plus — when the token holds a non-ASCII byte — one in the caller's locale over the sanitized copy. Both
+# are case-sensitive, as tokens are.
+pa_token_first() {
+  local step="$1" t="$2" f="$3"
+  pa_hit=""
+  pa_match "$step" "$audit_tmp/tok.c" pa_c grep -aE -e "$t" -- "$f" || return 1
+  pa_first "$audit_tmp/tok.c"; pa_hit="$pa_line"
+  [ -n "$pa_hit" ] && return 0
+  case "$t" in *[![:ascii:]]*) ;; *) return 0 ;; esac
+  pa_sanitize "$f"
+  pa_match "$step" "$audit_tmp/tok.u" grep -aE -e "$t" -- "$pa_u8" || return 1
+  pa_first "$audit_tmp/tok.u"; pa_hit="$pa_line"
+  return 0
+}
+# pa_personal_first STEP FLAGS FILE — pa_hit = the first line of FILE a personal literal matches (FLAGS is the
+# grep flag cluster, e.g. -aoiE), or empty; 1 when the grep failed. Pass C: every byte, ASCII case-folded.
+# Pass U (only when a literal is non-ASCII): the caller's locale over the sanitized copy, which folds
+# non-ASCII case. The caller checks $has_personal first.
+pa_personal_first() {
+  local step="$1" flags="$2" f="$3"
+  pa_hit=""
+  pa_match "$step" "$audit_tmp/per.c" pa_c grep "$flags" -f "$personal_pat" -- "$f" || return 1
+  pa_first "$audit_tmp/per.c"; pa_hit="$pa_line"
+  [ -n "$pa_hit" ] && return 0
+  [ "$personal_nonascii" = 1 ] || return 0
+  pa_sanitize "$f"
+  pa_match "$step" "$audit_tmp/per.u" grep "$flags" -f "$personal_pat" -- "$pa_u8" || return 1
+  pa_first "$audit_tmp/per.u"; pa_hit="$pa_line"
+  return 0
+}
+# pa_tree STEP OUT PATTERN — git grep -nIE over the tracked tree (caller's locale: git grep is not affected).
+pa_tree() { pa_match "$1" "$2" git -C "$DIR" grep -nIE -e "$3" -- . "${excludes[@]}"; }
+# pa_log_p ARGS… — `git log -p` for the content greps, NUL-stripped. --text/--no-textconv/--no-ext-diff: a
+# `-diff` attribute or a textconv driver otherwise replaces the bytes (a literal behind one reads 0 hits).
+# The NUL strip keeps `grep -I`-free greps reading a history that holds one NUL (a bash variable dropped it).
+pa_log_p() { git -C "$DIR" log "$@" -p --text --no-textconv --no-ext-diff | LC_ALL=C tr -d '\000'; }
+# pa_blob_list REV-LIST-ARGS… — "type|sha|size|path" for every object reachable from the revs.
+pa_blob_list() {
+  git -C "$DIR" rev-list --objects "$@" | git -C "$DIR" cat-file --batch-check='%(objecttype)|%(objectname)|%(objectsize)|%(rest)'
+}
+# pa_ids_merge COMMIT-IDS TAG-IDS — the de-duplicated, non-empty identities of both lists.
+pa_ids_merge() {
+  { LC_ALL=C cat "$1"; LC_ALL=C tr -d '<>' < "$2"; } | LC_ALL=C sed '/^$/d' | LC_ALL=C sort -u
+}
+# pa_uniq FILE — FILE's non-empty lines, de-duplicated.
+pa_uniq() { LC_ALL=C sed '/^$/d' "$1" | LC_ALL=C sort -u; }
+
 # --- gather config -------------------------------------------------------------------------------
 tokens=()
 [ "${#cli_tokens[@]}" -gt 0 ] && tokens+=("${cli_tokens[@]}")
@@ -105,23 +255,35 @@ allow_emails=()
 allow_paths=()
 
 cfg="${CONFIG:-$DIR/.public-audit}"
+cfg_rc=0
 if [ -f "$cfg" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    val="$(printf '%s' "${line#*:}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  # The value's whitespace is trimmed with parameter expansions (no sed to fail unseen).
+  while IFS= LC_ALL=C read -r line || [ -n "$line" ]; do
+    val="${line#*:}"
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
     case "$line" in
       ''|\#*)         ;;
       token:*)        tokens+=("$val") ;;
       allow-email:*)  allow_emails+=("$val") ;;
       allow-path:*)   allow_paths+=("$val") ;;
     esac
-  done < "$cfg"
+  done < "$cfg" || cfg_rc=$?
 fi
 
-# Bad ERE? Detect by stderr, not exit code: a valid pattern on empty input exits 1 (no match) with no
-# stderr; a broken one prints an error. (busybox grep doesn't use exit 2 for a bad regex, so an
-# exit-code check would pass a broken regex through.) Shared by the allow-email and personal-literal
-# validation below — same idiom, only the case-sensitivity flag differs.
-valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pat" 2>&1 >/dev/null)" ]; }
+# Bad ERE? Detect by stderr AND exit code: a valid pattern on one input line exits 1 (no match) with no stderr;
+# a broken one prints an error. The probe reads ONE input line (dir #738 B4): busybox grep compiles its pattern
+# only when it reads input, so an empty probe never saw a broken ERE. The pattern is compiled in both locales
+# the audit greps in — under LC_ALL=C (every byte) and in the caller's (the personal literals' second pass).
+# Shared by the allow-email and personal-literal validation below — same idiom, only the case flag differs.
+valid_ere() {
+  local flag="$1" pat="$2" err rc
+  rc=0; err="$(printf 'x\n' | LC_ALL=C grep "$flag" -e "$pat" 2>&1 >/dev/null)" || rc=$?
+  [ -z "$err" ] && [ "$rc" -le 1 ] || return 1
+  rc=0; err="$(printf 'x\n' | grep "$flag" -e "$pat" 2>&1 >/dev/null)" || rc=$?
+  [ -z "$err" ] && [ "$rc" -le 1 ] || return 1
+  return 0
+}
 
 # Personal literals from the secret-guard's local file double as private tokens for this audit —
 # they are precisely what must not ship when a repo goes public. Case-INSENSITIVE (unlike tokens).
@@ -130,25 +292,33 @@ valid_ere() { local flag="$1" pat="$2"; [ -z "$(printf '' | grep "$flag" -- "$pa
 # (which fails open safely — worst case one extra false WARN), a bad personal-literal line means that
 # literal goes completely unscanned, which is a detection-accuracy failure this audit's own GAP bar
 # ("high-confidence leaks... painful to scrub after publishing") exists to catch, not just advise on.
+# dir #738 B3: the accepted lines are written ONE PER LINE to $personal_pat and every personal grep reads
+# `-f` — each line is its own pattern, so two literals never fuse into one ERE that matches neither. No
+# file is written when nothing was accepted (`grep -f <empty file>` disagrees across platforms), and a blank
+# line never reaches it (the parser drops them; a blank pattern would match every line).
 PERSONAL_FILE="${SECRET_SCAN_PERSONAL_FILE:-$HOME/.claude/secret-scan-personal}"
-personal_re=""
 bad_personal=0
+personal_wr_rc=0
 # dir #148: the parse (read, CRLF, BOM, comments, whitespace) is tools/lib/personal-literals.sh's (capture
 # rules in its header); only the per-line validation policy stays here. Its status is read at the GAP
 # site below (dir #680): 3 = a line ends in a backslash (withheld by the parser; the other literals are
 # still scanned), anything else non-zero = the file could not be read or parsed (coverage is ZERO).
 personal_rc=0
 personal_lines="$(personal_literals_parse "$PERSONAL_FILE")" || personal_rc=$?
-while IFS= read -r line; do
+while IFS= LC_ALL=C read -r line; do
   [ -n "$line" ] || continue   # an empty capture still yields one empty line
   if valid_ere -iE "$line"; then
-    personal_re="${personal_re:+$personal_re|}$line"
+    printf '%s\n' "$line" >> "$personal_pat" || personal_wr_rc=$?
+    has_personal=1
+    case "$line" in *[![:ascii:]]*) personal_nonascii=1 ;; esac
   else
     bad_personal=$((bad_personal + 1))
   fi
 done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
+# A pattern file that could not be written is no coverage at all: report it, and run no personal grep.
+[ "$personal_wr_rc" -ne 0 ] && has_personal=0
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
@@ -174,33 +344,6 @@ excludes=( ":(exclude).public-audit" )
 if [ "${#allow_paths[@]}" -gt 0 ]; then
   for g in "${allow_paths[@]}"; do [ -n "$g" ] && excludes+=( ":(exclude)$g" ); done
 fi
-
-# --- reporting -----------------------------------------------------------------------------------
-exit_code=0
-say()  { [ "$QUIET" = 1 ] || echo "$@"; }
-gap()  { echo "  GAP  $1"; exit_code=1; }
-warn() { echo "  WARN $1"; }
-
-is_git=0
-git -C "$DIR" rev-parse --git-dir >/dev/null 2>&1 && is_git=1
-
-# Temp refs from the host-PR-ref scan (section 6) must never outlive the run. Clean them on EXIT/INT/TERM
-# so a Ctrl-C mid-fetch — or a run against a repo with no GitHub remote — leaves nothing behind, and any
-# orphan a prior interrupted run left is reaped on the next run's exit.
-cleanup_pr_refs() {
-  [ "$is_git" = 1 ] || return 0
-  git -C "$DIR" for-each-ref --format='%(refname)' 'refs/keel-pr-audit/*' 2>/dev/null \
-    | while IFS= read -r r; do [ -n "$r" ] && git -C "$DIR" update-ref -d "$r" 2>/dev/null || true; done
-}
-audit_tmp="$(mktemp -d)"
-# dir #85 (code audit, finding 11): the INT/TERM handler must EXIT. Bash runs a trap handler for a
-# caught signal and then RESUMES the script — so Ctrl-C used to tear down the fetched PR refs and the
-# tmpdir and then keep auditing against the state it had just deleted, while the operator believed the
-# run was cancelled. `exit 130` is the conventional 128+SIGINT status; the EXIT trap still fires after
-# it (that is what actually performs cleanup), so the teardown is written once, not per-signal.
-trap 'cleanup_pr_refs; rm -rf "$audit_tmp"' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 # Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read
 # directly) into concatenated ASCII/UTF-16/UTF-32/raw-printable views, for the regex scans that can't
@@ -242,59 +385,56 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
   local label="$1"; shift
   # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls
   # back to 10485760 rather than crashing the later `-gt` size comparison.
-  local max; max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"
-  local tmp="$audit_tmp/blob" dec="$audit_tmp/blob.dec"
-  local otype osha osize opath h t skipped=0 reported_toks="" reported_personal=""
-  local hit_home="" hit_email="" hit_cyr=""
-  # A failed mktemp (full/unwritable TMPDIR) must not silently no-op the whole pass — the tool's job
-  # is never to trust unscanned content. Surface it and bail.
-  if [ ! -d "$audit_tmp" ]; then
-    warn "binary-blob scan of $label SKIPPED — no usable temp dir (mktemp failed); result is INCOMPLETE"
-    return 0
-  fi
+  local max; max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"   # fail-open-ok: pure shell
+  local tmp="$audit_tmp/blob" dec="$audit_tmp/blob.dec" list="$audit_tmp/blob.list"
+  local otype osha osize opath t skipped=0 reported_toks="" reported_personal=""
+  local hit_home="" hit_email="" hit_cyr="" shown
+  # The blob listing is spooled and its status checked (dir #738): a failing rev-list/cat-file pair used to
+  # end the loop as if there were no blobs.
+  pa_read "list the blobs of $label" "$list" pa_blob_list "$@" || return 0
   # LC_ALL=C (dir #719 B13): under bash >= 5 + UTF-8 a committed name ending in an invalid byte makes `read`
   # drop the NEXT record, so a blob after it would never be decoded.
   while IFS='|' LC_ALL=C read -r otype osha osize opath; do
     [ "$otype" = "blob" ] && [ -n "$osha" ] || continue
     if [ "${osize:-0}" -gt "$max" ]; then skipped=$((skipped + 1)); continue; fi
-    git -C "$DIR" cat-file blob "$osha" > "$tmp" 2>/dev/null || continue
+    shown="${opath:-$osha}"
+    if ! pa_read "read blob ${osha:0:7} of $label" "$tmp" git -C "$DIR" cat-file blob "$osha"; then continue; fi
     # binary = contains a NUL byte; text blobs are already covered by the text passes
     LC_ALL=C tr -d '\000' < "$tmp" | cmp -s - "$tmp" && continue
-    decode_binary "$tmp" "$dec"
+    decode_binary "$tmp" "$dec" || { gap "could not decode '$shown' in $label (exit $?) — the audit is INCOMPLETE"; continue; }
     if [ "${#tokens[@]}" -gt 0 ]; then
       for t in "${tokens[@]}"; do
         [ -z "$t" ] && continue
         case "$reported_toks" in *"|$t|"*) continue ;; esac       # one GAP per token per pass
-        if [ -n "$(grep -aE -- "$t" "$dec" 2>/dev/null | head -n1 || true)" ]; then
-          gap "private token /$t/ in a binary blob in $label — ${opath:-$osha}"
+        if pa_token_first "match /$t/ in $shown" "$t" "$dec" && [ -n "$pa_hit" ]; then
+          gap "private token /$t/ in a binary blob in $label — $shown"
           reported_toks="$reported_toks|$t|"
         fi
       done
     fi
-    if [ -n "$personal_re" ] && [ -z "$reported_personal" ]; then
-      h="$(grep -aoiE -- "$personal_re" "$dec" 2>/dev/null | head -1 || true)"
-      if [ -n "$h" ]; then
-        gap "personal literal (secret-scan-personal) in a binary blob in $label — ${opath:-$osha}: $h"
+    if [ "$has_personal" = 1 ] && [ -z "$reported_personal" ]; then
+      if pa_personal_first "match the personal literals in $shown" -aoiE "$dec" && [ -n "$pa_hit" ]; then
+        gap "personal literal (secret-scan-personal) in a binary blob in $label — $shown: $pa_hit"
         reported_personal=1
       fi
     fi
     if [ -z "$hit_home" ]; then
-      h="$(grep -aoE "$HOME_RE" "$dec" 2>/dev/null | head -1 || true)"
-      [ -n "$h" ] && hit_home="$h (${opath:-$osha})"
+      pa_match "match home paths in $shown" "$audit_tmp/b.home" pa_c grep -aoE -e "$HOME_RE" "$dec" \
+        && { pa_first "$audit_tmp/b.home"; [ -n "$pa_line" ] && hit_home="$pa_line ($shown)"; }
     fi
     if [ -z "$hit_email" ]; then
-      h="$(grep -aoE "$EMAIL_RE" "$dec" 2>/dev/null | grep -vE "$safe_re" | head -1 || true)"
-      [ -n "$h" ] && hit_email="$h (${opath:-$osha})"
+      pa_match "match emails in $shown" "$audit_tmp/b.em1" pa_c grep -aoE -e "$EMAIL_RE" "$dec" \
+        && pa_match "match emails in $shown" "$audit_tmp/b.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/b.em1" \
+        && { pa_first "$audit_tmp/b.em2"; [ -n "$pa_line" ] && hit_email="$pa_line ($shown)"; }
     fi
     if [ -z "$hit_cyr" ]; then
       # Require ≥4 CONSECUTIVE Cyrillic chars, unlike the single-pair text heuristic: the NUL-strip
       # and raw-printable views of compressed data (a gif, a zip) match an isolated
       # [\xd0-\xd3][\x80-\xbf] pair by chance hundreds of times per MB — a real name is a run.
-      h="$(LC_ALL=C grep -acE "(${cyr_pat}){4}" "$dec" 2>/dev/null || true)"
-      [ "${h:-0}" -gt 0 ] && hit_cyr="${opath:-$osha}"
+      pa_match "match Cyrillic in $shown" "$audit_tmp/b.cyr" pa_c grep -acE -e "(${cyr_pat}){4}" "$dec" \
+        && { pa_first "$audit_tmp/b.cyr"; [ "${pa_line:-0}" -gt 0 ] && hit_cyr="$shown"; }
     fi
-  done < <(git -C "$DIR" rev-list --objects "$@" 2>/dev/null \
-           | git -C "$DIR" cat-file --batch-check='%(objecttype)|%(objectname)|%(objectsize)|%(rest)' 2>/dev/null)
+  done < "$list"
   [ -n "$hit_home" ]  && warn "absolute home path in a binary blob in $label — e.g. $hit_home"
   [ -n "$hit_email" ] && warn "email in a binary blob in $label — e.g. $hit_email"
   [ -n "$hit_cyr" ]   && warn "Cyrillic text in a binary blob in $label — e.g. $hit_cyr"
@@ -303,16 +443,17 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
 }
 
 say "● public-audit ($DIR)"
-[ "$is_git" = 1 ] || say "       (not a git repo — git-history checks skipped)"
 
 # annotated-tag message bodies, captured once for sections 2, 4 and 5 — a tag's message is neither a
 # commit message nor a diff, so `git log` (any format) never shows it. Populated up here (moved off
 # section 4, dir #509 F7) so the declared-token loop in section 2 can check it too.
-tag_msgs=""
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-  tag_msgs="$(git -C "$DIR" for-each-ref --format='%(contents)' refs/tags 2>/dev/null || true)"
+tag_msgs="$audit_tmp/tag_msgs"
+tag_ok=0
+if [ "$NO_HISTORY" = 0 ]; then
+  pa_read "read the annotated-tag messages" "$tag_msgs" git -C "$DIR" for-each-ref --format='%(contents)' refs/tags && tag_ok=1
 fi
 
+[ "$cfg_rc" -ne 0 ] && gap "could not parse $cfg (exit $cfg_rc) — the audit is INCOMPLETE"
 for e in "${bad_allow_emails[@]:-}"; do
   [ -n "$e" ] && warn "ignoring invalid allow-email regex in .public-audit: $e"
 done
@@ -330,37 +471,40 @@ case "$personal_rc" in
   *) gap "$PERSONAL_FILE could not be read or parsed (unreadable, a symlink to nothing, or a line sed could not process) — personal-literal coverage is ZERO or INCOMPLETE, fix it and re-run" ;;
 esac
 [ "$bad_personal" -gt 0 ] && gap "$bad_personal invalid regex line(s) in $PERSONAL_FILE ignored — personal-literal coverage is INCOMPLETE, fix the file and re-run"
-[ -n "$personal_re" ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
-
-# helper: first matching line of a tracked-tree grep, or empty
-tree_grep() { git -C "$DIR" grep -nIE -- "$1" -- . "${excludes[@]}" 2>/dev/null; }
+[ "$personal_wr_rc" -ne 0 ] && gap "could not write the personal literals (exit $personal_wr_rc) — the audit is INCOMPLETE"
+[ "$has_personal" = 1 ] && say "       (hunting the local secret-scan-personal literals as private tokens)"
 
 # --- 1. identities in git history (GAP) ----------------------------------------------------------
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+if [ "$NO_HISTORY" = 0 ]; then
   # A shallow clone only carries part of history, so every scan below sees an incomplete picture and a
   # clean result is not trustworthy. Warn loudly (visible even under --quiet, via the WARN stream).
-  if [ "$(git -C "$DIR" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
-    warn "shallow clone — git-history scans are INCOMPLETE; run 'git fetch --unshallow' before trusting a clean result"
+  pa_read "check whether the clone is shallow" "$audit_tmp/shallow" git -C "$DIR" rev-parse --is-shallow-repository \
+    && { pa_first "$audit_tmp/shallow"; [ "$pa_line" = "true" ] && warn "shallow clone — git-history scans are INCOMPLETE; run 'git fetch --unshallow' before trusting a clean result"; }
+  ids_ok=1
+  pa_read "read the commit identities" "$audit_tmp/ids.c" git -C "$DIR" log --all --format='%ae%n%ce' || ids_ok=0
+  pa_read "read the tag identities" "$audit_tmp/ids.t" git -C "$DIR" for-each-ref --format='%(taggeremail)' refs/tags || ids_ok=0
+  if [ "$ids_ok" = 1 ] && pa_read "sort the identities" "$audit_tmp/ids" pa_ids_merge "$audit_tmp/ids.c" "$audit_tmp/ids.t"; then
+    while IFS= LC_ALL=C read -r e; do
+      [ -z "$e" ] && continue
+      # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
+      # can be SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false
+      # GAP under load (dir #280) — the same class the pr_hist scan below (S2) already fixes.
+      id_rc=0
+      LC_ALL=C grep -qE -e "$safe_re" <<< "$e" || id_rc=$?
+      [ "$id_rc" -eq 0 ] && continue
+      if [ "$id_rc" -ge 2 ]; then
+        gap "could not match the commit identities (exit $id_rc) — the audit is INCOMPLETE"
+        break
+      fi
+      gap "non-public-safe identity in git history: $e"
+    done < "$audit_tmp/ids"
   fi
-  ids="$( { git -C "$DIR" log --all --format='%ae%n%ce' 2>/dev/null;
-            git -C "$DIR" for-each-ref --format='%(taggeremail)' refs/tags 2>/dev/null | tr -d '<>'; } \
-          | sed '/^$/d' | sort -u )"
-  while IFS= read -r e; do
-    [ -z "$e" ] && continue
-    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
-    # can be SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false
-    # GAP under load (dir #280) — the same class the pr_hist scan below (S2) already fixes.
-    grep -qE "$safe_re" <<< "$e" && continue
-    gap "non-public-safe identity in git history: $e"
-  done <<EOF
-$ids
-EOF
 fi
 
 # --- 2. declared-private tokens, in tree AND history (GAP) ---------------------------------------
 # The block also runs for personal literals alone (dir #719 B12): a binary holding one used to read clean.
 # Each token loop keeps its own non-empty test — bash 3.2 under `set -u` aborts on "${tokens[@]}" when empty.
-if [ "${#tokens[@]}" -gt 0 ] || [ -n "$personal_re" ]; then
+if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
   # F6 (dir #509): tree_grep's `git grep -I` skips binary files entirely, so a token only present in a
   # binary file's DECODED bytes is invisible to the loop below. Not gated on NO_HISTORY: this is a TREE
   # check, same altitude as tree_grep, not a history one. In default mode, scoped to files the history
@@ -373,113 +517,133 @@ if [ "${#tokens[@]}" -gt 0 ] || [ -n "$personal_re" ]; then
   wt_bin_reported=""
   wt_personal_reported=""
   wt_bin_skipped=0
-  if [ "$is_git" = 1 ]; then
-    if [ ! -d "$audit_tmp" ]; then
-      warn "working-tree binary-token scan SKIPPED — no usable temp dir (mktemp failed); result is INCOMPLETE"
-    else
-      # Same cap as scan_binary_blobs (dir #196: sanitized against a non-numeric/overflowing override) —
-      # an oversized file must be skipped-and-surfaced here too, not scanned unconditionally, or the
-      # working-tree pass silently defeats the cap the history pass already enforces.
-      wt_max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"
-      # `git diff`/`git diff --cached` print paths relative to the repo ROOT even under `-C "$DIR"`,
-      # while `git ls-files` prints paths relative to `$DIR` itself — a real divergence (verified live),
-      # so every diff-sourced path needs `$DIR`'s own root-prefix stripped before it can be joined onto
-      # "$DIR/..." like the ls-files-sourced ones already can be. Empty at the repo root (no-op).
-      wt_prefix="$(git -C "$DIR" rev-parse --show-prefix 2>/dev/null || true)"
-      if [ "$NO_HISTORY" = 1 ]; then
-        # Every TRACKED file (matching tree_grep's own unscoped text coverage), plus untracked ones —
-        # `ls-files` alone would silently drop the untracked case default mode still catches.
-        wt_src() {
-          git -C "$DIR" ls-files -z -- . "${excludes[@]}" 2>/dev/null
-          git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" 2>/dev/null
-        }
-      else
-        wt_src() {
-          git -C "$DIR" diff --name-only -z --diff-filter=ACMR HEAD -- . "${excludes[@]}" 2>/dev/null \
-            | while IFS= LC_ALL=C read -r -d '' _wp; do printf '%s\0' "${_wp#"$wt_prefix"}"; done
-          git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" 2>/dev/null
-        }
-      fi
-      # LC_ALL=C on both NUL reads (dir #719 B13): see scan_binary_blobs' read.
-      while IFS= LC_ALL=C read -r -d '' f; do
-        [ -L "$DIR/$f" ] && continue          # a symlink's tracked content is its link-text, not its target
-        [ -f "$DIR/$f" ] || continue
-        fsize="$(wc -c < "$DIR/$f" 2>/dev/null | tr -d ' ')"
-        if [ "${fsize:-0}" -gt "$wt_max" ]; then wt_bin_skipped=$((wt_bin_skipped + 1)); continue; fi
-        LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && continue
-        decode_binary "$DIR/$f" "$audit_tmp/wt.dec"
-        if [ "${#tokens[@]}" -gt 0 ]; then
-          for t in "${tokens[@]}"; do
-            [ -z "$t" ] && continue
-            case "$wt_bin_reported" in *"|$t|"*) continue ;; esac
-            if [ -n "$(grep -aE -- "$t" "$audit_tmp/wt.dec" 2>/dev/null | head -n1 || true)" ]; then
-              gap "private token /$t/ in a binary file in the working tree — $f"
-              wt_bin_reported="$wt_bin_reported|$t|"
-            fi
-          done
-        fi
-        if [ -n "$personal_re" ] && [ -z "$wt_personal_reported" ]; then
-          h="$(grep -aoiE -- "$personal_re" "$audit_tmp/wt.dec" 2>/dev/null)"   # no `| head` under pipefail
-          h="${h%%$'\n'*}"
-          if [ -n "$h" ]; then
-            gap "personal literal (secret-scan-personal) in a binary file in the working tree — $f: $h"
-            wt_personal_reported=1
-          fi
-        fi
-      done < <(wt_src)
-      [ "$wt_bin_skipped" -gt 0 ] && warn "$wt_bin_skipped binary file(s) over KEEL_AUDIT_BLOB_MAX (${wt_max}B) skipped in the working tree — UN-audited; raise the cap to cover them"
-    fi
+  # Same cap as scan_binary_blobs (dir #196: sanitized against a non-numeric/overflowing override) —
+  # an oversized file must be skipped-and-surfaced here too, not scanned unconditionally, or the
+  # working-tree pass silently defeats the cap the history pass already enforces.
+  wt_max="$(sanitize_nonneg_int "${KEEL_AUDIT_BLOB_MAX:-10485760}" 10485760)"   # fail-open-ok: pure shell
+  # The file lists are three spools (dir #738 B14), read in turn: the tracked files (--no-history, and a
+  # repository with no commit yet, where there is no history pass to lean on), the files changed against
+  # HEAD (default mode), and the untracked ones. `git diff` prints paths relative to the repo ROOT even under
+  # `-C "$DIR"` — `--no-relative` pins that against a user's diff.relative=true — while `ls-files` prints
+  # paths relative to `$DIR` itself, so ONLY the diff spool has `$DIR`'s root-prefix stripped (empty at the
+  # repo root). An unborn HEAD (`git diff … HEAD` exits 128) is not a failure.
+  wt_spool_files=()
+  wt_spool_kinds=()
+  wt_prefix=""
+  if [ "$NO_HISTORY" = 1 ]; then
+    pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}" \
+      && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(tracked); }
+  elif git -C "$DIR" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    pa_read "find the audited directory's prefix" "$audit_tmp/wt.prefix" git -C "$DIR" rev-parse --show-prefix \
+      && { pa_first "$audit_tmp/wt.prefix"; wt_prefix="$pa_line"; } \
+      && pa_read "list the changed files" "$audit_tmp/wt.diff" git -C "$DIR" diff --no-relative --name-only -z --diff-filter=ACMR HEAD -- . "${excludes[@]}" \
+      && { wt_spool_files+=("$audit_tmp/wt.diff"); wt_spool_kinds+=(diff); }
+  else
+    pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}" \
+      && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(index); }
   fi
+  pa_read "list the untracked files" "$audit_tmp/wt.untracked" git -C "$DIR" ls-files --others --exclude-standard -z -- . "${excludes[@]}" \
+    && { wt_spool_files+=("$audit_tmp/wt.untracked"); wt_spool_kinds+=(untracked); }
+  wt_i=0
+  while [ "$wt_i" -lt "${#wt_spool_files[@]}" ]; do
+    wt_file="${wt_spool_files[$wt_i]}"
+    wt_kind="${wt_spool_kinds[$wt_i]}"
+    wt_i=$((wt_i + 1))
+    # LC_ALL=C on the NUL read (dir #719 B13): see scan_binary_blobs' read.
+    while IFS= LC_ALL=C read -r -d '' f; do
+      [ "$wt_kind" = diff ] && f="${f#"$wt_prefix"}"
+      [ -L "$DIR/$f" ] && continue          # a symlink's tracked content is its link-text, not its target
+      if [ ! -e "$DIR/$f" ]; then
+        # A tracked file removed from the working tree but not from HEAD: git grep and this pass both skip it,
+        # while HEAD — what would be published — still holds it. Default mode reads HEAD in the history pass.
+        [ "$wt_kind" = tracked ] && gap "tracked file '$f' is missing from the working tree — its committed content was not audited (restore it or commit the removal)"
+        continue
+      fi
+      [ -f "$DIR/$f" ] || continue          # a directory (a submodule's gitlink), a fifo…
+      fsize="$(wc -c 2>/dev/null < "$DIR/$f")" || { gap "could not read '$f' in the working tree (exit $?) — the audit is INCOMPLETE"; continue; }
+      fsize="${fsize//[[:space:]]/}"
+      if [ "${fsize:-0}" -gt "$wt_max" ]; then wt_bin_skipped=$((wt_bin_skipped + 1)); continue; fi
+      LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && continue
+      decode_binary "$DIR/$f" "$audit_tmp/wt.dec" || { gap "could not decode '$f' in the working tree (exit $?) — the audit is INCOMPLETE"; continue; }
+      if [ "${#tokens[@]}" -gt 0 ]; then
+        for t in "${tokens[@]}"; do
+          [ -z "$t" ] && continue
+          case "$wt_bin_reported" in *"|$t|"*) continue ;; esac
+          if pa_token_first "match /$t/ in $f" "$t" "$audit_tmp/wt.dec" && [ -n "$pa_hit" ]; then
+            gap "private token /$t/ in a binary file in the working tree — $f"
+            wt_bin_reported="$wt_bin_reported|$t|"
+          fi
+        done
+      fi
+      if [ "$has_personal" = 1 ] && [ -z "$wt_personal_reported" ]; then
+        if pa_personal_first "match the personal literals in $f" -aoiE "$audit_tmp/wt.dec" && [ -n "$pa_hit" ]; then
+          gap "personal literal (secret-scan-personal) in a binary file in the working tree — $f: $pa_hit"
+          wt_personal_reported=1
+        fi
+      fi
+    done < "$wt_file"
+  done
+  [ "$wt_bin_skipped" -gt 0 ] && warn "$wt_bin_skipped binary file(s) over KEEL_AUDIT_BLOB_MAX (${wt_max}B) skipped in the working tree — UN-audited; raise the cap to cover them"
 
   if [ "${#tokens[@]}" -gt 0 ]; then
     for t in "${tokens[@]}"; do
       [ -z "$t" ] && continue
-      hit="$(tree_grep "$t" | head -1 || true)"
-      [ -n "$hit" ] && gap "private token /$t/ in tracked tree — e.g. $hit"
-      if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-        c="$(git -C "$DIR" log --all --oneline -G"$t" 2>/dev/null | head -1 || true)"
-        m="$(git -C "$DIR" log --all --oneline --grep="$t" -E 2>/dev/null | head -1 || true)"
+      pa_tree "search the tracked tree for /$t/" "$audit_tmp/tok.tree" "$t" \
+        && { pa_first "$audit_tmp/tok.tree"; [ -n "$pa_line" ] && gap "private token /$t/ in tracked tree — e.g. $pa_line"; }
+      if [ "$NO_HISTORY" = 0 ]; then
+        c=""; m=""
+        pa_read "search the history for /$t/" "$audit_tmp/tok.g" git -C "$DIR" log --all --oneline --text --no-textconv --no-ext-diff -G"$t" \
+          && { pa_first "$audit_tmp/tok.g"; c="$pa_line"; }
+        pa_read "search the history for /$t/" "$audit_tmp/tok.m" git -C "$DIR" log --all --oneline --grep="$t" -E \
+          && { pa_first "$audit_tmp/tok.m"; m="$pa_line"; }
         [ -n "$c$m" ] && gap "private token /$t/ in git history — e.g. ${c:-$m}"
         # F7 (dir #509): an annotated-tag message body is neither a commit message nor a diff, so the
-        # -G/--grep pair above never sees it; $tag_msgs was captured for this purpose.
-        tg="$(printf '%s\n' "$tag_msgs" | grep -aE -- "$t" | head -1 || true)"
-        [ -n "$tg" ] && gap "private token /$t/ in an annotated-tag message — e.g. $tg"
+        # -G/--grep pair above never sees it; the tag-message spool was captured for this purpose.
+        if [ "$tag_ok" = 1 ] && pa_token_first "match /$t/ in the tag messages" "$t" "$tag_msgs" && [ -n "$pa_hit" ]; then
+          gap "private token /$t/ in an annotated-tag message — e.g. $pa_hit"
+        fi
       fi
     done
   fi
 fi
 
 # --- 2b. personal literals (local secret-scan-personal), in tree text (GAP) ----------------------
-if [ -n "$personal_re" ]; then
-  hit="$(git -C "$DIR" grep -inIE -- "$personal_re" -- . "${excludes[@]}" 2>/dev/null | head -1 || true)"
-  [ -n "$hit" ] && gap "personal literal (secret-scan-personal) in tracked tree — e.g. $hit"
+if [ "$has_personal" = 1 ]; then
+  pa_match "search the tracked tree for the personal literals" "$audit_tmp/per.tree" git -C "$DIR" grep -inIE -f "$personal_pat" -- . "${excludes[@]}" \
+    && { pa_first "$audit_tmp/per.tree"; [ -n "$pa_line" ] && gap "personal literal (secret-scan-personal) in tracked tree — e.g. $pa_line"; }
 fi
 
 # --- 3. heuristic content scans (WARN) -----------------------------------------------------------
-home="$(tree_grep "$HOME_RE" | head -1 || true)"
-[ -n "$home" ] && warn "absolute home path in tracked tree — e.g. $home"
+pa_tree "search the tracked tree for home paths" "$audit_tmp/s3.home" "$HOME_RE" \
+  && { pa_first "$audit_tmp/s3.home"; [ -n "$pa_line" ] && warn "absolute home path in tracked tree — e.g. $pa_line"; }
 
-emails="$(tree_grep "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
-[ -n "$emails" ] && warn "email in tracked content — e.g. $emails"
+pa_tree "search the tracked tree for emails" "$audit_tmp/s3.em1" "$EMAIL_RE" \
+  && pa_match "match emails in the tracked tree" "$audit_tmp/s3.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/s3.em1" \
+  && { pa_first "$audit_tmp/s3.em2"; [ -n "$pa_line" ] && warn "email in tracked content — e.g. $pa_line"; }
 
 # Cyrillic via UTF-8 lead bytes (0xD0-0xD3) + a continuation byte — portable across grep flavors,
-# unlike `git grep -P '\x{0400}'` which isn't supported on every git build.
+# unlike `git grep -P '\x{0400}'` which isn't supported on every git build. `git grep` under LC_ALL=C reads
+# the bytes; an `xargs grep` pipeline maps grep's "no match" to 123, so its status could not be read.
 cyr_pat=$'[\xd0-\xd3][\x80-\xbf]'
-# Subshell cd so ls-files' repo-relative paths resolve for grep (which runs in the current cwd).
-cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
-        | LC_ALL=C xargs -0 grep -lI "$cyr_pat" 2>/dev/null | head -1 || true)"
-[ -n "$cyr" ] && warn "Cyrillic text in tracked file — e.g. $cyr"
+pa_match "search the tracked tree for Cyrillic" "$audit_tmp/s3.cyr" pa_c git -C "$DIR" grep -lI -e "$cyr_pat" -- . "${excludes[@]}" \
+  && { pa_first "$audit_tmp/s3.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in tracked file — e.g. $pa_line"; }
 
 # --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
 # The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
 # We hit this leak class ourselves and the audit missed it — so surface it on purpose.
 # Mirrored by secret-guard/secret-scan.sh SESSION_META (the preventive pre-push block) — keep in sync.
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
-sess_tree="$(tree_grep "$session_re" | head -1 || true)"
-[ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
-  sess_msg="$( { git -C "$DIR" log --all --format='%B' 2>/dev/null;
-                 printf '%s\n' "$tag_msgs"; } | grep -aE "$session_re" | head -1 || true)"
+pa_tree "search the tracked tree for session metadata" "$audit_tmp/s4.tree" "$session_re" \
+  && { pa_first "$audit_tmp/s4.tree"; [ -n "$pa_line" ] && warn "agent/session metadata in tracked tree — e.g. $pa_line"; }
+if [ "$NO_HISTORY" = 0 ]; then
+  sess_msg=""
+  pa_read "read the commit messages" "$audit_tmp/msgs" git -C "$DIR" log --all --format='%B' \
+    && pa_match "match session metadata in the commit messages" "$audit_tmp/s4.msg" pa_c grep -aE -e "$session_re" "$audit_tmp/msgs" \
+    && { pa_first "$audit_tmp/s4.msg"; sess_msg="$pa_line"; }
+  if [ -z "$sess_msg" ] && [ "$tag_ok" = 1 ]; then
+    pa_match "match session metadata in the tag messages" "$audit_tmp/s4.tag" pa_c grep -aE -e "$session_re" "$tag_msgs" \
+      && { pa_first "$audit_tmp/s4.tag"; sess_msg="$pa_line"; }
+  fi
   [ -n "$sess_msg" ] && warn "agent/session metadata in a commit or tag message — e.g. $sess_msg"
 fi
 
@@ -487,26 +651,39 @@ fi
 # Section 3 scans the working tree only — so personal data in a commit-message body or a historical
 # diff (an added-then-removed blob) would pass clean. Scan history content (messages + diffs in one
 # `git log -p` pass) with the SAME regexes; reuse EMAIL_RE/HOME_RE/safe_re/cyr_pat. WARN, not GAP.
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+# The spool is NUL-stripped and every grep over it takes -a (never -I): one NUL in a text file would
+# otherwise make `grep -I` skip the whole history.
+hist="$audit_tmp/hist"
+hist_ok=0
+if [ "$NO_HISTORY" = 0 ]; then
   # message bodies + diffs, AND annotated-tag message bodies (which `git log -p` omits).
-  hist="$( { git -C "$DIR" log --all -p 2>/dev/null;
-             printf '%s\n' "$tag_msgs"; } )"
-  h="$(printf '%s\n' "$hist" | grep -nE "$HOME_RE" | head -1 || true)"
-  [ -n "$h" ] && warn "absolute home path in git history — e.g. $h"
-  h="$(printf '%s\n' "$hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
-  [ -n "$h" ] && warn "email in git history content — e.g. $h"
-  h="$(printf '%s\n' "$hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
-  [ -n "$h" ] && warn "Cyrillic text in git history — e.g. $h"
+  if pa_read "read the history (log -p)" "$hist" pa_log_p --all; then
+    hist_ok=1
+    if [ "$tag_ok" = 1 ] && ! cat "$tag_msgs" >> "$hist"; then
+      gap "could not append the annotated-tag messages to the history spool — the audit is INCOMPLETE"
+      hist_ok=0
+    fi
+  fi
+fi
+if [ "$hist_ok" = 1 ]; then
+  pa_match "match home paths in the history" "$audit_tmp/h.home" pa_c grep -anE -e "$HOME_RE" "$hist" \
+    && { pa_first "$audit_tmp/h.home"; [ -n "$pa_line" ] && warn "absolute home path in git history — e.g. $pa_line"; }
+  pa_match "match emails in the history" "$audit_tmp/h.em1" pa_c grep -anE -e "$EMAIL_RE" "$hist" \
+    && pa_match "match emails in the history" "$audit_tmp/h.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/h.em1" \
+    && { pa_first "$audit_tmp/h.em2"; [ -n "$pa_line" ] && warn "email in git history content — e.g. $pa_line"; }
+  pa_match "match Cyrillic in the history" "$audit_tmp/h.cyr" pa_c grep -an -e "$cyr_pat" "$hist" \
+    && { pa_first "$audit_tmp/h.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in git history — e.g. $pa_line"; }
 fi
 
 # --- 5a. personal literals (local secret-scan-personal), in git history text (GAP) ----------------
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ] && [ -n "$personal_re" ]; then
-  h="$(printf '%s\n' "$hist" | grep -aniE -- "$personal_re" | head -1 || true)"
-  [ -n "$h" ] && gap "personal literal (secret-scan-personal) in git history — e.g. $h"
+if [ "$hist_ok" = 1 ] && [ "$has_personal" = 1 ]; then
+  if pa_personal_first "match the personal literals in the history" -aniE "$hist" && [ -n "$pa_hit" ]; then
+    gap "personal literal (secret-scan-personal) in git history — e.g. $pa_hit"
+  fi
 fi
 
 # --- 5b. binary blobs — the decoded scan of what sections 3/5 cannot see (tree + history) ---------
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+if [ "$NO_HISTORY" = 0 ]; then
   scan_binary_blobs "git history" --all
 fi
 
@@ -516,68 +693,81 @@ fi
 # (and not --no-history), fetch them and run the SAME checks: identity/token = GAP, heuristic = WARN.
 # Offline / no PR refs / non-GitHub remote → a prominent NOTE (out of local scope — the only fix is
 # delete-and-recreate; see docs/going-public.md). The network call is gated so the tool still runs offline.
-if [ "$is_git" = 1 ] && [ "$NO_HISTORY" = 0 ]; then
+if [ "$NO_HISTORY" = 0 ]; then
   # Probe EVERY remote, not just the first: `git remote | head -1` could pick a non-GitHub mirror that
   # sorts ahead of the real GitHub remote and silently skip the PR-ref scan. Scan each remote that
   # exposes refs/pull/*; emit the OUT-OF-SCOPE note only if a remote exists but none did.
   any_remote=0; scanned_pr=0
-  while IFS= read -r remote; do
-    [ -n "$remote" ] || continue
-    any_remote=1
-    # Capture the first ref, don't gate on the pipeline status: under `pipefail`, `… | grep -q .`
-    # makes ls-remote die with SIGPIPE on a busy remote (1000+ refs/pull/*), and the 141 would skip
-    # the whole PR-ref scan for that remote. The captured-non-empty test can't be flipped by SIGPIPE.
-    [ -n "$(git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*' 2>/dev/null | head -n1)" ] || continue
-    scanned_pr=1
-    # Fetch both the PR tip (…/head) AND GitHub's synthetic merge (…/merge) — neither is reachable
-    # from `git log --all`. Flat dest names keep them in one namespace for the scans below.
-    git -C "$DIR" fetch -q "$remote" 'refs/pull/*/head:refs/keel-pr-audit/head-*' \
-      'refs/pull/*/merge:refs/keel-pr-audit/merge-*' 2>/dev/null || true
-    while IFS= read -r e; do
-      [ -z "$e" ] && continue
-      # A here-string (dir #280) — see the git-history identity scan above for why not a
-      # `printf | grep -q` pipe.
-      grep -qE "$safe_re" <<< "$e" && continue
-      gap "non-public-safe identity in a host PR ref (refs/pull/*): $e — purge via delete-and-recreate (going-public.md)"
-    done <<EOF
-$(git -C "$DIR" log --glob='refs/keel-pr-audit/*' --format='%ae%n%ce' 2>/dev/null | sed '/^$/d' | sort -u)
-EOF
-    pr_hist="$(git -C "$DIR" log --glob='refs/keel-pr-audit/*' -p 2>/dev/null || true)"
-    if [ "${#tokens[@]}" -gt 0 ]; then
-      for t in "${tokens[@]}"; do
-        [ -z "$t" ] && continue
-        # Capture-then-test, not `grep -qE … && gap`: with a token that matches EARLY in a large
-        # pr_hist, `printf | grep -q` SIGPIPEs printf, and `pipefail` makes the pipeline 141 — so the
-        # `&& gap` never fires and a real leak passes clean. The captured hit can't be lost to SIGPIPE.
-        if [ -n "$(printf '%s\n' "$pr_hist" | grep -E -- "$t" | head -n1 || true)" ]; then
-          gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
+  if pa_read "list the remotes" "$audit_tmp/remotes" git -C "$DIR" remote; then
+    while IFS= LC_ALL=C read -r remote; do
+      [ -n "$remote" ] || continue
+      any_remote=1
+      # Capture the first ref, don't gate on the pipeline status: under `pipefail`, `… | grep -q .`
+      # makes ls-remote die with SIGPIPE on a busy remote (1000+ refs/pull/*), and the 141 would skip
+      # the whole PR-ref scan for that remote. The captured-non-empty test can't be flipped by SIGPIPE.
+      [ -n "$(git -C "$DIR" ls-remote --quiet "$remote" 'refs/pull/*' 2>/dev/null </dev/null | head -n1)" ] || continue   # fail-open-ok: offline or no PR refs is the documented OUT OF SCOPE note below
+      scanned_pr=1
+      # Fetch both the PR tip (…/head) AND GitHub's synthetic merge (…/merge) — neither is reachable
+      # from `git log --all`. Flat dest names keep them in one namespace for the scans below.
+      if ! pa_read "fetch the host PR refs of $remote" "$audit_tmp/fetch.out" git -C "$DIR" fetch -q "$remote" 'refs/pull/*/head:refs/keel-pr-audit/head-*' 'refs/pull/*/merge:refs/keel-pr-audit/merge-*'; then
+        cleanup_pr_refs
+        continue
+      fi
+      if pa_read "read the identities of the host PR refs" "$audit_tmp/pr.ids.raw" git -C "$DIR" log --glob='refs/keel-pr-audit/*' --format='%ae%n%ce' \
+         && pa_read "sort the identities of the host PR refs" "$audit_tmp/pr.ids" pa_uniq "$audit_tmp/pr.ids.raw"; then
+        while IFS= LC_ALL=C read -r e; do
+          [ -z "$e" ] && continue
+          # A here-string (dir #280) — see the git-history identity scan above for why not a
+          # `printf | grep -q` pipe.
+          id_rc=0
+          LC_ALL=C grep -qE -e "$safe_re" <<< "$e" || id_rc=$?
+          [ "$id_rc" -eq 0 ] && continue
+          if [ "$id_rc" -ge 2 ]; then
+            gap "could not match the identities of the host PR refs (exit $id_rc) — the audit is INCOMPLETE"
+            break
+          fi
+          gap "non-public-safe identity in a host PR ref (refs/pull/*): $e — purge via delete-and-recreate (going-public.md)"
+        done < "$audit_tmp/pr.ids"
+      fi
+      pr_hist="$audit_tmp/pr_hist"
+      if pa_read "read the host PR refs (log -p)" "$pr_hist" pa_log_p --glob='refs/keel-pr-audit/*'; then
+        if [ "${#tokens[@]}" -gt 0 ]; then
+          for t in "${tokens[@]}"; do
+            [ -z "$t" ] && continue
+            # Capture-then-test, not `grep -qE … && gap`: with a token that matches EARLY in a large
+            # pr_hist, `printf | grep -q` SIGPIPEs printf, and `pipefail` makes the pipeline 141 — so the
+            # `&& gap` never fires and a real leak passes clean. The captured hit can't be lost to SIGPIPE.
+            if pa_token_first "match /$t/ in the host PR refs" "$t" "$pr_hist" && [ -n "$pa_hit" ]; then
+              gap "private token /$t/ in a host PR ref (refs/pull/*) — purge via delete-and-recreate"
+            fi
+          done
         fi
-      done
-    fi
-    if [ -n "$personal_re" ]; then
-      ph="$(printf '%s\n' "$pr_hist" | grep -aniE -- "$personal_re" | head -1 || true)"
-      [ -n "$ph" ] && gap "personal literal (secret-scan-personal) in a host PR ref (refs/pull/*) — e.g. $ph — purge via delete-and-recreate"
-    fi
-    # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
-    ph="$(printf '%s\n' "$pr_hist" | grep -nIE "$EMAIL_RE" | grep -vE "$safe_re" | head -1 || true)"
-    [ -n "$ph" ] && warn "email in a host PR ref (refs/pull/*) — e.g. $ph"
-    ph="$(printf '%s\n' "$pr_hist" | grep -nE "$HOME_RE" | head -1 || true)"
-    [ -n "$ph" ] && warn "absolute home path in a host PR ref (refs/pull/*) — e.g. $ph"
-    ph="$(printf '%s\n' "$pr_hist" | LC_ALL=C grep -n "$cyr_pat" | head -1 || true)"
-    [ -n "$ph" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $ph"
-    ph="$(printf '%s\n' "$pr_hist" | grep -naE "$session_re" | head -1 || true)"
-    [ -n "$ph" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $ph"
-    # Binary blobs a PR ref carries that local history does not. The exclusion must NOT be a bare
-    # `--not --all`: --all includes the refs/keel-pr-audit/* temp refs themselves (fetched above), so
-    # the include-set would be a subset of the exclude-set and the scan a silent no-op — --exclude
-    # carves the temp namespace out of the --all that follows it. A leak in a closed PR's binary
-    # fixture is exactly as recoverable as a text one.
-    scan_binary_blobs "a host PR ref (refs/pull/*)" \
-      --glob='refs/keel-pr-audit/*' --not --exclude='refs/keel-pr-audit/*' --all
-    cleanup_pr_refs   # reap this remote's temp refs before the next iteration (also runs on EXIT)
-  done <<EOF_REMOTES
-$(git -C "$DIR" remote 2>/dev/null)
-EOF_REMOTES
+        if [ "$has_personal" = 1 ]; then
+          if pa_personal_first "match the personal literals in the host PR refs" -aniE "$pr_hist" && [ -n "$pa_hit" ]; then
+            gap "personal literal (secret-scan-personal) in a host PR ref (refs/pull/*) — e.g. $pa_hit — purge via delete-and-recreate"
+          fi
+        fi
+        # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
+        pa_match "match emails in the host PR refs" "$audit_tmp/pr.em1" pa_c grep -anE -e "$EMAIL_RE" "$pr_hist" \
+          && pa_match "match emails in the host PR refs" "$audit_tmp/pr.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/pr.em1" \
+          && { pa_first "$audit_tmp/pr.em2"; [ -n "$pa_line" ] && warn "email in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
+        pa_match "match home paths in the host PR refs" "$audit_tmp/pr.home" pa_c grep -anE -e "$HOME_RE" "$pr_hist" \
+          && { pa_first "$audit_tmp/pr.home"; [ -n "$pa_line" ] && warn "absolute home path in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
+        pa_match "match Cyrillic in the host PR refs" "$audit_tmp/pr.cyr" pa_c grep -an -e "$cyr_pat" "$pr_hist" \
+          && { pa_first "$audit_tmp/pr.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
+        pa_match "match session metadata in the host PR refs" "$audit_tmp/pr.sess" pa_c grep -anE -e "$session_re" "$pr_hist" \
+          && { pa_first "$audit_tmp/pr.sess"; [ -n "$pa_line" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
+      fi
+      # Binary blobs a PR ref carries that local history does not. The exclusion must NOT be a bare
+      # `--not --all`: --all includes the refs/keel-pr-audit/* temp refs themselves (fetched above), so
+      # the include-set would be a subset of the exclude-set and the scan a silent no-op — --exclude
+      # carves the temp namespace out of the --all that follows it. A leak in a closed PR's binary
+      # fixture is exactly as recoverable as a text one.
+      scan_binary_blobs "a host PR ref (refs/pull/*)" \
+        --glob='refs/keel-pr-audit/*' --not --exclude='refs/keel-pr-audit/*' --all
+      cleanup_pr_refs   # reap this remote's temp refs before the next iteration (also runs on EXIT)
+    done < "$audit_tmp/remotes"
+  fi
   if [ "$any_remote" = 1 ] && [ "$scanned_pr" = 0 ]; then
     say "       NOTE: host PR refs (refs/pull/*) are OUT OF SCOPE of this local scan (offline, none,"
     say "       or a non-GitHub remote). A repo with closed PRs must purge them via delete-and-recreate"
@@ -594,16 +784,16 @@ fi
 # $KEEL_IMPACT_LOG, else the audited repo's external store entry, else a legacy in-tree marker; with
 # none of those, nothing is written.
 if [ "$exit_code" != 0 ]; then
-  _klog="$(impact_log_path "$DIR")"
+  _klog="$(impact_log_path "$DIR")"   # fail-open-ok: impact-log metadata, written after the verdict
   if [ -n "$_klog" ]; then
-    _kclaim="$(impact_claim_key "$DIR")"
+    _kclaim="$(impact_claim_key "$DIR")"   # fail-open-ok: impact-log metadata, written after the verdict
     # dir #251 review: the resolver's legacy-marker fallback can name a path whose parent .keel/
     # doesn't physically exist yet (a fresh clone carrying the committed gitignore line but never
     # recreating the untracked dir) — without this, the append's own failed redirect leaks a raw error
     # and silently drops the event.
-    mkdir -p "$(dirname "$_klog")" 2>/dev/null || true
+    mkdir -p "$(dirname "$_klog")" 2>/dev/null || true   # fail-open-ok: impact-log metadata, written after the verdict
     printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" guard public-audit blocked "$_kclaim" \
-      >> "$_klog" 2>/dev/null || true
+      >> "$_klog" 2>/dev/null || true   # fail-open-ok: impact-log metadata, written after the verdict
   fi
 fi
 exit "$exit_code"
