@@ -173,6 +173,11 @@ pin "release-audit.md phase 7 names the CHANGELOG section as a source with two d
 pin "release-audit.md phase 7 cites §4 and polish-guide.md § Step 9 rather than restating either rule" \
   "$audit" 'this phase doesn'"'"'t restate either' \
   "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish-guide.md § Step 9, not restate them"
+# dir #745 A6 (S7-3): the pin above binds the "doesn't restate" clause, not the cite itself — re-pointing the
+# cite to `commands/polish.md` step 9 left it green. This one binds the cite (one line there; a byte match on §).
+pin "release-audit.md phase 7 cites commands/polish-guide.md § Step 9 itself, not only the 'doesn't restate' clause" \
+  "$audit" '`commands/polish-guide.md` § Step 9' \
+  "expected phase 7 to keep the cite \`commands/polish-guide.md\` § Step 9 (the PR-body rule's home, dir #745 S7-3)"
 
 # --- dir #249: phase 8 enforces that a delta-audit run is recorded, or the enforcement decays the
 # same way the ticket's own felt incident did — pin the phase so a later edit can't silently drop or
