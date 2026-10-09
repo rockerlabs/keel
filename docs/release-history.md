@@ -28,6 +28,83 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.15.0 — 2026-10-09
+
+A managed release built from three operator pains, groomed the day of the v0.14.0 tag: the secret guard's
+fail-opens that 0.14.0 disclosed, the weight of the review machinery, and installer writes that damage files.
+The secret scanner now exits 2, not clean, when a file list or object read fails, and reads every list and object
+NUL-separated in the C locale (dir #715); a mistyped `SECRET_SCAN_PERSONAL_FILE` fails closed (dir #725);
+`public-audit.sh` stops reading clean over a binary that holds a personal literal (dir #719); and a drift check
+pins the leak gate's path-variable list to the scanner's reads (dir #726). `install-secret-guard.sh --global`
+refuses a `core.hooksPath` that a conditional `[includeIf]` include sets (dir #717); `doctor.sh --install` no
+longer prints `OK` over a foreign hook and reads the machine-wide hooks directory through the installer's own
+resolver (dir #688); `doctor`'s secrets and guard floor closes four holes (dir #718). A commit made with the hooks
+switched off is pinned to be caught at push, and the pre-PR gate denies a `git push` that switches the pre-push
+scan off (dir #731); guard clauses the tests could not see are pinned (dir #721). On the installer side, a new
+required library, `tools/lib/safe-write.sh`, gives every installer edit, replacement and backup one write path
+that keeps your links, file modes and earlier backups (dir #679); install and uninstall no longer touch the Keel
+checkout through a linked folder, and a prose mention of the rails marker is no longer a marker (dir #716);
+`install.sh` never replaces a link Keel did not make (dir #685); three scripts no longer write outside their
+sandbox (dir #720). For the review machinery, `/polish` backgrounds the suite with an explicit timeout (dir #678)
+and names both skip receipts (dir #709), its guide's fallback precondition names both cases (dir #714), the gate's
+comments point at the guide (dir #710), the SIGPIPE static guard flags any producer before `grep -q` (dir #708),
+`session-cost.sh tail` opens a window on a second signal (dir #707), and a one-command helper cuts the per-worker
+Alpine clone (dir #728); a measurement found `/polish` still heavy, so its next step is a design, not a change in
+this release. The audit's fix round made a declined link a completed install again and corrected four CHANGELOG
+claims. Twenty-three merged slate PRs, #539–#556 and #558–#562 (seven of them through the release-train PR #557),
+plus the groom PR #538 and two audit-fix PRs, #563 and #564. Three known issues ship disclosed in the CHANGELOG
+section, and its upgrade note says which copies to refresh.
+
+**Verification.** **Scope:** 82 files across 23 merged slate PRs plus the groom PR, range v0.14.0 (`681fb8b`) to
+the release candidate `e74bff7`, 111 commits, +5,556/−1,017; plus a fix round of two PRs (#563 merged into #564),
+15 files, +287/−26, to the audited tree `cf216c8` — audit fixes, not feature work, so the anchor was not re-cut.
+**Method:** a managed release; orchestrator Opus 5.5 at high effort. A mechanical baseline leg plus eight
+whole-read legs (Sonnet) over clusters cut by coupling, after a two-leg pilot. The diverse leg was a different
+method, not a different vendor, since the operator was away and nothing was sent outside: a blind
+claim-falsification of the release's CHANGELOG section with live adversarial probes, reconciled afterwards. The
+verifier (Sonnet) returned NO-GO at `e74bff7`; two Fixer sessions — real sessions, launched by the release
+manager — fixed all six fix-before-tag findings, in #563 and #564. The Clause A re-check was scoped to the fix
+round's new surface: a pair read `cf216c8` in parallel and blind to each other, a fresh-context reader (a 24-row
+install matrix and 16 mutants) and a blind claim-falsifier. A second verifier pass, fresh from the written record,
+returned NO-GO with a stated route to GO: one residual behavioural finding, waived by the operator in so many
+words and filed, plus three CHANGELOG corrections made in the cut. **Coverage:** pass 1, 82 ledger rows, exactly
+one verdict each — 38 clean, 8 mechanical-only, 36 finding, 0 waived; pass 2, 85 rows — 12 re-verdicted, 3 added
+for files the fix round touched, 70 carried byte-identical. CI 6/6 by commit on the candidate (run 37834380984)
+and on the audited tree (run 37879483776), including the Alpine/busybox leg. Suite evidence from sandboxed clones
+and CI only, never the operator's own checkout: 10,562 passed, 0 failed, 127 files, at the candidate. **Findings:**
+74 accepted across two passes — pass 1: 58 (4 medium, 7 low-medium, 47 low); pass 2: 16. The six pass-1
+fix-before-tag findings were fixed in the release: `install.sh` failing an install, writing no manifest and
+leaving its lock when it declined a link (introduced in this range), `doctor`'s dead-end advice for that link, a
+missing upgrade note for the re-vendored scanner, a false "never deletes" for the Alpine-clone helper, an
+over-claiming scanner headline, and an incomplete list of what the gate's push rule does not catch. Three
+CHANGELOG sentences the fix round wrote were corrected in the cut. Open at the tag: 27 pass-1 findings and 10
+pass-2 findings ticketed, the rest recorded as no-action, all filed in the backlog or on the standing list; three
+known issues are disclosed in the CHANGELOG section. **Behavioural defects:** pass 1 accepted 27 behavioural
+findings (23 in shipped code, 4 in maintainer-only tools); among them, range-introduced: the declined-link install
+failure (fixed), a hard-linked `settings.json` failing an otherwise no-op hook-installer re-run, an accept file
+ignored for a path with `//` (fixed), a partly quoted prefix assignment that hides a push bypass from the gate,
+two false push denials, and two Alpine-clone helper edges (a symlinked clone path it would reset, a misleading
+refusal); the two medium baseline fail-opens (binary decode stops at
+the first invalid unit; `doctor` OK with Keel's pre-push missing) ship disclosed. Pass 2 accepted 5 behavioural
+findings: 2 on the fix surface (one counting — Keel's own dangling links labelled as yours and the install ending
+0 after a lost manifest and a moved checkout, waived and disclosed; one carved out — a test-only hook reachable
+from an exported variable) and 3 older ones off it. **Which layer found what:** the whole-read legs found four of
+the six fix-before-tag findings and two of the four mediums; the method-diverse leg found six findings no other
+leg did, including the other two mediums (the heredoc-commit push bypass and `doctor` OK over a missing pre-push),
+and independently found the declined-link install failure. In the re-check pair, the reader found the counting
+finding, which the falsifier could not construct because it kept the manifest; the falsifier found three older
+behavioural findings and explained an Ubuntu CI residue from the job log instead of closing it on a green re-run.
+No new class was named in pass 2; pass 1 named one candidate, an all-unchanged installer run that still writes.
+**What was NOT checked:** Clause A on the whole state — the re-check pair read only what the fix round newly
+reached, and the counting finding was waived rather than fixed. The verifier ran macOS only; Linux, busybox and
+dash behaviour of the fix code rests on CI's Ubuntu and Alpine legs and on the legs' own container runs, which one
+leg's container kill on the shared Docker daemon interrupted once; the Ubuntu teardown flake is explained from
+one CI log, not reproduced; the cut itself adds this entry and three CHANGELOG corrections that no verifier pass
+read; and the standing-list lines were not re-read by the verifier. **Induced-defect rate:** 10 / 74 — the
+verifier's per-finding tally, pass 1 0 / 58 and pass 2 10 / 16: eight are not behavioural (five are CHANGELOG
+sentences the fix round wrote), and two are behavioural, the counting finding and the carved-out test hook.
+**Records:** the run's own audit directory, gitignored.
+
 ## v0.14.0 — 2026-10-07
 
 A managed release, groomed after the operator lifted the moratorium on keel work, with the delta audit run

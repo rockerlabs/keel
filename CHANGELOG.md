@@ -15,6 +15,8 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-09
+
 **Known issues, disclosed at the cut.** These things from the 0.15.0 delta audit ship known-imperfect; none is
 fixed in this release, and each is filed. (1) A non-ASCII personal literal inside a binary file reads clean in
 `secret-scan.sh` and in `public-audit.sh` when an invalid UTF-16 or UTF-32 unit comes before it, because the
@@ -22,8 +24,11 @@ four `iconv` decode passes stop at the first invalid unit; an ASCII literal is n
 `docs/going-public.md` states the binary-blob coverage without this exception (dir #746). (2) `doctor.sh
 --install` prints `OK` for the secret guard, and the per-repo audit raises no finding, when Keel's `pre-push`
 hook is missing or not executable; git then skips the hook, so a commit made with the hooks switched off is
-not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #747). Both
-reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
+not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #747). (3) After a
+linked install whose `.keel/` manifest was lost and whose checkout was then moved, `install.sh --link` labels
+Keel's own dangling `keel/CORE.md`, `keel/FRAMEWORK.md` and `keel/PRINCIPLES.md` links as yours, leaves them
+dangling and exits 0 without saying that the always-on rails will not load; `doctor --install` flags the
+dangling links as `G-LINK-DANGLING` (dir #751). (1) and (2) reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
 
 - **Upgrading from 0.14.0 — a `git pull` alone does not refresh the copies Keel made.** (1) Secret guard: this
   release rewrote the scanner that is copied to every place the guard is wired (dir #715, dir #725). Re-vendor
@@ -34,7 +39,8 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   `docs/reference.md` among them, changed, and `doctor --install` still prints `OK` for the old copies after a
   plain pull. A linked install (`./install.sh --link`) reads the checkout and needs nothing. (3) Nothing else
   needs a re-run: the new required library `tools/lib/safe-write.sh` is read from the checkout, so a pull
-  delivers it; the hook installers changed only in how they write `settings.json`, so wired hooks stay wired;
+  delivers it; the Claude-hook installers (`install-pre-pr-gate.sh`, `install-read-trace.sh`,
+  `install-machine-watch.sh`) changed only in how they write `settings.json`, so wired hooks stay wired;
   and the gate's new push rule (dir #731) is live after the pull.
 
 - **Guard clauses the tests could not see are now pinned.** Each of these was shown to stay green with the
@@ -65,9 +71,10 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   (a quoted bypass argument included), a backslash-newline continuation, a `git config` write in an earlier
   segment, a leading word the rule does not skip (`sudo`, `env -C`, `/usr/bin/env`, a redirect), the closing
   line of a heredoc commit message (`)" && git push --no-verify`), a stray heredoc operator such as the shift
-  in `$((1<<2))` (a push after it separated by `;`, or on a later line, is swallowed; one after `&&` or `|` is
-  still seen), a partly quoted prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`),
-  and a missing `jq`. The lexer fix is dir #745. `docs/reference.md` names the new job. (dir #731)
+  in `$((1<<2))` (it reads as a heredoc opener whose delimiter runs to the next space, so a push glued to the
+  closing parentheses — `))&&…`, `)); …` — or on any later line is not seen; one after a spaced `&&`, `|` or `;`
+  is), a partly quoted prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`), and a
+  missing `jq`; the heredoc closing line and the stray heredoc operator hide a `gh pr create` the same way. The lexer fix is dir #745. `docs/reference.md` names the new job. (dir #731)
 
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
@@ -87,13 +94,14 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   remedy** (dir #685 follow-up, from the 0.15.0 release-candidate audit). A dangling link, a link to another
   file, or a folder at a path the installer checks at the end (`INSTANCE.md`, `LEARNINGS.md`, `IDEAS.md`,
   `CLAUDE.md`/`AGENTS.md`, `FRAMEWORK.md`, `PRINCIPLES.md`, and the linked `keel/` core files) is declined with
-  one line, and the run now exits 0, writes its manifest and releases its lock. Before, it printed
-  `MISS … re-run install.sh --link … from its new home`, failed, and left nothing for `uninstall.sh` to read.
-  Verify now names the path as yours and says to remove it, then re-run; a file that is truly absent still fails
+  one line, and the run now exits 0, writes its manifest and releases its lock. Before, a dangling link or a
+  folder there printed `MISS … re-run install.sh --link … from its new home`, failed, and left nothing for `uninstall.sh` to read.
+  Verify now names a path the manifest cannot show is Keel's as yours and says to remove it, then re-run (when
+  the manifest is lost and the checkout moved, that includes Keel's own dangling links — dir #751); a file that is truly absent still fails
   Verify. `tools/doctor.sh`'s `G-LINK-DANGLING` tells you to remove a dangling link that no manifest record
   proves Keel's own, and keeps the relink advice for Keel's own link whose checkout moved. The env-file check
-  (dir #718) honours `.keel/secrets-accept` for a project directory spelled with an internal `//`, which every
-  macOS temporary path has (this release's repeated-slash fix had made it ignore the accept file there).
+  (dir #718) honours `.keel/secrets-accept` for a project directory spelled with an internal `//`, which any
+  `$TMPDIR/name` path on macOS has, `$TMPDIR` ending in a slash (this release's repeated-slash fix had made it ignore the accept file there).
 - **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
   the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
   symlink into the Keel checkout, `install.sh` now skips it with one line instead of recording the
@@ -114,7 +122,7 @@ reproduce on v0.14.0. The audit's other open findings are filed or sit on the pr
   `core.hooksPath`, it refuses with exit 3, naming the condition, the file, the target and the value. A walk it
   cannot finish (include depth over 10, a path holding a TAB or newline, a target it cannot read or reach, a
   `~user/` target, a failed `git config`, a scratch dir inside a repository) refuses too, where it used to fall
-  back to a narrow read in silence; `install.sh`'s Verify then says why a plain re-run would be refused again. `--force` wires
+  back to a narrow read in silence; `install.sh`'s Verify then adds a hint that a plain re-run may be refused again, and how to get past it. `--force` wires
   anyway, prints a NOTE per conflict and records nothing, since the conditional line is left as it is. A re-run
   with Keel already wired prints the NOTEs and refuses nothing. `--where --global` gains `conditional=<n>|unknown`,
   and doctor discloses it once per run. README no longer says a `git pull` "refreshes what is already wired"
