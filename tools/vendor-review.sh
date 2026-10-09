@@ -167,6 +167,9 @@ fi
 # One round dir per launch, never reused: mkdir (no -p on the leaf) fails loudly if the exact same
 # label collides within the same UTC second, instead of two concurrent launches silently sharing a
 # dir and one's reply.md overwriting the other's mid-flight (found live in review).
+# dir #705: replies quote gitignored bundle material — store, round dir and the client's files are
+# owner-only whatever the caller's umask (a pre-existing store keeps its mode; only new dirs are made 700).
+umask 077
 mkdir -p "$out_dir" || refuse "could not create the output directory '$out_dir' — the client was not run."
 round="$out_dir/round-$(date -u +%Y%m%dT%H%M%SZ)-$label"
 if [ -e "$round" ]; then
