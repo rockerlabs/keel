@@ -290,9 +290,7 @@ incidental and has already broken mid-release once.
 
 At release close, the manager derives the run's token/cost figure from whatever on-disk usage data
 your project already has — summed at the weights the groom's estimate names (`docs/grooming.md` G5) — reads it against
-[`docs/loading-and-cost.md`](loading-and-cost.md) — and, where the estimate also names subscription-window
-points, records beside it the points the run actually moved, read just before each window reset the
-run crosses and summed per segment — and
+[`docs/loading-and-cost.md`](loading-and-cost.md), and
 **completes** the run's row in the releases cross-run record — **which now exists and has a path**, the
 one [`docs/grooming.md`](grooming.md)'s G7 names (keel's own instance: `private/releases/RUNS.md`,
 gitignored; per-project for adopters, per G9). **Completes, not creates:** the groom OPENS the row at
@@ -308,7 +306,10 @@ spanning more than one day, with breaks, means paying full input price on that c
 instead of reading it from cache, so a single-sitting release and a week-long one have completely
 different economics for the same work. This is a real trade against convenience, not a free win, and
 recording the figure every run is what eventually lets someone answer whether the trade is worth it —
-never asserted from one run's feel.
+never asserted from one run's feel. Where the estimate also names subscription-window points
+([`docs/grooming.md`](grooming.md) G5), record beside the figure the points the run moved: the reading
+taken before each wave already supplies them, so keep the last reading before each window reset the run
+crosses and sum the segments.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
@@ -533,11 +534,12 @@ instance (the gitignored per-project file named under the brief section above) c
 vocabulary as a fixed line — a manager's edit at the next launch, not a ticket.
 
 **Naming the kinds is not enough: the fixed line also shows one cited event (0.15.0).** That release's
-overlay listed the event kinds, and the checkpoints of its first manager and of the 27 other workers and
-designers its ledger lists still carried bare tallies such as "Events hit 1, friction 1". The scoring tool counts citations, never a bare integer,
-so the manager scored four sessions and recorded the rest as unscored rather than invent the cites.
-The line therefore carries the shape of one event — its kind, then one line naming what fired or was
-caught and where — beside the list of kinds.
+overlay listed the event kinds, yet most of its workers' checkpoints still carried bare tallies such as
+"Events hit 1, friction 1", which the scoring tool cannot count ([`docs/keel-impact.md`](keel-impact.md)),
+so the manager scored four sessions and left the rest unscored. The line therefore carries the shape of
+one event — its kind, then one line naming what fired or was caught and where — beside the list of kinds.
+A compensation: its remover is `dir #732`, whose tool half has the scoring tool print the one-event shape a
+checkpoint copies and attribute a score to the session it came from.
 
 ## What this pattern deliberately is not
 

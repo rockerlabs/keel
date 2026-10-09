@@ -438,28 +438,27 @@ estimate cell names its weights, the completing half
 row whose actual cannot be re-summed labels each figure with its weighting and does not compare them. A
 rule of the procedure, not a compensation.
 
-**Price the audit from the previous audit session's own weighted total, never from its legs' raw tokens
-(the 0.16.0 groom, reading the 0.15.0 row).** The 0.15.0 estimate gave the audit about 6M, the raw
-tokens its Sonnet legs read. At the estimate's own weights the audit cost 65.4M, because the orchestrator
-holds the release in context across many turns, and that part grows with the release, not with the
-legs. The release landed at 246.5M against an estimate of 145–180M, and the audit is most of the gap. So
-an audit priced as its own line takes the previous audit session's measured total, orchestrator and
-legs together, at the estimate's weights — and that total is subtracted from the release total before
-the per-unit division above, or the audit is counted twice. How far the audit grows with a larger slate
-has not been measured; the estimate cell names the scaling it used as a judgement. A rule of the
-procedure, not a compensation.
+**Price the audit from the previous audit session's own weighted total (the 0.16.0 groom, reading the
+0.15.0 row).** The 0.15.0 estimate gave the audit about 6M, the raw tokens its Sonnet legs read. At the
+estimate's own weights the audit cost 65.4M — most of that release's miss against its 145–180M estimate —
+because the orchestrator holds the release in context across many turns, the same mechanism that makes
+the manager expensive ([`docs/release-management.md`](release-management.md) R7). So an audit priced as its own line takes the previous audit session's
+measured total, orchestrator and legs together, at the estimate's weights. Subtract that total from the
+release total before the per-unit division above, or the audit is counted twice. How far the audit
+grows with a larger slate has not been measured; the estimate cell names the scaling it used as a
+judgement. A rule of the procedure; summing a session at those weights is a hand step today, a
+compensation whose remover is `dir #654`.
 
 **When the operator's binding limit is a subscription window, state the estimate in window points
 too, and name the ratio it was converted at (the same groom).** A weighted figure alone does not say
 whether a release fits the window it has to run in. 0.15.0 moved the weekly all-models window from 47%
 to 77% for 246.5M weighted, about 8.2M a point; its manager's intake calibration had assumed 10M a
-point, so even a correct estimate would have under-read the draw by about a fifth. The ratio is a
-release-wide average and errs low: the window also counted the groom and any session outside the
-release, and the phases differ — 0.15.0's builds moved about 23 points, while its audit tail ran near
-10M a point. The estimate cell therefore carries both figures and names the release the ratio was
-measured on, and the completing half ([`docs/release-management.md`](release-management.md) R7)
-records the points the run actually moved beside its cost line, so the next groom converts at a fresh
-ratio. A rule of the procedure, not a compensation.
+point, so it under-read the draw by about a fifth. The ratio is a release-wide average and errs low: the
+window also counted the groom and sessions outside the release, and phases differ (0.15.0's audit tail
+ran near 10M a point). The estimate cell therefore carries both figures and names the release the ratio
+was measured on; [`docs/release-management.md`](release-management.md) R7 records the points the run
+moved, so the next groom converts at a fresh ratio. Reading the window is a permanent limit, not a gap:
+it lives in the harness, where no repository tool can read it.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
