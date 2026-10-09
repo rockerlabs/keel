@@ -198,7 +198,17 @@ array_contains() {
   return 1
 }
 
-is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
+is_historical() {
+  [ "${#historical[@]}" -gt 0 ] || return 1
+  array_contains "$1" "${historical[@]}" && return 0
+  # dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file (README.md
+  # there is a living doc), so it follows CHANGELOG.md's class — and the DRYDOCK_HISTORICAL knob.
+  case "$1" in
+    changelog.d/README.md) return 1 ;;
+    changelog.d/*.md) array_contains CHANGELOG.md "${historical[@]}" ;;
+    *) return 1 ;;
+  esac
+}
 
 # EXACT-path membership, deliberately not the substring match tools/delta-audit/derive.sh's own
 # DELTA_INVARIANT_PATHS uses — that env's default entries are substrings by design, and would match

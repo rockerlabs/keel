@@ -219,4 +219,16 @@ check_absent "the stale-entry WARN is suppressed under --quiet, same as any othe
 run "$lc" "$REPO_ROOT" --quiet
 check_status "keel's own tree carries no unlisted line citation" 0 "$STATUS"
 
+# --- dir #744 B32: a changelog.d/ fragment is history text, like CHANGELOG.md -----------------------------
+d="$(mk_repo 'Clean prose.')"
+mkdir -p "$d/changelog.d"
+printf -- '- History: src/widget.sh:2 was fixed in v1.\n' > "$d/changelog.d/9-x.md"
+( cd "$d" && git add -A && git commit -q -m fragment )
+run "$lc" "$d"
+check_status "A29: a path:LINE inside a fragment is history, not scanned -> exit 0" 0 "$STATUS"
+printf 'See src/widget.sh:2 here.\n' > "$d/changelog.d/README.md"
+( cd "$d" && git add -A && git commit -q -m readme )
+run "$lc" "$d"
+check_status "A29: the same token in changelog.d/README.md is NOT history -> exit 1" 1 "$STATUS"
+
 summary

@@ -28,15 +28,17 @@
 #         the coverage ratchet (dir #142)
 #   WARN  a PRE-EXISTING such script listed in tools/self/legacy-untested.txt has zero test coverage
 #         (soft debt, dir #142 — burned down deliberately, never a retroactive block)
-#   WARN  CHANGELOG.md predates the most recent commands/, tools/, or install.sh change
+#   WARN  CHANGELOG.md (or changelog.d/, dir #744) predates the most recent commands/, tools/, or
+#         install.sh change
 #   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #   WARN  BACKLOG.md: a `⏳`/`IN REVIEW` heading cites a PR that `gh` reports MERGED (dir #135)
 #   GAP   CHANGELOG.md release sections and git release tags disagree (dir #139)
 #   GAP   a release-in-preparation section was cut more than KEEL_PENDING_RELEASE_MAX_COMMITS commits
 #         ago and is still untagged — the tag was forgotten, not merely pending (dir #156)
 #   WARN  a `dir #N` referenced in a commit message since the previous release tag is absent from
-#         CHANGELOG.md's own `[Unreleased]` section — per-TICKET, not per-file, so a PR that DOES
-#         touch CHANGELOG.md (for a different ticket) still trips it (dir #237)
+#         CHANGELOG.md's own `[Unreleased]` section and every changelog.d/ fragment (dir #744) —
+#         per-TICKET, not per-file, so a PR that DOES touch CHANGELOG.md (for a different ticket)
+#         still trips it (dir #237)
 #   WARN  a tracked .sh file sets `pipefail` AND reads `${PIPESTATUS[0]}`/`$PIPESTATUS` — once
 #         pipefail is active a plain `$?` right after the pipe already gives the real status, so
 #         reaching for PIPESTATUS specifically is usually a leftover belief, not a need (dir #321,
@@ -501,12 +503,15 @@ fi
 
 # --- 4. CHANGELOG staleness ----------------------------------------------------------------------
 say ""
-changelog_ts="$(git -C "$repo_root" log -1 --format=%ct -- CHANGELOG.md 2>/dev/null || echo 0)"
+# dir #744 (B5): a PR's changelog entry is a changelog.d/ fragment, so CHANGELOG.md alone stops moving
+# mid-release; the changelog's timestamp is the newest commit touching either. A pathspec naming a
+# directory that does not exist is not an error for `git log`, so a project without fragments is unchanged.
+changelog_ts="$(git -C "$repo_root" log -1 --format=%ct -- CHANGELOG.md changelog.d 2>/dev/null || echo 0)"
 product_ts="$(git -C "$repo_root" log -1 --format=%ct -- commands tools install.sh 2>/dev/null || echo 0)"
 # `git log -1` exits 0 with EMPTY stdout (not an error) when no commit ever touched the pathspec —
 # the `|| echo 0` above only catches a nonzero exit, so an untouched path needs this fallback too.
 if [ "${product_ts:-0}" -gt "${changelog_ts:-0}" ]; then
-  warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] covers it"
+  warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] or changelog.d/ covers it"
 else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"
 fi
@@ -1545,9 +1550,15 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     /^## / { grabbing=0 }
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
+  # dir #744 (B5): the effective unreleased text is that body PLUS every changelog.d/ fragment, read
+  # through the one reader (never a second listing of the directory). A reader failure reads as "no
+  # fragments" here — the lint is the PR's own check (tests/test_changelog_fragments.sh), not this
+  # advisory one's.
+  ct_fragment_text="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" 2>/dev/null || true)"
   # `_extract_dir_tickets`'s same `(ref)`-stripping applies on this side of the comparison too
   # (dir #273 gap 1) — see the check's header comment for the full rationale.
-  ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body" || true)"
+  ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body
+$ct_fragment_text" || true)"
   # Set difference via the same here-string-into-`grep -qxF` per-item membership idiom check 6's
   # pending-tag loop already uses above, not `comm` — `comm` needs no extra dependency here (it's
   # coreutils, not guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this
@@ -1564,9 +1575,9 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   ct_since="the repo's start"
   [ -n "$ct_highest" ] && ct_since="v$ct_highest"
   if [ -n "$ct_missing" ]; then
-    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
+    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section or changelog.d/: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
   else
-    say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section"
+    say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section or changelog.d/"
   fi
 else
   say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping commit-ticket reconciliation"

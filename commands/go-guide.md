@@ -67,7 +67,7 @@ Result: every change-list item done, its checks green.
 1. Re-read the spec's rules one by one. A rule nothing in your change implements → back to I3.
 2. Seams. Others' PRs merged while you built can falsify your diff.
    Commit your work, `git fetch`, rebase on `origin/<default>` (merge if pushed), then:
-   a. Their claims: `awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}' CHANGELOG.md`
+   a. Their claims: `awk 'FNR==1{p=(FILENAME!="CHANGELOG.md")} /^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"FNR": "$0}' CHANGELOG.md changelog.d/[[:lower:][:digit:]]*.md 2>/dev/null`
       (no changelog → skip). For each line that states a number: name the set it counts, then count that set on
       your tree with the command that derives it. A different number is falsified, even when every member you
       added conforms. For each "every"/"both" set, is your new member in it?

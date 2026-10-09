@@ -273,7 +273,8 @@ pin "A14: getting-started.md tells existing adopters to re-run both installers" 
   'after a pull re-run `install.sh` and `tools/install-pre-pr-gate.sh`' "expected the re-run-both-installers instruction (dir #413)"
 check_absent "A14: docs/reference.md no longer says the agent ships inert (the flip landed)" \
   "$(cat "$REPO_ROOT/docs/reference.md")" 'ships inert'
+# CHANGELOG.md plus the changelog.d/ fragments (dir #744): a bullet may still be a fragment.
 check_absent "A14: the slice-1 CHANGELOG bullet no longer says inert until a later release" \
-  "$(cat "$REPO_ROOT/CHANGELOG.md")" 'It is inert until a later release'
+  "$(cat "$REPO_ROOT/CHANGELOG.md"; "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'It is inert until a later release'
 
 summary

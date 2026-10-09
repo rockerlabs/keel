@@ -264,6 +264,9 @@ fi
 
 while IFS= read -r f; do
   case "$repo_dir/$f" in "$repo_dir/CHANGELOG.md"|"$repo_dir/$ALLOW_REL"|"$allow_file") continue ;; esac
+  # dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file; its README.md
+  # is a living doc and stays scanned.
+  case "$f" in changelog.d/README.md) ;; changelog.d/*.md) continue ;; esac
   [ -r "$repo_dir/$f" ] || continue
   # Fence-blanked (tools/lib/fence-blank.sh, dir #169), same as both sibling self-checks: a
   # `path:LINE` inside a fenced example — a pasted `grep -n` transcript, an illustration of this

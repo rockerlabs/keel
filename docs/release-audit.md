@@ -154,11 +154,15 @@ release-notes file and the release-prep PR's own narrative — and a convergence
 wording invalidates both. See `docs/publishing-checklist.md` §4 for the notes-file rule and
 `commands/polish-guide.md` § Step 9 (the already-open-PR branch) for the PR-body rule; this phase doesn't restate either (dir #206).
 
-**The order is: cut, land, then tag — and the tag is not the preparing session's to cut.** Rename
-`## [Unreleased]` to `## [x.y.z] — <date>`, open a fresh empty `## [Unreleased]` above it, and land
-that through the normal branch → PR → merge flow like any other change. The cut empties the live section,
-so no test may pin its text: an assertion on a changelog cite reads the whole file, or it turns the cut
-PR's own CI red. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
+**The order is: cut, land, then tag — and the tag is not the preparing session's to cut.** Run
+`tools/self/changelog-cut.sh x.y.z <date>`, then curate the new section by hand, in the same cut PR. The
+tool appends every `changelog.d/` fragment to `## [Unreleased]`, renames that heading to
+`## [x.y.z] — <date>`, opens a fresh empty `## [Unreleased]` above it and deletes the fragment files (dir #744;
+`changelog.d/README.md` states the fragment rules); land the result through the normal branch → PR → merge
+flow like any other change. The cut empties the live section and the fragment directory,
+so no test may pin their text: an assertion on a changelog cite reads `CHANGELOG.md` plus
+`tools/self/changelog-fragments.sh`'s output, never one fragment file and never `[Unreleased]` alone, or it
+turns the cut PR's own CI red. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
 outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
 prepares everything up to "tag ready to cut," names the exact SHA, and stops.
 

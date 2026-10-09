@@ -199,4 +199,11 @@ pin "release-audit.md phase 8 points at release-history.md's block, doesn't rest
   "$audit" '[`docs/release-history.md`](release-history.md), written by' \
   "expected phase 8 to point at the verification block's home, not restate its field list (dir #268 §4.2: 'Point, do not restate')"
 
+# --- dir #744 A6 / B7: Phase 7's cut paragraph names the fragment cut and the combined cite read ----------
+cut_para="$(awk '/^\*\*The order is: cut, land, then tag/{p=1} p&&/^$/{exit} p' "$audit")"
+check_contains "Phase 7's cut paragraph names changelog.d" "$cut_para" "changelog.d"
+check_contains "Phase 7's cut paragraph names the one cut command" "$cut_para" "tools/self/changelog-cut.sh"
+check_contains "Phase 7's cut paragraph tells a cite check to read the fragment reader's output too" "$cut_para" "tools/self/changelog-fragments.sh"
+check_contains "Phase 7's cut paragraph keeps the no-test-may-pin-it rule" "$cut_para" "no test may pin"
+
 summary

@@ -31,7 +31,8 @@
 # untrustworthy as a tree nobody chose.
 #
 # Class assignment (ledger.md) is MECHANICAL, first-match-wins, never judgment:
-#   1. CHANGELOG.md, or a path in DELTA_HISTORICAL           -> prose-historical
+#   1. CHANGELOG.md, a changelog.d/*.md fragment (dir #744; not its README.md), or a path in
+#      DELTA_HISTORICAL                                      -> prose-historical
 #   2. a path containing a DELTA_INVARIANT_PATHS substring   -> code-invariant
 #   3. a path starting with tests/                           -> test
 #   4. a *.sh/*.yml/*.yaml path, or one executable at <head-rev> -> code
@@ -250,6 +251,14 @@ session_cap="$(sanitize_nonneg_int "${DELTA_SESSION_FILES:-12}" 12)"
 is_historical() {
   local h
   for h in "${historical[@]}"; do [ "$h" = "$1" ] && return 0; done
+  # dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file, so it takes
+  # CHANGELOG.md's class (README.md there is a living doc, not history). It follows the knob: a
+  # DELTA_HISTORICAL that drops CHANGELOG.md drops its fragments with it.
+  case "$1" in
+    changelog.d/README.md) ;;
+    changelog.d/*.md)
+      for h in "${historical[@]}"; do [ "$h" = "CHANGELOG.md" ] && return 0; done ;;
+  esac
   return 1
 }
 is_invariant() {

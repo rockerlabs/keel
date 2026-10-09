@@ -69,7 +69,9 @@
 #
 # Chunking: markdown files (scope A, minus --historical) first, whole-files-first-fit up to
 # --chunk-bytes; then the remaining (non-md) files the same way; then each --historical file gets its
-# OWN trailing chunk, never packed with anything else, regardless of size. "First-fit" here means:
+# OWN trailing chunk, never packed with anything else, regardless of size (dir #744: the `changelog.d/*.md`
+# fragments, README.md excepted, are the exception — they ARE history, but pack together after the solo
+# historical chunks, so a release's ~30 fragments do not become ~30 chunks). "First-fit" here means:
 # try the currently open chunk; if the next file doesn't fit, close it and open a new one — never
 # re-visit an earlier closed chunk. True first-fit-with-backtracking (checking every earlier open
 # chunk for room) was considered and rejected: it could place a later file into an earlier,
@@ -365,13 +367,27 @@ array_contains() {
   return 1
 }
 is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
+# dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file (README.md there
+# is a living doc, not history). Fragments follow the CHANGELOG.md default: `--historical ''` frees them
+# along with it. They are NOT each their own chunk (a release carries ~30; the chunk numbering stops at
+# 99): they pack together, after every ordinary chunk and after the solo historical ones.
+is_fragment() {
+  case "$1" in
+    changelog.d/README.md) return 1 ;;
+    changelog.d/*.md) [ "${#historical[@]}" -gt 0 ] && array_contains CHANGELOG.md "${historical[@]}" ;;
+    *) return 1 ;;
+  esac
+}
 
 md_files=()
 code_files=()
 hist_files=()
+frag_files=()
 for f in "${files[@]}"; do
   if is_historical "$f"; then
     hist_files+=("$f")
+  elif is_fragment "$f"; then
+    frag_files+=("$f")
   elif case "$f" in *.md) true ;; *) false ;; esac; then
     md_files+=("$f")
   else
@@ -418,6 +434,7 @@ if [ "${#hist_files[@]}" -gt 0 ]; then
     pack_ordered "$chunk_bytes" "$f"
   done
 fi
+[ "${#frag_files[@]}" -gt 0 ] && pack_ordered "$chunk_bytes" "${frag_files[@]}"
 
 total_chunks="${#CHUNK_PATHS[@]}"
 [ "$total_chunks" -gt 0 ] || refuse "packing produced zero chunks — this should be unreachable given
