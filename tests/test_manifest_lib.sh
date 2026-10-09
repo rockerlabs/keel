@@ -37,6 +37,13 @@ m_noversion="$SANDBOX/no-version-manifest"
 printf 'kind=gate\n' > "$m_noversion"
 check_status "manifest_usable: no version line at all -> not usable" 1 "$(manifest_usable "$m_noversion"; echo $?)"
 
+# manifest_symlink_extra (dir #685 FIX-1): the recorded target of one `symlink` artifact, by home-relative path.
+printf 'artifact=symlink\tcommands/go.md\t/old/keel/commands/go.md\nartifact=symlink\tcommands/wrap.md\t-\nartifact=file\tFRAMEWORK.md\tcksum:1:2\n' >> "$m"
+check_eq "manifest_symlink_extra: a recorded target" "/old/keel/commands/go.md" "$(manifest_symlink_extra "$m" commands/go.md)"
+check_eq "manifest_symlink_extra: the pre-dir-#369 placeholder is returned as is" "-" "$(manifest_symlink_extra "$m" commands/wrap.md)"
+check_eq "manifest_symlink_extra: a file-kind record is not a symlink record" "" "$(manifest_symlink_extra "$m" FRAMEWORK.md)"
+check_eq "manifest_symlink_extra: absent path / absent file -> empty" "" "$(manifest_symlink_extra "$m" nope.md)$(manifest_symlink_extra "$SANDBOX/does-not-exist" commands/go.md)"
+
 # manifest_field must degrade to "" under an unreadable file, never abort a caller running under set -e
 # (the versioning contract: an unreadable manifest is treated as absent, never a crash) — chmod 000 is a
 # no-op for a root reader, so this half is skipped on the Alpine/root CI leg per the project's own

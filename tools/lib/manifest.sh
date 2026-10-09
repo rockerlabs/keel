@@ -36,6 +36,13 @@ manifest_field() {
   sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
 }
 
+# manifest_symlink_extra FILE REL — the target the manifest recorded for the `symlink` artifact at REL (dir #369;
+# `-` in a manifest older than that ticket); "" when there is no such record or the read fails. Shared by
+# install.sh's keel_own_stale_link and doctor's dangling-link advice, so both read Keel's record the same way.
+manifest_symlink_extra() {
+  awk -F'\t' -v rel="$2" '$1 == "artifact=symlink" && $2 == rel { print $3; exit }' "$1" 2>/dev/null || true
+}
+
 # manifest_usable FILE — the versioning contract shared by every dir #125 manifest reader: present,
 # readable, AND a keel_manifest_version this consumer understands (currently exactly "1").
 manifest_usable() {

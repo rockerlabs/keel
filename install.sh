@@ -478,8 +478,9 @@ if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh"
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
-  # Only manifest_usable — the one function keel_own_untouched below actually calls; install.sh never
-  # calls manifest_field.
+  # Only manifest_usable: every reader of the prior manifest (keel_own_untouched, prior_checkout,
+  # prior_symlink_extra) is gated on prior_manifest_usable, which this makes 0, so the lib's other
+  # functions (manifest_field, manifest_symlink_extra) are never reached without it.
   manifest_usable() { return 1; }
 fi
 
@@ -967,7 +968,7 @@ keel_own_untouched() {
 # no such record.
 prior_symlink_extra() {
   [ "$prior_manifest_usable" = 1 ] || return 0
-  awk -F'\t' -v rel="$1" '$1 == "artifact=symlink" && $2 == rel { print $3; exit }' "$prior_manifest" 2>/dev/null || true
+  manifest_symlink_extra "$prior_manifest" "$1"
 }
 # prior_checkout — the `checkout=` header of the PRIOR manifest: the checkout that wrote its records,
 # which is the OLD one when the checkout has moved. Empty when there is no usable prior manifest.
@@ -1931,11 +1932,18 @@ if [ "$LINK" = 1 ]; then
 else
   vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
+# Test-only fault injection (KEEL_TEST_REMOVE_BEFORE_VERIFY=<a listed core path>): delete that placed file just
+# before it is checked, so a test can prove an ABSENT core file still fails Verify (nothing else in a normal run
+# reaches that arm). A no-op in every real run.
 for f in "${vfiles[@]}"; do
+  [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" = "$f" ] && rm -f "$HOME_DIR/$f"   # only a listed core path
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
-  elif [ -L "$HOME_DIR/$f" ]; then
-    echo "  MISS $f (dangling symlink — did the checkout move? re-run install.sh --link$home_flag from its new home)" >&2; missing=1
+  elif [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; then
+    # Not a regular file, yet something sits here: this run declined it on purpose (a B3 T4/T6 decline or a B5
+    # seed left alone; Keel's own stale link was re-pointed above). Spec 685 B3 T4: a decline is not an error,
+    # so the run exits 0 and writes its manifest. Only an ABSENT file is MISS.
+    echo "  --   $f is yours (a link or non-regular file) — left untouched; remove it, then re-run '$advise_install' to let Keel place it"
   else
     echo "  MISS $f" >&2; missing=1
   fi
