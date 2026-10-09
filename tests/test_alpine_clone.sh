@@ -3,8 +3,10 @@
 # group per trap that cost a false red in 0.14.0: hard-linked packs (--no-hardlinks), a copied
 # .DS_Store under .git (git clone exits 128 inside the container), and a detached HEAD (bootstrap
 # --link exits 128). Plus the reuse guards: a path whose .git is not the expected clone is refused,
-# and the tool never deletes. Every clone here comes from a sandbox repo via --source, never from the
-# real checkout; HOME is the sandbox HOME lib.sh pins, so the canonical $HOME/.keel/tmp path is sandboxed.
+# and the tool never removes a clone directory (a reused clone is reset and cleaned back to the requested
+# commit, which the reuse group below pins). Every clone here comes from a sandbox repo via --source, never
+# from the real checkout; HOME is the sandbox HOME lib.sh pins, so the canonical $HOME/.keel/tmp path is
+# sandboxed.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 

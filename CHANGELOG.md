@@ -15,6 +15,28 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+**Known issues, disclosed at the cut.** These things from the 0.15.0 delta audit ship known-imperfect; none is
+fixed in this release, and each is filed. (1) A non-ASCII personal literal inside a binary file reads clean in
+`secret-scan.sh` and in `public-audit.sh` when an invalid UTF-16 or UTF-32 unit comes before it, because the
+four `iconv` decode passes stop at the first invalid unit; an ASCII literal is not affected, and
+`docs/going-public.md` states the binary-blob coverage without this exception (dir #T2). (2) `doctor.sh
+--install` prints `OK` for the secret guard, and the per-repo audit raises no finding, when Keel's `pre-push`
+hook is missing or not executable; git then skips the hook, so a commit made with the hooks switched off is
+not scanned at push — check by hand that `pre-push` in your hooks directory is executable (dir #T3). Both
+reproduce on v0.14.0. The audit's other open findings are filed or sit on the project's standing list.
+
+- **Upgrading from 0.14.0 — a `git pull` alone does not refresh the copies Keel made.** (1) Secret guard: this
+  release rewrote the scanner that is copied to every place the guard is wired (dir #715, dir #725). Re-vendor
+  each repo that carries a copy (`tools/install-secret-guard.sh <repo-path>`) AND, if you use the machine-wide
+  guard, re-run `tools/install-secret-guard.sh --global`; `doctor` reports a stale copy as `W-GUARD-STALE` /
+  `W-GUARD-GLOBAL-STALE`. (2) A copy-mode install (the default `./install.sh`): re-run `./install.sh` to refresh
+  the commands and docs in your harness home — `/polish` and its guide and `docs/reference.md` changed, and
+  `doctor --install` still prints `OK` for the old copies after a plain pull. A linked install
+  (`./install.sh --link`) reads the checkout and needs nothing. (3) Nothing else needs a re-run: the new required
+  library `tools/lib/safe-write.sh` is read from the checkout, so a pull delivers it; the hook installers changed
+  only in how they write `settings.json`, so wired hooks stay wired; and the gate's new push rule (dir #731) is
+  live after the pull.
+
 - **Guard clauses the tests could not see are now pinned.** Each of these was shown to stay green with the
   clause deleted; each now has a test that goes red under that deletion. The empty-`-C` refusal in
   `tests/lib.sh` is exercised from a working directory inside the allow-list, where it is the only thing
@@ -39,8 +61,11 @@ sections real content going forward — see that page for exactly when each one 
   `XDG_CONFIG_HOME` prefix is denied in any repo, behind `env`, `/usr/bin/git`, `if`, `{`, `!`, `time` and the
   other shell words the rule skips; a bypassed *commit* is still left to pre-push. The gate runs from the main
   checkout, so this is live for every Claude Code session on the machine after the next pull there. Not
-  caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text,
-  and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
+  caught, and left to the CI scan: a variable exported earlier, an alias or wrapper, `sh -c '…'`, quoted text
+  (a quoted bypass argument included), a backslash-newline continuation, a `git config` write in an earlier
+  segment, a leading word the rule does not skip (`sudo`, `env -C`, `/usr/bin/env`, a redirect), the closing line
+  of a heredoc commit message (`)" && git push --no-verify`), a stray `<<` such as `$((1<<2))`, a partly quoted
+  prefix assignment (`VAR="x"y git push …`, which also hides a `gh pr create`), and a missing `jq`. `docs/reference.md` names the new job. (dir #731)
 
 - **`install.sh` never puts Keel's file in place of a link you made — `--force` included — and says so once in the
   docs.** A link at a command, doc, `FRAMEWORK`/`PRINCIPLES` or `bin/keel` path is now classified before any prompt
@@ -101,7 +126,7 @@ sections real content going forward — see that page for exactly when each one 
   *push* leaks, and the gate rule that denies it is a separate change under the same ticket. No shipped hook
   file changes, so no re-vendor. (dir #731, dir #717)
 
-- **`secret-scan.sh` never reports clean over content it did not read.** Every file list and object read
+- **`secret-scan.sh` exits 2, not clean, when a file list or object read fails.** Every file list and object read
   is now status-checked: a failure exits 2 with `secret-scan: could not <step> (exit N) — refusing to report it
   clean`, followed by git's own error under a `secret-scan:   ` prefix. Before, each of these printed
   `secret-scan: clean`: a staged or tracked name holding a tab, a quote, a backslash or a newline (both lists now
@@ -113,7 +138,10 @@ sections real content going forward — see that page for exactly when each one 
   `read` now runs under `LC_ALL=C` (dir #715, absorbing dir #698). `--selftest` gains a `--staged` probe that
   runs on the host's own bash and locale, and every probe is isolated from the user's git config, so a broken
   `diff.*` there no longer skips a probe. A test fails the suite on any new untagged `|| true`, process
-  substitution or locale-bound `read` in the scanner.
+  substitution or locale-bound `read` in the scanner. Three gaps of the same kind are older than this change and
+  stay open (dir #T2): the UTF-16/32 decode passes stop at the first invalid unit, so a non-ASCII personal
+  literal after one still reads clean; `--staged` drops the rest of a line after a NUL byte in a file git still
+  diffs as text; and `--tracked` skips an unreadable tracked file with a `WARN` and exits 0.
 - **`doctor.sh --install` no longer prints `OK` over a foreign hook, and doctor, `uninstall.sh` and the
   watcher agree on the machine-wide hooks dir.** `--install` holds Keel's own machine hooks dir to the same
   marker line as the per-repo audit and `install.sh` Verify: a non-Keel `pre-commit` or `pre-push` there is
@@ -174,8 +202,8 @@ sections real content going forward — see that page for exactly when each one 
 - **`tools/self/alpine-clone.sh <Wn|solo> <sha>`: one command for the per-worker Alpine-leg clone** (dir #728).
   Cuts or refreshes `$HOME/.keel/tmp/alpine-clone-<Wn>` from the main checkout with the three traps that gave
   false reds in 0.14.0 built in: `--no-hardlinks`, no `.DS_Store` under `.git`, and a branch, never a detached
-  HEAD. It refuses a path that is not a clone of the source (stale origin) and never deletes; `--run` hands the
-  clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
+  HEAD. It refuses a path that is not a clone of the source (stale origin) and never removes a clone directory; a
+  reused clone is reset and cleaned back to the requested commit. `--run` hands the clone to the docker leg. Each trap is pinned in `tests/test_alpine_clone.sh`.
 - **`docs/delta-audit.md`: a mutation leg carries a size rule.** A leg keeps only the artifacts of
   surviving mutants (a killed mutant's are deleted in the iteration that kills it), uses one shared build
   cache per leg, checks a `df` floor before it starts, and its report states what it left and hands the

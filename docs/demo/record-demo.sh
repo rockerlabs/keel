@@ -39,6 +39,10 @@ export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
 . "$root/tools/lib/impact-store.sh"
 # shellcheck disable=SC2086  # IMPACT_ISOLATION_VARS is a space-separated list of NAMES
 unset $IMPACT_ISOLATION_VARS
+# dir #725: the scanner reads this machine-wide override too, and a set-but-missing value now fails it closed
+# (exit 2), so an operator's stale ambient one would end the guard step below in an error, not a BLOCK.
+# Unset, it falls back to $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
+unset SECRET_SCAN_PERSONAL_FILE
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"
