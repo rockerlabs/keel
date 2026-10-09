@@ -225,4 +225,9 @@ run "$cut" --repo "$d" 9.9.9 2026-01-01
 want="$(printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] — 2026-01-01\n\n## [1.0.0] — 2025-12-31\n\n- the first release')"
 check_eq "an empty cut leaves no doubled blank line" "$want" "$(cat "$d/CHANGELOG.md")"
 
+# An unclosed fence in CHANGELOG.md would hide every later heading: refused, nothing changed.
+d="$(mk_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n- bullet:\n  ```\n  never closed\n\n## [1.0.0] — 2025-12-31\n\n- the first release\n' > "$d/CHANGELOG.md"
+refuses "an unclosed fence in CHANGELOG.md" "odd number of fence markers" "$d" 9.9.9 2026-01-01
+
 summary

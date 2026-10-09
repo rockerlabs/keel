@@ -151,9 +151,16 @@ while IFS= read -r name; do
     *[![:space:]]*) ;;
     *) fail "$name" 1 "empty file — a fragment holds at least one bullet"; continue ;;
   esac
-  # Fence-blanked (and, for links, also inline-code-blanked) copies, line-aligned with the file: every rule
-  # is judged on them, as prose-drift and the cut's heading scan do — a column-0 line or a `#` comment inside a
-  # fenced example is content, not a heading or a bad continuation.
+  # Fence-blanked (and, for links, also inline-code-blanked) copies, line-aligned with the file: links and
+  # backticked tickets are judged on them, as prose-drift does. The SHAPE rules (bullet first, indented
+  # continuation, no heading) are judged on the raw lines: CommonMark ends a list item at a column-0 line even
+  # inside a fenced block, so an unindented line in a fence would split the bullet after the cut.
+  # An odd number of fence markers leaves blank_fenced_blocks stuck "in fence" to the end of the file —
+  # every later line would read as blank — so it is a defect of its own.
+  fence_marks="$(grep -cE '^[[:space:]]*(```|~~~)' "$path" || true)"
+  if [ $((fence_marks % 2)) -ne 0 ]; then
+    fail "$name" 1 "unbalanced fenced block ($fence_marks fence markers) — close every fence"
+  fi
   fenced="$(blank_fenced_blocks "$path")"
   blanked="$(blank_inline_code_spans <<< "$fenced")"
   seen_first=0
@@ -176,7 +183,7 @@ while IFS= read -r name; do
       '- '*|[[:space:]]*) ;;
       *) fail "$name" "$ln" "continuation line must be indented" ;;
     esac
-  done <<< "$fenced"
+  done < "$path"
   # `dir #N` inside backticks: doctor's ticket extraction drops inline code spans, so the citation would
   # never count. Judged on the fence-blanked copy (a fenced example is not a citation either way).
   ln=0

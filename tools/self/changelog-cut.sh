@@ -69,6 +69,10 @@ reader="$self_dir/changelog-fragments.sh"
 # Headings are located on a fence-blanked copy (line-aligned with the file): a `## [Unreleased]` inside a
 # fenced example is not a section.
 blanked="$(blank_fenced_blocks "$changelog")"
+# An odd number of fence markers would leave that blanking stuck "in fence" to the end of the file, hiding
+# every later heading: refuse rather than guess where [Unreleased] ends.
+fence_marks="$(grep -cE '^[[:space:]]*(```|~~~)' "$changelog" || true)"
+[ $((fence_marks % 2)) -eq 0 ] || refuse "CHANGELOG.md has an odd number of fence markers ($fence_marks) — an unclosed fenced block hides every later heading; close it first"
 unreleased_count="$(grep -c '^## \[Unreleased\]' <<< "$blanked" || true)"
 [ "$unreleased_count" = 1 ] || refuse "CHANGELOG.md has $unreleased_count '## [Unreleased]' headings, expected exactly 1"
 
