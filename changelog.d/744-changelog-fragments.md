@@ -9,7 +9,8 @@
   matches a commit's `dir #N` against `[Unreleased]` and the fragments, and takes the newest commit touching
   either as the changelog's age; the five tests that pin a changelog cite read `CHANGELOG.md` plus the
   fragment reader's output; the delta-audit, audit-packet, drydock and line-citation tools class a fragment as
-  history, like `CHANGELOG.md`; the pre-PR gate keeps `changelog.d/` in the tests-receipt hash; and `/go`'s
-  seam step scans fragments for numeric claims. The wave-plan prose in
+  history, like `CHANGELOG.md`, as one unit; the pre-PR gate keeps `changelog.d/` in the tests-receipt hash;
+  `/go`'s seam step scans fragments for numeric claims; and `doctor` fails when a fragment merges after the
+  cut but before the tag. The wave-plan prose in
   [`docs/release-management.md`](/docs/release-management.md) R2 and `commands/manage-release.md` M3 no longer
   assumes every PR collides in `CHANGELOG.md`.

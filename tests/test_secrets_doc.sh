@@ -102,7 +102,7 @@ case "$sec_body" in *secrets-in-the-working-tree.md*) pass "A14: the section lin
 # The whole file PLUS the changelog.d/ fragments (dir #744), never the live [Unreleased] section and never
 # one fragment: the release cut empties that section and deletes the fragments, and the cite then lives in
 # the dated section below it.
-clog="$(sed 's/`[^`]*`//g' <<< "$(cat "$REPO_ROOT/CHANGELOG.md"; "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")")"
+clog="$(sed 's/`[^`]*`//g' <<< "$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")")"
 for n in 631 379; do
   case "$clog" in *"dir #$n"*) pass "A15: CHANGELOG cites dir #$n, not backtick-wrapped" ;; *) fail "A15: CHANGELOG cites dir #$n, not backtick-wrapped" "absent (after dropping backtick spans)" ;; esac
 done

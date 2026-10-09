@@ -33,6 +33,8 @@
 #   WARN  BACKLOG.md: a `### dir #N` heading's own tag is stale (body already records closure)
 #   WARN  BACKLOG.md: a `⏳`/`IN REVIEW` heading cites a PR that `gh` reports MERGED (dir #135)
 #   GAP   CHANGELOG.md release sections and git release tags disagree (dir #139)
+#   GAP   a release-in-preparation section (cut, untagged) coexists with a changelog.d/ fragment — the
+#         fragment merged after the cut ran (dir #744, B34)
 #   GAP   a release-in-preparation section was cut more than KEEL_PENDING_RELEASE_MAX_COMMITS commits
 #         ago and is still untagged — the tag was forgotten, not merely pending (dir #156)
 #   WARN  a `dir #N` referenced in a commit message since the previous release tag is absent from
@@ -1398,6 +1400,15 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     pending_note="bound not computed"
     [ -n "$pending_dist" ] && pending_note="$pending_dist commit(s) since cut, bound $pending_max_commits"
     say "  OK   '## [$pending]' is cut but not tagged yet — release in preparation ($pending_note) (tag the merge commit to close it out)"
+    # dir #744 (B34): once the newest section is cut, changelog.d/ must be empty — the cut deletes every
+    # fragment. One that is still listed merged after the cut ran (in the queue, its merge group carries it
+    # ahead of the cut PR), and a plain `[Unreleased]`-style check cannot see it: it is in no section.
+    late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null | tr '\n' ' ' || true)"
+    late_fragments="${late_fragments% }"
+    if [ -n "$late_fragments" ]; then
+      gap "fragments merged after the cut ($late_fragments) — run tools/self/changelog-cut.sh again to sort them, or move them into [$pending]"
+      changelog_bad=1
+    fi
   fi
   [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
 else

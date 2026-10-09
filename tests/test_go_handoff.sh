@@ -366,7 +366,7 @@ done
 # The whole file PLUS the changelog.d/ fragments (dir #744), never the live [Unreleased] section and never
 # one fragment: the release cut empties that section and deletes the fragments, and a cite that moves to
 # the dated section below must still be found.
-clog="$(cat "$REPO_ROOT/CHANGELOG.md"; "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")"
+clog="$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")"
 check_contains "A19 CHANGELOG names dir #401 in full" "$clog" "dir #401"
 check_absent "A19 …not backtick-wrapped" "$clog" '`dir #401`'
 

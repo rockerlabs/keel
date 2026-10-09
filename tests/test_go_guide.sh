@@ -151,17 +151,17 @@ new_out="$(cd "$i_dir" && bash -c "$claims_cmd" 2>&1)"
 check_ne "(i) fixture: the old command finds the [Unreleased] claim (control has content)" "" "$old_out"
 check_eq "(i) a project without changelog.d/: the pinned command prints the old command's lines" "$old_out" "$new_out"
 mkdir -p "$i_dir/changelog.d"
-printf -- '- a fragment covering both of the tools\n  and every caller\n' > "$i_dir/changelog.d/9-x.md"
+printf -- '- a fragment covering both of the tools\n  and every file in it\n' > "$i_dir/changelog.d/9-x.md"
 printf -- '- nothing numeric here\n' > "$i_dir/changelog.d/10-y.md"
-printf '# readme\n\nall about fragments\n' > "$i_dir/changelog.d/README.md"
+printf '# readme\n\nevery note about fragments\n' > "$i_dir/changelog.d/README.md"
 frag_out="$(cd "$i_dir" && bash -c "$claims_cmd" 2>&1)"
 check_contains "(i) with changelog.d/: a fragment line is scanned, whole file, with its own line number" \
   "$frag_out" "changelog.d/9-x.md:1: - a fragment covering both of the tools"
-check_contains "(i) with changelog.d/: a continuation line is scanned too" "$frag_out" "changelog.d/9-x.md:2:   and every caller"
-check_contains "(i) with changelog.d/: the CHANGELOG.md [Unreleased] claim is still found" "$frag_out" "CHANGELOG.md:5: - fixes all 3 of them"
+check_contains "(i) with changelog.d/: a continuation line is scanned too" "$frag_out" "changelog.d/9-x.md:2:   and every file in it"
+check_contains "(i) with changelog.d/: the CHANGELOG.md [Unreleased] claim is still found" "$frag_out" "- fixes all 3 of them"
 check_absent "(i) a released section's claim is still skipped" "$frag_out" "every old thing"
 check_absent "(i) a fragment line without a claim is not printed" "$frag_out" "nothing numeric"
-check_absent "(i) changelog.d/README.md is not a fragment and is not scanned" "$frag_out" "all about fragments"
+check_absent "(i) changelog.d/README.md is not a fragment and is not scanned" "$frag_out" "every note about fragments"
 
 # --- (h) the handoff note's wiring (dir #401 A12): each action names its helper call ------------------
 # Scoped to the action's own paragraph — "go-handoff.sh read" anywhere in the file would still pass

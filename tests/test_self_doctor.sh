@@ -1048,6 +1048,33 @@ check_absent "no reconciliation GAP while the tag is still pending" "$OUT" "GAP"
 check_contains "the pending section is announced, not silently tolerated" "$OUT" "cut but not tagged yet"
 check_contains "and named specifically" "$OUT" "1.1.0"
 
+# dir #744 A31 (B34): the newest section is cut but untagged AND a fragment is still listed -> it merged
+# after the cut ran: GAP naming it. No fragment -> no such GAP; a TAGGED newest section plus a fragment (the
+# normal mid-release state) -> no such GAP.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, PR open, not tagged yet\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+mkdir -p "$d/changelog.d"
+printf -- '- dir #901: arrived after the cut\n' > "$d/changelog.d/901-late.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 ahead of its tag, with a late fragment" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "A31: a fragment beside an untagged newest section -> exit 1" 1 "$STATUS"
+check_contains "A31: the GAP says the fragment merged after the cut" "$OUT" "fragments merged after the cut"
+check_contains "A31: the GAP names the fragment" "$OUT" "changelog.d/901-late.md"
+rm -f "$d/changelog.d/901-late.md"
+( cd "$d" && git add -A && git commit -qm "the fragment is gone" )
+run "$sd" "$d" --quiet
+check_absent "A31 control: the same fixture without the fragment has no such GAP" "$OUT" "fragments merged after the cut"
+check_status "A31 control: ...and exits 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+mkdir -p "$d/changelog.d"
+printf -- '- dir #902: a normal mid-release fragment\n' > "$d/changelog.d/902-ok.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, then a fragment" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_absent "A31 control: a TAGGED newest section plus a fragment (mid-release) has no such GAP" "$OUT" "fragments merged after the cut"
+
 # ...and the allowance is exactly one section wide: a SECOND untagged section is still drift. Both
 # 1.1.0 and 1.2.0 lack tags; only the newest (1.2.0, first in file order) is exempt.
 d="$(mk_clean_repo)"

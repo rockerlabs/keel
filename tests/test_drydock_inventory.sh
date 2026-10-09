@@ -489,6 +489,7 @@ new_bare_origin "$rf" >/dev/null
 mkdir -p "$rf/changelog.d"
 lines 3 > "$rf/CHANGELOG.md"
 lines 2 > "$rf/changelog.d/9-x.md"
+lines 3 > "$rf/changelog.d/10-y.md"
 lines 4 > "$rf/changelog.d/README.md"
 lines 5 > "$rf/plain.md"
 git -C "$rf" add -A
@@ -496,9 +497,10 @@ git -C "$rf" commit -qm content
 git -C "$rf" push -q origin main
 run_in "$rf" "$TOOL"
 check_status "A29: a tree with fragments -> exit 0" 0 "$STATUS"
-check_contains "A29: the fragment gets the historical SPECIAL batch" "$OUT" "changelog.d/9-x.md SPECIAL"
+check_contains "A29: the fragments get ONE historical SPECIAL batch" "$OUT" "batch: changelog.d/ SPECIAL"
+check_eq "A29: ...exactly one such line, not one per fragment" "1" "$(grep -c 'changelog.d/.*SPECIAL' <<< "$OUT")"
 check_absent "A29: README.md gets no SPECIAL batch" "$OUT" "changelog.d/README.md SPECIAL"
 check_contains "A29: README.md packs as an ordinary file" "$OUT" "changelog.d/README.md (4 ln)"
-check_absent "A29: the fragment is not also an ordinary batch" "$OUT" "changelog.d/9-x.md (2 ln)"
+check_absent "A29: a fragment is not also an ordinary batch" "$OUT" "changelog.d/9-x.md (2 ln)"
 
 summary

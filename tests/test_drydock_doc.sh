@@ -24,7 +24,7 @@ external_auditor="$REPO_ROOT/docs/drydock/external-auditor.md"
 # CHANGELOG.md plus the changelog.d/ fragments (dir #744), in one sandbox file: `pin` takes a file, and a
 # cite pinned on CHANGELOG.md alone breaks the day its entry is still a fragment (or after the cut deletes it).
 changelog="$SANDBOX/changelog-with-fragments.md"
-{ cat "$REPO_ROOT/CHANGELOG.md"; "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT"; } > "$changelog"
+{ cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT"; } > "$changelog"
 
 check_file "docs/drydock.md exists" "$doc"
 check_file "docs/drydock/auditor.md exists" "$auditor"

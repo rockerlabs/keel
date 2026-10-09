@@ -23,7 +23,7 @@ keeltmp_count() { find "$@" -name '*.keeltmp.*' 2>/dev/null | grep -c . || true;
 # --- A1: every temp-and-rename write goes through the library ----------------------------------------
 # (a) the temp token lives in exactly one tracked non-test file; (b) register-project's own temp suffix
 # is gone; (c) the only `mv` left in the five installer files is take()'s REMOVE in uninstall.sh.
-a1a="$(git -C "$REPO_ROOT" grep -l -F '.keeltmp.' -- ':!tests' ':!docs' ':!CHANGELOG.md' || true)"
+a1a="$(git -C "$REPO_ROOT" grep -l -F '.keeltmp.' -- ':!tests' ':!docs' ':!CHANGELOG.md' ':!changelog.d' || true)"
 check_eq "A1(a) the .keeltmp. token is in exactly one tracked non-test file, the lib" "tools/lib/safe-write.sh" "$a1a"
 a1b="$(git -C "$REPO_ROOT" grep -n -F 'regtmp' -- ':!tests' || true)"
 check_eq "A1(b) register-project.sh's own temp suffix is gone" "" "$a1b"

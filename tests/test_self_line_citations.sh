@@ -223,6 +223,7 @@ check_status "keel's own tree carries no unlisted line citation" 0 "$STATUS"
 d="$(mk_repo 'Clean prose.')"
 mkdir -p "$d/changelog.d"
 printf -- '- History: src/widget.sh:2 was fixed in v1.\n' > "$d/changelog.d/9-x.md"
+printf -- '- Also src/widget.sh:2 here.\n' > "$d/changelog.d/10-y.md"
 ( cd "$d" && git add -A && git commit -q -m fragment )
 run "$lc" "$d"
 check_status "A29: a path:LINE inside a fragment is history, not scanned -> exit 0" 0 "$STATUS"

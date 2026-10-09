@@ -16,14 +16,18 @@
 #   2. renames that heading to `## [VERSION] — DATE`;
 #   3. inserts a fresh, empty `## [Unreleased]` above it;
 #   4. deletes the fragment files (README.md stays).
-# CHANGELOG.md is replaced through a temp file + `mv` (its mode kept); the script never runs git — the
-# result is an ordinary working-tree edit for the cut PR to commit. Each step is printed.
+# The new text is built in a temp file and written OVER CHANGELOG.md with `cat tmp > CHANGELOG.md` — never
+# `mv`/`cp` of a fresh mktemp file onto it, which would give the changelog the temp file's 0600 (busybox
+# `cp` onto an existing file also takes the SOURCE's mode; CLAUDE.md Linux trap 6). The script never runs
+# git — the result is an ordinary working-tree edit for the cut PR to commit. Each step is printed.
 #
 # Exit 0 done. Exit 2 REFUSED, changing nothing: a bad VERSION or DATE, no CHANGELOG.md, not exactly one
 # `## [Unreleased]` heading (fenced examples do not count), a `## [VERSION]` heading already present, or
 # `changelog-fragments.sh --check` failing. A `## [VERSION]` already present while fragment files are
-# still on disk is a cut that stopped after its `mv`: the refusal names those files as already assembled
-# (delete them; do not cut again). Running the cut twice therefore refuses the second time.
+# still on disk: the refusal labels each fragment `assembled` (its first bullet line already appears
+# verbatim in that section — a cut that stopped before deleting it; delete the file) or `late` (it does
+# not — merged after the cut ran; append it to that section by hand, then delete it). Running the cut
+# twice therefore refuses the second time.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -68,20 +72,33 @@ blanked="$(blank_fenced_blocks "$changelog")"
 unreleased_count="$(grep -c '^## \[Unreleased\]' <<< "$blanked" || true)"
 [ "$unreleased_count" = 1 ] || refuse "CHANGELOG.md has $unreleased_count '## [Unreleased]' headings, expected exactly 1"
 
-# The fragments on disk, by the reader's own listing (no second listing of changelog.d/ here).
+# The fragments, by the reader's own listing (no second listing of changelog.d/ here): the text to carry
+# and the names to delete, space-separated (kebab-case names have no spaces).
 if frag_text="$("$reader" --repo "$repo_dir")"; then :; else refuse "could not read changelog.d/"; fi
+if frag_list="$("$reader" --repo "$repo_dir" --list)"; then :; else refuse "could not list changelog.d/"; fi
 frag_files=""
-if [ -d "$repo_dir/changelog.d" ]; then
-  for f in "$repo_dir"/changelog.d/*.md; do
-    [ -f "$f" ] || continue
-    [ "${f##*/}" = README.md ] && continue
-    frag_files="$frag_files${frag_files:+ }${f##*/}"
-  done
-fi
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  frag_files="$frag_files${frag_files:+ }${f#changelog.d/}"
+done <<< "$frag_list"
 
 if grep -qE "^## \[${version//./\\.}\]" <<< "$blanked"; then
   if [ -n "$frag_files" ]; then
-    refuse "## [$version] is already in CHANGELOG.md and these fragment files are still on disk: $frag_files — a cut that stopped after its mv already assembled them; delete the fragment files, do not cut again"
+    # The body of the existing ## [VERSION], to tell a fragment already carried into it from one that
+    # arrived after the cut ran.
+    section="$(awk -v h="## [$version]" 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' <<< "$blanked")"
+    labelled=""
+    for f in $frag_files; do
+      first="$(awk 'NF { print; exit }' "$repo_dir/changelog.d/$f")"
+      if grep -qxF -- "$first" <<< "$section"; then
+        labelled="$labelled
+  changelog.d/$f — assembled (its first bullet is already in [$version]: a cut stopped before deleting it; delete the file)"
+      else
+        labelled="$labelled
+  changelog.d/$f — late (not in [$version]: merged after the cut ran; append it to that section by hand, then delete the file)"
+      fi
+    done
+    refuse "## [$version] is already in CHANGELOG.md and fragment files remain:$labelled"
   fi
   refuse "## [$version] is already in CHANGELOG.md"
 fi
@@ -94,9 +111,6 @@ fi
 # --- build the new file --------------------------------------------------------------------------
 tmp="$changelog.cut.$$"
 trap 'rm -f "$tmp"' EXIT
-# cp -p first: the temp file inherits CHANGELOG.md's mode, and the redirect below keeps it (a bare
-# mktemp file is 0600, and busybox cp onto an existing file would copy the SOURCE's mode instead).
-cp -p "$changelog" "$tmp"
 
 # Line numbers (on the blanked copy, same numbering as the file): the Unreleased heading, the next `## `
 # heading after it (or end of file), and the last non-blank line of the body between them.
@@ -131,7 +145,9 @@ last_body="$(awk -v u="$u_line" -v e="$next_line" 'NR > u && NR < e && /[^[:spac
   fi
 } > "$tmp"
 
-mv "$tmp" "$changelog"
+# Written over the existing file, so its mode survives (see the header).
+cat "$tmp" > "$changelog"
+rm -f "$tmp"
 trap - EXIT
 echo "changelog-cut.sh: CHANGELOG.md: appended ${frag_files:+fragments ($frag_files) and }renamed [Unreleased] to [$version] — $date_str, opened a fresh empty [Unreleased]"
 

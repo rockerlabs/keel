@@ -384,6 +384,7 @@ basef="$(git -C "$rf" rev-parse HEAD)"
 git -C "$rf" checkout -qb prf
 mkdir -p "$rf/changelog.d"
 printf -- '- x\n' > "$rf/changelog.d/9-x.md"
+printf -- '- y\n' > "$rf/changelog.d/10-y.md"
 printf '# readme\n' > "$rf/changelog.d/README.md"
 printf 'p\n' > "$rf/plain.md"
 git -C "$rf" add -A
@@ -395,11 +396,13 @@ mkdir -p "$outf"
 run_in "$rf" "$TOOL" --out "$outf" "$basef" "$(git -C "$rf" rev-parse HEAD)"
 check_status "A29: a range holding a fragment -> exit 0" 0 "$STATUS"
 ledgerf="$(cat "$outf/ledger.md")"
-check_contains "A29: changelog.d/9-x.md is prose-historical (class 1)" "$ledgerf" \
-  "| changelog.d/9-x.md | prose-historical | 1 | #301 |"
+check_contains "A29: the fragments fold into ONE prose-historical row (class 1), PRs unioned" "$ledgerf" \
+  "| changelog.d/ (2 files) | prose-historical | 1 | #301 |"
+check_count "A29: no per-fragment row" "$outf/ledger.md" '| changelog.d/[0-9]' 0
 check_contains "A29: changelog.d/README.md stays plain prose" "$ledgerf" "| changelog.d/README.md | prose | 1 | #301 |"
 run_in "$rf" env "DELTA_HISTORICAL=NOTHING.md" "$TOOL" --out "$SANDBOX/out-frag2" "$basef" "$(git -C "$rf" rev-parse HEAD)"
 check_contains "A29: overriding DELTA_HISTORICAL (CHANGELOG.md no longer historical) frees the fragments too" \
   "$(cat "$SANDBOX/out-frag2/ledger.md")" "| changelog.d/9-x.md | prose |"
+check_absent "A29: ...and then no folded row" "$(cat "$SANDBOX/out-frag2/ledger.md")" "changelog.d/ ("
 
 summary

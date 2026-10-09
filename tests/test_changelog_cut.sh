@@ -76,6 +76,13 @@ leftover=0
 for f in "$d"/CHANGELOG.md.cut.*; do [ -e "$f" ] && leftover=$((leftover + 1)); done
 check_eq "no temp file left behind" "0" "$leftover"
 
+# --- the changelog keeps its 0644 mode when the umask would give a fresh file 0600 ----------------------
+d="$(mk_repo)"
+chmod 644 "$d/CHANGELOG.md"
+run bash -c 'umask 077; exec "$@"' _ "$cut" --repo "$d" 9.9.9 2026-01-01
+check_status "cut under umask 077 -> exit 0" 0 "$STATUS"
+check_eq "CHANGELOG.md keeps 0644 under umask 077 (written over, not replaced by a fresh file)" "-rw-r--r--" "$(mode_of "$d/CHANGELOG.md")"
+
 # --- a second run refuses, changing nothing -------------------------------------------------------
 before="$(cat "$d/CHANGELOG.md")"
 run "$cut" --repo "$d" 9.9.9 2026-01-01
@@ -87,13 +94,15 @@ check_eq "second run leaves CHANGELOG.md unchanged" "$before" "$(cat "$d/CHANGEL
 d="$(mk_repo)"
 run "$cut" --repo "$d" 9.9.9 2026-01-01
 printf '%s\n' '- dir #1: the first one' > "$d/changelog.d/1-a.md"      # the leftover the interrupted run never deleted
+printf '%s\n' '- dir #3: arrived after the cut ran' > "$d/changelog.d/3-late.md"   # merged after the cut
 before="$(cat "$d/CHANGELOG.md")"
 run "$cut" --repo "$d" 9.9.9 2026-01-01
 check_status "rerun after a stopped cut -> exit 2" 2 "$STATUS"
-check_contains "refusal names the leftover file as already assembled" "$OUT" "1-a.md"
-check_contains "refusal says assembled" "$OUT" "already assembled"
+check_contains "refusal labels the leftover whose bullet is already in the section 'assembled'" "$OUT" "changelog.d/1-a.md — assembled"
+check_contains "refusal labels a fragment whose bullet is not in the section 'late'" "$OUT" "changelog.d/3-late.md — late"
 check_eq "refusal changes nothing" "$before" "$(cat "$d/CHANGELOG.md")"
 check_file "the leftover fragment is still there (not deleted by a refusal)" "$d/changelog.d/1-a.md"
+check_file "the late fragment is still there too" "$d/changelog.d/3-late.md"
 
 # --- other refusals, each exit 2 with the file unchanged ------------------------------------------
 refuses() {   # refuses LABEL EXPECTED-WORDS REPO VERSION DATE

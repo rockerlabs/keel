@@ -275,6 +275,6 @@ check_absent "A14: docs/reference.md no longer says the agent ships inert (the f
   "$(cat "$REPO_ROOT/docs/reference.md")" 'ships inert'
 # CHANGELOG.md plus the changelog.d/ fragments (dir #744): a bullet may still be a fragment.
 check_absent "A14: the slice-1 CHANGELOG bullet no longer says inert until a later release" \
-  "$(cat "$REPO_ROOT/CHANGELOG.md"; "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'It is inert until a later release'
+  "$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'It is inert until a later release'
 
 summary

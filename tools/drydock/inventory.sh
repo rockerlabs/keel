@@ -551,14 +551,20 @@ batch_stream() {
 }
 
 historical_batches() {
-  local path lines comments
+  local path lines comments frag=0
   [ -n "$1" ] || return 0
   while IFS="$TAB" read -r path lines comments; do
     [ -n "$path" ] || continue
     [ -z "$prev" ] || is_changed "$path" || continue
     is_historical "$path" || continue
+    # dir #744 B32: the changelog.d/ fragments are ONE batch, not one per file (a release carries ~30).
+    case "$path" in
+      changelog.d/README.md) ;;
+      changelog.d/*.md) frag=1; continue ;;
+    esac
     printf 'batch: %s SPECIAL (historical-prose rule)\n' "$path"
   done <<< "$1"
+  [ "$frag" = 0 ] || printf 'batch: changelog.d/ SPECIAL (historical-prose rule)\n'
 }
 
 # $1 = prefix, $2 = solo threshold (0 = never solo), $3 = cap, $4 = unit label. Reads

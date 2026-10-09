@@ -332,9 +332,24 @@ awk -F'\t' -v prmap="$out_dir/file-pr-map.tsv" \
 # arrays, not temp files: bash 3.2 (this repo's own /bin/bash on stock macOS) has them, and each
 # array preserves delta-files.txt's own (already sorted) insertion order, same as a file would.
 bucket1=(); bucket2=(); bucket3=()
+# dir #744 B32: every changelog.d/ fragment is ONE unit, never a row each — a release carries ~30, and 30
+# prose rows would bury the real prose in the ledger. They fold into a single prose-historical row
+# `changelog.d/ (N files)` carrying the union of their PRs, appended after the other prose rows.
+frag_files=0; frag_prs=""
 while IFS="$TAB" read -r f n exe prs; do
   [ -n "$f" ] || continue
   class="$(classify "$f" "$exe")"
+  if [ "$class" = prose-historical ]; then
+    case "$f" in
+      changelog.d/README.md) ;;
+      changelog.d/*.md)
+        frag_files=$((frag_files + 1))
+        for pr in $prs; do
+          case " $frag_prs " in *" $pr "*) ;; *) frag_prs="$frag_prs${frag_prs:+ }$pr" ;; esac
+        done
+        continue ;;
+    esac
+  fi
   row="$f$TAB$class$TAB$n$TAB$prs"
   # prose-historical is checked FIRST, even ahead of the seam test: CHANGELOG.md is a seam on
   # nearly every real run (every PR that ships user-visible change touches it), and the read-order
@@ -348,6 +363,11 @@ while IFS="$TAB" read -r f n exe prs; do
     bucket2+=("$row")
   fi
 done < "$joined"
+if [ "$frag_files" -gt 0 ]; then
+  frag_n=0
+  for pr in $frag_prs; do frag_n=$((frag_n + 1)); done
+  bucket3+=("changelog.d/ ($frag_files files)${TAB}prose-historical${TAB}${frag_n}${TAB}${frag_prs}")
+fi
 
 # `[ "${#bucketN[@]}" -gt 0 ] &&`, not a bare `"${bucketN[@]}"` expansion: under `set -u`, expanding
 # an EMPTY array is a hard error on bash < 4.4 (this repo's own stock-macOS bash is 3.2) — the length
