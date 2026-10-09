@@ -32,6 +32,14 @@ sections real content going forward — see that page for exactly when each one 
 - **`docs/release-management.md` R13: the brief shows one cited event.** Naming the scoring tool's event
   kinds was not enough: most workers still reported bare tallies, which the tool cannot score. The brief's
   fixed line now carries the shape of one cited event beside the list of kinds.
+- **A re-runnable mutation sweep, and the pre-PR gate's push-rule tests hardened to kill every mutant.**
+  dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
+  file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
+  CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
+  `tests/mutants/pre-pr-gate.tsv` lists 46 mutants of the bypassed-push deny; the dir #731 A18 block moved to
+  `tests/test_pre_pr_gate_lexer.sh` kills 29 of them before this change and all 46 after (17 new deny forms, and
+  every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
+  `commands/polish-guide.md` § Step 9 cite itself.
 
 ## [0.15.0] — 2026-10-09
 
