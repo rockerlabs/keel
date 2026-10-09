@@ -27,16 +27,14 @@ mkrepo() {
   printf '%s' "$d"
 }
 
-# Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS. (The same two
-# helpers as tests/test_pre_pr_gate.sh; the gate's other fixtures live in lib.sh.)
-gate_env() {
+# Drive the gate: $1 = command string, $2 = cwd. Captures OUT (stdout+stderr) and STATUS. (The same event shape as
+# tests/test_pre_pr_gate.sh's gate(); the gate's other fixtures live in lib.sh.)
+gate() {
   local json
   json="$(jq -n --arg c "$1" --arg d "$2" '{tool_input:{command:$c}, cwd:$d}')"
-  shift 2
-  OUT="$(printf '%s' "$json" | env "$@" bash "$gate" 2>&1)"
+  OUT="$(printf '%s' "$json" | bash "$gate" 2>&1)"
   STATUS=$?
 }
-gate() { gate_env "$1" "$2"; }
 
 # --- dir #731 A18 (docs/specs/717-machine-guard-truth.md B15): a `git push` segment that carries a bypass of
 # the pre-push secret scan is denied in ANY repo, with or without a `gh pr create` in the command. The hook is

@@ -44,6 +44,8 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 
 usage() { printf 'usage: mutation-sweep.sh <list> [<test-file>]\n       mutation-sweep.sh --check <list>\n' >&2; exit 2; }
 refuse() { printf 'mutation-sweep: %s\n' "$*" >&2; exit 2; }
+# shellcheck source=tools/lib/nonneg-int.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/nonneg-int.sh"
 
 # One awk program, three modes (-v mode=): `list` prints `<row>\t<id>\t<file>` per mutant row; `check` prints one
 # problem per bad row; `mutate` (-v want=<row>) writes row <want>'s mutated file to -v out= and prints OK,
@@ -81,40 +83,37 @@ function count(hay, n,   c, p) {
 function load(file) {
   if (!(file in have)) { body[file] = slurp(root "/" file); have[file] = slurp_ok }
 }
+# The ONE validity rule a row must meet (check and mutate both use it): "" when sound, else the problem.
+function problem(nf, file, needle,   n) {
+  if (nf != 5) return nf " fields, want 5"
+  load(file)
+  if (!have[file]) return "file " file " not found"
+  n = count(body[file], needle)
+  if (n != 1) return "needle occurs " n " times in " file ", want 1"
+  return ""
+}
 /^#/ || /^[ \t]*$/ { next }
 {
   row++
   if (mode == "list") { printf "%d\t%s\t%s\n", row, ($1 == "" ? "-" : $1), $2; next }
   if (mode == "mutate" && row != want) next
   id = $1; file = $2
-  if (NF != 5) {
-    if (mode == "check") printf "%s: %d fields, want 5\n", id, NF
-    else { print "BADNEEDLE\tmalformed row"; found = 1 }
-    next
-  }
   needle = decode($3); repl = decode($4)
+  why = problem(NF, file, needle)
   if (mode == "check") {
-    if (id in seen) printf "%s: id repeated\n", id
+    if (id in seen) print id ": id repeated"
     seen[id] = 1
-    load(file)
-    if (!have[file]) printf "%s: file %s not found\n", id, file
-    else if (count(body[file], needle) != 1) printf "%s: needle occurs %d times in %s, want 1\n", id, count(body[file], needle), file
-    if (needle == repl) printf "%s: replacement equals needle\n", id
+    if (why != "") print id ": " why
+    if (NF == 5 && needle == repl) print id ": replacement equals needle"
     next
   }
-  load(file)
-  found = 1
-  if (!have[file]) { print "BADNEEDLE\tfile not found"; next }
-  n = count(body[file], needle)
-  if (n != 1) { printf "BADNEEDLE\tneedle occurs %d times\n", n; next }
+  if (why != "") { print "BADNEEDLE\t" why; next }
+  if (needle == repl) { print "NOCHANGE"; next }
   p = index(body[file], needle)
-  mutated = substr(body[file], 1, p - 1) repl substr(body[file], p + length(needle))
-  if (mutated == body[file]) { print "NOCHANGE"; next }
-  printf "%s", mutated > out
+  printf "%s", substr(body[file], 1, p - 1) repl substr(body[file], p + length(needle)) > out
   close(out)
   print "OK"
 }
-END { if (mode == "mutate" && !found) print "BADNEEDLE\tno such row" }
 '
 
 mode=sweep
@@ -139,36 +138,24 @@ if [ "$mode" = check ]; then
 fi
 
 timeout="${KEEL_SWEEP_TIMEOUT:-600}"
-case "$timeout" in ''|*[!0-9]*|0) refuse "KEEL_SWEEP_TIMEOUT must be a positive integer (got '$timeout')" ;; esac
+{ _nonneg_int_valid "$timeout" && [ "$timeout" -gt 0 ]; } || refuse "KEEL_SWEEP_TIMEOUT must be a positive integer (got '$timeout')"
 
 rows="$(awk -F'\t' -v mode=list "$AWK_PROG" "$list")"
 [ -n "$rows" ] || refuse "the list has no mutant rows: $list"
 
-# files the sweep touches: every file the list names, once, plus the test file — each must be a clean path
-# inside the checkout (relative, no `..`) and carry no tracked change.
-files=""
+# files the sweep touches: every file the list names, plus the test file — each must be a clean path inside the
+# checkout (relative, no `..`) and carry no tracked change (git status takes a repeated path in stride).
+set --
 while IFS=$'\t' read -r _row _id file; do
   case "$file" in
     ''|/*|..|../*|*/..|*/../*) refuse "row $_id: file must be a path relative to the top level without '..' (got '$file')" ;;
   esac
-  case "
-$files
-" in *"
-$file
-"*) ;; *) files="$files
-$file" ;; esac
+  set -- "$@" "$file"
 done <<EOF
 $rows
 EOF
 case "$tfile" in ''|/*|..|../*|*/..|*/../*) refuse "test file must be a path relative to the top level without '..' (got '$tfile')" ;; esac
 [ -f "$top/$tfile" ] || refuse "no such test file: $tfile"
-
-set --
-while IFS= read -r f; do
-  [ -n "$f" ] && set -- "$@" "$f"
-done <<EOF
-$files
-EOF
 set -- "$@" "$tfile"
 dirty="$(git -C "$top" status --porcelain --untracked-files=no -- "$@")"
 if [ -n "$dirty" ]; then
@@ -193,18 +180,18 @@ if ! git -C "$work" checkout -q --detach "$sha" 2>/dev/null; then
 fi
 [ -f "$work/$tfile" ] || refuse "the test file is not in HEAD: $tfile"
 
-# run_test → sets rc and summary ('' when none); the output goes to $tmp/out.
+# run_test → sets rc, summary ('' when none) and nfailed (its failed count); the output goes to $tmp/out.
 run_test() {
   rc=0
   ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out" 2>&1 || rc=$?
   summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out" | tail -n 1 || true)"
+  nfailed="${summary% failed}"; nfailed="${nfailed##* }"
 }
-failed_of() { sed -E 's/.*, ([0-9]+) failed$/\1/' <<<"$1"; }
 
 run_test
 if [ "$rc" -eq 142 ]; then refuse "the unmutated test file timed out after ${timeout}s: $tfile"; fi
 [ -n "$summary" ] || refuse "the unmutated test file printed no summary line (exit $rc): $tfile"
-[ "$(failed_of "$summary")" = 0 ] || refuse "the unmutated test file has failures — a broken baseline makes every mutant look killed: $summary"
+[ "$nfailed" = 0 ] || refuse "the unmutated test file has failures — a broken baseline makes every mutant look killed: $summary"
 
 killed=0; survived=0; timed=0; crashed=0; bad=0
 while IFS=$'\t' read -r row id file; do
@@ -220,7 +207,7 @@ while IFS=$'\t' read -r row id file; do
   git -C "$work" checkout -q -- "$file"
   if [ "$rc" -eq 142 ]; then outcome=TIMEOUT; timed=$((timed + 1))
   elif [ -z "$summary" ]; then outcome=CRASHED; crashed=$((crashed + 1))
-  elif [ "$(failed_of "$summary")" -ge 1 ]; then outcome=KILLED; killed=$((killed + 1))
+  elif [ "$nfailed" -ge 1 ]; then outcome=KILLED; killed=$((killed + 1))
   else outcome=SURVIVED; survived=$((survived + 1)); fi
   printf '%s\t%s\t%s\n' "$id" "$outcome" "${summary:--}"
 done <<EOF

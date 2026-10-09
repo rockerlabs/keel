@@ -166,7 +166,9 @@ check_status "a missing test file: exit 2" 2 "$STATUS"
 printf 'm-four\tapp.sh\ta=1\ta=9\n' >"$SANDBOX/four.tsv"
 sweep_in "$fx" "$SANDBOX/four.tsv" t.sh
 check_contains "a four-field row is BADNEEDLE" "$OUT" "m-four${TAB}BADNEEDLE"
-check_eq "a list with no rows: exit 2 (nothing to sweep)" 2 "$(cd "$fx" && : >"$SANDBOX/empty.tsv" && env TMPDIR="$sweeptmp" bash "$sweep" "$SANDBOX/empty.tsv" t.sh >/dev/null 2>&1; echo $?)"
+: >"$SANDBOX/empty.tsv"
+sweep_in "$fx" "$SANDBOX/empty.tsv" t.sh
+check_status "a list with no rows: exit 2 (nothing to sweep)" 2 "$STATUS"
 
 # --- 9. --check: the list is current against the working tree (no test run) -------------------------------------------
 sweep_in "$fx" --check "$SANDBOX/ok.tsv"
