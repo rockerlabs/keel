@@ -768,7 +768,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     dl_rel="${1#"$ihome"/}"
     dl_man="$ihome/.keel/install-manifest.$([ "$CODEX_MODE" = 1 ] && echo codex || echo claude)"
     manifest_usable "$dl_man" || return 1
-    dl_rec="$(awk -F'\t' -v rel="$dl_rel" '$1 == "artifact=symlink" && $2 == rel { print $3; exit }' "$dl_man" 2>/dev/null)" || return 1
+    dl_rec="$(manifest_symlink_extra "$dl_man" "$dl_rel")"
     [ -n "$dl_rec" ] || return 1
     [ "$dl_rec" = "-" ] && return 0
     [ "$dl_rec" = "$(readlink "$1")" ] || return 1
@@ -809,10 +809,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
       # manifest record proves Keel's — is declined by install.sh (docs/specs/685-symlink-policy.md B3, T4),
       # --force included, so a re-run alone never clears it: remove it first.
       if doctor_link_is_keels_own "$l"; then
-        gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh$this_relink$ihome_flag from its home)"
+        dl_advice="checkout moved/deleted? re-run install.sh$this_relink$ihome_flag from its home"
       else
-        gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (not recorded as Keel's own — install never replaces a link Keel did not make, --force included: remove the link first, then re-run install.sh$this_relink$ihome_flag from its home)"
+        dl_advice="not recorded as Keel's own — install never replaces a link Keel did not make, --force included: remove the link first, then re-run install.sh$this_relink$ihome_flag from its home"
       fi
+      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") ($dl_advice)"
       continue
     fi
     b="$(basename "$l")"
@@ -1853,15 +1854,14 @@ EOF
   # B3 runs only for an ADOPTED project (.sops.yaml at its root): plain absence is never flagged.
   # Skipped outside a git repo — G-GIT-MISSING already speaks.
   if [ -n "$d_top" ]; then
-    sx_dd="${d%/}"; [ -n "$sx_dd" ] || sx_dd="/"
-    # sx_ddc — sx_dd with repeated slashes collapsed, the way every found path is collapsed below: the relative
-    # path is stripped with THIS prefix, so a dir spelled with an internal `//` keeps matching `.keel/secrets-accept`.
-    sx_ddc="$(printf '%s\n' "$sx_dd" | sed 's#//*#/#g')"
+    # Repeated slashes collapsed once, the way every found path is collapsed below: the relative path is stripped
+    # with THIS prefix, so a dir spelled with an internal `//` keeps matching `.keel/secrets-accept`.
+    sx_dd="$(printf '%s\n' "${d%/}" | sed 's#//*#/#g')"; [ -n "$sx_dd" ] || sx_dd="/"
     sx_accept=$'\n'"$(load_token_set "$unit_top/.keel/secrets-accept" 1)"$'\n'
     sx_exposed=""; sx_plain=""
     while IFS= read -r sx_f; do
       [ -n "$sx_f" ] || continue
-      sx_rel="${sx_f#"$sx_ddc"/}"
+      sx_rel="${sx_f#"$sx_dd"/}"
       if [[ "${sx_rel##*/}" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
       if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
       sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"

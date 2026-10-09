@@ -19,7 +19,7 @@ doctor="$REPO_ROOT/tools/doctor.sh"
 # decl MODE KIND REL — MODE copy|link|codex; KIND dangling|live (a live link to a differing dotfile). The link
 # is planted at $h/REL before the install.
 decl() {
-  local mode="$1" kind="$2" rel="$3" h flag="" uflag="" tgt tag
+  local mode="$1" kind="$2" rel="$3" uninst="${4:-0}" h flag="" uflag="" tgt tag first=""
   tag="$mode-$kind-$(printf '%s' "$rel" | tr '/.' '--')"
   h="$SANDBOX/d-$tag"; tgt="$SANDBOX/d-$tag-target"
   mkdir -p "$h/$(dirname "$rel")"
@@ -40,18 +40,30 @@ decl() {
   else
     # (an EDIT target — linked CLAUDE.md — legitimately gets the import line appended THROUGH the link, so the
     # first line is the invariant, not the whole file)
-    local first=""; read -r first < "$tgt" || true
+    read -r first < "$tgt" || true
     check_eq "$tag: the dotfile target still starts with the adopter's own line" "my own $rel" "$first"
   fi
-  run "$uninstall" --home "$h" --yes $uflag
-  check_status "$tag: uninstall works from the manifest (exit 0)" 0 "$STATUS"
-  check_eq "$tag: …and leaves the declined link alone" "$tgt" "$(readlink "$h/$rel")"
+  if [ "$uninst" = 1 ]; then   # the uninstall reads the manifest, not the path: once per mode is enough
+    run "$uninstall" --home "$h" --yes $uflag
+    check_status "$tag: uninstall works from the manifest (exit 0)" 0 "$STATUS"
+    check_eq "$tag: …and leaves the declined link alone" "$tgt" "$(readlink "$h/$rel")"
+  fi
 }
-for kind in dangling live; do
-  for rel in INSTANCE.md LEARNINGS.md IDEAS.md CLAUDE.md FRAMEWORK.md PRINCIPLES.md; do decl copy "$kind" "$rel"; done
-  for rel in INSTANCE.md LEARNINGS.md IDEAS.md CLAUDE.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md; do decl link "$kind" "$rel"; done
-  decl codex "$kind" AGENTS.md
+# dangling: every Verify-listed path (one OUT assertion set each); live: one row per decline class.
+for rel in INSTANCE.md LEARNINGS.md IDEAS.md CLAUDE.md FRAMEWORK.md PRINCIPLES.md; do
+  if [ "$rel" = INSTANCE.md ] || [ "$rel" = FRAMEWORK.md ]; then u=1; else u=0; fi
+  decl copy dangling "$rel" "$u"
 done
+for rel in INSTANCE.md LEARNINGS.md IDEAS.md CLAUDE.md keel/CORE.md keel/FRAMEWORK.md keel/PRINCIPLES.md; do
+  if [ "$rel" = INSTANCE.md ] || [ "$rel" = keel/CORE.md ]; then u=1; else u=0; fi
+  decl link dangling "$rel" "$u"
+done
+decl codex dangling AGENTS.md 1
+decl copy live INSTANCE.md 1
+decl copy live FRAMEWORK.md 1
+decl link live CLAUDE.md 1
+decl link live keel/FRAMEWORK.md 0
+decl codex live AGENTS.md 0
 
 # A non-regular file (a folder) at a Verify-listed path is the same decline (T6), not a missing file.
 h="$SANDBOX/d-dir"; mkdir -p "$h/FRAMEWORK.md"
