@@ -70,10 +70,21 @@ check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #
 # --- dir #735: oldest entry is the EARLIEST stated origination date, not the heading's first date ----
 # A heading's first date can be a later status annotation (#656's shape: filed 2026-10-01 per its body, heading
 # first date 2026-10-04) or absent; read off it, the age came out young — the direction that hides a stale pool.
-age_of() { # age_of <YYYY-MM-DD> -> whole days from then to now (BSD date, else GNU)
-  local ts
+# The script samples "now" before it parses the date (BSD `date -j -f` fills the time of day from the clock),
+# so on a loaded run its whole-day figure can sit one below ours: accept N or N-1 days, never the wrong date.
+age_of() { # age_of <YYYY-MM-DD> -> "Nd|N-1d" whole days from then to now (BSD date, else GNU)
+  local ts n
   ts="$(date -u -j -f '%Y-%m-%d' "$1" +%s 2>/dev/null || date -u -d "$1" +%s)"
-  echo $(( ($(date -u +%s) - ts) / 86400 ))
+  n=$(( ($(date -u +%s) - ts) / 86400 ))
+  echo "$n $((n - 1))"
+}
+check_age() { # check_age <label> <output> <date> <id>
+  local n m
+  read -r n m <<< "$(age_of "$3")"
+  case "$2" in
+    *"oldest entry:                   ${n}d ($4)"*|*"oldest entry:                   ${m}d ($4)"*) pass "$1" ;;
+    *) fail "$1" "output missing: ${n}d or ${m}d ($4)" ;;
+  esac
 }
 backlog_age="### dir #70 — status date on the heading, filing date in the body — R2 — → pool — ⏸ HALF NOT TRIGGERED (2020-06-01, re-tagged 2020-06-02)
 
@@ -89,11 +100,11 @@ body
 "
 f="$(mk_backlog "$backlog_age")"
 run "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
-check_contains "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" "oldest entry:                   $(age_of 2019-03-01)d (dir #71)"
+check_age "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" 2019-03-01 "dir #71"
 backlog_age2="${backlog_age%%### dir #71*}"
 f="$(mk_backlog "$backlog_age2")"
 run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
-check_contains "body Filed date beats the heading's later status date (dir #70)" "$OUT" "oldest entry:                   $(age_of 2020-01-01)d (dir #70)"
+check_age "body Filed date beats the heading's later status date (dir #70)" "$OUT" 2020-01-01 "dir #70"
 
 # --- structurally-parked wording variants: "⛔ PARKED" counts, "⛔ UNBLOCKED" does NOT --------------
 # MUTATION-PROOF pair, both real shapes found live in BACKLOG.md: a narrower `⛔.*BLOCKED` match
