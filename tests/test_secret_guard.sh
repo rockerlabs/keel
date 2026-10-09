@@ -958,6 +958,8 @@ check_status "post-copy-only failure with --force → exit 4" 4 "$STATUS"
 check_contains "foreign pre-commit restored verbatim after rollback" \
   "$(cat "$rbforeign/.git/hooks/pre-commit")" "my own pre-commit, pre-dating this install"
 check_nofile "rollback removes the backup after restoring it" "$rbforeign/.git/hooks/pre-commit.pre-keel.bak"
+if [ -x "$rbforeign/.git/hooks/pre-commit" ]; then pass "dir #684: the restored foreign pre-commit is still executable"
+else fail "dir #684: the restored foreign pre-commit is still executable" "not executable"; fi
 for f in secret-scan.sh pre-push; do
   check_nofile "post-copy rollback (--force case) → no $f left" "$rbforeign/.git/hooks/$f"
 done
@@ -1007,6 +1009,10 @@ check_status "the original pre-commit is restored, byte-for-byte" \
   "$orig_pre_commit" "$(cat "$uprepo/.git/hooks/pre-commit")"
 check_status "the original pre-push is restored, byte-for-byte" \
   "$orig_pre_push" "$(cat "$uprepo/.git/hooks/pre-push")"
+for xf in pre-commit pre-push secret-scan.sh; do
+  if [ -x "$uprepo/.git/hooks/$xf" ]; then pass "dir #684: the restored Keel $xf is still executable"
+  else fail "dir #684: the restored Keel $xf is still executable" "not executable"; fi
+done
 check_contains "the restored pre-commit still carries the Keel marker" \
   "$(cat "$uprepo/.git/hooks/pre-commit")" "Keel secret-guard"
 check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.keel-upgrade.bak"
@@ -1401,7 +1407,7 @@ check_status "dir #659: --uninstall and --force don't combine → exit 2 (as the
 run "$isg" --uninstall "$frepo"
 check_status "dir #659 S3-3: --uninstall is --global only → exit 2 for a repo path" 2 "$STATUS"
 check_contains "dir #659 S3-3: the repo-path --uninstall refusal says why" "$OUT" "--uninstall works with --global only"
-check_contains "dir #659: the repo-path refusal names the --force backup to move back" "$OUT" ".pre-keel.bak"
+check_contains "dir #659: the repo-path refusal names the --force backup to move back (dir #684: the newest numbered one)" "$OUT" ".pre-keel*.bak"
 
 # --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
 # put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.
