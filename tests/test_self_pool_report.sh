@@ -101,6 +101,13 @@ body
 f="$(mk_backlog "$backlog_age")"
 run "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
 check_age "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" 2019-03-01 "dir #71"
+# A "found"/"filed" inside another word is not a filing marker (the word needs a non-letter before it).
+f="$(mk_backlog "### dir #73 — decoy words — R3 — → pool (found 2025-01-01)
+
+A profound change; unfounded since 2018-05-01.
+")"
+run "$pr" --history "$SANDBOX/hist-age3.jsonl" "$f"
+check_age "'profound'/'unfounded' dates are not read as a filing date (dir #73 stays at its heading date)" "$OUT" 2025-01-01 "dir #73"
 backlog_age2="${backlog_age%%### dir #71*}"
 f="$(mk_backlog "$backlog_age2")"
 run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
