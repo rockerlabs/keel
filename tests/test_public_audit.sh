@@ -700,16 +700,7 @@ else
   pass "dir #719 A22/A26 skipped (this filesystem refuses a name ending in an invalid byte)"
 fi
 
-# A23: decode_binary is untouched (the dir #681 twin) — byte-identical to origin/main's.
-extract_decode() { awk '/^decode_binary\(\) \{/{p=1} p{print} p&&/^\}$/{exit}'; }
-if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  base_dec="$(git -C "$REPO_ROOT" show origin/main:tools/public-audit.sh | extract_decode)"
-  here_dec="$(extract_decode < "$pa")"
-  check_eq "dir #719 A23: decode_binary is byte-identical to origin/main's (the dir #681 twin)" \
-    "$base_dec" "$here_dec"
-else
-  pass "dir #719 A23 skipped (no origin/main to compare against)"
-fi
+# A23 retired (dir #746 S2-5): decode_binary is pinned to its twin, emit_blob, by tests/test_secret_guard.sh (T2).
 
 # A27 (B14): SECRET_SCAN_PERSONAL_FILE set to a missing path / a directory / a symlink to a directory →
 # one GAP naming the variable; a dangling symlink → only the existing could-not-be-parsed GAP; /dev/null
@@ -734,5 +725,16 @@ check_absent "dir #719 A27: /dev/null → no B14 GAP" "$OUT" "SECRET_SCAN_PERSON
 run env SECRET_SCAN_PERSONAL_FILE= bash "$pa" --no-history "$d"
 check_status "dir #719 A27: set-but-empty reads the (absent) default → exit 0" 0 "$STATUS"
 check_absent "dir #719 A27: empty → no B14 GAP" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
+
+# --- dir #746 (slice 1, S2-2): decode_binary resumes after an invalid UTF-16 unit — iconv -c, or the built-in
+# decoder where the host's iconv cannot resume (musl). A9(d): a Cyrillic literal after a lone surrogate.
+d="$(repo_by dev@example.com)"
+printf '\320\230\320\262\320\260\320\275\n' > "$SANDBOX/pa-personal-cyr746"      # "Ivan" (Cyrillic), UTF-8
+printf 'AB\000\330l\000e\000a\000d\000 \000\030\004\062\004\060\004\075\004 \000t\000r\000a\000i\000l\000' \
+  > "$d/bad16le.bin"
+commit_in "$d" "binary with a lone surrogate before the literal"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr746" bash "$pa" --no-history "$d"
+check_status "dir #746 A9(d): a Cyrillic literal after an invalid unit in a binary → GAP exit 1" 1 "$STATUS"
+check_contains "dir #746 A9(d): ...naming bad16le.bin" "$OUT" "in a binary file in the working tree — bad16le.bin"
 
 summary
