@@ -290,7 +290,9 @@ incidental and has already broken mid-release once.
 
 At release close, the manager derives the run's token/cost figure from whatever on-disk usage data
 your project already has — summed at the weights the groom's estimate names (`docs/grooming.md` G5) — reads it against
-[`docs/loading-and-cost.md`](loading-and-cost.md), and
+[`docs/loading-and-cost.md`](loading-and-cost.md) — and, where the estimate also names subscription-window
+points, records beside it the points the run actually moved, read just before each window reset the
+run crosses and summed per segment — and
 **completes** the run's row in the releases cross-run record — **which now exists and has a path**, the
 one [`docs/grooming.md`](grooming.md)'s G7 names (keel's own instance: `private/releases/RUNS.md`,
 gitignored; per-project for adopters, per G9). **Completes, not creates:** the groom OPENS the row at
@@ -529,6 +531,13 @@ eleven. State the exact event kinds the project's scoring tool consumes (keel's:
 `WRAP CENTRALIZED` marker already ride there verbatim. The remover is the project's own brief
 instance (the gitignored per-project file named under the brief section above) carrying that
 vocabulary as a fixed line — a manager's edit at the next launch, not a ticket.
+
+**Naming the kinds is not enough: the fixed line also shows one cited event (0.15.0).** That release's
+overlay listed the event kinds, and the checkpoints of its first manager and of the 27 other workers and
+designers its ledger lists still carried bare tallies such as "Events hit 1, friction 1". The scoring tool counts citations, never a bare integer,
+so the manager scored four sessions and recorded the rest as unscored rather than invent the cites.
+The line therefore carries the shape of one event — its kind, then one line naming what fired or was
+caught and where — beside the list of kinds.
 
 ## What this pattern deliberately is not
 
