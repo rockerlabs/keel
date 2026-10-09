@@ -67,6 +67,34 @@ check_contains "structurally-parked excluded by rule (2 of 4: blocked + gate)" "
   "excluding structurally-parked:  2 (of 4; 2 parked by rule"
 check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #1)"
 
+# --- dir #735: oldest entry is the EARLIEST stated origination date, not the heading's first date ----
+# A heading's first date can be a later status annotation (#656's shape: filed 2026-10-01 per its body, heading
+# first date 2026-10-04) or absent; read off it, the age came out young — the direction that hides a stale pool.
+age_of() { # age_of <YYYY-MM-DD> -> whole days from then to now (BSD date, else GNU)
+  local ts
+  ts="$(date -u -j -f '%Y-%m-%d' "$1" +%s 2>/dev/null || date -u -d "$1" +%s)"
+  echo $(( ($(date -u +%s) - ts) / 86400 ))
+}
+backlog_age="### dir #70 — status date on the heading, filing date in the body — R2 — → pool — ⏸ HALF NOT TRIGGERED (2020-06-01, re-tagged 2020-06-02)
+
+Filed 2020-01-01 by the implementer.
+
+### dir #71 — no date on the heading at all — R3 — → pool
+
+**Found:** the 2019-03-01 groom. Later prose cites 2020-09-09.
+
+### dir #72 — young, dated heading — R3 — → pool (found 2025-01-01)
+
+body
+"
+f="$(mk_backlog "$backlog_age")"
+run "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
+check_contains "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" "oldest entry:                   $(age_of 2019-03-01)d (dir #71)"
+backlog_age2="${backlog_age%%### dir #71*}"
+f="$(mk_backlog "$backlog_age2")"
+run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
+check_contains "body Filed date beats the heading's later status date (dir #70)" "$OUT" "oldest entry:                   $(age_of 2020-01-01)d (dir #70)"
+
 # --- structurally-parked wording variants: "⛔ PARKED" counts, "⛔ UNBLOCKED" does NOT --------------
 # MUTATION-PROOF pair, both real shapes found live in BACKLOG.md: a narrower `⛔.*BLOCKED` match
 # would silently miss "⛔ PARKED ..." tickets (dir #309/#410's own shape); a bare `⛔` match would

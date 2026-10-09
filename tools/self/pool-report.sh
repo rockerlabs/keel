@@ -149,6 +149,12 @@ oldest_id="unlabeled"
 # genuinely empty backlog and a not-yet-built array are otherwise indistinguishable).
 backlog_lines=()
 backlog_lines_loaded=0
+load_backlog_lines() {
+  [ "$backlog_lines_loaded" = "0" ] || return 0
+  while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done \
+    < <(sed -E 's/`[^`]*`//g' <<< "$(blank_fenced_blocks "$backlog_file")")
+  backlog_lines_loaded=1
+}
 
 while IFS=$'\t' read -r start end closed heading_block; do
   [ "$closed" = "1" ] && continue
@@ -210,11 +216,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
     # legacy tickets do exactly this. Scanned only when the heading match above is empty, so the
     # common case (grade on the heading) never pays for the extra pass over the body span; the
     # slice below reads the in-memory array, built lazily on this, its first actual use.
-    if [ "$backlog_lines_loaded" = "0" ]; then
-      while IFS= read -r bl_line || [ -n "$bl_line" ]; do backlog_lines+=("$bl_line"); done \
-        < <(sed -E 's/`[^`]*`//g' <<< "$(blank_fenced_blocks "$backlog_file")")
-      backlog_lines_loaded=1
-    fi
+    load_backlog_lines
     rlvl_match="$(printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
       | grep -oE 'Readiness:[[:space:]]*R[0-9]([^a-zA-Z0-9]|$)' | tail -1 || true)"
   fi
@@ -284,9 +286,17 @@ while IFS=$'\t' read -r start end closed heading_block; do
   grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
   [ "$parked" = "1" ] && parked_count=$((parked_count + 1))
 
-  # Oldest entry: the first YYYY-MM-DD date in the heading block — the origination date every
-  # ticket's own parenthetical carries ("captured ...", "found ...", "felt ...").
-  date_str="$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$heading_block" | head -1 || true)"
+  # Oldest entry: the EARLIEST origination date the ticket states. dir #735: the heading's FIRST
+  # date can be a later status annotation ("⏸ ... (2026-10-04, ...)", "⏳ IN FLIGHT (today)") and
+  # a heading may carry no date at all, so reading it alone reported a young age — the direction
+  # that hides a stale pool. Candidates: every date on the heading (a status date is never
+  # earlier than the filing, so the minimum is safe) and the first `Found`/`Filed` date in the
+  # ticket's body span; the oldest of them wins.
+  load_backlog_lines
+  date_str="$({ grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' <<< "$heading_block" || true
+    printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
+      | grep -oE '([Ff]ound|[Ff]iled)[^0-9]{0,40}[0-9]{4}-[0-9]{2}-[0-9]{2}' \
+      | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1 || true; } | sort | head -1)"
   if [ -n "$date_str" ]; then
     ts="$(date -u -j -f '%Y-%m-%d' "$date_str" +%s 2>/dev/null \
       || date -u -d "$date_str" +%s 2>/dev/null || true)"
