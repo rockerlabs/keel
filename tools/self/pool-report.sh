@@ -215,8 +215,8 @@ while IFS=$'\t' read -r start end closed heading_block; do
     # grade on its heading at all may still state one in prose, `**Readiness: RN**` — two named
     # legacy tickets do exactly this. Scanned only when the heading match above is empty, so the
     # common case (grade on the heading) never pays for the extra pass over the body span; the
-    # slice below reads the in-memory array (built on first use — the oldest-entry scan below
-    # also reads it, so by now every pool ticket has paid for the load).
+    # slice below reads the in-memory array (built on first use; the oldest-entry scan below
+    # calls load_backlog_lines itself, so neither call may be dropped).
     load_backlog_lines
     rlvl_match="$(printf '%s\n' "${backlog_lines[@]:$((start - 1)):$((end - start + 1))}" \
       | grep -oE 'Readiness:[[:space:]]*R[0-9]([^a-zA-Z0-9]|$)' | tail -1 || true)"
@@ -303,10 +303,13 @@ while IFS=$'\t' read -r start end closed heading_block; do
     if [ -z "$date_str" ] || [[ "${BASH_REMATCH[1]}" < "$date_str" ]]; then date_str="${BASH_REMATCH[1]}"; fi
     rest="${BASH_REMATCH[2]}"
   done
-  old_ifs="$IFS"; IFS=$'\n'
+  nl=$'\n'
+  old_ifs="$IFS"; IFS="$nl"
   body_span="${backlog_lines[*]:$((start - 1)):$((end - start + 1))}"
   IFS="$old_ifs"
-  if [[ "$body_span" =~ (^|[^A-Za-z])([Ff]ound|[Ff]iled)[^0-9]{0,40}([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+  # The gap between the word and its date stays on ONE line (a later line's dated bullet is not it).
+  found_re="(^|[^A-Za-z])([Ff]ound|[Ff]iled)[^0-9${nl}]{0,40}([0-9]{4}-[0-9]{2}-[0-9]{2})"
+  if [[ "$body_span" =~ $found_re ]]; then
     if [ -z "$date_str" ] || [[ "${BASH_REMATCH[3]}" < "$date_str" ]]; then date_str="${BASH_REMATCH[3]}"; fi
   fi
   if [ -n "$date_str" ]; then

@@ -108,6 +108,14 @@ A profound change; unfounded since 2018-05-01.
 ")"
 run "$pr" --history "$SANDBOX/hist-age3.jsonl" "$f"
 check_age "'profound'/'unfounded' dates are not read as a filing date (dir #73 stays at its heading date)" "$OUT" 2025-01-01 "dir #73"
+f="$(mk_backlog "### dir #74 — label and date on different lines — R3 — → pool (found 2025-01-01)
+
+**Filed** by the audit.
+
+- 2018-05-01 Log: an unrelated dated bullet.
+")"
+run "$pr" --history "$SANDBOX/hist-age4.jsonl" "$f"
+check_age "a Filed label does not pair with a date on a LATER line (dir #74 stays at its heading date)" "$OUT" 2025-01-01 "dir #74"
 backlog_age2="${backlog_age%%### dir #71*}"
 f="$(mk_backlog "$backlog_age2")"
 run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
