@@ -1932,10 +1932,11 @@ if [ "$LINK" = 1 ]; then
 else
   vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
-# Test-only fault injection: delete a placed file before the loop, so a test can prove an ABSENT core file still
-# fails Verify (nothing else in a normal run reaches that arm). A no-op in every real run.
-if [ -n "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" ]; then rm -f "$HOME_DIR/$KEEL_TEST_REMOVE_BEFORE_VERIFY"; fi
+# Test-only fault injection (KEEL_TEST_REMOVE_BEFORE_VERIFY=<a listed core path>): delete that placed file just
+# before it is checked, so a test can prove an ABSENT core file still fails Verify (nothing else in a normal run
+# reaches that arm). A no-op in every real run.
 for f in "${vfiles[@]}"; do
+  [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" = "$f" ] && rm -f "$HOME_DIR/$f"   # only a listed core path
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
   elif [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; then

@@ -101,5 +101,10 @@ gl="$(grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F 'commands/go.md')"
 check_contains "doctor: a moved checkout's own link is still a GAP" "$gl" "dangling symlink"
 check_contains "doctor: …and keeps the relink advice" "$gl" "re-run install.sh --link"
 check_absent "doctor: …without telling you to remove it" "$gl" "remove the link first"
+# …also when a Claude-mode install's home is audited with --codex (only install-manifest.claude holds the record).
+run "$doctor" --install --codex "$h"
+gl="$(grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F 'commands/go.md')"
+check_contains "doctor --codex: a Claude-mode install's moved link keeps the relink advice" "$gl" "re-run install.sh --link"
+check_absent "doctor --codex: …without telling you to remove it" "$gl" "remove the link first"
 
 summary

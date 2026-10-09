@@ -763,19 +763,21 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # the checkout the manifest names (the one that wrote the record — the OLD one after a move; a dangling target
   # is judged on the strings alone), or the record is the pre-dir-#369 `-` placeholder. No usable manifest
   # proves nothing, so a link is then not provably Keel's.
+  # Both modes' manifests are read: a home can hold a Claude-mode install audited with --codex (dir #124's shape).
   doctor_link_is_keels_own() {
     local dl_rel dl_man dl_rec dl_ck
     dl_rel="${1#"$ihome"/}"
-    dl_man="$ihome/.keel/install-manifest.$([ "$CODEX_MODE" = 1 ] && echo codex || echo claude)"
-    manifest_usable "$dl_man" || return 1
-    dl_rec="$(manifest_symlink_extra "$dl_man" "$dl_rel")"
-    [ -n "$dl_rec" ] || return 1
-    [ "$dl_rec" = "-" ] && return 0
-    [ "$dl_rec" = "$(readlink "$1")" ] || return 1
-    dl_ck="$(manifest_field "$dl_man" checkout)"
-    dl_ck="${dl_ck%/}"
-    [ -n "$dl_ck" ] || return 1
-    case "$dl_rec" in "$dl_ck"/*) return 0 ;; esac
+    for dl_man in "$ihome/.keel/install-manifest.claude" "$ihome/.keel/install-manifest.codex"; do
+      manifest_usable "$dl_man" || continue
+      dl_rec="$(manifest_symlink_extra "$dl_man" "$dl_rel")"
+      [ -n "$dl_rec" ] || continue
+      [ "$dl_rec" = "-" ] && return 0
+      [ "$dl_rec" = "$(readlink "$1")" ] || continue
+      dl_ck="$(manifest_field "$dl_man" checkout)"
+      dl_ck="${dl_ck%/}"
+      [ -n "$dl_ck" ] || continue
+      case "$dl_rec" in "$dl_ck"/*) return 0 ;; esac
+    done
     return 1
   }
   repo_root="$(cd "$tools_dir/.." && pwd)"
