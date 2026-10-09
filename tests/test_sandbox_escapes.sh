@@ -21,10 +21,10 @@ check_nofile "record-demo.sh --scenes leaves the ambient KEEL_IMPACT_LOG untouch
 check_nodir "record-demo.sh --scenes leaves the ambient KEEL_HOME untouched" "$khome"
 
 
-# dir #725 made a set-but-missing SECRET_SCAN_PERSONAL_FILE fail the scanner closed (exit 2), so a stale ambient value
-# in the operator's shell made the tour's guard step end "commit succeeded — that should not happen" (the hook
-# erred, the commit did not run through it as BLOCKED). Both demos must neutralize it with the other isolation
-# vars: with a missing path exported, the guard step must still end BLOCKED.
+# dir #725 made a set-but-missing SECRET_SCAN_PERSONAL_FILE fail the scanner closed (exit 2), also inside
+# install-secret-guard.sh's selftest, so a stale ambient value in the operator's shell left the tour's guard
+# uninstalled and its step 6 ended "commit succeeded — that should not happen". Both demos must neutralize it
+# with the other isolation vars: with a missing path exported, the guard step must still end BLOCKED.
 missing="$SANDBOX/no-such-personal-literals"
 run env SECRET_SCAN_PERSONAL_FILE="$missing" bash "$REPO_ROOT/examples/tour.sh"
 check_status "tour.sh with an ambient missing SECRET_SCAN_PERSONAL_FILE → exit 0" 0 "$STATUS"
