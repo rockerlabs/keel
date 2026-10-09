@@ -30,7 +30,8 @@ fi
 
 # ---- inner mode: the scenes ---------------------------------------------------------
 
-sandbox="$(mktemp -d /tmp/keel-demo.XXXX)"
+# six X: busybox mktemp (Alpine) refuses fewer and exits before any scene runs
+sandbox="$(mktemp -d /tmp/keel-demo.XXXXXX)"
 trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
 # dir #720 S10-3: HOME alone is not enough — tools/lib/impact-store.sh resolves these overrides BEFORE
