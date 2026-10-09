@@ -390,6 +390,19 @@ check_contains "vendor-review A10: stderr carries the leak-gate status sentence"
 vr_split "$SANDBOX" "$TOOL" --client "$failing" --system "$system" --bundle "$bundle" --label a10f --out "$SANDBOX/out-a10f"
 check_eq "vendor-review A10: on a client failure stdout is empty" "" "$V_OUT"
 
+# --- dir #705: store, round dir and reply.md are owner-only even under a 022 umask -------------------
+# (portable mode read: `ls -ld` first column; a pre-existing store is left alone, so --out is fresh)
+vr_mode() { ls -ld "$1" | cut -c2-10; }
+out705="$SANDBOX/out-705/store"
+( umask 022; "$TOOL" --client "$client" --system "$system" --bundle "$bundle" --label umask705 --out "$out705" >/dev/null 2>&1 )
+round705="$(find "$out705" -maxdepth 1 -name 'round-*-umask705' -type d | head -1)"
+check_eq "vendor-review #705: store dir is rwx------ under umask 022" "rwx------" "$(vr_mode "$out705")"
+check_eq "vendor-review #705: round dir is rwx------ under umask 022" "rwx------" "$(vr_mode "$round705")"
+case "$(vr_mode "$round705/reply.md")" in
+  ???------) pass "vendor-review #705: reply.md is not group/other-accessible" ;;
+  *) fail "vendor-review #705: reply.md is not group/other-accessible" "mode $(vr_mode "$round705/reply.md")" ;;
+esac
+
 run "$TOOL" -h
 check_status "vendor-review: --help exits 0" 0 "$STATUS"
 check_contains "vendor-review: --help documents the --client contract" "$OUT" "read the user message on stdin"
