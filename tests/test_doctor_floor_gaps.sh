@@ -46,6 +46,20 @@ d="$(fixture)"; put "$d/.env"; put "$d/dist/.env"; git -C "$d" add -f .env dist/
 run "$doctor" "$d/"
 check_contains "S6-1: a trailing-slash dir argument counts each tracked file once" "$(id_line W-SECRETS-EXPOSED)" " 2 env-shaped"
 
+# dir #718 / 0.15.0 S3-4: the audited dir spelled with an INTERNAL `//` (every `$TMPDIR`-derived scratch path on
+# macOS has one). The slash-collapse stage rewrites each found path but not the dir prefix the relative path is
+# stripped with, so the path stayed absolute and `.keel/secrets-accept` never matched it. Platform-independent:
+# the `//` is in the argument, not in what a BSD `find` happens to print.
+d="$(fixture)"; put "$d/.env" "SENTINEL_S34=hunter2"; git -C "$d" add -f .env
+dd="${d%/*}//${d##*/}"
+run "$doctor" "$dd"
+line="$(id_line W-SECRETS-EXPOSED)"
+check_contains "S3-4: a dir with an internal // still finds its tracked env file" "$line" " 1 env-shaped"
+check_contains "S3-4: ...and names it by its RELATIVE path" "$line" "permanent transcript: .env "
+mkdir -p "$d/.keel"; printf '.env\n' > "$d/.keel/secrets-accept"
+run "$doctor" "$dd"
+check_absent  "S3-4: an accepted path is honoured when the dir is spelled with an internal //" "$OUT" "W-SECRETS-EXPOSED"
+
 # a tracked file deleted from the work tree is not a file on disk: quiet, no crash
 d="$(fixture)"; put "$d/dist/.env"; git -C "$d" add -f dist/.env; rm "$d/dist/.env"
 run "$doctor" "$d"

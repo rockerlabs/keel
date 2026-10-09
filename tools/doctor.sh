@@ -758,6 +758,26 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # tools/self/doctor.sh's check 1c — which greps advice lines for the LITERAL substring `ihome_flag`,
   # not just its expanded value — still recognizes these as home-aware (dir #98).
   irelink_mode="${imode_flag:- --link}"
+  # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the same test as
+  # install.sh's keel_own_stale_link (B3, T3): its target is the one recorded for it, and that target lies inside
+  # the checkout the manifest names (the one that wrote the record — the OLD one after a move; a dangling target
+  # is judged on the strings alone), or the record is the pre-dir-#369 `-` placeholder. No usable manifest
+  # proves nothing, so a link is then not provably Keel's.
+  doctor_link_is_keels_own() {
+    local dl_rel dl_man dl_rec dl_ck
+    dl_rel="${1#"$ihome"/}"
+    dl_man="$ihome/.keel/install-manifest.$([ "$CODEX_MODE" = 1 ] && echo codex || echo claude)"
+    manifest_usable "$dl_man" || return 1
+    dl_rec="$(awk -F'\t' -v rel="$dl_rel" '$1 == "artifact=symlink" && $2 == rel { print $3; exit }' "$dl_man" 2>/dev/null)" || return 1
+    [ -n "$dl_rec" ] || return 1
+    [ "$dl_rec" = "-" ] && return 0
+    [ "$dl_rec" = "$(readlink "$1")" ] || return 1
+    dl_ck="$(manifest_field "$dl_man" checkout)"
+    dl_ck="${dl_ck%/}"
+    [ -n "$dl_ck" ] || return 1
+    case "$dl_rec" in "$dl_ck"/*) return 0 ;; esac
+    return 1
+  }
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
@@ -785,7 +805,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
     else                                    this_relink=" --link"
     fi
     if [ ! -e "$l" ]; then
-      gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh$this_relink$ihome_flag from its home)"
+      # Keel's own link whose checkout moved or was deleted: relinking restores it. Anything else — a link no
+      # manifest record proves Keel's — is declined by install.sh (docs/specs/685-symlink-policy.md B3, T4),
+      # --force included, so a re-run alone never clears it: remove it first.
+      if doctor_link_is_keels_own "$l"; then
+        gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (checkout moved/deleted? re-run install.sh$this_relink$ihome_flag from its home)"
+      else
+        gap G-LINK-DANGLING "dangling symlink: $l → $(readlink "$l") (not recorded as Keel's own — install never replaces a link Keel did not make, --force included: remove the link first, then re-run install.sh$this_relink$ihome_flag from its home)"
+      fi
       continue
     fi
     b="$(basename "$l")"
@@ -1827,11 +1854,14 @@ EOF
   # Skipped outside a git repo — G-GIT-MISSING already speaks.
   if [ -n "$d_top" ]; then
     sx_dd="${d%/}"; [ -n "$sx_dd" ] || sx_dd="/"
+    # sx_ddc — sx_dd with repeated slashes collapsed, the way every found path is collapsed below: the relative
+    # path is stripped with THIS prefix, so a dir spelled with an internal `//` keeps matching `.keel/secrets-accept`.
+    sx_ddc="$(printf '%s\n' "$sx_dd" | sed 's#//*#/#g')"
     sx_accept=$'\n'"$(load_token_set "$unit_top/.keel/secrets-accept" 1)"$'\n'
     sx_exposed=""; sx_plain=""
     while IFS= read -r sx_f; do
       [ -n "$sx_f" ] || continue
-      sx_rel="${sx_f#"$sx_dd"/}"
+      sx_rel="${sx_f#"$sx_ddc"/}"
       if [[ "${sx_rel##*/}" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
       if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
       sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"

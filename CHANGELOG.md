@@ -56,6 +56,17 @@ sections real content going forward — see that page for exactly when each one 
   `keel/README.md`, and a project's `CLAUDE.md` from `tools/init-project.sh`) that is a dangling link, a link to a
   folder or a folder is left alone with one line, instead of being replaced, written through, or aborting the run. `docs/getting-started.md` states the rule once for adopters, `docs/reference.md` points at it,
   and the three `tools/doctor.sh` link warnings now say to remove a link Keel did not make before re-running.
+- **A link or folder `install.sh` declined is no longer a failed install, and `doctor` stops giving a dead-end
+  remedy** (dir #685 follow-up, from the 0.15.0 release-candidate audit). A dangling link, a link to another
+  file, or a folder at a path the installer checks at the end (`INSTANCE.md`, `LEARNINGS.md`, `IDEAS.md`,
+  `CLAUDE.md`/`AGENTS.md`, `FRAMEWORK.md`, `PRINCIPLES.md`, and the linked `keel/` core files) is declined with
+  one line, and the run now exits 0, writes its manifest and releases its lock. Before, it printed
+  `MISS … re-run install.sh --link … from its new home`, failed, and left nothing for `uninstall.sh` to read.
+  Verify now names the path as yours and says to remove it, then re-run; a file that is truly absent still fails
+  Verify. `tools/doctor.sh`'s `G-LINK-DANGLING` tells you to remove a dangling link that no manifest record
+  proves Keel's own, and keeps the relink advice for Keel's own link whose checkout moved. The env-file check
+  (dir #718) honours `.keel/secrets-accept` for a project directory spelled with an internal `//`, which every
+  macOS temporary path has (this release's repeated-slash fix had made it ignore the accept file there).
 - **Install and uninstall no longer touch the Keel checkout through a linked folder, and a prose mention of
   the rails marker is no longer a marker.** If `<home>/docs`, `agents` (or any other folder Keel fills) is a
   symlink into the Keel checkout, `install.sh` now skips it with one line instead of recording the

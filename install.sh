@@ -1931,11 +1931,19 @@ if [ "$LINK" = 1 ]; then
 else
   vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
+# Test-only fault injection (dir #685, FIX-1): deletes a placed file right before the loop below, so a test can
+# prove that a genuinely ABSENT core file still fails Verify (nothing else in a normal run can reach that arm).
+# A no-op in every real run.
+if [ -n "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" ]; then rm -f "$HOME_DIR/$KEEL_TEST_REMOVE_BEFORE_VERIFY"; fi
 for f in "${vfiles[@]}"; do
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
-  elif [ -L "$HOME_DIR/$f" ]; then
-    echo "  MISS $f (dangling symlink — did the checkout move? re-run install.sh --link$home_flag from its new home)" >&2; missing=1
+  elif [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; then
+    # Something that is not a regular file sits here — a link (dangling included) or a non-regular file. By now
+    # this run has declined it on purpose (a B3 T4/T6 decline or a B5 seed that was left alone; Keel's own stale
+    # link was re-pointed above): that is not a failed install, and the run exits 0 and writes its manifest
+    # (docs/specs/685-symlink-policy.md B3 T4: "A decline is not an error"). Only an ABSENT file is MISS.
+    echo "  --   $f is yours (a link or non-regular file) — left untouched; remove it, then re-run '$advise_install' to let Keel place it"
   else
     echo "  MISS $f" >&2; missing=1
   fi
