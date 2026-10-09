@@ -20,6 +20,9 @@
 # NUL-strip pass (catches ASCII-range UTF-16/UTF-32 with no dependencies) plus iconv UTF-16 and UTF-32
 # LE/BE when iconv is available (needed for non-ASCII literals, e.g. a Cyrillic name) plus a
 # raw-printable pass — a real name inside a UTF-16/UTF-32 binary fixture is invisible to a plain-text grep.
+# The decode resumes after an invalid unit (iconv -c; a slower built-in decoder where the host's iconv
+# cannot, or where there is none). A UTF-16/UTF-32 payload that does not start on a unit boundary of the
+# file is not decoded.
 #
 # It does NOT catch passwords, opaque/custom tokens, or base64 blobs: it is a backstop to .gitignore +
 # env vars, NOT a complete DLP. Mark that boundary honestly (P1).
@@ -86,7 +89,7 @@ PATTERNS=(
 # harness appends (a `Claude-Session` line with its session URL). Scanned by --range only: a
 # message is not a blob, so no content pass above can see it, and the push is where it becomes
 # effectively unpurgeable (a protected public history needs a rewrite). Mirrors public-audit.sh
-# session_re — keep the two in sync.
+# session_re — keep the two in sync (pinned by tests/test_secret_guard.sh, dir #681).
 SESSION_META='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 
 ALLOW_FILE=".secret-scan-allow"
@@ -198,7 +201,6 @@ for p in "${PATTERNS[@]}"; do
 done
 
 # Class 2: operator literals from the local personal file (case-insensitive).
-personal=""
 # dir #148: the parse is _personal_literals_parse_inline (defined above). Its status is acted on right
 # here (dir #680): a personal file we cannot trust must fail CLOSED — silently scanning with fewer (or no)
 # literals is the fail-open this gate must never have.
@@ -229,17 +231,33 @@ case "$_personal_rc" in
     echo "sed could not process) — personal-data detection would be silently disabled. Fix the file." >&2
     exit 2 ;;
 esac
-# One literal per line, none empty (the parser's contract): join with `|` (an empty alternative would
-# match everything, so an empty capture is skipped). `tr` (byte-wise, LC_ALL=C), not ${var//$'\n'/|}: that
-# expansion is roughly cubic on bash <= 4.1 (macOS /bin/bash 3.2 — 15 s for 1000 literals).
+# dir #694 (spec 746 B3): one literal per line, none blank (the parser's contract), written to a pattern file
+# that every personal grep reads with `-f` — one pattern per literal. Joined with `|` into one ERE, two lines
+# fused: `zorb[` and `plugh]` became a valid pattern matching neither literal, and `(a)\1` + `(b)\1` matched
+# only the first. A literal starting with `-` is a pattern too, never a grep option (S2-1). No literal → no
+# file and no personal grep: `grep -f` over an empty file disagrees across BSD, GNU and busybox. The file
+# lives in $SCRATCH (mktemp -d, mode 0700), which the EXIT trap removes on every exit.
+# has_personal — at least one literal; personal_nonascii — one holds a non-ASCII byte, which turns on the
+# caller-locale passes (match_text) and, through decode_nonascii, emit_blob's built-in decoder.
+has_personal=""
+personal_nonascii=""
+personal_pat="$SCRATCH/personal.pat"
 if [ -n "$_personal_lines" ]; then
-  personal="$(printf '%s' "$_personal_lines" | LC_ALL=C tr '\n' '|')" || _fail_closed "join the personal literals" $?
+  has_personal=1
+  printf '%s\n' "$_personal_lines" > "$personal_pat" || _fail_closed "write the personal literals" $?
+  case "$_personal_lines" in *[![:ascii:]]*) personal_nonascii=1 ;; esac
 fi
+decode_nonascii="$personal_nonascii"
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
 # which reads as "no match" and would silently disable personal-data detection — a security gate
 # must never fail open on its own config. grep exits >=2 only on a bad pattern; 1 (no match) is fine.
-if [ -n "$personal" ]; then
-  rc=0; printf '' | grep -iE "$personal" >/dev/null 2>&1 || rc=$?
+# The probe reads one input line (dir #694, B4): busybox grep compiles a pattern only when it reads input,
+# so over empty input it passed every malformed ERE. It runs in each locale a personal grep runs in.
+if [ -n "$has_personal" ]; then
+  rc=0; printf 'x\n' | LC_ALL=C grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -lt 2 ] && [ -n "$personal_nonascii" ]; then
+    printf 'x\n' | grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
+  fi
   if [ "$rc" -ge 2 ]; then
     echo "secret-scan: invalid regex in $PERSONAL_FILE — personal-data detection would be" >&2
     echo "silently disabled. Fix the offending line (each line is an ERE)." >&2
@@ -260,18 +278,38 @@ is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
 # on its own, and the group ends by exiting with a failing one: the group is a pipeline element, so a
 # subshell (a variable set inside it never reaches this function), and `pipefail` carries its status —
 # or a failed `sort` — out as this function's own. Callers spool the output and check that status.
+# dir #740 (spec 746 B5): under a UTF-8 locale BSD and busybox grep stop matching a line at its first invalid
+# byte, so a key after a stray Latin-1 byte read clean. Class 1 and the personal pass P-C therefore run under
+# LC_ALL=C, which reads every byte; P-C's `-i` then folds ASCII only. A non-ASCII literal gets one more pass,
+# P-U, in the caller's locale (the only one that folds a Cyrillic literal across case), over a copy of the file with its
+# invalid UTF-8 removed by `iconv -c` — padded with newlines first, so a file ending in an incomplete sequence
+# still converts whole (unpadded, iconv exits 1 on macOS/glibc and truncates on musl). A sanitizer that fails
+# falls back to the file itself (the pre-746 behaviour), never to no pass. LC_ALL is never exported: each
+# `LC_ALL=C` is a per-command prefix. A line holding an invalid byte may be reported twice (raw and sanitized).
 match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = extra ERE ('' for none)
-  local flags="$1" f="$2" extra="${3:-}"
+  local flags="$1" f="$2" extra="${3:-}" u8 u8s
   {
-    rc1=0; rc2=0
+    rc1=0; rc2=0; rc3=0
     # shellcheck disable=SC2086  # $flags intentionally word-split ('' → no extra flag)
-    grep -aE $flags "${extra:+$extra|}$joined" "$f" 2>/dev/null || rc1=$?
-    if [ -n "$personal" ]; then
+    LC_ALL=C grep -aE $flags -e "${extra:+$extra|}$joined" "$f" 2>/dev/null || rc1=$?
+    if [ -n "$has_personal" ]; then
       # shellcheck disable=SC2086
-      grep -aiE $flags "$personal" "$f" 2>/dev/null || rc2=$?
+      LC_ALL=C grep -aiE $flags -f "$personal_pat" "$f" 2>/dev/null || rc2=$?
+      if [ -n "$personal_nonascii" ]; then
+        u8="$f"; u8s=""
+        if command -v iconv >/dev/null 2>&1; then
+          u8s="$(spool)" || exit $?
+          u8="$u8s"
+          { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8s" 2>/dev/null || u8="$f"
+        fi
+        # shellcheck disable=SC2086
+        grep -aiE $flags -f "$personal_pat" "$u8" 2>/dev/null || rc3=$?
+        [ -z "$u8s" ] || rm -f "$u8s"
+      fi
     fi
     [ "$rc1" -le 1 ] || exit "$rc1"
     [ "$rc2" -le 1 ] || exit "$rc2"
+    [ "$rc3" -le 1 ] || exit "$rc3"
   } | LC_ALL=C sort -u
 }
 
@@ -283,12 +321,25 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
 # real intermittent scanner hole (flaked on macOS CI). -c consumes the whole stream → deterministic.
 # Prints the count on stdout. dir #715 (B7): grep's exit 1 is a zero count; >= 2 (127 = no grep) is
 # returned, never read as zero — the caller captures the count into a variable and checks the status.
+# dir #740 (B5): the same passes as match_text — class 1 and P-C under LC_ALL=C, then P-U (a non-ASCII
+# literal, the caller's locale, the sanitized copy) only while the count is still zero.
 count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 ('' for none)
-  local f="$1" extra="${2:-}" n rc=0
-  n="$(grep -acE "${extra:+$extra|}$joined" "$f")" || rc=$?
+  local f="$1" extra="${2:-}" n rc=0 u8 u8s=""
+  n="$(LC_ALL=C grep -acE -e "${extra:+$extra|}$joined" "$f")" || rc=$?
   [ "$rc" -le 1 ] || return "$rc"
-  if [ "${n:-0}" -eq 0 ] && [ -n "$personal" ]; then
-    n="$(grep -aciE "$personal" "$f")" || rc=$?
+  if [ "${n:-0}" -eq 0 ] && [ -n "$has_personal" ]; then
+    n="$(LC_ALL=C grep -aciE -f "$personal_pat" "$f")" || rc=$?
+    [ "$rc" -le 1 ] || return "$rc"
+  fi
+  if [ "${n:-0}" -eq 0 ] && [ -n "$personal_nonascii" ]; then
+    u8="$f"
+    if command -v iconv >/dev/null 2>&1; then
+      u8s="$(spool)" || return $?
+      u8="$u8s"
+      { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8s" 2>/dev/null || u8="$f"
+    fi
+    n="$(grep -aciE -f "$personal_pat" "$u8")" || rc=$?
+    [ -z "$u8s" ] || rm -f "$u8s"
     [ "$rc" -le 1 ] || return "$rc"
   fi
   printf '%s' "${n:-0}"
@@ -316,7 +367,17 @@ collect_matches() {
 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
 # classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
-# public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync.
+# public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync (pinned by
+# tests/test_secret_guard.sh, dir #681).
+#
+# dir #746 (S2-2, spec 746 B7): the decode never stops at an invalid unit. A plain iconv stopped at the first
+# one (a lone surrogate, a value past U+10FFFF), so a literal after it read clean; `-c` skips it and decodes
+# the rest (macOS libiconv, glibc). musl's iconv stops anyway and ignores -c, so where the host's iconv does not
+# resume — or there is none — and a personal literal is non-ASCII (an ASCII one already survives the NUL-strip
+# pass), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
+# surrogates pair, code point 0 is dropped. It costs about 24 s per MiB on busybox and never runs on macOS or
+# glibc. Every pass but the best-effort iconv ones ends `|| exit $?`: a missing od, awk or tr ends the group,
+# and the caller exits 2 naming the file. A payload that does not start on a unit boundary is not decoded.
 #
 # The whole joined stream is NUL-stripped once, after every pass below (dir #250): decoding UTF-32
 # data through the UTF-16LE/BE converters (needed so a non-ASCII UTF-32 literal decodes at all — see
@@ -329,20 +390,49 @@ collect_matches() {
 # pass — covers any pass added here later for free, with no line to remember to re-append.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
-  tmp="$(mktemp "$SCRATCH/blob.XXXXXX")"; dec="$(mktemp "$SCRATCH/blob.XXXXXX")"
-  cat > "$tmp"
+  # its caller's `||` turns errexit off in here (emit_file), so each read returns its own status
+  tmp="$(mktemp "$SCRATCH/blob.XXXXXX")" || return $?
+  dec="$(mktemp "$SCRATCH/blob.XXXXXX")" || return $?
+  cat > "$tmp" || return $?
   {
-    LC_ALL=C tr -d '\000' < "$tmp"; echo                          # ASCII-range UTF-16, no deps
+    LC_ALL=C tr -d '\000' < "$tmp" || exit $?; echo              # ASCII-range UTF-16, no deps
     if command -v iconv >/dev/null 2>&1; then                     # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
-      iconv -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-      iconv -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      iconv -c -f UTF-16LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      iconv -c -f UTF-16BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
       # UTF-32: an ASCII literal survives the NUL-strip pass above (3-of-4 bytes are NUL), but a
       # NON-ASCII one (multi-byte code point) does not — decode it explicitly, symmetric with UTF-16.
-      iconv -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
-      iconv -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      iconv -c -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      iconv -c -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
     fi
-    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp"; echo            # raw printable runs
-  } | LC_ALL=C tr -d '\000' > "$dec"
+    # the built-in decoder, only where iconv cannot resume and a personal literal is non-ASCII
+    if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
+      od -An -v -tu1 < "$tmp" | LC_ALL=C awk '
+        function o(v, k) {
+          if (v < 128) { if (v) s[k] = s[k] sprintf("%c", v) }
+          else if (v < 2048) s[k] = s[k] sprintf("%c%c", 192 + int(v / 64), 128 + v % 64)
+          else if (v < 65536) s[k] = s[k] sprintf("%c%c%c", 224 + int(v / 4096), 128 + int(v / 64) % 64, 128 + v % 64)
+          else s[k] = s[k] sprintf("%c%c%c%c", 240 + int(v / 262144), 128 + int(v / 4096) % 64, 128 + int(v / 64) % 64, 128 + v % 64)
+        }
+        function u16(u, k) {
+          if (u >= 55296 && u < 56320) { if (h[k]) s[k] = s[k] "\n"; h[k] = u; return }
+          if (u >= 56320 && u < 57344) { if (h[k]) o(65536 + (h[k] - 55296) * 1024 + u - 56320, k); else s[k] = s[k] "\n"; h[k] = 0; return }
+          if (h[k]) { s[k] = s[k] "\n"; h[k] = 0 }
+          o(u, k)
+        }
+        function u32(u, k) { if (u > 1114111 || (u >= 55296 && u < 57344)) s[k] = s[k] "\n"; else o(u, k) }
+        {
+          for (i = 1; i <= NF; i++) {
+            b[n % 4] = $i; n++
+            if (n % 2 == 0) { u16(b[(n - 2) % 4] + 256 * b[(n - 1) % 4], 1); u16(256 * b[(n - 2) % 4] + b[(n - 1) % 4], 2) }
+            if (n % 4 == 0) { u32(b[0] + 256 * b[1] + 65536 * b[2] + 16777216 * b[3], 3); u32(16777216 * b[0] + 65536 * b[1] + 256 * b[2] + b[3], 4) }
+          }
+          if (NR % 256 == 0) { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; s[k] = "" } }
+        }
+        END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
+      ' || exit $?; echo
+    fi
+    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp" || exit $?; echo  # raw printable runs
+  } | LC_ALL=C tr -d '\000' > "$dec" || return $?
   collect_matches "$label" "$label:(binary) " "$dec" -o
   rm -f "$tmp" "$dec"
 }
@@ -354,7 +444,7 @@ emit_blob() {  # $1 = record label (path)
 # a `$(…)`), so the records+= appends land here.
 emit_file() {  # $1 = record label (path), $2 = a spool file under $SCRATCH
   if is_binary_file "$2"; then
-    emit_blob "$1" < "$2"
+    emit_blob "$1" < "$2" || _fail_closed "decode '$1'" $?
   else
     collect_matches "$1" "$1:" "$2" -n
   fi
@@ -430,7 +520,7 @@ _impact_log_path_inline() {
   # positive signal is the EXACT gitignore line pre-#251 `enable` always wrote, byte-for-byte — NOT
   # `git check-ignore` (a second review round caught this): that asks "is this path ignored by
   # ANYTHING", which an unrelated pattern like `*.log` would also satisfy, reopening the same leak.
-  [ -n "$top" ] && [ -f "$top/.gitignore" ] && grep -qxF '/.keel/impact-events.log' "$top/.gitignore" 2>/dev/null && \
+  [ -n "$top" ] && [ -f "$top/.gitignore" ] && grep -qxF -e '/.keel/impact-events.log' "$top/.gitignore" 2>/dev/null && \
     printf '%s/.keel/impact-events.log' "$top"
   return 0
 }
@@ -474,8 +564,12 @@ emit_diff() {
   # `diff.external` program replaces the patch with its own output (no `@@` header, so awk emits nothing)
   # and a `textconv` filter replaces the file's content with the converter's output — either one hid a
   # staged key (`clean`, exit 0). The scanner reads the staged bytes, whatever the git config says.
+  # dir #746 (D1-1, spec 746 B6): `tr -d '\000'` before awk. git diffs a file as text when its first 8000 bytes
+  # hold no NUL; a later NUL reached awk, which truncated the line there, so a key after it was never read. The
+  # NULs are dropped from the scanned text, as the binary decode's NUL-strip pass drops them.
   local derr="$dtmp.err"
-  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>"$derr" | LC_ALL=C awk '
+  git --literal-pathspecs diff "$@" --unified=0 --no-color --no-ext-diff --no-textconv -- "$path" 2>"$derr" \
+    | LC_ALL=C tr -d '\000' | LC_ALL=C awk '
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
   ' | LC_ALL=C sed 's/^+//' > "$dtmp" || _fail_closed "parse the staged diff of '$path'" $? "$derr"
@@ -497,7 +591,7 @@ emit_diff() {
 # regression coverage in tests/test_secret_guard.sh (dev-time, every change), and duplicating them here
 # would tax EVERY adopter install (install-secret-guard.sh runs --selftest before copying, dir #250).
 selftest() {
-  local script dir rc=0 fake greprc trailer mrepo trepo arepo arbase srepo bad _v
+  local script dir rc=0 fake greprc trailer mrepo trepo arepo arbase srepo bad _v resume_lit
   # shared git identity for every probe repo's commits/tags below — a probe repo must not depend on
   # host config (max-review reuse finding: this pair used to be re-typed at each of 4 call sites).
   local id_flags=(-c user.name=keel -c user.email=keel@keel.invalid)
@@ -544,10 +638,11 @@ selftest() {
   probe 0 "honored the inline allow pragma" /dev/null "$dir/allowed.txt"
   printf 'author: seekritpersonname\n' > "$dir/pers.txt"
   probe 1 "caught a personal literal in text (case-insensitive)" "$dir/personal" "$dir/pers.txt"
-  # The fail-closed probe holds only where grep itself signals a malformed ERE (exit >= 2); a
-  # lenient minimal grep (busybox) can't distinguish "bad pattern" from "no match" — WARN honestly
-  # there instead of failing the whole selftest on an otherwise-working host.
-  greprc=0; printf '' | grep -iE 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
+  # The fail-closed probe holds only where grep itself signals a malformed ERE (exit >= 2) — WARN honestly
+  # on a grep that accepts one instead of failing the whole selftest on an otherwise-working host. The probe
+  # reads one input line (dir #694): busybox compiles a pattern only when it reads input, so over empty input
+  # it looked lenient and this probe was skipped there.
+  greprc=0; printf 'x\n' | grep -iE -e 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
   if [ "$greprc" -ge 2 ]; then
     printf 'unbalanced(paren\n' > "$dir/badre"
     printf 'anything\n' > "$dir/any.txt"
@@ -573,6 +668,14 @@ selftest() {
   else
     echo "selftest: WARN — iconv absent; the non-ASCII UTF-16/UTF-32 passes are degraded on this host" >&2
   fi
+  # dir #746 (B8): the decode resumes after an invalid unit — a lone high surrogate, then `lead <Ivan> trail`
+  # in UTF-16LE, written byte by byte (no iconv needed). Found through `iconv -c` on macOS and glibc, through
+  # the built-in decoder on musl or with no iconv: a FAIL on any host means emit_blob's recipe regressed. The
+  # literal has its own variable — $cyr above is set only where iconv exists.
+  resume_lit="$(printf '\320\230\320\262\320\260\320\275')"   # "Ivan" (Cyrillic) in UTF-8
+  printf '%s\n' "$resume_lit" > "$dir/personal-resume"
+  printf 'AB\000\330l\000e\000a\000d\000 \000\030\004\062\004\060\004\075\004 \000t\000r\000a\000i\000l\000' > "$dir/resume.bin"
+  probe 1 "caught a non-ASCII personal literal after an invalid UTF-16 unit" "$dir/personal-resume" "$dir/resume.bin"
   # a session trailer in a pushed commit MESSAGE and in an annotated TAG message (neither is a
   # blob — only the --range message/tag passes see them). The trailer is built by printf so this
   # source never holds the literal. --template= + --no-verify + explicit -c identity: a probe repo
@@ -735,19 +838,16 @@ case "$mode" in
     if [ -z "$blobs" ]; then
       range_hits=0
     else
-      case "$personal" in
-        *[![:ascii:]]*) ;;  # a non-ASCII personal literal (e.g. a Cyrillic name) is invisible to
-                            # the NUL-strip fast view of UTF-16 bytes — skip the fast path and let
-                            # the detailed scan's iconv pass see it
-        *)
-          rtmp="$(spool)"; rerr="$(spool)"
-          awk '{print $2}' <<< "$blobs" \
-            | git cat-file --batch 2>"$rerr" | LC_ALL=C tr -d '\000' > "$rtmp" \
-            || _fail_closed "read the range's blobs" $? "$rerr"
-          range_hits="$(count_matches "$rtmp")" || _fail_closed "count matches in the range's blobs" $?
-          rm -f "$rtmp" "$rerr"
-          ;;
-      esac
+      # a non-ASCII personal literal (e.g. a Cyrillic name) is invisible to the NUL-strip fast view of
+      # UTF-16 bytes — skip the fast path and let the detailed scan's decode passes see it
+      if [ -z "$personal_nonascii" ]; then
+        rtmp="$(spool)"; rerr="$(spool)"
+        awk '{print $2}' <<< "$blobs" \
+          | git cat-file --batch 2>"$rerr" | LC_ALL=C tr -d '\000' > "$rtmp" \
+          || _fail_closed "read the range's blobs" $? "$rerr"
+        range_hits="$(count_matches "$rtmp")" || _fail_closed "count matches in the range's blobs" $?
+        rm -f "$rtmp" "$rerr"
+      fi
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
       btmp="$(spool)"; berr="$(spool)"
@@ -1067,8 +1167,10 @@ while LC_ALL=C IFS= read -r rec; do
     # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
     # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
     # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
-    # unreliable evidence in a security-facing scanner.
-    if grep -qE "$re" <<< "$rec"; then skip=1; break; fi
+    # unreliable evidence in a security-facing scanner. `-e` (dir #746 B2): an entry starting with `-` is a
+    # pattern — `-e.` read positionally was the option -e with the pattern `.`, exempting every record. LC_ALL=C
+    # (B5): bytes, as the records are; a non-ASCII entry using `.` or a bracket can only over-block.
+    if LC_ALL=C grep -qE -e "$re" <<< "$rec"; then skip=1; break; fi
   done
   [ "$skip" = 1 ] && continue
   # path-glob allowlist (only meaningful for "path:line" records)
