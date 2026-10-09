@@ -27,7 +27,10 @@
 #     `<ticket>-<slug>.md` (ticket = digits) or `<slug>.md`, the slug lowercase kebab-case — a
 #     subdirectory's file, a dotfile or another extension is named;
 #   - the first non-blank line starts `- `; every later non-blank line starts `- ` or whitespace (a
-#     column-0 continuation is a defect); no line starts with `#` (a heading would split the cut's section);
+#     column-0 continuation is a defect, INSIDE a fenced block too: CommonMark ends the list item at a
+#     column-0 line, so indent fence markers and their content); no line starts with `#` (a heading would
+#     split the cut's section); an odd number of fence markers is a defect (it would hide every later line
+#     from the fence-blanked scans);
 #   - no `dir #N` inside backticks (doctor's ticket extraction drops code spans, so the citation vanishes);
 #   - after blanking fenced blocks and inline code spans exactly as tools/self/prose-drift.sh does, every
 #     markdown link target starts `/`, `http://`, `https://` or `mailto:` — prose-drift resolves a bare

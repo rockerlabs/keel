@@ -86,6 +86,13 @@ while IFS= read -r f; do
   frag_files="$frag_files${frag_files:+ }${f#changelog.d/}"
 done <<< "$frag_list"
 
+# The lint first: a malformed fragment (empty, headings, unbalanced fence) can be neither carried nor honestly
+# labelled assembled/late below.
+if check_out="$("$reader" --repo "$repo_dir" --check)"; then :; else
+  refuse "changelog-fragments.sh --check fails:
+$check_out"
+fi
+
 if grep -qE "^## \[${version//./\\.}\]" <<< "$blanked"; then
   if [ -n "$frag_files" ]; then
     # The body of the existing ## [VERSION], to tell a fragment already carried into it from one that
@@ -105,11 +112,6 @@ if grep -qE "^## \[${version//./\\.}\]" <<< "$blanked"; then
     refuse "## [$version] is already in CHANGELOG.md and fragment files remain:$labelled"
   fi
   refuse "## [$version] is already in CHANGELOG.md"
-fi
-
-if check_out="$("$reader" --repo "$repo_dir" --check)"; then :; else
-  refuse "changelog-fragments.sh --check fails:
-$check_out"
 fi
 
 # --- build the new file --------------------------------------------------------------------------

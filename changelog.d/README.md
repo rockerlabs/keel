@@ -14,8 +14,8 @@ falls behind turns DIRTY, with no CI run); two PRs that each add their own file 
   conflict visibly (add/add), never silently. Do not edit another PR's fragment unless correcting it is
   your PR's purpose.
 - **Content** is only the bullets, exactly as they would sit under `## [Unreleased]`: the first non-blank
-  line starts `- `, continuation lines are indented, and no line starts with `#` (a heading would split the
-  cut's section). Cite a ticket as `dir #N` in full, never wrapped in backticks.
+  line starts `- `, continuation lines are indented (fenced blocks too: indent the fence markers and what is
+  inside), every fence is closed, and no line starts with `#` (a heading would split the cut's section). Cite a ticket as `dir #N` in full, never wrapped in backticks.
 - **Links** to a file in the repo are root-anchored, `[text](/docs/x.md)`, never relative; a bare `#anchor`
   or any scheme other than `http(s)` and `mailto` is rejected too. The cut moves
   the text into `CHANGELOG.md` verbatim, and `tools/self/prose-drift.sh` resolves a bare relative target
