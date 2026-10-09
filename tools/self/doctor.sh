@@ -1406,7 +1406,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null || true)"
     late_fragments="${late_fragments//$'\n'/ }"
     if [ -n "$late_fragments" ]; then
-      gap "fragments merged after the cut ($late_fragments) — run tools/self/changelog-cut.sh again to sort them, or move them into [$pending]"
+      gap "fragments merged after the cut ($late_fragments) — move each into [$pending] and delete the file (tools/self/changelog-cut.sh run again names which are late and which already are in the section)"
       changelog_bad=1
     fi
   fi

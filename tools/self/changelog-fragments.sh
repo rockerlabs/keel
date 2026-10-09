@@ -151,8 +151,9 @@ while IFS= read -r name; do
     *[![:space:]]*) ;;
     *) fail "$name" 1 "empty file — a fragment holds at least one bullet"; continue ;;
   esac
-  # Fence- and inline-code-blanked copy, line-aligned with the file: links are judged on this, the rest
-  # on the raw lines.
+  # Fence-blanked (and, for links, also inline-code-blanked) copies, line-aligned with the file: every rule
+  # is judged on them, as prose-drift and the cut's heading scan do — a column-0 line or a `#` comment inside a
+  # fenced example is content, not a heading or a bad continuation.
   fenced="$(blank_fenced_blocks "$path")"
   blanked="$(blank_inline_code_spans <<< "$fenced")"
   seen_first=0
@@ -175,7 +176,7 @@ while IFS= read -r name; do
       '- '*|[[:space:]]*) ;;
       *) fail "$name" "$ln" "continuation line must be indented" ;;
     esac
-  done < "$path"
+  done <<< "$fenced"
   # `dir #N` inside backticks: doctor's ticket extraction drops inline code spans, so the citation would
   # never count. Judged on the fence-blanked copy (a fenced example is not a citation either way).
   ln=0

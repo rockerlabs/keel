@@ -207,4 +207,22 @@ run "$cut" --repo "$d" 9.9.9 2026-01-01
 check_status "[Unreleased] is the last section -> exit 0" 0 "$STATUS"
 check_eq "last section: nothing follows the cut section" "$(printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] — 2026-01-01\n\n- only bullet\n\n- dir #1: the first one\n  with a continuation\n\n- dir #2: the second one')" "$(cat "$d/CHANGELOG.md")"
 
+
+# A body that ends in a fenced block keeps its fence (the last non-blank line is found on the RAW file).
+d="$(mk_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n- bullet with a block:\n  ```\n  code\n  ```\n\n## [1.0.0] — 2025-12-31\n\n- the first release\n' > "$d/CHANGELOG.md"
+rm -f "$d/changelog.d/1-a.md" "$d/changelog.d/2-b.md"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_status "a body ending in a fenced block -> exit 0" 0 "$STATUS"
+want="$(printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] — 2026-01-01\n\n- bullet with a block:\n  ```\n  code\n  ```\n\n## [1.0.0] — 2025-12-31\n\n- the first release')"
+check_eq "the closing fence survives the cut" "$want" "$(cat "$d/CHANGELOG.md")"
+
+# Nothing at all to carry (empty body, no fragments): exactly one blank line before the next section.
+d="$(mk_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] — 2025-12-31\n\n- the first release\n' > "$d/CHANGELOG.md"
+rm -f "$d/changelog.d/1-a.md" "$d/changelog.d/2-b.md"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+want="$(printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] — 2026-01-01\n\n## [1.0.0] — 2025-12-31\n\n- the first release')"
+check_eq "an empty cut leaves no doubled blank line" "$want" "$(cat "$d/CHANGELOG.md")"
+
 summary

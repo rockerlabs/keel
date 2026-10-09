@@ -140,7 +140,7 @@ pin_exact "(g) I4 item 2 is 'Seams.' (before the full test run)" "$guide_md" "2.
 # drops the fragments (or breaks a project without them) goes red. The old command is the control: on a
 # dir with no changelog.d/ the new one must print exactly the old one's lines.
 claims_cmd="$(sed -n 's/^   a\. Their claims: `\(.*\)`$/\1/p' "$guide_md")"
-pin "(i) I4 item 2a's command names changelog.d" "$guide_md" 'changelog.d/[[:lower:][:digit:]]*.md' \
+pin "(i) I4 item 2a's command names changelog.d" "$guide_md" 'changelog.d -name '"'"'[a-z0-9]*.md'"'"'' \
   "expected the Their-claims command to scan the changelog.d/ fragments"
 old_claims_cmd='awk '"'"'/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}'"'"' CHANGELOG.md'
 i_dir="$(mktemp -d "$SANDBOX/claims.XXXXXX")"
@@ -150,6 +150,12 @@ old_out="$(cd "$i_dir" && bash -c "$old_claims_cmd" 2>&1)"
 new_out="$(cd "$i_dir" && bash -c "$claims_cmd" 2>&1)"
 check_ne "(i) fixture: the old command finds the [Unreleased] claim (control has content)" "" "$old_out"
 check_eq "(i) a project without changelog.d/: the pinned command prints the old command's lines" "$old_out" "$new_out"
+# The Bash tool's shell is zsh, where an unmatched glob ABORTS the whole command ("no matches found"): the
+# pinned command must print the old lines there too, with no changelog.d/ at all.
+if command -v zsh >/dev/null 2>&1; then
+  zsh_out="$(cd "$i_dir" && zsh -c "$claims_cmd" 2>&1)"
+  check_eq "(i) under zsh with no changelog.d/: the same lines (no 'no matches found' abort)" "$old_out" "$zsh_out"
+fi
 mkdir -p "$i_dir/changelog.d"
 printf -- '- a fragment covering both of the tools\n  and every file in it\n' > "$i_dir/changelog.d/9-x.md"
 printf -- '- nothing numeric here\n' > "$i_dir/changelog.d/10-y.md"
@@ -160,6 +166,10 @@ check_contains "(i) with changelog.d/: a fragment line is scanned, whole file, w
 check_contains "(i) with changelog.d/: a continuation line is scanned too" "$frag_out" "changelog.d/9-x.md:2:   and every file in it"
 check_contains "(i) with changelog.d/: the CHANGELOG.md [Unreleased] claim is still found" "$frag_out" "- fixes all 3 of them"
 check_absent "(i) a released section's claim is still skipped" "$frag_out" "every old thing"
+if command -v zsh >/dev/null 2>&1; then
+  zsh_frag_out="$(cd "$i_dir" && zsh -c "$claims_cmd" 2>&1)"
+  check_contains "(i) under zsh with changelog.d/: the fragment line is scanned" "$zsh_frag_out" "changelog.d/9-x.md:1: - a fragment covering both"
+fi
 check_absent "(i) a fragment line without a claim is not printed" "$frag_out" "nothing numeric"
 check_absent "(i) changelog.d/README.md is not a fragment and is not scanned" "$frag_out" "every note about fragments"
 

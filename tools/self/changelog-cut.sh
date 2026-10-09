@@ -112,14 +112,15 @@ fi
 tmp="$changelog.cut.$$"
 trap 'rm -f "$tmp"' EXIT
 
-# Line numbers (on the blanked copy, same numbering as the file): the Unreleased heading, the next `## `
-# heading after it (or end of file), and the last non-blank line of the body between them.
+# Line numbers: the Unreleased heading and the next `## ` heading after it (or end of file) are found on the
+# fence-blanked copy (same numbering as the file); the last non-blank line of the body between them is found
+# on the RAW file, so a body that ends in a fenced block keeps its fence.
 u_line="$(grep -n '^## \[Unreleased\]' <<< "$blanked" | head -n 1 | cut -d: -f1)"
 # awk's NR counts an unterminated last line too (wc -l would undercount it).
 total="$(awk 'END { print NR }' "$changelog")"
 next_line="$(awk -v u="$u_line" 'NR > u && /^## / { print NR; exit }' <<< "$blanked")"
 [ -n "$next_line" ] || next_line=$((total + 1))
-last_body="$(awk -v u="$u_line" -v e="$next_line" 'BEGIN { last = u } NR > u && NR < e && /[^[:space:]]/ { last = NR } END { print last }' <<< "$blanked")"
+last_body="$(awk -v u="$u_line" -v e="$next_line" 'BEGIN { last = u } NR > u && NR < e && /[^[:space:]]/ { last = NR } END { print last }' "$changelog")"
 
 {
   # Everything above the heading, then the fresh empty section.
@@ -129,7 +130,7 @@ last_body="$(awk -v u="$u_line" -v e="$next_line" 'BEGIN { last = u } NR > u && 
   # The old body through its last non-blank line (the heading's own blank line comes along with it).
   if [ "$last_body" -gt "$u_line" ]; then
     sed -n "$((u_line + 1)),${last_body}p" "$changelog"
-  else
+  elif [ -n "$frag_text" ]; then
     printf '\n'
   fi
   if [ -n "$frag_text" ]; then

@@ -122,6 +122,8 @@ check_contains "bad: a '#' line later in the file is named at its line" "$OUT" "
 lint 9-x.md $'- see [x](docs/x.md)\n'
 check_status "bad: a file-relative link -> exit 1" 1 "$STATUS"
 check_contains "bad: names the link target" "$OUT" "changelog.d/9-x.md:1: link target 'docs/x.md' is file-relative"
+lint 20-x.md $'- a block:\n  ```\nunindented line in a fence\n# a comment in a fence\n  ```\n'
+check_status "good: column-0 lines and a '#' comment INSIDE a fenced block are content, not defects" 0 "$STATUS"
 lint 17-x.md $'- see [x](#top)\n'
 check_status "bad: a bare #anchor link -> exit 1" 1 "$STATUS"
 check_contains "bad: the #anchor target named" "$OUT" "changelog.d/17-x.md:1: link target '#top'"
