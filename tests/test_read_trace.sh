@@ -767,4 +767,20 @@ check_absent "moved: aggregate does NOT call this case 'lost'" "$OUT" "store ent
 # in tools/lib/read-trace.sh). This line exists so a reader of the acceptance table finds where C3 is
 # actually pinned, rather than a name that resolves to nothing.
 
+# dir #706 — an empty aggregate on a repo that holds nothing in the trace's scope says so (permanent),
+# one that holds any ONE of docs/*, commands/*.md, BACKLOG.md does not.
+d="$(new_repo)"; rt_env s706none
+printf 'src\n' > "$d/src.sh"
+git -C "$d" add -A; git -C "$d" commit -q -m init
+run_hook aggregate "$d"
+check_status "706: aggregate on an out-of-scope repo exits 0" 0 "$STATUS"
+check_contains "706: nothing-in-scope line printed" "$OUT" "nothing in this repository is in the trace's scope"
+d="$(mkrepo)"; rt_env s706some
+run_hook aggregate "$d"
+check_absent "706: a repo holding docs/ and commands/ does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
+d="$(new_repo)"; rt_env s706backlog
+printf '# b\n' > "$d/BACKLOG.md"
+run_hook aggregate "$d"
+check_absent "706: a repo holding only BACKLOG.md does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
+
 summary
