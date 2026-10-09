@@ -778,6 +778,10 @@ check_contains "706: nothing-in-scope line printed" "$OUT" "nothing in this repo
 d="$(mkrepo)"; rt_env s706some
 run_hook aggregate "$d"
 check_absent "706: a repo holding docs/ and commands/ does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
+d="$(mkrepo)"; rt_env s706sub
+mkdir -p "$d/sub"
+run_hook aggregate "$d/sub"
+check_absent "706: run from a subdirectory, the repo top's docs/ still count" "$OUT" "nothing in this repository is in the trace's scope"
 d="$(new_repo)"; rt_env s706backlog
 printf '# b\n' > "$d/BACKLOG.md"
 run_hook aggregate "$d"

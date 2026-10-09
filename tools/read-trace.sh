@@ -484,12 +484,14 @@ case "${1:-}" in
     # dir #706: same slot and shape as the lost/moved lines above — a repository holding nothing
     # _rt_in_doc_scope can see can never produce a row, so say the empty table is permanent. Candidates
     # come from the three scope roots only (not a whole-tree walk); the predicate stays the one source.
+    # Scanned from the repo top (tracked paths are top-relative), not a subdirectory $ag_dir.
+    ag_root="${ag_top:-$ag_dir}"
     ag_scoped=0
     while IFS= read -r ag_f; do
-      ag_f="${ag_f#"${ag_dir%/}"/}"
+      ag_f="${ag_f#"${ag_root%/}"/}"
       _rt_in_doc_scope "$ag_f" && { ag_scoped=1; break; }
-    done < <({ [ -f "$ag_dir/BACKLOG.md" ] && printf '%s\n' "$ag_dir/BACKLOG.md"
-               find "$ag_dir/docs" "$ag_dir/commands" -type f 2>/dev/null; })
+    done < <({ [ -f "$ag_root/BACKLOG.md" ] && printf '%s\n' "$ag_root/BACKLOG.md"
+               find "$ag_root/docs" "$ag_root/commands" -type f 2>/dev/null; })
     if [ "$ag_scoped" -eq 0 ]; then
       printf "read-trace: nothing in this repository is in the trace's scope (docs/*, commands/*.md, BACKLOG.md) — an empty table here is permanent, not a quiet cycle\n"
     fi
