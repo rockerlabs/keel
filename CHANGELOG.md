@@ -19,6 +19,10 @@ sections real content going forward — see that page for exactly when each one 
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
   (dir #705).
+- **`tools/self/pool-report.sh` reports the pool's oldest entry from the earliest date a ticket states.**
+  dir #735: the age was read off the heading's first date, which can be a later status annotation (a `⏸` or
+  `⏳` date) or absent, so a pool holding an old ticket reported a young age. The oldest entry is now the
+  earliest of the heading's dates and the first `Found`/`Filed` date in the ticket's body.
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
   together, and that total comes off the release total before the per-unit division. Where the operator's

@@ -67,6 +67,60 @@ check_contains "structurally-parked excluded by rule (2 of 4: blocked + gate)" "
   "excluding structurally-parked:  2 (of 4; 2 parked by rule"
 check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #1)"
 
+# --- dir #735: oldest entry is the EARLIEST stated origination date, not the heading's first date ----
+# A heading's first date can be a later status annotation (#656's shape: filed 2026-10-01 per its body, heading
+# first date 2026-10-04) or absent; read off it, the age came out young — the direction that hides a stale pool.
+# The script samples "now" before it parses the date (BSD `date -j -f` fills the time of day from the clock),
+# so on a loaded run its whole-day figure can sit one below ours: accept N or N-1 days, never the wrong date.
+age_of() { # age_of <YYYY-MM-DD> -> "Nd|N-1d" whole days from then to now (BSD date, else GNU)
+  local ts n
+  ts="$(date -u -j -f '%Y-%m-%d' "$1" +%s 2>/dev/null || date -u -d "$1" +%s)"
+  n=$(( ($(date -u +%s) - ts) / 86400 ))
+  echo "$n $((n - 1))"
+}
+check_age() { # check_age <label> <output> <date> <id>
+  local n m
+  read -r n m <<< "$(age_of "$3")"
+  case "$2" in
+    *"oldest entry:                   ${n}d ($4)"*|*"oldest entry:                   ${m}d ($4)"*) pass "$1" ;;
+    *) fail "$1" "output missing: ${n}d or ${m}d ($4)" ;;
+  esac
+}
+backlog_age="### dir #70 — status date on the heading, filing date in the body — R2 — → pool — ⏸ HALF NOT TRIGGERED (2020-06-01, re-tagged 2020-06-02)
+
+Filed 2020-01-01 by the implementer.
+
+### dir #71 — no date on the heading at all — R3 — → pool
+
+**Found:** the 2019-03-01 groom. Later prose cites 2020-09-09.
+
+### dir #72 — young, dated heading — R3 — → pool (found 2025-01-01)
+
+body
+"
+f="$(mk_backlog "$backlog_age")"
+run "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
+check_age "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" 2019-03-01 "dir #71"
+# A "found"/"filed" inside another word is not a filing marker (the word needs a non-letter before it).
+f="$(mk_backlog "### dir #73 — decoy words — R3 — → pool (found 2025-01-01)
+
+A profound change; unfounded since 2018-05-01.
+")"
+run "$pr" --history "$SANDBOX/hist-age3.jsonl" "$f"
+check_age "'profound'/'unfounded' dates are not read as a filing date (dir #73 stays at its heading date)" "$OUT" 2025-01-01 "dir #73"
+f="$(mk_backlog "### dir #74 — label and date on different lines — R3 — → pool (found 2025-01-01)
+
+**Filed** by the audit.
+
+- 2018-05-01 Log: an unrelated dated bullet.
+")"
+run "$pr" --history "$SANDBOX/hist-age4.jsonl" "$f"
+check_age "a Filed label does not pair with a date on a LATER line (dir #74 stays at its heading date)" "$OUT" 2025-01-01 "dir #74"
+backlog_age2="${backlog_age%%### dir #71*}"
+f="$(mk_backlog "$backlog_age2")"
+run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
+check_age "body Filed date beats the heading's later status date (dir #70)" "$OUT" 2020-01-01 "dir #70"
+
 # --- structurally-parked wording variants: "⛔ PARKED" counts, "⛔ UNBLOCKED" does NOT --------------
 # MUTATION-PROOF pair, both real shapes found live in BACKLOG.md: a narrower `⛔.*BLOCKED` match
 # would silently miss "⛔ PARKED ..." tickets (dir #309/#410's own shape); a bare `⛔` match would
