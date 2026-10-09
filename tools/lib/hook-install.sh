@@ -13,9 +13,9 @@
 #
 # The hook-specs JSON is an array of {event, matcher, command}. Every function below takes it as an
 # argument and never reads a global. The one global it WRITES is $HOOK_INSTALL_BACKUP (set by
-# hook_install_backup, read by the caller right after the call; safe-write.sh's keel_backup, which it
-# wraps, sets its own $KEEL_BACKUP the same way), so two installers sourced into one shell cannot
-# cross-talk on inputs.
+# hook_install_backup_write, read by the caller right after the call; safe-write.sh's
+# keel_backup_write_through, which it wraps, sets its own $KEEL_BACKUP the same way), so two installers
+# sourced into one shell cannot cross-talk on inputs.
 #
 # REQUIRED, not optional, by every caller — the same contract as tools/lib/artifact-cksum.sh, for the
 # same reason: a degrade-and-continue stub here would make an installer write a settings.json merge it
@@ -26,17 +26,36 @@
 # same-named function in any caller that sources this after its own (tools/lib/manifest.sh's header
 # documents the lib-sourcing shadowing hazard).
 
-# hook_install_backup SETTINGS — a timestamped copy before any destructive edit; sets
-# $HOOK_INSTALL_BACKUP to the new file's path. Shared by the merge path's --force overwrite and the
-# --uninstall removal path. A thin wrapper over tools/lib/safe-write.sh's keel_backup (dir #679), which
-# owns the contract dir #660 first shipped here: `<file>.<UTC %Y%m%dT%H%M%SZ>.bak`, then `.2.bak`, … on
-# a collision, the name CLAIMED by an exclusive create, the backup 0600. Returns 1 (one line on stderr,
-# nothing claimed left behind) when no name can be claimed or the copy fails.
-hook_install_backup() {
+# hook_install_backup_write SETTINGS CONTENT — the destructive edits (the --uninstall removal, a forced
+# STALE swap, a retirement): a timestamped backup of SETTINGS, then CONTENT (plus a newline) written to
+# it, in ONE call to tools/lib/safe-write.sh's keel_backup_write_through (dir #756 (d)). The write's
+# refusals (a hard-linked or checkout-linked settings.json, a loop, a non-regular target) are checked
+# BEFORE the backup, so a refusal leaves no orphan backup; a write that fails after the backup removes it.
+# The backup keeps the contract dir #660 first shipped here: `<file>.<UTC %Y%m%dT%H%M%SZ>.bak`, then
+# `.2.bak`, … on a collision, the name CLAIMED by an exclusive create, the backup 0600. Sets
+# $HOOK_INSTALL_BACKUP to its name on success only — the caller prints "backed up" after this returns.
+# Returns 1 (one line on stderr, nothing left behind) on any refusal or failure.
+hook_install_backup_write() {
+  HOOK_INSTALL_BACKUP=""
   _hook_install_need_safe_write || return 1
-  keel_backup "$1" || return 1
+  keel_backup_write_through "$1" printf '%s\n' "$2" || return 1
   # shellcheck disable=SC2034  # read by the calling installer right after this call (header)
   HOOK_INSTALL_BACKUP="$KEEL_BACKUP"
+}
+
+# hook_install_all_same STATUSES — true when a merge report (hook_install_merge's `report`: TSV lines,
+# STATUS first) holds at least one line and every line is SAME: every hook is already wired exactly, so
+# the merge has nothing to write (dir #748 audit S5-1). An installer then skips the backup and the
+# settings.json write ONLY — its status lines, manifest and ledger run as on any other run. An installer
+# with work of its own beyond the merge (the gate's retirement) ANDs its own "nothing else to do" in.
+hook_install_all_same() {
+  local status _rest n=0
+  while IFS=$'\t' read -r status _rest; do
+    [ -n "$status" ] || continue
+    [ "$status" = SAME ] || return 1
+    n=$((n + 1))
+  done <<<"$1"
+  [ "$n" -gt 0 ]
 }
 
 # _hook_install_need_safe_write — the wrappers' call-time check that the caller loaded

@@ -15,6 +15,24 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **The installers' write library no longer acts and then fails, and never follows a planted temp name.**
+  Keel's own state files (the install manifest, the foreign-core marker, the gate's manifest and the checkout
+  ledger) are now written as a STATE write: a hard-linked one is split, so the other name keeps the old bytes,
+  and a re-install over a hard-linked manifest records what it placed and exits 0 instead of exiting 1 with
+  the files unrecorded and the run lock left behind. A backup and the write it guards are one call
+  (`keel_backup_write_through`): a block refresh or a hook installer's `--uninstall`/`--force` over a
+  hard-linked file is refused before any backup, so no orphan `.bak` is left. The library derives the Keel
+  checkout from its own path, so a consumer can no longer skip the "never edit through a link into the
+  checkout" rule by forgetting to name it. The temp name `<file>.keeltmp.<pid>` is cleared and claimed by an
+  exclusive create, so a link planted there can no longer turn the target into a link or receive its
+  content. Each refusal is one line that carries the failing command's own error or a CMD's exit status
+  (dir #756, dir #755).
+- **A no-op hook re-run leaves `settings.json` alone, and linked mode's import line is an edit.** A re-run of
+  `install-pre-pr-gate.sh`, `install-read-trace.sh` or `install-machine-watch.sh` whose every hook is already
+  wired no longer rewrites `settings.json`, so it exits 0 over a hard-linked one. Linked mode's import line
+  goes through the same edit rule: a `CLAUDE.md` linked into the Keel checkout is refused instead of having
+  the line appended to a tracked file, and repeated link-mode install/uninstall cycles no longer add a blank
+  line each time (dir #748).
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
