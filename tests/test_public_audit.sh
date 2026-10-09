@@ -735,4 +735,282 @@ run env SECRET_SCAN_PERSONAL_FILE= bash "$pa" --no-history "$d"
 check_status "dir #719 A27: set-but-empty reads the (absent) default → exit 0" 0 "$STATUS"
 check_absent "dir #719 A27: empty → no B14 GAP" "$OUT" "SECRET_SCAN_PERSONAL_FILE is set to"
 
+
+# --- dir #738 (slice 3 of spec 746): public-audit never reports clean over a read it could not complete ---
+# A failed git read or grep is a GAP `could not <step> (exit N) — the audit is INCOMPLETE` (B14), a non-git
+# DIR is refused (B13), and the producer rule is held by a register (B15). Fixtures build the Cyrillic bytes
+# with printf octal escapes, never as literals.
+real_git738="$(type -P git)"
+loc738="$(pick_utf8_locale)" || loc738="C.UTF-8"
+p738="$SANDBOX/pa-personal-738.rx"
+printf 'SeekritPersonName\n' > "$p738"
+
+# shim738 DIR 'sh code' — DIR/git runs the code first (it may exit), then execs the real git.
+shim738() {
+  mkdir -p "$1"
+  printf '#!/bin/sh\n%s\nexec "%s" "$@"\n' "$2" "$real_git738" > "$1/git"
+  chmod +x "$1/git"
+}
+# farm738 DIR [SKIP…] — a PATH made of symlinks to the tools public-audit uses, minus the named ones.
+farm738() {
+  local dir="$1" t p s skip
+  shift
+  mkdir -p "$dir"
+  for t in git grep sed sort tr cat cmp wc dirname rm mkdir mktemp date iconv uname head cut awk ls env basename readlink od xargs find; do
+    skip=0
+    for s in "$@"; do [ "$s" = "$t" ] && skip=1; done
+    [ "$skip" = 1 ] && continue
+    p="$(type -P "$t")" || continue
+    ln -s "$p" "$dir/$t"
+  done
+}
+
+# A30 (S2-4, B13) (a): a plain directory outside every repository is refused, never "clean".
+nogit738="$SANDBOX/pa-nogit-738"
+mkdir -p "$nogit738"
+printf 'hello johndoe\n' > "$nogit738/f.txt"
+printf 'johndoe\n' > "$SANDBOX/pa-personal-johndoe-738.rx"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-johndoe-738.rx" bash "$pa" --no-history "$nogit738"
+check_status "dir #738 A30a: a non-git directory → exit 2" 2 "$STATUS"
+check_contains "dir #738 A30a: says it is not a git repository" "$OUT" "is not a git repository"
+check_absent "dir #738 A30a: never claims a clean audit" "$OUT" "no publication blockers found"
+
+# A30 (b): mktemp failing → exit 2, no audit with an empty audit_tmp. A shim `mktemp` (macOS's ignores a missing
+# TMPDIR and falls back to its user temp dir, so the env alone cannot fail it there).
+d="$(repo_by dev@example.com)"
+mkdir -p "$SANDBOX/pa-shim-mktemp-fail-738"
+printf '#!/bin/sh\necho "mktemp: shim failure" >&2\nexit 1\n' > "$SANDBOX/pa-shim-mktemp-fail-738/mktemp"
+chmod +x "$SANDBOX/pa-shim-mktemp-fail-738/mktemp"
+run env PATH="$SANDBOX/pa-shim-mktemp-fail-738:$PATH" bash "$pa" "$d"
+check_status "dir #738 A30b: mktemp failing → exit 2" 2 "$STATUS"
+check_contains "dir #738 A30b: says the temp dir could not be created" "$OUT" "could not create a temp dir"
+
+# A30 (c): DIR = a linked worktree (its .git is a FILE) still runs — git rev-parse, not `[ -d .git ]`.
+d="$(repo_by dev@example.com)"
+git -C "$d" worktree add -q "$SANDBOX/pa-wt-738" -b pa-wt-738 2>/dev/null
+run bash "$pa" "$SANDBOX/pa-wt-738"
+check_status "dir #738 A30c: a linked worktree is audited (exit 0 on a clean tree)" 0 "$STATUS"
+
+# A30 (d): a RELATIVE temp dir must not leave audit_tmp relative (git -C DIR grep -f would open the wrong file).
+# GNU/busybox mktemp return one under a relative TMPDIR; macOS's ignores TMPDIR, so a shim returns one everywhere.
+d="$(repo_by dev@example.com)"
+printf 'by SeekritPersonName\n' > "$d/t.txt"; commit_in "$d" "add t.txt"
+mkdir -p "$SANDBOX/pa-rel-738/t" "$SANDBOX/pa-shim-mktemp-rel-738"
+printf '#!/bin/sh\nexec "%s" -d ./t/tmp.XXXXXX\n' "$(type -P mktemp)" > "$SANDBOX/pa-shim-mktemp-rel-738/mktemp"
+chmod +x "$SANDBOX/pa-shim-mktemp-rel-738/mktemp"
+run_in "$SANDBOX/pa-rel-738" env PATH="$SANDBOX/pa-shim-mktemp-rel-738:$PATH" SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" --no-history "$d"
+check_status "dir #738 A30d: a relative temp dir still finds the literal → exit 1" 1 "$STATUS"
+check_contains "dir #738 A30d: the literal GAP fires" "$OUT" "personal literal (secret-scan-personal) in tracked tree"
+check_absent "dir #738 A30d: and no step failed" "$OUT" "could not"
+
+# A31 (#694, B3+B4): two lines that fuse into an invalid ERE — each is its own pattern; the bad one is a GAP.
+printf 'zorb[\nplugh]\n' > "$SANDBOX/pa-personal-fuse-738.rx"
+d="$(repo_by dev@example.com)"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-fuse-738.rx" bash "$pa" --no-history "$d"
+check_status "dir #738 A31: an invalid personal line → exit 1" 1 "$STATUS"
+check_contains "dir #738 A31: exactly the invalid line is reported" "$OUT" "GAP  1 invalid regex line(s)"
+
+# A32 (#738, B14): a corrupt index must not read as "no publication blockers found".
+d="$(repo_by dev@example.com)"
+printf 'by SeekritPersonName\n' > "$d/t.txt"; commit_in "$d" "add t.txt"
+printf 'garbage' > "$d/.git/index"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" --no-history "$d"
+check_status "dir #738 A32: a corrupt index → exit 1" 1 "$STATUS"
+check_contains "dir #738 A32: names the failed read" "$OUT" "could not"
+check_contains "dir #738 A32: says the audit is INCOMPLETE" "$OUT" "the audit is INCOMPLETE"
+check_absent "dir #738 A32: never claims a clean audit" "$OUT" "no publication blockers found"
+
+# A33 (a): a failing `git log` → a GAP naming the history read, never clean.
+d="$(repo_by dev@example.com)"
+shim738 "$SANDBOX/pa-shim-log-738" 'for a in "$@"; do [ "$a" = log ] && { echo "fatal: shim" >&2; exit 128; }; done'
+run env PATH="$SANDBOX/pa-shim-log-738:$PATH" bash "$pa" "$d"
+check_status "dir #738 A33a: a failing git log → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33a: names the history read" "$OUT" "could not read the history (log -p)"
+check_absent "dir #738 A33a: never claims a clean audit" "$OUT" "no publication blockers found"
+
+# A33 (b): a failing `cat-file blob` over a committed binary holding the literal → a GAP, not a silent skip.
+d="$(repo_by dev@example.com)"
+{ utf16le "made by SeekritPersonName"; } > "$d/b.bin"; commit_in "$d" "add b.bin"
+shim738 "$SANDBOX/pa-shim-blob-738" 'cf=0; bl=0; for a in "$@"; do [ "$a" = cat-file ] && cf=1; [ "$a" = blob ] && bl=1; done; [ "$cf$bl" = 11 ] && { echo "fatal: shim" >&2; exit 128; }'
+run env PATH="$SANDBOX/pa-shim-blob-738:$PATH" SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
+check_status "dir #738 A33b: a failing cat-file blob → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33b: names the blob read" "$OUT" "could not read blob"
+
+# A33 (c): an unreadable working-tree binary → a GAP (root reads it fine, so non-root only).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(repo_by dev@example.com)"
+  { utf16le "made by SeekritPersonName"; } > "$d/b.bin"; commit_in "$d" "add b.bin"
+  chmod 000 "$d/b.bin"
+  run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" --no-history "$d"
+  chmod 644 "$d/b.bin"
+  check_status "dir #738 A33c: an unreadable working-tree binary → exit 1" 1 "$STATUS"
+  check_contains "dir #738 A33c: names the unreadable file" "$OUT" "could not read 'b.bin' in the working tree"
+else
+  pass "dir #738 A33c skipped (root reads a chmod 000 file)"
+fi
+
+# A33 (d): a textconv driver must not hide a committed-then-removed literal from `git log -p` / `-G`.
+d="$(repo_by dev@example.com)"
+printf '*.txt diff=hide\n' > "$d/.gitattributes"
+git -C "$d" config diff.hide.textconv true
+printf 'by SeekritPersonName SeekritTokenX\n' > "$d/t.txt"; commit_in "$d" "add t.txt"
+git -C "$d" rm -q t.txt; commit_in "$d" "remove t.txt"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
+check_status "dir #738 A33d: a literal behind a textconv driver → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33d: found in the history (log -p)" "$OUT" "personal literal (secret-scan-personal) in git history"
+run bash "$pa" --token SeekritTokenX "$d"
+check_status "dir #738 A33d: a token behind a textconv driver → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33d: found by the -G read" "$OUT" "private token /SeekritTokenX/ in git history"
+
+# A33 (e) (B5 a2): a non-ASCII token with an ERE operator, matched where a grep reads it. Cyrillic built from bytes.
+ivdot738="$(printf '\320\230\320\262.\320\275')"  # Cyrillic "Iv.n": matches Cyrillic "Ivan" only through the dot
+ivan738="$(printf '\320\230\320\262\320\260\320\275')"  # Cyrillic "Ivan"
+d="$(repo_by dev@example.com)"
+git -C "$d" tag -a v1 -m "$(printf 'x %s y' "$ivan738")"
+run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
+check_status "dir #738 A33e: a non-ASCII token in an annotated-tag message → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33e: found in the tag message" "$OUT" "in an annotated-tag message"
+# ...and in a committed binary behind a lone surrogate (needs slice 1's decode — iconv -c / the fallback).
+d="$(repo_by dev@example.com)"
+{ printf 'AB\000\330'; printf 'x\000 \000\030\004\062\004\060\004\075\004 \000y\000'; } > "$d/s.bin"
+commit_in "$d" "add s.bin"
+if grep -qF 'iconv -c -f UTF-16LE' "$pa"; then
+  run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
+  check_status "dir #738 A33e: a non-ASCII token behind a lone surrogate in a binary → exit 1" 1 "$STATUS"
+  check_contains "dir #738 A33e: found in the binary blob" "$OUT" "in a binary blob in git history"
+else
+  pass "dir #738 A33e skipped (the surrogate-resuming decode is slice 1's; rerun after it merges)"
+fi
+# the same token, no surrogate: the plain UTF-16 decode must still find it under the token's two passes.
+d="$(repo_by dev@example.com)"
+{ printf 'x\000 \000\030\004\062\004\060\004\075\004 \000y\000'; } > "$d/p.bin"
+commit_in "$d" "add p.bin"
+run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
+check_status "dir #738 A33e: a non-ASCII token in a plain UTF-16 binary → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33e: found in the binary blob (plain)" "$OUT" "in a binary blob in git history"
+
+# A33 (f): `-diff` in .gitattributes must not hide a committed-then-removed literal (`--text`).
+d="$(repo_by dev@example.com)"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>by SeekritPersonName</svg>\n' > "$d/a.svg"; commit_in "$d" "add a.svg"
+git -C "$d" rm -q a.svg; commit_in "$d" "remove a.svg"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
+check_status "dir #738 A33f: a literal in a -diff file in history → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33f: found in the history" "$OUT" "personal literal (secret-scan-personal) in git history"
+
+# A33 (g): a NUL inside a text-classed file must not hide the rest of the history from the greps.
+d="$(repo_by dev@example.com)"
+{ rep x 9000; printf '\nb\000c\n'; } > "$d/nul.txt"; commit_in "$d" "add nul.txt"
+printf 'contact bob@corp-example.org\n' > "$d/mail.txt"; commit_in "$d" "add mail.txt"
+run bash "$pa" "$d"
+check_contains "dir #738 A33g: the email in history is still reported" "$OUT" "email in git history content"
+
+# A33 (h): a failing PR-ref fetch → a GAP naming the remote.
+d="$(repo_by dev@example.com)"
+git -C "$d" remote add origin "$SANDBOX/pa-no-such-remote-738"
+shim738 "$SANDBOX/pa-shim-fetch-738" 'case " $* " in *" ls-remote "*) printf "0000000000000000000000000000000000000001\trefs/pull/1/head\n"; exit 0 ;; *" fetch "*) echo "fatal: shim" >&2; exit 128 ;; esac'
+run env PATH="$SANDBOX/pa-shim-fetch-738:$PATH" bash "$pa" "$d"
+check_status "dir #738 A33h: a failing PR-ref fetch → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33h: names the remote" "$OUT" "could not fetch the host PR refs of origin"
+
+# A33 (i): a PATH without grep → at least one `could not` GAP, never clean.
+d="$(repo_by dev@example.com)"
+farm738 "$SANDBOX/pa-farm-nogrep-738" grep
+run env PATH="$SANDBOX/pa-farm-nogrep-738" "$(type -P bash)" "$pa" "$d"
+check_status "dir #738 A33i: no grep on PATH → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33i: at least one step is reported as failed" "$OUT" "could not"
+check_absent "dir #738 A33i: never claims a clean audit" "$OUT" "no publication blockers found"
+
+# A33 (j): a tracked file deleted but not committed, under --no-history → a GAP (HEAD still holds it).
+d="$(repo_by dev@example.com)"
+printf 'by SeekritPersonName\n' > "$d/t.txt"; commit_in "$d" "add t.txt"
+rm "$d/t.txt"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" --no-history "$d"
+check_status "dir #738 A33j: a deleted-but-committed tracked file, --no-history → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33j: names the missing file" "$OUT" "tracked file 't.txt' is missing from the working tree"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
+check_absent "dir #738 A33j control: default mode reads HEAD, so no such GAP" "$OUT" "is missing from the working tree"
+
+# A35 (#740, B5 in public-audit): a literal after an invalid byte in history is still found under a UTF-8 locale.
+d="$(repo_by dev@example.com)"
+printf 'caf\351 by JOHNDOE\n' > "$d/e.txt"; commit_in "$d" "add e.txt"
+git -C "$d" rm -q e.txt; commit_in "$d" "remove e.txt"
+run env LC_ALL="$loc738" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-johndoe-738.rx" bash "$pa" "$d"
+check_status "dir #738 A35: a literal after an invalid byte in history → exit 1" 1 "$STATUS"
+check_contains "dir #738 A35: found in the history" "$OUT" "personal literal (secret-scan-personal) in git history"
+
+# A35b (B5 c, public-audit): a NON-ASCII literal in another case is found only by the caller-locale pass over the
+# sanitized copy (pass C folds ASCII only) — after an invalid byte in history, and in a decoded binary.
+ivan_mixed738="$(printf '\320\230\320\262\320\260\320\275')"  # Cyrillic "Ivan", mixed case
+ivan_upper738="$(printf '\320\230\320\222\320\220\320\235')"  # Cyrillic "IVAN", upper case
+printf '%s\n' "$ivan_mixed738" > "$SANDBOX/pa-personal-ivan-738.rx"
+d="$(repo_by dev@example.com)"
+printf 'caf\351 name %s\n' "$ivan_upper738" > "$d/e.txt"; commit_in "$d" "add e.txt"
+git -C "$d" rm -q e.txt; commit_in "$d" "remove e.txt"
+run env LC_ALL="$loc738" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-ivan-738.rx" bash "$pa" "$d"
+check_status "dir #738 A35b: a non-ASCII literal in another case after an invalid byte in history → exit 1" 1 "$STATUS"
+check_contains "dir #738 A35b: found in the history" "$OUT" "personal literal (secret-scan-personal) in git history"
+d="$(repo_by dev@example.com)"
+{ printf 'x\000 \000\030\004\022\004\020\004\035\004 \000y\000'; } > "$d/u.bin"  # UTF-16LE: x, Cyrillic "IVAN" upper case, y
+commit_in "$d" "add u.bin"
+run env LC_ALL="$loc738" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-ivan-738.rx" bash "$pa" --no-history "$d"
+check_status "dir #738 A35b: a non-ASCII literal in another case in a UTF-16 binary → exit 1" 1 "$STATUS"
+check_contains "dir #738 A35b: found in the binary file" "$OUT" "personal literal (secret-scan-personal) in a binary file in the working tree — u.bin"
+
+# A38 (B14, unborn HEAD): no commits is not a failure — the untracked binary is still audited.
+d="$(mktemp -d "$SANDBOX/pa.XXXXXX")"
+git -C "$d" init -q
+{ utf16le "made by SeekritPersonName"; } > "$d/x.bin"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
+check_status "dir #738 A38: a repository with no commits → exit 1 (the binary's GAP)" 1 "$STATUS"
+check_contains "dir #738 A38: the untracked binary is reported" "$OUT" "in a binary file in the working tree — x.bin"
+check_absent "dir #738 A38: no false 'could not list the changed files'" "$OUT" "could not list the changed files"
+
+# A39 (B14, prefix): DIR = a subdirectory. Only the diff spool is prefix-stripped.
+d="$(repo_by dev@example.com)"
+mkdir -p "$d/sub/sub"
+{ utf16le "made by SeekritPersonName"; } > "$d/sub/sub/x.bin"
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d/sub"
+check_contains "dir #738 A39: an untracked sub/sub/x.bin is named relative to DIR" "$OUT" \
+  "in a binary file in the working tree — sub/x.bin"
+d="$(repo_by dev@example.com)"
+mkdir -p "$d/sub/sub"
+{ utf16le "nothing here"; } > "$d/sub/sub/y.bin"; commit_in "$d" "add y.bin"
+{ utf16le "made by SeekritPersonName"; } > "$d/sub/sub/y.bin"
+git -C "$d" config diff.relative true
+run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d/sub"
+check_contains "dir #738 A39: under diff.relative=true the changed file is still found (--no-relative)" "$OUT" \
+  "in a binary file in the working tree — sub/y.bin"
+
+# A36 (B15): the register. Outside decode_binary (a twin, pinned elsewhere), a fail-open shape must carry
+# `# fail-open-ok: <reason>`; a read -r must carry LC_ALL=C or the tag; `local x="$(…)"` is flagged with or
+# without `||` (local returns 0 and hides the status).
+register738() {   # FILE → one "N: line" per violation
+  awk '
+    /^decode_binary\(\) \{/ { skip = 1 }
+    skip { if ($0 == "}") skip = 0; next }
+    /^[[:space:]]*#/ { next }
+    {
+      line = $0
+      if (index(line, "# fail-open-ok:") > 0) next
+      bad = 0
+      if (index(line, "|| true") || index(line, "|| :") || index(line, "< <(") || index(line, "| head")) bad = 1
+      if (index(line, "|| continue") && index(line, "git ")) bad = 1
+      if (index(line, "=\"$(") && !index(line, "||")) bad = 1
+      if (index(line, "local ") && index(line, "=\"$(")) bad = 1
+      if (index(line, "read -r") && !index(line, "LC_ALL=C")) bad = 1
+      if (bad) print NR ": " line
+    }' "$1"
+}
+check_eq "dir #738 A36: public-audit.sh holds no untagged fail-open shape" "" "$(register738 "$pa")"
+mut738="$SANDBOX/pa-mutant-738.sh"
+cp "$pa" "$mut738"; printf 'echo hi || true\n' >> "$mut738"
+check_ne "dir #738 A36 mutation: an untagged || true turns the register red" "" "$(register738 "$mut738")"
+cp "$pa" "$mut738"; printf 'while read -r x; do :; done\n' >> "$mut738"
+check_ne "dir #738 A36 mutation: a read -r without LC_ALL=C turns the register red" "" "$(register738 "$mut738")"
+cp "$pa" "$mut738"; printf 'f() { local x="$(cmd)" || rc=$?; }\n' >> "$mut738"
+check_ne "dir #738 A36 mutation: local x=\"\$(cmd)\" || rc=\$? turns the register red" "" "$(register738 "$mut738")"
+cp "$pa" "$mut738"; printf 'echo hi || true  # fail-open-ok: control\n' >> "$mut738"
+check_eq "dir #738 A36 control: a tagged line is accepted" "" "$(register738 "$mut738")"
+
 summary
