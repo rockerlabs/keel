@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
+  An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
+  together, and that total comes off the release total before the per-unit division. Where the operator's
+  binding limit is a subscription window, the estimate also gives window points and names the release its
+  conversion ratio was measured on; `docs/release-management.md` R7 records the points the run moved, per
+  window segment.
+- **`docs/release-management.md` R13: the brief shows one cited event.** Naming the scoring tool's event
+  kinds was not enough: most workers still reported bare tallies, which the tool cannot score. The brief's
+  fixed line now carries the shape of one cited event beside the list of kinds.
+
 ## [0.15.0] — 2026-10-09
 
 **Known issues, disclosed at the cut.** These things from the 0.15.0 delta audit ship known-imperfect; none is

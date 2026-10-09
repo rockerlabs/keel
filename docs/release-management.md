@@ -306,7 +306,10 @@ spanning more than one day, with breaks, means paying full input price on that c
 instead of reading it from cache, so a single-sitting release and a week-long one have completely
 different economics for the same work. This is a real trade against convenience, not a free win, and
 recording the figure every run is what eventually lets someone answer whether the trade is worth it —
-never asserted from one run's feel.
+never asserted from one run's feel. Where the estimate also names subscription-window points
+([`docs/grooming.md`](grooming.md) G5), record beside the figure the points the run moved: the reading
+taken before each wave already supplies them, so keep the last reading before each window reset the run
+crosses and sum the segments.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
@@ -529,6 +532,14 @@ eleven. State the exact event kinds the project's scoring tool consumes (keel's:
 `WRAP CENTRALIZED` marker already ride there verbatim. The remover is the project's own brief
 instance (the gitignored per-project file named under the brief section above) carrying that
 vocabulary as a fixed line — a manager's edit at the next launch, not a ticket.
+
+**Naming the kinds is not enough: the fixed line also shows one cited event (0.15.0).** That release's
+overlay listed the event kinds, yet most of its workers' checkpoints still carried bare tallies such as
+"Events hit 1, friction 1", which the scoring tool cannot count ([`docs/keel-impact.md`](keel-impact.md)),
+so the manager scored four sessions and left the rest unscored. The line therefore carries the shape of
+one event — its kind, then one line naming what fired or was caught and where — beside the list of kinds.
+A compensation: its remover is `dir #732`, whose tool half has the scoring tool print the one-event shape a
+checkpoint copies and attribute a score to the session it came from.
 
 ## What this pattern deliberately is not
 
