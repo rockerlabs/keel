@@ -802,4 +802,22 @@ net "a brace region in an expanding body scopes from the operator" refuse "$(pri
 net "a backtick region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n`echo \\$x`\nE')"
 net "an arithmetic region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n$(( 1) ))\nE')"
 
+# A backtick in a context nested inside backticks ends them where the shell reads it; the reader records the region
+# and reads on — so the push after it is either judged (push) or inside the region (refuse): a deny both ways.
+net "a backtick inside a quote inside backticks ends them" refuse "echo \`echo 'a\`; git push --no-verify; echo 'b\`"
+net "a backtick inside an ANSI quote inside backticks" refuse "echo \`echo \$'a\`; git push --no-verify; echo 'b\`"
+net "a backtick inside \$(…) inside backticks" push 'echo `echo $(echo a`); git push --no-verify; echo `'
+net "a backtick inside double quotes inside backticks" refuse 'echo `echo "a`; git push --no-verify; echo "b`'
+net "a backtick inside \${…} inside backticks" push 'echo `echo ${v:-a`}; git push --no-verify; echo `'
+net "a backtick in arithmetic inside backticks" push 'echo `echo $(( a`)); git push --no-verify; echo `'
+net "a backtick region scopes from its own segment, not a heredoc nested in it" refuse "$(printf 'echo `git log $(cat <<E\n\\$y\nE\n)`')"
+
+lex_has() {   # lex_has <label> <command> <text the output must contain>
+  OUT="$(printf '%s' "$2" | bash "$gate" lex 2>&1)"
+  check_contains "lex:$1" "$OUT" "$3"
+}
+for ctx in 'echo `a $(b`)`' 'echo `a ${b:-c`}`' 'echo `a $(( b`))`' 'echo `a "b`"`' "echo \`a 'b\`'\`" "echo \`a \$'b\`'\`" "$(printf 'echo `cat <<E\nb`c\nE\n`')"; do
+  lex_has "a backtick nested in backticks is a region [$ctx]" "$ctx" "refuse${T}backtick inside a nested context in backticks"
+done
+
 summary
