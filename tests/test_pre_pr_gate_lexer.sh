@@ -850,4 +850,7 @@ lex_is "a second heredoc after a delimiter cut by the backtick has an empty body
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
 net "a heredoc pending when its BQ closes is never refused" allow 'x=`git log <<E`'
 
+lex_is "the body scan stops at its BQ's end (an empty delimiter does not match a line past it)" "$(printf "echo \`cat <<''\nx\` ; echo z\n\necho w")" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@2${T}d0${T}s0${T}p21${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p29${T}u:echo${T}u:w"$'\n'"refuse${T}backtick inside a nested context in backticks${T}line 1${T}scope:no"$'\n'"refuse${T}heredoc  not closed${T}line 2${T}scope:no"
+
 summary
