@@ -788,18 +788,21 @@ net "a )-led line in a heredoc body inside \$(…) refuses" refuse "$(printf 'MS
 net "a )-led line in a heredoc body outside \$(…) does not" allow "$(printf 'cat <<'"'"'EOF'"'"'\n) git push --no-verify\nEOF')"
 net "a )-led line's region runs to the body's end (bash 3.2 runs the lines after it)" refuse "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n)\ngit push --no-verify\nEOF\n)')"
 net "a )-led line's region stops at the body's end" allow "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n)\nx\nEOF\n); git status')"
-net "a \$(…) in a heredoc delimiter nests on its own opener only" push 'cat <<$(echo {) ; git push --no-verify'
-net "a \${…} in a heredoc delimiter nests on its own opener only" push 'cat <<${x:-(} && git push --no-verify'
-net "a quoted ) in a \$(…) heredoc delimiter does not close it" push 'cat <<$(echo ")") ; git push --no-verify'
-net "a nested \${…} in a heredoc delimiter closes at the outer }" push 'cat <<${x:-${y}} ; git push --no-verify'
-net "an escaped quote in a \$(…) heredoc delimiter opens nothing" push "cat <<\$(echo \\'x) ; git push --no-verify #'"
-net "an escaped double quote in a \$(…) heredoc delimiter opens nothing" push 'cat <<$(echo \"x) ; git push --no-verify #"'
-net "a \$'…' in a \$(…) heredoc delimiter ends past its escaped quote" push "cat <<\$(echo \$'\\'') ; git push --no-verify"
-net "an escaped \" inside \"…\" in a \$(…) heredoc delimiter ends nothing" push 'cat <<$(echo "a\"b)") ; git push --no-verify'
-net "an escaped ( in a \$(…) heredoc delimiter does not nest" push 'cat <<$(echo \() ; git push --no-verify'
-net "a bare { in a \${…} heredoc delimiter does not nest (bash closes at the first })" push 'cat <<${x:-{} ; git push --no-verify'
-net "a \$(…) heredoc delimiter never closed is a region" refuse 'cat <<$(echo x ; git push --no-verify'
-net "a \$(…) heredoc delimiter not closed on its line is a region" refuse "$(printf 'cat <<$(echo x\n) ; git status')"
+# a substitution in a heredoc delimiter is a region (the shells find its end by readings of their own), and the word
+# is read again as an ordinary word, so a push after it is still a segment
+net "a \$(…) in a heredoc delimiter: the push after it is read" push 'cat <<$(echo {) ; git push --no-verify'
+net "a \${…} in a heredoc delimiter: the push after it is read" push 'cat <<${x:-(} && git push --no-verify'
+net "a \$(…) in a double-quoted heredoc delimiter: the push after it is read" push 'cat <<"$(echo ")")" ; git push --no-verify'
+net "a backtick in a heredoc delimiter: the push after it is read" push 'cat <<`echo x` ; git push --no-verify'
+net "a \$(…) heredoc delimiter never closed: the push inside it is read" push 'cat <<$(echo x ; git push --no-verify'
+net "an escaped \$' in a \$(…) heredoc delimiter" refuse "cat <<\$(echo \\\$'x\\') ; git status ; echo ')'"
+net "an escaped \${ in a \${…} heredoc delimiter" refuse 'cat <<${x:-\${} ; git status ; echo }'
+net "a ( in a nested \"…\" in a \$(…) heredoc delimiter" refuse 'cat <<$(echo "$(echo "(")") ; git status # )'
+net "a ( in backticks in a \$(…) heredoc delimiter" refuse 'cat <<$(echo `echo (`) ; git status # )'
+net "a quote in a comment in a \$(…) heredoc delimiter" refuse "$(printf 'cat <<$(echo x # it'"'"'s\n) ; git status ; echo '"'"')'"'"'')"
+net "a \$(…) heredoc delimiter inside backticks" refuse "echo \`cat <<\$(echo x) ; git status\`"
+net "a \$ before a name in a heredoc delimiter is no substitution" allow "$(printf 'cat <<"E$x"\nbody\nE$x\ngit status')"
+net "an escaped quote in a double-quoted heredoc delimiter" push "$(printf 'cat <<"E\\"x"\nbody\nE"x\ngit push --no-verify')"
 net "a )-led line's region grows over the line's later heredoc bodies" refuse "$(printf 'MSG=$(cat <<'"'"'A'"'"' <<'"'"'B'"'"'\n)\nA\ngit push --no-verify\nB\n)')"
 net "a )-led line's region does not grow over a later \$(…)'s bodies" allow "$(printf 'x=$(cat <<'"'"'A'"'"'\n)\nA\n); y=$(cat <<'"'"'B'"'"'\ngit is named\nB\n)')"
 
@@ -898,6 +901,7 @@ lex_is "a second heredoc past a cut delimiter line has an empty body, more lines
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p33${T}u:echo${T}u:w"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
 
 net "a heredoc inside a body substitution scopes from the body's operator" refuse "$(printf 'git commit -F - <<E\n$(cat <<F\nx\nF\n)\nE')"
+lex_has "a \$(…) in a heredoc delimiter is a region" 'cat <<$(echo x) ; echo hi' "refuse${T}substitution in a heredoc delimiter${T}line 1${T}scope:no"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \

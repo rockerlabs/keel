@@ -1902,51 +1902,37 @@ function redirect(   c, op, s, t, m) {
 
 # Read a heredoc delimiter word after `<<`/`<<-` (quotes and escaping backslashes removed, nothing expanded; any
 # quoting makes the body literal) and queue the heredoc on its owner, the command context it was read in.
-function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k, o, e, esc, bf) {
+function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
   s = sp; op = pos; pos += strip ? 3 : 2
   while (pos < lim && (ch[pos] == " " || ch[pos] == "\t")) pos++
-  d = ""; quoted = 0; got = 0
+  d = ""; quoted = 0; got = 0; w = pos
   while (pos < lim) {
     c = ch[pos]
     if (index(" \t\n;&|<>()", c)) break
     got = 1
-    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; pos++; continue }
+    # a substitution in the delimiter (`<<$(…)`, `<<${…}`, a backtick, bare or in double quotes): where it ends the
+    # shells decide by a reading of their own, so it is a region, and the word is read again as an ordinary word
+    if (subst_at(pos)) { region(op, n, "substitution in a heredoc delimiter", rseg(segbeg[s])); pos = w; return }
+    if (c == "\047") { quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++; d = d substr(src, r, pos - r); pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
-      while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
+      while (pos < lim && ch[pos] != "\"") {
+        if (subst_at(pos)) { region(op, n, "substitution in a heredoc delimiter", rseg(segbeg[s])); pos = w; return }
+        if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) { d = d ch[pos + 1]; pos += 2; continue }
+        r = pos++; while (pos < lim && !index("\"\\$`", ch[pos])) pos++
+        d = d substr(src, r, pos - r)
+      }
       pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
-    # a `$(…)`/`${…}` in the delimiter runs to its closer as bash finds it: a backslash escapes the next character,
-    # a quoted span (single, double or $-single quotes) is skipped whole, `$(` nests on `(` and `${` only on a nested `${`
-    # (`<<$(echo {)` and `<<${x:-(}` end at their `)` and `}`); a bare `{` in `${…}` zsh counts toward the closer
-    # (B10(l)); one not closed on its line is a region, and nothing past it is read as a delimiter
-    if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == "{")) {
-      o = ch[pos + 1]; q = (o == "(") ? ")" : "}"; depth = 0; e = pos
-      for (pos++; pos < lim && ch[pos] != "\n"; pos++) {
-        c = ch[pos]
-        if (c == "\\") pos++
-        else if (c == "\047" || c == "\"") {
-          esc = (c == "\"" || ch[pos - 1] == "$"); pos++
-          while (pos < lim && ch[pos] != c) pos += (esc && ch[pos] == "\\") ? 2 : 1
-        }
-        else if ((o == "(" && c == "(") || (o == "{" && c == "{" && ch[pos - 1] == "$")) depth++
-        else if (o == "{" && c == "{") { if (!bf) bf = region(op, n, "brace inside ${…}", rseg(segbeg[s])) }
-        else if (c == q && --depth == 0) break
-      }
-      if (pos >= lim || ch[pos] != q) {
-        if (pos > lim) pos = lim
-        region(op, n, "unclosed $(…) or ${…} in a heredoc delimiter", rseg(segbeg[s])); return
-      }
-      pos++; d = d substr(src, e, pos - e)
-      continue
-    }
-    d = d c; pos++
+    r = pos++; while (pos < lim && !index(" \t\n;&|<>()\047\"\\$`", ch[pos])) pos++
+    d = d substr(src, r, pos - r)
   }
   if (!got) { region(op, n, "heredoc operator without a delimiter", rseg(segbeg[s])); return }
   if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
   k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
 }
+function subst_at(p) { return ch[p] == "`" || (ch[p] == "$" && (ch[p + 1] == "(" || ch[p + 1] == "{")) }
 
 # start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
 # order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.
