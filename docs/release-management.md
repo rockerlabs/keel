@@ -67,9 +67,10 @@ rename, a header ratchet) has maximal overlap by construction and sorts **last i
 same rule, rebased once at the end rather than once per sibling (one release placed such a sweep
 mid-wave and only luck made its collision `CHANGELOG.md` alone; a manual ordering rule, since no
 wave-planning tool exists to own it) — and **assume every PR collides in `CHANGELOG.md` at the
-`[Unreleased]` anchor** — every PR across a real ten-PR release did, without exception, which the manager's own
-test-file-range check structurally could not see (an insertion point isn't a line range). Merges
-serialize as a consequence: one release-manager session, keeping to itself the fact that this is
+`[Unreleased]` anchor, unless the project keeps changelog fragments (keel does, dir #744: a PR adds its own
+`changelog.d/` file instead)** — every PR across a real ten-PR release did, without exception, which the
+manager's own test-file-range check structurally could not see (an insertion point isn't a line range). Merges
+serialize as a consequence (strict up-to-date still forces it): one release-manager session, keeping to itself the fact that this is
 where mutation actually threads a needle. Show the operator the wave plan before wave 1 starts — the
 wave plan is a plan, not a report, and the operator's one intervention here is cheap compared to a
 wave already in flight.

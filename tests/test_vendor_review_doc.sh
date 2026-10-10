@@ -74,8 +74,9 @@ pin "vendor-review.md states the agy allow-rule refusal (permissions.allow)" "$d
   "expected a rail for B9"
 pin "vendor-review.md states B9's scope limit (MCP servers / plugins are not checked)" "$doc" 'MCP' \
   "expected the O-2 limit in the docs, never 'no tool access' unqualified"
-# The whole file, never the live [Unreleased] section: the release cut empties that section.
+# The whole file PLUS the changelog.d/ fragments (dir #744), never the live [Unreleased] section and never
+# one fragment: the release cut empties that section and deletes the fragments.
 check_contains "CHANGELOG carries a bullet citing dir #662" \
-  "$(cat "$REPO_ROOT/CHANGELOG.md")" 'dir #662'
+  "$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'dir #662'
 
 summary

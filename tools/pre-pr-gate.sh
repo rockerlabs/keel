@@ -699,6 +699,11 @@ _test_relevant_tree_hash() {
       rest="${line#* }"
       path="${rest#* }"
       case "$path" in
+        # dir #744 B33: a changelog.d/ fragment is test-relevant by DIRECTORY, never by basename —
+        # doctor's prose checks and tools/self/changelog-fragments.sh --check read the directory by
+        # glob, so no test names `9-x.md`, and the basename rule below would drop it from the hash and
+        # let a fragment-only convergence commit re-bind the tests receipt without a run.
+        changelog.d/*) printf '%s\n' "$line" ;;
         *.md)
           base="${path##*/}"
           [ -d "$testsdir" ] && grep -rq -F -- "$base" "$testsdir" 2>/dev/null && printf '%s\n' "$line"

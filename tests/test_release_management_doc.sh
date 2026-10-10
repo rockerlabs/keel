@@ -252,4 +252,16 @@ pin "R13 names the session attribution flag" "$doc" \
   "expected R13 to say each worker's score is attributed to its session (dir #732)"
 check_absent "R13 no longer names dir #732 as a pending remover" "$doc_body" 'its remover is `dir #732`'
 
+# --- dir #744 A6 / B8: the wave-plan prose qualifies "every PR collides in CHANGELOG.md" ------------------
+pin "R2 qualifies the CHANGELOG collision assumption with changelog fragments" "$doc" \
+  'unless the project keeps changelog fragments' \
+  "expected R2 to say the collision assumption holds unless the project keeps changelog fragments (dir #744)"
+pin "R2 still says merges serialize, and why (strict up-to-date)" "$doc" 'serialize as a consequence (strict up-to-date still forces it)' \
+  "expected R2 to keep the serialization consequence"
+pin "manage-release M3 qualifies the CHANGELOG collision assumption with changelog fragments" "$cmd" \
+  'unless the project keeps changelog fragments' \
+  "expected M3 to carry the same qualifier as R2 (dir #744)"
+pin "manage-release M3 still says merges serialize" "$cmd" 'merges serialize as a consequence' \
+  "expected M3 to keep the serialization consequence"
+
 summary
