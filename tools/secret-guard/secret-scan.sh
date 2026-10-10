@@ -1043,7 +1043,7 @@ case "$mode" in
       if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
         # As at stage 0 below, any working symlink's target is read: the target the user set while resolving (a
         # type conflict) is in no stage. Unlike stage 0, an unreadable or hidden working file is a read failure
-        # here (exit 2), not a WARN: no index copy stands in for it. The WARN goes first, so a read that then
+        # here (exit 2), not a WARN-and-continue: no index copy stands in for it. The WARN goes first, so a read that then
         # fails closed still says the path was unmerged.
         wkind="none"; wnote="no working file"
         if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink"
@@ -1070,7 +1070,7 @@ case "$mode" in
       elif [ -L "$top/$f" ]; then
         # a tracked symlink's committed content IS its target string — scan that (it can carry a
         # personal path); the target file itself, if tracked, is scanned as its own entry. A failed readlink
-        # exits 2 (it used to read as an empty target, i.e. `clean` — dir #715). A symlink that replaced a
+        # exits 2 (before dir #715 it read as an empty target, i.e. `clean`). A symlink that replaced a
         # tracked file gets the same read: its target is what the next `git add` commits.
         target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
         emit_stream "$f" <<< "$target"
