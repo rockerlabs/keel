@@ -1000,10 +1000,9 @@ case "$mode" in
     # not. A working-tree symlink's target string is always scanned (it is what the next `git add` commits); a
     # tracked file a symlink replaced (index mode not 120000) has its index copy scanned too. An unmerged path (a
     # stage other than 0) is read whole: its working file if there is one, and every distinct non-gitlink stage's
-    # index copy — the
-    # working file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs"
-    # alone. A hit a later copy shares byte for byte with an earlier one is recorded once; one WARN names the path
-    # and what its working file gave.
+    # index copy — the working file of a binary or type conflict holds one side only, and a key may sit in "ours"
+    # or "theirs" alone. A hit a later copy shares byte for byte with an earlier one is recorded once; one WARN
+    # names the path and what its working file gave.
     # tracked_index_copy PATH SHA — scan the index copy SHA of PATH (its records from path_from on are the earlier
     # copies'); exit 2 when git cannot read it.
     # hidden_by_dir PATH — 0 when a directory above PATH exists but cannot be searched: PATH may exist all the
@@ -1042,10 +1041,10 @@ case "$mode" in
       prev="$f"; staged_shas=" "; path_from="${#rec_path[@]}"
       fesc="${f//$'\n'/\\n}"
       if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
-        # As at stage 0 below, any working symlink's target is read: the target the user set while resolving (a type
-        # conflict) is in no stage. Unlike stage 0, an unreadable or hidden working file is a read failure here
-        # (exit 2), not a WARN: no index copy stands in for it. The WARN goes first, so a
-        # read that then fails closed still says the path was unmerged.
+        # As at stage 0 below, any working symlink's target is read: the target the user set while resolving (a
+        # type conflict) is in no stage. Unlike stage 0, an unreadable or hidden working file is a read failure
+        # here (exit 2), not a WARN: no index copy stands in for it. The WARN goes first, so a read that then
+        # fails closed still says the path was unmerged.
         wkind="none"; wnote="no working file"
         if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink"
         elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file"
@@ -1070,22 +1069,22 @@ case "$mode" in
         sparse=$((sparse + 1))
       elif [ -L "$top/$f" ]; then
         # a tracked symlink's committed content IS its target string — scan that (it can carry a
-        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-        # readlink read as an empty target, i.e. `clean` (dir #715). A symlink that replaced a tracked file
-        # gets the same read: its target is what the next `git add` commits.
+        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed readlink
+        # exits 2 (it used to read as an empty target, i.e. `clean` — dir #715). A symlink that replaced a
+        # tracked file gets the same read: its target is what the next `git add` commits.
         target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
         emit_stream "$f" <<< "$target"
         [ "$tmode" != 120000 ] || continue
         # a tracked file a symlink replaced: its committed content is the index copy
         echo "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $fesc" >&2
-      elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+      elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then              # (a symlink took the branch above)
         emit_stream "$f" < "$top/$f"
         continue
-      elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
+      elif [ -f "$top/$f" ]; then
         why="unreadable"
       elif hidden_by_dir "$f"; then
         why="hidden by a directory that cannot be searched"
-      elif [ ! -L "$top/$f" ] && [ ! -e "$top/$f" ]; then
+      elif [ ! -e "$top/$f" ]; then
         why="missing from the working tree"
       else
         why="not a regular file in the working tree"
