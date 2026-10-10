@@ -1910,7 +1910,7 @@ keel_hooks_is() {
 # scope selector that collapses to ONE file: it cannot see a hooksPath set in the XDG file behind an
 # existing ~/.gitconfig, in an [include], or at SYSTEM scope, yet any of those governs every commit. The
 # answer comes from the installer itself (`--where --global`, the one resolver tools/doctor.sh reads too),
-# as key=value lines: value, scope, origin, dir, keel-dir, pre-commit, pre-push. Empty when the installer
+# as key=value lines: set, value, scope, origin, dir, keel-dir, pre-commit, pre-push. Empty when the installer
 # cannot answer (HOME unset, a stripped checkout) — callers then fall through to the installer's own
 # check, which refuses a foreign hooksPath rather than overwrite it.
 keel_where_machine() { "$root/tools/install-secret-guard.sh" --where --global 2>/dev/null || true; }
@@ -1930,7 +1930,9 @@ if [ "$DO_HOOKS" = 1 ]; then
   : "${HOME:?install: wiring hooks needs HOME set (or pass --no-hooks)}"
   wm="$(keel_where_machine)"
   existing="$(wm_get value)"
-  if [ -z "$existing" ] || keel_hooks_is "$existing"; then
+  # dir #684 / dir #748 S4-1: "already set" is the installer's `set=` (the read's exit status), not a non-empty
+  # value — an empty hooksPath is the user's wiring too. No answer (`set=` absent) falls through to the installer.
+  if [ "$(wm_get set)" != 1 ] || keel_hooks_is "$existing"; then
     # Non-fatal: a wiring failure must still fall through to the verify summary below
     # (which reports the hook state), not abort the whole bootstrap under `set -e`.
     if ! "$root/tools/install-secret-guard.sh" --global | sed 's/^/  /'; then
