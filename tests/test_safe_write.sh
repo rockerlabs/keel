@@ -99,7 +99,7 @@ check_contains "A10 …and the output names it" "$OUT" "delegation.md.$ts.2.bak"
 
 # --- scratch checkout for A11 / A24: a copy of this tree, committed, so `git status` can tell -------
 ck="$SANDBOX/ck"
-tracked_tree_copy "$ck"
+tracked_tree_copy "$ck" || exit 1
 git -C "$ck" init -q
 git -C "$ck" add -A
 git -C "$ck" commit -qm base

@@ -657,7 +657,8 @@ inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # tracked_tree_copy DEST — a copy of this checkout's tracked top-level entries (uncommitted edits to them
 # included) into DEST, for a test that runs install.sh / uninstall.sh from a scratch checkout. Only the
 # tracked entries: a run from the main checkout would otherwise drag its .git/, private/ and nested
-# worktrees along. DEST is not a git repository; a test that needs one runs `git init` itself.
+# worktrees along. DEST is not a git repository; a test that needs one runs `git init` itself. Returns 1
+# (one FATAL line) when a copy fails — callers stop the file (`|| exit 1`) rather than test a partial tree.
 tracked_tree_copy() {
   local dest="$1" e tops
   require_sandbox_path "$dest" tracked_tree_copy

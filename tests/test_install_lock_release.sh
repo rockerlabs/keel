@@ -21,10 +21,11 @@ wait_ready() {
 }
 # reap PID — a bounded wait for PID, its exit status in $REAPED. Called in the test's own shell, never
 # inside `$( )`: a subshell cannot wait for its parent's child. A pid still alive after 30s is killed
-# (status 137), so a build that ignores the signal fails its row instead of hanging the suite.
+# (status 137), so a build that ignores the signal fails its row instead of hanging the suite. 120s, not
+# less: a full install after the pause, under a parallel test wave's load, can take well past 30s.
 reap() {
   local p="$1" dog
-  ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep 30 & s=$!; wait "$s"; kill -9 "$p" ) > /dev/null 2>&1 &
+  ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep 120 & s=$!; wait "$s"; kill -9 "$p" ) > /dev/null 2>&1 &
   dog=$!
   wait "$p"; REAPED=$?
   kill "$dog" 2>/dev/null || true; wait "$dog" 2>/dev/null || true
@@ -32,7 +33,7 @@ reap() {
 
 # --- scratch checkout for A31 (2): a copy of this tree (not a git repository) -----------------------
 ck="$SANDBOX/ck"
-tracked_tree_copy "$ck"
+tracked_tree_copy "$ck" || exit 1
 
 # --- A31 (2): a REQUIRED lib guard still after the lock leaves no lock -------------------------------
 : > "$ck/tools/lib/artifact-cksum.sh"
@@ -114,7 +115,7 @@ KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
   "$install" --home "$h" --no-hooks > "$SANDBOX/r-takeover-ok.out" 2>&1 </dev/null &
 pid=$!
 if wait_ready "$mk"; then
-  printf '%s' "$$" > "$h/.install.lock/pid"   # no final newline: the release still reads it
+  printf '%s\n' "$$" > "$h/.install.lock/pid"
   rm -f "$mk"
   reap "$pid"
   check_status "takeover (success path): the run finishes → exit 0" 0 "$REAPED"

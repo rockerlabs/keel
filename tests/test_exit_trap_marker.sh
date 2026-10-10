@@ -206,7 +206,7 @@ check_file "dir #692 bootstrap.sh under $sh: ...and installs" "$SANDBOX/pl692-bo
 #       trap, so nothing is left to read a status-0 abort as success (a build that only sets a flag at
 #       release and leaves the trap armed turns this into exit 0).
 itree="$SANDBOX/pl757"
-tracked_tree_copy "$itree"
+tracked_tree_copy "$itree" || exit 1
 for probe in a b; do
   case "$probe" in
     a) ianchor='if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then' ;;

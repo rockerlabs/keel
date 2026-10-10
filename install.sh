@@ -191,8 +191,8 @@ fi
 # never overwrites one — is stated once, in its header). A degrade-and-continue fallback would be the
 # detaching write it exists to remove, so a missing or corrupt copy refuses the whole run. Loaded here,
 # before the home is created and before the run lock is taken (spec 685 round 2 B18), so its refusal
-# leaves nothing behind — not even the home. It loads stat-portable itself and primes its flavor cache;
-# install.sh's own stat-portable block further down keeps that copy.
+# leaves nothing behind — not even the home. It loads stat-portable itself and primes its flavor cache, so
+# install.sh loads no copy of its own.
 if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/safe-write.sh
   . "$root/tools/lib/safe-write.sh"
@@ -475,8 +475,9 @@ done
 # releases it (dir #757, dir #756 (b); spec 685 round 2 B18): one EXIT trap in dir #692's completion-marker
 # form, since a bare `trap 'rm …' EXIT` was measured on bash 3.2.57 to turn a `set -u` abort into exit 0.
 # No exit 0 is legitimate while the lock is held — the run's only exit-0 path passes the success-path
-# release far below first — so the release itself is the completion marker: it removes the lock and
-# disarms this trap (`trap - EXIT`), and any status-0 exit the trap still sees is an abort, made 1.
+# release far below first — so that release is the completion marker: it removes the lock
+# (_keel_install_release_lock) and then disarms this trap (`trap - EXIT INT TERM`, the line after), and
+# any status-0 exit the trap still sees is an abort, made 1. An early exit-0 path added later needs both.
 # Disarming at release (not just setting a flag there) also means a later exit can never remove a lock
 # that another install took after ours. INT and TERM exit with their conventional statuses, so an
 # interrupted run removes the lock too (bash 3.2 otherwise shows the EXIT trap `$?` = 0 on them).
@@ -488,7 +489,9 @@ done
 # runs recovering one stale lock at once, or a sibling whose `kill -0` met EPERM — the residuals named at
 # the acquire) now belongs to the run that took it, and an exit of ours must not delete it. Named residual,
 # not closed: the read and the removal are two steps, so a sibling that reclaims the lock in the instant
-# between them still loses it — as narrow as the reclaim races it follows from.
+# between them still loses it — as narrow as the reclaim races it follows from. The cost of the check: a
+# lock whose pid file went missing or empty mid-run is not removed by its own run either; the next run's
+# empty-pid retry (about 1s) reclaims it.
 _keel_install_release_lock() {
   local holder=""
   # `|| :`, not `|| holder=""`: a pid file without a final newline makes `read` return 1 with the value
@@ -2335,9 +2338,10 @@ fi
 
 # Release the run-duration lock (dir #350, Fork 2) on the success path, right after the final manifest write
 # above — and with it the EXIT trap armed at the acquire (spec 685 round 2 B18): this release IS that trap's
-# completion marker. The trap is disarmed in the same step, so nothing after this line (the ledger, the
+# completion marker. The trap is disarmed on the very next line, so nothing after them (the ledger, the
 # summary) can remove a lock a sibling install takes once ours is gone, and a later abort exits with its
-# own status, never a masked 0. The release never aborts the run under `set -euo pipefail`: worst case it
+# own status, never a masked 0. (A signal landing between the two lines only runs the trap's own release
+# again, a no-op once the lock is gone.) The release never aborts the run under `set -euo pipefail`: worst case it
 # leaves the lock behind, which the next install's stale-pid check reclaims.
 _keel_install_release_lock
 trap - EXIT INT TERM
