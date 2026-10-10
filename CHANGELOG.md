@@ -30,6 +30,11 @@ sections real content going forward — see that page for exactly when each one 
   the verbatim Worker rails block, a leg writes only under its own scratch subdirectory and never stops, kills or
   removes a container, process or file it did not create; the cut-and-land step says a history entry states only
   events already on record. `tests/test_delta_audit_doc.sh` pins the leg rails byte-identical across the five copies.
+- **`tools/self/alpine-clone.sh` no longer resets and cleans through a symlink.** dir #750: with the clone path a
+  symlink, `checkout -f -B` and `clean -ffdx` ran on whatever it pointed at (reproduced on an operator clone and
+  on the source checkout itself). The path is now resolved physically before any git write: a symlinked clone
+  path, one resolving to the source, or a clone whose `.git` is a symlink is refused. The "`.git` not at its
+  root" refusal, which only an incidental `find` abort had been backing, is pinned by a test.
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
   together, and that total comes off the release total before the per-unit division. Where the operator's

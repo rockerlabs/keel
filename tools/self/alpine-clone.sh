@@ -21,8 +21,9 @@
 #   --run     after preparing the clone, run the Alpine docker leg on it (the CLAUDE.md one-liner).
 # Prints the clone path on stdout (last line). Exit: 0 ok; 2 usage; 1 any refusal.
 #
-# Refusals (nothing is touched): a target that exists but is neither empty nor a clone of --source
-# (its `.git` is not at its root, or its origin differs); an unknown <sha>. This tool never removes a clone
+# Refusals (nothing is touched): a clone path that is a symlink, or that resolves (physically) to the
+# source itself (dir #750); a target that exists but is neither empty nor a clone of --source (its `.git`
+# is not at its root or is a symlink, or its origin differs); an unknown <sha>. This tool never removes a clone
 # directory — a session cannot `rm -rf` — so removing one stays the release manager's wrap or the
 # operator's. A REUSED clone is reset to the requested commit (`checkout -f -B`), cleaned (`clean -ffdx`) and
 # stripped of `.DS_Store` files under `.git` (`find -delete`): keep nothing in it. The path is under
@@ -67,9 +68,25 @@ mkdir -p "$HOME/.keel/tmp"
 
 strip_ds_store() { find "$clone/.git" -name .DS_Store -type f -delete; }
 
+# dir #750: resolve the clone path PHYSICALLY before any git write. `checkout -f -B` + `clean -ffdx` below
+# follow a symlink and reset whatever it points at (an operator clone, or the source checkout itself).
+# The clone path itself must not be a link (a dangling one too), and its physical path must not be the
+# source's — a symlinked ANCESTOR (say $HOME/.keel/tmp) is fine so long as it does not lead back to the source.
+[ ! -L "$clone" ] || die "$clone is a symlink — refusing to reset and clean what it points at (remove the link by hand)"
+if [ -d "$clone" ]; then
+  clone_phys="$(cd -P "$clone" 2>/dev/null && pwd -P)" || die "cannot resolve $clone"
+  source_phys="$(cd -P "$source_dir" 2>/dev/null && pwd -P)" || die "cannot resolve $source_dir"
+  [ "$clone_phys" != "$source_phys" ] \
+    || die "$clone resolves to the source checkout itself ($source_phys) — refusing to reset and clean it"
+fi
+
 if [ -e "$clone" ] && [ -n "$(ls -A "$clone" 2>/dev/null)" ]; then
-  [ "$(git -C "$clone" rev-parse --git-dir 2>/dev/null || true)" = .git ] \
-    || die "$clone exists and is not a git clone — refusing to reuse it (remove it by hand)"
+  # `.git` must sit AT the clone's root: inside another repository `rev-parse --git-dir` names that
+  # repository's git dir instead, and the steps below would fetch into, reset and clean the ENCLOSING one
+  # (dir #750, S9-9: this refusal was unpinned — only an incidental `find` abort saved the tool). A `.git`
+  # that is itself a link leads to another repository's git dir the same way.
+  [ "$(git -C "$clone" rev-parse --git-dir 2>/dev/null || true)" = .git ] && [ ! -L "$clone/.git" ] \
+    || die "$clone exists and is not a git clone (its .git is missing, not at its root, or a symlink) — refusing to reuse it (remove it by hand)"
   have="$(git -C "$clone" config --get remote.origin.url || true)"
   [ "$have" = "$source_dir" ] \
     || die "$clone has origin '$have', not the source '$source_dir' — a stale clone; refusing to reuse it"

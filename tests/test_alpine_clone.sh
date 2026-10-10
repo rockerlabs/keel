@@ -84,6 +84,92 @@ check_status "no arguments is a usage error" 2 "$STATUS"
 run "$tool" W5 "$sha1" --source "$SANDBOX/nope"
 check_ne "a --source that is not a repo is refused" 0 "$STATUS"
 
+# --- dir #750: the clone path is resolved physically; nothing is reset or cleaned through a symlink ---------
+# Each fixture is a DECOY that looks like a clone of the source (origin = the source, as the reuse guard
+# requires) or the source itself with origin pointing at itself, planted with an untracked file. Before the
+# fix the tool followed the link and ran `checkout -f -B keel-alpine-leg` + `clean -ffdx` on the target
+# (S9-2, reproduced on an operator clone and on the source checkout). Everything lives under $SANDBOX; a
+# separate HOME per case keeps the canonical clone paths of the groups above untouched.
+# decoy_untouched DECOY LABEL — the planted file survives, the branch is the one it started on, and no
+# keel-alpine-leg branch was created in it.
+decoy_untouched() {
+  check_file "$2: the planted untracked file survives" "$1/keep-me"
+  check_eq "$2: HEAD still on its original branch" "$3" "$(git -C "$1" symbolic-ref -q --short HEAD || true)"
+  check_eq "$2: no keel-alpine-leg branch was created in it" "" \
+    "$(git -C "$1" for-each-ref --format='%(refname)' refs/heads/keel-alpine-leg)"
+}
+
+# (a) the clone path IS a symlink to a plausible clone of the source
+h1="$SANDBOX/h-symlink"; mkdir -p "$h1/.keel/tmp"
+git clone -q "$src" "$SANDBOX/decoy-clone"
+echo precious > "$SANDBOX/decoy-clone/keep-me"
+decoy_branch="$(git -C "$SANDBOX/decoy-clone" symbolic-ref -q --short HEAD)"
+ln -s "$SANDBOX/decoy-clone" "$h1/.keel/tmp/alpine-clone-W8"
+run env HOME="$h1" "$tool" W8 "$sha1" --source "$src"
+check_ne "750: a clone path that is a symlink is refused" 0 "$STATUS"
+check_contains "750: …and the refusal names the symlink" "$OUT" "symlink"
+decoy_untouched "$SANDBOX/decoy-clone" "750 symlink to a clone" "$decoy_branch"
+check_eq "750: the link itself is left in place" "$SANDBOX/decoy-clone" "$(readlink "$h1/.keel/tmp/alpine-clone-W8")"
+
+# (b) the symlink points at the source checkout itself, whose origin is itself
+srcself="$(new_repo)"; echo s > "$srcself/f"; git -C "$srcself" add f; git -C "$srcself" commit -q -m s
+git -C "$srcself" remote add origin "$srcself"
+echo precious > "$srcself/keep-me"
+self_branch="$(git -C "$srcself" symbolic-ref -q --short HEAD)"
+self_sha="$(git -C "$srcself" rev-parse HEAD)"
+ln -s "$srcself" "$h1/.keel/tmp/alpine-clone-W9"
+run env HOME="$h1" "$tool" W9 "$self_sha" --source "$srcself"
+check_ne "750: a symlink to the source checkout is refused" 0 "$STATUS"
+decoy_untouched "$srcself" "750 symlink to the source" "$self_branch"
+
+# (c) the clone path is a real directory name but resolves to the source through a symlinked ancestor
+h2="$SANDBOX/h-ancestor"; mkdir -p "$h2/.keel" "$SANDBOX/real-tmp"
+ln -s "$SANDBOX/real-tmp" "$h2/.keel/tmp"
+srcanc="$SANDBOX/real-tmp/alpine-clone-W10"; mkdir -p "$srcanc"; git -C "$srcanc" init -q
+echo s > "$srcanc/f"; git -C "$srcanc" add f; git -C "$srcanc" commit -q -m s
+git -C "$srcanc" remote add origin "$srcanc"
+echo precious > "$srcanc/keep-me"
+anc_branch="$(git -C "$srcanc" symbolic-ref -q --short HEAD)"
+run env HOME="$h2" "$tool" W10 "$(git -C "$srcanc" rev-parse HEAD)" --source "$srcanc"
+check_ne "750: a clone path that resolves to the source is refused" 0 "$STATUS"
+check_contains "750: …and the refusal says it resolves to the source" "$OUT" "source"
+decoy_untouched "$srcanc" "750 ancestor link to the source" "$anc_branch"
+
+# (d) a symlinked ANCESTOR that does not reach the source is fine: the clone is cut under the real directory
+h4="$SANDBOX/h-ancestor-ok"; mkdir -p "$h4/.keel" "$SANDBOX/real-tmp-ok"
+ln -s "$SANDBOX/real-tmp-ok" "$h4/.keel/tmp"
+run env HOME="$h4" "$tool" W11 "$sha1" --source "$src"
+check_status "750: a symlinked \$HOME/.keel/tmp is still usable" 0 "$STATUS"
+check_dir "750: …and the clone lands under its real directory" "$SANDBOX/real-tmp-ok/alpine-clone-W11/.git"
+
+# (e) the clone's `.git` is a symlink to another repository's git dir (the root test sees `.git`)
+h5="$SANDBOX/h-gitlink"; mkdir -p "$h5/.keel/tmp/alpine-clone-W12"
+git clone -q "$src" "$SANDBOX/decoy-gitdir"
+echo precious > "$SANDBOX/decoy-gitdir/keep-me"
+gl_branch="$(git -C "$SANDBOX/decoy-gitdir" symbolic-ref -q --short HEAD)"
+ln -s "$SANDBOX/decoy-gitdir/.git" "$h5/.keel/tmp/alpine-clone-W12/.git"
+run env HOME="$h5" "$tool" W12 "$sha1" --source "$src"
+check_ne "750: a clone whose .git is a symlink is refused" 0 "$STATUS"
+decoy_untouched "$SANDBOX/decoy-gitdir" "750 .git symlinked to another repo" "$gl_branch"
+
+# --- dir #750 (S9-9): the "`.git` not at its root" refusal is pinned ----------------------------------------
+# A non-empty target INSIDE another repository (which has origin = the source) answers `rev-parse --git-dir`
+# with a path that is not `.git`. Without the root check the tool would fetch, `checkout -f -B` and
+# `clean -ffdx` the ENCLOSING repository; it was saved only by an incidental `find` abort.
+h6="$SANDBOX/h-nested"; mkdir -p "$h6/.keel/tmp/alpine-clone-W13"
+git -C "$h6/.keel" init -q
+git -C "$h6/.keel" remote add origin "$src"
+git -C "$h6/.keel" commit -q --allow-empty -m enclosing
+echo data > "$h6/.keel/tmp/alpine-clone-W13/data"
+enc_branch="$(git -C "$h6/.keel" symbolic-ref -q --short HEAD)"
+run env HOME="$h6" "$tool" W13 "$sha1" --source "$src"
+check_ne "750: a target whose .git is not at its root is refused" 0 "$STATUS"
+check_contains "750: …and the refusal says it is not a git clone" "$OUT" "not a git clone"
+check_eq "750: …the target's content is kept" "data" "$(cat "$h6/.keel/tmp/alpine-clone-W13/data")"
+check_eq "750: …the enclosing repository stays on its branch" "$enc_branch" "$(git -C "$h6/.keel" symbolic-ref -q --short HEAD || true)"
+check_eq "750: …and no keel-alpine-leg branch was created in it" "" \
+  "$(git -C "$h6/.keel" for-each-ref --format='%(refname)' refs/heads/keel-alpine-leg)"
+
 # --run hands the clone to docker (a PATH shim records argv; no real docker is needed)
 shim="$SANDBOX/shim"; mkdir -p "$shim"
 printf '#!/bin/sh\nprintf "%%s\\n" "$*" > "%s/docker.args"\n' "$SANDBOX" > "$shim/docker"; chmod +x "$shim/docker"
