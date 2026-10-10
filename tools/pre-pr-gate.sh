@@ -1564,7 +1564,8 @@ function push_ctx(t, p) {
   sp++; cty[sp] = t; cpos[sp] = p; cseg[sp] = segbeg[ownsp]; adepth[sp] = 0; flagged[sp] = 0; qflagged[sp] = 0
   clim[sp] = (t == "BQ") ? bq_end(p) : n + 1
   if (t == "SUB" || t == "BQ") {
-    cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p
+    # its first segment starts right after the opener: a backtick, or `$(` / `<(` / `>(`
+    cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
     bqreg[sp] = 0
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
@@ -1670,7 +1671,7 @@ function on_segment(s,   i, k) {
   check_push()
   check_segment()
 }
-function lex_segment(   line, k, m, cls, t) {
+function lex_segment(   line, k, m, cls) {
   line = segctx "@" segline "\td" segdepth "\ts" segscope "\tp" segpos
   for (k = 1; k <= ntok; k++) {
     m = tokm[k]; cls = ""
@@ -1682,7 +1683,6 @@ function lex_segment(   line, k, m, cls, t) {
   }
   print line
 }
-# Word predicates the matchers use.
 # lex_esc(t) — t with a backslash, a TAB and a newline written as \\, \t and \n. A character loop, not gsub: busybox
 # awk reads a backslash in a gsub replacement differently from the other awks.
 function lex_esc(t,   o, i, c) {
@@ -1694,6 +1694,7 @@ function lex_esc(t,   o, i, c) {
   }
   return o
 }
+# Word predicates the matchers use.
 function w_plain(i) { return index(tokm[i], "x") == 0 }
 function w_literal(i) { return index(tokm[i], "x") == 0 && index(tokm[i], "g") == 0 }
 function w_unquoted(i) { return index(tokm[i], "q") == 0 && index(tokm[i], "x") == 0 }
@@ -1713,19 +1714,19 @@ function w_assign(i,   t, m, L, nl, ie) {
 function w_assign_name(i) { match(tok[i], /^[A-Za-z_][A-Za-z0-9_]*/); return substr(tok[i], 1, RLENGTH) }
 
 # --- the main loop ----------------------------------------------------------------------------------------
-function lex_main(   i, L) {
+function lex_main(   i, L, t) {
   n = split(src, ch, "")
   L = 1; lstart[1] = 1
   for (i = 1; i <= n; i++) { lno[i] = L; if (ch[i] == "\n") { lend[L] = i - 1; L++; lstart[L] = i + 1 } }
   lend[L] = n; nlines = L; lno[n + 1] = L
   sp = 0; ownsp = 0; gid = 0; nreg = 0; hd_sp = 0; hb_s = 0; lim = n + 1
-  push_ctx("TOP", 1); cid[1] = 0; gid = 0; segbeg[1] = 1
+  push_ctx("TOP", 1); segbeg[1] = 1
   pos = 1
   while (1) {
     if (pos >= lim && at_limit()) continue
     if (pos > n) break
     t = cty[sp]
-    if (t == "TOP" || t == "SUB" || t == "BQ") cmd_char()
+    if (is_cmd(t)) cmd_char()
     else if (t == "DQ") dq_char()
     else if (t == "SQ") sq_char()
     else if (t == "AQ") aq_char()
@@ -1741,7 +1742,7 @@ function lex_main(   i, L) {
 function dollar(   c, k) {
   c = at(1)
   if (c == "(" && at(2) == "(") { word_begin(pos); push_ctx("ARITH", pos); akind[sp] = "$(("; pos += 3; return 1 }
-  if (c == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; segbeg[sp] = pos; return 1 }
+  if (c == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; return 1 }
   if (c == "[") { word_begin(pos); push_ctx("ARITH", pos); akind[sp] = "$["; pos += 2; return 1 }
   if (c == "{") { word_begin(pos); push_ctx("PARAM", pos); pos += 2; return 1 }
   if (c ~ /^[A-Za-z_]$/) {
@@ -1765,20 +1766,22 @@ function bq_escape(set,   b) {
 # that starts earlier (a context’s own segment restarts at the body’s first line).
 function rseg(sb) { return (hd_sp && hd_seg < sb) ? hd_seg : sb }
 # brace_g(p) — 1 when the unquoted `{` at p opens a brace expansion: its matching `}` in the same word comes
-# after an unquoted `,` or `..` at its nesting level.
-function brace_g(p,   d, j, c, seen) {
-  d = 1; seen = 0
-  for (j = p + 1; j < lim; j++) {
+# after an unquoted `,` or `..` at its nesting level. One pass to the word’s end settles every `{` it meets (a
+# stack of open braces), cached by position — a rescan per `{` cost quadratic time on a word of many braces.
+function brace_g(p,   j, c, d) {
+  if (p in bgx) return bgx[p]
+  d = 0
+  for (j = p; j < lim; j++) {
     c = ch[j]
     if (c == "\\") { j++; continue }
     if (c == "\047") { while (++j < lim && ch[j] != "\047") ; continue }
     if (c == "\"") { while (++j < lim && ch[j] != "\"") if (ch[j] == "\\") j++; continue }
-    if (index(" \t\n;&|<>()", c)) return 0
-    if (c == "{") d++
-    else if (c == "}") { if (--d == 0) return seen }
-    else if (d == 1 && (c == "," || (c == "." && ch[j + 1] == "."))) seen = 1
+    if (index(" \t\n;&|<>()", c)) break
+    if (c == "{") { bst[++d] = j; bseen[d] = 0; bgx[j] = 0 }
+    else if (c == "}") { if (d > 0) { bgx[bst[d]] = bseen[d]; d-- } }
+    else if (d > 0 && (c == "," || (c == "." && ch[j + 1] == "."))) bseen[d] = 1
   }
-  return 0
+  return bgx[p]
 }
 # tilde_x() — 1 when the unquoted `~` at pos is a tilde expansion (a word’s start, or after `=`/`:` in an assignment).
 function tilde_x(   t) {
@@ -1807,7 +1810,7 @@ function cmd_char(   c, s, k, op) {
   }
   if (c == "\047") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { word_begin(pos); push_ctx("DQ", pos); pos++; return }
-  if (c == "`") { word_begin(pos); push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { word_begin(pos); push_ctx("BQ", pos); pos++; return }
   if (c == "$") {
     if (at(1) == "\047") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }
     if (at(1) == "\"") { word_begin(pos); push_ctx("DQ", pos); pos += 2; return }
@@ -1872,7 +1875,7 @@ function close_cmd(   s, k) {
 # substitutions are judged) but not a word of the segment — so `2>&1`, `>&2` and `&>/dev/null` split nothing.
 function redirect(   c, op, s, t, m) {
   s = sp; c = ch[pos]
-  if ((c == "<" || c == ">") && at(1) == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; segbeg[sp] = pos; return }
+  if ((c == "<" || c == ">") && at(1) == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; return }
   if (c == "&") op = (at(2) == ">") ? "&>>" : "&>"
   else if (c == "<") {
     if (at(1) == "<" && at(2) == "<") op = "<<<"
@@ -1918,15 +1921,15 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
     }
     d = d c; pos++
   }
-  if (!got) { region(op, n, "heredoc operator without a delimiter", segbeg[s]); return }
-  if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", segbeg[s]); return }
+  if (!got) { region(op, n, "heredoc operator without a delimiter", rseg(segbeg[s])); return }
+  if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
   k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
 }
 
 # start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
 # order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.
 function start_bodies(s) { hb_s = s; hb_k = 0; next_body() }
-function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
+function next_body(   s, k, L, txt, found, bstop, after, hline, cmp) {
   s = hb_s
   while (1) {
     k = ++hb_k
@@ -1941,7 +1944,7 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
       if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], line_end(L), ") line in a heredoc body inside $(…)", hqsb[s, k])
-      if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]
+      if (hqx[s, k] && !hline && txt ~ /\\$/ && bs_joins(L, s, k)) hline = lstart[L]
     }
     # not found: the body runs to the end of the text — a region — or to the backtick of the BQ it sits in, where
     # every shell ends it too
@@ -1975,7 +1978,7 @@ function empty_body(s, k) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not cl
 function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }
 function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
 # end_hdata — the expanding body’s end: anything still open inside it is a region, closed there.
-function end_hdata(   i) {
+function end_hdata() {
   if (sp > hd_sp) region(cpos[hd_sp + 1], clim[hd_sp] - 1, "substitution not closed in a heredoc body", hd_seg)
   while (sp > hd_sp) close_any(clim[hd_sp])
   pop_ctx(); hd_sp = 0; pos = hd_after
@@ -2004,7 +2007,7 @@ function dq_char(   c, k) {
     addsrc(pos, 1, "q"); pos++; return
   }
   if (c == "$" && dollar()) return
-  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
   k = 1
   while (pos + k < lim && index("\"\\$`", ch[pos + k]) == 0) k++
   addsrc(pos, k, "q"); pos += k
@@ -2028,14 +2031,14 @@ function param_quoted(   i) {
   for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
   return cty[i] == "DQ" || cty[i] == "HDATA"
 }
-function param_char(   c, i, j, k) {
+function param_char(   c, j, k) {
   c = ch[pos]
   if (c == "}") { pop_ctx(); addsrc(cpos[sp + 1], pos - cpos[sp + 1] + 1, "x"); pos++; return }
   if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   if (c == "$" && at(1) == "\047") { push_ctx("AQ", pos); pos += 2; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
   if (c == "\047") {
     if (param_quoted()) {
       # bash reads the quotes, zsh and busybox read them as text: the readings agree only on a span up to the next
@@ -2074,7 +2077,7 @@ function arith_char(   c) {
   }
   if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
   if (c == "\047") { push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   pos++
@@ -2084,7 +2087,7 @@ function hdata_char(   c, k) {
   c = ch[pos]
   if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
   k = 1
   while (pos + k < lim && index("\\$`", ch[pos + k]) == 0) k++
   pos += k
@@ -2097,7 +2100,7 @@ function region(a, b, why, sb) {
   nreg++; rstart[nreg] = a; rend[nreg] = b; rwhy[nreg] = why; rsb[nreg] = sb; rline[nreg] = lno[a]
   return nreg
 }
-function finish(   s, k, i) {
+function finish(   s, k, i, rt) {
   # a heredoc still pending at the end: an empty body, never refused
   for (s = 1; s <= sp; s++) if (is_cmd(cty[s])) {
     for (k = 1; k <= hqn[s]; k++) empty_body(s, k)
@@ -2111,7 +2114,8 @@ function finish(   s, k, i) {
   # either rule, which both need that text
   for (i = 1; i <= nreg; i++) {
     if (rend[i] < rstart[i]) { rscope[i] = "empty"; continue }
-    rscope[i] = (index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "git") || index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "gh")) ? "yes" : "no"
+    rt = substr(src, rsb[i], rend[i] - rsb[i] + 1)
+    rscope[i] = (index(rt, "git") || index(rt, "gh")) ? "yes" : "no"
   }
   # source order
   for (i = 1; i <= nreg; i++) ord[i] = i
@@ -2276,7 +2280,7 @@ case "${1:-}" in
     # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
     # from the $HOME guard above, like -h.
     [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
-    awk -v MODE=lex -v SEP=$'\x1f' "$PPG_AWK_PROG"
+    awk -v MODE=lex "$PPG_AWK_PROG"
     exit $?
     ;;
   repo-key)
@@ -2944,6 +2948,9 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # `pr` (a command that opens a PR — `gh pr create`, or a `gh api …/pulls` write). Every reader failure — an awk
 # error, output of the wrong shape — denies a git/gh command and allows the rest: the reader fails closed, never
 # open. What it does not see is listed in the header's residual paragraph.
+# No rule can fire without a `g` in the text (git, gh), and a reader failure denies only git/gh: a command with no
+# `g` is allowed without running awk — most Bash calls (ls, cat, cd, make) save the whole read.
+case "$cmd" in *g*) ;; *) exit 0 ;; esac
 sep=$'\x1f'
 awk_out="$(awk -v SEP="$sep" "$PPG_AWK_PROG" <<< "$cmd")"
 awk_status=$?

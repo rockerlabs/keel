@@ -134,9 +134,9 @@ verdict_of() {
     *) printf 'other: %s' "$OUT" ;;
   esac
 }
-hook_case() {   # hook_case <id> <verdict> <command>
+hook_case() {   # hook_case <id> <verdict> <command> [label prefix, default hook]
   gate "$3" "$hd"
-  check_eq "hook:$1 → $2" "$2" "$(verdict_of)"
+  check_eq "${4:-hook}:$1 → $2" "$2" "$(verdict_of)"
 }
 case_id=""; case_v=""; case_cmd=""; case_open=0
 while IFS= read -r line; do
@@ -658,6 +658,8 @@ shim_case() {   # shim_case <label> <exit status> <printf format the fake reader
   check_contains "shim:$1 gh pr create → denied, the reader failed" "$OUT" "the command reader failed (awk exit $2)"
   gate_env 'ls' "$hd" "PATH=$dir:$PATH"
   check_eq "shim:$1 ls → allowed" "" "$OUT"
+  gate_env 'grep -c x f' "$hd" "PATH=$dir:$PATH"
+  check_eq "shim:$1 a command with a g but no git/gh → allowed" "" "$OUT"
 }
 shim_case exit2 2 ''
 shim_case bogus 0 'bogus\037\037\n'
@@ -679,10 +681,7 @@ done
 
 # --- dir #745: the mutation net — one case per reader clause the case table does not reach alone ----------------
 # Each is here so a single-clause mutant of tests/mutants/pre-pr-gate.tsv has a test to fail.
-net() {   # net <label> <verdict> <command>
-  gate "$3" "$hd"
-  check_eq "net:$1 → $2" "$2" "$(verdict_of)"
-}
+net() { hook_case "$1" "$2" "$3" net; }   # net <label> <verdict> <command>
 net "quoted api is not the subcommand" allow 'gh "api" repos/o/r/pulls -f head=x'
 net "a pulls list is a read" allow 'gh api repos/o/r/pulls'
 net "-X POST" pr 'gh api -X POST repos/o/r/pulls'
@@ -868,5 +867,8 @@ lex_is "an expanding heredoc body ends at its BQ's backtick" "$(printf 'echo `ca
 
 lex_is "a second heredoc past a cut delimiter line has an empty body, more lines after" "$(printf 'echo `cat <<E <<F\nx\nE` ; echo z\necho w')" \
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p33${T}u:echo${T}u:w"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
+
+net "a heredoc inside a body substitution scopes from the body's operator" refuse "$(printf 'git commit -F - <<E\n$(cat <<F\nx\nF\n)\nE')"
+lex_is "a word of many braces is read in one pass" "echo {a,{b,c}} {{x}" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ug:{a,{b,c}}${T}u:{{x}"
 
 summary
