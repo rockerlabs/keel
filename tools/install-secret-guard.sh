@@ -113,26 +113,21 @@ fi
 
 # _isg_count_values KEY — how many values the global config holds for KEY across every file (an empty value is one).
 _isg_count_values() { { git config --global --get-all "$1" 2>/dev/null || true; } | wc -l | tr -d ' '; }
-# _isg_write_target — the ONE file a `git config --global` write goes to: $GIT_CONFIG_GLOBAL, else ~/.gitconfig when it
-# exists, else the XDG file (git's own order for writes).
+# _isg_write_target — the ONE file a `git config --global` write goes to: $GIT_CONFIG_GLOBAL when set (even empty: git
+# then has no global file), else the XDG file when it exists and ~/.gitconfig does not, else ~/.gitconfig.
 _isg_write_target() {
-  if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then printf '%s' "$GIT_CONFIG_GLOBAL"
-  elif [ -e "${HOME:-/nonexistent}/.gitconfig" ]; then printf '%s' "$HOME/.gitconfig"
-  else printf '%s' "${XDG_CONFIG_HOME:-${HOME:-}/.config}/git/config"; fi
+  if [ "${GIT_CONFIG_GLOBAL+x}" = x ]; then printf '%s' "$GIT_CONFIG_GLOBAL"; return 0; fi
+  local xdg="${XDG_CONFIG_HOME:-${HOME:-}/.config}/git/config"
+  if [ ! -e "${HOME:-/nonexistent}/.gitconfig" ] && [ -e "$xdg" ]; then printf '%s' "$xdg"
+  else printf '%s' "${HOME:-}/.gitconfig"; fi
 }
-# _isg_count_in FILE KEY — how many values KEY has in FILE (an empty value is one; FILE compared with `-ef`, so a
-# symlinked spelling counts). git exits 5 on a write only when the file it writes sets the key more than once, so a
-# duplicate in another global file (the XDG file behind an existing ~/.gitconfig) is no obstacle. Deliberately NOT
+# _isg_count_in FILE KEY — how many values KEY has in FILE itself (an empty value is one), read with `--file` so
+# git opens the file by the path it was given: no origin text to parse (it is C-quoted for a non-ASCII path), and a
+# symlinked spelling just works. git exits 5 on a write only when the file it writes sets the key more than once, so
+# a duplicate in another global file (the XDG file behind an existing ~/.gitconfig) is no obstacle. Deliberately NOT
 # _isg_count_values' all-files count: that one guards the displaced-key RECORD, which is read as the last of all
 # files but replaced in one.
-_isg_count_in() {
-  local o _ f n=0
-  while IFS=$'\t' read -r o _; do
-    f="${o#file:}"
-    if [ "$f" = "$1" ] || { [ -e "$f" ] && [ -e "$1" ] && [ "$f" -ef "$1" ]; }; then n=$((n + 1)); fi
-  done < <(git config --global --show-origin --get-all "$2" 2>/dev/null || true)
-  printf '%s' "$n"
-}
+_isg_count_in() { { git config --file "$1" --get-all "$2" 2>/dev/null || true; } | wc -l | tr -d ' '; }
 
 # _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
 # link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a

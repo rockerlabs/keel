@@ -183,4 +183,16 @@ check_status "M2: --uninstall over one value in each of two files → exit 0" 0 
 check_absent "M2: ...not called 'more than once'" "$OUT" "more than once"
 check_eq "M2: ...and ~/.gitconfig no longer sets core.hooksPath (unwired)" 1 "$(cfg_rc "$H/.gitconfig" core.hooksPath)"
 
+# git's own file reads: a symlinked ~/.gitconfig and a non-ASCII HOME (git C-quotes the latter in --show-origin)
+mk_home linked
+printf '[core]\n\thooksPath = %s/a\n\thooksPath = %s/b\n' "$H" "$H" > "$H/real.cfg"; ln -s "$H/real.cfg" "$H/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --force
+check_status "M2: a duplicate behind a symlinked ~/.gitconfig → refused (exit 3)" 3 "$STATUS"
+check_contains "M2: ...in words" "$OUT" "more than once"
+mk_home "uni-é"
+printf '[core]\n\thooksPath = %s/a\n\thooksPath = %s/b\n' "$H" "$H" > "$H/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --force
+check_status "M2: a duplicate under a non-ASCII HOME → refused (exit 3), not git's exit 5 after the hooks were placed" 3 "$STATUS"
+check_nodir "M2: ...nothing written" "$H/$kh_rel"
+
 summary
