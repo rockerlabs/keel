@@ -363,6 +363,25 @@ main() {
   case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
   [ "$jobs_cap" -ge 1 ] || jobs_cap=1
 
+  # dir #744 (B16): KEEL_TEST_SHARD=K/N runs only shard K of N (CI runs macOS as two shards behind one
+  # aggregated check). K and N are decimal integers, 1 <= K <= N, no sign, no leading zero; unset or empty =
+  # every file and no shard line; anything else is refused before any file runs. The variable is removed from
+  # the environment here, before anything launches, so a test that runs a nested runner (tests/test_run_sh.sh,
+  # tests/test_residue_gate.sh, …) sees every one of ITS fixtures.
+  shard_spec="${KEEL_TEST_SHARD-}"
+  unset KEEL_TEST_SHARD
+  shard_k="" shard_n=""
+  if [ -n "$shard_spec" ]; then
+    shard_k="${shard_spec%%/*}"; shard_n="${shard_spec#*/}"
+    case "$shard_spec" in */*) ;; *) shard_k="" ;; esac
+    case "$shard_k" in ''|0*|*[!0-9]*|??????????*) shard_k="" ;; esac
+    case "$shard_n" in ''|0*|*[!0-9]*|??????????*) shard_n="" ;; esac
+    if [ -z "$shard_k" ] || [ -z "$shard_n" ] || [ "$shard_k" -gt "$shard_n" ]; then
+      printf 'FATAL: KEEL_TEST_SHARD=%s is not K/N with 1 <= K <= N (decimal, no sign, no leading zero) — refusing to run.\n' "$shard_spec" >&2
+      exit 2
+    fi
+  fi
+
   # dir #744 (B10): the per-file watchdog. A test file that hangs used to hold its CI job until GitHub's
   # 360-minute default killed the whole job, with no log at all (run.sh buffers a file's output until reap).
   # KEEL_TEST_FILE_TIMEOUT is whole seconds, decimal digits only: `0` = off; unset or anything else (a sign,
@@ -580,13 +599,38 @@ SHIM
   # run for the instant between a launch and its own throttle check — with KEEL_TEST_JOBS=1 that
   # meant two jobs overlapping instead of the true one-at-a-time the env var promises (found by an
   # operator-run /code-review high pass, dir #130).
+  # The files this run launches: all of them, or (B16) shard K's share. Size-greedy: every test_*.sh by byte
+  # size, largest first (ties: LC_ALL=C name order), each to the shard with the smallest byte total so far (ties:
+  # the lowest K) — byte size tracks run time well enough to balance two macOS shards (E19), and the union over
+  # K is every file exactly once by construction.
+  run_files=()
+  all_files=("$here"/test_*.sh)
+  [ -e "${all_files[0]}" ] || all_files=()
+  if [ -z "$shard_n" ]; then
+    run_files=(${all_files[@]+"${all_files[@]}"})
+  else
+    shard_totals=()
+    for ((k = 1; k <= shard_n; k++)); do shard_totals[k]=0; done
+    while IFS="$(printf '\t')" read -r sz f; do
+      [ -n "$f" ] || continue
+      best=1
+      for ((k = 2; k <= shard_n; k++)); do
+        [ "${shard_totals[k]}" -lt "${shard_totals[best]}" ] && best=$k
+      done
+      shard_totals[best]=$((shard_totals[best] + sz))
+      [ "$best" = "$shard_k" ] && run_files+=("$f")
+    done < <(for f in ${all_files[@]+"${all_files[@]}"}; do printf '%s\t%s\n' "$(wc -c < "$f" | tr -d ' ')" "$f"; done \
+               | LC_ALL=C sort -t "$(printf '\t')" -k1,1nr -k2,2)
+    printf 'shard %s/%s: %d of %d test files\n' "$shard_k" "$shard_n" "${#run_files[@]}" "${#all_files[@]}"
+  fi
+
   launch_cap=$((jobs_cap - 1))
   if [ "$file_timeout" -gt 0 ]; then
     printf 'watchdog: %ss\n' "$file_timeout"
   else
     printf 'watchdog: off\n'
   fi
-  for t in "$here"/test_*.sh; do
+  for t in ${run_files[@]+"${run_files[@]}"}; do
     wait_until_at_most "$launch_cap"
     base="$(basename "$t")"
     log="$logdir/$base.log"

@@ -31,6 +31,42 @@ head="$(git -C "$repo" rev-parse HEAD)"
 run_in "$repo" env GITHUB_EVENT_NAME=pull_request GITHUB_BASE_SHA="$base" GITHUB_HEAD_SHA="$head" "$ci"
 check_status "pull_request: clean range -> exit 0" 0 "$STATUS"
 
+# --- merge_group (dir #744 B26, A23): the merge queue's event scans base..head exactly as a pull_request --
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+base="$(git -C "$repo" rev-parse HEAD)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/b.txt"
+git -C "$repo" add b.txt; git -C "$repo" commit -qm withkey
+head="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=merge_group GITHUB_BASE_SHA="$base" GITHUB_HEAD_SHA="$head" "$ci"
+check_status "merge_group: key introduced in the range -> BLOCKED" 1 "$STATUS"
+check_contains "merge_group: reports BLOCKED" "$OUT" "BLOCKED"
+
+repo="$(new_repo)"
+printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
+base="$(git -C "$repo" rev-parse HEAD)"
+printf 'still nothing secret\n' > "$repo/b.txt"; git -C "$repo" add b.txt; git -C "$repo" commit -qm clean
+head="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=merge_group GITHUB_BASE_SHA="$base" GITHUB_HEAD_SHA="$head" "$ci"
+check_status "merge_group: clean range -> exit 0" 0 "$STATUS"
+
+# The range is honoured, not all history: a key committed BEFORE base is not this group's to block.
+repo="$(new_repo)"
+printf 'aws = %s\n' "$(key 'AKIA' "$(rep A 16)")" > "$repo/old.txt"
+git -C "$repo" add old.txt; git -C "$repo" commit -qm old-key
+base="$(git -C "$repo" rev-parse HEAD)"
+printf 'clean change\n' > "$repo/c.txt"; git -C "$repo" add c.txt; git -C "$repo" commit -qm clean
+head="$(git -C "$repo" rev-parse HEAD)"
+run_in "$repo" env GITHUB_EVENT_NAME=merge_group GITHUB_BASE_SHA="$base" GITHUB_HEAD_SHA="$head" "$ci"
+check_status "merge_group: a key committed before base is outside the range -> exit 0" 0 "$STATUS"
+
+# ci-scan.sh never invents a base: an empty GITHUB_BASE_SHA is a config error, as on pull_request.
+run_in "$repo" env GITHUB_EVENT_NAME=merge_group GITHUB_BASE_SHA= GITHUB_HEAD_SHA="$head" "$ci"
+check_status "merge_group: empty GITHUB_BASE_SHA -> exit 2, not a full-history guess" 2 "$STATUS"
+run_in "$repo" env GITHUB_EVENT_NAME=bogus "$ci"
+check_status "an unknown event name still exits 2" 2 "$STATUS"
+check_contains "...and says unsupported" "$OUT" "unsupported"
+
 # --- push: before..after with an introduced key is BLOCKED ---------------------------------------
 repo="$(new_repo)"
 printf 'hello\n' > "$repo/a.txt"; git -C "$repo" add a.txt; git -C "$repo" commit -qm base
