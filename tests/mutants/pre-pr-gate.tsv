@@ -93,7 +93,6 @@ L080	tools/pre-pr-gate.sh	if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == 
 L081	tools/pre-pr-gate.sh	if (hqx[s, k] && pos < bstop) {	if (0) {	B8: an expanding body is read as HDATA
 L082	tools/pre-pr-gate.sh	if (cmp == hqd[s, k]) { found = 1; break }	if (cmp == hqd[s, k] || cmp == hqd[s, k] " ") { found = 1; break }	B8: the delimiter line matches byte for byte
 L083	tools/pre-pr-gate.sh	if (sp > 1) region(cpos[2], n, "unclosed "	if (0) region(cpos[2], n, "unclosed "	B10(a)
-L084	tools/pre-pr-gate.sh	if (!found) region(pos, n, "heredoc "	if (0) region(pos, n, "heredoc "	B10(b)
 L085	tools/pre-pr-gate.sh	if (!got) { region(op, n, "heredoc operator without a delimiter"	if (0) { region(op, n, "heredoc operator without a delimiter"	B10(c)
 L086	tools/pre-pr-gate.sh	if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution"	if (0) { region(op, n, "heredoc inside a heredoc substitution"	B10(d)
 L087	tools/pre-pr-gate.sh	if (sp > hd_sp) region(cpos[hd_sp + 1]	if (0) region(cpos[hd_sp + 1]	B10(e)
@@ -169,7 +168,7 @@ L014	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(BQESC); pos += (at(1) !
 L025	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	  if (c == "\\\\") { bq_escape(BQESC); pos += 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	B2 ARITH: backslash as in DQ
 L026	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1	  if (c == "\\\\") { bq_escape(BQESC); pos += 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1	B2 HDATA: \$ escaped
 L029	tools/pre-pr-gate.sh	    bq_escape(BQESC)\n    if (at(1) == "\\"" && bq_in_dq())	    bq_escape(BQESC)\n    if (0 && bq_in_dq())	B2 BQ: \" is a quote when the BQ sits in DQ
-L088	tools/pre-pr-gate.sh	if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`")	if (0) bqreg[b] = region(cpos[b], -1, (at(1) == "`")	B10(f)
+L088	tools/pre-pr-gate.sh	  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, why, rseg(segbeg[b]))	  if (0) bqreg[b] = region(cpos[b], -1, why, rseg(segbeg[b]))	B10(f): the BQ’s region
 L089	tools/pre-pr-gate.sh	index("$`\\"\\\\", at(1))) { bq_escape(BQESC); addsrc	index("$`\\"\\\\", at(1))) { addsrc	B10(f): an escape in DQ inside BQ
 L096	tools/pre-pr-gate.sh	if (!param_quoted() && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace	if (0) { flagged[sp] = 1; region(cpos[sp], n, "brace	B10(l)
 L207	tools/pre-pr-gate.sh	if (!param_quoted() && !flagged[sp])	if (!flagged[sp])	B10(l): only an unquoted {
@@ -179,17 +178,26 @@ L211	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(BQESC); pos += (at(1) !
 L212	tools/pre-pr-gate.sh	bq_escape("\\\\"); addsrc	addsrc	B10(f): a doubled backslash in an ANSI quote inside backticks
 L213	tools/pre-pr-gate.sh	BQESC = "`$\\\\"	BQESC = "`$"	B10(f): a doubled backslash inside backticks
 L214	tools/pre-pr-gate.sh	region(cpos[sp], n, "brace inside ${…}", rseg(cseg[sp]))	region(cpos[sp], n, "brace inside ${…}", cseg[sp])	B10 scope: the brace region inside an expanding body
-L215	tools/pre-pr-gate.sh	"escaped " at(1) " inside backticks", rseg(segbeg[b]))	"escaped " at(1) " inside backticks", segbeg[b])	B10 scope: the backtick region inside an expanding body
+L215	tools/pre-pr-gate.sh	region(cpos[b], -1, why, rseg(segbeg[b]))	region(cpos[b], -1, why, segbeg[b])	B10 scope: the backtick region inside an expanding body
 L216	tools/pre-pr-gate.sh	region(cpos[sp], n, "(( read as nested subshells", rseg(cseg[sp]))	region(cpos[sp], n, "(( read as nested subshells", cseg[sp])	B10 scope: the arithmetic region inside an expanding body
 L217	tools/pre-pr-gate.sh	  return cty[i] == "DQ" || cty[i] == "HDATA"	  return cty[i] == "DQ"	B10(i)/(l): an expanding body quotes a ${…} like a DQ
 L223	tools/pre-pr-gate.sh	bq_escape("\\\\"); addsrc	bq_escape(BQESC); addsrc	B10(f): inside $’…’ only a doubled backslash
 L005	tools/pre-pr-gate.sh	    else if (ch[j] == "`") return j	    else if (0) return j	B2 BQ: closed by the first unescaped backtick, whatever is nested before it
 L218	tools/pre-pr-gate.sh	function rseg(sb) { return (hd_sp && hd_seg < sb) ? hd_seg : sb }	function rseg(sb) { return hd_sp ? hd_seg : sb }	B10 scope: the earlier of the context’s own segment and the operator’s
-L219	tools/pre-pr-gate.sh	  if (sp > k && !bqreg[k]) bqreg[k] = region(cpos[k], -1, "backtick inside	  if (0) bqreg[k] = region(cpos[k], -1, "backtick inside	B10(f): a context left open at a BQ’s end
 L220	tools/pre-pr-gate.sh	    if (ch[j] == "\\\\") j++\n    else if (ch[j] == "`") return j	    if (0) j++\n    else if (ch[j] == "`") return j	B2 BQ: an escaped backtick does not end it
-L221	tools/pre-pr-gate.sh	    if (after > lim) { bq_cross(); after = lim; if (bstop > lim) bstop = lim }	    if (0) { bq_cross(); after = lim; if (bstop > lim) bstop = lim }	B8: a heredoc body ends at its BQ’s end
-L222	tools/pre-pr-gate.sh	  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, "backtick inside a nested context in backticks", rseg(segbeg[b]))\n}\nfunction bs_joins	  if (0) bqreg[b] = region(cpos[b], -1, "backtick inside a nested context in backticks", rseg(segbeg[b]))\n}\nfunction bs_joins	B10(f): a heredoc body that runs past its BQ
-L224	tools/pre-pr-gate.sh	  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]	  for (i = 1; i <= 1; i++) if (clim[i] < lim) lim = clim[i]	B2: the nearest end bounds every read
+L084	tools/pre-pr-gate.sh	if (!found) region(pos, (lim <= n) ? lim - 1 : n, "heredoc "	if (0) region(pos, (lim <= n) ? lim - 1 : n, "heredoc "	B10(b)
+L219	tools/pre-pr-gate.sh	  if (sp > k) bq_region(k, "backtick inside a nested context in backticks")	  if (0) bq_region(k, "backtick inside a nested context in backticks")	B10(f): a context left open at a BQ’s end
+L221	tools/pre-pr-gate.sh	    if (lim <= n && after > lim) { bq_region(bq_open()	    if (0 && after > lim) { bq_region(bq_open()	B8: a heredoc body ends at its BQ’s end
+L222	tools/pre-pr-gate.sh	{ bq_region(bq_open(), "backtick inside a nested context in backticks"); after = lim;	{ after = lim;	B10(f): a heredoc body that runs past its BQ
+L224	tools/pre-pr-gate.sh	  restack(); if (clim[sp] < lim) lim = clim[sp]	  restack()	B2: a context’s end bounds every read inside it
+L225	tools/pre-pr-gate.sh	  while (sp > k) close_any(e)	  while (0) close_any(e)	B2: contexts open at a BQ’s end close there
+L226	tools/pre-pr-gate.sh	(cty[k] == "BQ" && clim[k] <= n)	(cty[k] == "BQ")	B10(a): a BQ with no closing backtick is unclosed, not closed at the end
+L227	tools/pre-pr-gate.sh	  pos = e; close_cmd(); pos = e + 1	  pos = e; close_cmd(); pos = e + 2	B2: reading resumes right after a BQ’s backtick
+L228	tools/pre-pr-gate.sh	clim[sp] = bstop; if (bstop < lim) lim = bstop	clim[sp] = n + 1	B8: an expanding body ends at its delimiter line
+L229	tools/pre-pr-gate.sh	L <= nlines && lstart[L] < lim; L++	L <= nlines; L++	B8: the body scan stops at its BQ’s end
+L230	tools/pre-pr-gate.sh	(lim <= n) ? lim - 1 : n, "heredoc "	n, "heredoc "	B10(b): a body clamped at its BQ’s end ends its region there
+L231	tools/pre-pr-gate.sh	d = d ch[pos++]; if (pos < lim) pos++; continue }	d = d ch[pos++]; pos++; continue }	B8: an unclosed delimiter quote stops at the limit
+L232	tools/pre-pr-gate.sh	function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }	function pop_ctx() { flushrun(); sp--; restack() }	B2: a closed context’s end no longer bounds the reads after it
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass

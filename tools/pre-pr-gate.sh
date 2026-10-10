@@ -1565,9 +1565,9 @@ function push_ctx(t, p) {
     cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p
     bqreg[sp] = 0
   }
-  restack(); set_lim()
+  restack(); if (clim[sp] < lim) lim = clim[sp]
 }
-function pop_ctx() { flushrun(); sp--; restack(); set_lim() }
+function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }
 # A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
 # before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
 # clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
@@ -1584,14 +1584,19 @@ function set_lim(   i) {
 }
 # at_limit() — pos reached the nearest end: an expanding body’s, or a BQ’s closing backtick. Anything still open
 # inside a BQ there is a region (the reader’s nesting and the shell’s end disagree), closed at the backtick.
-function at_limit(   k) {
+function at_limit(   k, e) {
   for (k = sp; k >= 1; k--) if (clim[k] <= pos && (cty[k] == "HDATA" || (cty[k] == "BQ" && clim[k] <= n))) break
   if (k < 1) return 0
   if (cty[k] == "HDATA") { end_hdata(); return 1 }
-  if (sp > k && !bqreg[k]) bqreg[k] = region(cpos[k], -1, "backtick inside a nested context in backticks", rseg(segbeg[k]))
-  while (sp > k) close_any(pos)
-  close_cmd(); pos++
+  e = clim[k]
+  if (sp > k) bq_region(k, "backtick inside a nested context in backticks")
+  while (sp > k) close_any(e)
+  pos = e; close_cmd(); pos = e + 1
   return 1
+}
+# bq_region(b, why) — the BQ at stack index b is a region, once; its end is set when it closes.
+function bq_region(b, why) {
+  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, why, rseg(segbeg[b]))
 }
 function bq_open(   i) {
   for (i = sp; i >= 1; i--) if (cty[i] == "BQ") return i
@@ -1706,9 +1711,9 @@ function lex_main(   i, L) {
   L = 1; lstart[1] = 1
   for (i = 1; i <= n; i++) { lno[i] = L; if (ch[i] == "\n") { lend[L] = i - 1; L++; lstart[L] = i + 1 } }
   lend[L] = n; nlines = L; lno[n + 1] = L
-  sp = 0; ownsp = 0; gid = 0; nreg = 0; hd_sp = 0; hb_s = 0
+  sp = 0; ownsp = 0; gid = 0; nreg = 0; hd_sp = 0; hb_s = 0; lim = n + 1
   push_ctx("TOP", 1); cid[1] = 0; gid = 0; segbeg[1] = 1
-  lim = n + 1; pos = 1
+  pos = 1
   while (1) {
     if (pos >= lim && at_limit()) continue
     if (pos > n) break
@@ -1747,7 +1752,7 @@ function dollar(   c, k) {
 function bq_escape(set,   b) {
   if (at(1) == "" || !index(set, at(1))) return
   b = bq_open()
-  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks", rseg(segbeg[b]))
+  bq_region(b, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks")
 }
 # rseg(sb) — where a region’s scope starts: sb, or inside an expanding heredoc body the segment of its operator when
 # that starts earlier (a context’s own segment restarts at the body’s first line).
@@ -1887,11 +1892,11 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
     c = ch[pos]
     if (index(" \t\n;&|<>()", c)) break
     got = 1
-    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; pos++; continue }
+    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; if (pos < lim) pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
-      pos++; continue
+      if (pos < lim) pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
     if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == "{")) {
@@ -1916,7 +1921,7 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
     if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }
     if (pos > n) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]); continue }
     found = 0; hline = 0
-    for (L = lno[pos]; L <= nlines; L++) {
+    for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
       txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
@@ -1925,11 +1930,11 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
     }
     bstop = found ? lstart[L] : n + 1
     after = found ? lend[L] + 2 : n + 1
-    if (after > lim) { bq_cross(); after = lim; if (bstop > lim) bstop = lim }
-    if (!found) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    if (lim <= n && after > lim) { bq_region(bq_open(), "backtick inside a nested context in backticks"); after = lim; if (bstop > lim) bstop = lim }
+    if (!found) region(pos, (lim <= n) ? lim - 1 : n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
-      push_ctx("HDATA", pos); hd_sp = sp; hd_lim = bstop; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; set_lim()
+      push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
       return
     }
     pos = after
@@ -1937,11 +1942,6 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
 }
 # bs_joins(L, s, k) — line L ends in an unescaped backslash and its join with the next line(s) equals the
 # delimiter: bash and zsh end the body there, busybox and dash read on.
-# bq_cross() — a heredoc body runs past the end of the BQ it sits in: the BQ’s text is a region, once.
-function bq_cross(   b) {
-  b = bq_open()
-  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, "backtick inside a nested context in backticks", rseg(segbeg[b]))
-}
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
   j = L
@@ -1956,8 +1956,8 @@ function bs_joins(L, s, k,   txt, j, t2) {
 function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
 # end_hdata — the expanding body’s end: anything still open inside it is a region, closed there.
 function end_hdata(   i) {
-  if (sp > hd_sp) region(cpos[hd_sp + 1], hd_lim - 1, "substitution not closed in a heredoc body", hd_seg)
-  while (sp > hd_sp) close_any(hd_lim)
+  if (sp > hd_sp) region(cpos[hd_sp + 1], clim[hd_sp] - 1, "substitution not closed in a heredoc body", hd_seg)
+  while (sp > hd_sp) close_any(clim[hd_sp])
   pop_ctx(); hd_sp = 0; pos = hd_after
   next_body()
 }

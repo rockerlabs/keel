@@ -827,4 +827,12 @@ net "a region in a body that the backticks own scopes from the operator" refuse 
 net "an escaped backtick inside a quote inside backticks ends nothing" allow "echo \`git log --format='%h\\\`'\`"
 lex_has "a heredoc body that runs past its backticks is a region" "$(printf "echo \`cat <<'E'\nx\`\nE\n\`")" "refuse${T}backtick inside a nested context in backticks"
 
+lex_is "the character after a BQ that ends inside an unclosed delimiter quote is read" "x=\`cat <<'E\`;echo hi" \
+  "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:echo${T}u:hi"$'\n'"refuse${T}heredoc pending when \$(…) closed${T}line 1${T}scope:no"
+net "a heredoc body clamped at its BQ's end: lines after the backtick are commands" allow "$(printf '(x=`echo $(cat <<E\na`\n) ; git status\nE')"
+lex_is "an unclosed BQ holding a closed heredoc is one region" "$(printf 'echo `cat <<E\nx\nE')" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"refuse${T}unclosed BQ${T}line 1${T}scope:no"
+lex_is "a BQ that ends inside a nested context closes it there" 'echo `a "b` c' \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:a${T}q:b"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()${T}u:c"$'\n'"refuse${T}backtick inside a nested context in backticks${T}line 1${T}scope:no"
+
 summary
