@@ -15,6 +15,14 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/test_env_census.sh` now covers the environment names a tool reads under a non-`KEEL_` spelling.**
+  dir #704: the census derived and neutralized only `KEEL_*`, so an operator's exported `AGY_BIN` / `AGY_MODEL`
+  (the vendor-review client), `SECRET_SCAN_LOCAL_PUSH`, `GITHUB_EVENT_NAME`, `DRYDOCK_*`, `EDITOR` and the like
+  reached the suite. It now also derives every default-expansion / `ENVIRON` / `printenv` read of an
+  UPPER_CASE name, and any credential-shaped name (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`), from the
+  shipped scripts and proves, in a child that sources `tests/lib.sh` with each one poisoned, that none
+  survives (only `PATH` and `TMPDIR` are exempt, with reasons); `tests/lib.sh` unsets the 27 it found. A
+  self-default assignment (`AGY_BIN="${AGY_BIN:-d}"`) now counts as a read in the `KEEL_*` half too.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
