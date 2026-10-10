@@ -168,6 +168,13 @@ else
   echo "uninstall: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
+# B19 (spec 685 round 2, dir #748 D1-7): a home that is the Keel checkout, or lies inside it, is refused
+# (exit 2) before anything is read or moved — removing "Keel's files" there would move the checkout's own
+# tracked files out. install.sh refuses the same homes, so no shipped path makes one.
+if keel_dir_is_checkouts_own "$HOME_DIR"; then
+  echo "uninstall: refusing --home $HOME_DIR — it lies inside the Keel checkout ($root); nothing was removed." >&2
+  exit 2
+fi
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
 # artifact in the OTHER mode's manifest at this SAME home. Presence, not cksum agreement — the question
 # is "does the other install still need this file to exist", not "do the two installs agree on its
@@ -753,10 +760,10 @@ take() {
   [ -e "$p" ] || [ -L "$p" ] || return 0
   # B8 (dir #716): never move a recorded path out of a directory that is really the Keel checkout's own
   # (`<home>/docs` symlinked into it, as an install before this fix recorded it) — the dentry is only
-  # ours to remove when its parent directory is not the checkout's. A home that itself lies inside the
-  # checkout is excluded from the rule, as at install.
+  # ours to remove when its parent directory is not the checkout's. (The home itself is never inside the
+  # checkout: B19's refusal near the top runs first.)
   case "$p" in "$HOME_DIR"/*) rel="${p#"$HOME_DIR"/}" ;; *) rel="$(basename "$p")" ;; esac
-  if keel_dir_is_checkouts_own "${p%/*}" "$HOME_DIR"; then
+  if keel_dir_is_checkouts_own "${p%/*}"; then
     echo "  !    not removed: $rel — it lies inside the Keel checkout"
     return 0
   fi
@@ -896,10 +903,15 @@ if [ "$this_usable" = 1 ]; then
           # longer exists (a moved/reaped checkout) but the live symlink's own text still matches
           # exactly what was recorded — the manifest-is-a-snapshot design this whole mechanism
           # relies on, which a live-resolution-only test would break.
-          if [ "$apath" -ef "$extra" ] 2>/dev/null || [ "$live_target" = "$extra" ]; then
+          if ! { [ "$apath" -ef "$extra" ] 2>/dev/null || [ "$live_target" = "$extra" ]; }; then
+            echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+          elif manifest_link_is_keels "$this_manifest" "$rel" "$apath"; then
+            # The one link-record predicate (tools/lib/manifest.sh, B20): it also asks that the recorded
+            # target lie inside the checkout the manifest names — so an adopter's own link that an older
+            # manifest recorded (dir #748 S6-4) is never moved.
             owned=1
           else
-            echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
+            echo "  !    $rel: a link not provably Keel's — kept (its recorded target lies outside the checkout that recorded it)"
           fi
         else
           # Legacy record (extra is the pre-dir-369 `-` placeholder, or empty) — no target was
@@ -1098,8 +1110,20 @@ if [ "$DRY_RUN" = 0 ]; then
     # permission or busy-mount error even when .keel IS empty, and the `ls -A` below would then show
     # nothing, so claiming emptiness as the cause would be a wrong diagnosis in that case (caught live
     # by this ticket's own review).
+    # The store move (tools/state-root-migrate.sh, dir #637) leaves a compatibility link under
+    # .keel/{impact,read-trace} for each moved entry, pointing at its new home under $HOME/.keel; those
+    # links keep .keel non-empty. They are named as what they are, not blamed on rmdir (dir #748).
     if [ -d "$HOME_DIR/.keel" ] && ! rmdir "$HOME_DIR/.keel" 2>/dev/null; then
-      echo "  kept $HOME_DIR/.keel — could not remove; it still contains (if anything):"
+      compat_links=0
+      for cl in "$HOME_DIR"/.keel/impact/* "$HOME_DIR"/.keel/impact/.[!.]* \
+                "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]*; do
+        [ -L "$cl" ] && compat_links=$((compat_links + 1))
+      done
+      if [ "$compat_links" -gt 0 ]; then
+        echo "  kept $HOME_DIR/.keel — it holds $compat_links compatibility links Keel left (impact/read-trace entries that now live under \$HOME/.keel; the data there is untouched). It contains:"
+      else
+        echo "  kept $HOME_DIR/.keel — could not remove; it still contains (if anything):"
+      fi
       ls -A "$HOME_DIR/.keel" 2>/dev/null | sed 's/^/    /' || true
     fi
   fi

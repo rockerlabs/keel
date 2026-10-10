@@ -1722,12 +1722,11 @@ say ""
 say "● manifest_field/manifest_usable/core-ownership-predicate/core-block-comparator single-definition (dir #363, dir #650)"
 
 # single_def_check FN HOME [EXEMPT] — GAP unless FN's only real definition tree-wide is in HOME, with
-# at most one further exemption at EXEMPT: a documented, pre-existing degrade-stub, not a hand-copy this
-# check exists to catch — install.sh's own optional-source pattern keeps exactly one:
-# manifest_usable() { return 1; } (dir #323, predates this ticket — install.sh never calls
-# manifest_field, so only manifest_usable gets a stub, and a stub is deliberately NOT body-compared:
-# it isn't claimed to match anything). The core-ownership functions carry no exemption: core-ownership.sh
-# is REQUIRED by every consumer (dir #716), so they have exactly one definition.
+# at most one further exemption at EXEMPT: a documented degrade-stub, not a hand-copy this check exists
+# to catch (a stub is deliberately NOT body-compared: it isn't claimed to match anything). None is in use
+# today: install.sh's manifest_usable() stub went when tools/lib/manifest.sh became REQUIRED there (spec
+# 685 round 2 B20), and core-ownership.sh is REQUIRED by every consumer (dir #716), so every listed
+# function has exactly one definition.
 # Scoped away from tests/ (`:!tests/`, unlike check 9's plain `'*.sh' 'keel'`): a test fixture
 # legitimately keeps its OWN small, independent reader for isolation from production code under test
 # (e.g. tests/test_install_manifest.sh's own manifest_field(), pre-existing this ticket) — a real,
@@ -1753,7 +1752,9 @@ single_def_check() {
   fi
 }
 single_def_check manifest_field          tools/lib/manifest.sh
-single_def_check manifest_usable         tools/lib/manifest.sh       install.sh
+single_def_check manifest_usable         tools/lib/manifest.sh
+single_def_check manifest_link_is_keels  tools/lib/manifest.sh
+single_def_check keel_path_inside        tools/lib/manifest.sh
 single_def_check keel_core_is_link       tools/lib/core-ownership.sh
 single_def_check keel_core_is_nogit_trim tools/lib/core-ownership.sh
 single_def_check keel_core_block_text       tools/lib/core-ownership.sh

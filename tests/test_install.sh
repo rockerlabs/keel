@@ -435,20 +435,21 @@ check_file "T8 keel-go.md forked alongside, not an overwrite" "$t8home/commands/
 t8_bak_count="$(ls "$t8home"/commands/go.md.*.bak 2>/dev/null | wc -l | tr -d ' ')"
 check_status "T8 no backup was created (nothing was overwritten)" 0 "$t8_bak_count"
 
-# T9 — dir #323 (found by this ticket's own /code-review high pass): a PRESENT but CORRUPTED
-# tools/lib/manifest.sh must degrade to "provenance unavailable", never abort the whole install — the
-# comment above the sourcing site promises exactly that, but only a missing-file guard was there to
-# back it; a syntax error inside a sourced file aborts the whole script under `set -e` regardless of any
-# if/&& wrapped around the `.` command itself (verified live), so the fix pre-checks with `bash -n`.
+# T9 — dir #323 first made a corrupted tools/lib/manifest.sh degrade to "provenance unavailable"; spec 685
+# round 2 (B20, dir #748) makes it REQUIRED, as uninstall.sh and tools/doctor.sh already treat it: install
+# reads the link-record predicate from it on every run. So a PRESENT but CORRUPTED copy now refuses the
+# run, with one line, exit 1, before anything is placed — the `bash -n` pre-check is what lets it refuse
+# cleanly (a syntax error inside a sourced file would otherwise abort the script under `set -e`).
 t9ck="$SANDBOX/force-checkout-corrupt"
 cp -r "$ckdir" "$t9ck"
 printf 'this is not valid bash (\n' > "$t9ck/tools/lib/manifest.sh"
 t9home="$SANDBOX/force-corrupt-manifest-home"; mkdir -p "$t9home"
 fresh_home_env "$t9home"
 run env "${FRESH_HOME_ENV[@]}" "$t9ck/install.sh" --home "$t9home" --no-hooks
-check_status "T9 corrupted tools/lib/manifest.sh → still exit 0" 0 "$STATUS"
-check_file "T9 install still lands the core despite the corruption" "$t9home/FRAMEWORK.md"
-check_file "T9 install still lands commands" "$t9home/commands/wrap.md"
+check_status "T9 corrupted tools/lib/manifest.sh → refused, exit 1" 1 "$STATUS"
+check_eq "T9 …with one line naming the lib" 1 "$(grep -c 'tools/lib/manifest.sh is missing or corrupted' <<<"$OUT" || true)"
+check_nofile "T9 …and nothing is placed" "$t9home/FRAMEWORK.md"
+check_nodir "T9 …and no run lock is left" "$t9home/.install.lock"
 
 # T9b — the same degradation promise for tools/lib/stat-portable.sh, which keel_own_untouched now needs
 # for its hard-link count. Two directions, and the second is the one that matters: a MISSING lib must

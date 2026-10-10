@@ -73,12 +73,14 @@ check_contains "explains the refusal" "$OUT" "already-stamped"
 fixture="$SANDBOX/fixture-repo"
 mkdir -p "$fixture/templates" "$fixture/tools/lib"
 cp "$REPO_ROOT/install.sh" "$fixture/install.sh"
-# tools/lib/artifact-cksum.sh (dir #362) and tools/lib/safe-write.sh (dir #679) are REQUIRED, not
-# optional, unlike manifest.sh/stat-portable.sh — install.sh refuses outright without either, so this
-# fixture (otherwise deliberately tools/-lib-less) must carry them for the end-to-end install below to
-# succeed at all. stat-portable.sh rides along because safe-write.sh loads it for its hard-link check.
+# tools/lib/artifact-cksum.sh (dir #362), tools/lib/safe-write.sh (dir #679) and tools/lib/manifest.sh
+# (spec 685 round 2 B20) are REQUIRED, not optional, unlike stat-portable.sh — install.sh refuses outright
+# without any of them, so this fixture (otherwise deliberately tools/-lib-less) must carry them for the
+# end-to-end install below to succeed at all. stat-portable.sh rides along because safe-write.sh loads it
+# for its hard-link check.
 cp "$REPO_ROOT/tools/lib/artifact-cksum.sh" "$fixture/tools/lib/artifact-cksum.sh"
 cp "$REPO_ROOT/tools/lib/safe-write.sh" "$REPO_ROOT/tools/lib/stat-portable.sh" "$fixture/tools/lib/"
+cp "$REPO_ROOT/tools/lib/manifest.sh" "$fixture/tools/lib/"
 # tools/lib/core-ownership.sh (dir #716) is REQUIRED too: install.sh no longer carries an inline fallback.
 cp "$REPO_ROOT/tools/lib/core-ownership.sh" "$fixture/tools/lib/"
 cp "$REPO_ROOT/CORE.md" "$REPO_ROOT/FRAMEWORK.md" "$REPO_ROOT/PRINCIPLES.md" "$fixture/"

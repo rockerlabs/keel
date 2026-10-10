@@ -200,6 +200,15 @@ else
   echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run '$advise_install'" >&2
   exit 1
 fi
+# B19 (spec 685 round 2, dir #748 D1-7): a home that is the Keel checkout, or lies inside it, is refused in
+# every mode, before the home is touched at all (exit 2, nothing created, no lock). A copy install there
+# would write Keel's files over the checkout's own, and an uninstall would then move tracked files out. A
+# home still to be made is judged by its nearest existing ancestor. (The linked-mode self-link guard below
+# is a different case: a home that is the checkout's PARENT, so that <home>/keel is the checkout.)
+if keel_dir_is_checkouts_own "$HOME_DIR"; then
+  echo "install: refusing --home $HOME_DIR — it lies inside the Keel checkout ($root); choose a home outside the checkout. Nothing was written." >&2
+  exit 2
+fi
 
 # Mode is sticky: a plain re-run over a LINKED home must not quietly copy root FRAMEWORK/PRINCIPLES
 # back in as stale shadows — "git pull && ./install.sh" is exactly the muscle-memory the copy-mode
@@ -513,30 +522,19 @@ trap _keel_install_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# A checkout this minimal (a test fixture, or a corrupted install) may not ship tools/ at all — degrade
-# to "provenance unavailable" rather than aborting the whole install over an optional refinement; every
-# other real gap in a broken checkout (e.g. the secret-guard step below) still surfaces its own error.
-# `bash -n` syntax-checks the file BEFORE sourcing it (found by this ticket's own /code-review high
-# pass, reproduced live): under `set -e`, a `.`/source of a file with a genuine syntax error aborts the
-# WHOLE script immediately — no `if`/`&&` guard around the `.` command itself can catch that, since it's
-# a parse-time failure, not a runtime one — which would silently break the "optional refinement" promise
-# this comment makes for a present-but-corrupted file (a partial write, a disk error), not just a
-# missing one.
-# `-s`, not `-f` (every guard in this file and uninstall.sh's own — found by this ticket's own
-# /code-review max pass, reproduced live): a zero-byte file passes `bash -n` (empty input is
-# syntactically valid) and would source "successfully" while defining nothing — a required lib then
-# crashes with a raw "command not found" instead of this guard's clean message, and an optional one
-# (this block) silently keeps the missing function undefined instead of falling to its own `else`
-# fallback, for a different corruption shape (truncation) than the one the guard was written against
-# (a syntax error).
+# manifest (dir #125) — REQUIRED (spec 685 round 2 B20), as uninstall.sh and tools/doctor.sh already treat
+# it: every run reads the prior manifest through it, and the link-record predicate
+# (manifest_link_is_keels) that decides whether a stale link is Keel's lives there. It was OPTIONAL
+# before ("provenance unavailable" for a tools-less checkout); a checkout missing it already cannot
+# install, since safe-write.sh is REQUIRED too. `bash -n` first: a `.` of a file with a syntax error
+# aborts the whole script under `set -e`, past any `if` around it. `-s`, not `-f`: a zero-byte file
+# passes `bash -n` and would define nothing. The run lock is held here; the EXIT trap releases it.
 if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/manifest.sh
   . "$root/tools/lib/manifest.sh"
 else
-  # Only manifest_usable: every reader of the prior manifest (keel_own_untouched, prior_checkout,
-  # prior_symlink_extra) is gated on prior_manifest_usable, which this makes 0, so the lib's other
-  # functions (manifest_field, manifest_symlink_extra) are never reached without it.
-  manifest_usable() { return 1; }
+  echo "install: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot read what an earlier install recorded; re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
 fi
 
 # stat-portable: keel_own_untouched needs a hard-link count, the one thing POSIX gives no portable spelling
@@ -573,23 +571,20 @@ fi
 #     the whole run before the manifest was written (S4-1);
 #   - `mkdir -p` cannot make it;
 #   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
-#     Keel checkout while the home's does not: `<home>/docs` symlinked into the checkout made install
-#     record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked directory
-#     anywhere else is followed — the operator's own commands/ and agents/ are such links.
+#     Keel checkout: `<home>/docs` symlinked into the checkout made install record the checkout's own
+#     files, and uninstall then moved them out (S4-4). A symlinked directory anywhere else is followed —
+#     the operator's own commands/ and agents/ are such links. (The home itself is never inside the
+#     checkout: B19's refusal near the top runs first.)
 # Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
 # "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
-# with the slash — a sibling `<checkout>-dots` is not inside — while the home's is not).
+# with the slash — a sibling `<checkout>-dots` is not inside).
 product_dir() {
-  local d="$1" what="$2" a="$1"
+  local d="$1" what="$2"
   if { [ -e "$d" ] || [ -L "$d" ]; } && [ ! -d "$d" ]; then
     echo "  !    $d exists and is not a directory — $what were not placed there"
     return 1
   fi
-  while [ ! -d "$a" ]; do
-    case "$a" in */*) a="${a%/*}" ;; *) a="." ;; esac
-    [ -n "$a" ] || a="/"
-  done
-  if keel_dir_is_checkouts_own "$a" "$HOME_DIR"; then
+  if keel_dir_is_checkouts_own "$d"; then
     echo "  !    $d lands inside the Keel checkout ($root) — $what were not placed there (they would be written into the checkout itself)"
     return 1
   fi
@@ -790,21 +785,6 @@ _keel_test_checkpoint() {
 # foreign/edited file is never claimed as ours.
 manifest_artifacts=()
 record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
-# keel_path_inside PATH CHECKOUT — PATH is CHECKOUT or below it (B7's "inside": the checkout's path or a
-# path under it, with the slash, so a sibling `<checkout>-dots` is not inside): on the strings, or — when
-# PATH still resolves — on the physical paths, so a record that spells the checkout through another link
-# (`~/.keel/engine/...` for `~/pet-projects/keel/...`) still counts. A PATH that no longer resolves
-# (its checkout moved) is judged on the strings alone.
-keel_path_inside() {
-  local p="$1" ck="${2%/}" pd ckp
-  [ -n "$ck" ] || return 1
-  case "$p" in "$ck"|"$ck"/*) return 0 ;; esac
-  [ -e "$p" ] || return 1
-  pd="$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
-  ckp="$(cd -P "$ck" 2>/dev/null && pwd -P)" || return 1
-  case "$pd/$(basename "$p")" in "$ckp"|"$ckp"/*) return 0 ;; esac
-  return 1
-}
 # keel_link_is_ours LINK — LINK points into the checkout this run installs from. Keel's links are always
 # absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not.
 keel_link_is_ours() {
@@ -1020,7 +1000,7 @@ prior_checkout() {
 # re-placed. A dangling link whose record carries the pre-dir-#369 `-` is Keel's too: that record never
 # named a target. Anything else — no usable prior manifest included — fails closed (T4 declines it).
 keel_own_stale_link() {
-  local dest="$1" rec cur
+  local dest="$1" rec
   [ -L "$dest" ] || return 1
   rec="$(prior_symlink_extra "${dest#"$HOME_DIR"/}")"
   [ -n "$rec" ] || return 1
@@ -1028,9 +1008,9 @@ keel_own_stale_link() {
     [ ! -e "$dest" ]
     return
   fi
-  cur="$(readlink "$dest")" || return 1
-  [ "$cur" = "$rec" ] || return 1
-  keel_path_inside "$rec" "$(prior_checkout)"
+  # The one link-record predicate (tools/lib/manifest.sh, B20): the recorded target, inside the recording
+  # checkout. prior_symlink_extra answers only for a usable prior manifest, so the snapshot is usable here.
+  manifest_link_is_keels "$prior_manifest" "${dest#"$HOME_DIR"/}" "$dest"
 }
 
 # keel_link_class DEST SRC — what a link at DEST is, for SRC the Keel file that belongs there (B3): prints
@@ -1507,7 +1487,10 @@ sync_product() {
     printf "       [u]pdate it with Keel's version / [a] keep yours + add Keel's as %s / [N]either: " "$(basename "$alias_dest")"
     read -r reply || reply=""
     case "$reply" in
-      [uU]) place "$src" "$dest"; echo "  +    $name updated" ;;
+      [uU])
+        # A consent to replace a regular file's bytes backs it up first (B23, dir #754), as --force does; a
+        # backup that cannot be taken leaves the file untouched (force_backup said why) and the run goes on.
+        if force_backup "$dest" "overwrite"; then place "$src" "$dest"; echo "  +    $name updated"; fi ;;
       [aA]) sync_product "$src" "$alias_dest" ;;
       *)    echo "  =    $name left untouched (add Keel's alongside later:  $FIX \"$src\" \"$alias_dest\")" ;;
     esac
@@ -1516,7 +1499,9 @@ sync_product() {
     printf "       Overwrite your copy with the shipped version? [y/N] "
     read -r reply || reply=""
     case "$reply" in
-      [yY]|[yY][eE][sS]) place "$src" "$dest"; echo "  +    $name updated" ;;
+      [yY]|[yY][eE][sS])
+        # Backed up first, as [u] above (B23, dir #754).
+        if force_backup "$dest" "overwrite"; then place "$src" "$dest"; echo "  +    $name updated"; fi ;;
       *)                 echo "  =    $name left untouched (update later:  $FIX \"$src\" \"$dest\", or: $advise_refresh_force)" ;;
     esac
   elif [ -n "$alias_dest" ]; then
@@ -1753,9 +1738,13 @@ EOF
   # locator point. Keyed on files that are provably Keel's own — byte-identical to the shipped doc, or
   # recorded as docs/<rel> in the copy-mode manifest this run read BEFORE rewriting it — never on a
   # bare name match (an adopter's own docs/reference.md is not Keel's), and not on paths the --codex
-  # manifest records (a live codex install sharing this home). Nothing is deleted.
+  # manifest records (a live codex install sharing this home). Nothing is deleted. A <home>/docs whose
+  # physical path lies inside the checkout (a link to its docs/, dir #748 S6-5) is skipped: its files are
+  # the checkout's own, and the advice to remove them would delete tracked files.
   stale_docs=0
-  for doc in "$HOME_DIR"/docs/*.md "$HOME_DIR"/docs/drydock/*.md; do
+  stale_docs_glob=("$HOME_DIR"/docs/*.md "$HOME_DIR"/docs/drydock/*.md)
+  if keel_dir_is_checkouts_own "$HOME_DIR/docs"; then stale_docs_glob=(); fi
+  for doc in ${stale_docs_glob[@]+"${stale_docs_glob[@]}"}; do
     [ -f "$doc" ] && [ ! -L "$doc" ] || continue
     rel="${doc#"$HOME_DIR"/docs/}"
     [ -f "$root/docs/$rel" ] || continue
@@ -1994,11 +1983,15 @@ if [ "$LINK" = 1 ]; then
 else
   vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
-# Test-only fault injection (KEEL_TEST_REMOVE_BEFORE_VERIFY=<a listed core path>): delete that placed file just
-# before it is checked, so a test can prove an ABSENT core file still fails Verify (nothing else in a normal run
-# reaches that arm). A no-op in every real run.
+# Test-only fault injection (KEEL_TEST_REMOVE_BEFORE_VERIFY=<a listed core path>): Verify treats that path as
+# ABSENT, so a test can prove an absent core file still fails Verify (nothing else in a normal run reaches that
+# arm). It never deletes anything (dir #748: the variable is reachable from an adopter's environment, and once
+# removed the named file — an adopter's own INSTANCE.md included). A no-op in every real run.
 for f in "${vfiles[@]}"; do
-  [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" = "$f" ] && rm -f "$HOME_DIR/$f"   # only a listed core path
+  if [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" = "$f" ]; then
+    echo "  MISS $f" >&2; missing=1
+    continue
+  fi
   if [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
   elif [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; then
@@ -2165,7 +2158,7 @@ if [ "$CODEX" = 0 ]; then
 fi
 
 if [ "$foreign_core" = 1 ]; then
-  echo "  WARN $HOME_DIR/$CONTEXT_FILE predates Keel — its always-loaded rails were NOT merged in (your file is untouched)."
+  echo "  WARN $HOME_DIR/$CONTEXT_FILE carries no Keel rails block (it predates Keel, or an uninstall stripped them) — its always-loaded rails were NOT merged in (your file is untouched)."
   echo "       Merge the rails you want by hand:  diff $HOME_DIR/$CONTEXT_FILE $root/templates/CLAUDE.md"
 fi
 
