@@ -72,7 +72,7 @@ check_contains "D1-3: a vendored guard with secret-scan.sh ABSENT → W-GUARD-ST
 mv "$r13/.git/hooks/secret-scan.sh.away" "$r13/.git/hooks/secret-scan.sh"
 
 # --- S3-1: the prune list applies below the audited root -----------------------------------------------------------
-for nm in build dist out vendor target; do
+for nm in build target; do   # the prune list is one name set, the fix is name-independent: two representatives
   d="$SANDBOX/proj-$nm/$nm"; mkdir -p "$d"; git init -q "$d"
   printf '# ctx\n' > "$d/CLAUDE.md"; printf '%s\n' 'CLAUDE.md' '.claude/' > "$d/.gitignore"
   put "$d/.env" "SENTINEL_S31=hunter2"
