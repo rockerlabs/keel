@@ -1,0 +1,14 @@
+- **`secret-scan.sh` allow decisions read the right field, and `--tracked` reads every tracked file.** A hit is now
+  a record whose label and content are kept apart: the inline `secret-scan:allow` marker and every ERE allowlist
+  entry match the matched line only, so a file named `notes-secret-scan:allow.txt`, or `README.md:x.txt` under
+  `path:README.md`, no longer exempts its own key, and a `path:` glob never exempts a commit or tag message
+  (dir #741). Under `--range`, a `path:` glob exempts a blob only when every path the push introduces it at is
+  exempt: the same key added at `fixtures/key.txt` and `src/real.txt` — in one commit, on two merged branches, or
+  by an evil merge — is reported under the path that is not exempt (dir #742).
+  A tracked file `--tracked` could not read from the working tree used to be skipped — an unreadable one with a
+  WARN, a deleted one silently — and the run reported clean; it now scans that file's index copy, with one WARN
+  line naming why, and so does an absent sparse-checkout (skip-worktree) entry, counted in one summary line. It
+  exits 2 only when git cannot read the index copy (dir #746). A mid-merge (unmerged) file the working tree
+  cannot give is read from one stage only (its first that is not a submodule), and a WARN names that stage.
+  Printed hit lines are unchanged. Upgrading: an ERE allowlist entry now matches the line's content only; use
+  `path:` for a path.
