@@ -3112,7 +3112,7 @@ run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(a): a tracked path replaced by a directory → BLOCKED from its index copy" 1 "$STATUS"
 check_contains "dir #746 A26(a): ...named as not a regular file" "$OUT" \
   "secret-scan: WARN not a regular file in the working tree, scanned its index copy instead: dirfile.txt"
-check_absent "dir #746 A26(a): a broken symlink takes the readlink branch, not the index copy" "$OUT" "instead: lnk"
+check_absent "dir #746 A26(a): a tracked (broken) symlink takes the readlink branch, not the index copy" "$OUT" ": lnk"
 r746="$(new_repo)"
 printf 'clean\n' > "$r746/a.txt"
 commit746 "$r746" base
@@ -3314,7 +3314,9 @@ run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(g): tracked files replaced by symlinks → BLOCKED" 1 "$STATUS"
 check_contains "dir #746 A26(g): ...the index copy's key is reported" "$OUT" "  c.txt:1:tok = $k746"
 check_contains "dir #746 A26(g): ...the target string's key is reported" "$OUT" "  d.txt:1:/tmp/$aws746"
-check_contains "dir #746 A26(g): ...and each says both were scanned" "$OUT" \
-  "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: c.txt"
+for n746 in c.txt d.txt; do
+  check_contains "dir #746 A26(g): ...and $n746 says both were scanned" "$OUT" \
+    "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $n746"
+done
 
 summary

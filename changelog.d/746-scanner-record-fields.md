@@ -12,7 +12,7 @@
   before, and now its index copy too. An absent sparse-checkout (skip-worktree) entry is scanned from its index
   copy, counted in one summary line. A mid-merge (unmerged) file is read from its working file or symlink, if
   any, and from each of its stages' index copies; a hit they share prints once, and one WARN names the path.
-  New causes of exit 2: git cannot read an index copy, or the working file of an unmerged path cannot be read —
-  it is unreadable, or a directory that cannot be searched hides whether it exists (dir #746).
+  New causes of exit 2: git cannot read an index copy, or the working file or symlink of an unmerged path cannot
+  be read — it is unreadable, or a directory that cannot be searched hides whether it exists (dir #746).
   Hit lines print in the same form as before. Upgrading: an ERE allowlist entry now matches the line's content
   only; use `path:` for a path.
