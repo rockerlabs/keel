@@ -654,12 +654,16 @@ match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 # pair), the "second use = promote" convention above.
 inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 
-# wait_ready MARKER — wait (bounded, 60s, polled every 0.1s like install.sh's own pause loop) for an install
-# paused by _keel_test_pause_after (KEEL_TEST_PAUSE_AFTER / KEEL_TEST_PAUSE_MARKER) to touch "$MARKER.ready";
-# 0 once it has.
+# wait_ready MARKER [PID] — wait (bounded, 60s, polled every 0.1s like install.sh's own pause loop) for an
+# install paused by _keel_test_pause_after (KEEL_TEST_PAUSE_AFTER / KEEL_TEST_PAUSE_MARKER) to touch
+# "$MARKER.ready"; 0 once it has. With PID, the wait ends early once that process is gone (an install that
+# fails before its checkpoint costs one poll, not the whole bound).
 wait_ready() {
   local n=0
-  while [ ! -e "$1.ready" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  while [ ! -e "$1.ready" ] && [ "$n" -lt 600 ]; do
+    if [ -n "${2:-}" ] && ! kill -0 "$2" 2>/dev/null; then break; fi
+    sleep 0.1; n=$((n + 1))
+  done
   [ -e "$1.ready" ]
 }
 

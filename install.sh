@@ -197,7 +197,7 @@ if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write
   # shellcheck source=tools/lib/safe-write.sh
   . "$root/tools/lib/safe-write.sh"
 else
-  echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
+  echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run '$advise_install'" >&2
   exit 1
 fi
 
@@ -502,6 +502,9 @@ _keel_install_release_lock() {
 }
 _keel_install_on_exit() {
   local rc=$?
+  # A second signal (a double Ctrl-C, TERM then INT) must not cut the release short: its `exit` would end
+  # the shell inside this handler and leave the lock.
+  trap '' INT TERM
   _keel_install_release_lock
   [ "$rc" != 0 ] || rc=1
   exit "$rc"

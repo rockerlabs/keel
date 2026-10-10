@@ -24,7 +24,7 @@ start_paused() {
     "$install" --home "$h" --no-hooks > "$SANDBOX/$1.out" 2>&1 </dev/null &
   pid=$!
   set +m
-  wait_ready "$mk"
+  wait_ready "$mk" "$pid"
 }
 # abandon PID LABEL — a paused install that never reached its checkpoint: kill it, reap it, fail the row.
 abandon() {
@@ -88,14 +88,14 @@ for sig in TERM INT; do
   # TERM goes to the install's own pid; INT to its whole process group, as a terminal's Ctrl-C does (bash
   # treats an INT its foreground child survived as handled, so an INT to the shell alone proves nothing).
   case "$sig" in
-    TERM) want=143; target="$sig" ;;
-    INT)  want=130; target="-$sig"
+    TERM) want=143; target="$sig"; job= ;;
+    INT)  want=130; target="-$sig"; job=monitor
           if [ "$int_probe" != 7 ]; then
-            pass "A33/K29a SIGINT row skipped — SIGINT is ignored in this test's environment (ignored on entry, so untrappable)"
+            pass "A33/K29a SIGINT row skipped — SIGINT is ignored in this test's environment (ignored on entry, so untrappable; tests/run.sh and CI always skip it — run this file standalone to cover it)"
             continue
           fi ;;
   esac
-  if start_paused "a33-$sig" merge-write monitor; then
+  if start_paused "a33-$sig" merge-write "$job"; then
     check_dir "A33 $sig fixture: the paused run holds the lock" "$h/.install.lock"
     if [ "$target" = TERM ]; then kill -TERM "$pid"; else kill -INT -- -"$pid"; fi
     reap "$pid"
