@@ -79,6 +79,14 @@ run genv "$isg" --global
 check_status "walk (4): a bare 'path = ~' → refused (exit 3), not skipped as a missing relative file" 3 "$STATUS"
 check_contains "walk (4): ...as an incomplete walk" "$OUT" "$incomplete"
 
+# git expands the include path in isolation: a key of the same name in the ambient config must not steer it
+mk_home isolated
+printf '[includeIf "gitdir:~/work/"]\n\tpath = ~/work.cfg\n[isg "unset"]\n\tname = /nowhere/evil.cfg\n' > "$H/.gitconfig"
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
+run genv "$isg" --global
+check_status "walk (4): an ambient isg.unset.name does not steer the expansion → still refused (exit 3)" 3 "$STATUS"
+check_contains "walk (4): ...naming the real target" "$OUT" "$H/work.cfg"
+
 # --- (6): _isg_absent_for_sure terminates on a slash-less path ------------------------------------------------------
 fn="$SANDBOX/absent-fn.sh"
 sed -n '/^_isg_absent_for_sure() {/,/^}/p' "$isg" > "$fn"

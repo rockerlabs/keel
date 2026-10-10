@@ -559,13 +559,15 @@ _isg_machine_read_files() {
 #   - listed from the scratch dir, so global, the XDG file, SYSTEM and unconditionally [include]d files all
 #     count; only `file:` origins — a command-scope include (`git -c`, GIT_CONFIG_COUNT; tests/lib.sh arms one
 #     for every test) applies to one command, not to the machine;
-#   - a relative target resolves beside the file that names it (git's rule), a leading ~/ to $HOME; a
-#     missing target is skipped, as git skips it, and so is a valueless `path` key; a `~user/` or
-#     `%(prefix)/` target, which this walk does not resolve, an unreadable one and one under a dir that
-#     cannot be searched make it incomplete;
+#   - `~`, `~/…`, `~user/…` and `%(prefix)/…` are expanded by git itself (`git config --type=path --default`, run
+#     in the scratch dir against /dev/null so no ambient config steers it); a relative target resolves beside the
+#     file that names it (git's rule). A missing target is skipped, as git skips it, and so is a valueless `path`
+#     key; a path git cannot expand, an unreadable target, a directory and a target under a dir that cannot be
+#     searched (or reached through a dangling link into one) make it incomplete;
 #   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
-#     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is skipped — a conditional
-#     self-include is complete — and depth stops at $isg_include_depth_max;
+#     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is read once — a conditional
+#     self-include is complete — but reported under each independent condition that reaches it, and depth stops
+#     at $isg_include_depth_max;
 #   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
 #     hook off in its trees, and a valueless `hooksPath` makes git fail there.
 # Every `-z` read goes to a FILE in the scratch dir and is read back with `read -d ''`: bash 3.2 drops NUL
@@ -606,7 +608,7 @@ _isg_cond_list() {
     # the walk incomplete (dir #743). A relative result resolves beside the file that names it.
     case "$raw" in
       "~"*|"%(prefix)/"*)
-        exp="$(git config --type=path --default "$raw" --get isg.unset.name 2>/dev/null)" \
+        exp="$(git -C "$c_probe" config --file /dev/null --type=path --default "$raw" --get isg.unset.name 2>/dev/null)" \
           || { c_cause="an include path this walk cannot resolve: $raw"; return 1; }
         raw="$exp" ;;
     esac
