@@ -19,7 +19,7 @@ sections real content going forward — see that page for exactly when each one 
   dir #672: five grooms running, G6's top finding was a value-claim cell not bound to its slate, and the prose
   rule in `docs/grooming.md` G5 did not prevent the repeat. Run before G6, it reads a `RELEASES.md` plan
   section and flags each value-claim table row or `**Value claims**` bullet carrying none of G5's forms: a
-  `Subject set:` clause, a `Residue:` clause (G5's source/diff/residue form), `no claim`, or `no subject set — <why>`. Advisory:
+  `Subject set:` clause, a `Residue:` clause (G5's third part), `no claim`, or `no subject set — <why>`. Advisory:
   it always exits 0.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable

@@ -94,8 +94,9 @@ blank_fenced_blocks "$releases_file" | awk -v want="$version" '
   function ok(t,   l) {
     sub(/[ \t]*\|[ \t]*$/, "", t)   # a table row ends in its closing pipe, which is not a reason
     sub(/^\|[^|]*\|/, "", t)         # a table row: judge the claim cell, not its label cell
+    sub(/^- \*\*[^*]*\*\*/, "", t)    # a bullet: likewise, not its bold label ("**Row A:**")
     l = tolower(t)
-    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /residue *(:|=|—)/ || l ~ /(^|[^a-z])no claim([^a-z]|$)/)
+    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /(^|[^a-z])residue *(:|=|—)/ || l ~ /(^|[^a-z])no claim([^a-z]|$)/)
   }
   function judge(t, at) {
     cells++
@@ -118,7 +119,7 @@ blank_fenced_blocks "$releases_file" | awk -v want="$version" '
   in_list {
     if ($0 ~ /^- /) { flush(); bullet = $0; bullet_at = NR; next }
     if ($0 ~ /^  / && bullet != "") { bullet = bullet " " $0; next }
-    if ($0 ~ /^[ \t]*$/) { flush(); next }   # blank lines separate bullets; they do not end the list
+    if ($0 ~ /^[ \t]*$/) next   # a blank line neither ends the list nor the pending bullet
     flush(); in_list = 0               # an unindented paragraph does
   }
   /^\*\*[Vv]alue claims/ { in_list = 1; next }

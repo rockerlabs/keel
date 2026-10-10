@@ -81,9 +81,9 @@ run "$vc" "$f"
 check_contains "source+diff+Residue, Residue alone and 'no claim' pass; two bare claims are flagged" "$OUT" "7 value-claim cell(s), 2 lacking a subject set"
 check_contains "a claim with no G5 form is flagged (0.14.0 row A's shape)" "$OUT" "FLAG  v1.5.0 line 6: | value claim | the median session"
 check_contains "a source named but no residue or diff is still flagged" "$OUT" "FLAG  v1.5.0 line 11: - **Row C:**"
-check_absent "the source/diff/Residue row passes" "$OUT" "line 3"
-check_absent "the Residue-alone row passes" "$OUT" "line 4"
-check_absent "the 'no claim' table row passes" "$OUT" "line 5"
+check_absent "the source/diff/Residue row passes" "$OUT" "line 3:"
+check_absent "the Residue-alone row passes" "$OUT" "line 4:"
+check_absent "the 'no claim' table row passes" "$OUT" "line 5:"
 
 # --- prose bullets under a **Value claims** lead-in: continuation lines belong to their bullet -------
 f="$(mk_releases "## v2.0.0 — cut readiness
@@ -101,8 +101,8 @@ A later paragraph that says value claims in passing is not a cell.
 run "$vc" "$f"
 check_contains "four bullets read, one lacks every form (Row D says no claim)" "$OUT" "4 value-claim cell(s), 1 lacking a subject set"
 check_contains "bullet without a clause is flagged" "$OUT" "FLAG  v2.0.0 line 8"
-check_absent "a bullet saying no claim passes" "$OUT" "line 9"
-check_absent "a clause on a continuation line counts for its bullet" "$OUT" "line 6"
+check_absent "a bullet saying no claim passes" "$OUT" "line 9:"
+check_absent "a clause on a continuation line counts for its bullet" "$OUT" "line 6:"
 
 # --- review findings (fresh-context round 1) -----------------------------------------------------------------
 f="$(mk_releases "## v6.0.0 — cut readiness
@@ -125,9 +125,24 @@ check_contains "blank lines around bullets keep list mode: both bullets read" "$
 check_contains "'no claimant' / 'no claims' is not the phrase 'no claim'" "$OUT" "FLAG  v6.0.0 line 12"
 check_contains "a G5 form in the LABEL cell does not rescue the claim cell" "$OUT" "FLAG  v6.0.0 line 13"
 check_contains "a bullet after an unindented paragraph is not a cell; 5 cells, 3 lacking" "$OUT" "5 value-claim cell(s), 3 lacking a subject set"
-check_absent "Residue followed by an em dash passes" "$OUT" "line 14"
-LC_ALL=C run "$vc" "$f"
+check_absent "Residue followed by an em dash passes" "$OUT" "line 14:"
+OUT="$(export LC_ALL=C; "$vc" "$f" 2>&1)"
 check_contains "same verdicts under LC_ALL=C (a multibyte dash is not a byte class)" "$OUT" "5 value-claim cell(s), 3 lacking a subject set"
+
+f="$(mk_releases "## v6.1.0 — cut readiness
+
+**Value claims (G5):**
+- **Residue:** the claim is that every ticket closes.
+
+- **Row B:** closed.
+
+  Subject set: row B's own tickets, on an indented paragraph after a blank line.
+- **Row C:** bare.
+")"
+run "$vc" "$f"
+check_contains "a G5 word in a bullet's bold label does not rescue it; an indented paragraph after a blank line continues its bullet" "$OUT" "3 value-claim cell(s), 2 lacking a subject set"
+check_contains "the bullet whose label says Residue is flagged" "$OUT" "FLAG  v6.1.0 line 4"
+check_absent "Row B passes through its blank-separated continuation" "$OUT" "line 6:"
 
 # --- sections: VERSION filters, no VERSION reads all, a duplicate heading is read twice --------------
 f="$(mk_releases "## v3.0.0 — cut readiness
