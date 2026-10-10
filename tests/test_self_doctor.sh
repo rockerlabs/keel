@@ -30,7 +30,7 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 # dir #678: the shellcheck leg over every tracked script is ~40% of this file's CPU and CI runs it anyway
 # (the doctor job + the shellcheck job), so the smoke skips it via the documented knob.
 run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" --quiet
-check_status "the real keel checkout is clean (no GAP)" 0 "$STATUS"
+check_status_out "the real keel checkout is clean (no GAP)" 0
 
 # --- synthetic sandbox: a minimal, fully-passing mini-repo; each test mutates a fresh copy --------
 # Fixture scripts hold only what the checks under test actually need: doctor.sh's ship-skip check
@@ -290,6 +290,14 @@ printf 'Then run `/code-review high`.\n' > "$d/README.md"
 ( cd "$d" && git add -A && git commit -qm "harness-allowlisted command" )
 run "$sd" "$d" --quiet
 check_status "a harness-allowlisted command -> exit 0" 0 "$STATUS"
+
+# dir #739: `/compact` is a Claude Code builtin the /polish compaction stop asks the OPERATOR to send; it is never
+# shipped as a commands/*.md file, and the stop already handles its failure or absence (guide § Step 1 (g)).
+d="$(mk_clean_repo)"
+printf 'Send `/compact`, then continue.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "harness-builtin compact" )
+run "$sd" "$d" --quiet
+check_status "a harness-builtin /compact reference -> exit 0" 0 "$STATUS"
 
 # the not_commands allowlist (dir #110): a token that only looks like a command (a filesystem path
 # or an adopter's own pre-existing name) must not false-GAP.

@@ -76,8 +76,8 @@ fi
 # stat-portable answers the hard-link count. OPTIONAL, as install.sh has always treated it: when it is
 # missing or corrupt the count reads empty, and keel_write_through skips only its hard-link check — the
 # write proceeds as it did before this lib. The decision lives here so every caller makes it the same
-# way. A caller that already loaded it (install.sh primes its flavor cache for a hot loop) is left
-# alone: re-sourcing would reset that cache.
+# way. A caller that already loaded it is left alone: re-sourcing would reset its primed flavor cache.
+# (install.sh sources this lib first, so this load is the one it keeps.)
 if ! declare -F stat_portable_nlink >/dev/null 2>&1; then
   if [ -s "$_keel_sw_libdir/stat-portable.sh" ] && bash -n "$_keel_sw_libdir/stat-portable.sh" 2>/dev/null; then
     # shellcheck source=tools/lib/stat-portable.sh

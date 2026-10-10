@@ -2,10 +2,8 @@
 description: Pre-PR polish pass — simplify + tests + depth-matched code-review + gate + open the PR
 argument-hint: [--no-test]
 ---
-<!-- Installed by default (dir #68) — pairs with tools/pre-pr-gate.sh, a Claude-Code-specific hook that
-install.sh never auto-wires: run
-tools/install-pre-pr-gate.sh <repo> once per project to turn the gate on. Without it, every
-step here still runs — only its blocks are inert. -->
+<!-- Installed by default (dir #68). Pairs with tools/pre-pr-gate.sh, wired per project by
+tools/install-pre-pr-gate.sh <repo>; unwired, only its blocks are inert. -->
 
 The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` wires the gate, it also blocks
 `gh pr create` until this command has run cleanly on the current HEAD, and always `git push --no-verify`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
@@ -27,7 +25,7 @@ load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-gui
 Steps, in order:
 
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
-   nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Otherwise
+   nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.

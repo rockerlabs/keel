@@ -345,4 +345,48 @@ check_eq "no test header says its pre-split text lives 'unchanged' in the guide"
 check_count "docs/release-audit.md names the guide as the growing open-FLOOR file" \
   "$REPO_ROOT/docs/release-audit.md" 'the guide is the one that grows' 1
 
+# --- dir #739 (build B, A10): the compaction stop — the core's trigger and the guide's § Step 1 paragraph ------
+# Each needle is checked inside the one place it must live (step_text 1 for the core, guide_step 1 for the guide).
+s1="$(step_text 1)"
+check_contains "core step 1: runs tools/token-report.sh --context in a non-convergence run" "$s1" 'Not a convergence round: run `tools/token-report.sh --context`'
+check_contains "core step 1: verdict compact sends the run to the guide's compaction stop" "$s1" "\`verdict: compact\` → the guide, § Step 1's compaction stop (dir #739)"
+check_contains "core step 1: the --context run comes before init" "${s1%%'`tools/pre-pr-gate.sh init`'*}" 'token-report.sh --context'
+g1="$(guide_step 1)"
+check_contains "guide § Step 1: carries the compaction-stop paragraph" "$g1" '**Compaction stop (dir #739).**'
+# (a) the loop guard keys on the invocation's arguments, never on memory, and precedes the first act.
+check_contains "compaction stop (a): a run whose arguments say 'after a compaction stop' continues" "$g1" 'arguments say `after a compaction stop`'
+check_contains "compaction stop (a): ... even when --context still prints compact" "$g1" 'even when'
+a_head="${g1%%'arguments say `after a compaction stop`'*}"
+c_head="${g1%%'Commit all work'*}"
+check_eq "compaction stop (a): the loop guard comes before 'Commit all work'" "yes" "$([ "${#a_head}" -lt "${#c_head}" ] && echo yes || echo no)"
+check_contains "compaction stop (b): why — a compacted session resumes at a fresh session's size" "$g1" "about a fresh session's size"
+check_contains "compaction stop (c): no init and no receipt before the stop" "$g1" '`init` and no receipt'
+check_contains "compaction stop (d): an uncommittable tree stops the run" "$g1" 'cannot be committed → stop and report'
+check_contains "compaction stop (e): the hand-over file lives outside the repo" "$g1" 'outside the repo'
+check_contains "compaction stop (e): ... and carries the final report with the PR URL left blank" "$g1" 'the PR URL left blank'
+check_contains "compaction stop (e): a /go run's handoff note says next: /polish (compaction stop, dir #739)" "$g1" 'next: /polish (compaction stop, dir #739)'
+check_contains "compaction stop (f): no tool call after the two lines" "$g1" 'no further tool call'
+check_contains "compaction stop (f): a managed-release worker tells its manager" "$g1" 'to its manager'
+check_contains "compaction stop (g): the continued run's conformance mandate reads the hand-over file" "$g1" 'conformance mandate'
+check_contains "compaction stop (g): a missing hand-over file is recomposed" "$g1" 'recompose it from'
+check_contains "compaction stop (g): the operator may decline the stop" "$g1" 'continue without compacting'
+# (f) structure, not presence: ONE fenced block whose only line is `/compact`, and a SEPARATE fenced block whose only
+# line is the verbatim /polish template — two messages, because text sent together with /compact becomes its summary
+# instructions. fenced_blocks lists each fenced block of the guide's § Step 1 as one line (its lines joined by '|').
+fenced_blocks() {
+  awk -v h="## Step 1 " '
+    index($0, h) == 1 { f = 1; next }
+    f && /^## / { exit }
+    f && /^[[:space:]]*```/ { if (inb) { print blk; blk = ""; inb = 0 } else { inb = 1 }; next }
+    f && inb { sub(/^[[:space:]]+/, ""); blk = (blk == "" ? $0 : blk "|" $0) }' "$guide"
+}
+blocks="$(fenced_blocks)"
+tmpl='/polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first'
+check_eq "compaction stop (f): exactly one fenced block is the bare /compact line" "1" "$(grep -cxF '/compact' <<< "$blocks" || true)"
+check_eq "compaction stop (f): exactly one fenced block is the verbatim /polish template, alone" "1" "$(grep -cxF "$tmpl" <<< "$blocks" || true)"
+# B12a: the guide's trigger lists name a compaction stop.
+check_contains "guide description names a compaction stop" "$guide_head" 'a compaction stop'
+check_contains "docs/loading-and-cost.md's guide row names a compaction stop" "$(grep -F '`commands/polish-guide.md`' "$REPO_ROOT/docs/loading-and-cost.md" || true)" 'a compaction stop'
+check_contains "docs/reference.md's polish-guide sentence names a compaction stop" "$(grep -F '`polish-guide` is not one either' "$REPO_ROOT/docs/reference.md" || true)" 'a compaction stop'
+
 summary
