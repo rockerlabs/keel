@@ -85,8 +85,11 @@ gpara="${gpara%%'Where the guide and this file disagree'*}"
 check_contains "**The guide.** states the guide-loading instruction" "$gpara" "$instr"
 check_contains "**The guide.** says an unreachable guide stops the run" "$gpara" "guide unreachable → stop and report"
 check_contains "**The guide.** forbids improvising a branch" "$gpara" "Never improvise a branch."
-check_eq "the guide-loading instruction appears 3 times in the core (The guide., steps 8, 9)" "3" "$(grep -oF "$instr" <<< "$flat" | wc -l | tr -d ' ')"
-check_eq "'unreachable' appears 3 times in the core (The guide., steps 8, 9)" "3" "$(grep -oF "unreachable" <<< "$flat" | wc -l | tr -d ' ')"
+# occurrences HAYSTACK NEEDLE — how often NEEDLE occurs in HAYSTACK, in bash alone: busybox's `grep -oF` prints
+# only the FIRST match of a line, and the flattened core is one line.
+occurrences() { local rest="${1//"$2"/}"; echo $(( (${#1} - ${#rest}) / ${#2} )); }
+check_eq "the guide-loading instruction appears 3 times in the core (The guide., steps 8, 9)" "3" "$(occurrences "$flat" "$instr")"
+check_eq "'unreachable' appears 3 times in the core (The guide., steps 8, 9)" "3" "$(occurrences "$flat" "unreachable")"
 check_contains "step 9's closing pointer also reaches step 10's add-on summary forms" "$(ends_with_rare 9)" "§ Step 10 for the add-on summary forms"
 check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
 check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
