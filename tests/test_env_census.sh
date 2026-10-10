@@ -182,8 +182,8 @@ unneutralized "$nolib/broken.sh" KEEL_PLANT_BRACE >/dev/null; rc=$?
 check_ne "a lib that fails to source is a hard failure, not a clean 'nothing poisoned'" "$rc" 0
 
 # --- the real tree --------------------------------------------------------------------------------------------
-names="$(inherited_reads "$REPO_ROOT/tools" "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
-  "$REPO_ROOT/bootstrap.sh" "$REPO_ROOT/keel")"
+census_roots=("$REPO_ROOT/tools" "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" "$REPO_ROOT/bootstrap.sh" "$REPO_ROOT/keel")
+names="$(inherited_reads "${census_roots[@]}")"
 count="$(printf '%s\n' "$names" | grep -c .)"
 # anchors: names tests/lib.sh handled BEFORE this gate existed — a scanner that cannot see them is blind
 for anchor in KEEL_HOME KEEL_IMPACT_LOG KEEL_MACHINE_WATCH_NOTIFIER KEEL_LEDGER_FILE; do
@@ -251,8 +251,7 @@ check_absent "substring / strip / length expansions are not default-expansion re
 check_eq "exactly the seven reads are reported" 7 "$(printf '%s\n' "$oplanted" | grep -c .)"
 
 # --- the real tree --------------------------------------------------------------------------------------------
-onames_all="$(inherited_other_reads "$REPO_ROOT/tools" "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
-  "$REPO_ROOT/bootstrap.sh" "$REPO_ROOT/keel")"
+onames_all="$(inherited_other_reads "${census_roots[@]}")"
 # anchors: names the ticket names (dir #704) and one per documented family — a scanner blind to them is vacuous
 for anchor in AGY_BIN AGY_MODEL AGY_PRINT_TIMEOUT SECRET_SCAN_LOCAL_PUSH GITHUB_EVENT_NAME DRYDOCK_SCOPE_A LEAK_GATE_CWD HOME; do
   check_contains "the non-KEEL_ scan sees $anchor (so it is not vacuous on the real tree)" "$onames_all" "$anchor"
