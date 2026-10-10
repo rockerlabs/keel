@@ -48,8 +48,8 @@ The number is `input + cache_read + cache_creation` tokens of the **last** turn 
 `$CLAUDE_CODE_SESSION_ID` (never the largest turn, never the newest file — a compacted session's last turn is small
 again, and a wrong file would stop a run for nothing). The verdict is `compact` when that number reaches the
 threshold. A session id that is unset, not on disk, ambiguous, a missing `jq`, or a transcript with no usage turn
-prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't know", never a guess (and a malformed threshold, exit 2 with no line, is not `compact` either: `/polish` continues). `--context`
-takes no other option. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
+prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't know", never a guess. `--context`
+takes no other option. A malformed `KEEL_POLISH_COMPACT_TOKENS` exits 2 with no line, which is not `compact`, so `/polish` continues. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
 can send `/compact`; see the guide's § Step 1 "Compaction stop".
 
 One thing was checked when this was built. On the desktop app (entrypoint `claude-desktop`), `CLAUDE_CODE_SESSION_ID`

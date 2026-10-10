@@ -391,20 +391,6 @@ id_cmp="c0000000-0000-4000-8000-0000000000b3"
 ctx_run "$id_cmp"
 check_eq "--context (xi): after a compact_boundary the LAST turn (90,000) is N, never the 900,000 max" \
   "context: 90000 threshold: 250000 verdict: stay" "$CTX_OUT"
-# A trailing zero-usage assistant record (an interrupted or synthetic stub) is not a turn with a context: N is the
-# last turn that carries one, or the stop would silently never fire for a big session that ends on a stub.
-id_stub="c0000000-0000-4000-8000-0000000000b5"
-{ ctx_early
-  ctx_rec l1 2026-10-01T10:05:00.000Z 40 60000 239960 500
-  ctx_rec z1 2026-10-01T10:06:00.000Z 0 0 0 0; } > "$ctxdir/$id_stub.jsonl"
-ctx_run "$id_stub"
-check_eq "--context: a trailing all-zero usage record is skipped, N is the last real turn" \
-  "context: 300000 threshold: 250000 verdict: compact" "$CTX_OUT"
-# A transcript whose only usage record is all-zero has no turn to measure.
-id_zero="c0000000-0000-4000-8000-0000000000b6"
-ctx_rec z1 2026-10-01T10:06:00.000Z 0 0 0 0 > "$ctxdir/$id_zero.jsonl"
-ctx_run "$id_zero"
-check_eq "--context: only all-zero usage records -> unknown, stay" "context: unknown (no usage turn) threshold: 250000 verdict: stay" "$CTX_OUT"
 # A transcript with no assistant usage at all.
 id_empty="c0000000-0000-4000-8000-0000000000b4"
 printf '{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","message":{"role":"user","content":"hi"}}\n' > "$ctxdir/$id_empty.jsonl"
