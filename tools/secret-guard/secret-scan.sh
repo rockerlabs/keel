@@ -54,7 +54,8 @@
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
-#     <ERE>          drop any matched line from results
+#     <ERE>          drop a hit whose matched line matches (the line's content only — never its path or
+#                    line number; dir #741)
 #     path:<glob>    exclude a path
 #   or an inline  secret-scan:allow  comment on the offending line.
 #
@@ -266,8 +267,21 @@ if [ -n "$has_personal" ]; then
   fi
 fi
 
-# --- gather the lines to scan as "path:line" records ---------------------------------------------------
-records=""
+# --- gather the hits as records ---------------------------------------------------------------------
+# dir #741 (spec 746 B10): one record is one index into five parallel arrays, so a label never reads as
+# content: the allow channels each read their own field (the filter loop below), and a file name holding
+# `secret-scan:allow` or a colon can no longer exempt a hit. rec_path — the label (a path, its newlines
+# written `\n`, or `commit|tag <sha7> message`); rec_where — `-n`'s line number, `(binary)`, or empty;
+# rec_text — the matched line or `-o` match; rec_blob — the blob sha in --range's detailed pass (cur_blob,
+# set around that loop's emit_file); rec_msg — 1 for a commit or tag message (collect_matches' MSG argument,
+# passes): a message is never path-exempted. Iterated by index: bash 3.2 aborts on an empty "${a[@]}" under
+# set -u.
+rec_path=(); rec_where=(); rec_text=(); rec_blob=(); rec_msg=()
+cur_blob=""
+# --tracked reads several copies of one unmerged path (its working file, its stages): while it reads a later copy,
+# a hit whose text is byte-identical to one an EARLIER copy of the path recorded — records [from, to) — is not
+# recorded again (conflict markers shift line numbers, so the text alone decides). to empty = off.
+rec_dedupe_from=""; rec_dedupe_to=""
 
 # a file (or blob) is binary if it contains a NUL byte
 is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
@@ -344,11 +358,12 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
   printf '%s' "${n:-0}"
 }
 
-# collect_matches LABEL PREFIX FILE FLAGS [EXTRA] — the one path from a match pass to records (dir #715):
+# collect_matches LABEL FILE FLAGS [EXTRA [MSG]] — the one path from a match pass to records (dir #715):
 # match_text FILE (FLAGS, EXTRA as there), fail closed on its status (STEP `match 'LABEL'`), and append
-# each hit as a "PREFIX<hit>" record. Main shell only, so the records+= appends land here. Records are
-# newline-separated, so a newline inside a name is written as the two characters `\n`: a raw one split the
-# record, and a `path:` allowlist glob matching the tail fragment exempted the hit (dir #715 review).
+# each hit as a record (B10): `-n` output splits at its FIRST colon (the number is digits only), `-o` output
+# is a binary match. Main shell only, so the appends land here. A newline inside a name is written as the two
+# characters `\n` in rec_path: printed raw it would start a line of its own, and a `path:` glob matching
+# that fragment exempted the hit (dir #715 review).
 # dir #693 — the read carries `|| [ -n "$hit" ]`: under a UTF-8 locale bash 5.x `read -r` returns 1 for a
 # FINAL line whose last byte is an invalid multibyte lead byte (the newline is swallowed into the incomplete
 # sequence), though it did fill the variable — a bare `while read` dropped exactly the record carrying the
@@ -357,15 +372,29 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
 # never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
 collect_matches() {
-  local label="$1" prefix="${2//$'\n'/\\n}" f="$3" m="$SCRATCH/matches" hit=""
-  match_text "$4" "$f" "${5:-}" > "$m" || _fail_closed "match '$label'" $?
+  local label="$1" path="${1//$'\n'/\\n}" f="$2" flags="$3" msg="${5:-}" m="$SCRATCH/matches" hit="" where seen di
+  match_text "$flags" "$f" "${4:-}" > "$m" || _fail_closed "match '$label'" $?
   while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
-    [ -z "$hit" ] || records+="$prefix$hit"$'\n'
+    [ -n "$hit" ] || continue
+    where=""
+    case "$flags" in
+      -n) where="${hit%%:*}"; hit="${hit#*:}" ;;
+      -o) where="(binary)" ;;
+    esac
+    if [ -n "$rec_dedupe_to" ]; then
+      seen=""; di="$rec_dedupe_from"
+      while [ "$di" -lt "$rec_dedupe_to" ]; do
+        [ "${rec_text[$di]}" = "$hit" ] && { seen=1; break; }
+        di=$((di + 1))
+      done
+      [ -z "$seen" ] || continue
+    fi
+    rec_path+=("$path"); rec_where+=("$where"); rec_text+=("$hit"); rec_blob+=("$cur_blob"); rec_msg+=("$msg")
   done < "$m"
 }
 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
-# classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
+# classes, and record each `-o` match as a binary hit of the label. The decode recipe is deliberately duplicated in
 # public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync (pinned by
 # tests/test_secret_guard.sh, dir #681).
 #
@@ -432,7 +461,7 @@ emit_blob() {  # $1 = record label (path)
     fi
     LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp" || exit $?; echo  # raw printable runs
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
-  collect_matches "$label" "$label:(binary) " "$dec" -o
+  collect_matches "$label" "$dec" -o
   rm -f "$tmp" "$dec"
 }
 
@@ -440,12 +469,12 @@ emit_blob() {  # $1 = record label (path)
 # emit_file reads a spool file this script made; emit_stream spools stdin first — the path for anything
 # else. A caller's own path never reaches cmp/grep: a name like `-v` would be read as an option there, and
 # the spool is one snapshot of a file that may change mid-scan. Both run in this shell (never in a pipe or
-# a `$(…)`), so the records+= appends land here.
+# a `$(…)`), so the record appends land here.
 emit_file() {  # $1 = record label (path), $2 = a spool file under $SCRATCH
   if is_binary_file "$2"; then
     emit_blob "$1" < "$2" || _fail_closed "decode '$1'" $?
   else
-    collect_matches "$1" "$1:" "$2" -n
+    collect_matches "$1" "$2" -n
   fi
 }
 emit_stream() {  # $1 = record label (path); the content on stdin
@@ -525,7 +554,7 @@ _impact_log_path_inline() {
 }
 _impact_claim_key_inline() { git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true; }  # fail-open-ok: impact-log metadata
 
-# scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
+# scan the added lines of one file's diff, recording each hit's line under the path. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
 emit_diff() {
@@ -572,7 +601,7 @@ emit_diff() {
     /^@@ / { in_hunk=1; next }
     in_hunk && /^\+/ { print }
   ' | LC_ALL=C sed 's/^+//' > "$dtmp" || _fail_closed "parse the staged diff of '$path'" $? "$derr"
-  collect_matches "$path" "$path:" "$dtmp" ''
+  collect_matches "$path" "$dtmp" ''
   rm -f "$dtmp" "$derr"
 }
 
@@ -854,7 +883,9 @@ case "$mode" in
       while LC_ALL=C IFS=' ' read -r _otype osha opath || [ -n "$opath" ]; do   # dir #693/#715: see emit_blob's loop
         [ -n "$osha" ] || continue
         git cat-file blob "$osha" > "$btmp" 2>"$berr" || _fail_closed "read blob $osha ('$opath')" $? "$berr"
+        cur_blob="$osha"                            # dir #742: the filter pairs this record's blob with every path
         emit_file "$opath" "$btmp"
+        cur_blob=""
       done <<< "$blobs"
       rm -f "$btmp" "$berr"
     fi
@@ -879,7 +910,7 @@ case "$mode" in
         [ -n "$csha" ] || continue
         git log -1 --format=%B "$csha" > "$ctmp" 2>"$merr" \
           || _fail_closed "read the message of commit ${csha:0:7}" $? "$merr"
-        collect_matches "commit ${csha:0:7} message" "commit ${csha:0:7} message:" "$ctmp" '' "$SESSION_META"
+        collect_matches "commit ${csha:0:7} message" "$ctmp" '' "$SESSION_META" 1   # 1: a message (dir #741)
       done < "$clist"
       rm -f "$clist" "$ctmp"
     fi
@@ -901,7 +932,7 @@ case "$mode" in
         while LC_ALL=C IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
           tag_body "$tsha" "$terr" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
-          collect_matches "tag ${tsha:0:7} message" "tag ${tsha:0:7} message:" "$tagtmp" '' "$SESSION_META"
+          collect_matches "tag ${tsha:0:7} message" "$tagtmp" '' "$SESSION_META" 1
         done <<< "$tagshas"
       fi
       rm -f "$tagtmp"
@@ -960,25 +991,108 @@ case "$mode" in
     # dir #715 (B5): `-z` (raw, NUL-terminated names — a tab, quote or newline in a name no longer skips
     # the file), the status checked (a corrupt index exits 2 instead of auditing zero files), every read
     # under LC_ALL=C (B3, emit_blob's loop).
-    tlist="$(spool)"; terr="$(spool)"
-    git -C "$top" ls-files -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    while LC_ALL=C IFS= read -r -d '' f || [ -n "$f" ]; do
+    # dir #746 (D1-4, spec 746 B12): `-s -t` — each record is `<tag> <mode> <sha> <stage>TAB<path>`, so a tracked
+    # file the working tree cannot give us (unreadable, deleted, replaced by a directory, or a sparse checkout's
+    # skip-worktree entry, tag S, that is absent) is scanned from its index copy instead of being skipped with a
+    # `clean` verdict; exit 2 when git cannot read that copy (a partial clone offline included). A gitlink
+    # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
+    # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
+    # not. A working-tree symlink's target string is always scanned (it is what the next `git add` commits); a
+    # tracked file a symlink replaced (index mode not 120000) has its index copy scanned too. An unmerged path (a
+    # stage other than 0) is read whole: its working file if there is one, and every distinct non-gitlink stage's
+    # index copy — the working file of a binary or type conflict holds one side only, and a key may sit in "ours"
+    # or "theirs" alone. A hit a later copy shares byte for byte with an earlier one is recorded once; one WARN
+    # names the path and what its working file gave.
+    # tracked_index_copy PATH SHA — scan the index copy SHA of PATH (its records from path_from on are the earlier
+    # copies'); exit 2 when git cannot read it.
+    # hidden_by_dir PATH — 0 when a directory above PATH exists but cannot be searched: PATH may exist all the
+    # same, so a failed `-e` there does not mean "absent". Deepest first; the shallowest such directory is
+    # always visible (the top level is searchable), so one is found at any depth.
+    hidden_by_dir() {
+      local d="$1"
+      while [ "${d%/*}" != "$d" ]; do
+        d="${d%/*}"
+        [ -d "$top/$d" ] && [ ! -x "$top/$d" ] && return 0
+      done
+      return 1
+    }
+    tracked_index_copy() {
+      staged_shas+="$2 "
+      git -C "$top" cat-file blob "$2" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$1'" $? "$terr"
+      rec_dedupe_from="$path_from"; rec_dedupe_to="${#rec_path[@]}"
+      emit_file "$1" "$tblob"
+      rec_dedupe_to=""
+    }
+    tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
+    git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
+    tab=$'\t'; prev=""; sparse=0
+    while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
+      [ -n "$rec" ] || continue
+      f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
+      thdr="${rec%%"$tab"*}"                        # `<tag> <mode> <sha> <stage>`: fixed fields, no spaces inside
+      ttag="${thdr%% *}"; thdr="${thdr#* }"; tmode="${thdr%% *}"; thdr="${thdr#* }"; tsha="${thdr%% *}"
+      tstage="${thdr#* }"
       [ -n "$f" ] || continue
-      if [ -L "$top/$f" ]; then
+      [ "$tmode" != 160000 ] || continue
+      if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
+        case "$staged_shas" in *" $tsha "*) ;; *) tracked_index_copy "$f" "$tsha" ;; esac
+        continue
+      fi
+      prev="$f"; staged_shas=" "; path_from="${#rec_path[@]}"
+      fesc="${f//$'\n'/\\n}"
+      if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
+        # As at stage 0 below, any working symlink's target is read: the target the user set while resolving (a
+        # type conflict) is in no stage. Unlike stage 0, an unreadable or hidden working file is a read failure
+        # here (exit 2), not a WARN-and-continue: no index copy stands in for it. The WARN goes first, so a read that then
+        # fails closed still says the path was unmerged.
+        wkind="none"; wnote="no working file"
+        if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink"
+        elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file"
+        elif [ -e "$top/$f" ]; then wnote="its working file not a regular file"
+        elif hidden_by_dir "$f"; then             # read it anyway: the read fails closed
+          wkind="file"; wnote="its working file, hidden by a directory that cannot be searched"
+        fi
+        echo "secret-scan: WARN unmerged ($wnote), each stage's index copy scanned: $fesc" >&2
+        case "$wkind" in
+          link)
+            target="$(readlink "$top/$f")" || _fail_closed "read the working symlink of the unmerged '$f'" $?
+            emit_stream "$f" <<< "$target" ;;
+          file)
+            cat 2>"$terr" < "$top/$f" > "$tblob" || _fail_closed "read the working file of the unmerged '$f'" $? "$terr"
+            emit_file "$f" "$tblob" ;;
+        esac
+        tracked_index_copy "$f" "$tsha"
+        continue
+      fi
+      why=""
+      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ] && ! hidden_by_dir "$f"; then
+        sparse=$((sparse + 1))
+      elif [ -L "$top/$f" ]; then
         # a tracked symlink's committed content IS its target string — scan that (it can carry a
-        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-        # readlink read as an empty target, i.e. `clean` (dir #715).
+        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed readlink
+        # exits 2 (before dir #715 it read as an empty target, i.e. `clean`). A symlink that replaced a
+        # tracked file gets the same read: its target is what the next `git add` commits.
         target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
         emit_stream "$f" <<< "$target"
+        [ "$tmode" != 120000 ] || continue
+        # a tracked file a symlink replaced: its committed content is the index copy
+        echo "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $fesc" >&2
+      elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then              # (a symlink took the branch above)
+        emit_stream "$f" < "$top/$f"
+        continue
       elif [ -f "$top/$f" ]; then
-        if [ -r "$top/$f" ]; then
-          emit_stream "$f" < "$top/$f"
-        else
-          # skip-and-warn, never abort: one unreadable file must not void the rest of the audit
-          echo "secret-scan: WARN unreadable, skipped: $f" >&2
-        fi
+        why="unreadable"
+      elif hidden_by_dir "$f"; then
+        why="hidden by a directory that cannot be searched"
+      elif [ ! -e "$top/$f" ]; then
+        why="missing from the working tree"
+      else
+        why="not a regular file in the working tree"
       fi
+      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
+      tracked_index_copy "$f" "$tsha"
     done < "$tlist"
+    [ "$sparse" -eq 0 ] || echo "secret-scan: WARN $sparse skip-worktree file(s) scanned from the index" >&2
     ;;
   --selftest)
     selftest; exit $?
@@ -991,7 +1105,7 @@ case "$mode" in
     ;;
 esac
 
-[ -n "$records" ] || { echo "secret-scan: clean"; _scan_done=1; exit 0; }
+[ "${#rec_path[@]}" -gt 0 ] || { echo "secret-scan: clean"; _scan_done=1; exit 0; }
 
 # dir #518: resolve the --range allowlist same-change-provenance baseline (dir #508 (a) extended to
 # --range too), but only now — AFTER we already know this push has something to check the allowlist
@@ -1153,41 +1267,120 @@ if [ -f "$ALLOW_FILE" ]; then
   done < "$ALLOW_FILE"
 fi
 
-found=0
-# LC_ALL=C (dir #715, B3): a key record ending in an invalid byte was merged with the NEXT record under
-# bash >= 5 + UTF-8, and an allowlist hit on that second record dropped both.
-while LC_ALL=C IFS= read -r rec; do
-  [ -z "$rec" ] && continue
-  # inline allow
-  case "$rec" in *secret-scan:allow*) continue ;; esac
-  # ERE allowlist
-  skip=0
+# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow` marker, or an ERE
+# entry. A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
+# SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a false "not allowlisted"
+# under load (dir #280). `-e` (dir #746 B2): an entry starting with `-` is a pattern — `-e.` read positionally
+# was the option -e with the pattern `.`, exempting every record. LC_ALL=C (B5): bytes, as the records are; a
+# non-ASCII entry using `.` or a bracket can only over-block.
+allowed_text() {
+  local re
+  case "$1" in *secret-scan:allow*) return 0 ;; esac
   for re in "${drop_res[@]:-}"; do
-    [ -z "$re" ] && continue
-    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
-    # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
-    # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
-    # unreliable evidence in a security-facing scanner. `-e` (dir #746 B2): an entry starting with `-` is a
-    # pattern — `-e.` read positionally was the option -e with the pattern `.`, exempting every record. LC_ALL=C
-    # (B5): bytes, as the records are; a non-ASCII entry using `.` or a bracket can only over-block.
-    if LC_ALL=C grep -qE -e "$re" <<< "$rec"; then skip=1; break; fi
+    [ -n "$re" ] || continue
+    LC_ALL=C grep -qE -e "$re" <<< "$1" && return 0
   done
-  [ "$skip" = 1 ] && continue
-  # path-glob allowlist (only meaningful for "path:line" records)
-  recpath="${rec%%:*}"
+  return 1
+}
+
+# path_exempt PATH — 0 when a `path:` glob matches the whole of PATH (a record's path, escaped as rec_path is);
+# `*` crosses `/` (a bash `[[ == ]]` glob).
+path_exempt() {
+  local g
   for g in "${path_globs[@]:-}"; do
-    [ -z "$g" ] && continue
+    [ -n "$g" ] || continue
     # shellcheck disable=SC2053
-    if [[ "$recpath" == $g ]]; then skip=1; break; fi
+    [[ "$1" == $g ]] && return 0
   done
-  [ "$skip" = 1 ] && continue
+  return 1
+}
+
+# dir #742 (spec 746 B11): --range names each blob by the first path rev-list reaches, so a `path:` glob on that
+# path exempted the same bytes introduced at another path in the same push. When a --range blob hit falls under
+# a `path:` glob, the range's (blob, path) pairs are listed once — lazily: a clean push, or one with no such hit,
+# never pays for it — with the user's log/diff config pinned (dir #697's class): `log.diffMerges=combined` would fold an evil
+# merge's entry into a `::` header, `log.showRoot=false` drop the root commit's pairs, `diff.relative=true` cut
+# them to a subdirectory; `-m` keeps a merge's own entries. The stream is NUL-delimited header/path tokens, a
+# STRICT alternation: the token after a header is its path whatever its first byte (a path may start with `:`),
+# and a header that does not start with a single `:` is a refusal, never a pair with zeros. Only the pairs of
+# the blobs in need_blobs (" sha sha … ") are kept.
+pair_blob=(); pair_path=(); pair_last_blob=""; need_blobs=" "
+load_range_pairs() {
+  local plist perr tok hdr="" dsha
+  plist="$(spool)"; perr="$(spool)"
+  # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
+  git -c log.showRoot=true -c log.diffMerges=separate -c diff.relative=false log --root -m --raw -z --no-renames \
+    --no-abbrev --no-show-signature --format= $rng > "$plist" 2>"$perr" || _fail_closed "list the range's paths" $? "$perr"
+  while LC_ALL=C IFS= read -r -d '' tok || [ -n "$tok" ]; do
+    [ -n "$tok" ] || continue
+    if [ -z "$hdr" ]; then
+      case "$tok" in ::*|[!:]*) _fail_closed "read the range's paths (unexpected record)" ;; esac
+      hdr="$tok"
+    else
+      dsha="${hdr#* * * }"; dsha="${dsha%% *}"     # `:<mode> <mode> <sha> <sha> <status>`: the 4th field
+      case "$need_blobs" in *" $dsha "*) pair_blob+=("$dsha"); pair_path+=("${tok//$'\n'/\\n}") ;; esac
+      hdr=""
+    fi
+  done < "$plist"
+  [ -z "$hdr" ] || _fail_closed "read the range's paths (unexpected record)"
+  rm -f "$plist" "$perr"
+}
+
+found=0
+# dir #741 (B10): each allow channel reads its own field — the inline marker and the ERE entries the matched
+# text, a `path:` glob the path, and never a commit or tag message's label. Iterated by index (no empty
+# "${a[@]}" under set -u on bash 3.2). Two passes: the content channels first, so the range's pairs (B11) are
+# listed only for a hit they keep, and before the first hit line prints — a failing listing exits 2 with no
+# hit line out. The printed line is the pre-B10 record, byte for byte.
+rec_drop=(); rec_pex=()
+ri=0
+while [ "$ri" -lt "${#rec_path[@]}" ]; do
+  drop=""; pex=""
+  if allowed_text "${rec_text[$ri]}"; then
+    drop=1
+  elif [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
+    pex=1
+    if [ -n "${rec_blob[$ri]}" ]; then                                # a --range blob: its pairs decide
+      case "$need_blobs" in *" ${rec_blob[$ri]} "*) ;; *) need_blobs+="${rec_blob[$ri]} " ;; esac
+    fi
+  fi
+  rec_drop+=("$drop"); rec_pex+=("$pex")
+  ri=$((ri + 1))
+done
+[ "$need_blobs" = " " ] || load_range_pairs
+
+ri=0
+while [ "$ri" -lt "${#rec_path[@]}" ]; do
+  rpath="${rec_path[$ri]}"; rwhere="${rec_where[$ri]}"; rtext="${rec_text[$ri]}"; rblob="${rec_blob[$ri]}"
+  rdrop="${rec_drop[$ri]}"; rpex="${rec_pex[$ri]}"; ri=$((ri + 1))
+  [ -z "$rdrop" ] || continue
+  # path-glob allowlist: file records only; a --range blob only when every path it is introduced at is exempt
+  if [ -n "$rpex" ]; then
+    [ -n "$rblob" ] || continue
+    if [ "$rblob" != "$pair_last_blob" ]; then   # one blob's hits are consecutive: decide once per blob
+      pair_last_blob="$rblob"; paired=""; unexempt=""; pi=0
+      while [ "$pi" -lt "${#pair_blob[@]}" ]; do
+        if [ "${pair_blob[$pi]}" = "$rblob" ]; then
+          paired=1
+          path_exempt "${pair_path[$pi]}" || { unexempt="${pair_path[$pi]}"; break; }
+        fi
+        pi=$((pi + 1))
+      done
+    fi
+    [ -z "$paired" ] || [ -n "$unexempt" ] || continue
+    [ -z "$unexempt" ] || rpath="$unexempt"     # no pair at all → reported under its rev-list path
+  fi
 
   if [ "$found" = 0 ]; then
     echo "secret-scan: BLOCKED — secret-shaped string(s) or personal data detected:" >&2
     found=1
   fi
-  echo "  $rec" >&2
-done <<< "$records"
+  case "$rwhere" in
+    '') printf '  %s:%s\n' "$rpath" "$rtext" >&2 ;;
+    '(binary)') printf '  %s:(binary) %s\n' "$rpath" "$rtext" >&2 ;;
+    *) printf '  %s:%s:%s\n' "$rpath" "$rwhere" "$rtext" >&2 ;;
+  esac
+done
 
 if [ "$found" = 1 ]; then
   # Impact instrumentation (metadata only, opt-in per repo): record that a guardrail fired so keel-impact
