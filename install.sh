@@ -799,11 +799,13 @@ keel_link_points_at() {
   [ -L "$1" ] && manifest_same_path "$(readlink "$1" 2>/dev/null || true)" "$2"
 }
 # keel_link_is_ours LINK — LINK points into the checkout this run installs from. Keel's links are always
-# absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not.
+# absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not. A target
+# that is itself a symlink is never recorded either: manifest_link_is_keels never reads such a record as
+# Keel's (spec 685 round 2 B20), so the writer records only what the reader accepts.
 keel_link_is_ours() {
   local t
   t="$(readlink "$1")" || return 1
-  case "$t" in /*) keel_path_inside "$t" "$root" ;; *) return 1 ;; esac
+  case "$t" in /*) [ ! -L "$t" ] && keel_path_inside "$t" "$root" ;; *) return 1 ;; esac
 }
 # CKSUM_UNREADABLE/artifact_cksum — sourced from tools/lib/artifact-cksum.sh above (dir #362).
 # record_placed DEST — DEST is confirmed Keel content as of right now; classify symlink vs file and
@@ -1765,21 +1767,21 @@ EOF
   # physical path lies inside the checkout (a link to its docs/, dir #748 S6-5) is skipped: its files are
   # the checkout's own, and the advice to remove them would delete tracked files.
   stale_docs=0
-  stale_docs_glob=("$HOME_DIR"/docs/*.md "$HOME_DIR"/docs/drydock/*.md)
-  if keel_dir_is_checkouts_own "$HOME_DIR/docs"; then stale_docs_glob=(); fi
-  for doc in ${stale_docs_glob[@]+"${stale_docs_glob[@]}"}; do
-    [ -f "$doc" ] && [ ! -L "$doc" ] || continue
-    rel="${doc#"$HOME_DIR"/docs/}"
-    [ -f "$root/docs/$rel" ] || continue
-    if [ -f "$manifest_dir/install-manifest.codex" ] \
-       && awk -F'\t' -v r="docs/$rel" '$1 == "artifact=file" && $2 == r { found = 1 } END { exit !found }' "$manifest_dir/install-manifest.codex"; then
-      continue
-    fi
-    recorded="$(prior_file_cksum "docs/$rel")"
-    if cmp -s "$root/docs/$rel" "$doc" || { [ -n "$recorded" ] && [ "$recorded" != "$PRIOR_READ_FAILED" ]; }; then
-      stale_docs=$((stale_docs + 1))
-    fi
-  done
+  if ! keel_dir_is_checkouts_own "$HOME_DIR/docs"; then
+    for doc in "$HOME_DIR"/docs/*.md "$HOME_DIR"/docs/drydock/*.md; do
+      [ -f "$doc" ] && [ ! -L "$doc" ] || continue
+      rel="${doc#"$HOME_DIR"/docs/}"
+      [ -f "$root/docs/$rel" ] || continue
+      if [ -f "$manifest_dir/install-manifest.codex" ] \
+         && awk -F'\t' -v r="docs/$rel" '$1 == "artifact=file" && $2 == r { found = 1 } END { exit !found }' "$manifest_dir/install-manifest.codex"; then
+        continue
+      fi
+      recorded="$(prior_file_cksum "docs/$rel")"
+      if cmp -s "$root/docs/$rel" "$doc" || { [ -n "$recorded" ] && [ "$recorded" != "$PRIOR_READ_FAILED" ]; }; then
+        stale_docs=$((stale_docs + 1))
+      fi
+    done
+  fi
   if [ "$stale_docs" -gt 0 ]; then
     echo "  !    docs/ copies remain from a copy-mode install ($stale_docs of Keel's own files in $HOME_DIR/docs) — linked mode reads keel/docs/."
     echo "       Point your CLAUDE.md map at keel/FRAMEWORK.md (the docs locator follows FRAMEWORK.md), then remove Keel's copies from $HOME_DIR/docs — the files identical to this checkout's docs/ (your own files there are not Keel's)."
