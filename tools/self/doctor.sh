@@ -262,6 +262,21 @@ done
 # doc location (CORE.md/IDEAS.md joined it late, dir #129) only needs adding here once. Check 2 adds
 # the implementation shell files on top (tests/*.sh, install.sh, tools/*.sh, tools/self/*.sh,
 # bootstrap.sh) — check 2b deliberately does NOT scan those (see its own comment for why).
+# tracked_files WHAT CHECK pathspec… — `git ls-files -- pathspec…` into $LS_OUT (newline-separated), its status CHECKED
+# (dir #738 slice 4, spec 746 B16): a failing listing (a corrupt index, a git that will not run) is a GAP naming WHAT
+# and CHECK, returns the status, and leaves $LS_OUT empty — the caller prints no OK line for CHECK. A process
+# substitution (`done < <(git …)`) hides that status, and an empty listing then reads as "nothing wrong".
+LS_OUT=""
+tracked_files() {
+  local what="$1" check="$2" rc=0
+  shift 2
+  LS_OUT="$(git -C "$repo_root" ls-files -- "$@" 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    LS_OUT=""
+    gap "could not list $what (exit $rc) — $check is INCOMPLETE"
+  fi
+  return "$rc"
+}
 adopter_docs=(
   'README.md' 'ADAPTING.md' 'FRAMEWORK.md' 'PRINCIPLES.md' 'SECURITY.md' 'CORE.md' 'IDEAS.md'
   'docs/*.md' 'commands/*.md' 'templates/*.md'
@@ -270,10 +285,12 @@ say ""
 say "● dead internal references"
 dead=0
 scan_files=()
-while IFS= read -r f; do scan_files+=("$f"); done < <(
-  git -C "$repo_root" ls-files -- \
-    "${adopter_docs[@]}" 'tests/*.sh' 'install.sh' 'tools/*.sh' 'tools/self/*.sh' 'bootstrap.sh'
-)
+if tracked_files "the tracked docs and scripts" "the dead-reference check" \
+     "${adopter_docs[@]}" 'tests/*.sh' 'install.sh' 'tools/*.sh' 'tools/self/*.sh' 'bootstrap.sh'; then
+  while IFS= read -r f; do [ -n "$f" ] && scan_files+=("$f"); done <<< "$LS_OUT"
+else
+  dead=$((dead + 1))   # no OK line for a check that could not list what it scans
+fi
 # "${arr[@]}" on a zero-element array is an unbound-variable error under `set -u` on bash < 4.4
 # (macOS ships bash 3.2 by default) — guard the length before expanding, every time, everywhere
 # this pattern appears below.
@@ -326,9 +343,11 @@ scan_files_cmd=()
 # `grep -r` below fails its WHOLE run, silently blinding this check across every file it scans, if
 # any one path in its file-operand list is unreadable; check 2's own per-file loop above only loses
 # that ONE file's coverage on the same failure, since each of its grep calls is scoped to one path.
-while IFS= read -r f; do [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done < <(
-  git -C "$repo_root" ls-files -- "${adopter_docs[@]}"
-)
+if tracked_files "the adopter-facing docs" "the slash-command check" "${adopter_docs[@]}"; then
+  while IFS= read -r f; do [ -n "$f" ] && [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done <<< "$LS_OUT"
+else
+  dead_cmd=$((dead_cmd + 1))
+fi
 harness_commands=(code-review simplify review compact)
 not_commands=(tmp setup)
 # Joined once into a plain string, then fed to grep via `<<<` (a here-string, not a pipe) — the
@@ -380,9 +399,9 @@ say "● tool wiring (reference + test coverage)"
 # sandbox with a stray untracked file of that name is still correctly excluded, with one git
 # invocation rather than a second, separate ls-files call.
 tool_files=()
-while IFS= read -r f; do tool_files+=("$f"); done < <(
-  git -C "$repo_root" ls-files -- 'tools/*.sh' 'tools/self/*.sh' 'keel'
-)
+if tracked_files "the shipped tools" "the tool-wiring check" 'tools/*.sh' 'tools/self/*.sh' 'keel'; then
+  while IFS= read -r f; do [ -n "$f" ] && tool_files+=("$f"); done <<< "$LS_OUT"
+fi
 # tools/self/legacy-untested.txt — dir #142's soft-debt allowlist: shipped scripts with zero test
 # coverage BEFORE the ratchet below existed. One relative path per line (matching the `rel` values
 # this loop computes, e.g. `tools/branch-cleanup.sh` or `keel`); `#`-comments and blank lines are
@@ -410,11 +429,14 @@ fi
 legacy_joined=""
 [ "${#legacy_list[@]}" -gt 0 ] && legacy_joined="$(printf '%s\n' "${legacy_list[@]}")"
 ref_files=()
-while IFS= read -r f; do ref_files+=("$f"); done < <(
-  git -C "$repo_root" ls-files -- \
-    'commands/*.md' 'tests/*.sh' 'install.sh' 'docs/*.md' 'README.md' 'ADAPTING.md' \
-    '.github/workflows/*.yml'
-)
+ref_blind=0   # the reference files could not be listed: every tool would read as unreferenced, so the loop is skipped
+if tracked_files "the reference files" "the tool-wiring check" \
+     'commands/*.md' 'tests/*.sh' 'install.sh' 'docs/*.md' 'README.md' 'ADAPTING.md' \
+     '.github/workflows/*.yml'; then
+  while IFS= read -r f; do [ -n "$f" ] && ref_files+=("$f"); done <<< "$LS_OUT"
+else
+  ref_blind=1
+fi
 # Read each reference file's content once (parallel to ref_files, same order) so the per-tool loop
 # below does zero subprocess spawns / disk re-reads — O(files) I/O total, not O(tools × files) grep
 # calls (that used to be the shape even after ref_files itself was hoisted out of the loop). A SECOND,
@@ -454,7 +476,7 @@ if [ "${#ref_files[@]}" -gt 0 ]; then
     esac
   done
 fi
-if [ "${#tool_files[@]}" -gt 0 ]; then
+if [ "${#tool_files[@]}" -gt 0 ] && [ "$ref_blind" -eq 0 ]; then
   for rel in "${tool_files[@]}"; do
     # the relative path, not the bare basename: tools/doctor.sh and tools/self/doctor.sh share a
     # basename by design (the "doctor / self-doctor" pairing) — matching on basename alone would let
@@ -1624,7 +1646,7 @@ fi
 # documents for its own sed-based strip.
 say ""
 say "● PIPESTATUS read in a file that sets pipefail (dir #321)"
-# THIS file (tools/self/doctor.sh) sets pipefail (line 56) and, now that this check's own code exists,
+# THIS file (tools/self/doctor.sh) sets pipefail (near the top) and, now that this check's own code exists,
 # also contains the literal `${PIPESTATUS[0]}` shape in its own message text below — so it is excluded
 # from the scan, declaratively, by pathspec (the same way this file's other exclusions work, e.g. the
 # CHANGELOG.md/adopter-docs handling above) rather than a runtime string comparison inside the loop.
@@ -1636,7 +1658,9 @@ say "● PIPESTATUS read in a file that sets pipefail (dir #321)"
 # actually compared against ($rel, always repo-relative), not wherever this particular process happens
 # to be running from.
 ps_hit=0
+tracked_files "the tracked shell scripts" "the PIPESTATUS check" '*.sh' 'keel' ':!tools/self/doctor.sh' || ps_hit=1
 while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
   [ -f "$repo_root/$rel" ] || continue
   stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
   if grep -qE '(^|[[:space:];&|])set[[:space:]].*\bpipefail\b' <<< "$stripped"; then
@@ -1646,7 +1670,7 @@ while IFS= read -r rel; do
       warn "$rel:$ps_lines sets pipefail and reads \$PIPESTATUS (dir #321) — verify it isn't the F-06 shape (pipefail's own \$? already gives the real pipeline status once it's active; \${PIPESTATUS[0]} is only right if an EARLIER stage's status is deliberately, specifically wanted)"
     fi
   fi
-done < <(git -C "$repo_root" ls-files -- '*.sh' 'keel' ':!tools/self/doctor.sh')
+done <<< "$LS_OUT"
 [ "$ps_hit" -eq 0 ] && say "  OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
 # fn_open_re FN OUT — writes into variable OUT (via `printf -v`, so a plain assignment in the caller's
@@ -1831,9 +1855,13 @@ elif command -v shellcheck >/dev/null 2>&1; then
   sc_files=()
   # This checkout's own copy, not $repo_root's — $repo_root is the AUDITED target (a sandbox in
   # tests, or possibly a different checkout entirely) and may not ship the selector script at all.
-  while IFS= read -r f; do sc_files+=("$repo_root/$f"); done \
-    < <(bash "$self_dir/shellcheck-targets.sh" "$repo_root")
-  if [ "${#sc_files[@]}" -gt 0 ]; then
+  # Status checked (dir #738 slice 4, B16), via `|| sc_rc=$?` under `set -e`: a failing selector is a GAP, not "none".
+  sc_rc=0
+  sc_targets="$(bash "$self_dir/shellcheck-targets.sh" "$repo_root" 2>/dev/null)" || sc_rc=$?
+  while IFS= read -r f; do [ -n "$f" ] && sc_files+=("$repo_root/$f"); done <<< "$sc_targets"
+  if [ "$sc_rc" -ne 0 ]; then
+    gap "could not list the shell scripts to check (exit $sc_rc) — the shellcheck check is INCOMPLETE"
+  elif [ "${#sc_files[@]}" -gt 0 ]; then
     run_check "shellcheck clean (${#sc_files[@]} tracked scripts, mirrors ci.yml)" \
       shellcheck -x --severity=warning "${sc_files[@]}"
   else
