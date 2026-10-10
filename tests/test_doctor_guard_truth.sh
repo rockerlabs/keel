@@ -76,6 +76,15 @@ run genv "$doctor" "$r13"
 check_contains "D1-3: a vendored guard with secret-scan.sh ABSENT → W-GUARD-STALE" "$(id_line W-GUARD-STALE)" "secret-scan.sh (missing"
 mv "$r13/.git/hooks/secret-scan.sh.away" "$r13/.git/hooks/secret-scan.sh"
 
+# a pre-push that is a DANGLING link is no hook at all (git skips it): half wired, not OK
+mk_home dl; r_dl="$(mk_repo)"
+run genv "$isg" "$r_dl"
+check_status "D1-3 setup: vendor into a repo" 0 "$STATUS"
+mv "$r_dl/.git/hooks/pre-push" "$r_dl/.git/hooks/pre-push.away"
+ln -s "$SANDBOX/no-such-prepush-target" "$r_dl/.git/hooks/pre-push"
+run genv "$doctor" "$r_dl"
+check_contains "D1-3: a dangling pre-push link beside a working pre-commit → half wired" "$(id_line W-GUARD-UNWIRED)" "dangling link"
+
 # --- S3-1: the prune list applies below the audited root -----------------------------------------------------------
 for nm in build target; do   # the prune list is one name set, the fix is name-independent: two representatives
   d="$SANDBOX/proj-$nm/$nm"; mkdir -p "$d"; git init -q "$d"

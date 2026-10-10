@@ -592,6 +592,8 @@ guard_push_gap() {
   local dir="$1" keeldir="$2" pc="$3" pp="$4"
   guard_gap=""
   [ "$keeldir" = 1 ] || [ "${pc#keel}" != "$pc" ] || return 0
+  # a link whose target is gone is no hook at all: git skips it (the producer's state says only "-link")
+  case "$pp" in *-link) [ -e "$dir/pre-push" ] || { guard_gap="Keel's pre-push at $dir/pre-push is a dangling link (git skips it, so a commit made with hooks bypassed would reach the remote unscanned)"; return 0; } ;; esac
   case "$pp" in
     absent) guard_gap="Keel's pre-push is absent from $dir (a commit made with hooks bypassed would reach the remote unscanned)" ;;
     keel*) [ -x "$dir/pre-push" ] || guard_gap="Keel's pre-push at $dir/pre-push is not executable (git skips it, so a commit made with hooks bypassed would reach the remote unscanned)" ;;
@@ -1787,6 +1789,7 @@ for d in "${DIRS[@]}"; do
     # The way out depends on the scope that sets it: a repo-level setting is unset there (--worktree outranks --local).
     case "$w_scope" in
       local|worktree) w_fix="git -C $d config --$w_scope --unset core.hooksPath" ;;
+      command) w_fix="stop supplying it — it comes from this environment (git -c, GIT_CONFIG_COUNT/KEY/VALUE or GIT_CONFIG_PARAMETERS), not from a config file" ;;
       *) if [ "$w_novalue" = 1 ]; then w_fix="fix or remove that line$w_src"
          else w_fix="remove that line$w_src, or replace it machine-wide with install-secret-guard.sh --global --force (the empty value is recorded; --uninstall restores it)"; fi ;;
     esac
@@ -2021,7 +2024,7 @@ EOF
       [ -n "$sx_f" ] || continue
       sx_rel="${sx_f#"$sx_dd"/}"
       # (the name set is matched in any letter case, so the template words are too: lower-cased first — bash 3.2 has no ${x,,})
-      sx_base="$(printf '%s' "${sx_rel##*/}" | tr '[:upper:]' '[:lower:]')"
+      sx_base="$(printf '%s' "${sx_rel##*/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
       if [[ "$sx_base" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
       if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
       sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"
