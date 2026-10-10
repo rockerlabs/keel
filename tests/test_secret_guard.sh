@@ -2713,8 +2713,9 @@ run_in "$r746" env LC_ALL="$loc746" "$scan" --range HEAD
 check_status "dir #746 A5: --range, a key after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
 check_contains "dir #746 A5: --range names x.txt" "$OUT" "x.txt:"
 
-# A6 (B5 (b)(c)): the personal pass reads every byte under LC_ALL=C (P-C) and, for a non-ASCII literal, folds
-# case in the caller's locale over a copy with the invalid bytes removed (P-U).
+# A6 (B5 (b)(c)): the personal pass reads every byte under LC_ALL=C (P-C), and for every literal runs again in
+# the caller's locale over a copy with the invalid bytes removed (P-U) — case folding for a non-ASCII literal,
+# multibyte characters for an ERE `.` (f).
 mkdir "$d746/a6"
 printf 'caf\351 author SEEKRITPERSONNAME\n' > "$d746/a6/a.txt"
 printf 'caf\351 name %s\n' "$cyrup746" > "$d746/a6/b.txt"

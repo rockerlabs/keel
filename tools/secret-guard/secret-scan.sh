@@ -372,8 +372,8 @@ collect_matches() {
 # dir #746 (S2-2, spec 746 B7): the decode never stops at an invalid unit. A plain iconv stopped at the first
 # one (a lone surrogate, a value past U+10FFFF), so a literal after it read clean; `-c` skips it and decodes
 # the rest (macOS libiconv, glibc). musl's iconv stops anyway and ignores -c, so where the host's iconv does not
-# resume — or there is none — and a personal literal is non-ASCII (an ASCII one already survives the NUL-strip
-# pass), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
+# resume — or there is none — and a personal literal is non-ASCII (an ASCII one survives the NUL-strip pass,
+# unless an ERE `.` or bracket in it stands for a non-ASCII letter: a stated limit there), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
 # surrogates pair, code point 0 is dropped. It costs about 24 s per MiB on busybox and never runs on macOS or
 # glibc. Every pass but the best-effort iconv ones ends `|| exit $?`: a missing od, awk or tr ends the group,
 # and the caller exits 2 naming the file. A payload that does not start on a unit boundary is not decoded.
@@ -838,7 +838,8 @@ case "$mode" in
       range_hits=0
     else
       # a non-ASCII personal literal (e.g. a Cyrillic name) is invisible to the NUL-strip fast view of
-      # UTF-16 bytes — skip the fast path and let the detailed scan's decode passes see it
+      # UTF-16 bytes — skip the fast path and let the detailed scan's decode passes see it. Stated limit: an
+      # ASCII literal whose `.` or bracket stands for a non-ASCII letter is not visible in that view either.
       if [ -z "$personal_nonascii" ]; then
         rtmp="$(spool)"; rerr="$(spool)"
         awk '{print $2}' <<< "$blobs" \

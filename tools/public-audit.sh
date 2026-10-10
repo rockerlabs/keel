@@ -150,7 +150,8 @@ done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
 # dir #746 (B7): decode_binary's built-in decoder runs only for a non-ASCII needle — a personal literal this
-# audit scans with, or a token (an ASCII one already survives the NUL-strip pass).
+# audit scans with, or a token (an ASCII one survives the NUL-strip pass, unless an ERE `.` or bracket in it
+# stands for a non-ASCII letter: a stated limit there).
 decode_nonascii=""
 case "$personal_re${tokens[*]:-}" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
 
