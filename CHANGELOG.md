@@ -66,6 +66,14 @@ sections real content going forward — see that page for exactly when each one 
   fixes (`git init` the nested directory, or enable the parent); a linked worktree's root still enables its main
   checkout, and a bare `enable` from a subdirectory is refused too. The guard lives in `enable` only: `add`, `event`
   and the hooks keep resolving upward from subdirectories.
+- **`doctor` H-FOOTPRINT sums the `MEMORY.md` index and honours a live `## Footprint exceptions` row.**
+  The figure now counts the project `CLAUDE.md`, the resolved global `CLAUDE.md` and the harness's `MEMORY.md`
+  index (all loaded every session) and names the three separately. The default budget rises from 10000 to
+  16000 tokens (`KEEL_STARTUP_WARN_TOKENS`) so an index like keel's own, measured at 5.8k tokens, does not
+  newly flag a project that was inside the old budget (dir #686). A dated
+  `| Expires (YYYY-MM-DD) | Ticket/note |` row under `## Footprint exceptions` in the
+  project's `CLAUDE.md` silences the hint through its expiry day; an expired row is flagged EXPIRED on the
+  hint (dir #687). `/wrap` step 4's sentence that the doctor ignores the row is corrected.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

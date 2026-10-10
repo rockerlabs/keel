@@ -80,7 +80,7 @@ write a DATED exception row before finishing — an alarm nobody is obliged to a
 forever. The exception is a row in a `## Footprint exceptions` section of the project's `CLAUDE.md`:
 `| Expires (YYYY-MM-DD) | Ticket/note |` — an expiry date and the ticket or decision that owns the
 overage, so "not now" stays visible. An expired row is not live: the next wrap trims or re-decides.
-The doctor still prints its hint while a live row exists; the wrap reads the row, the doctor does not.
+The doctor reads the same row: a live one silences its hint until the expiry day, an expired one is flagged.
 This step acts on its own project only — never a fleet-wide sweep from inside one project's wrap.
 Mirror half — the
 **promote** signal: did the session hit a *retrieval miss* (had to hunt for a fact that should have been
