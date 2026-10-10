@@ -6,12 +6,12 @@
   exempt: the same key added at `fixtures/key.txt` and `src/real.txt` — in one commit, on two merged branches, or
   by an evil merge — is reported under the path that is not exempt (dir #742).
   A tracked file `--tracked` could not read from the working tree used to be skipped — an unreadable one with a
-  WARN, a deleted one silently — and the run reported clean; it now scans that file's index copy, with one WARN
-  line naming why, and so does an absent sparse-checkout (skip-worktree) entry, counted in one summary line. It
-  exits 2 only when git cannot read the index copy (dir #746). A tracked file replaced by a symlink is read from
-  its index copy too, and a mid-merge (unmerged) file from its working file (or symlink) and each of its stages'
-  index copies, a hit they share printed once and one WARN naming the path. When the working file of an
-  unmerged path is unreadable, or sits under a directory that cannot be searched, the scan exits 2; a file that
-  is not unmerged under such a directory is named "hidden" rather than "missing" and is read from its index copy,
-  and is no longer counted as a skip-worktree entry. Hit lines print in the same form as before. Upgrading: an ERE
-  allowlist entry now matches the line's content only; use `path:` for a path.
+  WARN, a deleted one silently — and the run reported clean. It now scans that file's index copy, with a WARN
+  naming why: unreadable, missing, not a regular file (a tracked file replaced by a symlink or a directory), or
+  hidden by a directory that cannot be searched. An absent sparse-checkout (skip-worktree) entry is scanned from
+  its index copy too, counted in one summary line. A mid-merge (unmerged) file is read from its working file, if
+  any, and from each of its stages' index copies; a hit they share prints once, and one WARN names the path.
+  The scan exits 2 when git cannot read an index copy, and when the working file of an unmerged path cannot be
+  read: it is unreadable, or a directory that cannot be searched hides whether it exists (dir #746).
+  Hit lines print in the same form as before. Upgrading: an ERE allowlist entry now matches the line's content
+  only; use `path:` for a path.
