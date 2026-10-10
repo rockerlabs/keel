@@ -54,15 +54,15 @@ Steps, in order:
 ## Step 1 — diff, init, and the convergence round
 
 **Compaction stop (dir #739).** Reached from the core's step 1 when `tools/token-report.sh --context` printed
-`verdict: compact`: this session's last turn already carries 250k or more tokens of context (the threshold is
-`KEEL_POLISH_COMPACT_TOKENS`). Do these, in order:
+`verdict: compact`: this session's last turn already carries at least the printed `threshold:` tokens of context
+(`KEEL_POLISH_COMPACT_TOKENS`, default 250000). Do these, in order:
 
 - (a) **Already stopped → continue.** A run whose `/polish` arguments say `after a compaction stop` never stops
   again, even when `--context` still prints `verdict: compact`: continue with step 1's `init`, and tell the
   operator the post-compaction context in one line. This is the loop guard.
 - (b) **Why.** Every remaining turn re-reads this context, and a compacted session resumes at about a fresh
-  session's size (83–115k measured). For a window opened at 250k or more, that roughly halves the tail
-  (median 16.8M → an estimated 8.9M).
+  session's size (83–115k measured). For a window opened at the default 250k or more, that roughly halves
+  the tail (median 16.8M → an estimated 8.9M).
 - (c) **No `init` and no receipt** in this run before the stop.
 - (d) **Commit all work.** `git status --porcelain --untracked-files=no` prints nothing. A tree that cannot be
   committed → stop and report.

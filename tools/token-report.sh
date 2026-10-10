@@ -484,7 +484,7 @@ _tr_print_human() {
 _tr_ge() {
   local n="$1" m="$2"
   if [ "${#n}" -ne "${#m}" ]; then [ "${#n}" -gt "${#m}" ]; return; fi
-  [[ "$n" == "$m" || "$n" > "$m" ]]
+  [[ ! "$n" < "$m" ]]
 }
 
 # _tr_context — dir #739 (spec 739 B1): one stdout line, exit 0, for /polish step 1's compaction stop.
@@ -497,10 +497,10 @@ _tr_ge() {
 # sign, space or leading zero, or this exits 2 with the key on stderr and nothing on stdout. 0 is not "off".
 # Nothing is piped into head/grep -q here (the dir #280 SIGPIPE race): each producer is captured first.
 _tr_context() {
-  local m="${KEEL_POLISH_COMPACT_TOKENS-}" id="${CLAUDE_CODE_SESSION_ID-}" why="" n="" hits turns last
-  if [ -z "$m" ]; then
-    m=250000
-  elif [[ ! "$m" =~ ^[1-9][0-9]*$ ]]; then
+  local m="${KEEL_POLISH_COMPACT_TOKENS:-250000}" id="${CLAUDE_CODE_SESSION_ID-}" why="" n="" hits turns ctx verdict=stay
+  # Not tools/lib/nonneg-int.sh: its default digit cap rejects the huge off-switch value this accepts, and it
+  # allows the leading zero this rejects (a `0250000` reads as octal under `(( ))`).
+  if [[ ! "$m" =~ ^[1-9][0-9]*$ ]]; then
     printf 'token-report.sh: KEEL_POLISH_COMPACT_TOKENS must be a positive integer without sign, space or leading zero\n' >&2
     exit 2
   fi
@@ -511,6 +511,7 @@ _tr_context() {
   elif ! command -v jq >/dev/null 2>&1; then
     why="jq missing"
   else
+    # Not _tr_resolve_session: this needs "ambiguous" to be unknown, where that one takes the first hit.
     # The trailing slash makes find descend into a projects root that is itself a symlink (this machine's
     # ~/.claude/projects is one); without it find lists nothing and every run reads "transcript not found".
     hits="$(find "$(tu_projects_root)/" -mindepth 2 -maxdepth 2 -type f -name "$id.jsonl" 2>/dev/null || true)"
@@ -520,22 +521,13 @@ _tr_context() {
       why="ambiguous transcript"
     else
       turns="$(tu_turns primary "$hits" 2>/dev/null || true)"
-      last="$(jq -c -s 'last // empty' <<<"$turns" 2>/dev/null || true)"
-      if [ -z "$last" ]; then
-        why="no usage turn"
-      else
-        n="$(jq -r '(.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) | floor | tostring' <<<"$last" 2>/dev/null || true)"
-        [[ "$n" =~ ^[0-9]+$ ]] || { n=""; why="no usage turn"; }
-      fi
+      n="$(jq -r -s 'last // empty | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) | floor | tostring' <<<"$turns" 2>/dev/null || true)"
+      [[ "$n" =~ ^[0-9]+$ ]] || { n=""; why="no usage turn"; }
     fi
   fi
-  if [ -z "$n" ]; then
-    printf 'context: unknown (%s) threshold: %s verdict: stay\n' "$why" "$m"
-  elif _tr_ge "$n" "$m"; then
-    printf 'context: %s threshold: %s verdict: compact\n' "$n" "$m"
-  else
-    printf 'context: %s threshold: %s verdict: stay\n' "$n" "$m"
-  fi
+  ctx="${n:-unknown ($why)}"
+  if [ -n "$n" ] && _tr_ge "$n" "$m"; then verdict=compact; fi
+  printf 'context: %s threshold: %s verdict: %s\n' "$ctx" "$m" "$verdict"
 }
 
 main() {

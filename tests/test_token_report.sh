@@ -276,9 +276,11 @@ mkdir -p "$ctxdir"
 ctx_rec() {
   printf '{"type":"assistant","requestId":"%s","sessionId":"S","timestamp":"%s","message":{"model":"m","content":[],"usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s}}}\n' "$@"
 }
-# ctx_session ID LAST_INPUT LAST_CACHE_CREATION LAST_CACHE_READ — an earlier 100,010-token turn, then the last turn.
+# ctx_early — the earlier, smaller (100,010-token) turn every fixture session starts with.
+ctx_early() { ctx_rec e1 2026-10-01T10:00:00.000Z 10 20000 80000 100; }
+# ctx_session ID LAST_INPUT LAST_CACHE_CREATION LAST_CACHE_READ — ctx_early, then the last turn.
 ctx_session() {
-  { ctx_rec e1 2026-10-01T10:00:00.000Z 10 20000 80000 100
+  { ctx_early
     ctx_rec l1 2026-10-01T10:05:00.000Z "$2" "$3" "$4" 500; } > "$ctxdir/$1.jsonl"
 }
 id_hi="c0000000-0000-4000-8000-0000000000a1"
@@ -354,7 +356,7 @@ check_eq "--context (vi): a 23-digit threshold does not overflow into compact" \
 
 # (vii) the last turn's requestId in two records, and the file's last RAW line a tool-result record: N is that turn's, once.
 id_dup="c0000000-0000-4000-8000-0000000000b1"
-{ ctx_rec e1 2026-10-01T10:00:00.000Z 10 20000 80000 100
+{ ctx_early
   ctx_rec l1 2026-10-01T10:05:00.000Z 40 60000 239960 500
   ctx_rec l1 2026-10-01T10:05:01.000Z 40 60000 239960 500
   printf '{"type":"user","timestamp":"2026-10-01T10:05:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}\n'; } > "$ctxdir/$id_dup.jsonl"
@@ -371,8 +373,7 @@ check_eq "--context (viii): a newer, larger session file is ignored" "context: 2
 # (ix) jq off PATH -> unknown, exit 0 (the jq check lives inside the mode, after argument parsing).
 nojq_ctx="$SANDBOX/nojq-ctx-path"
 path_farm "$nojq_ctx" jq
-CTX_OUT="$(env PATH="$nojq_ctx" CLAUDE_CODE_SESSION_ID="$id_hi" KEEL_TOKENS_PROJECTS_DIR="$ctxroot" bash "$tool" --context 2>/dev/null </dev/null)"
-CTX_STATUS=$?
+ctx_run "$id_hi" PATH="$nojq_ctx"
 check_status "--context (ix): jq off PATH exits 0" "0" "$CTX_STATUS"
 check_eq "--context (ix): jq off PATH -> unknown, stay" "context: unknown (jq missing) threshold: 250000 verdict: stay" "$CTX_OUT"
 # (x) --context combined with any other option is a usage error, in either order.
@@ -383,7 +384,7 @@ for combo in "--context --json" "--json --context" "--context --session X" "--se
 done
 # (xi) an earlier 900,000 turn, a compact_boundary line, then a last turn of 90,000: N is the LAST turn.
 id_cmp="c0000000-0000-4000-8000-0000000000b3"
-{ ctx_rec e1 2026-10-01T10:00:00.000Z 10 20000 80000 100
+{ ctx_early
   ctx_rec e2 2026-10-01T10:30:00.000Z 60 100000 799940 100
   printf '{"type":"system","subtype":"compact_boundary","timestamp":"2026-10-01T10:40:00.000Z","compactMetadata":{"trigger":"manual","preTokens":900000}}\n'
   ctx_rec l1 2026-10-01T10:45:00.000Z 30 20000 69970 500; } > "$ctxdir/$id_cmp.jsonl"
