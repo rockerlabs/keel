@@ -87,6 +87,10 @@ done
 # mkdir / trap). Neither script runs under -e, so a failed mktemp leaves $sandbox empty and, unguarded,
 # "$sandbox/home" is "/home" — a write outside any sandbox. Pinned by line order (running the red case
 # for real would write at the filesystem root of a root-owned CI container).
+# record-demo.sh's outer mode needs asciinema and agg, so no behavioural case reaches its $castdir guard: pin it.
+pin "dir #753: record-demo.sh guards \$castdir right after its mktemp" "$REPO_ROOT/docs/demo/record-demo.sh" \
+  '[ -n "$castdir" ] || {' \
+  "expected the outer mode to refuse an empty \$castdir (an unguarded one aims asciinema at /demo.cast)"
 for demo in examples/tour.sh docs/demo/record-demo.sh; do
   f="$REPO_ROOT/$demo"
   mk="$(grep -n '^sandbox="$(mktemp -d' "$f" | head -1 | cut -d: -f1)"

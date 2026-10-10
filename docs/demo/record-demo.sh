@@ -20,7 +20,7 @@ if [ "${1:-}" != "--scenes" ]; then
   command -v asciinema >/dev/null 2>&1 || { echo "missing asciinema (brew install asciinema)"; exit 1; }
   command -v agg       >/dev/null 2>&1 || { echo "missing agg (brew install agg)"; exit 1; }
   castdir="$(mktemp -d)"
-  [ -n "$castdir" ] || exit 1   # dir #753: no -e, so an empty $castdir would aim asciinema at /demo.cast
+  [ -n "$castdir" ] || { echo "record-demo: mktemp failed — refusing to record into the filesystem root" >&2; exit 1; }   # dir #753: no -e
   trap 'rm -rf "$castdir"' EXIT
   asciinema rec --quiet --cols 100 --rows 24 \
     --command "bash '$root/docs/demo/record-demo.sh' --scenes" "$castdir/demo.cast"
