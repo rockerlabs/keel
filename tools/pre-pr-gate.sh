@@ -1524,27 +1524,29 @@ log_event() {
 # records a region; a region whose segment mentions git or gh refuses the command (fail closed, with a reason).
 # It never reads a file, runs a command or resolves a path: a matcher that needs one reports a candidate line
 # and the shell side resolves it.
-IFS= read -r -d '' PPG_AWK_PROG <<'PPG_AWK_EOF' || true
+# A single-quoted string, not a heredoc read: `read -d ''` takes a heredoc one byte per system call, which cost
+# ~30 ms on every Bash call at this size. So the program holds no single quote; it spells one \047.
+PPG_AWK_PROG='
 # The whole command is one text, lexed once in END: no state is per line.
 { src = (NR == 1) ? $0 : src "\n" $0 }
 END { lex_main() }
 
-# rep(c, k) — k copies of c, by doubling: a run's mask costs O(log k) appends, not k.
+# rep(c, k) — k copies of c, by doubling: a run’s mask costs O(log k) appends, not k.
 function rep(c, k,   s) {
   s = ""
   while (k > 0) { if (k % 2) s = s c; c = c c; k = int(k / 2) }
   return s
 }
-# at(k) — the character k places past pos, or "" past the current limit (an HDATA body's end, or the text's).
+# at(k) — the character k places past pos, or "" past the current limit (an HDATA body’s end, or the text’s).
 function at(k) { return (pos + k < lim) ? ch[pos + k] : "" }
 function is_cmd(t) { return (t == "TOP" || t == "SUB" || t == "BQ") }
 
 # --- the context stack ------------------------------------------------------------------------------------
-# Command contexts TOP, SUB (`$(`, `<(`, `>(`) and BQ (a backtick) make words and segments; SQ, AQ (`$'`), DQ,
+# Command contexts TOP, SUB (`$(`, `<(`, `>(`) and BQ (a backtick) make words and segments; SQ, AQ (`$` and a quote), DQ,
 # ARITH (`$((`, `$[`, `((`), PARAM (`${`) and HDATA (an expanding heredoc body) are data. cty[] type, cpos[]
-# opener position, cseg[] the owner's segment start when it opened (where a region's scope starts), cid[] a
-# SUB/BQ's group id (segscope). ownsp is the nearest command context; opq is 1 while a PARAM, ARITH or HDATA
-# sits between it and the top — their text is not a word's own (a whole ${…} or $(( )) counts once).
+# opener position, cseg[] the owner’s segment start when it opened (where a region’s scope starts), cid[] a
+# SUB/BQ’s group id (segscope). ownsp is the nearest command context; opq is 1 while a PARAM, ARITH or HDATA
+# sits between it and the top — their text is not a word’s own (a whole ${…} or $(( )) counts once).
 function restack(   i) {
   ownsp = 0; opq = 0
   for (i = sp; i >= 1; i--) {
@@ -1644,7 +1646,7 @@ function lex_segment(   line, k, m, cls, t) {
 function w_plain(i) { return index(tokm[i], "x") == 0 }
 function w_literal(i) { return index(tokm[i], "x") == 0 && index(tokm[i], "g") == 0 }
 function w_unquoted(i) { return index(tokm[i], "q") == 0 && index(tokm[i], "x") == 0 }
-# assign_len(t) — the length of t's `NAME[index]+=` prefix, 0 when t has none.
+# assign_len(t) — the length of t’s `NAME[index]+=` prefix, 0 when t has none.
 function assign_len(t) {
   if (match(t, /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=/)) return RLENGTH
   return 0
@@ -1699,7 +1701,7 @@ function dollar(   c, k) {
   if (c != "" && index("0123456789@*#?$!-", c)) { word_begin(pos); addsrc(pos, 2, "x"); pos += 2; return 1 }
   return 0
 }
-# A backslash-escaped backtick while a BQ is open: nested backticks, which run — the BQ's text is a region, once.
+# A backslash-escaped backtick while a BQ is open: nested backticks, which run — the BQ’s text is a region, once.
 function nested_bq(   b) {
   b = bq_open()
   if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, "nested backticks", segbeg[b])
@@ -1711,7 +1713,7 @@ function brace_g(p,   d, j, c, seen) {
   for (j = p + 1; j < lim; j++) {
     c = ch[j]
     if (c == "\\") { j++; continue }
-    if (c == "'") { while (++j < lim && ch[j] != "'") ; continue }
+    if (c == "\047") { while (++j < lim && ch[j] != "\047") ; continue }
     if (c == "\"") { while (++j < lim && ch[j] != "\"") if (ch[j] == "\\") j++; continue }
     if (index(" \t\n;&|<>()", c)) return 0
     if (c == "{") d++
@@ -1720,7 +1722,7 @@ function brace_g(p,   d, j, c, seen) {
   }
   return 0
 }
-# tilde_x() — 1 when the unquoted `~` at pos is a tilde expansion (a word's start, or after `=`/`:` in an assignment).
+# tilde_x() — 1 when the unquoted `~` at pos is a tilde expansion (a word’s start, or after `=`/`:` in an assignment).
 function tilde_x(   t) {
   if (!wst[ownsp]) return 1
   if (ch[pos - 1] != "=" && ch[pos - 1] != ":") return 0
@@ -1745,14 +1747,14 @@ function cmd_char(   c, s, k, op) {
     if (at(1) == "\"" && bq_in_dq()) { pos++; return }
     word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return
   }
-  if (c == "'") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
+  if (c == "\047") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { word_begin(pos); push_ctx("DQ", pos); pos++; return }
   if (c == "`") {
     if (cty[s] == "BQ") { close_cmd(); pos++; return }
     word_begin(pos); push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return
   }
   if (c == "$") {
-    if (at(1) == "'") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }
+    if (at(1) == "\047") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }
     if (at(1) == "\"") { word_begin(pos); push_ctx("DQ", pos); pos += 2; return }
     if (dollar()) return
     word_begin(pos); addsrc(pos, 1, "u"); pos++; return
@@ -1842,7 +1844,7 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
     c = ch[pos]
     if (index(" \t\n;&|<>()", c)) break
     got = 1
-    if (c == "'") { quoted = 1; pos++; while (pos < lim && ch[pos] != "'") d = d ch[pos++]; pos++; continue }
+    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
@@ -1915,7 +1917,7 @@ function unbalanced_close(t,   i, d, c) {
   return 0
 }
 function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
-# end_hdata — the expanding body's end: anything still open inside it is a region, closed there.
+# end_hdata — the expanding body’s end: anything still open inside it is a region, closed there.
 function end_hdata(   i) {
   if (sp > hd_sp) region(cpos[hd_sp + 1], hd_lim - 1, "substitution not closed in a heredoc body", hd_seg)
   while (sp > hd_sp) close_any(hd_lim)
@@ -1951,27 +1953,27 @@ function dq_char(   c, k) {
   addsrc(pos, k, "q"); pos += k
 }
 function sq_char(   k) {
-  if (ch[pos] == "'") { pop_ctx(); pos++; return }
+  if (ch[pos] == "\047") { pop_ctx(); pos++; return }
   k = 1
-  while (pos + k < lim && ch[pos + k] != "'") k++
+  while (pos + k < lim && ch[pos + k] != "\047") k++
   addsrc(pos, k, "q"); pos += k
 }
 function aq_char() {
-  if (ch[pos] == "'") { pop_ctx(); pos++; return }
+  if (ch[pos] == "\047") { pop_ctx(); pos++; return }
   if (ch[pos] == "\\" && at(1) != "") { addsrc(pos + 1, 1, "q"); pos += 2; return }
   addsrc(pos, 1, "q"); pos++
 }
-# PARAM: closed by the first unquoted `}` (bash, busybox); a `'` in it under a DQ or HDATA, and an unquoted `{`
+# PARAM: closed by the first unquoted `}` (bash, busybox); a single quote in it under a DQ or HDATA, and an unquoted `{`
 # in it (zsh counts it toward the closer), are regions — the shells disagree.
 function param_char(   c, i) {
   c = ch[pos]
   if (c == "}") { pop_ctx(); addsrc(cpos[sp + 1], pos - cpos[sp + 1] + 1, "x"); pos++; return }
   if (c == "\\") { pos += (at(1) != "") ? 2 : 1; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
-  if (c == "$" && at(1) == "'") { push_ctx("AQ", pos); pos += 2; return }
+  if (c == "$" && at(1) == "\047") { push_ctx("AQ", pos); pos += 2; return }
   if (c == "$" && dollar()) return
   if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
-  if (c == "'") {
+  if (c == "\047") {
     for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
     if (cty[i] == "DQ" || cty[i] == "HDATA") { region(pos, n, "quote inside ${…} in double quotes", segbeg[ownsp]); pos++; return }
     push_ctx("SQ", pos); pos++; return
@@ -1998,7 +2000,7 @@ function arith_char(   c) {
   if (c == "\\") { pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
   if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
-  if (c == "'") { push_ctx("SQ", pos); pos++; return }
+  if (c == "\047") { push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   pos++
 }
@@ -2042,9 +2044,9 @@ function finish(   s, k, i) {
 }
 
 # --- the command start: the one skip set both matchers share ----------------------------------------------
-# Three phases in the shells' own order, never going back: reserved words (unquoted only — a quoted `if` is a
+# Three phases in the shells’ own order, never going back: reserved words (unquoted only — a quoted `if` is a
 # command name; the reserved `time` takes one `-p`), then shell assignments, then wrappers (quoted or not), each
-# with its own flags. assign_at[] collects the assignments and env's NAME=value arguments skipped.
+# with its own flags. assign_at[] collects the assignments and env’s NAME=value arguments skipped.
 function is_reserved(t) {
   return t == "if" || t == "then" || t == "elif" || t == "else" || t == "do" || t == "while" || t == "until" || t == "!" || t == "{" || t == "time"
 }
@@ -2160,8 +2162,8 @@ function out(   i, r, v) {
   print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
   exit 0
 }
-BEGIN { CMDSPECIAL = " \t\n#\\'\"`$<>&;|()~*?[{" }
-PPG_AWK_EOF
+BEGIN { CMDSPECIAL = " \t\n#\\\047\"`$<>&;|()~*?[{" }
+'
 
 case "${1:-}" in
   -h|--help)
