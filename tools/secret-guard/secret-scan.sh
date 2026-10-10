@@ -989,18 +989,26 @@ case "$mode" in
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
     # (mode 160000) is a submodule — its content is its own repo's. A skip-worktree file that IS present is read
     # from the working tree, whose copy may hold what the index does not. An unmerged path is listed once per
-    # stage and read once: its later stages are skipped (spec 746's stated limit — an unmerged path whose working
-    # copy is gone is scanned from its first stage only; the conflict blocks a commit anyway).
+    # stage and read once — from the working tree when it is there; when it is not, from its first non-gitlink
+    # stage's index copy only (spec 746's stated limit; the conflict blocks a commit anyway), and a WARN says so.
+    # A gitlink stage never claims its path, so it cannot hide the working file.
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    tab=$'\t'; prev=""; sparse=0
+    tab=$'\t'; prev=""; prev_idx=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
       LC_ALL=C IFS=' ' read -r ttag tmode tsha _tstage <<< "${rec%%"$tab"*}"
-      [ -n "$f" ] && [ "$f" != "$prev" ] || continue
-      prev="$f"
+      [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
+      if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
+        if [ -n "$prev_idx" ]; then
+          echo "secret-scan: WARN unmerged, only its first stage was scanned: ${f//$'\n'/\\n}" >&2
+          prev_idx=""
+        fi
+        continue
+      fi
+      prev="$f"; prev_idx=""
       why=""
       if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
         sparse=$((sparse + 1))
@@ -1022,6 +1030,7 @@ case "$mode" in
         why="not a regular file in the working tree"
       fi
       [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
+      prev_idx=1
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
     done < "$tlist"
@@ -1239,6 +1248,7 @@ load_range_pairs() {
     fi
   done < "$plist"
   [ -z "$hdr" ] || _fail_closed "read the range's paths (unexpected record)"
+  rm -f "$plist" "$perr"
 }
 
 found=0
@@ -1247,7 +1257,7 @@ found=0
 # "${a[@]}" under set -u on bash 3.2). Two passes: the content channels first, so the range's pairs (B11) are
 # listed only for a hit they keep, and before the first hit line prints — a failing listing exits 2 with no
 # hit line out. The printed line is the pre-B10 record, byte for byte.
-rec_drop=(); need_pairs=""
+rec_drop=(); rec_pex=(); need_pairs=""
 ri=0
 while [ "$ri" -lt "${#rec_path[@]}" ]; do
   drop=""
@@ -1264,10 +1274,12 @@ while [ "$ri" -lt "${#rec_path[@]}" ]; do
       if LC_ALL=C grep -qE -e "$re" <<< "${rec_text[$ri]}"; then drop=1; break; fi
     done
   fi
-  rec_drop+=("$drop")
-  if [ -z "$drop" ] && [ -n "${rec_blob[$ri]}" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
-    need_pairs=1
+  pex=""                                                               # a path: glob covers it
+  if [ -z "$drop" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
+    pex=1
+    [ -z "${rec_blob[$ri]}" ] || need_pairs=1
   fi
+  rec_drop+=("$drop"); rec_pex+=("$pex")
   ri=$((ri + 1))
 done
 [ -z "$need_pairs" ] || load_range_pairs
@@ -1275,10 +1287,10 @@ done
 ri=0
 while [ "$ri" -lt "${#rec_path[@]}" ]; do
   rpath="${rec_path[$ri]}"; rwhere="${rec_where[$ri]}"; rtext="${rec_text[$ri]}"; rblob="${rec_blob[$ri]}"
-  rmsg="${rec_msg[$ri]}"; rdrop="${rec_drop[$ri]}"; ri=$((ri + 1))
+  rdrop="${rec_drop[$ri]}"; rpex="${rec_pex[$ri]}"; ri=$((ri + 1))
   [ -z "$rdrop" ] || continue
   # path-glob allowlist: file records only; a --range blob only when every path it is introduced at is exempt
-  if [ -z "$rmsg" ] && path_exempt "$rpath"; then
+  if [ -n "$rpex" ]; then
     [ -n "$rblob" ] || continue
     if [ "$rblob" != "${pair_last_blob:-}" ]; then   # one blob's hits are consecutive: decide once per blob
       pair_last_blob="$rblob"; paired=""; unexempt=""; pi=0

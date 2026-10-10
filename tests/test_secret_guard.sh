@@ -3068,6 +3068,16 @@ printf 'tok = %s # secret-scan:allow\n' "$k746" > "$r746/fixtures/k.txt"
 commit746 "$r746" allowed
 run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
 check_status "dir #746 A25(c): an inline-allowed hit under a path: glob never enumerates the pairs → exit 0" 0 "$STATUS"
+r746="$(new_repo)"
+git -C "$r746" commit -q --allow-empty -m base
+printf 'path:fixtures/*\nfixture-marker-746\n' > "$r746/.secret-scan-allow"
+commit746 "$r746" allow
+a746="$(git -C "$r746" rev-parse HEAD)"
+mkdir -p "$r746/fixtures"
+printf 'tok = %s fixture-marker-746\n' "$k746" > "$r746/fixtures/k.txt"
+commit746 "$r746" ere-allowed
+run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A25(c): ...nor an ERE-dropped one → exit 0" 0 "$STATUS"
 
 # A26 / A27 (B12): --tracked scans the index copy of a tracked file it cannot read from the working tree.
 r746="$(new_repo)"
@@ -3132,5 +3142,29 @@ printf 'tok = %s\n' "$k746" > "$r746/c.txt"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
 check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
+# (f) an unmerged path: its stages are one path, read once — from the working tree when it is there (one hit
+# line, not one per stage); a gitlink stage never claims the path (review finding: a gitlink stage 1 hid the
+# working file); with no working copy, the first stage's index copy only (spec 746's stated limit, said in a WARN)
+r746="$(new_repo)"
+printf 'base\n' > "$r746/f.txt"
+commit746 "$r746" base
+c746="$(git -C "$r746" rev-parse HEAD)"
+b746="$(git -C "$r746" hash-object -w f.txt)"
+printf 'tok = %s\n' "$k746" > "$r746/f.txt"
+git -C "$r746" update-index --force-remove f.txt
+printf '100644 %s 1\tf.txt\n100644 %s 2\tf.txt\n100644 %s 3\tf.txt\n' "$b746" "$b746" "$b746" \
+  | git -C "$r746" update-index --index-info
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): an unmerged path present in the working tree → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...one hit line, not one per stage" 1 "$(match "$OUT" -c '^  f.txt:1:')"
+git -C "$r746" update-index --force-remove f.txt
+printf '160000 %s 1\tf.txt\n100644 %s 2\tf.txt\n100644 %s 3\tf.txt\n' "$c746" "$b746" "$b746" \
+  | git -C "$r746" update-index --index-info
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file → BLOCKED" 1 "$STATUS"
+rm "$r746/f.txt"
+run_in "$r746" "$scan" --tracked
+check_contains "dir #746 A26(f): with no working copy, the later stages' skip is said" "$OUT" \
+  "secret-scan: WARN unmerged, only its first stage was scanned: f.txt"
 
 summary
