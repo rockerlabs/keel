@@ -133,17 +133,19 @@ _isg_place() {
 # else `.pre-keel.2.bak` … `.99.bak`, each by an exclusive create under umask 077 (checked to be a regular,
 # non-link file), so a file that appears there between the pre-flight and now is never overwritten. Copy with
 # `cat`, then add u+x when HOOK is executable — the backup stays runnable once moved back, and a hook with
-# no execute bit stays without one. Sets isg_claimed to the name it took; returns 1 when none was free.
+# no execute bit stays without one. Sets isg_claimed to the SUFFIX it took (pre-keel.bak, pre-keel.2.bak …);
+# returns 1 when none was free.
 isg_claimed=""
 _isg_backup() {
-  local hook="$1" n=1 cand
+  local hook="$1" n=1 sfx cand
   isg_claimed=""
   while [ "$n" -le 99 ]; do
-    if [ "$n" = 1 ]; then cand="$hook.$isg_bak_force"; else cand="$hook.${isg_bak_force%.bak}.$n.bak"; fi
+    if [ "$n" = 1 ]; then sfx="$isg_bak_force"; else sfx="${isg_bak_force%.bak}.$n.bak"; fi
+    cand="$hook.$sfx"
     if { ( umask 077; set -o noclobber; : > "$cand" ) 2>/dev/null && [ -f "$cand" ] && [ ! -L "$cand" ]; }; then
       cat "$hook" > "$cand" || { rm -f "$cand"; return 1; }
       if [ -x "$hook" ]; then chmod u+x "$cand" || { rm -f "$cand"; return 1; }; fi
-      isg_claimed="$cand"
+      isg_claimed="$sfx"
       return 0
     fi
     n=$((n + 1))
@@ -321,7 +323,6 @@ install_into() {
         # `.keel-upgrade.bak`, NOT `.pre-keel.bak` — this branch runs on every ordinary re-install,
         # including one right after a --force install, and must never touch the permanent backup
         # a --force run may have left at `.pre-keel.bak` (see the note above `local copied=`).
-        rm -f "$t.$isg_bak_upgrade"
         _isg_place "$t" "$t.$isg_bak_upgrade" \
           || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to save a safety copy of $t"
         upgraded="$upgraded $h"
@@ -332,8 +333,8 @@ install_into() {
       else
         _isg_backup "$t" \
           || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "could not back up $t (no free .$isg_bak_force name)"
-        backed_up="$backed_up $h:${isg_claimed#"$t".}"
-        echo "secret-guard: backed up your existing $h → ${isg_claimed##*/} (--force)" >&2
+        backed_up="$backed_up $h:$isg_claimed"
+        echo "secret-guard: backed up your existing $h → $h.$isg_claimed (--force)" >&2
       fi
     fi
   done
@@ -350,7 +351,6 @@ install_into() {
     case "$f" in pre-commit|pre-push) continue ;; esac
     t="$hooks_dir/$f"
     if [ -e "$t" ]; then
-      rm -f "$t.$isg_bak_upgrade"
       _isg_place "$t" "$t.$isg_bak_upgrade" \
         || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to save a safety copy of $t"
       upgraded="$upgraded $f"
@@ -454,10 +454,14 @@ _isg_same_dir() {
 #               walk could not read them all (dir #717); omitted when n = 0
 # When own and effective differ, a copy written to own is inert: git never reads it.
 
+# _isg_valueless GIT-ARGS… — 0 when core.hooksPath, read by `git GIT-ARGS --get …`, is a bare `hooksPath` line (no
+# `=`). `--get` answers it like the empty value (rc 0, no output); `--get --type=path` fails only for it (git's
+# "missing value"). Call only after a read that returned an empty value.
+_isg_valueless() { ! git "$@" --get --type=path core.hooksPath >/dev/null 2>&1; }
+
 # One read of core.hooksPath as git sees it from directory $1: sets m_set (1 when ANY scope sets it — decided by
 # the read's EXIT STATUS, so the empty value counts; dir #748 S4-1) and m_scope m_origin m_value (all empty when
-# unset), plus m_novalue=1 for a VALUELESS `hooksPath` (no `=`): `--get` answers it like the empty value (rc 0, no
-# output), but `--get --type=path` fails only for it (git's "missing value"). `--show-scope` needs git 2.26; an
+# unset), plus m_novalue=1 for a VALUELESS `hooksPath` (_isg_valueless). `--show-scope` needs git 2.26; an
 # older git still yields the value, scope "unknown".
 _isg_cfg_read() {
   local out rest rc=0
@@ -473,9 +477,7 @@ _isg_cfg_read() {
     out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" || rc=$?
     if [ "$rc" = 0 ]; then m_set=1; m_scope="unknown"; m_value="$out"; fi
   fi
-  if [ "$m_set" = 1 ] && [ -z "$m_value" ] && ! git -C "$1" config --get --type=path core.hooksPath >/dev/null 2>&1; then
-    m_novalue=1
-  fi
+  if [ "$m_set" = 1 ] && [ -z "$m_value" ] && _isg_valueless -C "$1" config; then m_novalue=1; fi
   [ "$m_set" = 1 ] || { m_scope=""; m_origin=""; }
   return 0
 }
@@ -496,12 +498,10 @@ _isg_machine_read() {
     [ "${1:-}" != walk ] || _isg_conditional_reads "$probe"
   else
     m_fallback=1
-    m_set=0 m_novalue=0 m_scope="" m_origin="" m_value=""
+    m_set=0 m_novalue=0 m_scope="" m_origin=""
     if m_value="$(git config --global core.hooksPath 2>/dev/null)"; then
       m_set=1 m_scope="global"
-      if [ -z "$m_value" ] && ! git config --global --get --type=path core.hooksPath >/dev/null 2>&1; then m_novalue=1; fi
-    else
-      m_value=""
+      if [ -z "$m_value" ] && _isg_valueless config --global; then m_novalue=1; fi
     fi
     if [ "${1:-}" = walk ]; then
       c_list=""

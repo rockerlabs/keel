@@ -58,7 +58,7 @@ mk_foreign "$h27" pre-commit "foreign hook, hard-linked elsewhere"
 out27="$SANDBOX/a27-outside"
 ln "$h27/pre-commit" "$out27"
 want27="$(cat "$out27")"
-run "$isg" --force "$r27"
+run bash "$ok_stub/install-secret-guard.sh" --force "$r27"
 check_status "A27: --force over a hard-linked foreign hook → exit 0" 0 "$STATUS"
 check_eq "A27: the outside name's bytes are unchanged" "$want27" "$(cat "$out27")"
 if cmp -s "$shipped/pre-commit" "$h27/pre-commit"; then pass "A27: the hook is Keel's now (the shipped pre-commit, byte for byte)"
@@ -69,7 +69,7 @@ check_contains "A27: the backup holds the foreign hook" "$(cat "$h27/pre-commit.
 
 # the same for a KEEL hook and the scanner on a plain re-vendor (no --force)
 r27b="$(new_repo)"; h27b="$r27b/.git/hooks"
-run "$isg" "$r27b"
+run bash "$ok_stub/install-secret-guard.sh" "$r27b"
 check_status "A27: first vendoring → exit 0" 0 "$STATUS"
 for f in pre-commit secret-scan.sh; do
   printf '# stale tail of an older version\n' >> "$h27b/$f"
@@ -121,9 +121,10 @@ check_contains "A28: ...its bytes come back" "$(cat "$h28c/pre-commit" 2>/dev/nu
 if [ -x "$h28c/pre-commit" ]; then fail "A28: ...and it is still not executable" "the rollback made it executable"
 else pass "A28: ...and it is still not executable"; fi
 
-# (4) a Keel hook re-vendored then a failure: the restored Keel hook is executable (the :1004-1007 row's twin)
+# (4) a Keel hook re-vendored then a failure: the restored Keel hook is executable (twin of test_secret_guard.sh's
+#     "re-vendoring over an ALREADY-INSTALLED Keel hook" rollback row)
 r28d="$(new_repo)"
-run "$isg" "$r28d"
+run bash "$ok_stub/install-secret-guard.sh" "$r28d"
 check_status "A28: genuine first install → exit 0" 0 "$STATUS"
 run bash "$bad_stub/install-secret-guard.sh" "$r28d"
 check_status "A28: re-vendor + forced post-copy failure → exit 4" 4 "$STATUS"
