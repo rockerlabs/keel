@@ -111,8 +111,13 @@ if [ "$uninstall" = 1 ]; then
   esac
 fi
 
-# _isg_count_values KEY — how many values the global config holds for KEY (an empty value counts as one).
-_isg_count_values() { { git config --global --get-all "$1" 2>/dev/null || true; } | wc -l | tr -d ' '; }
+# _isg_count_values KEY — the most values any ONE global config file holds for KEY (an empty value counts as one): a
+# write replaces or unsets in a single file, and git exits 5 only when that file sets the key more than once — one
+# value each in ~/.gitconfig and the XDG file is no obstacle.
+_isg_count_values() {
+  { git config --global --show-origin --get-all "$1" 2>/dev/null || true; } \
+    | awk -F'\t' '{ c[$1]++ } END { m = 0; for (k in c) if (c[k] > m) m = c[k]; print m }'
+}
 
 # _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
 # link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a
@@ -625,16 +630,25 @@ _isg_cond_list() {
   return 0
 }
 
-# Is file $1 one of the files already read, listed in $2 as `file TAB condition TAB kind TAB value` lines? Compared
-# with `-ef`, so `./work.cfg`, a symlink to a file and the file itself are one (both exist: the caller tested $1).
-# Sets seen_cond seen_kind seen_val from the matching line.
+# Has file $1 already been read, and under which conditions? $3 lists the reads so far as `file TAB condition TAB kind
+# TAB value` lines — one per (file, condition) the walk has entered. Compared with `-ef`, so `./work.cfg`, a symlink
+# to a file and the file itself are one (both exist: the caller tested $1). Sets seen_rel, and seen_kind/seen_val
+# from the file's own read:
+#   cycle  an entry for this file has condition $2 or a prefix of it (`<entry> and …`): the walk is returning to it
+#   indep  the file was read, but only under conditions $2 does not extend: an independent route to the same file
+#   none   never read
 _isg_seen() {
   local f v_cond v_kind v_val
-  seen_cond="" seen_kind="" seen_val=""
+  seen_rel=none seen_kind="" seen_val=""
   while IFS=$'\t' read -r f v_cond v_kind v_val; do
-    if [ -n "$f" ] && [ "$f" -ef "$1" ]; then seen_cond="$v_cond" seen_kind="$v_kind" seen_val="$v_val"; return 0; fi
-  done <<< "$2"
-  return 1
+    [ -n "$f" ] && [ "$f" -ef "$1" ] || continue
+    seen_kind="$v_kind" seen_val="$v_val"
+    case "$2" in
+      "$v_cond"|"$v_cond and "*) seen_rel=cycle; return 0 ;;
+    esac
+    seen_rel=indep
+  done <<< "$3"
+  return 0
 }
 
 # 0 when path $1 is absent for certain. A dir that cannot be searched hides what is under it, and git fails reading
@@ -678,16 +692,18 @@ _isg_conditional_reads() {
       # an include that names a directory (a bare `path = ~` is $HOME): git warns "Is a directory" and then fails
       # the whole config read in the trees that match — while `--file <dir>` exits 1, the "not set" exit
       [ ! -d "$tgt" ] || { c_cause="git config failed on $tgt (a directory)"; return 0; }
-      if _isg_seen "$tgt" "$visited"; then
-        # Read once, but reported once per (condition, file): a file reached again under an INDEPENDENT condition
-        # (a symlink alias, dir #743 item 2) governs that condition's trees too. A condition that merely extends
-        # the first one's is a cycle returning to it — counted once.
-        case "$cond" in
-          "$seen_cond and "*) ;;
-          *) [ -z "$seen_kind" ] || c_list="$c_list$seen_kind"$'\t'"$cond"$'\t'"$origin"$'\t'"$tgt"$'\t'"$seen_val"$'\n' ;;
-        esac
-        continue
-      fi
+      _isg_seen "$tgt" "$cond" "$visited"
+      case "$seen_rel" in
+        cycle) continue ;;   # the walk returning to a file it is already inside: counted once
+        indep)
+          # Read once, but reported and walked once per (condition, file): a file reached again by an INDEPENDENT
+          # route (a symlink alias under a second condition, dir #743) governs that condition's trees too, and so
+          # do the includes nested inside it.
+          [ -z "$seen_kind" ] || c_list="$c_list$seen_kind"$'\t'"$cond"$'\t'"$origin"$'\t'"$tgt"$'\t'"$seen_val"$'\n'
+          visited="$visited$tgt"$'\t'"$cond"$'\t'"$seen_kind"$'\t'"$seen_val"$'\n'
+          _isg_cond_list "$cond" "$tgt" || return 0
+          continue ;;
+      esac
       kind="" val=""
       rc=0
       git -C "$c_probe" config --file "$tgt" --includes -z --get-regexp '^core\.hookspath$' > "$vout" 2>/dev/null || rc=$?

@@ -51,6 +51,18 @@ check_status "walk (2): --force wires anyway → exit 0" 0 "$STATUS"
 check_contains "walk (2): the NOTE names the first condition" "$OUT" "NOTE — in trees matching gitdir:~/work/"
 check_contains "walk (10): the NOTE names the second condition too" "$OUT" "NOTE — in trees matching gitdir:~/other/"
 
+# the aliased file's own nested includes are walked under the second condition too
+mk_home alias-nested
+printf '[includeIf "gitdir:~/a/"]\n\tpath = f.cfg\n[includeIf "gitdir:~/b/"]\n\tpath = alias.cfg\n' > "$H/.gitconfig"
+printf '[includeIf "gitdir:~/c/"]\n\tpath = g.cfg\n' > "$H/f.cfg"
+printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/g.cfg"
+ln -s "$H/f.cfg" "$H/alias.cfg"
+run genv "$isg" --where --global
+check_contains "walk (2): a nested include under the aliased file counts under BOTH conditions: conditional=2" "$OUT" "conditional=2"
+run genv "$isg" --global --force
+check_contains "walk (2): ...the NOTE names the nested condition under the first route" "$OUT" "gitdir:~/a/ and gitdir:~/c/"
+check_contains "walk (2): ...and under the second" "$OUT" "gitdir:~/b/ and gitdir:~/c/"
+
 # --- (3)/(7): a dangling symlink into an unsearchable dir is not "missing" -------------------------------------
 mk_home dangle; mkdir -p "$H/locked"
 printf '[includeIf "gitdir:~/work/"]\n\tpath = link.cfg\n' > "$H/.gitconfig"
@@ -141,5 +153,11 @@ printf '[core]\n\thooksPath = %s/a\n\thooksPath = %s/%s\n' "$H" "$H" "$kh_rel" >
 run genv "$isg" --global --uninstall
 check_status "M2: --uninstall over a hooksPath set twice → refused (exit 3)" 3 "$STATUS"
 check_contains "M2: ...in words" "$OUT" "more than once"
+
+# a hooksPath set once in ~/.gitconfig and once in the XDG file is no multi-value problem: a write goes to ONE file
+mk_home twofiles
+mkdir -p "$H/xdg/git"; printf '[core]\n\thooksPath = %s/b\n' "$H" > "$H/xdg/git/config"; printf '[core]\n\thooksPath = %s/a\n' "$H" > "$H/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --force
+check_absent "M2: one value in each of two config files is not 'more than once'" "$OUT" "more than once"
 
 summary
