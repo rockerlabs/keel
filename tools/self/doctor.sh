@@ -253,6 +253,24 @@ for f in FRAMEWORK.md PRINCIPLES.md; do
 done
 [ "$id_leak" -eq 0 ] && say "  OK   no leaked host path or non-safe email in FRAMEWORK.md / PRINCIPLES.md"
 
+# tracked_files WHAT CHECK pathspec… — `git ls-files -- pathspec…` into $LS_OUT (newline-separated), status CHECKED
+# (dir #738 slice 4, spec 746 B16). A failing listing (a corrupt index, a git that will not run) is a GAP naming WHAT and
+# CHECK plus git's first stderr line, returns the status, and leaves $LS_OUT empty — the caller prints no OK line for
+# CHECK. A process substitution (`done < <(git …)`) would hide that status: an empty listing reads as "nothing wrong".
+LS_OUT=""
+tracked_files() {
+  local what="$1" check="$2" rc=0 why
+  shift 2
+  LS_OUT="$(git -C "$repo_root" ls-files -- "$@" 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    LS_OUT=""
+    gap "could not list $what (exit $rc) — $check is INCOMPLETE"
+    why="$(git -C "$repo_root" ls-files -- "$@" 2>&1 >/dev/null || true)"   # the diagnosis only, on the failure path
+    [ -z "$why" ] || echo "       ${why%%$'\n'*}"
+  fi
+  return "$rc"
+}
+
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or
@@ -262,21 +280,6 @@ done
 # doc location (CORE.md/IDEAS.md joined it late, dir #129) only needs adding here once. Check 2 adds
 # the implementation shell files on top (tests/*.sh, install.sh, tools/*.sh, tools/self/*.sh,
 # bootstrap.sh) — check 2b deliberately does NOT scan those (see its own comment for why).
-# tracked_files WHAT CHECK pathspec… — `git ls-files -- pathspec…` into $LS_OUT (newline-separated), its status CHECKED
-# (dir #738 slice 4, spec 746 B16): a failing listing (a corrupt index, a git that will not run) is a GAP naming WHAT
-# and CHECK, returns the status, and leaves $LS_OUT empty — the caller prints no OK line for CHECK. A process
-# substitution (`done < <(git …)`) hides that status, and an empty listing then reads as "nothing wrong".
-LS_OUT=""
-tracked_files() {
-  local what="$1" check="$2" rc=0
-  shift 2
-  LS_OUT="$(git -C "$repo_root" ls-files -- "$@" 2>/dev/null)" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    LS_OUT=""
-    gap "could not list $what (exit $rc) — $check is INCOMPLETE"
-  fi
-  return "$rc"
-}
 adopter_docs=(
   'README.md' 'ADAPTING.md' 'FRAMEWORK.md' 'PRINCIPLES.md' 'SECURITY.md' 'CORE.md' 'IDEAS.md'
   'docs/*.md' 'commands/*.md' 'templates/*.md'
@@ -1861,6 +1864,8 @@ elif command -v shellcheck >/dev/null 2>&1; then
   while IFS= read -r f; do [ -n "$f" ] && sc_files+=("$repo_root/$f"); done <<< "$sc_targets"
   if [ "$sc_rc" -ne 0 ]; then
     gap "could not list the shell scripts to check (exit $sc_rc) — the shellcheck check is INCOMPLETE"
+    sc_why="$(bash "$self_dir/shellcheck-targets.sh" "$repo_root" 2>&1 >/dev/null || true)"
+    [ -z "$sc_why" ] || echo "       ${sc_why%%$'\n'*}"
   elif [ "${#sc_files[@]}" -gt 0 ]; then
     run_check "shellcheck clean (${#sc_files[@]} tracked scripts, mirrors ci.yml)" \
       shellcheck -x --severity=warning "${sc_files[@]}"

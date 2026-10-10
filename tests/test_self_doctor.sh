@@ -2282,6 +2282,7 @@ check_status "A40: a failing shellcheck-target selector -> exit 1" 1 "$STATUS"
 check_contains "A40: the GAP names the selector failure" "$OUT" "could not list the shell scripts to check (exit 3)"
 check_contains "A40: the GAP states the check is incomplete" "$OUT" "the shellcheck check is INCOMPLETE"
 check_absent "A40: no OK line over a selector that could not list" "$OUT" "OK   shellcheck: no tracked shell scripts"
+check_contains "A40: the selector's own stderr line rides under the GAP" "$OUT" "       x"
 # the empty-success branch: a selector that lists nothing and succeeds is still the honest OK line, and the empty
 # list adds no phantom `$repo_root/` script.
 printf '#!/usr/bin/env bash\nexit 0\n' > "$sel_root/tools/self/shellcheck-targets.sh"
@@ -2303,7 +2304,22 @@ check_absent "A41: no OK for the dead-reference check" "$OUT" "OK   no dead tool
 check_absent "A41: no OK for the slash-command check" "$OUT" "OK   no unshipped slash-command references"
 check_absent "A41: no OK for the PIPESTATUS check" "$OUT" "OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
 
-# A42 — no stale line number in the pipefail comment.
-check_eq "A42: tools/self/doctor.sh cites no 'line 56'" 0 "$(grep -c 'line 56' "$sd" || true)"
+# git's own first stderr line rides under the GAP (the operator sees WHY, not only an exit code); the selector's too.
+check_contains "A41: the GAP is followed by git's own stderr line" "$OUT" "       fatal:"
+
+# B16's tool-wiring guard — the reference files alone fail to list (a git shim refuses only the workflow pathspec):
+# the loop must not run, or every tool reads as an orphan with no test coverage. A41 cannot pin this: its corrupt
+# index empties the tool list too.
+d="$(mk_clean_repo)"
+mkdir -p "$sel_root/gitshim"
+printf '#!/bin/sh\ncase "$*" in *.github/workflows*) echo "fatal: shim refuses the reference listing" >&2; exit 128 ;; esac\nexec %s "$@"\n' \
+  "$(type -P git)" > "$sel_root/gitshim/git"
+chmod +x "$sel_root/gitshim/git"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$sel_root/gitshim:$PATH" "$sd" "$d"
+check_status "A41: only the reference listing failing -> exit 1" 1 "$STATUS"
+check_contains "A41: that listing is named" "$OUT" "could not list the reference files (exit 128)"
+check_eq "A41: it is the only 'could not list' GAP" 1 "$(grep -c 'could not list' <<< "$OUT" || true)"
+check_absent "A41: no tool is named an orphan over an unlisted reference set" "$OUT" "orphan tool"
+check_absent "A41: no tool is named a NEW untested script over it" "$OUT" "NEW shipped script"
 
 summary
