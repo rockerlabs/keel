@@ -74,6 +74,9 @@ serialize as a consequence (strict up-to-date still forces it): one release-mana
 where mutation actually threads a needle. Show the operator the wave plan before wave 1 starts — the
 wave plan is a plan, not a report, and the operator's one intervention here is cheap compared to a
 wave already in flight.
+Where the repository requires a merge queue (keel does, dir #744), the operator enqueues a green PR
+instead of updating and merging it; the queue tests it on top of the PRs ahead, and a conflict or red check
+ejects it back to its worker.
 
 ## R3 — worker launches, soft form
 
@@ -378,7 +381,7 @@ set is unchanged from [`docs/delegation.md`](delegation.md) — merges, the rele
 stay the operator's.
 
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
-over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the
+over — the merge list, the tag, the release — arrives as a copy-paste-ready command block with the
 actual SHAs and versions substituted, re-derived live and never recited from a plan file.
 
 **Where the project has a daily-use location for its build** (an application bundle, a deployed service, a
