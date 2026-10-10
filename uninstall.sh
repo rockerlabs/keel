@@ -908,7 +908,7 @@ if [ "$this_usable" = 1 ]; then
             # manifest recorded (dir #748 S6-4) is never moved.
             owned=1
           else
-            echo "  !    $rel: a link not provably Keel's — kept (its recorded target lies outside the checkout that recorded it)"
+            echo "  !    $rel: a link not provably Keel's — kept (its recorded target is not one of the checkout's own files)"
           fi
         else
           # Legacy record (extra is the pre-dir-369 `-` placeholder, or empty) — no target was

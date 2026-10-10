@@ -1012,12 +1012,11 @@ prior_checkout() {
 # one). The second test is what keeps an adopter's link that an older install recorded as Keel's from being
 # re-placed. A dangling link whose record carries the pre-dir-#369 `-` is Keel's too: that record never
 # named a target. Anything else — no usable prior manifest included — fails closed (T4 declines it).
-# Named residual, not handled: an adopter's link to a differently-named file INSIDE the checkout (an alias)
-# that a manifest written before spec 685 round 2 recorded as Keel's (its "in sync" test followed the
-# chain) is still taken as Keel's here — re-pointed — and by uninstall — removed. It cannot be told apart
-# on disk from Keel's own link to a file it has since remapped, or into an old checkout nested inside the
-# new one (a worktree), both of which must stay T3; this run records such a link correctly, so only that
-# older record carries it.
+# An adopter's alias INSIDE the checkout (`<checkout>/ALIAS.md -> CORE.md`) that a manifest written before
+# spec 685 round 2 recorded as Keel's fails the predicate too (a recorded target that is itself a symlink).
+# Named residual, not handled: the same through a HARD link in the checkout — it cannot be told apart on
+# disk from Keel's own link to a file it has since remapped, or into an old checkout nested inside the new
+# one (a worktree), both of which must stay T3.
 keel_own_stale_link() {
   local dest="$1" rec
   [ -L "$dest" ] || return 1

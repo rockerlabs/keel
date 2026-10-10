@@ -72,9 +72,9 @@ keel_path_inside() {
 # separate `core.md` beside `CORE.md` pass on a case-sensitive file system. None of them is "the same"
 # entry. (On a case-insensitive file system a case-only file name is then not matched either — the safe
 # direction: the link is kept, never taken.) The text half is what still answers once the directories are
-# gone (a moved checkout). The one definition of "a link points where the record says": install.sh's
-# keel_link_points_at, manifest_link_is_keels below, uninstall.sh's symlink arm and its
-# compatibility-link count.
+# gone (a moved checkout). The one same-entry comparison, used by install.sh's keel_link_points_at (a
+# link against the file Keel would wire now), manifest_link_is_keels below (a link against its record),
+# uninstall.sh's symlink arm and its compatibility-link count.
 manifest_same_path() {
   [ "$1" = "$2" ] && return 0
   case "$1" in /*) ;; *) return 1 ;; esac
@@ -89,7 +89,10 @@ manifest_same_path() {
 # move). An adopter's link that an older manifest recorded as Keel's fails the last test, so nothing that
 # asks this moves or re-places it. A link that only ENDS at the recorded target through another link (a
 # dotfiles manager's `~/.claude/x -> ~/dots/x -> <checkout>/x`) is not Keel's: the test compares where LINK
-# itself points, never the end of its chain. install.sh's stale-link class, tools/doctor.sh's
+# itself points, never the end of its chain. A recorded target that is ITSELF a symlink is not Keel's
+# either: Keel's tracked tree holds no symlinks (tests/test_install_never_clobber.sh pins that), so such a
+# record — written by an older install whose "in sync" test followed a chain — names an adopter's alias
+# inside the checkout (`<checkout>/ALIAS.md -> CORE.md`). install.sh's stale-link class, tools/doctor.sh's
 # dangling-link advice and uninstall.sh's symlink arm all ask it; each keeps its own handling of a `-`
 # record at the call site.
 manifest_link_is_keels() {
@@ -99,6 +102,7 @@ manifest_link_is_keels() {
   [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
   cur="$(readlink "$link" 2>/dev/null)" || return 1
   manifest_same_path "$cur" "$rec" || return 1
+  [ ! -L "$rec" ] || return 1
   ck="$(manifest_field "$man" checkout)"
   keel_path_inside "$rec" "$ck"
 }
