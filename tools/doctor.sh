@@ -117,7 +117,8 @@
 #   HINT  H-LINT-*             a detected stack missing its lint gate (JAVA/PY/SWIFT/BASH);
 #                              H-JAVA-WILDCARD — a Java file uses a wildcard import
 # (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below —
-# the one HINT exception is H-DENY-ENV, listed above.)
+# the one HINT exception is H-DENY-ENV, listed above. One GAP is --install's alone, G-REQUIRED-LIB: a lib
+# install.sh / uninstall.sh REQUIRE (artifact-cksum.sh, safe-write.sh) missing or corrupt — dir #747.)
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -1258,7 +1259,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # hooks bypassed, so Keel's guard missing it is not OK (the message says what; the way out is the installer).
     guard_push_gap "$g_dir" "$g_keeldir" "$g_pc" "$g_pp"
     if [ -n "$guard_gap" ]; then
-      warn W-GUARD-UNWIRED "secret-guard is only half wired machine-global: $guard_gap — re-run install-secret-guard.sh --global$guard_eff_note"
+      # the installer writes only Keel's own dir: a hooks dir the user points core.hooksPath at is fixed by hand
+      if [ "$g_keeldir" = 1 ]; then g_way="re-run install-secret-guard.sh --global"
+      else g_way="copy the shipped hooks (tools/secret-guard/) into $g_dir by hand — install-secret-guard.sh --global writes Keel's own dir, not this one"; fi
+      warn W-GUARD-UNWIRED "secret-guard is only half wired machine-global: $guard_gap — $g_way$guard_eff_note"
     else
       say "  OK   secret-guard: machine-global ($g_dir)"
       if [ "$g_pc" = keel-link ]; then
@@ -1766,17 +1770,19 @@ for d in "${DIRS[@]}"; do
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
   # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
-  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue="" w_readerr=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
       effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
       origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; pre-push) w_pp="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
-      machine-dir) w_machinedir="$w_v" ;; set) w_set="$w_v" ;; novalue) w_novalue="$w_v" ;;
+      machine-dir) w_machinedir="$w_v" ;; set) w_set="$w_v" ;; novalue) w_novalue="$w_v" ;; read-error) w_readerr="$w_v" ;;
     esac
   done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
   if [ -z "$w_eff" ]; then
     warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo$guard_home_note"
+  elif [ "$w_readerr" = 1 ]; then
+    warn W-GUARD-UNWIRED "secret-guard state unknown: git could not read this repo's config (a corrupt file — 'git -C $d config --list' shows git's own message)$guard_home_note"
   elif [ "$w_set" = 1 ] && [ -z "$w_value" ]; then
     # dir #747 (S3-5): core.hooksPath is SET, to nothing (or to no value at all). Git runs no hooks in this repo while
     # it stands, a vendored copy would be ignored, and the old "install --global / vendor" advice was refused or inert.
@@ -1803,7 +1809,16 @@ for d in "${DIRS[@]}"; do
         if [ -n "$guard_gap" ]; then
           # dir #747 (D1-3): a working pre-commit is not the whole guard; without Keel's pre-push a commit made with
           # hooks bypassed reaches the remote unscanned. The fix is the installer for the dir that holds the hooks.
-          warn W-GUARD-UNWIRED "secret-guard is only half wired here: $guard_gap — re-vendor: install-secret-guard.sh $d (or --global for the machine-wide dir)$guard_home_note"
+          # The fix depends on whose dir it is: Keel's machine-wide dir is re-written by --global, a vendored copy (no
+          # outside hooksPath) by a re-vendor, and a dir a global/system/other hooksPath names is the user's to fix.
+          if [ "$w_keeldir" = 1 ]; then g_way="re-run install-secret-guard.sh --global"
+          else
+            case "$w_scope" in
+              none|local) g_way="re-vendor: install-secret-guard.sh $d" ;;
+              *) g_way="copy the shipped hooks (tools/secret-guard/) into $w_eff by hand — Keel's installers do not write into a hooksPath set at $w_scope scope" ;;
+            esac
+          fi
+          warn W-GUARD-UNWIRED "secret-guard is only half wired here: $guard_gap — $g_way$guard_home_note"
         fi
         case "$w_pc" in
           keel-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
@@ -2007,7 +2022,9 @@ EOF
     while IFS= read -r sx_f; do
       [ -n "$sx_f" ] || continue
       sx_rel="${sx_f#"$sx_dd"/}"
-      if [[ "${sx_rel##*/}" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
+      # (the name set is matched in any letter case, so the template words are too: lower-cased first — bash 3.2 has no ${x,,})
+      sx_base="$(printf '%s' "${sx_rel##*/}" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$sx_base" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
       if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
       sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"
       if [ "$sx_top" != "$d_top" ]; then continue; fi

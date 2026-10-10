@@ -95,6 +95,25 @@ check_contains "env names: a <name>.env.<ext> backup is an env-shaped file" "$li
 check_contains "env names: ...and an upper-case *.ENV" "$line" "STAGING.ENV"
 check_absent "env names: ...but .envrc (direnv; committed by design, holds no values) is not" "$line" ".envrc"
 
+# the template words are matched in any letter case too (the name set is): an upper-case template is not "exposed"
+d="$SANDBOX/proj-tmpl"; mkdir -p "$d"; git init -q "$d"; printf '# ctx\n' > "$d/CLAUDE.md"; printf '%s\n' 'CLAUDE.md' '.claude/' > "$d/.gitignore"
+put "$d/CONFIG.ENV.TEMPLATE"; put "$d/.Env.Sample"
+run "$doctor" "$d"
+check_absent "env names: an upper-case template (CONFIG.ENV.TEMPLATE, .Env.Sample) is not exposed" "$OUT" "[W-SECRETS-EXPOSED]"
+
+# --- half-wired advice follows whose dir it is ---------------------------------------------------------------------------
+mk_home hw
+mkdir -p "$H/own-hooks"
+cp "$REPO_ROOT/tools/secret-guard/pre-commit" "$H/own-hooks/pre-commit"; chmod +x "$H/own-hooks/pre-commit"
+cp "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$H/own-hooks/secret-scan.sh"; cp "$REPO_ROOT/tools/secret-guard/range-lib.sh" "$H/own-hooks/range-lib.sh"
+printf '[core]\n\thooksPath = %s/own-hooks\n' "$H" > "$H/.gitconfig"
+run genv "$doctor" --install "$H/claude"
+check_contains "D1-3: a user's own global dir with a Keel pre-commit and no pre-push → half wired" "$(id_line W-GUARD-UNWIRED)" "half wired"
+check_contains "D1-3: ...told to copy by hand — the installer writes Keel's dir, not theirs" "$(id_line W-GUARD-UNWIRED)" "by hand"
+r_hw="$(mk_repo)"
+run genv "$doctor" "$r_hw"
+check_contains "D1-3: the per-repo audit gives the same by-hand advice for a global-scope dir" "$(id_line W-GUARD-UNWIRED)" "by hand"
+
 # --- S3-2: every lib install.sh / uninstall.sh REQUIRE ------------------------------------------------------------------
 cp_root="$SANDBOX/doctor-copy-w23"; mkdir -p "$cp_root"
 for part in tools agents commands docs; do [ -e "$REPO_ROOT/$part" ] && cp -R "$REPO_ROOT/$part" "$cp_root/$part"; done
