@@ -6,7 +6,10 @@
 # and the tool never removes a clone directory (a reused clone is reset and cleaned back to the requested
 # commit, which the reuse group below pins). Every clone here comes from a sandbox repo via --source, never
 # from the real checkout; HOME is the sandbox HOME lib.sh pins, so the canonical $HOME/.keel/tmp path is
-# sandboxed.
+# sandboxed. dir #750 adds the symlink group: a clone path that is a symlink, that resolves to the source
+# (same device+inode, also through a symlinked ancestor) or whose .git is a symlink is refused before any git
+# write, and the .git-not-at-its-root refusal is pinned with an enclosing-repository fixture; every decoy lives
+# under its own sandbox HOME.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -99,6 +102,15 @@ decoy_untouched() {
     "$(git -C "$1" for-each-ref --format='%(refname)' refs/heads/keel-alpine-leg)"
 }
 
+# self_origin_repo DIR — a repository at DIR with one commit, origin = itself (so the tool's origin check
+# passes when DIR is the source) and an untracked keep-me file for decoy_untouched to find again.
+self_origin_repo() {
+  mkdir -p "$1"; git -C "$1" init -q
+  echo s > "$1/f"; git -C "$1" add f; git -C "$1" commit -q -m s
+  git -C "$1" remote add origin "$1"
+  echo precious > "$1/keep-me"
+}
+
 # (a) the clone path IS a symlink to a plausible clone of the source
 h1="$SANDBOX/h-symlink"; mkdir -p "$h1/.keel/tmp"
 git clone -q "$src" "$SANDBOX/decoy-clone"
@@ -112,9 +124,7 @@ decoy_untouched "$SANDBOX/decoy-clone" "750 symlink to a clone" "$decoy_branch"
 check_eq "750: the link itself is left in place" "$SANDBOX/decoy-clone" "$(readlink "$h1/.keel/tmp/alpine-clone-W8")"
 
 # (b) the symlink points at the source checkout itself, whose origin is itself
-srcself="$(new_repo)"; echo s > "$srcself/f"; git -C "$srcself" add f; git -C "$srcself" commit -q -m s
-git -C "$srcself" remote add origin "$srcself"
-echo precious > "$srcself/keep-me"
+srcself="$(new_repo)"; self_origin_repo "$srcself"
 self_branch="$(git -C "$srcself" symbolic-ref -q --short HEAD)"
 self_sha="$(git -C "$srcself" rev-parse HEAD)"
 ln -s "$srcself" "$h1/.keel/tmp/alpine-clone-W9"
@@ -125,30 +135,27 @@ decoy_untouched "$srcself" "750 symlink to the source" "$self_branch"
 # (c) the clone path is a real directory name but resolves to the source through a symlinked ancestor
 h2="$SANDBOX/h-ancestor"; mkdir -p "$h2/.keel" "$SANDBOX/real-tmp"
 ln -s "$SANDBOX/real-tmp" "$h2/.keel/tmp"
-srcanc="$SANDBOX/real-tmp/alpine-clone-W10"; mkdir -p "$srcanc"; git -C "$srcanc" init -q
-echo s > "$srcanc/f"; git -C "$srcanc" add f; git -C "$srcanc" commit -q -m s
-git -C "$srcanc" remote add origin "$srcanc"
-echo precious > "$srcanc/keep-me"
+srcanc="$SANDBOX/real-tmp/alpine-clone-W10"; self_origin_repo "$srcanc"
 anc_branch="$(git -C "$srcanc" symbolic-ref -q --short HEAD)"
 run env HOME="$h2" "$tool" W10 "$(git -C "$srcanc" rev-parse HEAD)" --source "$srcanc"
 check_ne "750: a clone path that resolves to the source is refused" 0 "$STATUS"
-check_contains "750: …and the refusal says it resolves to the source" "$OUT" "source"
+check_contains "750: …and the refusal says it resolves to the source checkout" "$OUT" "resolves to the source checkout"
 decoy_untouched "$srcanc" "750 ancestor link to the source" "$anc_branch"
 
 # (d) a symlinked ANCESTOR that does not reach the source is fine: the clone is cut under the real directory
-h4="$SANDBOX/h-ancestor-ok"; mkdir -p "$h4/.keel" "$SANDBOX/real-tmp-ok"
-ln -s "$SANDBOX/real-tmp-ok" "$h4/.keel/tmp"
-run env HOME="$h4" "$tool" W11 "$sha1" --source "$src"
+h3="$SANDBOX/h-ancestor-ok"; mkdir -p "$h3/.keel" "$SANDBOX/real-tmp-ok"
+ln -s "$SANDBOX/real-tmp-ok" "$h3/.keel/tmp"
+run env HOME="$h3" "$tool" W11 "$sha1" --source "$src"
 check_status "750: a symlinked \$HOME/.keel/tmp is still usable" 0 "$STATUS"
 check_dir "750: …and the clone lands under its real directory" "$SANDBOX/real-tmp-ok/alpine-clone-W11/.git"
 
 # (e) the clone's `.git` is a symlink to another repository's git dir (the root test sees `.git`)
-h5="$SANDBOX/h-gitlink"; mkdir -p "$h5/.keel/tmp/alpine-clone-W12"
+h4="$SANDBOX/h-gitlink"; mkdir -p "$h4/.keel/tmp/alpine-clone-W12"
 git clone -q "$src" "$SANDBOX/decoy-gitdir"
 echo precious > "$SANDBOX/decoy-gitdir/keep-me"
 gl_branch="$(git -C "$SANDBOX/decoy-gitdir" symbolic-ref -q --short HEAD)"
-ln -s "$SANDBOX/decoy-gitdir/.git" "$h5/.keel/tmp/alpine-clone-W12/.git"
-run env HOME="$h5" "$tool" W12 "$sha1" --source "$src"
+ln -s "$SANDBOX/decoy-gitdir/.git" "$h4/.keel/tmp/alpine-clone-W12/.git"
+run env HOME="$h4" "$tool" W12 "$sha1" --source "$src"
 check_ne "750: a clone whose .git is a symlink is refused" 0 "$STATUS"
 decoy_untouched "$SANDBOX/decoy-gitdir" "750 .git symlinked to another repo" "$gl_branch"
 
@@ -156,19 +163,19 @@ decoy_untouched "$SANDBOX/decoy-gitdir" "750 .git symlinked to another repo" "$g
 # A non-empty target INSIDE another repository (which has origin = the source) answers `rev-parse --git-dir`
 # with a path that is not `.git`. Without the root check the tool would fetch, `checkout -f -B` and
 # `clean -ffdx` the ENCLOSING repository; it was saved only by an incidental `find` abort.
-h6="$SANDBOX/h-nested"; mkdir -p "$h6/.keel/tmp/alpine-clone-W13"
-git -C "$h6/.keel" init -q
-git -C "$h6/.keel" remote add origin "$src"
-git -C "$h6/.keel" commit -q --allow-empty -m enclosing
-echo data > "$h6/.keel/tmp/alpine-clone-W13/data"
-enc_branch="$(git -C "$h6/.keel" symbolic-ref -q --short HEAD)"
-run env HOME="$h6" "$tool" W13 "$sha1" --source "$src"
+h5="$SANDBOX/h-nested"; mkdir -p "$h5/.keel/tmp/alpine-clone-W13"
+git -C "$h5/.keel" init -q
+git -C "$h5/.keel" remote add origin "$src"
+git -C "$h5/.keel" commit -q --allow-empty -m enclosing
+echo data > "$h5/.keel/tmp/alpine-clone-W13/data"
+enc_branch="$(git -C "$h5/.keel" symbolic-ref -q --short HEAD)"
+run env HOME="$h5" "$tool" W13 "$sha1" --source "$src"
 check_ne "750: a target whose .git is not at its root is refused" 0 "$STATUS"
 check_contains "750: …and the refusal says it is not a git clone" "$OUT" "not a git clone"
-check_eq "750: …the target's content is kept" "data" "$(cat "$h6/.keel/tmp/alpine-clone-W13/data")"
-check_eq "750: …the enclosing repository stays on its branch" "$enc_branch" "$(git -C "$h6/.keel" symbolic-ref -q --short HEAD || true)"
+check_eq "750: …the target's content is kept" "data" "$(cat "$h5/.keel/tmp/alpine-clone-W13/data")"
+check_eq "750: …the enclosing repository stays on its branch" "$enc_branch" "$(git -C "$h5/.keel" symbolic-ref -q --short HEAD || true)"
 check_eq "750: …and no keel-alpine-leg branch was created in it" "" \
-  "$(git -C "$h6/.keel" for-each-ref --format='%(refname)' refs/heads/keel-alpine-leg)"
+  "$(git -C "$h5/.keel" for-each-ref --format='%(refname)' refs/heads/keel-alpine-leg)"
 
 # --run hands the clone to docker (a PATH shim records argv; no real docker is needed)
 shim="$SANDBOX/shim"; mkdir -p "$shim"

@@ -32,8 +32,8 @@ sections real content going forward — see that page for exactly when each one 
   events already on record. `tests/test_delta_audit_doc.sh` pins the leg rails byte-identical across the five copies.
 - **`tools/self/alpine-clone.sh` no longer resets and cleans through a symlink.** dir #750: with the clone path a
   symlink, `checkout -f -B` and `clean -ffdx` ran on whatever it pointed at (reproduced on an operator clone and
-  on the source checkout itself). The path is now resolved physically before any git write: a symlinked clone
-  path, one resolving to the source, or a clone whose `.git` is a symlink is refused. The "`.git` not at its
+  on the source checkout itself). Before any git write a symlinked clone path, one that is the source directory
+  (same device and inode, also through a symlinked ancestor), or a clone whose `.git` is a symlink is refused. The "`.git` not at its
   root" refusal, which only an incidental `find` abort had been backing, is pinned by a test.
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs

@@ -68,16 +68,14 @@ mkdir -p "$HOME/.keel/tmp"
 
 strip_ds_store() { find "$clone/.git" -name .DS_Store -type f -delete; }
 
-# dir #750: resolve the clone path PHYSICALLY before any git write. `checkout -f -B` + `clean -ffdx` below
-# follow a symlink and reset whatever it points at (an operator clone, or the source checkout itself).
-# The clone path itself must not be a link (a dangling one too), and its physical path must not be the
-# source's — a symlinked ANCESTOR (say $HOME/.keel/tmp) is fine so long as it does not lead back to the source.
+# dir #750: `checkout -f -B` + `clean -ffdx` below follow a symlink and reset whatever it points at (an
+# operator clone, or the source checkout itself). The clone path itself must not be a link (a dangling one
+# too), and it must not BE the source directory: `-ef` compares device and inode, so a symlinked ANCESTOR
+# (say $HOME/.keel/tmp), a bind mount or a case-folded spelling that leads back to the source is caught where
+# a `pwd -P` string compare would miss it, while an ancestor link that does not reach the source stays fine.
 [ ! -L "$clone" ] || die "$clone is a symlink — refusing to reset and clean what it points at (remove the link by hand)"
-if [ -d "$clone" ]; then
-  clone_phys="$(cd -P "$clone" 2>/dev/null && pwd -P)" || die "cannot resolve $clone"
-  source_phys="$(cd -P "$source_dir" 2>/dev/null && pwd -P)" || die "cannot resolve $source_dir"
-  [ "$clone_phys" != "$source_phys" ] \
-    || die "$clone resolves to the source checkout itself ($source_phys) — refusing to reset and clean it"
+if [ -d "$clone" ] && [ "$clone/." -ef "$source_dir/." ]; then
+  die "$clone resolves to the source checkout itself ($source_dir) — refusing to reset and clean it"
 fi
 
 if [ -e "$clone" ] && [ -n "$(ls -A "$clone" 2>/dev/null)" ]; then
