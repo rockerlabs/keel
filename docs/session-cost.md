@@ -158,7 +158,12 @@ which would make a review run by a subagent read as free.
   line, plus every subagent in the window whose parent chain reaches one (the `code-review` skill's fork
   and its children). It is zero where no review subagent ran.
 
-`--json` prints one object per window per line: `session`, `start`, `end`, `status`, `opened_by` (`skill` or `init`), `primary_turns`,
+The human form ends each session with one coverage line when it holds a successful `gh pr create`:
+`coverage: <session> pr-create=<n> closed-windows=<m> outside-any-window=<k>`, followed by the URL of each of
+the k PRs no closed window accounts for (dir #737) — a PR created with no window around it would otherwise
+vanish from the output without a trace. `--json` stays one object per window and carries no coverage line.
+
+`--json` prints one object per window per line: `session`, `start`, `end`, `status`, `closed_by` (the closing turn's request id, null on an open window), `opened_by` (`skill` or `init`), `primary_turns`,
 `subagent_turns`, `cost`, `review_cost` and a `subagents` array (`agent_id`, `parent_agent_id`, `depth`,
 `first_line`, `turns`, `cost`, `review`). Over the ten sessions behind 0.13.0's slate PRs it finds 11
 closed windows with a median of 5,620,765 cache-read tokens (about 5.62M), the baseline dir #670's value
