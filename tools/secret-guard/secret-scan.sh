@@ -278,6 +278,9 @@ fi
 # set -u.
 rec_path=(); rec_where=(); rec_text=(); rec_blob=(); rec_msg=()
 cur_blob=""
+# --tracked reads several stages of one unmerged path: a hit line they share is recorded once — set to the first
+# record index of that path, empty otherwise
+rec_dedupe_from=""
 
 # a file (or blob) is binary if it contains a NUL byte
 is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
@@ -368,7 +371,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
 # never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
 collect_matches() {
-  local label="$1" path="${1//$'\n'/\\n}" f="$2" flags="$3" msg="${5:-}" m="$SCRATCH/matches" hit="" where
+  local label="$1" path="${1//$'\n'/\\n}" f="$2" flags="$3" msg="${5:-}" m="$SCRATCH/matches" hit="" where seen di
   match_text "$flags" "$f" "${4:-}" > "$m" || _fail_closed "match '$label'" $?
   while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
     [ -n "$hit" ] || continue
@@ -377,12 +380,20 @@ collect_matches() {
       -n) where="${hit%%:*}"; hit="${hit#*:}" ;;
       -o) where="(binary)" ;;
     esac
+    if [ -n "$rec_dedupe_from" ]; then
+      seen=""; di="$rec_dedupe_from"
+      while [ "$di" -lt "${#rec_path[@]}" ]; do
+        [ "${rec_where[$di]}" = "$where" ] && [ "${rec_text[$di]}" = "$hit" ] && { seen=1; break; }
+        di=$((di + 1))
+      done
+      [ -z "$seen" ] || continue
+    fi
     rec_path+=("$path"); rec_where+=("$where"); rec_text+=("$hit"); rec_blob+=("$cur_blob"); rec_msg+=("$msg")
   done < "$m"
 }
 
 # decode binary bytes on stdin (NUL-strip + optional iconv UTF-16LE/BE + raw-printable), match both
-# classes, and emit "label:(binary) MATCH" records. The decode recipe is deliberately duplicated in
+# classes, and record each `-o` match as a binary hit of the label. The decode recipe is deliberately duplicated in
 # public-audit.sh scan_binary_blobs() (each tool stands alone) — keep the two in sync (pinned by
 # tests/test_secret_guard.sh, dir #681).
 #
@@ -542,7 +553,7 @@ _impact_log_path_inline() {
 }
 _impact_claim_key_inline() { git -C "${1:-.}" rev-parse --show-toplevel 2>/dev/null || true; }  # fail-open-ok: impact-log metadata
 
-# scan the added lines of one file's diff, emitting path-aware "path:content" records. No line number:
+# scan the added lines of one file's diff, recording each hit's line under the path. No line number:
 # the diff has already been reduced to a bare added-lines stream, so `grep -n` would number that stream,
 # not the file — a misleading figure. The path + matched content is what's actionable.
 emit_diff() {
@@ -985,53 +996,53 @@ case "$mode" in
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
     # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
     # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
-    # not. An unmerged path is listed once per stage and read once — from the working tree when it is there; when
-    # it is not, from its first non-gitlink stage's index copy only (spec 746's stated limit; the conflict blocks a
-    # commit anyway), and a WARN names the stage read.
+    # not. A working-tree symlink is read as a symlink only for a tracked symlink (mode 120000); a tracked file
+    # replaced by one is "not a regular file" and read from the index. An unmerged path is listed once per stage:
+    # read once from the working tree when it is there; when it is not, every distinct non-gitlink stage's index
+    # copy is read — a key may sit in "ours" or "theirs" alone — and a hit line the stages share is kept once.
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    tab=$'\t'; prev=""; prev_idx=""; sparse=0
+    tab=$'\t'; prev=""; staged_shas=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
       thdr="${rec%%"$tab"*}"                        # `<tag> <mode> <sha> <stage>`: fixed fields, no spaces inside
       ttag="${thdr%% *}"; thdr="${thdr#* }"; tmode="${thdr%% *}"; thdr="${thdr#* }"; tsha="${thdr%% *}"
-      tstage="${thdr#* }"
       [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
       if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
-        if [ -n "$prev_idx" ]; then
-          echo "secret-scan: WARN unmerged, only stage $prev_idx was scanned: $fesc" >&2
-          prev_idx=""
-        fi
-        continue
-      fi
-      prev="$f"; prev_idx=""; fesc="${f//$'\n'/\\n}"
-      why=""
-      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
-        sparse=$((sparse + 1))
-      elif [ -L "$top/$f" ]; then
-        # a tracked symlink's committed content IS its target string — scan that (it can carry a
-        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-        # readlink read as an empty target, i.e. `clean` (dir #715).
-        target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
-        emit_stream "$f" <<< "$target"
-        continue
-      elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
-        emit_stream "$f" < "$top/$f"
-        continue
-      elif [ -f "$top/$f" ]; then
-        why="unreadable"
-      elif [ ! -e "$top/$f" ]; then
-        why="missing from the working tree"
+        [ -n "$staged_shas" ] || continue           # ...read from the working tree already
+        case "$staged_shas" in *" $tsha "*) continue ;; esac
       else
-        why="not a regular file in the working tree"
+        prev="$f"; staged_shas=""; rec_dedupe_from=""; fesc="${f//$'\n'/\\n}"
+        why=""
+        if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
+          sparse=$((sparse + 1))
+        elif [ -L "$top/$f" ] && [ "$tmode" = 120000 ]; then
+          # a tracked symlink's committed content IS its target string — scan that (it can carry a
+          # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
+          # readlink read as an empty target, i.e. `clean` (dir #715).
+          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+          emit_stream "$f" <<< "$target"
+          continue
+        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+          emit_stream "$f" < "$top/$f"
+          continue
+        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
+          why="unreadable"
+        elif [ ! -L "$top/$f" ] && [ ! -e "$top/$f" ]; then
+          why="missing from the working tree"
+        else
+          why="not a regular file in the working tree"
+        fi
+        [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
+        staged_shas=" "; rec_dedupe_from="${#rec_path[@]}"
       fi
-      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
-      prev_idx="$tstage"                            # the stage read, named if a later one is skipped
+      staged_shas+="$tsha "
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
     done < "$tlist"
+    rec_dedupe_from=""
     [ "$sparse" -eq 0 ] || echo "secret-scan: WARN $sparse skip-worktree file(s) scanned from the index" >&2
     ;;
   --selftest)

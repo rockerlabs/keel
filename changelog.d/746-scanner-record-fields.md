@@ -9,6 +9,6 @@
   WARN, a deleted one silently — and the run reported clean; it now scans that file's index copy, with one WARN
   line naming why, and so does an absent sparse-checkout (skip-worktree) entry, counted in one summary line. It
   exits 2 only when git cannot read the index copy (dir #746). A mid-merge (unmerged) file the working tree
-  cannot give is read from one stage only (its first that is not a submodule), and a WARN names that stage.
+  cannot give is read from each of its stages, and a tracked file replaced by a symlink from its index copy.
   Printed hit lines are unchanged. Upgrading: an ERE allowlist entry now matches the line's content only; use
   `path:` for a path.
