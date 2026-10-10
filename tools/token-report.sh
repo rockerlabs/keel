@@ -521,7 +521,9 @@ _tr_context() {
       why="ambiguous transcript"
     else
       turns="$(tu_turns primary "$hits" 2>/dev/null || true)"
-      n="$(jq -r -s 'last // empty | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) | floor | tostring' <<<"$turns" 2>/dev/null || true)"
+      # A turn whose three counters sum to 0 (an interrupted or synthetic stub) carries no context: skipped, so a
+      # stub at the end of a big session cannot read as N=0 and hide the stop.
+      n="$(jq -r -s 'map(.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens | floor | select(. > 0)) | last // empty | tostring' <<<"$turns" 2>/dev/null || true)"
       [[ "$n" =~ ^[0-9]+$ ]] || { n=""; why="no usage turn"; }
     fi
   fi

@@ -48,11 +48,11 @@ The number is `input + cache_read + cache_creation` tokens of the **last** turn 
 `$CLAUDE_CODE_SESSION_ID` (never the largest turn, never the newest file — a compacted session's last turn is small
 again, and a wrong file would stop a run for nothing). The verdict is `compact` when that number reaches the
 threshold. A session id that is unset, not on disk, ambiguous, a missing `jq`, or a transcript with no usage turn
-prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't know", never a guess. `--context`
+prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't know", never a guess (and a malformed threshold, exit 2 with no line, is not `compact` either: `/polish` continues). `--context`
 takes no other option. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
 can send `/compact`; see the guide's § Step 1 "Compaction stop".
 
-Two things were checked when this was built. On the desktop app (entrypoint `claude-desktop`), `CLAUDE_CODE_SESSION_ID`
+One thing was checked when this was built. On the desktop app (entrypoint `claude-desktop`), `CLAUDE_CODE_SESSION_ID`
 is the transcript's own file name. Not yet checked: whether the terminal `claude` CLI sets it the same way, and whether it
 follows the new transcript after the conversation is cleared — a stale id there would cost one spurious stop, which the operator declines
 (the guide's clause (g)). If the id is absent, the line is `unknown` and the run continues.
