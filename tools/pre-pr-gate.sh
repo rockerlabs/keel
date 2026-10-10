@@ -1892,11 +1892,11 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
     c = ch[pos]
     if (index(" \t\n;&|<>()", c)) break
     got = 1
-    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; if (pos < lim) pos++; continue }
+    if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
-      if (pos < lim) pos++; continue
+      pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
     if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == "{")) {

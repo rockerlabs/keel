@@ -196,7 +196,6 @@ L227	tools/pre-pr-gate.sh	  pos = e; close_cmd(); pos = e + 1	  pos = e; close_c
 L228	tools/pre-pr-gate.sh	clim[sp] = bstop; if (bstop < lim) lim = bstop	clim[sp] = n + 1	B8: an expanding body ends at its delimiter line
 L229	tools/pre-pr-gate.sh	L <= nlines && lstart[L] < lim; L++	L <= nlines; L++	B8: the body scan stops at its BQ’s end
 L230	tools/pre-pr-gate.sh	(lim <= n) ? lim - 1 : n, "heredoc "	n, "heredoc "	B10(b): a body clamped at its BQ’s end ends its region there
-L231	tools/pre-pr-gate.sh	d = d ch[pos++]; if (pos < lim) pos++; continue }	d = d ch[pos++]; pos++; continue }	B8: an unclosed delimiter quote stops at the limit
 L232	tools/pre-pr-gate.sh	function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }	function pop_ctx() { flushrun(); sp--; restack() }	B2: a closed context’s end no longer bounds the reads after it
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
