@@ -734,9 +734,10 @@ inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # KEEL_TEST_PAUSE_MARKER) to touch "$MARKER.ready"; 0 once it has. Bounded by KEEL_TEST_HANG_BOUND (dir #744
 # B31: a literal bound fails slow-but-finishing runs under load), polled every 0.1s like install.sh's own
 # pause loop. With PID, the wait ends early once that process is gone (an install that fails before its
-# checkpoint costs one poll, not the whole bound).
+# checkpoint costs one poll, not the whole bound). `10#`: the normalizer above keeps a leading zero, and a
+# bare `08` in `$(( ))` is an invalid octal number.
 wait_ready() {
-  local n=0 max=$(( ${KEEL_TEST_HANG_BOUND:-120} * 10 ))
+  local n=0 max=$(( 10#${KEEL_TEST_HANG_BOUND:-120} * 10 ))
   while [ ! -e "$1.ready" ] && [ "$n" -lt "$max" ]; do
     if [ -n "${2:-}" ] && ! kill -0 "$2" 2>/dev/null; then break; fi
     sleep 0.1; n=$((n + 1))

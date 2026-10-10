@@ -37,6 +37,7 @@ for row in "install copy|$ck/install.sh --no-hooks|$ck" \
            "install into docs/|$ck/install.sh --no-hooks|$ck/docs" \
            "install into a home still to be made|$ck/install.sh --no-hooks|$ck/not-yet" \
            "install through a symlinked parent|$ck/install.sh --no-hooks|$SANDBOX/a39-parent/ck-link/docs" \
+           "install into a home still to be made that climbs back with ..|$ck/install.sh --no-hooks|$SANDBOX/a39-nx/../ck/dd" \
            "uninstall|$ck/uninstall.sh --yes|$ck"; do
   label="${row%%|*}"; rest="${row#*|}"; cmd="${rest%%|*}"; home="${rest#*|}"
   before="$(find "$home" -mindepth 1 2>/dev/null | sort)"
