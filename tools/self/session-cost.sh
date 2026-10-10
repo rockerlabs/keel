@@ -306,12 +306,12 @@ _sc_tail_agent_row() {
 }
 
 # _sc_tail_pr_results — stdin: tu_tool_results lines; stdout: one {tool_use_id, url} per NON-error result whose
-# text names a github.com/<owner>/<repo>/pull/<n> URL (the first). The window walk needs only the id (the url feeds
+# text names a github.com/<owner>/<repo>/pull/<n> URL (the LAST: `gh pr create` prints the new PR's URL as its final line, after any warning). The window walk needs only the id (the url feeds
 # _sc_tail_coverage), nothing else from a result,
 # and result bodies are the bulk of a transcript, so they are dropped here rather than carried along.
 _sc_tail_pr_results() {
   jq -c 'select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+")))
-         | {tool_use_id, url: (.text | capture("(?<u>https://github\\.com/[^ \"\\\\]+/pull/[0-9]+)").u)}'
+         | {tool_use_id, url: ([.text | scan("https://github\\.com/[^ \"\\\\]+/pull/[0-9]+")] | last)}'
 }
 
 # _sc_tail_init_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per result (error or not: an
@@ -392,8 +392,12 @@ _sc_tail_coverage() {
     | ($closed | map(.closed_by) | map(select(. != null))) as $closers
     | [$calls[] | select(.name == "Bash" and ((.command // "") | contains("gh pr create")) and ($url[.id] != null))] as $made
     | select(($made | length) > 0)
-    | [$made[] | select(.requestId as $q | ($closers | index($q)) == null)] as $lost
-    | "coverage: \($session[0:8]) pr-create=\($made | length) closed-windows=\($closed | length) outside-any-window=\($lost | length)"
+    # One closing turn closes one window: of several PRs created on the same turn, only the first is covered.
+    | (reduce $made[] as $c ({seen: {}, lost: []};
+        ($c.requestId // "") as $q
+        | if (($closers | index($q)) != null) and (.seen[$q] | not) then .seen[$q] = true
+          else .lost += [$c] end) | .lost) as $lost
+    | "coverage: \($session) pr-create=\($made | length) closed-windows=\($closed | length) outside-any-window=\($lost | length)"
       + ([$lost[] | " " + $url[.id]] | join(""))
   '
 }

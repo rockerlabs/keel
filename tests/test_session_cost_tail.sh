@@ -569,9 +569,30 @@ check_status "(737) tail with a PR outside any window exits 0" "0" "$STATUS"
 check_eq "(737) exactly one coverage line" "1" "$(printf '%s\n' "$OUT" | grep -c '^coverage:')"
 check_contains "(737) the line counts both successful PRs (the denied one is not a PR) and the one closed window" "$OUT" "pr-create=2 closed-windows=1 outside-any-window=1"
 check_contains "(737) the line names the PR outside any window" "$OUT" "$PRURL2"
-check_absent "(737) the covered PR is not named as lost" "$OUT" "outside-any-window=1 $PRURL "
+check_absent "(737) the covered PR is not named anywhere in the output" "$OUT" "$PRURL"
+check_contains "(737) the line carries the full session id" "$OUT" "coverage: $SESS_ID "
 tail_json
 check_absent "(737) --json stays one object per window: no coverage line" "$OUT" "coverage:"
+
+mk_session covpar
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:05:00 polish b1 200 "$(jq -nc --arg u1 'gh pr create --title a' --arg u2 'gh pr create --title b' '[{type:"tool_use",id:"toolu_a",name:"Bash",input:{command:$u1}},{type:"tool_use",id:"toolu_b",name:"Bash",input:{command:$u2}}]')"
+  rec_result 10:05:05 toolu_a false "$PRURL"
+  rec_result 10:05:06 toolu_b false "$PRURL2"
+} > "$SF"
+run bash "$tool" tail "$SF"
+check_contains "(737) two PRs on one closing turn: one window, so one is outside any window" "$OUT" "pr-create=2 closed-windows=1 outside-any-window=1"
+
+mk_session covwarn
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 11:00:00 "" b2 200 "$(bash_use toolu_a 'gh pr create --title orphan')"
+  rec_result 11:00:05 toolu_a false "warning: see $PRURL for the template
+$PRURL2"
+} > "$SF"
+run bash "$tool" tail "$SF"
+check_contains "(737) a result quoting another PR first: the LAST URL (the new PR) is named" "$OUT" "outside-any-window=1 $PRURL2"
 
 mk_session covok
 {
