@@ -534,12 +534,6 @@ SHIM
       log_content="${log_content%x}"
       printf '\n=== %s%s ===\n' "${active_files[$i]}" "${termed:+ (timed out after ${file_timeout}s)}"
       printf '%s' "$log_content"
-      if [ -n "$termed" ]; then
-        # B10: one failure, counted here and nowhere else (the rc check below is skipped for it).
-        failed=$((failed + 1))
-        reaped=$((reaped + 1))
-        continue
-      fi
       # dir #627, second fail-open: a test file calling an assertion lib.sh does not define loses that
       # assertion SILENTLY (bash prints its own "command not found" and, under lib.sh's `set -uo
       # pipefail` with no `-e`, keeps going) — the file can still exit 0 with fewer checks than it meant
@@ -555,7 +549,10 @@ SHIM
       # alternatives, no subprocess: mid-content (followed by a newline) or the very last line (string
       # end, no trailing newline). Only escalates an otherwise-green ($rc -eq 0) file: one that already
       # failed is already counted below.
-      if [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
+      # B10: a timed-out file is one failure, through the same count as any other.
+      if [ -n "$termed" ]; then
+        rc=1
+      elif [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
         printf '!!! %s exited 0 but its log shows "command not found" — an unknown assertion likely vanished silently (dir #627)\n' "${active_files[$i]}"
         rc=1
       fi

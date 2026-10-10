@@ -424,7 +424,7 @@ ref_guard_arm "$REPO_ROOT"
 # writer. Two command-scope entries turn it off for every git process this test spawns. APPENDED to the
 # GIT_CONFIG_COUNT/KEY/VALUE triple, never overwritten (CLAUDE.md Linux trap 4's note): an entry a parent
 # exported — a parent test's guard, a CI step's triple — survives this file. fresh_home_env replaces only
-# HOME and GIT_CONFIG_GLOBAL, so these survive it too. Self-contained (siblings add single lines here).
+# HOME and GIT_CONFIG_GLOBAL, so these survive it too.
 _maint_n="${GIT_CONFIG_COUNT:-0}"
 case "$_maint_n" in
   (*[!0-9]*|??????????*)

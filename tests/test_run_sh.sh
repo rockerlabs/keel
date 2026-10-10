@@ -101,19 +101,19 @@ mk_peak_fixtures() {
     cat > "$d/test_peak$i.sh" <<FIX
 #!/usr/bin/env bash
 d="\$(cd "\$(dirname "\$0")" && pwd)"
-count() { set -- "\$d/\$1"/*; [ -e "\$1" ] || { echo 0; return; }; echo \$#; }
+count() { set -- "\$d/\$1"/*; if [ -e "\$1" ]; then c=\$#; else c=0; fi; }
 : > "\$d/live/\$\$"
 peak=0
 w=0
 while :; do
-  l="\$(count live)"; dn="\$(count done)"
+  count live; l="\$c"; count done; dn="\$c"
   [ "\$l" -gt "\$peak" ] && peak="\$l"
   { [ "\$l" -ge $barrier ] || [ \$((l + dn)) -ge $n ] || [ "\$w" -ge 200 ]; } && break
   sleep 0.1; w=\$((w + 1))
 done
 h=0
 while [ "\$h" -lt 20 ]; do
-  l="\$(count live)"; [ "\$l" -gt "\$peak" ] && peak="\$l"
+  count live; l="\$c"; [ "\$l" -gt "\$peak" ] && peak="\$l"
   sleep 0.1; h=\$((h + 1))
 done
 echo "\$peak" >> "\$d/peaks"
@@ -290,7 +290,7 @@ if [ "$s1_count" = 2 ]; then
   fi
 fi
 order="$(grep -nE '^residue gate|^slowest test files:|TEST FILE\(S\) FAILED$' <<< "$OUT" | cut -d: -f1 | tr '\n' ' ')"
-r_line="$(cut -d' ' -f1 <<< "$order")"; s_line="$(cut -d' ' -f2 <<< "$order")"; v_line="$(cut -d' ' -f3 <<< "$order")"
+read -r r_line s_line v_line <<< "$order"
 if [ "$r_line" -lt "$s_line" ] && [ "$s_line" -lt "$v_line" ]; then
   pass "slowest block: after the residue-gate line, before the verdict"
 else

@@ -457,9 +457,7 @@ check_nofile "a malformed line before the marker turn does not defeat the exclus
 # regression, kept smaller here so this test itself stays fast) precede the marker.
 # Run in the BACKGROUND with a bounded poll, not `timeout` — this suite ships no timeout helper and
 # `timeout` is absent on macOS (tests/test_install.sh's own T14f note, same reasoning here): a naive
-# foreground call would hang the whole suite instead of failing this one test. That wait is only the HANG
-# guard (KEEL_TEST_HANG_BOUND, 120 s — far looser than the regression's ~25 s here); the regression itself
-# is detected by the jq launch COUNT below, which does not depend on the machine's load.
+# foreground call would hang the whole suite instead of failing this one test.
 d="$(mkrepo)"; rt_env manynoise
 feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
 tp="$SANDBOX/transcript.manynoise.jsonl"; : > "$tp"
