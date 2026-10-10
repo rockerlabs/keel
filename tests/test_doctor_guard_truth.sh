@@ -84,6 +84,15 @@ mv "$r_dl/.git/hooks/pre-push" "$r_dl/.git/hooks/pre-push.away"
 ln -s "$SANDBOX/no-such-prepush-target" "$r_dl/.git/hooks/pre-push"
 run genv "$doctor" "$r_dl"
 check_contains "D1-3: a dangling pre-push link beside a working pre-commit → half wired" "$(id_line W-GUARD-UNWIRED)" "dangling link"
+rm -f "$r_dl/.git/hooks/pre-push"
+run genv "$isg" "$r_dl"
+run genv "$doctor" "$r_dl"
+check_absent "D1-3: ...removing the link and re-vendoring (the advice) clears the warning" "$OUT" "[W-GUARD-UNWIRED]"
+
+# an empty hooksPath supplied by the ENVIRONMENT (git -c / GIT_CONFIG_COUNT) has no file line to remove
+mk_home cmd; r_cmd="$(mk_repo)"
+run genv GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0= "$doctor" "$r_cmd"
+check_contains "S3-5: a command-scope empty hooksPath → W-GUARD-UNWIRED with environment advice" "$(id_line W-GUARD-UNWIRED)" "comes from this environment"
 
 # --- S3-1: the prune list applies below the audited root -----------------------------------------------------------
 for nm in build target; do   # the prune list is one name set, the fix is name-independent: two representatives

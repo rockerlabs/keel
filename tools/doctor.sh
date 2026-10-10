@@ -593,7 +593,7 @@ guard_push_gap() {
   guard_gap=""
   [ "$keeldir" = 1 ] || [ "${pc#keel}" != "$pc" ] || return 0
   # a link whose target is gone is no hook at all: git skips it (the producer's state says only "-link")
-  case "$pp" in *-link) [ -e "$dir/pre-push" ] || { guard_gap="Keel's pre-push at $dir/pre-push is a dangling link (git skips it, so a commit made with hooks bypassed would reach the remote unscanned)"; return 0; } ;; esac
+  case "$pp" in *-link) [ -e "$dir/pre-push" ] || { guard_gap="pre-push at $dir/pre-push is a dangling link (git skips it, so a commit made with hooks bypassed would reach the remote unscanned; the installer will not write through a link — remove it first)"; return 0; } ;; esac
   case "$pp" in
     absent) guard_gap="Keel's pre-push is absent from $dir (a commit made with hooks bypassed would reach the remote unscanned)" ;;
     keel*) [ -x "$dir/pre-push" ] || guard_gap="Keel's pre-push at $dir/pre-push is not executable (git skips it, so a commit made with hooks bypassed would reach the remote unscanned)" ;;

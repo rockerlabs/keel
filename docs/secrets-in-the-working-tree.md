@@ -228,7 +228,7 @@ a fresh clone warns again until you recreate it.
   directories included, and a project whose own root directory has one of those names is scanned like any other.
   `.envrc` (direnv) is not env-shaped: it is committed by design and holds no values. The `.gitignore` recipe and the
   Read deny globs above name `.env`, `.env.*` and `*.env` only: a `*.env.bak`-style backup is reported but neither rule
-  covers it, so ignore or remove such a file by its own name (or list its exact path in `.keel/secrets-accept`).
+  covers it, so ignore or remove such a file by its own name — the other backup forms (`.old`, `.orig`, `.save`, `.backup`, `*.env~`) are in the same position.
 - **Names, not content.** `doctor` checks file names and git state, never what a file holds — a secret in
   a file with an ordinary name is invisible to it.
 - **Read deny covers Read only.** The deny globs stop the Read tool; shell verbs such as `cat` stay open,
