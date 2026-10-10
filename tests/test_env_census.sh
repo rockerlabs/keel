@@ -27,6 +27,9 @@
 # switch — those are the suite's own knobs, not tool reads), a non-KEEL_ name read bare under a name that is
 # not credential-shaped and never default-expanded (`$FOO_BIN`, `[ -n "$FOO_BIN" ]`, `${FOO_BIN%/}`,
 # `${FOO_BIN:0:3}`), or an indirect read (`${!v}`).
+# Ownership is a line-level approximation: the value word of an assignment is scanned for a read-back of the same
+# name, tracking quotes and `$( … )` depth, but not backslash-escaped quotes, backtick substitutions or `$(( … ))`
+# arithmetic (`X=$((X+1))`) — a self-read in one of those rare shapes is taken as ownership and slips through.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
