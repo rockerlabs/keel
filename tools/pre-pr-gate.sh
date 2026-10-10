@@ -1910,14 +1910,13 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
     c = ch[pos]
     if (index(" \t\n;&|<>()", c)) break
     got = 1
-    # a substitution in the delimiter (`<<$(…)`, `<<${…}`, a backtick, bare or in double quotes): where it ends the
-    # shells decide by a reading of their own, so it is a region, and the word is read again as an ordinary word
-    if (subst_at(pos)) { region(op, n, "substitution in a heredoc delimiter", rseg(segbeg[s])); pos = w; return }
+    # what this reader does not model (delim_odd) is a region, and the lexer reads the word again as the target
+    if (delim_odd(pos, 0)) { delim_redo(s, op, w); return }
     if (c == "\047") { quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++; d = d substr(src, r, pos - r); pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") {
-        if (subst_at(pos)) { region(op, n, "substitution in a heredoc delimiter", rseg(segbeg[s])); pos = w; return }
+        if (delim_odd(pos, 1)) { delim_redo(s, op, w); return }
         if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) { d = d ch[pos + 1]; pos += 2; continue }
         r = pos++; while (pos < lim && !index("\"\\$`", ch[pos])) pos++
         d = d substr(src, r, pos - r)
@@ -1932,7 +1931,14 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
   if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
   k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
 }
-function subst_at(p) { return ch[p] == "`" || (ch[p] == "$" && (ch[p + 1] == "(" || ch[p + 1] == "{")) }
+# delim_odd(p, dq) — a delimiter character whose reading this reader does not model: a substitution (`$(`, `${`,
+# `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or any backslash
+# inside backticks (the shells unescape the backticks first)
+function delim_odd(p, dq) {
+  if (ch[p] == "`" || (ch[p] == "\\" && (ch[p + 1] == "\n" || bq_open()))) return 1
+  return ch[p] == "$" && ch[p + 1] != "" && index(dq ? "({[" : "({[\047\"", ch[p + 1]) > 0
+}
+function delim_redo(s, op, w) { region(op, n, "substitution or escape in a heredoc delimiter", rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }
 
 # start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
 # order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.
