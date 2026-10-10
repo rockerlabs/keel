@@ -545,7 +545,7 @@ fi
 # an empty count as UNKNOWN and refuses, which is the fail-closed direction: a checkout too broken to carry
 # tools/ is not one to auto-refresh an adopter's files from.
 
-# artifact-cksum (dir #362) — REQUIRED, not optional, unlike manifest.sh and stat-portable above: its output
+# artifact-cksum (dir #362) — REQUIRED, not optional, unlike stat-portable above: its output
 # (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
 # which uninstall.sh later trusts for a destructive (removal) decision. A same-shape "degrade and
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
