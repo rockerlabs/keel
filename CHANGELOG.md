@@ -83,6 +83,12 @@ sections real content going forward — see that page for exactly when each one 
   `--global` refuses it without `--force`, `--force` records and `--uninstall` restores the empty value, and a
   `hooksPath` with no value at all is refused; `--where` gains `set=1|0` and `install.sh` reads it. Also dir #748
   S4-2 (a stale comment) and S4-3 (a pin for `/` in `git-global-paths.sh`).
+- **`/go` step 4 now says what to do about a ticket another worktree has checked out.** dir #696: git refuses a
+  second checkout of a branch, so "offer to continue it" had no mechanism and step 5 then adopted an empty fresh
+  branch as the ticket's. Step 4 finds the checkout with `worktree list --porcelain`, reports its path and
+  uncommitted-file count, and offers resume there (writing and claiming nothing), a fresh branch, or another
+  ticket; a deleted or moved directory is offered `git worktree remove <path>`. The implementer guide's handoff-note
+  step points at that offer once per session instead of restating a variant of it.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

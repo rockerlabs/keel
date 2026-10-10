@@ -89,6 +89,8 @@ needle_rules=(
   "GUIDE8 report field"
   "GUIDE4 old item 3 kept"
   "GUIDE4 old item 4 kept"
+  "dir #696 B9: I1 item 0 points at step 4's offer"
+  "dir #696 B9: the offer is made once per session"
 )
 needle_texts=(
   "\`go.md\` wins"
@@ -114,6 +116,8 @@ needle_texts=(
   "Seams: <none | skipped — why | fixed <n>, escape <n>, unchecked <n>>"
   "you wrote down in I1. Red"
   "Run the project's full test command"
+  "step 4's offer"
+  "unless step 4 already did"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
@@ -123,6 +127,15 @@ while [ "$i" -lt "${#needle_rules[@]}" ]; do
     "missing needle for $rule in $guide_md"
   i=$((i + 1))
 done
+
+# dir #696 A8: the guide no longer restates step 4's offer, and no longer offers work-by-absolute-path from a
+# second session (two writers on one tree); the retired variant must not come back.
+if grep -qF -- 'continue there (absolute paths' "$guide_md"; then
+  fail "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'" \
+    "found the retired offer in $guide_md"
+else
+  pass "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'"
+fi
 
 # --- (g) I4's items are numbered 1-4 in order, Seams is item 2 (dir #668 B1) -------------------------
 # A numbering slip (Seams as item 4, an old item lost, a duplicate number) passes every needle above.
@@ -462,5 +475,22 @@ h9_copy="$(scratch_copy "$guide_md" go-guide.md)"
 append_line "$h9_copy" "**I9 — extra.** A ninth action."
 assert_case_turns_red "(h) wiring mutation: a ninth label" \
   "(h) exactly eight **I<n> — ** action labels (no I0, no I9)" "KEEL_GO_GUIDE_MD=$h9_copy"
+
+# (f) needle — dir #696's two I1-item-0 clauses (spec 690 B9, A8), each shown red by its own mutation.
+b9a_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$b9a_copy" "step 4's offer" "make step 4's offer" "ask the operator"
+assert_case_turns_red "(f) needle mutation: dir #696 B9-a pointer to step 4's offer removed" \
+  "(f) needle [dir #696 B9: I1 item 0 points at step 4's offer]: 'step 4's offer' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$b9a_copy"
+b9b_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$b9b_copy" "unless step 4 already did" ", unless step 4 already did" ""
+assert_case_turns_red "(f) needle mutation: dir #696 B9-b once-per-session clause removed" \
+  "(f) needle [dir #696 B9: the offer is made once per session]: 'unless step 4 already did' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$b9b_copy"
+b9c_copy="$(scratch_copy "$guide_md" go-guide.md)"
+append_line "$b9c_copy" "continue there (absolute paths, git -C)"
+assert_case_turns_red "(f) mutation: dir #696 retired absolute-path offer re-added" \
+  "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'" \
+  "KEEL_GO_GUIDE_MD=$b9c_copy"
 
 summary
