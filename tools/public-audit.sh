@@ -199,40 +199,68 @@ pa_sanitize() {
   { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null && pa_u8="$u8"
   return 0
 }
-# pa_token_first STEP TOKEN FILE — pa_hit = the first line of FILE a declared token matches, or empty; 1 when
-# the grep itself failed. A token is a user ERE and may be non-ASCII: one pass under LC_ALL=C (every byte),
-# plus — when the token holds a non-ASCII byte — one in the caller's locale over the sanitized copy. Both
-# are case-sensitive, as tokens are.
-pa_token_first() {
-  local step="$1" t="$2" f="$3"
+# pa_grep2 STEP USE_U FILE GREP-ARGS… — pa_hit = the first line of FILE that `grep GREP-ARGS -- FILE` selects,
+# or empty; 1 when a grep itself failed. Pass C reads every byte under LC_ALL=C. Pass U (only when USE_U is
+# non-empty) runs in the caller's locale over the sanitized copy, where a non-ASCII literal still folds and
+# matches after an invalid byte; it runs only when pass C found nothing.
+pa_grep2() {
+  local step="$1" use_u="$2" f="$3"
+  shift 3
   pa_hit=""
-  pa_match "$step" "$audit_tmp/tok.c" pa_c grep -aE -e "$t" -- "$f" || return 1
-  pa_first "$audit_tmp/tok.c"; pa_hit="$pa_line"
-  [ -n "$pa_hit" ] && return 0
-  case "$t" in *[![:ascii:]]*) ;; *) return 0 ;; esac
-  pa_sanitize "$f"
-  pa_match "$step" "$audit_tmp/tok.u" grep -aE -e "$t" -- "$pa_u8" || return 1
-  pa_first "$audit_tmp/tok.u"; pa_hit="$pa_line"
+  pa_match "$step" "$audit_tmp/g2.c" pa_c grep "$@" -- "$f" || return 1
+  pa_first "$audit_tmp/g2.c"; pa_hit="$pa_line"
+  if [ -z "$pa_hit" ] && [ -n "$use_u" ]; then
+    pa_sanitize "$f"
+    pa_match "$step" "$audit_tmp/g2.u" grep "$@" -- "$pa_u8" || return 1
+    pa_first "$audit_tmp/g2.u"; pa_hit="$pa_line"
+  fi
   return 0
+}
+# pa_token_first STEP TOKEN FILE — pa_hit = the first line of FILE a declared token matches. A token is a user
+# ERE and may be non-ASCII: its caller-locale pass runs when the token holds a non-ASCII byte. Case-sensitive.
+pa_token_first() {
+  local use_u=""
+  case "$2" in *[![:ascii:]]*) use_u=1 ;; esac
+  pa_grep2 "$1" "$use_u" "$3" -aE -e "$2"
 }
 # pa_personal_first STEP FLAGS FILE — pa_hit = the first line of FILE a personal literal matches (FLAGS is the
-# grep flag cluster, e.g. -aoiE), or empty; 1 when the grep failed. Pass C: every byte, ASCII case-folded.
-# Pass U (only when $decode_nonascii — a literal or a token holds a non-ASCII byte): the caller's locale over
-# the sanitized copy, which folds non-ASCII case. The caller checks $has_personal first.
-pa_personal_first() {
-  local step="$1" flags="$2" f="$3"
-  pa_hit=""
-  pa_match "$step" "$audit_tmp/per.c" pa_c grep "$flags" -f "$personal_pat" -- "$f" || return 1
-  pa_first "$audit_tmp/per.c"; pa_hit="$pa_line"
-  [ -n "$pa_hit" ] && return 0
-  [ -n "$decode_nonascii" ] || return 0
-  pa_sanitize "$f"
-  pa_match "$step" "$audit_tmp/per.u" grep "$flags" -f "$personal_pat" -- "$pa_u8" || return 1
-  pa_first "$audit_tmp/per.u"; pa_hit="$pa_line"
+# grep flag cluster, e.g. -aoiE). Pass U runs when $decode_nonascii. The caller checks $has_personal first.
+pa_personal_first() { pa_grep2 "$1" "$decode_nonascii" "$3" "$2" -f "$personal_pat"; }
+# pa_report LEVEL STEP OUT TEXT CMD… — run CMD (exit 1 = no match); on a first output line, LEVEL "TEXT — e.g. LINE".
+pa_report() {
+  local level="$1" step="$2" out="$3" text="$4"
+  shift 4
+  pa_match "$step" "$out" "$@" || return 1
+  pa_first "$out"
+  [ -n "$pa_line" ] && "$level" "$text — e.g. $pa_line"
   return 0
 }
-# pa_tree STEP OUT PATTERN — git grep -nIE over the tracked tree (caller's locale: git grep is not affected).
-pa_tree() { pa_match "$1" "$2" git -C "$DIR" grep -nIE -e "$3" -- . "${excludes[@]}"; }
+# pa_report_email LEVEL STEP OUT TEXT FLAGS FILE — the two-stage email filter over a spool: EMAIL_RE, then the
+# lines no safe pattern covers.
+pa_report_email() {
+  local level="$1" step="$2" out="$3" text="$4" flags="$5" f="$6"
+  pa_match "$step" "$out.1" pa_c grep "$flags" -e "$EMAIL_RE" -- "$f" || return 1
+  pa_report "$level" "$step" "$out.2" "$text" pa_c grep -vE -e "$safe_re" -- "$out.1"
+}
+# pa_check_ids FILE LABEL SUFFIX — a GAP for each identity in FILE that no safe pattern covers.
+pa_check_ids() {
+  local e id_rc
+  while IFS= LC_ALL=C read -r e; do
+    [ -z "$e" ] && continue
+    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
+    # SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false GAP (dir #280).
+    id_rc=0
+    LC_ALL=C grep -qE -e "$safe_re" <<< "$e" || id_rc=$?
+    [ "$id_rc" -eq 0 ] && continue
+    if [ "$id_rc" -ge 2 ]; then
+      gap "could not match the identities in $2 (exit $id_rc) — the audit is INCOMPLETE"
+      return 1
+    fi
+    gap "non-public-safe identity in $2: $e$3"
+  done < "$1"
+}
+# pa_tree PATTERN — git grep -nIE over the tracked tree (caller's locale: git grep is not affected).
+pa_tree() { git -C "$DIR" grep -nIE -e "$1" -- . "${excludes[@]}"; }
 # pa_log_p ARGS… — `git log -p` for the content greps, NUL-stripped. --text/--no-textconv/--no-ext-diff: a
 # `-diff` attribute or a textconv driver otherwise replaces the bytes (a literal behind one reads 0 hits).
 # The NUL strip keeps `grep -I`-free greps reading a history that holds one NUL (a bash variable dropped it).
@@ -426,19 +454,19 @@ scan_binary_blobs() {  # $1 = label for messages; the rest = rev-list args (e.g.
       fi
     fi
     if [ -z "$hit_home" ]; then
-      pa_match "match home paths in $shown" "$audit_tmp/b.home" pa_c grep -aoE -e "$HOME_RE" "$dec" \
+      pa_match "match home paths in $shown" "$audit_tmp/b.home" pa_c grep -aoE -e "$HOME_RE" -- "$dec" \
         && { pa_first "$audit_tmp/b.home"; [ -n "$pa_line" ] && hit_home="$pa_line ($shown)"; }
     fi
     if [ -z "$hit_email" ]; then
-      pa_match "match emails in $shown" "$audit_tmp/b.em1" pa_c grep -aoE -e "$EMAIL_RE" "$dec" \
-        && pa_match "match emails in $shown" "$audit_tmp/b.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/b.em1" \
+      pa_match "match emails in $shown" "$audit_tmp/b.em1" pa_c grep -aoE -e "$EMAIL_RE" -- "$dec" \
+        && pa_match "match emails in $shown" "$audit_tmp/b.em2" pa_c grep -vE -e "$safe_re" -- "$audit_tmp/b.em1" \
         && { pa_first "$audit_tmp/b.em2"; [ -n "$pa_line" ] && hit_email="$pa_line ($shown)"; }
     fi
     if [ -z "$hit_cyr" ]; then
       # Require ≥4 CONSECUTIVE Cyrillic chars, unlike the single-pair text heuristic: the NUL-strip
       # and raw-printable views of compressed data (a gif, a zip) match an isolated
       # [\xd0-\xd3][\x80-\xbf] pair by chance hundreds of times per MB — a real name is a run.
-      pa_match "match Cyrillic in $shown" "$audit_tmp/b.cyr" pa_c grep -acE -e "(${cyr_pat}){4}" "$dec" \
+      pa_match "match Cyrillic in $shown" "$audit_tmp/b.cyr" pa_c grep -acE -e "(${cyr_pat}){4}" -- "$dec" \
         && { pa_first "$audit_tmp/b.cyr"; [ "${pa_line:-0}" -gt 0 ] && hit_cyr="$shown"; }
     fi
   done < "$list"
@@ -491,20 +519,7 @@ if [ "$NO_HISTORY" = 0 ]; then
   pa_read "read the commit identities" "$audit_tmp/ids.c" git -C "$DIR" log --all --format='%ae%n%ce' || ids_ok=0
   pa_read "read the tag identities" "$audit_tmp/ids.t" git -C "$DIR" for-each-ref --format='%(taggeremail)' refs/tags || ids_ok=0
   if [ "$ids_ok" = 1 ] && pa_read "sort the identities" "$audit_tmp/ids" pa_ids_merge "$audit_tmp/ids.c" "$audit_tmp/ids.t"; then
-    while IFS= LC_ALL=C read -r e; do
-      [ -z "$e" ] && continue
-      # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
-      # can be SIGPIPE'd by grep's own early exit on match, flipping a real "safe" match into a false
-      # GAP under load (dir #280) — the same class the pr_hist scan below (S2) already fixes.
-      id_rc=0
-      LC_ALL=C grep -qE -e "$safe_re" <<< "$e" || id_rc=$?
-      [ "$id_rc" -eq 0 ] && continue
-      if [ "$id_rc" -ge 2 ]; then
-        gap "could not match the commit identities (exit $id_rc) — the audit is INCOMPLETE"
-        break
-      fi
-      gap "non-public-safe identity in git history: $e"
-    done < "$audit_tmp/ids"
+    pa_check_ids "$audit_tmp/ids" "git history" ""
   fi
 fi
 
@@ -595,8 +610,7 @@ if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
   if [ "${#tokens[@]}" -gt 0 ]; then
     for t in "${tokens[@]}"; do
       [ -z "$t" ] && continue
-      pa_tree "search the tracked tree for /$t/" "$audit_tmp/tok.tree" "$t" \
-        && { pa_first "$audit_tmp/tok.tree"; [ -n "$pa_line" ] && gap "private token /$t/ in tracked tree — e.g. $pa_line"; }
+      pa_report gap "search the tracked tree for /$t/" "$audit_tmp/tok.tree" "private token /$t/ in tracked tree" pa_tree "$t"
       if [ "$NO_HISTORY" = 0 ]; then
         c=""; m=""
         pa_read "search the history for /$t/" "$audit_tmp/tok.g" git -C "$DIR" log --all --oneline --text --no-textconv --no-ext-diff -G"$t" \
@@ -616,39 +630,36 @@ fi
 
 # --- 2b. personal literals (local secret-scan-personal), in tree text (GAP) ----------------------
 if [ "$has_personal" = 1 ]; then
-  pa_match "search the tracked tree for the personal literals" "$audit_tmp/per.tree" git -C "$DIR" grep -inIE -f "$personal_pat" -- . "${excludes[@]}" \
-    && { pa_first "$audit_tmp/per.tree"; [ -n "$pa_line" ] && gap "personal literal (secret-scan-personal) in tracked tree — e.g. $pa_line"; }
+  pa_report gap "search the tracked tree for the personal literals" "$audit_tmp/per.tree" "personal literal (secret-scan-personal) in tracked tree" \
+    git -C "$DIR" grep -inIE -f "$personal_pat" -- . "${excludes[@]}"
 fi
 
 # --- 3. heuristic content scans (WARN) -----------------------------------------------------------
-pa_tree "search the tracked tree for home paths" "$audit_tmp/s3.home" "$HOME_RE" \
-  && { pa_first "$audit_tmp/s3.home"; [ -n "$pa_line" ] && warn "absolute home path in tracked tree — e.g. $pa_line"; }
+pa_report warn "search the tracked tree for home paths" "$audit_tmp/s3.home" "absolute home path in tracked tree" pa_tree "$HOME_RE"
 
-pa_tree "search the tracked tree for emails" "$audit_tmp/s3.em1" "$EMAIL_RE" \
-  && pa_match "match emails in the tracked tree" "$audit_tmp/s3.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/s3.em1" \
-  && { pa_first "$audit_tmp/s3.em2"; [ -n "$pa_line" ] && warn "email in tracked content — e.g. $pa_line"; }
+pa_match "search the tracked tree for emails" "$audit_tmp/s3.em1" pa_tree "$EMAIL_RE" \
+  && pa_report warn "match emails in the tracked tree" "$audit_tmp/s3.em2" "email in tracked content" pa_c grep -vE -e "$safe_re" -- "$audit_tmp/s3.em1"
 
 # Cyrillic via UTF-8 lead bytes (0xD0-0xD3) + a continuation byte — portable across grep flavors,
 # unlike `git grep -P '\x{0400}'` which isn't supported on every git build. `git grep` under LC_ALL=C reads
 # the bytes; an `xargs grep` pipeline maps grep's "no match" to 123, so its status could not be read.
 cyr_pat=$'[\xd0-\xd3][\x80-\xbf]'
-pa_match "search the tracked tree for Cyrillic" "$audit_tmp/s3.cyr" pa_c git -C "$DIR" grep -lI -e "$cyr_pat" -- . "${excludes[@]}" \
-  && { pa_first "$audit_tmp/s3.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in tracked file — e.g. $pa_line"; }
+pa_report warn "search the tracked tree for Cyrillic" "$audit_tmp/s3.cyr" "Cyrillic text in tracked file" \
+  pa_c git -C "$DIR" grep -lI -e "$cyr_pat" -- . "${excludes[@]}"
 
 # --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
 # The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
 # We hit this leak class ourselves and the audit missed it — so surface it on purpose.
 # Mirrored by secret-guard/secret-scan.sh SESSION_META (the preventive pre-push block) — keep in sync.
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
-pa_tree "search the tracked tree for session metadata" "$audit_tmp/s4.tree" "$session_re" \
-  && { pa_first "$audit_tmp/s4.tree"; [ -n "$pa_line" ] && warn "agent/session metadata in tracked tree — e.g. $pa_line"; }
+pa_report warn "search the tracked tree for session metadata" "$audit_tmp/s4.tree" "agent/session metadata in tracked tree" pa_tree "$session_re"
 if [ "$NO_HISTORY" = 0 ]; then
   sess_msg=""
   pa_read "read the commit messages" "$audit_tmp/msgs" git -C "$DIR" log --all --format='%B' \
-    && pa_match "match session metadata in the commit messages" "$audit_tmp/s4.msg" pa_c grep -aE -e "$session_re" "$audit_tmp/msgs" \
+    && pa_match "match session metadata in the commit messages" "$audit_tmp/s4.msg" pa_c grep -aE -e "$session_re" -- "$audit_tmp/msgs" \
     && { pa_first "$audit_tmp/s4.msg"; sess_msg="$pa_line"; }
   if [ -z "$sess_msg" ] && [ "$tag_ok" = 1 ]; then
-    pa_match "match session metadata in the tag messages" "$audit_tmp/s4.tag" pa_c grep -aE -e "$session_re" "$tag_msgs" \
+    pa_match "match session metadata in the tag messages" "$audit_tmp/s4.tag" pa_c grep -aE -e "$session_re" -- "$tag_msgs" \
       && { pa_first "$audit_tmp/s4.tag"; sess_msg="$pa_line"; }
   fi
   [ -n "$sess_msg" ] && warn "agent/session metadata in a commit or tag message — e.g. $sess_msg"
@@ -673,13 +684,9 @@ if [ "$NO_HISTORY" = 0 ]; then
   fi
 fi
 if [ "$hist_ok" = 1 ]; then
-  pa_match "match home paths in the history" "$audit_tmp/h.home" pa_c grep -anE -e "$HOME_RE" "$hist" \
-    && { pa_first "$audit_tmp/h.home"; [ -n "$pa_line" ] && warn "absolute home path in git history — e.g. $pa_line"; }
-  pa_match "match emails in the history" "$audit_tmp/h.em1" pa_c grep -anE -e "$EMAIL_RE" "$hist" \
-    && pa_match "match emails in the history" "$audit_tmp/h.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/h.em1" \
-    && { pa_first "$audit_tmp/h.em2"; [ -n "$pa_line" ] && warn "email in git history content — e.g. $pa_line"; }
-  pa_match "match Cyrillic in the history" "$audit_tmp/h.cyr" pa_c grep -an -e "$cyr_pat" "$hist" \
-    && { pa_first "$audit_tmp/h.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in git history — e.g. $pa_line"; }
+  pa_report warn "match home paths in the history" "$audit_tmp/h.home" "absolute home path in git history" pa_c grep -anE -e "$HOME_RE" -- "$hist"
+  pa_report_email warn "match emails in the history" "$audit_tmp/h.em" "email in git history content" -anE "$hist"
+  pa_report warn "match Cyrillic in the history" "$audit_tmp/h.cyr" "Cyrillic text in git history" pa_c grep -an -e "$cyr_pat" -- "$hist"
 fi
 
 # --- 5a. personal literals (local secret-scan-personal), in git history text (GAP) ----------------
@@ -722,19 +729,7 @@ if [ "$NO_HISTORY" = 0 ]; then
       fi
       if pa_read "read the identities of the host PR refs" "$audit_tmp/pr.ids.raw" git -C "$DIR" log --glob='refs/keel-pr-audit/*' --format='%ae%n%ce' \
          && pa_read "sort the identities of the host PR refs" "$audit_tmp/pr.ids" pa_uniq "$audit_tmp/pr.ids.raw"; then
-        while IFS= LC_ALL=C read -r e; do
-          [ -z "$e" ] && continue
-          # A here-string (dir #280) — see the git-history identity scan above for why not a
-          # `printf | grep -q` pipe.
-          id_rc=0
-          LC_ALL=C grep -qE -e "$safe_re" <<< "$e" || id_rc=$?
-          [ "$id_rc" -eq 0 ] && continue
-          if [ "$id_rc" -ge 2 ]; then
-            gap "could not match the identities of the host PR refs (exit $id_rc) — the audit is INCOMPLETE"
-            break
-          fi
-          gap "non-public-safe identity in a host PR ref (refs/pull/*): $e — purge via delete-and-recreate (going-public.md)"
-        done < "$audit_tmp/pr.ids"
+        pa_check_ids "$audit_tmp/pr.ids" "a host PR ref (refs/pull/*)" " — purge via delete-and-recreate (going-public.md)"
       fi
       pr_hist="$audit_tmp/pr_hist"
       if pa_read "read the host PR refs (log -p)" "$pr_hist" pa_log_p --glob='refs/keel-pr-audit/*'; then
@@ -755,15 +750,10 @@ if [ "$NO_HISTORY" = 0 ]; then
           fi
         fi
         # Same heuristic set the local-history pass (sections 4-5) applies, over PR-ref content. WARN.
-        pa_match "match emails in the host PR refs" "$audit_tmp/pr.em1" pa_c grep -anE -e "$EMAIL_RE" "$pr_hist" \
-          && pa_match "match emails in the host PR refs" "$audit_tmp/pr.em2" pa_c grep -vE -e "$safe_re" "$audit_tmp/pr.em1" \
-          && { pa_first "$audit_tmp/pr.em2"; [ -n "$pa_line" ] && warn "email in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
-        pa_match "match home paths in the host PR refs" "$audit_tmp/pr.home" pa_c grep -anE -e "$HOME_RE" "$pr_hist" \
-          && { pa_first "$audit_tmp/pr.home"; [ -n "$pa_line" ] && warn "absolute home path in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
-        pa_match "match Cyrillic in the host PR refs" "$audit_tmp/pr.cyr" pa_c grep -an -e "$cyr_pat" "$pr_hist" \
-          && { pa_first "$audit_tmp/pr.cyr"; [ -n "$pa_line" ] && warn "Cyrillic text in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
-        pa_match "match session metadata in the host PR refs" "$audit_tmp/pr.sess" pa_c grep -anE -e "$session_re" "$pr_hist" \
-          && { pa_first "$audit_tmp/pr.sess"; [ -n "$pa_line" ] && warn "agent/session metadata in a host PR ref (refs/pull/*) — e.g. $pa_line"; }
+        pa_report_email warn "match emails in the host PR refs" "$audit_tmp/pr.em" "email in a host PR ref (refs/pull/*)" -anE "$pr_hist"
+        pa_report warn "match home paths in the host PR refs" "$audit_tmp/pr.home" "absolute home path in a host PR ref (refs/pull/*)" pa_c grep -anE -e "$HOME_RE" -- "$pr_hist"
+        pa_report warn "match Cyrillic in the host PR refs" "$audit_tmp/pr.cyr" "Cyrillic text in a host PR ref (refs/pull/*)" pa_c grep -an -e "$cyr_pat" -- "$pr_hist"
+        pa_report warn "match session metadata in the host PR refs" "$audit_tmp/pr.sess" "agent/session metadata in a host PR ref (refs/pull/*)" pa_c grep -anE -e "$session_re" -- "$pr_hist"
       fi
       # Binary blobs a PR ref carries that local history does not. The exclusion must NOT be a bare
       # `--not --all`: --all includes the refs/keel-pr-audit/* temp refs themselves (fetched above), so
