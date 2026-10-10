@@ -12,6 +12,10 @@
 # - `w_plain` on the git/gh command word and the "no expansion in the last four characters" of a path to
 #   git: no word has the text `git`, `gh` or a `/git` ending made of an expansion's characters (an expansion
 #   keeps its `$` source text), so these mutants are equivalent.
+# - env's "no expansion in the NAME of NAME=value": a name part with an expansion keeps its `$` source text, which
+#   the assignment pattern never matches, so dropping the check is equivalent.
+# - the owner-prefix strip of a `gh api … head=owner:branch` value: the shell side strips `owner:` again before it
+#   resolves the branch, so dropping the reader's strip is equivalent.
 # - B15 (a) and the candidate-line clauses of B14: no candidate tag is registered yet.
 L001	tools/pre-pr-gate.sh	src = (NR == 1) ? $0 : src "\\n" $0	src = (NR == 1) ? $0 : src " " $0	B1: lines joined with a newline
 L002	tools/pre-pr-gate.sh	    word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return	    word_begin(pos); addsrc(pos + 1, 1, "u"); pos += 2; return	B2 TOP: an escaped char is quoted
@@ -159,7 +163,6 @@ L143	tools/pre-pr-gate.sh	if (tok[i] == "-u" || tok[i] == "--unset") i++; i++	if
 L144	tools/pre-pr-gate.sh	if (tok[i] == "-u" || tok[i] == "--unset") i++; i++	if (tok[i] == "-u" || tok[i] == "XX") i++; i++	I4 env --unset takes a value
 L145	tools/pre-pr-gate.sh	if (tok[i] == "-u" || tok[i] == "--unset") i++; i++	if (substr(tok[i], 1, 2) == "-u" || tok[i] == "--unset") i++; i++	I4 env -uX takes none
 L146	tools/pre-pr-gate.sh	else if (assign_len(tok[i]) && index(substr(tokm[i], 1, length(w_assign_name(i))), "x") == 0) assign_at[++nassign] = i++	else if (0) assign_at[++nassign] = i++	I4 env NAME=value
-L147	tools/pre-pr-gate.sh	index(substr(tokm[i], 1, length(w_assign_name(i))), "x") == 0	1	I4 env NAME=value: no expansion in the name
 L148	tools/pre-pr-gate.sh	else if (t == "command") { while (i <= ntok && w_plain(i) && substr(tok[i], 1, 1) == "-") i++ }	else if (t == "command") { }	I4 command takes its flags
 L149	tools/pre-pr-gate.sh	else if (t == "time") { if (i <= ntok && tok[i] == "-p") i++ }	else if (t == "time") { }	I4 the time wrapper takes -p
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
@@ -203,7 +206,6 @@ L187	tools/pre-pr-gate.sh	tok[j] == "--raw-field" || tok[j] == "--input") has_fi
 L188	tools/pre-pr-gate.sh	if (method != "") writes = (method == "POST")	if (0) writes = (method == "POST")	B13: a named method wins over the field inference
 L189	tools/pre-pr-gate.sh	  else writes = has_field	  else writes = 0	B13: a field implies a write
 L190	tools/pre-pr-gate.sh	if (tok[k] ~ /^head=/ && w_plain(k)) {	if (tok[k] ~ /^head=/) {	B13: head= only from a plain word
-L191	tools/pre-pr-gate.sh	sub(/^[^:]*:/, "", head_out)	head_out = head_out	B13: head= owner prefix stripped
 L192	tools/pre-pr-gate.sh	if (tok[j] == "pr" && w_unquoted(j)) found_pr = 1	if (tok[j] == "pr") found_pr = 1	B13/F4: a quoted pr does not count
 L193	tools/pre-pr-gate.sh	} else if (tok[j] == "create" && w_unquoted(j)) {	} else if (tok[j] == "create") {	B13/F4: a quoted create does not count
 L194	tools/pre-pr-gate.sh	if (tok[k] == "--head" || tok[k] == "-H") {	if (tok[k] == "XX" || tok[k] == "-H") {	B13: --head

@@ -16,6 +16,11 @@
 
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
 check_file "pre-pr-gate.sh exists" "$gate"
+# Which awk read the commands: the reader must agree across macOS awk, busybox awk, mawk and gawk, so a CI log
+# names the one each leg ran (captured, never piped into head — the dir #280 SIGPIPE race).
+awk_path="$(type -P awk)"; awk_real="$(readlink -f "$awk_path" 2>/dev/null || printf '%s' "$awk_path")"
+awk_ver="$(awk --version 2>&1)"; awk_ver="${awk_ver%%$'\n'*}"
+pass "the reader runs under awk: $awk_real (${awk_ver:-no --version})"
 
 if ! command -v jq >/dev/null 2>&1; then
   pass "jq not available — pre-pr-gate lexer tests skipped (gate requires jq to parse its event)"
@@ -727,7 +732,7 @@ rcpt "--head= from a substitution is not taken" allow 'gh pr create --head="$(gi
 rcpt "gh api head= from a substitution is not taken" allow 'gh api repos/o/r/pulls -f head="$(git branch --show-current)"' cwd
 
 # The reader's own output for each word class and each operator.
-lex_is "tilde expansions" 'ls ~ ~/x ~user/y a=~/b:~/c x~y' "TOP@1${T}d0${T}s0${T}p1${T}u:ls${T}x:~${T}ux:~/x${T}ux:~user/y${T}ux:a=~/b:~/c${T}u:x~y"
+lex_is "tilde expansions" 'ls ~ ~/x ~user/y a=~/b:~/c a=b:~/c x~y' "TOP@1${T}d0${T}s0${T}p1${T}u:ls${T}x:~${T}ux:~/x${T}ux:~user/y${T}ux:a=~/b:~/c${T}ux:a=b:~/c${T}u:x~y"
 lex_is "brace expansions" 'echo {a,b} {x} {1..3} {' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ug:{a,b}${T}u:{x}${T}ug:{1..3}${T}u:{"
 lex_is "expansions keep their source text" 'echo $"a b" $1 $@ ${HOME}/x a$ $' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:a b${T}x:\$1${T}x:\$@${T}ux:\${HOME}/x${T}u:a\$${T}u:\$"
 lex_is "an arithmetic command is a word of its own; empty quotes are words" "((x++))y && echo \"\" ''" "TOP@1${T}d0${T}s0${T}p1${T}x:\$()${T}u:y"$'\n'"TOP@1${T}d0${T}s0${T}p13${T}u:echo${T}:${T}:"
@@ -753,5 +758,12 @@ lex_is "(( re-read as nested subshells" '((cd a && git push --no-verify) && (tru
   "TOP@1${T}d0${T}s0${T}p1${T}x:\$()"$'\n'"refuse${T}(( read as nested subshells${T}line 1${T}scope:yes"$'\n'"refuse${T}unclosed ARITH${T}line 1${T}scope:yes"
 lex_is "a heredoc that never started is an empty region" 'git log <<E' "TOP@1${T}d0${T}s0${T}p1${T}u:git${T}u:log"$'\n'"refuse${T}heredoc E not closed${T}line 1${T}scope:empty"
 lex_is "a segment with no word is dropped" "$(printf 'a;\n\nb')" "TOP@1${T}d0${T}s0${T}p1${T}u:a"$'\n'"TOP@3${T}d0${T}s0${T}p5${T}u:b"
+
+net "an ANSI quote in \${…} escapes its quote" pr "echo \${v:-\$'\\'}'}; gh pr create --fill"
+net "\\\" in backticks inside double quotes opens a quote" allow 'echo "`echo \"a; git push --no-verify \"`"'
+net "the reserved time comes before an assignment" push 'time HOME=/x git push'
+lex_is "a \${…} counts once in its word" 'echo ${v:-"a"}' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\${v:-\"a\"}"
+lex_is "a heredoc inside a heredoc substitution" "$(printf 'cat <<E\n$(cat <<F\nx\nF\n)\ngit status\nE')" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:cat"$'\n'"SUB@2${T}d1${T}s0.1${T}p11${T}u:cat"$'\n'"SUB@3${T}d1${T}s0.1${T}p19${T}u:x"$'\n'"SUB@4${T}d1${T}s0.1${T}p21${T}u:F"$'\n'"refuse${T}heredoc inside a heredoc substitution${T}line 2${T}scope:yes"
 
 summary
