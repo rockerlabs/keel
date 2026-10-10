@@ -631,6 +631,19 @@ write_full_receipt "$rd"
 gate 'gh pr create --head "$(git branch --show-current)"' "$rd"
 check_eq "rcpt:C44b → a full receipt for the cwd's branch, --head from a substitution (no head taken) → allow" allow "$(verdict_of)"
 rm -f "$(sentinel_for "$rd")"
+# the head is the last PR-opening segment's: an earlier segment's --head never carries over to one with no head taken
+rd="$(mkrepo)"
+rd_main="$(git -C "$rd" branch --show-current)"
+git -C "$rd" branch feat-x >/dev/null 2>&1
+git -C "$rd" checkout -q feat-x
+write_full_receipt "$rd"
+git -C "$rd" checkout -q "$rd_main"
+gate 'gh pr create --head feat-x --dry-run; gh pr create --head "$(git branch --show-current)" --fill' "$rd"
+check_eq "rcpt:an earlier segment's --head feat-x, the last's from a substitution → the cwd's branch, no receipt → pr" pr "$(verdict_of)"
+gate 'gh api repos/o/r/pulls -f head=feat-x; gh api repos/o/r/pulls -f head="$h" -f base=main' "$rd"
+check_eq "rcpt:an earlier gh api head=feat-x, the last's head unreadable → the cwd's branch, no receipt → pr" pr "$(verdict_of)"
+gate 'gh pr create --head feat-x --dry-run; gh pr create --head feat-x --fill' "$rd"
+check_eq "rcpt:…and with the last segment's own --head feat-x → allow" allow "$(verdict_of)"
 
 # --- dir #745: one skip set — both matchers start at cmd_start() (A9) -------------------------------------------
 for fn in check_push check_segment; do
@@ -672,7 +685,7 @@ gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
 for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` pattern's" "an array assignment's" '`repeat N cmd`' \
   '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
   "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' '`sudo`' '`timeout`' '`env -C`' '`/usr/bin/env …`' '`exec -a x`' \
-  '`xargs -r`' '`nohup --`' '`git "push"`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
+  '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
@@ -773,6 +786,12 @@ lex_is "a heredoc inside a heredoc substitution" "$(printf 'cat <<E\n$(cat <<F\n
 
 net "a )-led line in a heredoc body inside \$(…) refuses" refuse "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n  ) git push --no-verify\nEOF\n)')"
 net "a )-led line in a heredoc body outside \$(…) does not" allow "$(printf 'cat <<'"'"'EOF'"'"'\n) git push --no-verify\nEOF')"
+net "a )-led line's region runs to the body's end (bash 3.2 runs the lines after it)" refuse "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n)\ngit push --no-verify\nEOF\n)')"
+net "a )-led line's region stops at the body's end" allow "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n)\nx\nEOF\n); git status')"
+net "a \$(…) in a heredoc delimiter nests on its own opener only" push 'cat <<$(echo {) ; git push --no-verify'
+net "a \${…} in a heredoc delimiter nests on its own opener only" push 'cat <<${x:-(} && git push --no-verify'
+net "a quoted ) in a \$(…) heredoc delimiter does not close it" push 'cat <<$(echo ")") ; git push --no-verify'
+net "a nested \${…} in a heredoc delimiter closes at the outer }" push 'cat <<${x:-${y}} ; git push --no-verify'
 
 net "a quoted span in \${…} in double quotes with no } or \" in it is plain text" allow "echo \"\${v:-'x'}\" && git status"
 lex_is "a disagreeing quote in \${…} in double quotes: a region, the quote read as text" "echo \"\${v:-'}' '}'}\"" \
@@ -869,6 +888,8 @@ lex_is "a second heredoc past a cut delimiter line has an empty body, more lines
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p33${T}u:echo${T}u:w"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
 
 net "a heredoc inside a body substitution scopes from the body's operator" refuse "$(printf 'git commit -F - <<E\n$(cat <<F\nx\nF\n)\nE')"
+lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \
+  "refuse${T}) line in a heredoc body inside \$(…)${T}line 3${T}"
 lex_is "a word of many braces is read in one pass" "echo {a,{b,c}} {{x}" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ug:{a,{b,c}}${T}u:{{x}"
 
 summary

@@ -106,10 +106,19 @@ L086	tools/pre-pr-gate.sh	if (hd_sp) { region(op, n, "heredoc inside a heredoc s
 L087	tools/pre-pr-gate.sh	if (sp > hd_sp) region(cpos[hd_sp + 1]	if (0) region(cpos[hd_sp + 1]	B10(e)
 L091	tools/pre-pr-gate.sh	if (hqx[s, k] && !hline && txt ~ /\\\\$/ && bs_joins(L, s, k)) hline = lstart[L]	if (0) hline = lstart[L]	B10(h)
 L093	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "((	if (0) { flagged[sp] = 1; region(cpos[sp], n, "((	B10(j)
-L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && txt ~ /^[ \\t]*\\)/)	if (0 && txt ~ /^[ \\t]*\\)/)	B10(k)
-L095	tools/pre-pr-gate.sh	txt ~ /^[ \\t]*\\)/) region(	txt ~ /^\\)/) region(	B10(k): blanks before the ) still count
-L097	tools/pre-pr-gate.sh	index(rt, "git") ||	index(rt, "XgitX") ||	B10 scope: git
-L098	tools/pre-pr-gate.sh	index(rt, "gh")) ?	index(rt, "XghX")) ?	B10 scope: gh
+L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && !kline && txt	if (0 && !kline && txt	B10(k)
+L095	tools/pre-pr-gate.sh	txt ~ /^[ \\t]*\\)/) kline = 	txt ~ /^\\)/) kline = 	B10(k): blanks before the ) still count
+L097	tools/pre-pr-gate.sh	else if (substr(src, p + 1, 2) == "it") {	else if (0) {	B10 scope: git
+L098	tools/pre-pr-gate.sh	if (substr(src, p + 1, 1) == "h") {	if (0) {	B10 scope: gh
+L246	tools/pre-pr-gate.sh	"SUB" && !kline && txt	"SUB" && txt	B10(k): the region starts at the first )-led line
+L247	tools/pre-pr-gate.sh	if (kline) region(kline, bstop - 1, ") line	if (kline) region(kline, n, ") line	B10(k): the region ends at the body's end
+L248	tools/pre-pr-gate.sh	        else if (c == o) depth++	        else if (c == "(" || c == "{") depth++	B8: a $(…)/${…} delimiter nests on its own opener only
+L249	tools/pre-pr-gate.sh	        if (c == "\\047" || c == "\\"") { pos++; while	        if (0) { pos++; while	B8: a quoted span in a $(…) delimiter is skipped
+L250	tools/pre-pr-gate.sh	if (gbeg[k] < rsb[i]) lo = k + 1	if (gbeg[k] <= rsb[i]) lo = k + 1	B10 scope: a git or gh at the segment start counts
+L251	tools/pre-pr-gate.sh	rscope[i] = (lo <= ng && gend[lo] <= rend[i])	rscope[i] = (lo <= ng && gend[lo] < rend[i])	B10 scope: a git or gh ending at the region end counts
+L252	tools/pre-pr-gate.sh	rscope[i] = (lo <= ng && gend[lo]	rscope[i] = (gend[lo]	B10 scope: no git or gh after the segment start
+L253	tools/pre-pr-gate.sh	      matched = 1; head_out = ""	      matched = 1	B13: the last PR-opening segment sets the head, or none
+L254	tools/pre-pr-gate.sh	    head_out = ""\n    for (k = i + 1; k <= ntok; k++) {\n      if (tok[k] ~ /^head=/	    for (k = i + 1; k <= ntok; k++) {\n      if (tok[k] ~ /^head=/	B13: the last gh api segment sets the head, or none
 L099	tools/pre-pr-gate.sh	rsb[nreg] = sb;	rsb[nreg] = a;	B10 scope: from the segment start, not the region
 L100	tools/pre-pr-gate.sh	rsb[nreg] = sb;	rsb[nreg] = 1;	B10 scope: from the region's own segment, not the text start
 L101	tools/pre-pr-gate.sh	    if (rend[i] < rstart[i]) { rscope[i] = "empty"; continue }	    if (0) { rscope[i] = "empty"; continue }	B10: an empty region
@@ -206,7 +215,6 @@ L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { empty_body(s, k); continu
 L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) empty_body(s, k)	    for (k = 1; k <= 0; k++) empty_body(s, k)	B8/B10: a never-started body is empty, never refused
 L232	tools/pre-pr-gate.sh	if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }	}	B2: a closed context’s end no longer bounds the reads after it
 L238	tools/pre-pr-gate.sh	j < nlines && lstart[j + 1] < lim) {	j < nlines) {	B10(h): a backslash join stops at its BQ’s backtick
-L240	tools/pre-pr-gate.sh	region(lstart[L], line_end(L), ") line	region(lstart[L], lend[L], ") line	B10(k): the region ends at its BQ’s backtick
 L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], lim - 1, "heredoc pending	    else if (0) region(hqop[s, k], lim - 1, "heredoc pending	B10(g)
 L239	tools/pre-pr-gate.sh	region(hqop[s, k], lim - 1, "heredoc pending	region(hqop[s, k], n, "heredoc pending	B10(g): inside a BQ the region ends at its backtick
 L241	tools/pre-pr-gate.sh	function empty_body(s, k) { region(hqop[s, k], -1,	function empty_body(s, k) { region(hqop[s, k], n,	B8: an empty body is never refused

@@ -36,9 +36,11 @@
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
 # name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
 # (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
-# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`); bash 3.2's misreading of a heredoc
-# body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only when a body line
-# starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
+# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new` and a
+# `gh api graphql` mutation; an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
+# index holds an expansion or a blank (`a[$i]=1 git …`, read as the command word); bash 3.2's misreading of a
+# heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only from a
+# body line that starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
@@ -1899,7 +1901,7 @@ function redirect(   c, op, s, t, m) {
 
 # Read a heredoc delimiter word after `<<`/`<<-` (quotes and escaping backslashes removed, nothing expanded; any
 # quoting makes the body literal) and queue the heredoc on its owner, the command context it was read in.
-function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
+function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k, o, e) {
   s = sp; op = pos; pos += strip ? 3 : 2
   while (pos < lim && (ch[pos] == " " || ch[pos] == "\t")) pos++
   d = ""; quoted = 0; got = 0
@@ -1914,9 +1916,19 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
       pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
+    # a `$(…)`/`${…}` in the delimiter runs to its own closer: only its own opener nests, and a quoted span is
+    # skipped whole (`<<$(echo {)` and `<<${x:-(}` end at their `)` and `}`); unclosed, it runs to lim, where
+    # every shell reports a syntax error
     if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == "{")) {
-      q = (ch[pos + 1] == "(") ? ")" : "}"; depth = 0
-      while (pos < lim) { d = d ch[pos]; if (ch[pos] == "(" || ch[pos] == "{") depth++; if (ch[pos] == q && --depth == 0) { pos++; break }; pos++ }
+      o = ch[pos + 1]; q = (o == "(") ? ")" : "}"; depth = 0; e = pos
+      for (pos++; pos < lim; pos++) {
+        c = ch[pos]
+        if (c == "\047" || c == "\"") { pos++; while (pos < lim && ch[pos] != c) pos += (c == "\"" && ch[pos] == "\\") ? 2 : 1 }
+        else if (c == o) depth++
+        else if (c == q && --depth == 0) { pos++; break }
+      }
+      if (pos > lim) pos = lim
+      d = d substr(src, e, pos - e)
       continue
     }
     d = d c; pos++
@@ -1929,7 +1941,7 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
 # start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
 # order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.
 function start_bodies(s) { hb_s = s; hb_k = 0; next_body() }
-function next_body(   s, k, L, txt, found, bstop, after, hline, cmp) {
+function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
   s = hb_s
   while (1) {
     k = ++hb_k
@@ -1938,12 +1950,12 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp) {
     # the BQ’s last character, or an earlier delimiter line was cut at it; after such a line pos may lie past the
     # backtick, and at_limit() resumes right after it): an empty body, as every shell gives it
     if (pos > n || pos >= lim) { empty_body(s, k); continue }
-    found = 0; hline = 0
+    found = 0; hline = 0; kline = 0
     for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
       txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
-      if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], line_end(L), ") line in a heredoc body inside $(…)", hqsb[s, k])
+      if (cty[s] == "SUB" && !kline && txt ~ /^[ \t]*\)/) kline = lstart[L]
       if (hqx[s, k] && !hline && txt ~ /\\$/ && bs_joins(L, s, k)) hline = lstart[L]
     }
     # not found: the body runs to the end of the text — a region — or to the backtick of the BQ it sits in, where
@@ -1952,6 +1964,8 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp) {
     after = found ? lend[L] + 2 : lim
     if (!found && lim > n) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
+    # bash 3.2 closes the $(…) at the first `)`-led line and runs every body line after it as commands
+    if (kline) region(kline, bstop - 1, ") line in a heredoc body inside $(…)", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
       push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
       return
@@ -2100,7 +2114,7 @@ function region(a, b, why, sb) {
   nreg++; rstart[nreg] = a; rend[nreg] = b; rwhy[nreg] = why; rsb[nreg] = sb; rline[nreg] = lno[a]
   return nreg
 }
-function finish(   s, k, i, rt) {
+function finish(   s, k, i, m, p, ng, lo, hi) {
   # a heredoc still pending at the end: an empty body, never refused
   for (s = 1; s <= sp; s++) if (is_cmd(cty[s])) {
     for (k = 1; k <= hqn[s]; k++) empty_body(s, k)
@@ -2112,10 +2126,22 @@ function finish(   s, k, i, rt) {
   seg_end(1, n + 1)
   # a non-empty region whose segment-to-end text mentions git or gh refuses the command; any other cannot hide
   # either rule, which both need that text
+  # (read once: every git and gh in the text, by start, then for each region the first at or past its segment
+  # start, by halving — a region per line of a long body must not copy the text once per region)
+  ng = 0
+  if (nreg) {
+    m = split(src, gpart, "g"); p = 0
+    for (k = 1; k < m; k++) {
+      p += length(gpart[k]) + 1
+      if (substr(src, p + 1, 1) == "h") { ng++; gbeg[ng] = p; gend[ng] = p + 1 }
+      else if (substr(src, p + 1, 2) == "it") { ng++; gbeg[ng] = p; gend[ng] = p + 2 }
+    }
+  }
   for (i = 1; i <= nreg; i++) {
     if (rend[i] < rstart[i]) { rscope[i] = "empty"; continue }
-    rt = substr(src, rsb[i], rend[i] - rsb[i] + 1)
-    rscope[i] = (index(rt, "git") || index(rt, "gh")) ? "yes" : "no"
+    lo = 1; hi = ng + 1
+    while (lo < hi) { k = int((lo + hi) / 2); if (gbeg[k] < rsb[i]) lo = k + 1; else hi = k }
+    rscope[i] = (lo <= ng && gend[lo] <= rend[i]) ? "yes" : "no"
   }
   # source order
   for (i = 1; i <= nreg; i++) ord[i] = i
@@ -2206,6 +2232,7 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
   if (method != "") writes = (method == "POST")
   else writes = has_field
   if (found_api && ep_pulls && writes) {
+    head_out = ""
     for (k = i + 1; k <= ntok; k++) {
       if (tok[k] ~ /^head=/ && w_plain(k)) { head_out = substr(tok[k], 6); sub(/^[^:]*:/, "", head_out) }
     }
@@ -2217,7 +2244,7 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
     if (!found_pr) {
       if (tok[j] == "pr" && w_unquoted(j)) found_pr = 1
     } else if (tok[j] == "create" && w_unquoted(j)) {
-      matched = 1
+      matched = 1; head_out = ""
       for (k = i + 1; k <= ntok; k++) {
         if (tok[k] == "--head" || tok[k] == "-H") { if (k + 1 <= ntok && w_plain(k + 1)) head_out = tok[k + 1] }
         else if (tok[k] ~ /^--head=/ && w_plain(k)) { head_out = substr(tok[k], 8) }
