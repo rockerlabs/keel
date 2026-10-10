@@ -889,7 +889,7 @@ _impact_history_append() {
 # to restart and refuses too; `moved` and `never` proceed exactly as before (a notice is added for
 # `moved`); `unresolved` is untouched (today's crash on unset HOME, unaffected by this ticket).
 cmd_enable() {
-  local dir="." restart=0 positional=0 a top state already=0 entry moved_prior prefix parent
+  local dir="." restart=0 positional=0 a top state already=0 entry moved_prior prefix parent real
   for a in "$@"; do
     case "$a" in
       -h|--help) usage; return 0 ;;
@@ -918,8 +918,9 @@ cmd_enable() {
   prefix="$(git -C "$dir" rev-parse --show-prefix 2>/dev/null || true)"
   if [ -n "$prefix" ]; then
     parent="$(git -C "$dir" rev-parse --show-toplevel)"
-    printf 'keel-impact: enable: %s is inside the git repo at %s — refusing to enable that repo by accident.\n' "$(cd "$dir" && pwd -P)" "$parent" >&2
-    printf '  To track it on its own:  git init %s  and enable again.\n' "$(cd "$dir" && pwd -P)" >&2
+    real="$(cd "$dir" && pwd -P)"
+    printf 'keel-impact: enable: %s is inside the git repo at %s — refusing to enable that repo by accident.\n' "$real" "$parent" >&2
+    printf '  To track it on its own:  git init %s  and enable again.\n' "$real" >&2
     printf '  To track the parent:     %s enable %s\n' "$0" "$parent" >&2
     exit 2
   fi
