@@ -501,7 +501,7 @@ SHIM
           if [ -z "$termed" ] && [ $((SECONDS - active_starts[i])) -gt "$file_timeout" ]; then
             kill -TERM "$pid" 2>/dev/null
             termed="$SECONDS"
-          elif [ -n "$termed" ] && [ $((SECONDS - termed)) -ge 5 ]; then
+          elif [ -n "$termed" ] && [ $((SECONDS - termed)) -gt 5 ]; then
             kill -KILL "$pid" 2>/dev/null
           fi
         fi
