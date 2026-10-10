@@ -267,6 +267,13 @@ check_eq "A52: core.hooksPath is read with rc 0 (restored, not unset)" 0 "$(cfg_
 check_eq "A52: ... and is empty" "" "$(cfg_val "$B/.gitconfig" core.hooksPath)"
 check_eq "A52: the record is dropped once restored" 1 "$(cfg_rc "$B/.gitconfig" keel.displacedHooksPath)"
 
+# a bare `displacedHooksPath` line (no `=`) records nothing: --uninstall unsets Keel's hooksPath, never restores ""
+mk_b barerec
+printf '[core]\n\thooksPath = %s/.config/git/keel-hooks\n[keel]\n\tdisplacedHooksPath\n' "$B" > "$B/.gitconfig"
+run benv "$isg" --global --uninstall
+check_status "A52: --uninstall with a bare displacedHooksPath line → exit 0" 0 "$STATUS"
+check_eq "A52: ...unsets core.hooksPath (a bare record restores nothing)" 1 "$(cfg_rc "$B/.gitconfig" core.hooksPath)"
+
 # =============================================================================================================
 # A53 / A54 — passengers.
 # =============================================================================================================

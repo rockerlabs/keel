@@ -454,10 +454,15 @@ _isg_same_dir() {
 #               walk could not read them all (dir #717); omitted when n = 0
 # When own and effective differ, a copy written to own is inert: git never reads it.
 
-# _isg_valueless GIT-ARGS… — 0 when core.hooksPath, read by `git GIT-ARGS --get …`, is a bare `hooksPath` line (no
-# `=`). `--get` answers it like the empty value (rc 0, no output); `--get --type=path` fails only for it (git's
-# "missing value"). Call only after a read that returned an empty value.
-_isg_valueless() { ! git "$@" --get --type=path core.hooksPath >/dev/null 2>&1; }
+# _isg_valueless KEY GIT-ARGS… — 0 when KEY, read by `git GIT-ARGS --get …`, is a bare line (no `=`). `--get`
+# answers it like the empty value (rc 0, no output); `--get --type=path` fails only for it, with rc 128 (git's
+# "missing value" fatal) — so only 128 counts, never a git too old to know `--type` (usage error, rc 129).
+# Call only after a read that returned an empty value.
+_isg_valueless() {
+  local key="$1" rc=0; shift
+  git "$@" --get --type=path "$key" >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 128 ]
+}
 
 # One read of core.hooksPath as git sees it from directory $1: sets m_set (1 when ANY scope sets it — decided by
 # the read's EXIT STATUS, so the empty value counts; dir #748 S4-1) and m_scope m_origin m_value (all empty when
@@ -477,7 +482,7 @@ _isg_cfg_read() {
     out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" || rc=$?
     if [ "$rc" = 0 ]; then m_set=1; m_scope="unknown"; m_value="$out"; fi
   fi
-  if [ "$m_set" = 1 ] && [ -z "$m_value" ] && _isg_valueless -C "$1" config; then m_novalue=1; fi
+  if [ "$m_set" = 1 ] && [ -z "$m_value" ] && _isg_valueless core.hooksPath -C "$1" config; then m_novalue=1; fi
   [ "$m_set" = 1 ] || { m_scope=""; m_origin=""; }
   return 0
 }
@@ -501,7 +506,7 @@ _isg_machine_read() {
     m_set=0 m_novalue=0 m_scope="" m_origin=""
     if m_value="$(git config --global core.hooksPath 2>/dev/null)"; then
       m_set=1 m_scope="global"
-      if [ -z "$m_value" ] && _isg_valueless config --global; then m_novalue=1; fi
+      if [ -z "$m_value" ] && _isg_valueless core.hooksPath config --global; then m_novalue=1; fi
     fi
     if [ "${1:-}" = walk ]; then
       c_list=""
@@ -823,6 +828,9 @@ case "${1:-}" in
     [ "$m_novalue" != 1 ] || existing_desc="no value at all (a bare \`hooksPath\` line)"
     rec_set=0
     recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || recorded=""
+    # A bare `displacedHooksPath` line (hand-edited or merged) reads like an empty record, and restoring "" would
+    # turn every hook off though nothing was displaced: it records nothing.
+    if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then rec_set=0; fi
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
     if [ "$( { git config --global --get-all "$isg_displaced_key" 2>/dev/null || true; } | wc -l | tr -d ' ')" -gt 1 ]; then
