@@ -310,8 +310,8 @@ _sc_tail_agent_row() {
 # URL as its final line, after any warning). The window walk needs only the id; the url feeds
 # _sc_tail_coverage. Result bodies are the bulk of a transcript, so nothing else is carried along.
 _sc_tail_pr_results() {
-  jq -c 'select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+")))
-         | {tool_use_id, url: ([.text | scan("https://github\\.com/[^\\s\"\\\\]+/pull/[0-9]+")] | last)}'
+  jq -c '([.text | scan("https://github\\.com/[^\\s\"\\\\]+/pull/[0-9]+")] | last) as $u
+         | select((.is_error | not) and $u != null) | {tool_use_id, url: $u}'
 }
 
 # _sc_tail_init_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per result (error or not: an
