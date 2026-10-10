@@ -594,6 +594,16 @@ $PRURL2"
 run bash "$tool" tail "$SF"
 check_contains "(737) a result quoting another PR first: the LAST URL (the new PR) is named" "$OUT" "outside-any-window=1 $PRURL2"
 
+mk_session covnl
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 11:00:00 "" b2 200 "$(bash_use toolu_a 'gh pr create --title orphan')"
+  rec_result 11:00:05 toolu_a false "$PRURL
+$PRURL2"
+} > "$SF"
+run bash "$tool" tail "$SF"
+check_eq "(737) URLs separated only by a newline: the coverage stays ONE line naming the last" "1" "$(printf '%s\n' "$OUT" | grep -c '^coverage:.*pull/77$')"
+
 mk_session covok
 {
   rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
