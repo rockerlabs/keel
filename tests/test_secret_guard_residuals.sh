@@ -158,6 +158,9 @@ check_contains "M2: ...in words" "$OUT" "more than once"
 mk_home twofiles
 mkdir -p "$H/xdg/git"; printf '[core]\n\thooksPath = %s/b\n' "$H" > "$H/xdg/git/config"; printf '[core]\n\thooksPath = %s/a\n' "$H" > "$H/.gitconfig"
 run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --force
-check_absent "M2: one value in each of two config files is not 'more than once'" "$OUT" "more than once"
+check_status "M2: one value in each of two config files is not refused → exit 0" 0 "$STATUS"
+check_absent "M2: ...nor called 'more than once'" "$OUT" "more than once"
+check_eq "M2: ...~/.gitconfig now holds Keel's dir" "$H/$kh_rel" "$(git config --file "$H/.gitconfig" --get core.hooksPath || true)"
+check_eq "M2: ...and the effective value it displaced (~/.gitconfig wins over the XDG file) is recorded" "$H/a" "$(git config --file "$H/.gitconfig" --get keel.displacedHooksPath || true)"
 
 summary

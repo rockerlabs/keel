@@ -111,10 +111,12 @@ if [ "$uninstall" = 1 ]; then
   esac
 fi
 
-# _isg_count_values KEY — the most values any ONE global config file holds for KEY (an empty value counts as one): a
-# write replaces or unsets in a single file, and git exits 5 only when that file sets the key more than once — one
-# value each in ~/.gitconfig and the XDG file is no obstacle.
-_isg_count_values() {
+# _isg_count_values KEY — how many values the global config holds for KEY across every file (an empty value is one).
+_isg_count_values() { { git config --global --get-all "$1" 2>/dev/null || true; } | wc -l | tr -d ' '; }
+# _isg_count_per_file KEY — the most values any ONE global config file holds for KEY: a write replaces or unsets in a
+# single file, and git exits 5 only when THAT file sets the key more than once — one value each in ~/.gitconfig and
+# the XDG file is no obstacle.
+_isg_count_per_file() {
   { git config --global --show-origin --get-all "$1" 2>/dev/null || true; } \
     | awk -F'\t' '{ c[$1]++ } END { m = 0; for (k in c) if (c[k] > m) m = c[k]; print m }'
 }
@@ -571,8 +573,9 @@ _isg_machine_read_files() {
 #     searched (or reached through a dangling link into one) make it incomplete;
 #   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
 #     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is read once — a conditional
-#     self-include is complete — but reported under each independent condition that reaches it, and depth stops
-#     at $isg_include_depth_max;
+#     self-include is complete — but reported, and its nested includes walked, under each independent condition
+#     that reaches it (a route whose condition extends an earlier one's is a cycle returning, and is skipped);
+#     depth stops at $isg_include_depth_max;
 #   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
 #     hook off in its trees, and a valueless `hooksPath` makes git fail there.
 # Every `-z` read goes to a FILE in the scratch dir and is read back with `read -d ''`: bash 3.2 drops NUL
@@ -920,10 +923,10 @@ case "${1:-}" in
     fi
     # dir #743 (M2): git exits 5 when asked to replace or unset a key the file sets more than once — after the
     # hooks were already placed, with a generic message. Refuse up front, in words.
-    n_hp="$(_isg_count_values core.hooksPath)"
+    n_hp="$(_isg_count_per_file core.hooksPath)"
     if [ "$n_hp" -gt 1 ]; then
-      echo "secret-guard: core.hooksPath is set more than once in the global config ($n_hp values) — git cannot replace or unset it;" >&2
-      echo "  keep the one you want (git config --global --get-all core.hooksPath), then re-run. Nothing was changed." >&2
+      echo "secret-guard: core.hooksPath is set more than once in one global config file ($n_hp times) — git cannot replace or unset it;" >&2
+      echo "  keep the one you want (git config --global --show-origin --get-all core.hooksPath names the file), then re-run. Nothing was changed." >&2
       exit 3
     fi
     # How the existing value reads in a message (the empty value is a value, so it is named, not shown as nothing).
