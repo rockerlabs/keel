@@ -206,9 +206,9 @@ fi
 
 # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls back
 # to 16000 rather than crashing the later `-gt` token-count comparison (no `[: integer expected`).
-# dir #686: 16000 = the former 10000 + ~6000 for the MEMORY.md index now summed in. The index is bounded
-# in practice; keel's own index measured 5.8k tokens (2026-10-05), so ~6000 keeps a project that was inside
-# the old budget from being newly flagged merely because the index is now counted.
+# dir #686: 16000 = the former 10000 + ~6000 for the MEMORY.md index now summed in. keel's own index measured
+# 5.8k tokens (2026-10-05), so ~6000 keeps a project with an index of that size, and inside the old budget,
+# from being newly flagged merely because the index is now counted; a larger index is real startup cost.
 WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-16000}" 16000)"
 exit_code=0
 
@@ -1320,7 +1320,7 @@ _footprint_exception() {
   [ -f "$1" ] || return 0
   awk '
     { sub(/\r$/, "") }
-    /^## Footprint exceptions[ \t]*$/ { insec=1; next }
+    /^## Footprint exceptions([^A-Za-z0-9_-]|$)/ { insec=1; next }
     insec && /^#/ { insec=0 }
     insec && /^\|/ && tolower($0) !~ /^\| *expires/ && $0 !~ /^\|[-:| ]+\|$/ { last=$0 }
     END { if (last != "") print last }

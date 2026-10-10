@@ -17,9 +17,10 @@ sections real content going forward — see that page for exactly when each one 
 
 - **`doctor` H-FOOTPRINT sums the `MEMORY.md` index and honours a live `## Footprint exceptions` row.**
   The figure now counts the project `CLAUDE.md`, the resolved global `CLAUDE.md` and the harness's `MEMORY.md`
-  index (all loaded every session) and names the three separately; the default budget rises from 10000 to
-  16000 tokens (`KEEL_STARTUP_WARN_TOKENS`) so the index does not newly flag a project that was inside the old
-  budget (keel's own index measured 5.8k tokens) (dir #686). A dated `| Expires (YYYY-MM-DD) | Ticket/note |` row under `## Footprint exceptions` in the
+  index (all loaded every session) and names the three separately. The default budget rises from 10000 to
+  16000 tokens (`KEEL_STARTUP_WARN_TOKENS`) so an index like keel's own, measured at 5.8k tokens, does not
+  newly flag a project that was inside the old budget (dir #686). A dated
+  `| Expires (YYYY-MM-DD) | Ticket/note |` row under `## Footprint exceptions` in the
   project's `CLAUDE.md` silences the hint through its expiry day; an expired row is flagged EXPIRED on the
   hint (dir #687). `/wrap` step 4's sentence that the doctor ignores the row is corrected.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`

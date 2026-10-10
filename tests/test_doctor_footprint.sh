@@ -112,3 +112,14 @@ d="$(fproj 400)"; m="$(fmem 800)"
 printf '\n## Footprint exceptions-old\n\n| 2099-12-31 | not this heading |\n' >> "$d/CLAUDE.md"
 frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
 check_contains "a longer heading does not open the section" "$OUT" "HINT [H-FOOTPRINT]"
+
+# regex boundaries: each impossible month/day is rejected; a suffixed heading still opens the section
+for bad in 2026-13-01 2026-00-10 2026-01-32 2026-01-00; do
+  d="$(fproj 400)"; m="$(fmem 800)"; exc "$d" "$bad" "boundary"
+  frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+  check_contains "$bad is not a valid date" "$OUT" "no valid YYYY-MM-DD date"
+done
+d="$(fproj 400)"; m="$(fmem 800)"
+printf '\n## Footprint exceptions (until the split)\n\n| 2020-01-01 | suffixed |\n' >> "$d/CLAUDE.md"
+frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+check_contains "a suffixed heading still opens the section" "$OUT" "EXPIRED 2020-01-01"
