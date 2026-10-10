@@ -607,17 +607,29 @@ SHIM
   if [ -z "$shard_n" ]; then
     run_files=(${all_files[@]+"${all_files[@]}"})
   else
+    # Greedy fills an empty shard before any non-empty one, so only the first min(N, files) shards can ever get a
+    # file: tracking just those keeps a huge N (a typo like 1/999999999) from looping over N slots per file.
+    shard_used="$shard_n"
+    [ "${#all_files[@]}" -lt "$shard_used" ] && shard_used="${#all_files[@]}"
     shard_totals=()
-    for ((k = 1; k <= shard_n; k++)); do shard_totals[k]=0; done
+    for ((k = 1; k <= shard_used; k++)); do shard_totals[k]=0; done
+    shard_rows=0
     while IFS="$(printf '\t')" read -r sz f; do
+      shard_rows=$((shard_rows + 1))
       best=1
-      for ((k = 2; k <= shard_n; k++)); do
+      for ((k = 2; k <= shard_used; k++)); do
         [ "${shard_totals[k]}" -lt "${shard_totals[best]}" ] && best=$k
       done
       shard_totals[best]=$((shard_totals[best] + sz))
       [ "$best" = "$shard_k" ] && run_files+=("$here/$f")
     done < <([ "${#all_files[@]}" -eq 0 ] || (cd "$here" && wc -c -- test_*.sh) \
                | awk '$2 != "total" { print $1 "\t" $2 }' | LC_ALL=C sort -t "$(printf '\t')" -k1,1nr -k2,2)
+    # The size listing is a process substitution, whose failure bash never reports: count what it delivered, so a
+    # broken pipeline cannot select too few files and let a shard's check go green with tests unrun.
+    if [ "$shard_rows" -ne "${#all_files[@]}" ]; then
+      printf 'FATAL: KEEL_TEST_SHARD: sized %d of %d test files — refusing to run a partial shard.\n' "$shard_rows" "${#all_files[@]}" >&2
+      exit 2
+    fi
     printf 'shard %s/%s: %d of %d test files\n' "$shard_k" "$shard_n" "${#run_files[@]}" "${#all_files[@]}"
   fi
 

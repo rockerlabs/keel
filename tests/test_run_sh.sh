@@ -312,8 +312,9 @@ mk_shard_dir() {
   mk_sized "$d" e 300; mk_sized "$d" f 200; mk_sized "$d" g 100
   printf '%s' "$d"
 }
-# ran_set OUT — the fixture letters whose header OUT carries, in order (e.g. "a d e").
-ran_set() { grep -oE '^=== test_[a-g]\.sh ===$' <<< "$1" | sed 's/^=== test_\(.\)\.sh ===$/\1/' | tr '\n' ' ' | sed 's/ $//'; }
+# ran_set OUT — the fixture letters whose header OUT carries, SORTED (e.g. "a d e"): headers print in reap order,
+# which concurrent files can swap.
+ran_set() { grep -oE '^=== test_[a-g]\.sh ===$' <<< "$1" | sed 's/^=== test_\(.\)\.sh ===$/\1/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
 
 d="$(mk_shard_dir)"
 check_eq "shard fixture: test_a.sh is exactly 700 bytes" "700" "$(wc -c < "$d/test_a.sh" | tr -d ' ')"
@@ -327,6 +328,9 @@ check_status "KEEL_TEST_SHARD=2/2 -> exit 0" 0 "$STATUS"
 check_eq "shard 2/2 runs exactly {b, c, f, g}" "b c f g" "$(ran_set "$OUT")"
 check_contains "shard 2/2 announces itself" "$OUT" "shard 2/2: 4 of 7 test files"
 
+run env KEEL_TEST_SHARD=1/999999999 bash "$d/run.sh"
+check_status "a huge N is no loop over N slots: KEEL_TEST_SHARD=1/999999999 -> exit 0" 0 "$STATUS"
+check_eq "...and shard 1 gets only the largest file" "a" "$(ran_set "$OUT")"
 run env KEEL_TEST_SHARD=9/9 bash "$d/run.sh"
 check_status "KEEL_TEST_SHARD=9/9 (an empty shard) -> exit 0" 0 "$STATUS"
 check_contains "an empty shard says so" "$OUT" "shard 9/9: 0 of 7 test files"

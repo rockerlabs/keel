@@ -74,7 +74,7 @@ job_names() {
     case "$name" in
       *'${{ matrix.'*' }}'*)
         var="${name#*\$\{\{ matrix.}"; var="${var%% \}\}*}"
-        vals="$(sed -n "s/^        $var: \\[\\(.*\\)\\]\$/\\1/p" <<< "$blk" | tr ',' '\n' | sed 's/^ *//; s/ *\$//')"
+        vals="$(sed -n "s/^        $var: \\[\\(.*\\)\\]\$/\\1/p" <<< "$blk" | tr ',' '\n' | sed 's/^ *//; s/ *$//')"
         while IFS= read -r v; do
           [ -n "$v" ] && printf '%s\n' "${name//\$\{\{ matrix.$var \}\}/$v}"
         done <<< "$vals"
