@@ -132,6 +132,16 @@ sections real content going forward — see that page for exactly when each one 
   assertion gains a control that clones the same repo without the variable; the `env -u` pin names the missing or
   extra variable; `tests/lib.sh` states the clone effect of the GIT_NAMESPACE unset (dir #712).
 - **`tools/self/session-cost.sh tail` prints a coverage line.** Each session in the human form now ends with `coverage: <session> pr-create=<n> closed-windows=<m> outside-any-window=<k>` and the URL of each successful `gh pr create` that closed no window, so a PR the window walk loses shows itself in the tool's own output instead of needing a separate script; `--json` stays one object per window, with a new `closed_by` field (dir #737).
+- **`docs/release-management.md` R3 names both launch paths, and R13 and `commands/manage-release.md` agree; `tools/keel-impact.sh` prints the one-event shape and attributes a score to a session.**
+  dir #732: R3 said the manager "cannot preset" a worker's model, but a direct launch (`start_session`)
+  presets model and effort (the 0.14.0 release's FIX and CUT workers ran Sonnet from turn 1) while a task
+  chip leaves them to the operator (the chips ran Opus on 3 of 6) — R3 and its `docs/delegation.md`
+  cross-reference now name both paths and require verifying the running tier on either. `manage-release.md`'s
+  closing paragraph said workers carry the DELEGATION RUN line; R13 says the `WRAP CENTRALIZED` marker, and
+  the paragraph now agrees (M9 also asks for cited events, not an "event-count block"). Tool half:
+  `keel-impact.sh shape` prints the event kinds and the one line a checkpoint copies, and `add --session
+  <worker id>` records the session a score came from in a new last ledger column (older rows read `—`), so a
+  manager's one wrap can score every worker, not only itself.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

@@ -219,6 +219,39 @@ pin "docs/token-economy.md owns the cost reason for waiting" "$REPO_ROOT/docs/to
   'Waiting on external state is the same edge.' \
   "expected token-economy to own the cost reason for the CI-wait rule (dir #616)"
 
+# --- dir #732: R3 names BOTH launch paths and what each verifies; the command agrees with R13 -------------------
+pin "R3 names the direct launch that presets model and effort" "$doc" \
+  'A direct launch (`start_session`) takes a `model` and an `effort`' \
+  "expected R3 to say a direct launch presets the worker's tier (dir #732)"
+pin "R3 names the hand-off path where the operator sets the tier" "$doc" \
+  'task chip or any hand-off the operator starts' \
+  "expected R3 to name the manual-gesture path beside the direct one (dir #732)"
+pin "R3 says each path is verified against what is RUNNING" "$doc" \
+  'verifies what is actually running' \
+  "expected R3 to require the running-tier check on both paths (dir #732)"
+check_absent "R3 no longer says the manager cannot preset the tier" "$doc_body" 'it cannot preset it'
+check_absent "delegation.md no longer says a launcher cannot preset the tier" "$(cat "$delegation")" 'not something a launcher can preset'
+pin "delegation.md's launch-time rule names both paths" "$delegation" \
+  'A direct launch (`start_session`) can preset' \
+  "expected the delegation.md cross-reference to agree with R3 (dir #732)"
+
+pin "manage-release.md says workers carry the R13 marker" "$cmd" \
+  'carries the `WRAP CENTRALIZED (R13)` marker' \
+  "expected the closing paragraph to agree with R13 (dir #732)"
+check_absent "manage-release.md no longer says workers carry the DELEGATION RUN line" "$cmd_body" 'DOES carry that line'
+check_absent "manage-release.md M9 no longer asks for a 'structured event-count block'" "$cmd_body" 'structured event-count block'
+pin "manage-release.md M9 asks for cited events in the scoring tool's shape" "$cmd" \
+  'tools/keel-impact.sh shape' \
+  "expected M9 to point at the shape verb (dir #732)"
+
+pin "R13 names the shipped one-event shape verb" "$doc" \
+  '`tools/keel-impact.sh shape`' \
+  "expected R13's one-cited-event paragraph to name the shipped verb (dir #732)"
+pin "R13 names the session attribution flag" "$doc" \
+  'add --session <worker id>' \
+  "expected R13 to say each worker's score is attributed to its session (dir #732)"
+check_absent "R13 no longer names dir #732 as a pending remover" "$doc_body" 'its remover is `dir #732`'
+
 # --- dir #744 A6 / B8: the wave-plan prose qualifies "every PR collides in CHANGELOG.md" ------------------
 pin "R2 qualifies the CHANGELOG collision assumption with changelog fragments" "$doc" \
   'unless the project keeps changelog fragments' \

@@ -97,10 +97,15 @@ numbered requirement: state the model/effort call as the first line of the launc
 recommendation the operator only sees after reading the rest of the brief is one that arrived too late
 to change anything.
 
-**Setting the model and effort is always the operator's own gesture on the freshly spawned session —
-the manager surfaces the recommendation, it cannot preset it.** [`docs/delegation.md`](delegation.md)
-states the launch-time verify rule that follows from it — check actual model/effort against the
-recommendation right after launch, flag a mismatch before the worker spends. That doc also names
+**There are two ways to launch a real worker, and they differ in who can set its model and effort — and
+in what must be checked.** A direct launch (`start_session`) takes a `model` and an `effort`, so the
+manager presets both at the launch (measured on the 0.14.0 release: every FIX and CUT worker launched
+this way ran Sonnet from its first turn). A task chip or any hand-off the operator starts leaves the
+setting to the operator, a manual gesture on the freshly spawned session (measured on the same release:
+the chips ran Opus on 3 of 6 despite the picker). Either way the manager surfaces the recommendation and
+**verifies what is actually running**, never what was requested: [`docs/delegation.md`](delegation.md)
+states the launch-time verify rule — check actual model/effort against the recommendation right after
+launch, flag a mismatch before the worker spends. That doc also names
 which way the un-set default falls (the launcher's own tier — a top-tier manager makes every worker
 top-tier by doing nothing), the order to verify in (running-tier evidence before session metadata), and
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
@@ -518,12 +523,12 @@ session directly.
 **Per-session scoring survives centralization by splitting where each half runs.** A project's own
 per-session impact score (if it has one) is *derived* from events the session itself counted — only
 the session that lived the context can count its own events, so the **counting** stays in each worker,
-as a short structured event-count block in its final checkpoint report (tens of tokens against an
+as its cited events in its final checkpoint report (kind, then one cite line per event; tens of tokens against an
 already-cached context, orders cheaper than a per-worker wrap). The **scoring** — turning counted
 events into a number and writing it to a ledger — centralizes in the manager, since a scoring tool is
 typically a pure function over counts and costs nothing in context to run N+1 times. The manager's one
 wrap thus produces one score per worker plus its own, each attributed to its own session in the
-ledger — a release record that reports one averaged number instead of the per-session list hides
+ledger (`add --session <worker id>` labels the row) — a release record that reports one averaged number instead of the per-session list hides
 exactly the outlier worker a per-session score exists to surface. **The brief names the scoring tool's
 own event vocabulary, or the counts come back in the wrong one.** A release whose briefs asked for
 "an event-count block" received operational counts — denials, commits, subagents — from nine of ten
@@ -539,8 +544,9 @@ overlay listed the event kinds, yet most of its workers' checkpoints still carri
 "Events hit 1, friction 1", which the scoring tool cannot count ([`docs/keel-impact.md`](keel-impact.md)),
 so the manager scored four sessions and left the rest unscored. The line therefore carries the shape of
 one event — its kind, then one line naming what fired or was caught and where — beside the list of kinds.
-A compensation: its remover is `dir #732`, whose tool half has the scoring tool print the one-event shape a
-checkpoint copies and attribute a score to the session it came from.
+The scoring tool prints that shape itself (`tools/keel-impact.sh shape`: the kinds and one example line), so the
+fixed line copies it instead of hand-typing it, and the manager's one wrap turns each worker's lines into one
+`add --session <worker id>` call — a score attributed to the session it came from (`dir #732`).
 
 ## What this pattern deliberately is not
 

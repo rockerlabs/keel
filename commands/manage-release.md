@@ -62,9 +62,10 @@ record.
 
 **M9 — one wrap, at the end (R13).**
 Workers never run their own wrap; each checkpoint report carries its wrap-relevant material
-(findings, lessons, incident signals, draft tickets) plus a structured event-count block for its own
-per-session score, self-contained per R6. You run exactly one `/wrap` at release close, folding all of
-it.
+(findings, lessons, incident signals, draft tickets) plus its cited events for its own per-session score
+(kind, then one cite line per event — `tools/keel-impact.sh shape` prints the form), self-contained per R6.
+You run exactly one `/wrap` at release close, folding all of it and scoring each worker with
+`keel-impact.sh add --session <worker id>`.
 
 **Portability (R12).** Backlog resolved the `/go` way; the slate is the `→ <version>` tag convention;
 no project-specific absolute paths — a worked exemplar from one project's own instance is cited as an
@@ -77,4 +78,5 @@ workers are real, gated sessions per R3, never subagents; that boundary is
 
 **DELEGATION RUN does not apply to this session** — the manager is the orchestrator, not a delegation
 worker, and owns wrap duties for the whole release (R13). Every worker session you launch or brief
-DOES carry that line, per its own template in `docs/delegation.md`.
+carries the `WRAP CENTRALIZED (R13)` marker instead, verbatim from R13's quoted block — not the DELEGATION RUN
+line, which also forbids the log and backlog writes R8 sanctions for a worker.

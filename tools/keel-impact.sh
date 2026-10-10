@@ -226,6 +226,7 @@ Usage:
   keel-impact.sh add [--guard "cite"]... --fire "cite"... --hit "cite"... --miss "cite"... \
                      --friction "cite"... [--silent N] [--since ISO-TS] --gap "..."
   keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
+  keel-impact.sh shape                           print the event kinds and the ONE-event line a checkpoint copies
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (creates an external store entry)
   keel-impact.sh enable [dir] --restart          start a NEW trend on a LOST entry, on purpose (see below)
@@ -278,6 +279,10 @@ citation, no count). Each citation is archived to the evidence file so the score
                      it) so a ledger row's ticket is machine-resolvable the same way a citation is. Free text
                      otherwise; not validated. Enables the cost/influence join dir #313 §2 scoped but could
                      not build (no join key existed until this column).
+  --session S        the session this score came from (dir #732): a release manager scores each worker's cited
+                     events at its one wrap, and without a label every row reads as the manager's own. Free text,
+                     recommended shape: the worker id from the release brief (e.g. "W27"). Recorded in the
+                     row's last cell and in the evidence block's heading; "—" when absent.
 
 The script derives score = round(100*HELP/(HELP+COST)), HELP=4*hold+3*guard+2*fire+hit, COST=2*miss+2*friction,
 and a confidence tag from the total event count. No --score flag: the number is computed, never asserted.
@@ -297,7 +302,7 @@ EOF
 
 # --- the ledger's column list: the ONE ordered source of truth for the table's shape (dir #151) ----
 # cmd_add's row-printf (the WRITER), _ledger_parse (the READER), and the table header below all derive
-# their column positions/order from this single array instead of each hand-listing the same 13 columns.
+# their column positions/order from this single array instead of each hand-listing the same columns.
 # Position in the array is the invariant: table field N = array-index + 2 (field 1 is the empty cell
 # before the table's leading "|"; array indices are 0-based, so "date" at index 0 is field 2, "guard"
 # at index 3 is field 5, etc — the same numbering _ledger_parse's old header comment already documented).
@@ -307,8 +312,8 @@ EOF
 # reader (awk -F'|') indexes a field past a row's actual width as empty, which is exactly the "existing
 # rows read back with an empty/— value in the new field" behavior the spec calls for — no migration of
 # old rows needed. Appending anywhere but the end would have shifted every column position after it and
-# broken every existing _ledger_col_pos consumer against old rows.
-_LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap ticket)
+# broken every existing _ledger_col_pos consumer against old rows. dir #732 appended `session` the same way.
+_LEDGER_COLS=(date score conf guard hold fire hit miss fric silent evidence gap ticket session)
 
 # table field number (1-based, counting the empty pre-leading-pipe cell as field 1) for column $1 —
 # the single place that turns a column NAME into a table POSITION. Every reader/writer of ledger rows
@@ -375,6 +380,10 @@ empty on a row that predates this column or on a session with no single owning t
 that makes influence times cost possible (dir #313 per-ticket cost, joined against a per-session score
 here): a date column collides under same-day concurrent sessions, `gitBranch` is not recorded here, but
 `dir #N` is stable and already resolvable by `tools/lib/dir-tickets.sh`.
+
+**session** (dir #732) names the session the score came from, via `--session LABEL` (a release manager scores
+the cited events of each worker at its one wrap and labels each row with the worker id) — optional, `—` on a row
+that predates this column or on a session scored for itself. Appended at the END, like ticket.
 '
 
 # --- the evidence file header, written once when it is first created ------------------------------
@@ -1243,7 +1252,7 @@ cmd_add() {
   # pure: add_cite/require_count/_is_iso_ts only accumulate and inspect shell variables, no file is
   # read or written, so hoisting the block above the enabled checks costs nothing and buys the
   # ordering — `add --guard` with no citation used to migrate a legacy .keel/ and then exit 2.
-  local silent="" gap="" ticket="" ingest=1 retro=0 asof="" since=""
+  local silent="" gap="" ticket="" session="" ingest=1 retro=0 asof="" since=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --hold)      _need_cite "${2:-}" --hold;     add_cite hold     "$2"; shift 2 ;;
@@ -1255,6 +1264,7 @@ cmd_add() {
       --silent)    silent="${2:?}";                shift 2 ;;
       --gap)       gap="${2:?}";               shift 2 ;;
       --ticket)    ticket="${2:?}";             shift 2 ;;
+      --session)   session="${2:?}";            shift 2 ;;
       --no-ingest) ingest=0;                   shift 1 ;;
       --retro)     retro=1;                    shift 1 ;;
       --asof)      asof="${2:?}";              shift 2 ;;
@@ -1420,6 +1430,7 @@ cmd_add() {
   local ev; ev="$(_ledger_cell "${raw_ev:-—}")"
   local gp; gp="$(_ledger_cell "${gap:-—}")"
   local tk; tk="$(_ledger_cell "${ticket:-—}")"
+  local sn; sn="$(_ledger_cell "${session:-—}")"
 
   ensure_ledger
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
@@ -1445,6 +1456,7 @@ cmd_add() {
       evidence) _row_vals+=("$ev") ;;
       gap)      _row_vals+=("$gp") ;;
       ticket)   _row_vals+=("$tk") ;;
+      session)  _row_vals+=("$sn") ;;
       *) printf 'keel-impact: internal error — no value mapped for ledger column %s\n' "$_col" >&2; exit 1 ;;
     esac
   done
@@ -1454,7 +1466,7 @@ cmd_add() {
   # ("—") session leaves no block, mirroring "no evidence, nothing to record".
   if [ "$ev_count" -gt 0 ]; then
     ensure_evidence
-    { printf '\n## %s — score %s/100 (conf %s)\n\n' "$today" "$score" "$conf"
+    { printf '\n## %s — score %s/100 (conf %s)%s\n\n' "$today" "$score" "$conf" "${session:+ — session $(_flatten "$session")}"
       printf '%s' "${_ev_hold}${_ev_guard}${_ev_fire}${_ev_hit}${_ev_miss}${_ev_friction}"
     } >> "$EVIDENCE"
   fi
@@ -1759,8 +1771,30 @@ cmd_restore() {
   printf 'keel-impact: restored from %s — ledger data rows %s -> %s\n' "$from_p" "$before" "$after"
 }
 
+# shape — print the event vocabulary and the ONE-event line a checkpoint copies (dir #732). A pure printer: no
+# repo, store or flag needed, so a manager can paste it into a worker brief and a worker can read it cold. The
+# first line takes the kinds from $EVENT_TYPES (plus the count-only silent); the example lines and the flags in
+# the last paragraph are prose, only partly pinned by tests/test_keel_impact.sh.
+cmd_shape() {
+  [ "$#" -eq 0 ] || { printf 'keel-impact: shape takes no arguments\n' >&2; usage >&2; exit 2; }
+  cat <<EOF
+Event kinds this tool scores: $EVENT_TYPES — plus silent (a COUNT of always-loaded rules that did not fire; no cite line).
+
+One event is ONE line: the kind, a dash, then the cite — what fired or was caught, and where. A bare tally
+("hit 1, friction 1") cannot be scored — no citation, no count. Each non-zero kind is followed by one such line
+per event; the cite is the text after the dash, without the kind:
+
+  hit — read docs/delegation.md's rails block before spawning the review subagent; it named the scratch-clone rule I needed
+  friction — the pre-pr-gate denied gh pr create after an amend invalidated the receipts; re-ran /polish's steps 3-5
+
+The manager turns each line into a flag at its one wrap — keel-impact.sh add --hit "<cite>" --friction "<cite>" ... --session <worker id>
+— so every worker is scored as its own row. Operational counts (denials, commits) are not events: report them elsewhere.
+EOF
+}
+
 case "${1:-}" in
   add)            shift; cmd_add "$@" ;;
+  shape)          shift; cmd_shape "$@" ;;
   event)          shift; cmd_event "$@" ;;
   enable)         shift; cmd_enable "$@" ;;
   migrate)        shift; cmd_migrate "$@" ;;
