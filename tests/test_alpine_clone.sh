@@ -9,7 +9,7 @@
 # sandboxed. dir #750 adds the symlink group: a clone path that is a symlink, that resolves to the source
 # (same device+inode, also through a symlinked ancestor) or whose .git is a symlink is refused before any git
 # write, and the .git-not-at-its-root refusal is pinned with an enclosing-repository fixture; every decoy lives
-# under its own sandbox HOME.
+# under $SANDBOX, each case with its own clone name or HOME.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -87,12 +87,12 @@ check_status "no arguments is a usage error" 2 "$STATUS"
 run "$tool" W5 "$sha1" --source "$SANDBOX/nope"
 check_ne "a --source that is not a repo is refused" 0 "$STATUS"
 
-# --- dir #750: the clone path is resolved physically; nothing is reset or cleaned through a symlink ---------
+# --- dir #750: nothing is reset or cleaned through a symlink, or in the source directory itself -----------
 # Each fixture is a DECOY that looks like a clone of the source (origin = the source, as the reuse guard
 # requires) or the source itself with origin pointing at itself, planted with an untracked file. Before the
 # fix the tool followed the link and ran `checkout -f -B keel-alpine-leg` + `clean -ffdx` on the target
 # (S9-2, reproduced on an operator clone and on the source checkout). Everything lives under $SANDBOX; a
-# separate HOME per case keeps the canonical clone paths of the groups above untouched.
+# HOME (or clone name) per case keeps the canonical clone paths of the groups above untouched.
 # decoy_untouched DECOY LABEL — the planted file survives, the branch is the one it started on, and no
 # keel-alpine-leg branch was created in it.
 decoy_untouched() {
@@ -124,7 +124,7 @@ decoy_untouched "$SANDBOX/decoy-clone" "750 symlink to a clone" "$decoy_branch"
 check_eq "750: the link itself is left in place" "$SANDBOX/decoy-clone" "$(readlink "$h1/.keel/tmp/alpine-clone-W8")"
 
 # (b) the symlink points at the source checkout itself, whose origin is itself
-srcself="$(new_repo)"; self_origin_repo "$srcself"
+srcself="$SANDBOX/src-self"; self_origin_repo "$srcself"
 self_branch="$(git -C "$srcself" symbolic-ref -q --short HEAD)"
 self_sha="$(git -C "$srcself" rev-parse HEAD)"
 ln -s "$srcself" "$h1/.keel/tmp/alpine-clone-W9"

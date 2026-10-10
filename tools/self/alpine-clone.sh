@@ -21,8 +21,8 @@
 #   --run     after preparing the clone, run the Alpine docker leg on it (the CLAUDE.md one-liner).
 # Prints the clone path on stdout (last line). Exit: 0 ok; 2 usage; 1 any refusal.
 #
-# Refusals (nothing is touched): a clone path that is a symlink, or that resolves (physically) to the
-# source itself (dir #750); a target that exists but is neither empty nor a clone of --source (its `.git`
+# Refusals (nothing is touched): a clone path that is a symlink, or that is the source directory
+# itself (same device and inode — also through a symlinked ancestor; dir #750); a target that exists but is neither empty nor a clone of --source (its `.git`
 # is not at its root or is a symlink, or its origin differs); an unknown <sha>. This tool never removes a clone
 # directory — a session cannot `rm -rf` — so removing one stays the release manager's wrap or the
 # operator's. A REUSED clone is reset to the requested commit (`checkout -f -B`), cleaned (`clean -ffdx`) and
