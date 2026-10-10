@@ -15,6 +15,12 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/go` step 4 now says what to do about a ticket another worktree has checked out.** dir #696: git refuses a
+  second checkout of a branch, so "offer to continue it" had no mechanism and step 5 then adopted an empty fresh
+  branch as the ticket's. Step 4 finds the checkout with `worktree list --porcelain`, reports its path and
+  uncommitted-file count, and offers resume there (writing and claiming nothing), a fresh branch, or another
+  ticket; a deleted or moved directory is offered `git worktree remove <path>`. The implementer guide's handoff-note
+  step points at that offer once per session instead of restating a variant of it.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
