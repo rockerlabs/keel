@@ -47,9 +47,9 @@ relaunch — a session cannot raise its own) and continue.
 STOP: report "in flight on `<branch>`" and where it is checked out (`worktree list --porcelain`; git refuses a
 second checkout): path, uncommitted-file count (`unknown` if `git -C <path> status --porcelain` fails). Offer
 resume there (the operator runs `/go <id>` in a session in that path; you write and claim nothing), a fresh
-branch (step 6 replaces the marker; its handoff note is superseded), or another ticket. `prunable` (directory deleted or moved; if
-deleted, uncommitted work is lost) → offer `git worktree remove <path>`, then switching to it, or another ticket.
-Checked out nowhere → offer to switch to it, or another ticket. Fallback for an unclaimed
+branch (step 6 replaces the marker; its handoff note is superseded), or another ticket. `prunable` (directory
+deleted or moved; if deleted, uncommitted work is lost) → offer `git worktree remove <path>`, then switching to
+it, or another ticket. Checked out nowhere → offer to switch to it, or another ticket. Fallback for an unclaimed
 ticket: scan `git branch -a` for a live branch, not your own — `go` + the id first, decoration loose,
 id exact — then a keyword grep of branch names against the title; a match → same stop. A `⏳` heading
 whose branch is gone → if its PR merged, stop: done, the heading is stale.
