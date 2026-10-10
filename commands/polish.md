@@ -167,8 +167,7 @@ Steps, in order:
      refused, the review was voided for a missing findings list or quote (never for a changed tree — that stops), or
      the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session
      with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
-     first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b). Each existing
-     path stays as written; this adds one layer in front of them.
+     first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b).
    - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
      other mechanism (dir #183).
@@ -210,7 +209,8 @@ Steps, in order:
    disclosure:* the guide, § Step 9 (§ Step 10 for the add-on summary forms).
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (any post-review re-run and the
-    self-check), the PR URL, step 9's `docs read:` line unchanged if it produced one, and the review depth
+    self-check), the PR URL, every fixed finding as `file:line` — what changed (never a bare "addressed"),
+    step 9's `docs read:` line unchanged if it produced one, and the review depth
     with its exact mechanism, never the depth alone — `/code-review <level>` run by a fresh-context
     subagent, a genuine in-session `/code-review <level>`, an independent agent review, plus every add-on
     that also ran, or the hand-off outcome.
