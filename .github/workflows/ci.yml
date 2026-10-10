@@ -198,6 +198,9 @@ jobs:
   # tests/run.sh; a test that pins `## [Unreleased]` or one fragment file goes red here, before the real cut PR.
   cut-simulation:
     name: cut-simulation
+    # PR runs only: a full unsharded suite per push to main and per merge group would be a runner burned for a
+    # verdict the PR run already gave (the p90 the requirement rule reads comes from PR runs).
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

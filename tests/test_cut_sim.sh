@@ -61,25 +61,38 @@ check_status "a suite pinning [Unreleased] -> exit 1" 1 "$STATUS"
 check_contains "...prints FAIL" "$OUT" "cut-sim (dir #722): the suite on the cut shape: FAIL"
 check_eq "...and the source repo is unchanged" "$before" "$(snap "$fail_src")"
 check_eq "...and the clone is removed" "" "$(ls -A "$tmproot")"
+# Both verdict lines go to STDOUT (a caller capturing only stdout must see FAIL too).
+out_only="$(env TMPDIR="$tmproot" bash "$sim" --repo "$fail_src" 2>/dev/null || true)"
+check_contains "the FAIL verdict is on stdout" "$out_only" "the suite on the cut shape: FAIL"
 
 # --- the clone really holds the CUT shape, committed, under the fixed identity ----------------------
 probe_src="$(mk_src 'grep -q "^## \[9999.0.0\] — $(date -u +%Y-%m-%d)$" CHANGELOG.md && [ ! -e changelog.d/1-a.md ] && [ -z "$(git status --porcelain)" ] && [ "$(git log -1 --format=%an:%ae)" = "keel-cut-sim:cut-sim@example.invalid" ]')"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$probe_src"
 check_status "the clone has a committed 9999.0.0 section dated today (UTC), no fragments, the cut-sim author" 0 "$STATUS"
 
-# --- a signal removes the clone too ----------------------------------------------------------------
-sig_src="$(mk_src 'exec sleep 61')"
+# --- a signal removes the clone too, AFTER the suite and its descendants are gone ---------------------------
+# The fixture suite is a well-behaved runner: it starts a descendant (sleep), records its pid, announces itself
+# with a sentinel file, and on TERM kills the descendant and exits. cut-sim must TERM the suite, WAIT for it,
+# and only then remove the clone — so when the tool has exited the descendant is gone and so is the clone.
+pidfile="$SANDBOX/sig-desc.pid"; ready="$SANDBOX/sig-ready"
+sig_src="$(mk_src 'trap "kill \$p 2>/dev/null; exit 143" TERM; sleep 61 & p=$!; echo $p > '"$pidfile"'; : > '"$ready"'; wait')"
 env TMPDIR="$tmproot" bash "$sim" --repo "$sig_src" >/dev/null 2>&1 &
 sim_pid=$!
 n=0
-while [ -z "$(ls -A "$tmproot")" ] && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
-[ -n "$(ls -A "$tmproot")" ] && pass "(fixture) the clone exists while the suite runs" \
-  || fail "(fixture) the clone exists while the suite runs" "no keel-cut-sim dir appeared under $tmproot"
+while [ ! -e "$ready" ] && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
+[ -e "$ready" ] && pass "(fixture) the clone's suite is running (its sentinel appeared)" \
+  || fail "(fixture) the clone's suite is running (its sentinel appeared)" "no sentinel within the bound"
 kill -TERM "$sim_pid" 2>/dev/null || true
 n=0
 while kill -0 "$sim_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
 wait "$sim_pid" 2>/dev/null || true
-# The fixture suite is exec'd all the way down to the sleep, so the tool's TERM reaches it directly.
+desc_pid="$(cat "$pidfile" 2>/dev/null || true)"
+if [ -n "$desc_pid" ] && ! kill -0 "$desc_pid" 2>/dev/null; then
+  pass "a TERM stops the suite's descendant before the tool exits"
+else
+  fail "a TERM stops the suite's descendant before the tool exits" "descendant pid '${desc_pid}' is still alive"
+  [ -n "$desc_pid" ] && kill -TERM "$desc_pid" 2>/dev/null || true   # our own fixture's sleep, started above
+fi
 check_eq "a TERM removes the clone" "" "$(ls -A "$tmproot")"
 
 # --- refusals: no v* tag (a shallow/tagless checkout), not a git repo --------------------------------
@@ -91,6 +104,16 @@ check_status "a source with no v* tag -> exit 2" 2 "$STATUS"
 check_contains "...naming fetch-depth: 0" "$OUT" "fetch-depth: 0"
 check_eq "...and the source repo is unchanged" "$before" "$(snap "$notag_src")"
 check_eq "...and nothing was cloned" "" "$(ls -A "$tmproot")"
+# a shallow source that still carries a v* tag: the history-reading tests would be red before any cut
+git config --global --add safe.directory '*'
+shallow_dst="$SANDBOX/shallow-copy"
+git clone -q --depth 1 "file://$pass_src" "$shallow_dst" 2>/dev/null
+run env TMPDIR="$tmproot" bash "$sim" --repo "$shallow_dst"
+check_status "a shallow source -> exit 2" 2 "$STATUS"
+check_contains "...naming fetch-depth: 0" "$OUT" "fetch-depth: 0"
+# --repo on a SUBDIRECTORY of a work tree simulates that work tree's root
+run env TMPDIR="$tmproot" bash "$sim" --repo "$pass_src/tests"
+check_status "--repo on a subdirectory simulates the work tree root -> exit 0" 0 "$STATUS"
 plain="$(mktemp -d "$SANDBOX/plain.XXXXXX")"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$plain"
 check_status "a directory that is not a git repo -> exit 2" 2 "$STATUS"

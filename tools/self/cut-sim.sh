@@ -17,10 +17,11 @@
 # `tests/run.sh` and prints `cut-sim (dir #722): the suite on the cut shape: PASS` or `...: FAIL`.
 #
 # Exit 0 the suite passed on the cut shape. Exit 1 it failed (or the cut itself refused: the cut shape is
-# then not even producible). Exit 2 refused before cloning: a bad argument, DIR is not a git repo, or DIR has
-# no `v*` tag — a shallow, tagless checkout (CI's default) makes the tag-reading tests red before any cut;
-# check out with `fetch-depth: 0`. DIR is never written to. The clone is removed on every exit path,
-# including a signal.
+# then not even producible). Exit 2 refused before cloning: a bad argument, DIR is not a git work tree, or DIR
+# is shallow or has no `v*` tag — a shallow or tagless checkout (CI's default) makes the history- and
+# tag-reading tests red before any cut; check out with `fetch-depth: 0`. DIR is never written to. The clone
+# is removed on every exit path, including a signal: the suite is TERMed, waited for (bounded, then KILLed)
+# and only then is the clone removed, so no test is still writing into it. Both verdict lines go to stdout.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -43,21 +44,30 @@ done
 [ -d "$repo_dir" ] || die_args "no such directory: $repo_dir"
 repo_dir="$(cd "$repo_dir" && pwd)"
 
-git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || refuse "$repo_dir is not a git repository"
+# --repo may name any directory inside a work tree; simulate that work tree's root, not the subdirectory.
+top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)" || refuse "$repo_dir is not inside a git work tree"
+repo_dir="$top"
+shallow="$(git -C "$repo_dir" rev-parse --is-shallow-repository)"
+[ "$shallow" != "true" ] || refuse "$repo_dir is a shallow checkout — the history- and tag-reading tests would fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
 # Capture, then test: a producer piped into `grep -q` under pipefail is the dir #280 SIGPIPE race.
 tags="$(git -C "$repo_dir" tag -l 'v*')"
-[ -n "$tags" ] || refuse "$repo_dir has no v* tag — a shallow, tagless checkout makes the tag-reading tests fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
+[ -n "$tags" ] || refuse "$repo_dir has no v* tag — a tagless checkout makes the tag-reading tests fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
-[ -n "$work" ] || exit 2
+work=""
 child=""
 
-# Remove the clone, once, on every path. One retry: a git writer that is still finishing can make the first
-# rm fail with "Directory not empty" (dir #744 R2-6); a second failure is a NOTE, never a hidden leak.
+# Remove the clone, once, on every path. The suite is TERMed and waited for first: its tests are the clone's
+# writers, and an rm racing them ends in "Directory not empty". One retry after that: a git writer that is
+# still finishing can make the first rm fail (dir #744 R2-6); a second failure is a NOTE, never a hidden leak.
 cleanup() {
-  local rc=$?
+  local rc=$? n=0
   trap - EXIT INT TERM HUP
-  if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then kill -TERM "$child" 2>/dev/null || true; fi
+  if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then
+    kill -TERM "$child" 2>/dev/null || true
+    while kill -0 "$child" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
+    if kill -0 "$child" 2>/dev/null; then kill -KILL "$child" 2>/dev/null || true; fi
+    wait "$child" 2>/dev/null || true
+  fi
   case "$work" in
     */keel-cut-sim.*)
       if ! rm -rf "$work" 2>/dev/null; then
@@ -67,20 +77,22 @@ cleanup() {
   esac
   exit "$rc"
 }
+# The traps come BEFORE the mktemp, so a signal in between cannot leave a directory the handler does not know.
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
+work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
 clone="$work/clone"
 head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
-fail() { echo "cut-sim (dir #722): the suite on the cut shape: FAIL" >&2; exit 1; }
+fail() { echo "cut-sim (dir #722): the suite on the cut shape: FAIL"; exit 1; }
 
 # maintenance.auto/gc.auto off: no detached writer may still be in the clone when the cleanup removes it.
-cs_git() { git -C "$clone" -c maintenance.auto=false -c gc.auto=0 -c user.name=keel-cut-sim -c user.email=cut-sim@example.invalid "$@"; }
+cs_git() { git -C "$clone" -c maintenance.auto=false -c gc.auto=0 -c user.name=keel-cut-sim -c user.email=cut-sim@example.invalid -c commit.gpgsign=false "$@"; }
 
 echo "cut-sim: cutting 9999.0.0 in a clone of $head_sha"
 if ! bash "$clone/tools/self/changelog-cut.sh" --repo "$clone" 9999.0.0 "$(date -u +%Y-%m-%d)"; then
