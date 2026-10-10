@@ -1528,7 +1528,9 @@ log_event() {
 # It never reads a file, runs a command or resolves a path: a matcher that needs one reports a candidate line
 # and the shell side resolves it.
 # A single-quoted string, not a heredoc read: `read -d ''` takes a heredoc one byte per system call, which cost
-# ~30 ms on every Bash call at this size. So the program holds no single quote; it spells one \047.
+# ~30 ms on every Bash call at this size. So the program holds no single quote; it spells one \047. (Its
+# comments use typographic apostrophes, which shellcheck flags inside a quoted string as SC1112.)
+# shellcheck disable=SC1112
 PPG_AWK_PROG='
 # The whole command is one text, lexed once in END: no state is per line.
 { src = (NR == 1) ? $0 : src "\n" $0 }
