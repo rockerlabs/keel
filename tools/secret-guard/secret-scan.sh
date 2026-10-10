@@ -278,8 +278,9 @@ fi
 # set -u.
 rec_path=(); rec_where=(); rec_text=(); rec_blob=(); rec_msg=()
 cur_blob=""
-# --tracked reads several copies of one unmerged path (its stages, its working file): while it reads a later one, a
-# hit line already recorded for the path is not recorded again — set to the path's first record index, else empty
+# --tracked reads several copies of one unmerged path (its working file, its stages): while it does, a hit whose
+# text is already recorded for the path is not recorded again — conflict markers shift line numbers, so the text
+# alone decides. Set to the path's first record index, empty otherwise.
 rec_dedupe_from=""
 
 # a file (or blob) is binary if it contains a NUL byte
@@ -383,7 +384,7 @@ collect_matches() {
     if [ -n "$rec_dedupe_from" ]; then
       seen=""; di="$rec_dedupe_from"
       while [ "$di" -lt "${#rec_path[@]}" ]; do
-        [ "${rec_where[$di]}" = "$where" ] && [ "${rec_text[$di]}" = "$hit" ] && { seen=1; break; }
+        [ "${rec_text[$di]}" = "$hit" ] && { seen=1; break; }
         di=$((di + 1))
       done
       [ -z "$seen" ] || continue
@@ -997,18 +998,15 @@ case "$mode" in
     # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
     # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
     # not. A working-tree symlink is read as a symlink only for a tracked symlink (mode 120000); a tracked file
-    # replaced by one is "not a regular file" and read from the index. An unmerged path is listed once per stage,
-    # and every distinct non-gitlink stage's index copy is read as well as its working file, if any: the working
-    # file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs" alone. A hit
-    # line the copies share is recorded once; one WARN says the stages were read.
-    # tracked_index_copy SHA — scan the index copy SHA of the current path $f (once per path and sha), keeping a
-    # hit line already recorded for the path out; exit 2 when git cannot read it.
+    # replaced by one is "not a regular file" and read from the index. An unmerged path (a stage other than 0) is
+    # read whole: its working file if there is one, and every distinct non-gitlink stage's index copy — the
+    # working file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs"
+    # alone. A hit the copies share is recorded once (rec_dedupe_from); one WARN names the path.
+    # tracked_index_copy PATH SHA — scan the index copy SHA of PATH; exit 2 when git cannot read it.
     tracked_index_copy() {
-      staged_shas+="$1 "
-      git -C "$top" cat-file blob "$1" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
-      rec_dedupe_from="$path_from"
-      emit_file "$f" "$tblob"
-      rec_dedupe_from=""
+      staged_shas+="$2 "
+      git -C "$top" cat-file blob "$2" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$1'" $? "$terr"
+      emit_file "$1" "$tblob"
     }
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
@@ -1018,20 +1016,27 @@ case "$mode" in
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
       thdr="${rec%%"$tab"*}"                        # `<tag> <mode> <sha> <stage>`: fixed fields, no spaces inside
       ttag="${thdr%% *}"; thdr="${thdr#* }"; tmode="${thdr%% *}"; thdr="${thdr#* }"; tsha="${thdr%% *}"
+      tstage="${thdr#* }"
       [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
       if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
-        if [ -z "$unmerged" ]; then
-          unmerged=1
-          echo "secret-scan: WARN unmerged, each stage's index copy scanned too: $fesc" >&2
-          # its first stage was read from the working tree: read that stage's index copy too
-          case "$staged_shas" in *" $first_sha "*) ;; *) tracked_index_copy "$first_sha" ;; esac
-        fi
-        case "$staged_shas" in *" $tsha "*) ;; *) tracked_index_copy "$tsha" ;; esac
+        case "$staged_shas" in *" $tsha "*) ;; *) tracked_index_copy "$f" "$tsha" ;; esac
         continue
       fi
-      prev="$f"; path_from="${#rec_path[@]}"; staged_shas=" "; first_sha="$tsha"; unmerged=""
+      prev="$f"; staged_shas=" "; rec_dedupe_from=""
       fesc="${f//$'\n'/\\n}"
+      if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
+        echo "secret-scan: WARN unmerged, its working file (if any) and each stage's index copy scanned: $fesc" >&2
+        rec_dedupe_from="${#rec_path[@]}"
+        if [ -L "$top/$f" ]; then
+          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+          emit_stream "$f" <<< "$target"
+        elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+          emit_stream "$f" < "$top/$f"
+        fi
+        tracked_index_copy "$f" "$tsha"
+        continue
+      fi
       why=""
       if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
         sparse=$((sparse + 1))
@@ -1053,8 +1058,9 @@ case "$mode" in
         why="not a regular file in the working tree"
       fi
       [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
-      tracked_index_copy "$tsha"
+      tracked_index_copy "$f" "$tsha"
     done < "$tlist"
+    rec_dedupe_from=""
     [ "$sparse" -eq 0 ] || echo "secret-scan: WARN $sparse skip-worktree file(s) scanned from the index" >&2
     ;;
   --selftest)

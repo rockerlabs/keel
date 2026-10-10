@@ -3142,10 +3142,10 @@ printf 'tok = %s\n' "$k746" > "$r746/c.txt"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
 check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
-# (f) an unmerged path: every distinct non-gitlink stage's index copy is read as well as its working file, if any —
-# the working file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs" alone;
-# a gitlink stage never claims the path (a gitlink stage 1 once hid the working file); a hit line the copies share
-# prints once; one WARN says the stages were read (review findings)
+# (f) an unmerged path (a stage other than 0) is read whole: its working file, if any, and every distinct
+# non-gitlink stage's index copy — the working file of a binary or type conflict holds one side only, and a key may
+# sit in "ours" or "theirs" alone. A gitlink stage never claims the path; a hit the copies share prints once, even
+# when conflict markers move its line; one WARN names the path (review findings)
 r746="$(new_repo)"
 printf 'base\n' > "$r746/f.txt"
 commit746 "$r746" base
@@ -3157,41 +3157,56 @@ printf 'tok = %s\nmore\n' "$k746" > "$r746/f.txt"
 kb2_746="$(git -C "$r746" hash-object -w f.txt)"
 printf 'tok = %s\n' "$k746" > "$r746/f.txt"
 kb746="$(git -C "$r746" hash-object -w f.txt)"
-stages746() {  # mode1 sha1 mode2 sha2 sha3 — f.txt unmerged with these three stages
+stages746() {  # "<mode> <sha> <stage>"… — f.txt unmerged with exactly these index entries
+  local e
   git -C "$r746" update-index --force-remove f.txt
-  printf '%s %s 1\tf.txt\n%s %s 2\tf.txt\n100644 %s 3\tf.txt\n' "$1" "$2" "$3" "$4" "$5" \
-    | git -C "$r746" update-index --index-info
+  for e in "$@"; do printf '%s\tf.txt\n' "$e"; done | git -C "$r746" update-index --index-info
 }
-stages746 100644 "$b746" 100644 "$b746" "$b746"
+unmerged746="secret-scan: WARN unmerged, its working file (if any) and each stage's index copy scanned: f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): the key in the working file of an unmerged path → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...one hit line, not one per stage" 1 "$(match "$OUT" -c '^  f.txt:1:')"
-check_eq "dir #746 A26(f): ...and one WARN that the stages were read" 1 \
-  "$(match "$OUT" -c "^secret-scan: WARN unmerged, each stage's index copy scanned too: f.txt\$")"
-stages746 160000 "$c746" 100644 "$kb746" "$kb746"
+check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:')"
+check_eq "dir #746 A26(f): ...and one WARN naming the unmerged path" 1 "$(match "$OUT" -cF "$unmerged746")"
+stages746 "160000 $c746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
-check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...the working file and the stages share the line: printed once" 1 \
-  "$(match "$OUT" -c '^  f.txt:1:')"
+check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file (stages clean) → BLOCKED" 1 "$STATUS"
 printf 'clean\n' > "$r746/f.txt"
-stages746 100644 "$b746" 100644 "$b746" "$kb746"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a clean working file, the key in stage 3 alone → BLOCKED" 1 "$STATUS"
-rm "$r746/f.txt"
+stages746 "160000 $c746 1" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
-check_status "dir #746 A26(f): no working copy, the key in stage 3 alone → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:1:')"
-check_eq "dir #746 A26(f): ...and one index-copy WARN for the path" 1 "$(match "$OUT" -c 'index copy instead: f.txt$')"
-stages746 100644 "$b746" 100644 "$kb746" "$o746"
+check_status "dir #746 A26(f): a gitlink stage 1 and the key in stage 3, the only file stage → BLOCKED" 1 "$STATUS"
+stages746 "100644 $kb746 2" "100644 $o746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): add/add, a clean working file, the key in stage 2 alone → BLOCKED" 1 "$STATUS"
+rm "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $kb746 2" "100644 $o746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, the key in stage 2 alone (stage 3 distinct and clean) → BLOCKED" 1 "$STATUS"
-stages746 100644 "$b746" 160000 "$c746" "$kb746"
+stages746 "100644 $b746 1" "160000 $c746 2" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, a gitlink stage 2 before the key in stage 3 → BLOCKED" 1 "$STATUS"
-stages746 160000 "$c746" 100644 "$kb746" "$kb2_746"
+stages746 "160000 $c746 1" "100644 $kb746 2" "100644 $kb2_746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, the key in stages 2 and 3 (different blobs) → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...the hit line the stages share prints once" 1 "$(match "$OUT" -c '^  f.txt:1:')"
+check_eq "dir #746 A26(f): ...the hit the stages share prints once" 1 "$(match "$OUT" -c '^  f.txt:')"
+# a real text conflict: the markers move the key's line in the working file, and it still prints once
+r746="$(new_repo)"
+printf 'a\n' > "$r746/f.txt"
+commit746 "$r746" base
+main746="$(git -C "$r746" branch --show-current)"
+git -C "$r746" checkout -q -b theirs746
+printf 'x\n' > "$r746/f.txt"
+commit746 "$r746" theirs
+git -C "$r746" checkout -q "$main746"
+printf 'y\ntok = %s\n' "$k746" > "$r746/f.txt"
+commit746 "$r746" ours
+git -C "$r746" merge -q theirs746 >/dev/null 2>&1 || true
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a real text conflict holding the key → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...printed once, though the markers moved its line" 1 "$(match "$OUT" -c '^  f.txt:')"
 # (g) a tracked regular file replaced by a symlink: its index copy is read — the readlink branch is for a tracked
 # symlink (mode 120000) only (review finding: the key read clean)
 r746="$(new_repo)"
