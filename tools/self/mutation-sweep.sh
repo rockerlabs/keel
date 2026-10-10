@@ -14,10 +14,12 @@
 #                ignored. In the needle and the replacement `\t`, `\n` and `\\` are decoded; the replacement
 #                may be empty (a deletion mutant). `file` is relative to the checkout's top level.
 #   <test-file>  the suite to run per mutant, relative to the top level; default tests/test_pre_pr_gate_lexer.sh.
-#   --check      validate the list against the working tree, run nothing: five fields, an id unique in the list,
-#                a needle occurring exactly once in its file, a replacement that differs from the needle. One
-#                problem per line on stdout; exit 0 when the list is sound, 1 otherwise. tests/test_mutation_lists.sh
-#                is its caller — one parser, so the sweep and the staleness check cannot disagree on a row.
+#   --check      validate the list against the WORKING TREE, run nothing: five fields, an id unique in the list,
+#                a needle occurring exactly once in its file, a replacement that differs from the needle, a file path
+#                that is relative, without `..`, and neither a symlink nor under one. One problem per line on
+#                stdout; exit 0 when the list is sound, 1 otherwise. tests/test_mutation_lists.sh is its caller —
+#                one parser and one path rule, so the sweep (which tests committed HEAD, and refuses a dirty named
+#                file) and the staleness check agree on a row whenever the named files are clean.
 #   KEEL_SWEEP_TIMEOUT   seconds per test run (default 600), via `perl -e 'alarm shift; exec @ARGV'`.
 #
 # Run from inside a keel checkout; the repo is that checkout's top level. The sweep tests COMMITTED HEAD: it
@@ -30,7 +32,7 @@
 #
 # A run's summary is the last line of the test file's output matching `: N passed, M failed`; its failed count
 # is M. Per mutant the needle must occur exactly once in the file, counted as substring occurrences,
-# overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink, or a file under one — --check reports it too); it is replaced literally; the file
+# overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink, or a file under one); it is replaced literally; the file
 # must change (else NOCHANGE). Outcome: TIMEOUT (exit status 142), else CRASHED (no summary), else KILLED (failed >= 1)
 # or SURVIVED (failed = 0). The file is restored from git after each mutant. Known limits: the timeout kills the test
 # file's bash, not its children — a mutant that makes a child (the gate's awk) spin leaves that child running after
@@ -46,16 +48,31 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 
 usage() { printf 'usage: mutation-sweep.sh <list> [<test-file>]\n       mutation-sweep.sh --check <list>\n' >&2; exit 2; }
 refuse() { printf 'mutation-sweep: %s\n' "$*" >&2; exit 2; }
-# via_symlink ROOT REL — 0 when REL, or any directory on its way, is a symlink under ROOT: a write there leaves the clone.
+# path_shape_bad REL — 0 when REL is not a path relative to the top level without `..` (empty, absolute, or climbing).
+path_shape_bad() {
+  case "$1" in ''|/*|..|../*|*/..|*/../*) return 0 ;; esac
+  return 1
+}
+# via_symlink ROOT REL — 0 when REL, or any directory on its way, is a symlink under ROOT: a write there leaves the
+# clone. Empty components (a//b, a trailing slash) are skipped, so a doubled slash cannot hide a link.
 via_symlink() {
   local p="$1" rest="$2" part
   while [ -n "$rest" ]; do
     part="${rest%%/*}"
     case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    [ -n "$part" ] || continue
     p="$p/$part"
     [ -L "$p" ] && return 0
   done
   return 1
+}
+# path_problem ROOT REL — prints why REL cannot be a mutant target under ROOT (nothing when it can); the ONE path
+# rule, applied by --check (to the working tree) and by the sweep (to its clone).
+path_problem() {
+  if path_shape_bad "$2"; then echo "must be a path relative to the top level without '..'"
+  elif via_symlink "$1" "$2"; then echo "is, or lies under, a symlink"
+  fi
+  return 0
 }
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/nonneg-int.sh"
@@ -145,10 +162,11 @@ list="$1"; tfile="${2:-tests/test_pre_pr_gate_lexer.sh}"
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git checkout"
 
 if [ "$mode" = check ]; then
+  nl=$'\n'
   problems="$(awk -F'\t' -v mode=check -v root="$top" "$AWK_PROG" "$list")"
   while IFS=$'\t' read -r _row _id file; do
-    if via_symlink "$top" "$file"; then problems="$problems${problems:+
-}$_id: $file is, or lies under, a symlink"; fi
+    why="$(path_problem "$top" "$file")"
+    [ -z "$why" ] || problems="$problems${problems:+$nl}$_id: $file $why"
   done <<EOF
 $(awk -F'\t' -v mode=list "$AWK_PROG" "$list")
 EOF
@@ -167,14 +185,12 @@ rows="$(awk -F'\t' -v mode=list "$AWK_PROG" "$list")"
 # checkout (relative, no `..`) and carry no tracked change (git status takes a repeated path in stride).
 set --
 while IFS=$'\t' read -r _row _id file; do
-  case "$file" in
-    ''|/*|..|../*|*/..|*/../*) refuse "row $_id: file must be a path relative to the top level without '..' (got '$file')" ;;
-  esac
+  ! path_shape_bad "$file" || refuse "row $_id: file must be a path relative to the top level without '..' (got '$file')"
   set -- "$@" "$file"
 done <<EOF
 $rows
 EOF
-case "$tfile" in ''|/*|..|../*|*/..|*/../*) refuse "test file must be a path relative to the top level without '..' (got '$tfile')" ;; esac
+! path_shape_bad "$tfile" || refuse "test file must be a path relative to the top level without '..' (got '$tfile')"
 [ -f "$top/$tfile" ] || refuse "no such test file: $tfile"
 set -- "$@" "$tfile"
 dirty="$(git -C "$top" status --porcelain --untracked-files=no -- "$@")"
@@ -207,6 +223,7 @@ run_test() {
   ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out.$runs" 2>&1 || rc=$?
   summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out.$runs" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
+  rm -f "$tmp/out.$runs"   # an orphan still writing to it writes to an unlinked file
 }
 
 runs=0
@@ -217,8 +234,9 @@ if [ "$rc" -eq 142 ]; then refuse "the unmutated test file timed out after ${tim
 
 killed=0; survived=0; timed=0; crashed=0; bad=0
 while IFS=$'\t' read -r row id file; do
-  if via_symlink "$work" "$file"; then   # a write through a tracked symlink would leave the clone
-    printf '%s\tBADNEEDLE\t-\n' "$id"; printf 'mutation-sweep: %s: %s is, or lies under, a symlink\n' "$id" "$file" >&2
+  why="$(path_problem "$work" "$file")"
+  if [ -n "$why" ]; then   # e.g. a tracked symlink: a write through it would leave the clone
+    printf '%s\tBADNEEDLE\t-\n' "$id"; printf 'mutation-sweep: %s: %s %s\n' "$id" "$file" "$why" >&2
     bad=$((bad + 1)); continue
   fi
   res="$(awk -F'\t' -v mode=mutate -v root="$work" -v want="$row" -v out="$tmp/mutant" "$AWK_PROG" "$list")"

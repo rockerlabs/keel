@@ -167,6 +167,17 @@ sweep_in "$fxs" --check "$SANDBOX/link.tsv"
 check_status "--check agrees with the sweep: exit 1 on both symlink rows" 1 "$STATUS"
 check_contains "…naming the leaf symlink" "$OUT" "m-link: link.sh is, or lies under, a symlink"
 check_contains "…and the directory one" "$OUT" "m-dirlink: ldir/target.txt is, or lies under, a symlink"
+# a link deeper than the first component, and a doubled slash that must not hide one
+mkdir "$fxs/sub"
+ln -s "$SANDBOX/outside" "$fxs/sub/dl"
+git -C "$fxs" add sub/dl
+git -C "$fxs" commit -qm nested
+{ row m-nested sub/dl/target.txt 'a=1' 'a=9' 'a link on the second component'; row m-double ldir//target.txt 'a=1' 'a=9' 'a doubled slash'; } >"$SANDBOX/nested.tsv"
+sweep_in "$fxs" "$SANDBOX/nested.tsv" t.sh
+check_contains "a symlink on the SECOND path component: BADNEEDLE" "$OUT" "m-nested${TAB}BADNEEDLE${TAB}-"
+check_contains "…named by id and file" "$OUT" "m-nested: sub/dl/target.txt is, or lies under, a symlink"
+check_contains "a doubled slash does not hide the link: BADNEEDLE" "$OUT" "m-double${TAB}BADNEEDLE${TAB}-"
+check_eq "…and still nothing outside the clone was written" "$outside_before" "$(cksum <"$SANDBOX/outside/target.txt")"
 
 # --- 7c. overlapping occurrences count: `aa` in `aaa` is two matches, not one ------------------------------------------
 printf 'aaa\n' >"$fx/over.txt"
@@ -190,6 +201,10 @@ check_status "a list naming an absolute path: exit 2" 2 "$STATUS"
 row m-dots ../x 'a' 'b' 'a parent path' >"$SANDBOX/dots.tsv"
 sweep_in "$fx" "$SANDBOX/dots.tsv" t.sh
 check_status "a list naming a .. path: exit 2" 2 "$STATUS"
+sweep_in "$fx" --check "$SANDBOX/abs.tsv"
+check_contains "--check applies the same path rule (absolute)" "$OUT" "m-abs: /etc/passwd must be a path relative to the top level without '..'"
+sweep_in "$fx" --check "$SANDBOX/dots.tsv"
+check_contains "--check applies the same path rule (..)" "$OUT" "m-dots: ../x must be a path relative to the top level without '..'"
 sweep_in "$fx" "$SANDBOX/one.tsv" no-such-test.sh
 check_status "a missing test file: exit 2" 2 "$STATUS"
 printf 'm-four\tapp.sh\ta=1\ta=9\n' >"$SANDBOX/four.tsv"
