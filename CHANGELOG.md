@@ -30,6 +30,7 @@ sections real content going forward — see that page for exactly when each one 
   the verbatim Worker rails block, a leg writes only under its own scratch subdirectory and never stops, kills or
   removes a container, process or file it did not create; the cut-and-land step says a history entry states only
   events already on record. `tests/test_delta_audit_doc.sh` pins the leg rails byte-identical across the five copies.
+- **`tools/read-trace.sh aggregate` says when its empty table is permanent.** A repository holding nothing the trace's scope (`docs/*`, `commands/*.md`, `BACKLOG.md`) can see now gets one "nothing in this repository is in the trace's scope" line before the table, in the slot of the lost/moved lines, instead of an empty table identical to a project nobody has opened yet (dir #706).
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
   together, and that total comes off the release total before the per-unit division. Where the operator's
