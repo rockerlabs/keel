@@ -217,8 +217,9 @@ fi
 # B19 (spec 685 round 2, dir #748 D1-7): a home that is the Keel checkout, or lies inside it, is refused in
 # every mode, before the home is touched at all (exit 2, nothing created, no lock). A copy install there
 # would write Keel's files over the checkout's own, and an uninstall would then move tracked files out. A
-# home still to be made is judged by its nearest existing ancestor. (The linked-mode self-link guard below
-# is a different case: a home that is the checkout's PARENT, so that <home>/keel is the checkout.)
+# home still to be made is judged where `mkdir -p` would make it (keel_dir_is_checkouts_own: its nearest
+# existing ancestor, the rest of the path replayed from there, `..` included). (The linked-mode self-link
+# guard below is a different case: a home that is the checkout's PARENT, so that <home>/keel is the checkout.)
 if keel_dir_is_checkouts_own "$HOME_DIR"; then
   echo "install: refusing --home $HOME_DIR — it lies inside the Keel checkout ($root); choose a home outside the checkout. Nothing was written." >&2
   exit 2
@@ -568,11 +569,11 @@ fi
 #   - DIR exists but is not a directory (a file, a dangling link) — a bare `mkdir -p` there used to abort
 #     the whole run before the manifest was written (S4-1);
 #   - `mkdir -p` cannot make it;
-#   - DIR's physical path (or, for a DIR still to be made, its nearest existing ancestor's) lies inside the
-#     Keel checkout: `<home>/docs` symlinked into the checkout made install record the checkout's own
-#     files, and uninstall then moved them out (S4-4). A symlinked directory anywhere else is followed —
-#     the operator's own commands/ and agents/ are such links. (The home itself is never inside the
-#     checkout: B19's refusal near the top runs first.)
+#   - DIR's physical path (for a DIR still to be made: where `mkdir -p` would make it — see
+#     keel_dir_is_checkouts_own) lies inside the Keel checkout: `<home>/docs` symlinked into the checkout
+#     made install record the checkout's own files, and uninstall then moved them out (S4-4). A symlinked
+#     directory anywhere else is followed — the operator's own commands/ and agents/ are such links. (The
+#     home itself is never inside the checkout: B19's refusal near the top runs first.)
 # Every product-directory site calls this, so the checks live once; the caller skips its placement on 1.
 # "Inside" is safe-write's one definition (keel_dir_is_checkouts_own: the checkout's path or below it,
 # with the slash — a sibling `<checkout>-dots` is not inside).

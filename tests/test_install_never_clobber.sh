@@ -51,6 +51,14 @@ for row in "install copy|$ck/install.sh --no-hooks|$ck" \
   check_eq "A39 $label …git status of the checkout is clean" "" "$(git -C "$ck" status --porcelain)"
 done
 check_nodir "A39 the home still to be made was never created" "$ck/not-yet"
+check_nodir "A39 the climbing home made no directory on its way" "$SANDBOX/a39-nx"
+check_nodir "A39 …nor its target inside the checkout" "$ck/dd"
+# …and a home still to be made that climbs back OUT of the checkout with .. lies outside it: installed.
+h="$ck/nx/../../a39-out/h"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "A39 a home still to be made that climbs out of the checkout with .. → exit 0" 0 "$STATUS"
+check_file "A39 …landing outside the checkout" "$SANDBOX/a39-out/h/FRAMEWORK.md"
+check_eq "A39 …and the checkout's git status stays clean" "" "$(git -C "$ck" status --porcelain)"
 # round trip: an ordinary home outside the checkout still installs, uninstalls and installs.
 h="$SANDBOX/a39-ok/h"
 run "$ck/install.sh" --home "$h" --no-hooks
