@@ -532,7 +532,6 @@ else
   echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
-KEEL_SAFE_WRITE_CHECKOUT="$root"
 
 # product_dir DIR WHAT — ready DIR to receive Keel's WHAT (B7 of docs/specs/685-symlink-policy.md): make it
 # if it is missing, and return 0. Return 1 after ONE skip line, having written nothing, when:
@@ -699,8 +698,7 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
 # failure — which is exactly what the backup check below now does.
-# LABEL (default "--force") is only the word in the success line's closing parentheses; the block-refresh
-# ladder (dir #650) passes "block refresh".
+# LABEL (default "--force") is only the word in the success line's closing parentheses.
 force_backup() {
   local dest="$1" label="${2:---force}"
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
@@ -728,7 +726,9 @@ force_backup() {
 # Every file write below goes through tools/lib/safe-write.sh (dir #679), by the shape of the write:
 # keel_write_replace / keel_link_replace for a whole file or link of Keel content (a temp sibling renamed
 # onto the path, so a dest is never left half-written), keel_write_through for an edit of a file whose
-# new bytes depend on its current ones (the rails block, the manifest, the foreign-core marker).
+# new bytes depend on its current ones (the rails block, the import line; keel_backup_write_through when
+# the edit takes a backup), keel_write_state for Keel's own state files (the manifest, the foreign-core
+# marker), where a hard link is split rather than refused.
 
 # _keel_test_checkpoint NAME — test-only crash-simulation checkpoint (dir #235): exits immediately
 # when KEEL_TEST_CRASH_AFTER equals NAME, letting the test suite prove the ordering of two
@@ -1167,6 +1167,9 @@ replace_core_block() {
 # Optional second argument "trimmed" (dir #650): write the git-rails-trimmed reference form instead —
 # the shipped block through strip_git_blocks (crumb included), so a later run recognizes the trim
 # mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
+# The backup goes with the write, in one call (dir #756 (d)): the write's refusals are checked first, so a
+# refused refresh (a hard-linked or checkout-linked FILE) claims no backup, and the "backed up" line is
+# printed only once the refresh has landed.
 refresh_core_block() {
   local file="$1" fresh
   keel_core_block_check "$file" || return 1
@@ -1175,16 +1178,17 @@ refresh_core_block() {
     fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
   fi
   # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
-  keel_write_through "$file" keel_core_block_replace "$file" "$fresh"
+  keel_backup_write_through "$file" keel_core_block_replace "$file" "$fresh" || return 1
+  echo "  ~    $(basename "$file") backed up → $(basename "$KEEL_BACKUP") (block refresh)"
 }
 # core_block_currency FILE — the ONE block-currency ladder for every copy-shaped home (dir #650 D9): the
 # --codex AGENTS.md and copy-mode Claude's CLAUDE.md, whenever FILE already exists and is Keel-managed
 # (foreign_core=0). It touches ONLY the text between the KEEL-CORE markers, never anything outside.
 #   block current           → "=" line (a git-rails trim made by /keel-setup counts as current: the
 #                             comparison is trim-aware, keel_core_block_state)
-#   differs, on a terminal  → offer to refresh just the block (default NO); a yes backs FILE up first
-#                             (force_backup's caller contract: tested in an `if`), then writes the
-#                             reference form — the full block, or the trimmed one for a trimmed block
+#   differs, on a terminal  → offer to refresh just the block (default NO); a yes backs FILE up and
+#                             writes the reference form in one call (refresh_core_block) — the full
+#                             block, or the trimmed one for a trimmed block
 #   differs, no terminal    → WARN, never a write; the route carries the mode and home flags (a bare
 #                             ./install.sh would build a second install elsewhere for a --codex or
 #                             --home adopter) and, from an ephemeral bootstrap run whose checkout is
@@ -1216,7 +1220,7 @@ core_block_currency() {
       [yY]|[yY][eE][sS])
         # $kind unquoted on purpose: empty → no argument (the full block), "trimmed" → the trimmed form.
         # shellcheck disable=SC2086
-        if force_backup "$dest" "block refresh" && refresh_core_block "$dest" $kind; then
+        if refresh_core_block "$dest" $kind; then
           echo "  +    $CONTEXT_FILE core block refreshed"
         else
           echo "  =    $CONTEXT_FILE left untouched (nothing was refreshed)"
@@ -1246,6 +1250,24 @@ strip_template_prose() {
 # ^@…$ would call a working import unwired (and then append a duplicate). Verify uses this too, and
 # tools/doctor.sh --install carries a mirrored copy (cross-referenced there) — keep them in sync.
 has_core_import() { grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$1" 2>/dev/null; }
+# import_line_appended FILE — FILE's bytes with the import line appended, on stdout: the CMD of linked
+# mode's append, an EDIT through tools/lib/safe-write.sh (dir #748 audit S5-2), so a CLAUDE.md linked
+# into the checkout is refused like any other edit. A newline first when FILE does not end in one; a
+# blank separator line only when FILE's last line is not already blank — so N link-mode install /
+# uninstall cycles (uninstall strips the import line, leaving the separator) end byte-identical to one
+# (dir #748 audit S6-3). Built in one variable and printed by one printf, so its status is the read's
+# and the write's (manifest_body's shape).
+import_line_appended() {
+  local body nl=$'\n'
+  body="$(cat "$1" && printf x)" || return 1
+  body="${body%x}"
+  case "$body" in
+    ''|"$nl"|*"$nl$nl") ;;              # empty, or the last line is already blank
+    *"$nl") body="$body$nl" ;;          # the separator
+    *)      body="$body$nl$nl" ;;       # no final newline: end the line, then the separator
+  esac
+  printf '%s%s\n' "$body" "$import_line"
+}
 # --no-git (linked mode): CORE.md's KEEL-GIT markers fence the code/git rails. strip_git_blocks removes
 # every marked block, replacing the FIRST with the constant breadcrumb below — always-on text that
 # (a) tells the assistant the git rails are deliberately absent and to restore them BEFORE the first
@@ -1618,7 +1640,7 @@ EOF
   #   your own file     → append the one line (non-destructive, announced; delete it to unlink)
   gclaude="$HOME_DIR/CLAUDE.md"
   if seed_blocked "$gclaude" CLAUDE.md; then
-    :   # B5: the whole seed / import / migrate chain is skipped, so no later branch's `>>` append can write through it
+    :   # B5: the whole seed / import / migrate chain is skipped, so no later branch's write can reach it
   elif [ ! -f "$gclaude" ]; then
     # tests/test_install_link.sh pins the exact source strings strip_template_prose targets, so a
     # reword in templates/CLAUDE.md fails loudly instead of no-oping here.
@@ -1674,9 +1696,10 @@ EOF
       echo "  !    CLAUDE.md embeds rails that differ from the shipped core — left untouched (your edits may live in the block)."
       echo "       Compare, then migrate by hand: replace the KEEL-CORE block with the line  $import_line"
     fi
-  else
-    printf '\n%s\n' "$import_line" >> "$gclaude"
+  elif keel_write_through "$gclaude" import_line_appended "$gclaude"; then
     echo "  +    CLAUDE.md: appended the Keel core import line (one line, at the end — remove it to unlink)"
+  else
+    echo "  =    CLAUDE.md left untouched (the verify below flags the missing import)"
   fi
 
   # Root-level copies from an earlier copy-mode install would now shadow the linked versions and
@@ -2138,8 +2161,9 @@ rm -f "$prior_manifest"
 # already tells the truth for whichever mode/state this run ended in.
 foreign_core_marker="$manifest_dir/foreign-core.$manifest_mode"
 if [ "$foreign_core" = 1 ]; then
-  # A state EDIT: a refused write (the lib's one line) means the run cannot record what it did — exit.
-  keel_write_through "$foreign_core_marker" printf '' || exit 1
+  # A STATE write (dir #756 (a)): a hard-linked marker is split, not refused; any other refusal (the lib's
+  # one line) means the run cannot record what it did — exit.
+  keel_write_state "$foreign_core_marker" printf '' || exit 1
 else
   rm -f "$foreign_core_marker"
 fi
@@ -2228,26 +2252,28 @@ done < "$merge_tmp"
 rm -f "$merge_tmp"
 
 # manifest_body — the manifest's content on stdout. A function, so the lib's command form runs it: a
-# body whose LAST command fails, or that aborts (`set -u`), leaves the previous manifest in place. A
-# write error on an earlier line is NOT caught — the command form runs CMD where errexit is off, so
-# only the last status counts (a known residual of dir #679, recorded in its PR).
+# body that fails, or that aborts (`set -u`), leaves the previous manifest in place. The command form
+# runs CMD with errexit off (declined in safe-write.sh's header), so only the LAST status counts: the
+# whole body is built into one variable, with no command in the build, and printed by ONE printf, so a
+# failed write anywhere is that printf's own status (dir #755).
 manifest_body() {
-  echo "keel_manifest_version=1"
-  echo "mode=$manifest_mode"
-  echo "layout=$manifest_layout"
-  echo "home=$home_resolved"
-  echo "context_file=$CONTEXT_FILE"
-  echo "context_created=$context_created"
-  echo "checkout=$root"
-  echo "ephemeral=$EPHEMERAL"
-  echo "keel_version=$keel_version"
-  echo "installed_at=$installed_at"
-  [ -n "$edit_kind" ] && printf 'artifact=%s\t%s\t%s\n' "$edit_kind" "$CONTEXT_FILE" "$edit_extra"
-  if [ "${#manifest_artifact_lines[@]}" -gt 0 ]; then
-    printf '%s\n' "${manifest_artifact_lines[@]}"
+  local body line nl=$'\n' tab=$'\t'
+  body="keel_manifest_version=1${nl}mode=$manifest_mode${nl}layout=$manifest_layout${nl}home=$home_resolved${nl}"
+  body="${body}context_file=$CONTEXT_FILE${nl}context_created=$context_created${nl}checkout=$root${nl}"
+  body="${body}ephemeral=$EPHEMERAL${nl}keel_version=$keel_version${nl}installed_at=$installed_at${nl}"
+  if [ -n "$edit_kind" ]; then
+    body="${body}artifact=$edit_kind${tab}$CONTEXT_FILE${tab}$edit_extra${nl}"
   fi
+  if [ "${#manifest_artifact_lines[@]}" -gt 0 ]; then
+    for line in "${manifest_artifact_lines[@]}"; do
+      body="${body}${line}${nl}"
+    done
+  fi
+  printf '%s' "$body"
 }
-keel_write_through "$manifest_file" manifest_body || exit 1   # a state EDIT: refused → exit, as for the marker
+# A STATE write (dir #756 (a)): a hard-linked manifest is split, so the run records what it placed; any
+# other refusal exits, as for the marker.
+keel_write_state "$manifest_file" manifest_body || exit 1
 echo "  +    install manifest ($manifest_file)"
 
 # dir #381: crash-simulation checkpoint right in the window the comment below already names — "if this

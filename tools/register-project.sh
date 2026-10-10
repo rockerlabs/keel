@@ -16,7 +16,6 @@ else
   echo "register-project: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
-KEEL_SAFE_WRITE_CHECKOUT="$(cd "$here/.." && pwd)"
 
 # Where the registry lives: KEEL_INSTANCE wins, else <KEEL_HOME>/INSTANCE.md, else ~/.claude/INSTANCE.md.
 INSTANCE="${KEEL_INSTANCE:-${KEEL_HOME:-${HOME:?set HOME, or pass KEEL_INSTANCE}/.claude}/INSTANCE.md}"

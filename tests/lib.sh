@@ -609,6 +609,11 @@ check_nolink()   { if [ -L "$2" ]; then fail "$1" "should not be a symlink: $2";
 # signal — pass grep's own flags (including -q) straight through, e.g. `match "$s" -qw "$v"`.
 match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 
+# inode_of FILE — FILE's inode number (a rename changes it; a hard link shares it). `read` drops the
+# leading blanks busybox `ls -i` pads the number with. Promoted on its second test file (the safe-write
+# pair), the "second use = promote" convention above.
+inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
+
 # STRICT_SEMVER_TAG_RE — a v-prefixed strict-semver tag name (`v<x.y.z>`, the `v` kept), anchored.
 # Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE —
 # all_release_tag_versions()'s own `ls-remote` leg below, which release_tag_versions() can't cover

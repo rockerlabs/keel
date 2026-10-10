@@ -168,7 +168,6 @@ else
   echo "uninstall: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
-KEEL_SAFE_WRITE_CHECKOUT="$root"
 # artifact_shared_with_other REL — dir #124's structural closure: true iff REL is ALSO a recorded
 # artifact in the OTHER mode's manifest at this SAME home. Presence, not cksum agreement — the question
 # is "does the other install still need this file to exist", not "do the two installs agree on its
