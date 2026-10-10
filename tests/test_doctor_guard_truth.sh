@@ -91,7 +91,8 @@ check_absent "D1-3: ...removing the link and re-vendoring (the advice) clears th
 
 # an empty hooksPath supplied by the ENVIRONMENT (git -c / GIT_CONFIG_COUNT) has no file line to remove
 mk_home cmd; r_cmd="$(mk_repo)"
-run genv GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0= "$doctor" "$r_cmd"
+n_cfg=${GIT_CONFIG_COUNT:-0}   # tests/lib.sh arms entries (dir #318): append to the triple, never overwrite it
+run genv "GIT_CONFIG_KEY_$n_cfg=core.hooksPath" "GIT_CONFIG_VALUE_$n_cfg=" "GIT_CONFIG_COUNT=$((n_cfg + 1))" "$doctor" "$r_cmd"
 check_contains "S3-5: a command-scope empty hooksPath → W-GUARD-UNWIRED with environment advice" "$(id_line W-GUARD-UNWIRED)" "comes from this environment"
 
 # --- S3-1: the prune list applies below the audited root -----------------------------------------------------------
