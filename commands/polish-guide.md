@@ -1,5 +1,5 @@
 ---
-description: The /polish rare-branch guide — convergence rounds, a compaction stop, the depth dialogs and hand-off, refused or void reviews, the add-ons, deny handling, an already-open PR. /polish loads it on a trigger; never run directly.
+description: The /polish rare-branch guide — convergence rounds, a compaction stop, a mutation pass, the depth dialogs and hand-off, refused or void reviews, the add-ons, deny handling, an already-open PR. /polish loads it on a trigger; never run directly.
 user-invocable: false
 ---
 `/polish` sent you here from one of its steps. Where this guide and `polish.md` (the core) disagree, the
@@ -259,6 +259,19 @@ Steps, in order:
    a still-matching tree-relevant hash carried over from a recovered receipt), or step 6's retest. Only
    the two named literals waive it; an invented `skipped:<anything-else>` is denied, and a prior round's
    *waiver* is never carried over on recovery — only a real sha's tree-relevant hash is.
+
+   **Mutation pass (dir #673).** Reached from step 3's pointer when the diff's code adds or changes a
+   filter, threshold, guard or exclusion rule; a rule written only in prose has nothing to mutate, so it
+   never fires. It tests the tests: the suite must go red when the rule is wrong.
+   - Mutate one clause of a changed rule at a time: flip a comparison, drop a clause, widen and narrow a
+     bound (`FRAMEWORK.md`: mutation-test the guard's own negative path).
+   - Mutate only in a scratch clone of the committed work (`git clone --no-hardlinks`, then `git -C <clone>`
+     for every call), never the worktree — least of all while a suite runs there (dir #505).
+   - In the clone, run only the test files that pin the rule (grep `tests/` for the changed file), not the
+     whole suite; a mutant is killed when one of them goes red.
+   - A survivor is a finding: add the missing test (step 6's retest then runs) or record the mutant in the
+     PR body with why it is not worth pinning.
+   - Disclose the pass in step 10. It has no receipt of its own.
 
 ## Step 4 — the review depth: handoff-check, the buckets, the dialogs
 
@@ -1012,4 +1025,5 @@ Steps, in order:
     or, if step 5 took the (b) hand-off, that no real review ran in-session and whether the human ran it
     (`-operator-run`) or waived it (`-waived`, leaving only (a)'s last-resort inline pass). A bare depth is
     indistinguishable from a genuine in-session review, so reporting one here would re-hide exactly what
-    step 5 exists to surface.
+    step 5 exists to surface. When step 3's mutation pass ran, add it: `mutation pass: <N> mutants, <M>
+    survived (fixed | recorded)`.
