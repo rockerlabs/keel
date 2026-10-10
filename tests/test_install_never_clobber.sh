@@ -89,7 +89,9 @@ check_absent "A40 respelled: …never reported as not provably Keel's" "$OUT" "k
 # the same directory: the checkout's own directory name upper-cased. Run only where that spelling really is
 # the checkout (probed beside it, not assumed); a file name must match exactly (see the alias row below).
 ck_case="${REPO_ROOT%/*}/$(printf '%s' "${REPO_ROOT##*/}" | tr '[:lower:]' '[:upper:]')"
-if [ "$ck_case" != "$REPO_ROOT" ] && [ -d "$ck_case" ] && [ "$ck_case" -ef "$REPO_ROOT" ]; then
+if [ "$ck_case" = "$REPO_ROOT" ]; then
+  pass "A40 case-only directory row not applicable — the checkout's directory name has no lower-case letter"
+elif [ -d "$ck_case" ] && [ "$ck_case" -ef "$REPO_ROOT" ]; then
   h="$SANDBOX/a40i/h"
   run "$install" --link --home "$h" --no-hooks
   check_status "A40 case-only directory fixture: linked install → exit 0" 0 "$STATUS"
@@ -101,18 +103,35 @@ else
   pass "A40 case-only directory row not applicable — the checkout's file system tells names apart by case"
 fi
 # …but a differently-named sibling in the recorded target's own directory (`<checkout>/ALIAS.md -> CORE.md`)
-# is not the recorded entry: an adopter's link to it is kept. (In the scratch checkout, removed afterwards.)
+# is not the recorded entry: an adopter's link to it is kept — and a re-install in between must not record
+# it as Keel's either (it ends at CORE.md, so a chain-following "in sync" test would). (In the scratch
+# checkout, removed afterwards.)
 ln -s CORE.md "$ck/ALIAS.md"
 h="$SANDBOX/a40a/h"
 run "$ck/install.sh" --link --home "$h" --no-hooks
 check_status "A40 sibling-alias fixture: linked install from the scratch checkout → exit 0" 0 "$STATUS"
 rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A40 sibling-alias: a re-install over the adopter's alias link → exit 0" 0 "$STATUS"
+check_eq "A40 sibling-alias: …which is not recorded as Keel's" 0 \
+  "$(grep -c "^artifact=symlink	keel/CORE.md	$ck/ALIAS.md\$" "$h/.keel/install-manifest.claude" || true)"
+check_eq "A40 sibling-alias: …and is still the adopter's link" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
 run "$ck/uninstall.sh" --home "$h" --yes
 check_status "A40 sibling-alias: uninstall → exit 0" 0 "$STATUS"
 check_link "A40 sibling-alias: …the adopter's link to the alias stays" "$h/keel/CORE.md"
-check_contains "A40 sibling-alias: …named as pointing where Keel did not wire it" "$OUT" \
-  "keel/CORE.md: symlink no longer points where Keel would have wired it"
 rm -f "$ck/ALIAS.md"
+# …and on a case-insensitive file system a case-only FILE name (`<checkout>/core.md`) is likewise not taken:
+# the link is kept (the safe direction — a separate `core.md` on a case-sensitive one must never pass).
+if [ -e "$REPO_ROOT/core.md" ] && [ "$REPO_ROOT/core.md" -ef "$REPO_ROOT/CORE.md" ]; then
+  h="$SANDBOX/a40f/h"
+  run "$install" --link --home "$h" --no-hooks
+  rm -f "$h/keel/CORE.md"; ln -s "$REPO_ROOT/core.md" "$h/keel/CORE.md"
+  run "$uninstall" --home "$h" --yes
+  check_status "A40 case-only file name: uninstall → exit 0" 0 "$STATUS"
+  check_link "A40 case-only file name: …the link is kept" "$h/keel/CORE.md"
+else
+  pass "A40 case-only file name row not applicable — the checkout's file system tells names apart by case"
+fi
 # …but a link that only ENDS at the recorded target through another link (a dotfiles manager's
 # `<home>/keel/CORE.md -> dots/CORE.md -> <checkout>/CORE.md`) is the adopter's: kept, not moved.
 h="$SANDBOX/a40c/h"; dots="$SANDBOX/a40c/dots"; mkdir -p "$dots"

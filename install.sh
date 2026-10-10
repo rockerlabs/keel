@@ -789,6 +789,15 @@ _keel_test_checkpoint() {
 # foreign/edited file is never claimed as ours.
 manifest_artifacts=()
 record_artifact() { manifest_artifacts+=("$1	$2	$3"); }   # rel kind extra
+# keel_link_points_at LINK TARGET — LINK is a symlink whose OWN target is TARGET (tools/lib/manifest.sh
+# manifest_same_path: the same text, or the same entry spelled through another directory). Not `-ef`,
+# which follows a chain: an adopter's `LINK -> ~/dots/x -> <checkout>/x`, or a link to a differently-named
+# sibling in the checkout, ends at TARGET without being Keel's link to it (spec 685 round 2 B20). Every
+# "is this Keel's link, already in place?" test below asks this, so such a link is classified (T3a/T4) and
+# never recorded as Keel's.
+keel_link_points_at() {
+  [ -L "$1" ] && manifest_same_path "$(readlink "$1" 2>/dev/null || true)" "$2"
+}
 # keel_link_is_ours LINK — LINK points into the checkout this run installs from. Keel's links are always
 # absolute and always do; an adopter's link to a dotfiles copy (or any relative link) does not.
 keel_link_is_ours() {
@@ -1142,10 +1151,12 @@ place() {
 }
 in_sync() {
   if [ "$LINK" = 1 ]; then
-    # -ef, not a readlink string compare: the same checkout is reachable through different path
-    # spellings (/tmp vs /private/tmp on macOS, a symlinked parent) — a link to the same physical
-    # file is in sync however it's spelled. A link to a DIFFERENT checkout stays out of sync.
-    [ -L "$2" ] && [ "$2" -ef "$1" ]
+    # keel_link_points_at, not a readlink string compare: the same checkout is reachable through
+    # different path spellings (/tmp vs /private/tmp on macOS, a symlinked parent) — a link to the same
+    # entry is in sync however it's spelled. Not `-ef` either: a link that only ENDS at the file through
+    # another link is someone's wiring, classified above, never "in sync". A link to a DIFFERENT checkout
+    # stays out of sync.
+    keel_link_points_at "$2" "$1"
   else
     # `[ -f "$2" ]` first (dir #351): a FIFO/char-device/etc. at $2 blocks `cmp` forever, and this is
     # reachable independently of keel_own_untouched's own guard — a fresh install (no prior manifest)
@@ -1374,7 +1385,7 @@ sync_product() {
   # link to a non-regular file (T6: $dest_nonregular below). T3 Keel's own link gone stale; T3a an
   # adopter's link whose content already equals Keel's; T4 any other link, live or dangling.
   local lclass=""
-  if [ -L "$dest" ] && [ "$dest_nonregular" = 0 ] && [ ! "$dest" -ef "$src" ]; then
+  if [ -L "$dest" ] && [ "$dest_nonregular" = 0 ] && ! keel_link_points_at "$dest" "$src"; then
     lclass="$(keel_link_class "$dest" "$src")"
   fi
   if [ ! -f "$src" ]; then
@@ -1592,7 +1603,7 @@ if [ "$LINK" = 1 ]; then
     # marks the file as generated — regenerate without asking: a re-run after `git pull` is exactly
     # how a stale trim heals (doctor --install carries the matching staleness check).
     trimmed="$(strip_git_blocks "$root/CORE.md")"
-    if [ -L "$core_dest" ] && [ ! "$core_dest" -ef "$root/CORE.md" ] && ! keel_own_stale_link "$core_dest"; then
+    if [ -L "$core_dest" ] && ! keel_link_points_at "$core_dest" "$root/CORE.md" && ! keel_own_stale_link "$core_dest"; then
       # B3, T4: not Keel's own link (current or stale) — never replaced by the trimmed copy, whatever the flags.
       echo "  !    CORE.md is a symlink to a different target ($(readlink "$core_dest")) — your own wiring; left untouched, whatever the flags. To let Keel place its trimmed copy, remove the link and re-run."
       record_artifact "${core_dest#"$HOME_DIR"/}" forget -
@@ -1858,7 +1869,7 @@ if [ "$EPHEMERAL" = 1 ]; then
   echo "  =    keel CLI skipped (temporary bootstrap clone — the summary below has the --link alternative)"
 elif [ -f "$root/keel" ] && product_dir "$HOME_DIR/bin" "the keel CLI link"; then
   keel_link="$HOME_DIR/bin/keel"
-  if [ -L "$keel_link" ] && [ "$keel_link" -ef "$root/keel" ]; then
+  if keel_link_points_at "$keel_link" "$root/keel"; then
     echo "  =    bin/keel already wired"
     record_placed "$keel_link"
   elif [ -L "$keel_link" ]; then

@@ -66,10 +66,12 @@ keel_path_inside() {
 # manifest_same_path A B — A and B name the same directory entry: the same text; or, for an absolute A, the
 # same name in the same directory (`-ef` on the two parent directories, so a symlinked parent, /tmp vs
 # /private/tmp and a case-only difference in a directory name on a case-insensitive file system all match).
-# The entry's own name must match exactly: comparing the entries themselves would follow a link at A, so
-# neither the end of a chain of links (`x -> ~/dots/x -> <checkout>/x`) nor a differently-named sibling
-# (`<checkout>/ALIAS.md -> CORE.md`, a case-only `core.md` beside `CORE.md`, or a hard link) is "the same"
-# as the file it leads to. The text half is what still answers once the directories are gone (a moved
+# The entry's own name must match exactly. Comparing the entries themselves (`-ef`) would follow a link at
+# A, so the end of a chain of links (`x -> ~/dots/x -> <checkout>/x`) and a differently-named sibling
+# (`<checkout>/ALIAS.md -> CORE.md`, or a hard link) would pass; folding the name's case would let a
+# separate `core.md` beside `CORE.md` pass on a case-sensitive file system. None of them is "the same"
+# entry. (On a case-insensitive file system a case-only file name is then not matched either — the safe
+# direction: the link is kept, never taken.) The text half is what still answers once the directories are gone (a moved
 # checkout). The one definition of "a link points where the record says" (manifest_link_is_keels below,
 # uninstall.sh's symlink arm and its compatibility-link count).
 manifest_same_path() {
