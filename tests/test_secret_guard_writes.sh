@@ -273,7 +273,13 @@ printf '[core]\n\thooksPath = %s/.config/git/keel-hooks\n[keel]\n\tdisplacedHook
 run benv "$isg" --global --uninstall
 check_status "A52: --uninstall with a bare displacedHooksPath line → exit 0" 0 "$STATUS"
 check_eq "A52: ...unsets core.hooksPath (a bare record restores nothing)" 1 "$(cfg_rc "$B/.gitconfig" core.hooksPath)"
-check_eq "A52: ...and the bare line is removed, not left to linger" 1 "$(cfg_rc "$B/.gitconfig" keel.displacedHooksPath)"
+# a real record beside a bare line is still refused by the several-values guard, and nothing is deleted
+mk_b barerec2
+printf '[core]\n\thooksPath = %s/.config/git/keel-hooks\n[keel]\n\tdisplacedHooksPath = %s/mine\n\tdisplacedHooksPath\n' "$B" "$B" > "$B/.gitconfig"
+cp "$B/.gitconfig" "$B/.gitconfig.before"
+run benv "$isg" --global --uninstall
+check_status "A52: a real record beside a bare line → exit 3 (several values)" 3 "$STATUS"
+check_eq "A52: ...and the config is untouched" "$(cat "$B/.gitconfig.before")" "$(cat "$B/.gitconfig")"
 
 # =============================================================================================================
 # A53 / A54 — passengers.

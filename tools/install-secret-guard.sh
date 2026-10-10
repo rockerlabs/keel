@@ -829,11 +829,10 @@ case "${1:-}" in
     rec_set=0
     recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || recorded=""
     # A bare `displacedHooksPath` line (hand-edited or merged) reads like an empty record, and restoring "" would
-    # turn every hook off though nothing was displaced: it records nothing, and is removed so it cannot linger.
-    if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then
-      rec_set=0
-      git config --global --unset-all "$isg_displaced_key" || true
-    fi
+    # turn every hook off though nothing was displaced: it records nothing. Left in place, never written to here —
+    # a refusal below must stay "Nothing was changed", and a record may sit beside it (the several-values guard
+    # below still counts every value).
+    if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then rec_set=0; fi
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
     if [ "$( { git config --global --get-all "$isg_displaced_key" 2>/dev/null || true; } | wc -l | tr -d ' ')" -gt 1 ]; then
