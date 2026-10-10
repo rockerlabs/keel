@@ -34,10 +34,10 @@ run env SECRET_SCAN_PERSONAL_FILE="$missing" bash "$REPO_ROOT/docs/demo/record-d
 check_contains "record-demo.sh --scenes with an ambient missing SECRET_SCAN_PERSONAL_FILE → the commit is still BLOCKED" "$OUT" "BLOCKED"
 check_absent "record-demo.sh --scenes with an ambient missing SECRET_SCAN_PERSONAL_FILE → no 'is not a regular file' scanner error" "$OUT" "not a regular file"
 
-
 # --- dir #753 (the cases below are this ticket's; the KEEL_HOME/impact-store cases above are dir #720's) ----
-# R2-4: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface. The GIT_CONFIG_COUNT/KEY_n/VALUE_n
-# triple (command scope, beats every file) and GIT_CONFIG_SYSTEM (an alternate system file) both reach a demo
+# HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface. The GIT_CONFIG_COUNT/KEY_n/VALUE_n triple
+# (command scope, beats every file), GIT_CONFIG_PARAMETERS (what a parent `git -c k=v` exports) and
+# GIT_CONFIG_SYSTEM (an alternate system file) all reach a demo
 # that claims to touch nothing of the operator's, and one carrying core.hooksPath=/dev/null silently turns the
 # guard step into "commit succeeded". Behavioural for tour.sh, and a `git` shim for BOTH demos that records the
 # env each git call actually sees (a no-op shim would pass a demo that never reached git, so the log must be
@@ -47,7 +47,7 @@ shim="$SANDBOX/git-shim"; mkdir -p "$shim"
 cat > "$shim/git" <<SHIM
 #!/bin/sh
 echo CALL >> "\$GIT_ENV_LOG"
-env | grep -E '^GIT_CONFIG_(COUNT|SYSTEM|KEY_[0-9]+|VALUE_[0-9]+)=' >> "\$GIT_ENV_LOG"
+env | grep -E '^GIT_CONFIG_(COUNT|PARAMETERS|SYSTEM|KEY_[0-9]+|VALUE_[0-9]+)=' >> "\$GIT_ENV_LOG"
 exec "$real_git" "\$@"
 SHIM
 chmod +x "$shim/git"
@@ -64,18 +64,26 @@ check_status "dir #753: tour.sh with an ambient GIT_CONFIG_SYSTEM hooksPath file
 check_contains "dir #753: ...the key-shaped commit is still BLOCKED by the hook" "$OUT" "BLOCKED by the hook, exactly as intended"
 check_absent "dir #753: ...never prints 'commit succeeded'" "$OUT" "commit succeeded"
 
+run env GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" bash "$REPO_ROOT/examples/tour.sh"
+check_status "dir #753: tour.sh with an ambient GIT_CONFIG_PARAMETERS hooksPath → exit 0" 0 "$STATUS"
+check_contains "dir #753: ...the key-shaped commit is still BLOCKED by the hook" "$OUT" "BLOCKED by the hook, exactly as intended"
+check_absent "dir #753: ...never prints 'commit succeeded'" "$OUT" "commit succeeded"
+
 for demo in "examples/tour.sh" "docs/demo/record-demo.sh --scenes"; do
   genv_log="$SANDBOX/git-env-$(printf '%s' "${demo%% *}" | tr '/.' '--').log"; : > "$genv_log"
   # shellcheck disable=SC2086  # $demo is "script [--scenes]" on purpose
   run env PATH="$shim:$PATH" GIT_ENV_LOG="$genv_log" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath \
-    GIT_CONFIG_VALUE_0=/dev/null GIT_CONFIG_SYSTEM="$poison_sys" bash "$REPO_ROOT"/$demo
+    GIT_CONFIG_VALUE_0=/dev/null GIT_CONFIG_SYSTEM="$poison_sys" GIT_CONFIG_PARAMETERS="'core.hooksPath=/dev/null'" \
+    bash "$REPO_ROOT"/$demo
+  check_status "dir #753: ${demo%% *} under all three ambient routes runs to exit 0 (so the shim saw its whole run)" 0 "$STATUS"
   seen="$(cat "$genv_log")"
   check_contains "dir #753: the git shim saw ${demo%% *}'s git calls (the absence checks below are not vacuous)" "$seen" "CALL"
   check_absent "dir #753: no git call in ${demo%% *} sees GIT_CONFIG_COUNT/KEY_n/VALUE_n" "$seen" "GIT_CONFIG_COUNT"
   check_absent "dir #753: no git call in ${demo%% *} sees GIT_CONFIG_SYSTEM" "$seen" "GIT_CONFIG_SYSTEM"
+  check_absent "dir #753: no git call in ${demo%% *} sees GIT_CONFIG_PARAMETERS" "$seen" "GIT_CONFIG_PARAMETERS"
 done
 
-# R1-10: the emptiness guard must sit IMMEDIATELY after mktemp, before the first write (export HOME /
+# The emptiness guard must sit IMMEDIATELY after mktemp, before the first write (export HOME /
 # mkdir / trap). Neither script runs under -e, so a failed mktemp leaves $sandbox empty and, unguarded,
 # "$sandbox/home" is "/home" — a write outside any sandbox. Pinned by line order (running the red case
 # for real would write at the filesystem root of a root-owned CI container).

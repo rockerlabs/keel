@@ -20,6 +20,7 @@ if [ "${1:-}" != "--scenes" ]; then
   command -v asciinema >/dev/null 2>&1 || { echo "missing asciinema (brew install asciinema)"; exit 1; }
   command -v agg       >/dev/null 2>&1 || { echo "missing agg (brew install agg)"; exit 1; }
   castdir="$(mktemp -d)"
+  [ -n "$castdir" ] || exit 1   # dir #753: no -e, so an empty $castdir would aim asciinema at /demo.cast
   trap 'rm -rf "$castdir"' EXIT
   asciinema rec --quiet --cols 100 --rows 24 \
     --command "bash '$root/docs/demo/record-demo.sh' --scenes" "$castdir/demo.cast"
@@ -50,11 +51,12 @@ unset $IMPACT_ISOLATION_VARS
 # $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
 unset SECRET_SCAN_PERSONAL_FILE
 # dir #753: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface — the GIT_CONFIG_COUNT/KEY_n/VALUE_n
-# triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone) and GIT_CONFIG_SYSTEM
-# (an alternate system file) would carry an operator's ambient config in, e.g. a core.hooksPath that turns the
-# guard step into "commit succeeded". tests/test_sandbox_escapes.sh pins both. The stock /etc/gitconfig stays
-# readable on purpose: CI's safe.directory entry lives there.
-unset GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM
+# triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone), GIT_CONFIG_PARAMETERS
+# (what a parent `git -c k=v` exports to its children) and GIT_CONFIG_SYSTEM (an alternate system file) would
+# carry an operator's ambient config in, e.g. a core.hooksPath that turns the guard step into "commit succeeded".
+# tests/test_sandbox_escapes.sh pins all three. The stock /etc/gitconfig stays readable on purpose: CI's
+# safe.directory entry lives there.
+unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"

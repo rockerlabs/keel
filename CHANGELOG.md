@@ -15,14 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
-- **`examples/tour.sh` and `docs/demo/record-demo.sh` no longer read the operator's git config through `GIT_CONFIG_COUNT`
-  or `GIT_CONFIG_SYSTEM`, and guard their sandbox before they write (dir #753).** Both demos redirected HOME and
-  `GIT_CONFIG_GLOBAL` but not the rest of git's config surface: an ambient `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`
-  triple or `GIT_CONFIG_SYSTEM` carrying `core.hooksPath=/dev/null` turned the tour's guard step into "commit
-  succeeded". Both now unset those two, and the `$sandbox` emptiness guard moves to the line right after `mktemp`
-  (a failed `mktemp` used to leave `"$sandbox/home"` as `/home` before the guard ran).
-  `tests/test_sandbox_escapes.sh` pins both env routes (behaviourally for the tour, by a `git` shim for both
-  demos) and the guard order.
+- **`examples/tour.sh` and `docs/demo/record-demo.sh` no longer read the operator's git config through `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_PARAMETERS` or `GIT_CONFIG_SYSTEM`, and guard their sandbox right after `mktemp` (dir #753).** Both demos
+  redirected HOME and `GIT_CONFIG_GLOBAL` but not the rest of git's config surface: an ambient
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` triple, a parent `git -c` (`GIT_CONFIG_PARAMETERS`) or `GIT_CONFIG_SYSTEM`
+  carrying `core.hooksPath=/dev/null` turned the tour's guard step into "commit succeeded". Both now unset the three
+  (the stock `/etc/gitconfig` stays readable: CI's `safe.directory` entry lives there). The tour had no `$sandbox`
+  emptiness guard at all and `record-demo.sh`'s ran after its first writes, so a failed `mktemp` left
+  `"$sandbox/home"` as `/home`; both now guard on the line right after `mktemp`, and `record-demo.sh`'s outer mode
+  guards its `$castdir` too. `tests/test_sandbox_escapes.sh` pins the three env routes (behaviourally for the tour,
+  by a `git` shim for both demos) and the guard order.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
