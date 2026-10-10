@@ -876,7 +876,8 @@ d="$(repo_by dev@example.com)"
 commit_in "$d" "add s.bin"
 # BRIDGE (dir #746 slice 1): the assertion below needs slice 1's resuming decode_binary. Whoever merges SECOND deletes
 # this guard (the assertion becomes unconditional) in the rebase and says so in the PR.
-if grep -qF 'iconv -c -f UTF-16LE' "$pa"; then
+dec738="$(sed -n '/^decode_binary() {/,/^}$/p' "$pa")"
+if grep -qE 'iconv.* -c( |$)' <<< "$dec738"; then
   run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
   check_status "dir #738 A33e: a non-ASCII token behind a lone surrogate in a binary → exit 1" 1 "$STATUS"
   check_contains "dir #738 A33e: found in the binary blob" "$OUT" "in a binary blob in git history"

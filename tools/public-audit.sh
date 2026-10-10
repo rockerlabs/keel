@@ -347,8 +347,7 @@ done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
 # dir #746 (B7): the non-ASCII needle flag — set above for a personal literal, here for a token (an ASCII one
-# already survives decode_binary's NUL-strip pass). It gates pass U, and is the same flag the built-in decoder
-# gate in decode_binary reads (dir #746 slice 1).
+# already survives decode_binary's NUL-strip pass). It gates pass U.
 if [ "${#tokens[@]}" -gt 0 ]; then
   for t in "${tokens[@]}"; do
     case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
