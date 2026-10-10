@@ -1035,17 +1035,19 @@ case "$mode" in
         # is a read failure here (exit 2), not a WARN: no index copy stands in for it. The WARN goes first, so a
         # read that then fails closed still says the path was unmerged.
         wkind="none"; wnote="no working file"
-        if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink read"
-        elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file read"
+        if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink"
+        elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file"
         elif [ -e "$top/$f" ]; then wnote="its working file not a regular file"
+        elif [ "${f%/*}" != "$f" ] && [ -d "$top/${f%/*}" ] && [ ! -x "$top/${f%/*}" ]; then
+          wkind="file"; wnote="its working file"    # a directory that cannot be searched hides it: read it, fail
         fi
         echo "secret-scan: WARN unmerged ($wnote), each stage's index copy scanned: $fesc" >&2
         case "$wkind" in
           link)
-            target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+            target="$(readlink "$top/$f")" || _fail_closed "read the working symlink of the unmerged '$f'" $?
             emit_stream "$f" <<< "$target" ;;
           file)
-            cat < "$top/$f" > "$tblob" 2>"$terr" || _fail_closed "read the working file of the unmerged '$f'" $? "$terr"
+            cat 2>"$terr" < "$top/$f" > "$tblob" || _fail_closed "read the working file of the unmerged '$f'" $? "$terr"
             emit_file "$f" "$tblob" ;;
         esac
         tracked_index_copy "$f" "$tsha"

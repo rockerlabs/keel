@@ -3168,7 +3168,7 @@ run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): the key in the working file of an unmerged path → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:')"
 check_eq "dir #746 A26(f): ...and one WARN naming the unmerged path and its working file" 1 \
-  "$(match "$OUT" -cF "secret-scan: WARN unmerged (its working file read), $unmerged746")"
+  "$(match "$OUT" -cF "secret-scan: WARN unmerged (its working file), $unmerged746")"
 stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
 check_eq "dir #746 A26(f): the working file and stage 3 share the hit: printed once" 1 "$(match "$OUT" -c '^  f.txt:')"
@@ -3184,11 +3184,28 @@ run_in "$r746" "$scan" --tracked
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "dir #746 A26(f): an unmerged path's unreadable working file → exit 2" 2 "$STATUS"
   check_contains "dir #746 A26(f): ...naming it" "$OUT" "could not read the working file of the unmerged 'f.txt'"
+  check_eq "dir #746 A26(f): ...after the unmerged WARN, and no unprefixed shell error line" \
+    "secret-scan: WARN unmerged (its working file), $unmerged746" "$(match "$OUT" -m1 -v '^secret-scan:   ')"
 else
   check_status "dir #746 A26(f): as root the working file is read → BLOCKED" 1 "$STATUS"
 fi
 check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
 chmod 644 "$r746/f.txt"
+# ...and one hidden by a directory that cannot be searched is not taken for an absent file
+r2_746="$(new_repo)"
+mkdir "$r2_746/d"; printf 'tok = %s\n' "$k746" > "$r2_746/d/f.txt"
+printf '100644 %s 1\td/f.txt\n100644 %s 3\td/f.txt\n' "$b746" "$b746" \
+  | git -C "$r2_746" update-index --index-info
+git -C "$r2_746" cat-file -e "$b746" 2>/dev/null || git -C "$r746" cat-file blob "$b746" | git -C "$r2_746" hash-object -w --stdin >/dev/null
+chmod 600 "$r2_746/d"
+run_in "$r2_746" "$scan" --tracked
+chmod 755 "$r2_746/d"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "dir #746 A26(f): an unmerged file in an unsearchable directory → exit 2" 2 "$STATUS"
+else
+  check_status "dir #746 A26(f): as root the unsearchable directory is read → BLOCKED" 1 "$STATUS"
+fi
+check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
 # a type conflict resolved to a symlink: its target is read whatever the first stage's mode (review finding)
 printf 'somewhere' > "$d746/lnk-target"
 l746="$(git -C "$r746" hash-object -w "$d746/lnk-target")"
@@ -3197,7 +3214,7 @@ stages746 "100644 $b746 1" "120000 $l746 2" "100644 $o746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a working symlink of an unmerged path is read → BLOCKED on its target" 1 "$STATUS"
 check_contains "dir #746 A26(f): ...and its WARN says the symlink was read" "$OUT" \
-  "secret-scan: WARN unmerged (its working symlink read), $unmerged746"
+  "secret-scan: WARN unmerged (its working symlink), $unmerged746"
 rm "$r746/f.txt"; mkdir "$r746/f.txt"
 stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
