@@ -1942,7 +1942,7 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
     # not found: the body runs to the end of the text — a region — or to the backtick of the BQ it sits in, where
     # every shell ends it too
     bstop = found ? lstart[L] : lim
-    after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : lim
+    after = found ? lend[L] + 2 : lim
     if (!found && lim > n) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
