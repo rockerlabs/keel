@@ -5,10 +5,10 @@ argument-hint: [--no-test]
 <!-- Installed by default (dir #68) — pairs with tools/pre-pr-gate.sh, a Claude-Code-specific hook that
 install.sh never auto-wires: run
 tools/install-pre-pr-gate.sh <repo> once per project to turn the gate on. Without it, every
-step here still runs — only the gh pr create block is inert. -->
+step here still runs — only its blocks are inert. -->
 
 The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` wires the gate, it also blocks
-`gh pr create` until this command has run cleanly on the current HEAD. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
+`gh pr create` until this command has run cleanly on the current HEAD, and always `git push --no-verify`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
 
@@ -21,8 +21,8 @@ current run — never skip a receipt write. An unexpected permission prompt on o
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt cycle.
 
-**The guide.** The rare branches live in `polish-guide.md`, loaded when a step below names a trigger that
-fired; never improvise one from memory. Where the guide and this file disagree, this file wins.
+**The guide.** The rare branches live in `polish-guide.md`. When a step below names a trigger that fired,
+load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, at its section; guide unreachable → stop and report. Never improvise a branch. Where the guide and this file disagree, this file wins.
 
 Steps, in order:
 
@@ -30,13 +30,11 @@ Steps, in order:
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
-   something), `--recover`:* load the `polish-guide` skill
-   (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, § Step 1; guide unreachable →
-   stop and report.
+   something), `--recover`:* the guide, § Step 1.
 
-2. **Simplify.** Every changed file `*.md`, none a command, skill or runbook → load `polish-guide`, § Step 2.
+2. **Simplify.** Every changed file `*.md`, none a command, skill or runbook → the guide, § Step 2.
    Otherwise invoke `/simplify` and wait; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
-   Refused or unavailable → § Step 2. Guide unreachable → stop and report.
+   Refused or unavailable → § Step 2.
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`), backgrounded with an explicit timeout past the suite's runtime, and show the real
    output; never claim "passed" without it. A cut-short run is not green: re-run the remainder. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
@@ -59,8 +57,7 @@ Steps, in order:
    recommendation pre-selected and a `skip` option, ended by the literal line `KEEL-DEPTH-DIALOG`.
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`.
    *Rare — a `handoff-check` match, any of the max/ultra/skip/borderline dialogs and their marker rule:*
-   load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file,
-   § Step 4; guide unreachable → stop and report.
+   the guide, § Step 4.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
@@ -102,7 +99,7 @@ Steps, in order:
      on a two-commit PR). The skill's own fork is not "a subagent of your own" under the rails' no-spawn
      line. Then: edit nothing, commit nothing; wait for the skill to finish, including any background agents
      it starts; restate every finding in your final message as `file:line — quoted text — failure scenario`,
-     even after a `ReportFindings` call, and write `0 findings` explicitly when there are none; print no
+     even after a `ReportFindings` call, and write `0 findings` explicitly when there are none, quoting the skill's first line after `Result:`; print no
      `KEEL-*` marker line.
 
      ```
@@ -146,10 +143,10 @@ Steps, in order:
      recorded at the spawn. Any difference → the review is void AND the run **stops**: report it to the
      operator, who decides; never restore the tree with `git checkout`/`reset`/`clean`/`stash` (dir #375),
      and never fall through to the in-session attempt on a tree the subagent changed. **A final message with
-     neither a findings list nor an explicit `0 findings`** — it stopped halfway, errored, was interrupted
+     neither a findings list nor an explicit `0 findings` and its quoted line** — it stopped halfway, errored, was interrupted
      (a subagent that never returns is interrupted by the operator and read the same way), or handed back
      while its own background work ran — **is void too**, even though the trace was already minted when the
-     skill launched: go to the in-session attempt below. Otherwise verify every finding live against the
+     skill launched: go to the in-session attempt below. An empty or error quote is void, and so is `(none)` except at `low` with `0 findings`. Otherwise verify every finding live against the
      file before acting (`FRAMEWORK.md` "Classifying a finding"), fix the accepted ones and commit; a
      finding that fails live verification is named as refuted, with why, in step 10's summary.
    - **Delta rounds.** A fix commit (or `--amend`) moves HEAD past the trace. Send a follow-up message to
@@ -169,7 +166,7 @@ Steps, in order:
      exists: then the in-session attempt again at the current HEAD, with the delta args `<level> <that
      sha>..HEAD`. HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.
    - **Fallbacks, in order.** The Agent tool is unavailable, the subagent reports its Skill call was
-     refused, the review was voided for a missing findings list (never for a changed tree — that stops), or
+     refused, the review was voided for a missing findings list or quote (never for a changed tree — that stops), or
      the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session
      with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
      first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b). Each existing
@@ -185,8 +182,7 @@ Steps, in order:
    the PR.
 
    *Rare — the direct attempt refused or the Agent tool unavailable, a void review, an add-on review, a second
-   delta round still finding, the in-run `--amend` path:* load the `polish-guide` skill (`keel-polish-guide`
-   if aliased), else `polish-guide.md` beside this file, § Step 5; guide unreachable → stop and report.
+   delta round still finding, the in-run `--amend` path:* the guide, § Step 5.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (hand-off edits count)
    or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once, showing the real output; red → no receipt,

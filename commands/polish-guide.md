@@ -3,11 +3,12 @@ description: The /polish rare-branch guide — convergence rounds, the depth dia
 user-invocable: false
 ---
 `/polish` sent you here from one of its steps. Where this guide and `polish.md` (the core) disagree, the
-core wins. Every paragraph below is carried over from the pre-split `polish.md` unchanged: each section
-holds the whole text of its step, so a rule the core only condenses is here in full. The one exception is
-step 5's K2 block (the review run by a fresh-context subagent), which lives in the core verbatim and is not
-repeated here; where a paragraph below says K2 "below", it means that block in the core. Find the section the
-core named, follow it, then go back to the core's next step.
+core wins. Each section below holds its step's rare-branch text, carried over from the pre-split `polish.md`
+and amended in place since, so a rule the core only condenses is here in full. The core can also hold text this
+guide lacks: step 5's K2 block (the review run by a fresh-context subagent) lives only there — where a paragraph
+below says K2 "below", it means that block in the core — and so do some rules added to the core after the split
+(step 3's timeout, step 6's `skipped:--no-test` receipt). Find the section the core named, follow it, then go back
+to the core's next step.
 
 ## Preamble — the contract, the two ordering rules
 
