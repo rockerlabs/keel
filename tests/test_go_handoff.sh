@@ -116,13 +116,13 @@ cs() { # cs closed|null — run write "dir #8" with stdin closed or </dev/null; 
   local pre='exec <&-' pid wd
   [ "$1" = null ] && pre='exec </dev/null'
   set -m
-  ( cd "$r" && exec "$BASH" -c "$pre"'; exec "$0" write "dir #8"' "$tool" ) >/dev/null 2>"$ERRF" &
+  ( cd "$r" && exec "${BASH:-bash}" -c "$pre"'; exec "$0" write "dir #8"' "$tool" ) >/dev/null 2>"$ERRF" &
   pid=$!
   ( sleep 20; kill -9 -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   wd=$!
   set +m
   wait "$pid"; RC=$?
-  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  kill -- "-$wd" 2>/dev/null; wait "$wd" 2>/dev/null   # the watchdog's own group, so its `sleep` goes too
   ERR="$(<"$ERRF")"
 }
 cs closed
