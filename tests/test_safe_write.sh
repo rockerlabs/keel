@@ -98,13 +98,8 @@ check_contains "A10 …the drifted content went to the next name" "$(cat "$h/doc
 check_contains "A10 …and the output names it" "$OUT" "delegation.md.$ts.2.bak"
 
 # --- scratch checkout for A11 / A24: a copy of this tree, committed, so `git status` can tell -------
-# Only the tracked top-level entries are copied (uncommitted edits to them included): a run from the
-# main checkout would otherwise drag its .git/, private/ and nested worktrees along.
-ck="$SANDBOX/ck"; mkdir -p "$ck"
-tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
-while IFS= read -r e; do
-  [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$ck/"
-done <<<"$tops"
+ck="$SANDBOX/ck"
+tracked_tree_copy "$ck"
 git -C "$ck" init -q
 git -C "$ck" add -A
 git -C "$ck" commit -qm base

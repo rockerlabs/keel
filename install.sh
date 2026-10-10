@@ -191,8 +191,8 @@ fi
 # never overwrites one — is stated once, in its header). A degrade-and-continue fallback would be the
 # detaching write it exists to remove, so a missing or corrupt copy refuses the whole run. Loaded here,
 # before the home is created and before the run lock is taken (spec 685 round 2 B18), so its refusal
-# leaves nothing behind — not even the home. It loads stat-portable itself; install.sh's own
-# stat-portable block further down re-sources it and primes the same flavor cache.
+# leaves nothing behind — not even the home. It loads stat-portable itself and primes its flavor cache;
+# install.sh's own stat-portable block further down keeps that copy.
 if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/safe-write.sh
   . "$root/tools/lib/safe-write.sh"
@@ -480,10 +480,23 @@ done
 # Disarming at release (not just setting a flag there) also means a later exit can never remove a lock
 # that another install took after ours. INT and TERM exit with their conventional statuses, so an
 # interrupted run removes the lock too (bash 3.2 otherwise shows the EXIT trap `$?` = 0 on them).
-# A SIGKILL or a power loss still leaves the lock (no handler runs); the next run reclaims it as stale.
+# A SIGKILL or a power loss still leaves the lock (no handler runs); the next run reclaims it as stale. So
+# does an exit in the instant between the acquire's `mkdir` and its pid write, before this trap exists —
+# the lock is then pid-less, and the next run's bounded retry reclaims it.
+# _keel_install_release_lock — the ONE release, used by the trap and by the success path: the lock is
+# removed only while its pid file still names this run. A lock reclaimed out from under a live run (two
+# runs recovering one stale lock at once, or a sibling whose `kill -0` met EPERM — the residuals named at
+# the acquire) now belongs to the run that took it, and an exit of ours must not delete it.
+_keel_install_release_lock() {
+  local holder=""
+  IFS= read -r holder 2>/dev/null < "$install_lock_dir/pid" || holder=""
+  if [ "$holder" = "$$" ]; then
+    rm -rf "$install_lock_dir" 2>/dev/null || true
+  fi
+}
 _keel_install_on_exit() {
   local rc=$?
-  rm -rf "$install_lock_dir" 2>/dev/null || true
+  _keel_install_release_lock
   [ "$rc" != 0 ] || rc=1
   exit "$rc"
 }
@@ -523,7 +536,11 @@ fi
 # here with its own tests. If the lib is missing or corrupt the fallback answers empty, and the
 # predicate below treats an empty count as UNKNOWN and refuses, which is the fail-closed direction:
 # a checkout too broken to carry tools/ is not one to auto-refresh an adopter's files from.
-if [ -s "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
+# safe-write.sh (loaded near the top) has normally already loaded it — or its empty-answer stub — and primed
+# the flavor cache; that copy is kept, since re-sourcing would only reset the cache and probe again.
+if declare -F stat_portable_nlink >/dev/null 2>&1; then
+  :
+elif [ -s "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/stat-portable.sh
   . "$root/tools/lib/stat-portable.sh"
   # Prime the flavor cache HERE, once, as that lib's own header instructs for a hot loop: the predicate
@@ -2329,10 +2346,9 @@ fi
 # above — and with it the EXIT trap armed at the acquire (spec 685 round 2 B18): this release IS that trap's
 # completion marker. The trap is disarmed in the same step, so nothing after this line (the ledger, the
 # summary) can remove a lock a sibling install takes once ours is gone, and a later abort exits with its
-# own status, never a masked 0. `|| true`: a failed release must not abort an otherwise-successful run
-# under `set -euo pipefail` — worst case it leaves the lock behind, which the next install's stale-pid
-# check reclaims.
-rm -rf "$install_lock_dir" 2>/dev/null || true
+# own status, never a masked 0. The release never aborts the run under `set -euo pipefail`: worst case it
+# leaves the lock behind, which the next install's stale-pid check reclaims.
+_keel_install_release_lock
 trap - EXIT INT TERM
 _keel_test_pause_after lock-released
 

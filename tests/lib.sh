@@ -654,6 +654,21 @@ match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 # pair), the "second use = promote" convention above.
 inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 
+# tracked_tree_copy DEST — a copy of this checkout's tracked top-level entries (uncommitted edits to them
+# included) into DEST, for a test that runs install.sh / uninstall.sh from a scratch checkout. Only the
+# tracked entries: a run from the main checkout would otherwise drag its .git/, private/ and nested
+# worktrees along. DEST is not a git repository; a test that needs one runs `git init` itself.
+tracked_tree_copy() {
+  local dest="$1" e tops
+  require_sandbox_path "$dest" tracked_tree_copy
+  mkdir -p "$dest"
+  tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
+  while IFS= read -r e; do
+    [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$dest/"
+  done <<<"$tops"
+  return 0
+}
+
 # STRICT_SEMVER_TAG_RE — a v-prefixed strict-semver tag name (`v<x.y.z>`, the `v` kept), anchored.
 # Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE —
 # all_release_tag_versions()'s own `ls-remote` leg below, which release_tag_versions() can't cover

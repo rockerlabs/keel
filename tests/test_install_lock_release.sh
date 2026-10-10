@@ -30,12 +30,9 @@ reap() {
   kill "$dog" 2>/dev/null || true; wait "$dog" 2>/dev/null || true
 }
 
-# --- scratch checkout for A31 (2): a copy of this tree, committed ------------------------------------
-ck="$SANDBOX/ck"; mkdir -p "$ck"
-tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
-while IFS= read -r e; do
-  [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$ck/"
-done <<<"$tops"
+# --- scratch checkout for A31 (2): a copy of this tree (not a git repository) -----------------------
+ck="$SANDBOX/ck"
+tracked_tree_copy "$ck"
 
 # --- A31 (2): a REQUIRED lib guard still after the lock leaves no lock -------------------------------
 : > "$ck/tools/lib/artifact-cksum.sh"
@@ -89,6 +86,26 @@ for sig in TERM INT; do
     fail "A33 $sig fixture: the install reached its pause checkpoint" "no $mk.ready"
   fi
 done
+
+# --- review: a lock taken over mid-run is not ours to remove ----------------------------------------
+# Two runs recovering one stale lock at once (or a sibling whose `kill -0` met EPERM) can leave a live run
+# whose lock now names another process. Staged: pause a run holding the lock, rewrite the pid file to a
+# live process (this test's own shell), then TERM the run — its exit must leave that lock in place.
+h="$SANDBOX/r-takeover/h"; mk="$SANDBOX/r-takeover.marker"; mkdir -p "$h"; : > "$mk"
+KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
+  "$install" --home "$h" --no-hooks > "$SANDBOX/r-takeover.out" 2>&1 </dev/null &
+pid=$!
+if wait_ready "$mk"; then
+  printf '%s\n' "$$" > "$h/.install.lock/pid"
+  kill -TERM "$pid"
+  reap "$pid"
+  check_status "takeover: the interrupted run exits 143" 143 "$REAPED"
+  check_eq "takeover: …and the lock that now names another live process is left in place" "$$" \
+    "$(cat "$h/.install.lock/pid" 2>/dev/null)"
+else
+  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+  fail "takeover fixture: the install reached its pause checkpoint" "no $mk.ready"
+fi
 
 # --- A34 / K30: after our release, a sibling's lock is never ours to remove --------------------------
 # The first install pauses right after its success-path release; a second install then takes the lock

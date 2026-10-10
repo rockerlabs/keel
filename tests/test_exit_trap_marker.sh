@@ -198,25 +198,24 @@ check_file "dir #692 bootstrap.sh under $sh: ...and installs" "$SANDBOX/pl692-bo
 
 # --- install.sh (dir #757 / dir #756 (b), spec 685 round 2 B18) -------------------------------------
 # The run lock's EXIT trap is armed right after the pid write and disarmed by the success-path release.
-# Two probes, each in a copy of the whole tracked tree (install.sh needs its checkout beside it):
+# Two probes, two copies of install.sh side by side in ONE copy of the tracked tree (install.sh finds its
+# checkout from its own directory, so both see the same tools/):
 #   (a) a fatal right AFTER the trap is armed (at the first lib guard that follows the lock): non-zero,
 #       never the "Done" summary, and no lock left;
 #   (b) the same fatal right AFTER the success-path release: still non-zero — the release disarms the
 #       trap, so nothing is left to read a status-0 abort as success (a build that only sets a flag at
 #       release and leaves the trap armed turns this into exit 0).
+itree="$SANDBOX/pl757"
+tracked_tree_copy "$itree"
 for probe in a b; do
-  itree="$SANDBOX/pl757-$probe"; mkdir -p "$itree"
-  while IFS= read -r e; do
-    [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$itree/"
-  done <<<"$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
   case "$probe" in
     a) ianchor='if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then' ;;
     b) ianchor='# Checkout-side ledger — the discovery index' ;;
   esac
-  probe_copy "dir #757 install.sh ($probe)" "$REPO_ROOT/install.sh" "$itree/install.sh" "$ianchor" "$fatal"
+  probe_copy "dir #757 install.sh ($probe)" "$REPO_ROOT/install.sh" "$itree/install-$probe.sh" "$ianchor" "$fatal"
   for sh in $shells; do
     ih="$SANDBOX/pl757-$probe-home-${sh//\//_}"
-    run "$sh" "$itree/install.sh" --home "$ih" --no-hooks
+    run "$sh" "$itree/install-$probe.sh" --home "$ih" --no-hooks
     if [ "$STATUS" -ne 0 ]; then
       pass "dir #757 install.sh ($probe) under $sh: a top-level fatal error exits non-zero (status $STATUS)"
     else
