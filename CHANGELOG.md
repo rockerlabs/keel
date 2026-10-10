@@ -107,6 +107,12 @@ sections real content going forward — see that page for exactly when each one 
   `"$sandbox/home"` as `/home`; both now guard on the line right after `mktemp`, and `record-demo.sh`'s outer mode
   guards its `$castdir` too. `tests/test_sandbox_escapes.sh` pins the three env routes (behaviourally for the tour,
   by a `git` shim for both demos) and the guard order.
+- **`tools/self/value-claim-lint.sh` flags a groom plan's value claim that names no subject set.**
+  dir #672: five grooms running, G6's top finding was a value-claim cell not bound to its slate, and the prose
+  rule in `docs/grooming.md` G5 did not prevent the repeat. Run before G6, it reads a `RELEASES.md` plan
+  section and flags each value-claim table row or `**Value claims**` bullet carrying none of G5's forms: a
+  `Subject set:` clause, a `Residue:` clause (G5's third part), `no claim`, or `no subject set — <why>`. Advisory:
+  it always exits 0, and a clean run means a form is present, not that the set is right.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
