@@ -30,15 +30,15 @@
 # `pre-pr-gate.sh lex` shows how a command was read. It guards habits, not a deliberate disguise. Named residuals,
 # caught only by the CI scan on the PR: a variable exported earlier, or set in an earlier segment of the same
 # command; an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted
-# subcommand word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion (`git
-# push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an earlier
-# segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's `noglob`,
-# bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose name is no
-# identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)` (read as
-# commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a `function
-# NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`); bash 3.2's misreading of a heredoc body
-# inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only when a body line starts
-# with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
+# subcommand word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion
+# (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
+# earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
+# `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
+# name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
+# (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`); bash 3.2's misreading of a heredoc
+# body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only when a body line
+# starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
@@ -1559,7 +1559,7 @@ function restack(   i) {
 }
 function push_ctx(t, p) {
   flushrun()
-  sp++; cty[sp] = t; cpos[sp] = p; cseg[sp] = segbeg[ownsp]; adepth[sp] = 0; flagged[sp] = 0
+  sp++; cty[sp] = t; cpos[sp] = p; cseg[sp] = segbeg[ownsp]; adepth[sp] = 0; flagged[sp] = 0; qflagged[sp] = 0
   if (t == "SUB" || t == "BQ") {
     cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p
     bqreg[sp] = 0
@@ -1966,7 +1966,7 @@ function aq_char() {
 }
 # PARAM: closed by the first unquoted `}` (bash, busybox); a single quote in it under a DQ or HDATA, and an unquoted `{`
 # in it (zsh counts it toward the closer), are regions — the shells disagree.
-function param_char(   c, i, j) {
+function param_char(   c, i, j, k) {
   c = ch[pos]
   if (c == "}") { pop_ctx(); addsrc(cpos[sp + 1], pos - cpos[sp + 1] + 1, "x"); pos++; return }
   if (c == "\\") { pos += (at(1) != "") ? 2 : 1; return }
@@ -1977,17 +1977,20 @@ function param_char(   c, i, j) {
   if (c == "\047") {
     for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
     if (cty[i] == "DQ" || cty[i] == "HDATA") {
-      # bash reads the quotes, zsh and busybox read them as text: they disagree only when a } or " lies before
-      # the next quote (or there is none) — otherwise the quoted span is plain text in every reading.
-      for (j = pos + 1; j < lim && ch[j] != "\047"; j++) if (ch[j] == "}" || ch[j] == "\"") break
+      # bash reads the quotes, zsh and busybox read them as text: the readings agree only on a span up to the next
+      # quote holding no } or " (where they would end differently) and nothing that expands ($, a backtick, \) —
+      # that span is plain text in every reading; anything else is a region, and the quote is read as text.
+      for (j = pos + 1; j < lim && ch[j] != "\047"; j++) if (index("}\"$`\\", ch[j])) break
       if (j < lim && ch[j] == "\047") { pos = j + 1; return }
-      if (!flagged[sp]) { flagged[sp] = 1; region(pos, n, "quote inside ${…} in double quotes", segbeg[ownsp]) }
+      if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, "quote inside ${…} in double quotes", segbeg[ownsp]) }
       pos++; return
     }
     push_ctx("SQ", pos); pos++; return
   }
   if (c == "{") { if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", cseg[sp]) }; pos++; return }
-  pos++
+  k = 1
+  while (pos + k < lim && index("}\\\"$`\047{", ch[pos + k]) == 0) k++
+  pos += k
 }
 # ARITH: `((`/`$((` close at `))` on depth 0, `$[` at `]`; `<<` in it is a shift. A lone `)` on depth 0 is a
 # region: bash, zsh and busybox re-read `((…) && (…))` as nested subshells.

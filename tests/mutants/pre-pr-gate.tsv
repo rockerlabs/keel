@@ -164,9 +164,13 @@ L148	tools/pre-pr-gate.sh	else if (t == "command") { while (i <= ntok && w_plain
 L149	tools/pre-pr-gate.sh	else if (t == "time") { if (i <= ntok && tok[i] == "-p") i++ }	else if (t == "time") { }	I4 the time wrapper takes -p
 L027	tools/pre-pr-gate.sh	  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\\\$`"	  if (0 && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\\\$`"	B2 HDATA: opens $(…)
 L028	tools/pre-pr-gate.sh	  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\\\$`"	  if (0) { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\\\$`"	B2 HDATA: opens backticks
-L092	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(pos, n, "quote inside	if (0) { flagged[sp] = 1; region(pos, n, "quote inside	B10(i)
-L201	tools/pre-pr-gate.sh	if (j < lim && ch[j] == "\\047") { pos = j + 1; return }	if (0) { pos = j + 1; return }	B10(i): a quoted span with no } or " is text in every shell
 L202	tools/pre-pr-gate.sh	while (pos + k < lim && index("\\\\$`", ch[pos + k]) == 0) k++	while (pos + k < lim && index("\\\\`", ch[pos + k]) == 0) k++	B2 HDATA: the scan stops at a $
+L092	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, "quote inside	if (0) { qflagged[sp] = 1; region(pos, n, "quote inside	B10(i)
+L201	tools/pre-pr-gate.sh	if (j < lim && ch[j] == "\\047") { pos = j + 1; return }	if (0) { pos = j + 1; return }	B10(i): a quoted span with no } " $ ` or \ before the next quote is text in every reading
+L203	tools/pre-pr-gate.sh	if (index("}\\"$`\\\\", ch[j])) break	if (index("}\\"", ch[j])) break	B10(i): a span holding an expansion is no agreeing span
+L204	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1;	if (1) { qflagged[sp] = 1;	B10(i): one region per ${…}
+L205	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1;	if (!flagged[sp]) { flagged[sp] = 1;	B10(i) and (l) keep separate flags
+L206	tools/pre-pr-gate.sh	while (pos + k < lim && index("}\\\\\\"$`\\047{", ch[pos + k]) == 0) k++	while (pos + k < lim && index("}\\\\\\"`\\047{", ch[pos + k]) == 0) k++	B2 PARAM: the scan stops at a $
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass

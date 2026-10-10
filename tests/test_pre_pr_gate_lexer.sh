@@ -666,8 +666,9 @@ shim_case line-with-exit1 1 'push\037\037\n'
 
 # --- dir #745: the header's residual paragraph tells the truth (B18) -------------------------------------------
 gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
-for kept in "\`sh -c '…'\`" '`eval' '"pr" create`' "a \`case\` pattern's" 'array assignment' 'repeat N cmd' '`function' 'a path to `gh`' \
-  "bash 3.2's misreading" 'brace expansion' 'glued to a bypass' "a wrapper's own flags" 'REFUSES'; do
+for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` pattern's" "an array assignment's" '`repeat N cmd`' \
+  '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
+  "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
@@ -775,5 +776,14 @@ net "a )-led line in a heredoc body outside \$(…) does not" allow "$(printf 'c
 net "a quoted span in \${…} in double quotes with no } or \" in it is plain text" allow "echo \"\${v:-'x'}\" && git status"
 lex_is "a disagreeing quote in \${…} in double quotes: a region, the quote read as text" "echo \"\${v:-'}' '}'}\"" \
   "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}qx:\${v:-'}' '}'}"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
+
+net "a substitution in an agreeing quoted span in \${…} in double quotes" push "echo \"\${v:-'\$(git push --no-verify)'}\""
+net "backticks in such a span" push "echo \"\${v:-'\`git push --no-verify\`'}\""
+net "gh in such a span (the region outranks pr)" refuse "echo \"\${v:-'\$(gh pr create --fill)'}\""
+net "such a span in an expanding heredoc body" push "$(printf 'cat <<E\n${v:-'"'"'$(git push --no-verify)'"'"'}\nE')"
+lex_is "two disagreeing quotes in one \${…}: one region" "echo \"\${v:-'\$x'\$y'}\"" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\${v:-'\$x'\$y'}"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
+lex_is "a brace and a disagreeing quote in one \${…}: both regions" "echo \"\${v:-{'}'}\"" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}qx:\${v:-{'}'}"$'\n'"refuse${T}brace inside \${…}${T}line 1${T}scope:no"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
 
 summary
