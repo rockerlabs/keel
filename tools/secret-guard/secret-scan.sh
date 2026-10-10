@@ -990,7 +990,8 @@ case "$mode" in
     # (mode 160000) is a submodule — its content is its own repo's. A skip-worktree file that IS present is read
     # from the working tree, whose copy may hold what the index does not. An unmerged path is listed once per
     # stage and read once — from the working tree when it is there; when it is not, from its first non-gitlink
-    # stage's index copy only (spec 746's stated limit; the conflict blocks a commit anyway), and a WARN says so.
+    # stage's index copy only (spec 746's stated limit; the conflict blocks a commit anyway), and a WARN names
+    # the stage read.
     # A gitlink stage never claims its path, so it cannot hide the working file.
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
@@ -998,12 +999,12 @@ case "$mode" in
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
-      LC_ALL=C IFS=' ' read -r ttag tmode tsha _tstage <<< "${rec%%"$tab"*}"
+      LC_ALL=C IFS=' ' read -r ttag tmode tsha tstage <<< "${rec%%"$tab"*}"
       [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
       if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
         if [ -n "$prev_idx" ]; then
-          echo "secret-scan: WARN unmerged, only its first stage was scanned: ${f//$'\n'/\\n}" >&2
+          echo "secret-scan: WARN unmerged, only stage $prev_idx was scanned: ${f//$'\n'/\\n}" >&2
           prev_idx=""
         fi
         continue
@@ -1030,7 +1031,7 @@ case "$mode" in
         why="not a regular file in the working tree"
       fi
       [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
-      prev_idx=1
+      prev_idx="$tstage"                            # the stage read, named if a later one is skipped
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
     done < "$tlist"
