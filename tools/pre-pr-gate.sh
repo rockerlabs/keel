@@ -1567,7 +1567,7 @@ function push_ctx(t, p) {
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
 }
-function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }
+function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }
 # A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
 # before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
 # clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
@@ -1582,20 +1582,23 @@ function set_lim(   i) {
   lim = n + 1
   for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]
 }
-# at_limit() — pos reached the nearest end: an expanding body’s, or a BQ’s closing backtick. Anything still open
-# inside a BQ there is a region (the reader’s nesting and the shell’s end disagree), closed at the backtick.
+# at_limit() — pos reached (or a reader stepped past) the nearest end: an expanding body’s, or a BQ’s closing
+# backtick. Anything still open inside a BQ there is a region (the reader’s nesting and the shell’s end disagree),
+# closed at the backtick; reading resumes right after it.
 function at_limit(   k, e) {
   for (k = sp; k >= 1; k--) if (clim[k] <= pos && (cty[k] == "HDATA" || (cty[k] == "BQ" && clim[k] <= n))) break
   if (k < 1) return 0
   if (cty[k] == "HDATA") { end_hdata(); return 1 }
   e = clim[k]
-  if (sp > k) bq_region(k, "backtick inside a nested context in backticks")
+  if (sp > k) bq_region(k)
   while (sp > k) close_any(e)
   pos = e; close_cmd(); pos = e + 1
   return 1
 }
-# bq_region(b, why) — the BQ at stack index b is a region, once; its end is set when it closes.
+# bq_region(b, why) — the BQ at stack index b is a region, once; its end is set when it closes. The default reason:
+# the BQ ends (at its first unescaped backtick) inside something the reader has open.
 function bq_region(b, why) {
+  if (why == "") why = "backtick inside a nested context in backticks"
   if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, why, rseg(segbeg[b]))
 }
 function bq_open(   i) {
@@ -1850,7 +1853,7 @@ function cmd_char(   c, s, k, op) {
 function close_cmd(   s, k) {
   s = sp
   seg_end(s, pos)
-  for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n, "heredoc pending when $(…) closed", hqsb[s, k])
+  for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], (cty[s] == "BQ" && clim[s] <= n) ? clim[s] : n, "heredoc pending when $(…) closed", hqsb[s, k])
   hqn[s] = 0
   if (bqreg[s]) rend[bqreg[s]] = (pos > n) ? n : pos
   pop_ctx(); addlit("$()", "xxx")
@@ -1922,16 +1925,16 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
     if (pos > n) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]); continue }
     found = 0; hline = 0
     for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
-      txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
+      txt = substr(src, lstart[L], ((lend[L] < lim) ? lend[L] : lim - 1) - lstart[L] + 1)
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
       if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], lend[L], ") line in a heredoc body inside $(…)", hqsb[s, k])
       if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]
     }
     bstop = found ? lstart[L] : n + 1
-    after = found ? lend[L] + 2 : n + 1
-    if (lim <= n && after > lim) { bq_region(bq_open(), "backtick inside a nested context in backticks"); after = lim; if (bstop > lim) bstop = lim }
-    if (!found) region(pos, (lim <= n) ? lim - 1 : n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : n + 1
+    if (lim <= n && after > lim) { bq_region(bq_open()); after = lim; if (bstop > lim) bstop = lim }
+    if (!found) region(pos, lim - 1, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
       push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
