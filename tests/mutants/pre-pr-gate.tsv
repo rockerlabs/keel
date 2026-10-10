@@ -110,8 +110,8 @@ L090	tools/pre-pr-gate.sh	for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n, "h
 L091	tools/pre-pr-gate.sh	if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]	if (0) hline = lstart[L]	B10(h)
 L092	tools/pre-pr-gate.sh	if (cty[i] == "DQ" || cty[i] == "HDATA") { region(pos, n, "quote inside	if (0) { region(pos, n, "quote inside	B10(i)
 L093	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "((	if (0) { flagged[sp] = 1; region(cpos[sp], n, "((	B10(j)
-L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && unbalanced_close(txt))	if (0 && unbalanced_close(txt))	B10(k)
-L095	tools/pre-pr-gate.sh	    if (c == "(") d++	    if (0) d++	B10(k): a balanced ( ) does not trigger
+L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && txt ~ /^[ \\t]*\\)/)	if (0 && txt ~ /^[ \\t]*\\)/)	B10(k)
+L095	tools/pre-pr-gate.sh	txt ~ /^[ \\t]*\\)/) region(	txt ~ /^\\)/) region(	B10(k): blanks before the ) still count
 L096	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace	if (0) { flagged[sp] = 1; region(cpos[sp], n, "brace	B10(l)
 L097	tools/pre-pr-gate.sh	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "git") ||	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "XgitX") ||	B10 scope: git
 L098	tools/pre-pr-gate.sh	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "gh")) ?	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "XghX")) ?	B10 scope: gh

@@ -1877,7 +1877,7 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
       txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
-      if (cty[s] == "SUB" && unbalanced_close(txt)) region(lstart[L], lend[L], ") line in a heredoc body inside $(…)", hqsb[s, k])
+      if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], lend[L], ") line in a heredoc body inside $(…)", hqsb[s, k])
       if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]
     }
     bstop = found ? lstart[L] : n + 1
@@ -1901,18 +1901,6 @@ function bs_joins(L, s, k,   txt, j, t2) {
     txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
     t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
     if (t2 == hqd[s, k]) return 1
-  }
-  return 0
-}
-# unbalanced_close(t) — t has a `)` with no `(` before it on the line: where bash 3.2 closes a $(…) that owns
-# the body and runs the rest of the line (zsh and bash 4+ read it as body text).
-function unbalanced_close(t,   i, d, c) {
-  if (!index(t, ")")) return 0
-  d = 0
-  for (i = 1; i <= length(t); i++) {
-    c = substr(t, i, 1)
-    if (c == "(") d++
-    else if (c == ")" && --d < 0) return 1
   }
   return 0
 }

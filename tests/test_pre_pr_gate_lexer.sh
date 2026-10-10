@@ -119,6 +119,9 @@ push_allow 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x g
 # N… the rows the mutation leg added (C100–C121), P… leg 3's (P1 C122, P2 C123, P3 C124, P4/P10 C114b, P5 C56b,
 # P6–P8 C77, P9 C73d, P11 C125). P3 (C124) is `push`, not the table's `refuse`: `${…}` closes at the first
 # unquoted `}` (bash, busybox), so the push after it is a segment of its own, and a push outranks a refusal.
+# P2 (C123) is `allow`, not the table's `refuse`: a heredoc-body line inside `$(…)` is refused only when its first
+# non-blank character is `)` (bash 3.2 closes the `$(…)` there); `1) git push …` starts with `1`. Refusing every
+# unbalanced `)` instead denied 390 habitual commit messages in the operator's corpus (wrapped parentheticals).
 hd="$(mkrepo)"
 rm -f "$(sentinel_for "$hd")"
 verdict_of() {
@@ -532,7 +535,7 @@ git log <<E
 x=$[1<<2]; gh pr create --fill
 @ P1 refuse
 ((cd a && git push --no-verify) && (true))
-@ P2 refuse
+@ P2 allow
 MSG=$(cat <<'EOF'
 1) git push --no-verify
 EOF
@@ -592,9 +595,8 @@ lex_is "a quoted expansion glued to a path" '"$HOME"/bin/git push' "TOP@1${T}d0$
 lex_is "a quoted command word" '"git" status' "TOP@1${T}d0${T}s0${T}p1${T}q:git${T}u:status"
 lex_is "backticks" 'echo `git status`' "BQ@1${T}d1${T}s0.1${T}p7${T}u:git${T}u:status"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"
 lex_is "a TAB and a backslash print escaped" "echo \"a${T}b\" 'x\\y'" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:a\\tb${T}q:x\\\\y"
-# The third region: bash 3.2 closes the `$(` at the unbalanced `)` on line 3 and runs the rest of that line.
-lex_is "a terminator glued to ): its regions in source order" "$(printf 'X="$(cat <<E\nmsg\nE)" && git push --no-verify')" \
-  "SUB@1${T}d1${T}s0.1${T}p6${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:X=\$()"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:yes"$'\n'"refuse${T}heredoc E not closed${T}line 2${T}scope:yes"$'\n'"refuse${T}) line in a heredoc body inside \$(…)${T}line 3${T}scope:yes"
+lex_is "a terminator glued to ): two regions in source order" "$(printf 'X="$(cat <<E\nmsg\nE)" && git push --no-verify')" \
+  "SUB@1${T}d1${T}s0.1${T}p6${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:X=\$()"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:yes"$'\n'"refuse${T}heredoc E not closed${T}line 2${T}scope:yes"
 want_home="$(printf 'VAR="x"y git push' | bash "$gate" lex 2>&1)"
 OUT="$(printf 'VAR="x"y git push' | env -u HOME bash "$gate" lex 2>&1)"; STATUS=$?
 check_status "lex:HOME unset → exit 0" 0 "$STATUS"
@@ -765,5 +767,8 @@ net "the reserved time comes before an assignment" push 'time HOME=/x git push'
 lex_is "a \${…} counts once in its word" 'echo ${v:-"a"}' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\${v:-\"a\"}"
 lex_is "a heredoc inside a heredoc substitution" "$(printf 'cat <<E\n$(cat <<F\nx\nF\n)\ngit status\nE')" \
   "TOP@1${T}d0${T}s0${T}p1${T}u:cat"$'\n'"SUB@2${T}d1${T}s0.1${T}p11${T}u:cat"$'\n'"SUB@3${T}d1${T}s0.1${T}p19${T}u:x"$'\n'"SUB@4${T}d1${T}s0.1${T}p21${T}u:F"$'\n'"refuse${T}heredoc inside a heredoc substitution${T}line 2${T}scope:yes"
+
+net "a )-led line in a heredoc body inside \$(…) refuses" refuse "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n  ) git push --no-verify\nEOF\n)')"
+net "a )-led line in a heredoc body outside \$(…) does not" allow "$(printf 'cat <<'"'"'EOF'"'"'\n) git push --no-verify\nEOF')"
 
 summary
