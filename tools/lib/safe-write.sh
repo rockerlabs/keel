@@ -209,7 +209,9 @@ _keel_sw_check() {
 # in that same instant can block the claim's open — the residual keel_backup names, not handled.
 _keel_sw_claim() {
   local err=""
-  rm -f "$1" 2>/dev/null || :
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    rm -f "$1" 2>/dev/null || :
+  fi
   if ! err="$( (set -C; : > "$1") 2>&1 )" || [ ! -f "$1" ] || [ -L "$1" ]; then
     _keel_sw_refuse "could not write $2: its temp name $1 could not be claimed$(_keel_sw_cause "$err")"
     return 1
@@ -225,13 +227,18 @@ _keel_sw_write() {
   local target="$1" tmp="$1.keeltmp.$$" err="" rc=0
   shift
   _keel_sw_claim "$tmp" "$target" || return 1
-  if [ -f "$target" ] && ! err="$(cp -p "$target" "$tmp" 2>&1)"; then
-    _keel_sw_fail "$tmp" "could not write $target (it cannot be read, or its directory is not writable)$(_keel_sw_cause "$err")"
-    return 1
-  fi
-  if ! err="$( { : > "$tmp"; } 2>&1 )"; then
-    _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)$(_keel_sw_cause "$err")"
-    return 1
+  if [ -f "$target" ]; then
+    if ! err="$(cp -p "$target" "$tmp" 2>&1)"; then
+      _keel_sw_fail "$tmp" "could not write $target (it cannot be read, or its directory is not writable)$(_keel_sw_cause "$err")"
+      return 1
+    fi
+    # The cause is captured only when the open fails (a second open of the same read-only temp fails the
+    # same way), so the common path stays fork-free.
+    if ! { : > "$tmp"; } 2>/dev/null; then
+      err="$( { : > "$tmp"; } 2>&1 )" || :
+      _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)$(_keel_sw_cause "$err")"
+      return 1
+    fi
   fi
   if [ "$#" -gt 0 ]; then
     # In a subshell: an `exit` or a `set -u` abort inside a shell-function CMD stays a failed CMD
@@ -241,7 +248,7 @@ _keel_sw_write() {
       _keel_sw_fail "$tmp" "the new content for $target could not be produced (CMD exited $rc)"
       return 1
     fi
-  elif ! err="$( { cat > "$tmp"; } 2>&1 )"; then
+  elif ! err="$(cat 2>&1 > "$tmp")"; then
     _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)$(_keel_sw_cause "$err")"
     return 1
   fi
@@ -275,20 +282,15 @@ keel_write_state() {
 # between its checks and its write (header). Sets $KEEL_BACKUP to the backup's name on success only; on
 # any refusal or failure it is empty and no backup is left behind.
 keel_backup_write_through() {
-  local file="$1" target b
   KEEL_BACKUP=""
-  _keel_sw_check "$file" strict || return 1
-  target="$_keel_sw_target"
+  _keel_sw_check "$1" strict || return 1
+  keel_backup "$1" || return 1
   shift
-  keel_backup "$file" || return 1
-  b="$KEEL_BACKUP"
-  KEEL_BACKUP=""
-  if ! _keel_sw_write "$target" "$@"; then
-    rm -f "$b" 2>/dev/null || :
+  if ! _keel_sw_write "$_keel_sw_target" "$@"; then
+    rm -f "$KEEL_BACKUP" 2>/dev/null || :
+    KEEL_BACKUP=""
     return 1
   fi
-  # shellcheck disable=SC2034  # read by the caller right after this call (header)
-  KEEL_BACKUP="$b"
 }
 
 # keel_write_replace PATH — stdin → PATH, as a REPLACE (header): a claimed temp sibling of PATH (never of
@@ -301,7 +303,7 @@ keel_write_replace() {
     return 1
   fi
   _keel_sw_claim "$tmp" "$p" || return 1
-  if ! err="$( { cat > "$tmp"; } 2>&1 )" || ! err="$(mv -f "$tmp" "$p" 2>&1)"; then
+  if ! err="$(cat 2>&1 > "$tmp")" || ! err="$(mv -f "$tmp" "$p" 2>&1)"; then
     _keel_sw_fail "$tmp" "could not write $p (its directory is missing or not writable)$(_keel_sw_cause "$err")"
     return 1
   fi
@@ -317,7 +319,9 @@ keel_link_replace() {
     _keel_sw_refuse "$p is a directory"
     return 1
   fi
-  rm -f "$tmp" 2>/dev/null || :
+  if [ -e "$tmp" ] || [ -L "$tmp" ]; then
+    rm -f "$tmp" 2>/dev/null || :
+  fi
   if [ -e "$tmp" ] || [ -L "$tmp" ]; then
     _keel_sw_refuse "could not link $p: its temp name $tmp is taken and could not be cleared"
     return 1

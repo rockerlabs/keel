@@ -459,7 +459,6 @@ fi
 # run that takes the --force STALE swap, retires, or both. An all-SAME run that retires nothing has
 # nothing to write: settings.json is left as it is, untouched even when it is hard-linked (dir #748 audit
 # S5-1); the status lines, the gate manifest and the ledger below still run.
-new_settings="$(jq '.new' <<<"$merged")"
 if [ "$n_retired" = 0 ] && hook_install_all_same "$statuses"; then
   :
 elif { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; then
@@ -470,9 +469,11 @@ elif { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; 
   if [ "$n_retired" -gt 0 ]; then
     backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
   fi
+  new_settings="$(jq '.new' <<<"$merged")"
   hook_install_backup_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") ($backup_why)"
 else
+  new_settings="$(jq '.new' <<<"$merged")"
   hook_install_atomic_write "$settings" "$new_settings"
 fi
 

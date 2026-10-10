@@ -14,9 +14,6 @@ uninstall="$REPO_ROOT/uninstall.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$REPO_ROOT/tools/lib/stat-portable.sh"
 
-# inode_of FILE — the inode number (a rename changes it).
-# (`read` drops the leading blanks busybox `ls -i` pads the number with.)
-inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # keeltmp_count DIR... — leftover temp siblings under DIR.
 keeltmp_count() { find "$@" -name '*.keeltmp.*' 2>/dev/null | grep -c . || true; }
 
@@ -132,6 +129,17 @@ a35="$(git -C "$REPO_ROOT" grep -n 'KEEL_SAFE_WRITE_CHECKOUT=' -- install.sh uni
 check_eq "A35 none of the six consumers assigns KEEL_SAFE_WRITE_CHECKOUT" "" "$a35"
 check_eq "A35 the lib holds exactly one line deriving it with cd -P" 1 \
   "$(grep 'KEEL_SAFE_WRITE_CHECKOUT=' "$lib" | grep -c 'cd -P' || true)"
+
+# --- A47 (audit S5-2): linked mode's import-line append is an EDIT, refused into the checkout -----------
+h="$SANDBOX/a47s/h"; mkdir -p "$h"
+ln -s "$ck/README.md" "$h/CLAUDE.md"
+before="$(cksum < "$ck/README.md")"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A47/S5-2 linked install, CLAUDE.md linked to a tracked checkout file → exit 0" 0 "$STATUS"
+check_eq "A47/S5-2 …README.md is byte-identical" "$before" "$(cksum < "$ck/README.md")"
+check_eq "A47/S5-2 …git status of the checkout is clean" "" "$(git -C "$ck" status --porcelain)"
+check_eq "A47/S5-2 …one line names the refusal" 1 "$(grep -c 'inside the Keel checkout' <<<"$OUT" || true)"
+check_contains "A47/S5-2 …Verify's rails WARN" "$OUT" "will NOT load"
 
 # --- A24: B1's checkout clause at uninstall ---------------------------------------------------------
 h="$SANDBOX/a24/h"

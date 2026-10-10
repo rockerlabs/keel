@@ -295,13 +295,14 @@ fi
 # The backup goes with the write in one call, so a refused write leaves no backup behind (dir #756 (d)).
 # An all-SAME run has nothing to write: settings.json is left as it is, untouched even when it is
 # hard-linked (dir #748 audit S5-1); the status lines below still print.
-new_settings="$(jq '.new' <<<"$merged")"
 if hook_install_all_same "$statuses"; then
   :
 elif [ "$n_stale" -gt 0 ] && [ -f "$settings" ]; then
+  new_settings="$(jq '.new' <<<"$merged")"
   hook_install_backup_write "$settings" "$new_settings"
   echo "install-read-trace: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") (--force)"
 else
+  new_settings="$(jq '.new' <<<"$merged")"
   hook_install_atomic_write "$settings" "$new_settings"
 fi
 

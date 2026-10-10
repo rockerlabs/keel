@@ -698,8 +698,7 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # caller invokes it as a bare statement; the moment ANY caller tests its return value, the function
 # must check its own risky commands explicitly instead of trusting the shell to abort on their
 # failure — which is exactly what the backup check below now does.
-# LABEL (default "--force") is only the word in the success line's closing parentheses. (The block-refresh
-# ladder, dir #650, no longer comes here: refresh_core_block backs up and writes in one call.)
+# LABEL (default "--force") is only the word in the success line's closing parentheses.
 force_backup() {
   local dest="$1" label="${2:---force}"
   if [ -e "$dest" ] && [ ! -f "$dest" ]; then
@@ -1170,7 +1169,7 @@ replace_core_block() {
 # mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
 # The backup goes with the write, in one call (dir #756 (d)): the write's refusals are checked first, so a
 # refused refresh (a hard-linked or checkout-linked FILE) claims no backup, and the "backed up" line is
-# printed only once the refresh has landed. LABEL names the backup in that line.
+# printed only once the refresh has landed.
 refresh_core_block() {
   local file="$1" fresh
   keel_core_block_check "$file" || return 1

@@ -8,7 +8,8 @@
 #   - a backup and the write it guards are one call: a refused write leaves no orphan backup;
 #   - an all-SAME hook run does not rewrite settings.json;
 #   - the manifest body carries its own status;
-#   - linked mode's import line is an EDIT: idempotent across cycles, and refused into the checkout.
+#   - linked mode's import line is an EDIT: idempotent across cycles (its refusal into the checkout,
+#     audit S5-2, runs in tests/test_safe_write.sh, beside the scratch checkout it needs).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -17,8 +18,6 @@ uninstall="$REPO_ROOT/uninstall.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$REPO_ROOT/tools/lib/stat-portable.sh"
 
-# inode_of FILE — the inode number (`read` drops the leading blanks busybox `ls -i` pads it with).
-inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 # bak_count DIR NAME — backups of NAME directly in DIR.
 bak_count() { find "$1" -maxdepth 1 -name "$2.*.bak" 2>/dev/null | grep -c . || true; }
 
@@ -213,23 +212,5 @@ run "$install" --link --home "$h" --no-hooks
 check_status "A47/K42a linked install over a CLAUDE.md with no final newline → exit 0" 0 "$STATUS"
 check_eq "A47/K42a …the user's last line is intact" line "$(sed -n 2p "$h/CLAUDE.md")"
 check_eq "A47/K42a …the import is on a line of its own" 1 "$(grep -c '^@.*keel/CORE\.md$' "$h/CLAUDE.md" || true)"
-# audit S5-2: a CLAUDE.md linked to a tracked checkout file is refused for the append too.
-ck="$SANDBOX/ck"; mkdir -p "$ck"
-tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
-while IFS= read -r e; do
-  [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$ck/"
-done <<<"$tops"
-git -C "$ck" init -q
-git -C "$ck" add -A
-git -C "$ck" commit -qm base
-h="$SANDBOX/a47s/h"; mkdir -p "$h"
-ln -s "$ck/README.md" "$h/CLAUDE.md"
-before="$(cksum < "$ck/README.md")"
-run "$ck/install.sh" --link --home "$h" --no-hooks
-check_status "A47/S5-2 linked install, CLAUDE.md linked to a tracked checkout file → exit 0" 0 "$STATUS"
-check_eq "A47/S5-2 …README.md is byte-identical" "$before" "$(cksum < "$ck/README.md")"
-check_eq "A47/S5-2 …git status of the checkout is clean" "" "$(git -C "$ck" status --porcelain)"
-check_eq "A47/S5-2 …one line names the refusal" 1 "$(grep -c 'inside the Keel checkout' <<<"$OUT" || true)"
-check_contains "A47/S5-2 …Verify's rails WARN" "$OUT" "will NOT load"
 
 summary
