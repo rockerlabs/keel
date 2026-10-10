@@ -333,6 +333,14 @@ requests with no changelog entry — five instances in one wave of a class with 
 after the same class had already been caught twice by humans mid-wave. That is not a review-depth
 problem; it is a missing check one layer up.
 
+**The operator's review is the last net too.** A defect the operator finds that no gate, check or
+review caught is the same shift-left signal, and the remedy is the same: a check one layer up, not a
+promise to look harder. Sort each operator note first. An **error** — something a check could have
+decided, such as a wrong fact, a broken reference, a stale count or two things that collide — earns
+that check. A **taste** note — a preference no stated rule implies — is fixed, and only if it recurs is
+it written into the project's conventions; it never becomes a check, which would encode one reader's
+preference as a defect.
+
 ## 8. Bootstrapping the class registry, if you have no history yet
 
 Every rule that turns on "new class vs known class" — Clause A, Clause B, and §4's class-registry
