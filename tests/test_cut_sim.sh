@@ -73,9 +73,8 @@ env TMPDIR="$tmproot" bash "$sim" --repo "$sig_src" >/dev/null 2>&1 &
 sim_pid=$!
 n=0
 while [ -z "$(ls -A "$tmproot")" ] && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
-check_nonempty_dir=""
-[ -n "$(ls -A "$tmproot")" ] && check_nonempty_dir=1
-check_eq "(fixture) the clone exists while the suite runs" "1" "$check_nonempty_dir"
+[ -n "$(ls -A "$tmproot")" ] && pass "(fixture) the clone exists while the suite runs" \
+  || fail "(fixture) the clone exists while the suite runs" "no keel-cut-sim dir appeared under $tmproot"
 kill -TERM "$sim_pid" 2>/dev/null || true
 n=0
 while kill -0 "$sim_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
