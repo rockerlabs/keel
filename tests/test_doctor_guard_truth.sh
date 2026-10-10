@@ -37,7 +37,7 @@ mv "$kdir/pre-push" "$kdir/pre-push.away"
 run genv "$doctor" --install "$H/claude"
 check_contains "D1-3: Keel's pre-push ABSENT beside a working pre-commit → W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "D1-3: ...naming the pre-push" "$(id_line W-GUARD-UNWIRED)" "pre-push"
-check_contains "D1-3: ...Keel's own dir is fixed by re-running --global" "$(id_line W-GUARD-UNWIRED)" "re-run install-secret-guard.sh --global"
+check_contains "D1-3: ...Keel's own dir is fixed by re-running --global" "$(id_line W-GUARD-UNWIRED)" "pre-push is absent from $kdir (a commit made with hooks bypassed would reach the remote unscanned) — re-run install-secret-guard.sh --global"
 check_absent "D1-3: ...and never the OK line" "$OUT" "OK   secret-guard: machine-global"
 mv "$kdir/pre-push.away" "$kdir/pre-push"; chmod -x "$kdir/pre-push"
 run genv "$doctor" --install "$H/claude"
@@ -108,6 +108,8 @@ check_absent "env names: an upper-case template (CONFIG.ENV.TEMPLATE, .Env.Sampl
 put "$d/PROD.ENV"
 run "$doctor" "$d"
 check_contains "env names: ...while an upper-case non-template (PROD.ENV) beside them is" "$(id_line W-SECRETS-EXPOSED)" "PROD.ENV"
+check_absent "env names: ...and the upper-case templates stay out of that same finding" "$(id_line W-SECRETS-EXPOSED)" "TEMPLATE"
+check_absent "env names: ... (.Env.Sample too)" "$(id_line W-SECRETS-EXPOSED)" "Sample"
 
 # --- half-wired advice follows whose dir it is ---------------------------------------------------------------------------
 mk_home hw
