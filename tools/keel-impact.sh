@@ -243,6 +243,9 @@ events (e.g. a secret-guard block) reach the score deterministically, at zero to
 model counting them. $KEEL_IMPACT_LOG overrides the log path outright; pass --no-ingest to skip
 ingestion. TYPE ∈ hold guard fire hit miss friction.
 
+`enable` refuses a DIR nested inside another repo (and a bare `enable` from a subdirectory) — it would key the
+entry on the parent; run it at the repo's own root, or `git init` the nested dir first (dir #677).
+
 dir #630: this repo's `enable` is recorded durably — a multi-valued `keel.impactStore` key in the repo's
 own LOCAL git config (never the global one; documented so a `git config --local -l` doesn't surprise you)
 — so a store entry that later goes missing (a wiped or moved state root) is told apart from
@@ -886,7 +889,7 @@ _impact_history_append() {
 # to restart and refuses too; `moved` and `never` proceed exactly as before (a notice is added for
 # `moved`); `unresolved` is untouched (today's crash on unset HOME, unaffected by this ticket).
 cmd_enable() {
-  local dir="." restart=0 positional=0 a top state already=0 entry moved_prior
+  local dir="." restart=0 positional=0 a top state already=0 entry moved_prior prefix parent
   for a in "$@"; do
     case "$a" in
       -h|--help) usage; return 0 ;;
@@ -904,6 +907,20 @@ cmd_enable() {
   # S9: a DIR that is not an existing directory refuses, same wording as migrate's.
   if [ "$dir" != "." ] && [ ! -d "$dir" ]; then
     printf 'keel-impact: enable: not a directory: %s\n' "$dir" >&2
+    exit 2
+  fi
+  # dir #677 (init-project.sh's dir #611 class): `_impact_resolve_top` resolves UPWARD — right for add/event/the
+  # hooks, which run from subdirectories and linked worktrees — so enabling a directory nested inside another
+  # repo would key the store entry on the PARENT's root. A non-empty `--show-prefix` means DIR is not its own
+  # toplevel (a linked worktree's root has an empty one, so it still enables its main checkout). The guard lives
+  # here, never in the shared resolver, and runs before any store write. `enable` with no argument from a
+  # subdirectory is refused too. A dir outside any repo fails the probe and falls through unchanged.
+  prefix="$(git -C "$dir" rev-parse --show-prefix 2>/dev/null || true)"
+  if [ -n "$prefix" ]; then
+    parent="$(git -C "$dir" rev-parse --show-toplevel)"
+    printf 'keel-impact: enable: %s is inside the git repo at %s — refusing to enable that repo by accident.\n' "$(cd "$dir" && pwd -P)" "$parent" >&2
+    printf '  To track it on its own:  git init %s  and enable again.\n' "$(cd "$dir" && pwd -P)" >&2
+    printf '  To track the parent:     %s enable %s\n' "$0" "$parent" >&2
     exit 2
   fi
 

@@ -15,6 +15,12 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/keel-impact.sh enable` refuses a directory nested inside another repo (dir #677).** `enable DIR` resolved
+  the store key upward, so a path like `~/zone/repos/site` inside a parent repo silently enabled the PARENT's root, the
+  class dir #611 closed for `init-project.sh`. It now exits 2 before any store write, naming the parent and the two
+  fixes (`git init` the nested directory, or enable the parent); a linked worktree's root still enables its main
+  checkout, and a bare `enable` from a subdirectory is refused too. The guard lives in `enable` only: `add`, `event`
+  and the hooks keep resolving upward from subdirectories.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
