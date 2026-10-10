@@ -75,6 +75,16 @@ check_status "A40 round trip: install again → exit 0" 0 "$STATUS"
 check_link "A40 round trip: …the link is still the adopter's" "$h/commands/go.md"
 run test "$h/commands/go.md" -ef "$dots/go.md"
 check_status "A40 round trip: …pointing at the dotfiles copy" 0 "$STATUS"
+# …and a Keel link whose text spells its recorded target another way (a symlinked parent; /tmp vs
+# /private/tmp) is still Keel's: the predicate accepts the same file (`-ef`) as well as the same text.
+h="$SANDBOX/a40s/h"; ln -s "$REPO_ROOT" "$SANDBOX/a40s-alias"
+run "$install" --link --home "$h" --no-hooks
+check_status "A40 respelled fixture: linked install → exit 0" 0 "$STATUS"
+rm -f "$h/keel/CORE.md"; ln -s "$SANDBOX/a40s-alias/CORE.md" "$h/keel/CORE.md"
+run "$uninstall" --home "$h" --yes
+check_status "A40 respelled: uninstall → exit 0" 0 "$STATUS"
+check_nolink "A40 respelled: …Keel's respelled link is removed" "$h/keel/CORE.md"
+check_absent "A40 respelled: …never reported as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably"
 # doctor and install ask the same predicate (one definition).
 body="$(awk '/doctor_link_is_keels_own\(\) \{/,/^  \}/' "$REPO_ROOT/tools/doctor.sh")"
 check_contains "A40 doctor_link_is_keels_own calls manifest_link_is_keels" "$body" "manifest_link_is_keels"
@@ -135,7 +145,7 @@ fi
 h="$SANDBOX/a50-1/h"
 run env KEEL_TEST_REMOVE_BEFORE_VERIFY=INSTANCE.md "$install" --home "$h" --no-hooks
 check_status "A50(1) KEEL_TEST_REMOVE_BEFORE_VERIFY=INSTANCE.md → Verify still exits 1" 1 "$STATUS"
-check_contains "A50(1) …reporting it missing" "$OUT" "INSTANCE.md"
+check_contains "A50(1) …reporting it missing" "$OUT" "MISS INSTANCE.md"
 check_file "A50(1) …and the file is still on disk" "$h/INSTANCE.md"
 # (2) linked mode: a <home>/docs that is a link into the checkout is not "docs/ copies remain".
 h="$SANDBOX/a50-2/h"; mkdir -p "$h"; ln -s "$ck/docs" "$h/docs"

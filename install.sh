@@ -702,19 +702,21 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # CALLER CONTRACT — this only protects a caller that either tests the return value, or is upstream-gated
 # to never see a non-regular dest in the first place. `return 1` from a BARE statement still aborts the
 # whole script under `set -euo pipefail`; this function cannot change that for a caller that doesn't
-# account for it. The three call sites split across both worlds today:
+# account for it. The five call sites split across both worlds today:
 #   - bin/keel (below) tests the return value directly (`elif force_backup "$keel_link"; then`), so a
 #     decline is the tested command of that `elif` — exempt from `set -e` — and falls through with
-#     nothing further to print, since this function's own message above already explained why. This is
-#     the one site that can actually reach a decline today.
-#   - sync_product's two call sites are bare statements and rely entirely on an upstream gate instead:
+#     nothing further to print, since this function's own message above already explained why.
+#   - sync_product's `y` at "Overwrite your copy" and `[u]` at the alias prompt (B23, dir #754) test it
+#     too (`if force_backup "$dest" "overwrite"; then place …`): a backup that cannot be taken — no free
+#     name, a failed copy — leaves the file untouched and the run goes on, a decline like any other.
+#   - sync_product's two --force call sites are bare statements and rely entirely on an upstream gate instead:
 #     the first is reached only when `dest_differs=1`, which itself requires `[ -f "$dest" ]`; the
 #     second sits below dir #351's own `dest_nonregular` decline branch, which already intercepts and
 #     returns before this call is ever reached. Neither site checks this function's return value, so a
 #     decline there is unreachable ONLY as long as its one upstream gate keeps holding.
 # A future bare call site added without its own gate, or the removal of either gate above, silently
 # turns this guard from a clean decline back into the mid-sync abort dir #349 exists to remove — the
-# exact shape that bit dir #342/#343's `ensure_ledger` the same week. Whoever adds a fourth call site
+# exact shape that bit dir #342/#343's `ensure_ledger` the same week. Whoever adds a sixth call site
 # needs to land in one of the two worlds above on purpose, not by accident.
 #
 # THE SAME "test position suspends set -e" FACT CUTS BOTH WAYS (found live by a fresh /code-review
@@ -740,7 +742,7 @@ force_backup() {
   # caller would then believe the backup happened and proceed to overwrite the adopter's real file
   # with nothing actually backed up — reproduced live. Checking explicitly makes the failure mode the
   # same regardless of how the caller invokes this function: a bare-statement caller (sync_product's
-  # two call sites) still aborts under `set -e` on a `return 1` here, same as before, but now with a
+  # two --force call sites) still aborts under `set -e` on a `return 1` here, same as before, but now with a
   # clear message first (keel_backup's line saying why, then this one) instead of a bare stderr line.
   if ! keel_backup "$dest"; then
     echo "  !    $(basename "$dest"): backup failed — left untouched" >&2

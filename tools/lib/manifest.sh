@@ -65,7 +65,9 @@ keel_path_inside() {
 
 # manifest_link_is_keels MANIFEST REL LINK — the ONE test that a link a manifest recorded is provably Keel's
 # (spec 685 round 2 B20): MANIFEST is usable and holds a `symlink` record for REL whose target is not the
-# pre-dir-#369 `-`, LINK's own target is exactly that recorded target, and the target lies inside the
+# pre-dir-#369 `-`, LINK leads to that recorded target — its own text equals it, or (both resolving) it
+# names the same file, so a spelling that differs only by a symlinked parent or /tmp vs /private/tmp still
+# counts, as uninstall's `-ef` match always has — and the target lies inside the
 # checkout MANIFEST's `checkout=` header names (keel_path_inside — the checkout that WROTE the record, the
 # old one after a move). An adopter's link that an older manifest recorded as Keel's fails the last test,
 # so nothing that asks this moves or re-places it. install.sh's stale-link class, tools/doctor.sh's
@@ -77,7 +79,7 @@ manifest_link_is_keels() {
   rec="$(manifest_symlink_extra "$man" "$rel")"
   [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
   cur="$(readlink "$link" 2>/dev/null)" || return 1
-  [ "$cur" = "$rec" ] || return 1
+  [ "$cur" = "$rec" ] || [ "$link" -ef "$rec" ] || return 1
   ck="$(manifest_field "$man" checkout)"
   keel_path_inside "$rec" "$ck"
 }
