@@ -293,4 +293,4 @@ L287	tools/pre-pr-gate.sh	      for (k = 1; at(k) ~ /^[0-9]$/; k++) ;	      k = 
 L288	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++; at(k) ~ /^[0-9]$/; k++) ;	if (at(k) == "-") { k++;	B8: <N-M>: the digits after the -
 L289	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++;	if (1) { for (k++;	B8: <N-M>: the -; a < with digits, another character, digits and a > (<1x2>) is a redirection
 L290	tools/pre-pr-gate.sh	; if (at(k) == ">") return RDGLOB }	; return RDGLOB }	B8: <N-M>: the closing >
-L291	tools/pre-pr-gate.sh	    if (lend[j] >= lim) return 0	    if (0) return 0	B10(h): a join that meets its delimiter only on a line cut at the BQ’s backtick is no disagreement
+L291	tools/pre-pr-gate.sh	    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)	    txt = txt substr(src, lstart[j], line_end(j) - lstart[j] + 1)	B10(h): a joined line cut at the BQ’s backtick keeps it, so the join is no disagreement

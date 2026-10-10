@@ -813,7 +813,7 @@ net "a \$' inside a double-quoted delimiter is two characters" allow "$(printf '
 net "a substitution inside a double-quoted delimiter: the word is read again from its start" push 'cat <<"E$(x)" ; git push --no-verify'
 net "a \$'…' delimiter" push "cat <<\$'\\'' ; git push --no-verify #'"
 net "a \$\"…\" delimiter" push 'cat <<$"E" ; git push --no-verify'
-net "a \$\"…\" delimiter: the shells disagree (bash ends the body at E; zsh, dash and busybox read on)" push "$(printf 'cat <<$"E"\nE\ngit push --no-verify\n$E')"
+net "a \$\"…\" delimiter: the shells disagree (bash and macOS sh end the body at E; zsh, dash and busybox read on)" push "$(printf 'cat <<$"E"\nE\ngit push --no-verify\n$E')"
 net "a \$[…] delimiter" push "$(printf 'cat <<$[ ; x ]\n$[ ; x ]\ng"it" push --no-verify\n$[')"
 net "a backslash-newline in a delimiter" push "$(printf 'cat <<E\\\nF\n$(git push --no-verify)\nEF')"
 net "a backslash in a delimiter inside backticks (the shells read Ex, the body ends at line 2)" push "$(printf 'echo `cat <<E\\\\x\nEx\ngit push --no-verify\nE\\\\x`')"
@@ -936,6 +936,7 @@ lex_has "a ( right after the operator is no delimiter (B10(c)), not zsh glob syn
 lex_has "zsh glob syntax glued to a delimiter has its own reason" 'cat <<E(x)' "refuse${T}zsh glob glued to a heredoc delimiter${T}line 1"
 net "a backslash join that meets its delimiter only on a line cut at its BQ's backtick is no disagreement" allow "$(printf 'x=`cat <<gitE\ngit\\\nE`; git status')"
 lex_out "$(printf 'echo `x $(cat <<")"\n)`')"
+check_contains "lex:a delimiter line cut at its BQ's backtick (the run reads it)" "$OUT" "refuse${T}backtick inside a nested context in backticks${T}line 1${T}"
 check_absent "lex:a delimiter line cut at its BQ's backtick is the delimiter, not a )-led body line" "$OUT" ") line in a heredoc body"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
