@@ -1640,12 +1640,22 @@ function lex_segment(   line, k, m, cls, t) {
     if (index(m, "q")) cls = cls "q"
     if (index(m, "x")) cls = cls "x"
     if (index(m, "g")) cls = cls "g"
-    t = tok[k]; gsub(/\\/, "\\\\", t); gsub(/\t/, "\\t", t); gsub(/\n/, "\\n", t)
-    line = line "\t" cls ":" t
+    line = line "\t" cls ":" lex_esc(tok[k])
   }
   print line
 }
 # Word predicates the matchers use.
+# lex_esc(t) — t with a backslash, a TAB and a newline written as \\, \t and \n. A character loop, not gsub: busybox
+# awk reads a backslash in a gsub replacement differently from the other awks.
+function lex_esc(t,   o, i, c) {
+  if (t !~ /[\\\t\n]/) return t
+  o = ""
+  for (i = 1; i <= length(t); i++) {
+    c = substr(t, i, 1)
+    if (c == "\\") o = o "\\\\"; else if (c == "\t") o = o "\\t"; else if (c == "\n") o = o "\\n"; else o = o c
+  }
+  return o
+}
 function w_plain(i) { return index(tokm[i], "x") == 0 }
 function w_literal(i) { return index(tokm[i], "x") == 0 && index(tokm[i], "g") == 0 }
 function w_unquoted(i) { return index(tokm[i], "q") == 0 && index(tokm[i], "x") == 0 }
@@ -1850,7 +1860,7 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k) {
     if (c == "\047") { quoted = 1; pos++; while (pos < lim && ch[pos] != "\047") d = d ch[pos++]; pos++; continue }
     if (c == "\"") {
       quoted = 1; pos++
-      while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
+      while (pos < lim && ch[pos] != "\"") { if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) pos++; d = d ch[pos++] }
       pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
