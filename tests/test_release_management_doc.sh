@@ -264,7 +264,6 @@ pin "manage-release M3 qualifies the CHANGELOG collision assumption with changel
 pin "manage-release M3 still says merges serialize, and why (strict up-to-date)" "$cmd" 'merges serialize as a consequence (strict up-to-date still forces it)' \
   "expected M3 to keep the serialization consequence"
 
-
 # --- dir #744 B29 (A25): the merge queue, conditional, beside today's default --------------------------------
 r2="$(section_body "## R2 — wave plan by file overlap, merges serialized" "$doc")"
 check_contains "R2 carries the conditional merge-queue sentence" "$r2" \
@@ -273,9 +272,9 @@ check_contains "R2 says a conflict or red check ejects the PR back to its worker
 r9="$(section_body "## R9 — close checklist" "$doc")"
 check_absent "R9 no longer calls the list of merges 'a merge queue' (GitHub's queue is a different thing)" "$r9" "a merge queue"
 check_contains "R9 calls it the merge list" "$r9" "the merge list"
-m3="$(awk '/^\*\*M3 /{p=1} /^\*\*M4 /{p=0} p' "$cmd")"
-m8="$(awk '/^\*\*M8 /{p=1} /^\*\*M9 /{p=0} p' "$cmd")"
-check_contains "manage-release M3 carries the merge-queue clause" "$m3" "merge queue"
-check_contains "manage-release M8 carries the merge-queue clause" "$m8" "merge queue"
+pin "manage-release M3 carries the merge-queue clause" "$cmd" 'through the merge queue where one is required' \
+  "expected M3's serialization sentence to name the merge queue (dir #744 B29)"
+pin "manage-release M8 carries the merge-queue clause" "$cmd" 'enqueue instead of merge where a merge queue is required' \
+  "expected M8's hand-over list to say enqueue instead of merge under a queue (dir #744 B29)"
 
 summary

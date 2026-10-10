@@ -71,12 +71,12 @@ wave-planning tool exists to own it) — and **assume every PR collides in `CHAN
 `changelog.d/` file instead)** — every PR across a real ten-PR release did, without exception, which the
 manager's own test-file-range check structurally could not see (an insertion point isn't a line range). Merges
 serialize as a consequence (strict up-to-date still forces it): one release-manager session, keeping to itself the fact that this is
-where mutation actually threads a needle. Show the operator the wave plan before wave 1 starts — the
-wave plan is a plan, not a report, and the operator's one intervention here is cheap compared to a
-wave already in flight.
+where mutation actually threads a needle.
 Where the repository requires a merge queue (keel does, dir #744), the operator enqueues a green PR
 instead of updating and merging it; the queue tests it on top of the PRs ahead, and a conflict or red check
-ejects it back to its worker.
+ejects it back to its worker. Show the operator the wave plan before wave 1 starts — the
+wave plan is a plan, not a report, and the operator's one intervention here is cheap compared to a
+wave already in flight.
 
 ## R3 — worker launches, soft form
 
