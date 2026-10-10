@@ -90,7 +90,7 @@ L069	tools/pre-pr-gate.sh	  if (wtgt[s]) return	  if (0) return	B7: the target i
 L070	tools/pre-pr-gate.sh	  sntok[s] = 0; tgtpend[s] = 0; segbeg[s] = nextp	  sntok[s] = 0; segbeg[s] = nextp	B7: a separator before the target: no target
 L071	tools/pre-pr-gate.sh	if (index(" \\t\\n;&|<>()", c)) break\n    got = 1	if (index(" \\t\\n", c)) break\n    got = 1	B8: the delimiter ends at a separator
 L072	tools/pre-pr-gate.sh	if (hqn[s] > 0) start_bodies(s)	if (0) start_bodies(s)	B8: bodies start at the owner's newline
-L073	tools/pre-pr-gate.sh	if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }	if (k > 1) { hqn[s] = 0; hb_s = 0; return }	B8: every queued body, in order
+L073	tools/pre-pr-gate.sh	if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; kreg = 0; return }	if (k > 1) { hqn[s] = 0; hb_s = 0; kreg = 0; return }	B8: every queued body, in order
 L074	tools/pre-pr-gate.sh	cmp = txt; if (hqs[s, k]) sub(/^\\t+/, "", cmp)	cmp = txt	B8: <<- strips leading tabs
 L075	tools/pre-pr-gate.sh	heredoc_op(op == "<<-")	heredoc_op(0)	B8: <<- is the stripping operator
 L076	tools/pre-pr-gate.sh	hqx[s, k] = !quoted	hqx[s, k] = 1	B8: a quoted delimiter makes the body literal
@@ -111,9 +111,18 @@ L095	tools/pre-pr-gate.sh	txt ~ /^[ \\t]*\\)/) kline = 	txt ~ /^\\)/) kline = 	B
 L097	tools/pre-pr-gate.sh	else if (substr(src, p + 1, 2) == "it") {	else if (0) {	B10 scope: git
 L098	tools/pre-pr-gate.sh	if (substr(src, p + 1, 1) == "h") {	if (0) {	B10 scope: gh
 L246	tools/pre-pr-gate.sh	"SUB" && !kline && txt	"SUB" && txt	B10(k): the region starts at the first )-led line
-L247	tools/pre-pr-gate.sh	if (kline) region(kline, bstop - 1, ") line	if (kline) region(kline, n, ") line	B10(k): the region ends at the body's end
-L248	tools/pre-pr-gate.sh	        else if (c == o) depth++	        else if (c == "(" || c == "{") depth++	B8: a $(…)/${…} delimiter nests on its own opener only
-L249	tools/pre-pr-gate.sh	        if (c == "\\047" || c == "\\"") { pos++; while	        if (0) { pos++; while	B8: a quoted span in a $(…) delimiter is skipped
+L247	tools/pre-pr-gate.sh	else if (kline) kreg = region(kline, bstop - 1, ") line	else if (kline) kreg = region(kline, n, ") line	B10(k): the region ends at the body's end
+L248	tools/pre-pr-gate.sh	        else if ((o == "(" && c == "(") || (o == "{" && c == "{" && ch[pos - 1] == "$")) depth++	        else if (c == "(" || c == "{") depth++	B8: a $(…)/${…} delimiter nests on its own opener only
+L249	tools/pre-pr-gate.sh	        else if (c == "\\047" || c == "\\"") {\n          esc =	        else if (0) {\n          esc =	B8: a quoted span in a $(…) delimiter is skipped
+L255	tools/pre-pr-gate.sh	        if (c == "\\\\") pos++\n        else if (c == "\\047"	        if (0) pos++\n        else if (c == "\\047"	B8: a backslash in a $(…) delimiter escapes the next character
+L256	tools/pre-pr-gate.sh	esc = (c == "\\"" || ch[pos - 1] == "$")	esc = (c == "\\"")	B8: a backslash escapes inside $'…' in a $(…) delimiter
+L257	tools/pre-pr-gate.sh	esc = (c == "\\"" || ch[pos - 1] == "$")	esc = (ch[pos - 1] == "$")	B8: a backslash escapes inside "…" in a $(…) delimiter
+L258	tools/pre-pr-gate.sh	(o == "{" && c == "{" && ch[pos - 1] == "$")) depth++	(o == "{" && c == "{")) depth++	B8: a ${…} delimiter nests only on a nested ${
+L259	tools/pre-pr-gate.sh	{ if (!bf) bf = region(op, n, "brace inside ${…}"	{ if (0) bf = region(op, n, "brace inside ${…}"	B10(l): a bare { in a ${…} delimiter
+L260	tools/pre-pr-gate.sh	for (pos++; pos < lim && ch[pos] != "\\n"; pos++) {	for (pos++; pos < lim; pos++) {	B8: a $(…) delimiter not closed on its line
+L261	tools/pre-pr-gate.sh	        region(op, n, "unclosed $(…) or ${…} in a heredoc delimiter", rseg(segbeg[s])); return	        return	B8: an unclosed $(…) delimiter is a region
+L262	tools/pre-pr-gate.sh	    if (kreg) rend[kreg] = bstop - 1	    if (0) rend[kreg] = bstop - 1	B10(k): the region grows over the line's later bodies
+L263	tools/pre-pr-gate.sh	hqn[s] = 0; hb_s = 0; kreg = 0; return	hqn[s] = 0; hb_s = 0; return	B10(k): the region stops growing after the line's last body
 L250	tools/pre-pr-gate.sh	if (gbeg[k] < rsb[i]) lo = k + 1	if (gbeg[k] <= rsb[i]) lo = k + 1	B10 scope: a git or gh at the segment start counts
 L251	tools/pre-pr-gate.sh	rscope[i] = (lo <= ng && gend[lo] <= rend[i])	rscope[i] = (lo <= ng && gend[lo] < rend[i])	B10 scope: a git or gh ending at the region end counts
 L252	tools/pre-pr-gate.sh	rscope[i] = (lo <= ng && gend[lo]	rscope[i] = (gend[lo]	B10 scope: no git or gh after the segment start

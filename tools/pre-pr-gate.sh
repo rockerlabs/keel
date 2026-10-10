@@ -36,8 +36,9 @@
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
 # name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
 # (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
-# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new` and a
-# `gh api graphql` mutation; an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
+# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
+# `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
+# for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
 # index holds an expansion or a blank (`a[$i]=1 git …`, read as the command word); bash 3.2's misreading of a
 # heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only from a
 # body line that starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
@@ -1901,7 +1902,7 @@ function redirect(   c, op, s, t, m) {
 
 # Read a heredoc delimiter word after `<<`/`<<-` (quotes and escaping backslashes removed, nothing expanded; any
 # quoting makes the body literal) and queue the heredoc on its owner, the command context it was read in.
-function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k, o, e) {
+function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k, o, e, esc, bf) {
   s = sp; op = pos; pos += strip ? 3 : 2
   while (pos < lim && (ch[pos] == " " || ch[pos] == "\t")) pos++
   d = ""; quoted = 0; got = 0
@@ -1916,19 +1917,28 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, depth, q, k, o, e) {
       pos++; continue
     }
     if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
-    # a `$(…)`/`${…}` in the delimiter runs to its own closer: only its own opener nests, and a quoted span is
-    # skipped whole (`<<$(echo {)` and `<<${x:-(}` end at their `)` and `}`); unclosed, it runs to lim, where
-    # every shell reports a syntax error
+    # a `$(…)`/`${…}` in the delimiter runs to its closer as bash finds it: a backslash escapes the next character,
+    # a quoted span (single, double or $-single quotes) is skipped whole, `$(` nests on `(` and `${` only on a nested `${`
+    # (`<<$(echo {)` and `<<${x:-(}` end at their `)` and `}`); a bare `{` in `${…}` zsh counts toward the closer
+    # (B10(l)); one not closed on its line is a region, and nothing past it is read as a delimiter
     if (c == "$" && (ch[pos + 1] == "(" || ch[pos + 1] == "{")) {
       o = ch[pos + 1]; q = (o == "(") ? ")" : "}"; depth = 0; e = pos
-      for (pos++; pos < lim; pos++) {
+      for (pos++; pos < lim && ch[pos] != "\n"; pos++) {
         c = ch[pos]
-        if (c == "\047" || c == "\"") { pos++; while (pos < lim && ch[pos] != c) pos += (c == "\"" && ch[pos] == "\\") ? 2 : 1 }
-        else if (c == o) depth++
-        else if (c == q && --depth == 0) { pos++; break }
+        if (c == "\\") pos++
+        else if (c == "\047" || c == "\"") {
+          esc = (c == "\"" || ch[pos - 1] == "$"); pos++
+          while (pos < lim && ch[pos] != c) pos += (esc && ch[pos] == "\\") ? 2 : 1
+        }
+        else if ((o == "(" && c == "(") || (o == "{" && c == "{" && ch[pos - 1] == "$")) depth++
+        else if (o == "{" && c == "{") { if (!bf) bf = region(op, n, "brace inside ${…}", rseg(segbeg[s])) }
+        else if (c == q && --depth == 0) break
       }
-      if (pos > lim) pos = lim
-      d = d substr(src, e, pos - e)
+      if (pos >= lim || ch[pos] != q) {
+        if (pos > lim) pos = lim
+        region(op, n, "unclosed $(…) or ${…} in a heredoc delimiter", rseg(segbeg[s])); return
+      }
+      pos++; d = d substr(src, e, pos - e)
       continue
     }
     d = d c; pos++
@@ -1945,7 +1955,7 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
   s = hb_s
   while (1) {
     k = ++hb_k
-    if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }
+    if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; kreg = 0; return }
     # no body left — past the text, or at or past the backtick that ends the BQ the heredoc sits in (the newline was
     # the BQ’s last character, or an earlier delimiter line was cut at it; after such a line pos may lie past the
     # backtick, and at_limit() resumes right after it): an empty body, as every shell gives it
@@ -1964,8 +1974,10 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
     after = found ? lend[L] + 2 : lim
     if (!found && lim > n) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
-    # bash 3.2 closes the $(…) at the first `)`-led line and runs every body line after it as commands
-    if (kline) region(kline, bstop - 1, ") line in a heredoc body inside $(…)", hqsb[s, k])
+    # bash 3.2 closes the $(…) at the first `)`-led line and runs every body line after it as commands — the
+    # later bodies of the same line’s heredocs too, so one region grows over them
+    if (kreg) rend[kreg] = bstop - 1
+    else if (kline) kreg = region(kline, bstop - 1, ") line in a heredoc body inside $(…)", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
       push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
       return

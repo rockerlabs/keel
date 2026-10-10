@@ -685,7 +685,7 @@ gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
 for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` pattern's" "an array assignment's" '`repeat N cmd`' \
   '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
   "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' '`sudo`' '`timeout`' '`env -C`' '`/usr/bin/env …`' '`exec -a x`' \
-  '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
+  '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' 'a second PR-opening command' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
@@ -792,6 +792,16 @@ net "a \$(…) in a heredoc delimiter nests on its own opener only" push 'cat <<
 net "a \${…} in a heredoc delimiter nests on its own opener only" push 'cat <<${x:-(} && git push --no-verify'
 net "a quoted ) in a \$(…) heredoc delimiter does not close it" push 'cat <<$(echo ")") ; git push --no-verify'
 net "a nested \${…} in a heredoc delimiter closes at the outer }" push 'cat <<${x:-${y}} ; git push --no-verify'
+net "an escaped quote in a \$(…) heredoc delimiter opens nothing" push "cat <<\$(echo \\'x) ; git push --no-verify #'"
+net "an escaped double quote in a \$(…) heredoc delimiter opens nothing" push 'cat <<$(echo \"x) ; git push --no-verify #"'
+net "a \$'…' in a \$(…) heredoc delimiter ends past its escaped quote" push "cat <<\$(echo \$'\\'') ; git push --no-verify"
+net "an escaped \" inside \"…\" in a \$(…) heredoc delimiter ends nothing" push 'cat <<$(echo "a\"b)") ; git push --no-verify'
+net "an escaped ( in a \$(…) heredoc delimiter does not nest" push 'cat <<$(echo \() ; git push --no-verify'
+net "a bare { in a \${…} heredoc delimiter does not nest (bash closes at the first })" push 'cat <<${x:-{} ; git push --no-verify'
+net "a \$(…) heredoc delimiter never closed is a region" refuse 'cat <<$(echo x ; git push --no-verify'
+net "a \$(…) heredoc delimiter not closed on its line is a region" refuse "$(printf 'cat <<$(echo x\n) ; git status')"
+net "a )-led line's region grows over the line's later heredoc bodies" refuse "$(printf 'MSG=$(cat <<'"'"'A'"'"' <<'"'"'B'"'"'\n)\nA\ngit push --no-verify\nB\n)')"
+net "a )-led line's region does not grow over a later \$(…)'s bodies" allow "$(printf 'x=$(cat <<'"'"'A'"'"'\n)\nA\n); y=$(cat <<'"'"'B'"'"'\ngit is named\nB\n)')"
 
 net "a quoted span in \${…} in double quotes with no } or \" in it is plain text" allow "echo \"\${v:-'x'}\" && git status"
 lex_is "a disagreeing quote in \${…} in double quotes: a region, the quote read as text" "echo \"\${v:-'}' '}'}\"" \
@@ -888,6 +898,8 @@ lex_is "a second heredoc past a cut delimiter line has an empty body, more lines
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p33${T}u:echo${T}u:w"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
 
 net "a heredoc inside a body substitution scopes from the body's operator" refuse "$(printf 'git commit -F - <<E\n$(cat <<F\nx\nF\n)\nE')"
+lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
+lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \
   "refuse${T}) line in a heredoc body inside \$(…)${T}line 3${T}"
 lex_is "a word of many braces is read in one pass" "echo {a,{b,c}} {{x}" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ug:{a,{b,c}}${T}u:{{x}"
