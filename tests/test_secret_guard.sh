@@ -3177,13 +3177,32 @@ stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_eq "dir #746 A26(f): one copy's repeated line is two hits (only earlier copies dedupe)" 2 \
   "$(match "$OUT" -c '^  f.txt:')"
+# an unreadable working file (chmod is a no-op for root, CLAUDE.md trap 2: the WARN text is checked off root
+# only; the run itself, never exit 2, everywhere)
+chmod 000 "$r746/f.txt"
+run_in "$r746" "$scan" --tracked
+check_ne "dir #746 A26(f): an unmerged path with an unreadable working file is not a read failure" 2 "$STATUS"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  chmod 000 "$r746/f.txt"
-  run_in "$r746" "$scan" --tracked
-  check_contains "dir #746 A26(f): an unreadable working file is said, not claimed read" "$OUT" \
+  check_contains "dir #746 A26(f): ...and its WARN says unreadable, not read" "$OUT" \
     "secret-scan: WARN unmerged (its working file unreadable), $unmerged746"
-  chmod 644 "$r746/f.txt"
 fi
+chmod 644 "$r746/f.txt"
+# a type conflict resolved to a symlink: its target is read whatever the first stage's mode (review finding)
+printf 'somewhere' > "$d746/lnk-target"
+l746="$(git -C "$r746" hash-object -w "$d746/lnk-target")"
+rm "$r746/f.txt"; ln -s "tok = $k746" "$r746/f.txt"
+stages746 "100644 $b746 1" "120000 $l746 2" "100644 $o746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a working symlink of an unmerged path is read → BLOCKED on its target" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...and its WARN says the symlink was read" "$OUT" \
+  "secret-scan: WARN unmerged (its working symlink read), $unmerged746"
+rm "$r746/f.txt"; mkdir "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a directory in place of an unmerged file → BLOCKED from stage 3" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...and its WARN says not a regular file" "$OUT" \
+  "secret-scan: WARN unmerged (its working file not a regular file), $unmerged746"
+rmdir "$r746/f.txt"; printf 'tok = %s\nx\ntok = %s\n' "$k746" "$k746" > "$r746/f.txt"
 stages746 "160000 $c746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file (stages clean) → BLOCKED" 1 "$STATUS"

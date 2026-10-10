@@ -1008,7 +1008,7 @@ case "$mode" in
     tracked_index_copy() {
       staged_shas+="$2 "
       git -C "$top" cat-file blob "$2" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$1'" $? "$terr"
-      rec_dedupe_from="$path_from"; rec_dedupe_to="${#rec_path[@]}"
+      [ "${#rec_path[@]}" -eq "$path_from" ] || { rec_dedupe_from="$path_from"; rec_dedupe_to="${#rec_path[@]}"; }
       emit_file "$1" "$tblob"
       rec_dedupe_to=""
     }
@@ -1030,20 +1030,22 @@ case "$mode" in
       prev="$f"; staged_shas=" "; path_from="${#rec_path[@]}"
       fesc="${f//$'\n'/\\n}"
       if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
-        wnote="no working file"
-        if [ -L "$top/$f" ] && [ "$tmode" = 120000 ]; then
-          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
-          emit_stream "$f" <<< "$target"
-          wnote="its working symlink read"
-        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
-          emit_stream "$f" < "$top/$f"
-          wnote="its working file read"
-        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
-          wnote="its working file unreadable"
-        elif [ -e "$top/$f" ] || [ -L "$top/$f" ]; then
-          wnote="its working file not a regular file"
+        # Unlike stage 0 below, any working symlink is read as one: the stages are read anyway, and the target the
+        # user set while resolving (a type conflict) is in no stage. The WARN goes first, so a read that then
+        # fails closed still says the path was unmerged.
+        if [ -L "$top/$f" ]; then wnote="its working symlink read"
+        elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then wnote="its working file read"
+        elif [ -f "$top/$f" ]; then wnote="its working file unreadable"
+        elif [ -e "$top/$f" ]; then wnote="its working file not a regular file"
+        else wnote="no working file"
         fi
         echo "secret-scan: WARN unmerged ($wnote), each stage's index copy scanned: $fesc" >&2
+        case "$wnote" in
+          *symlink*)
+            target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+            emit_stream "$f" <<< "$target" ;;
+          *"file read") emit_stream "$f" < "$top/$f" ;;
+        esac
         tracked_index_copy "$f" "$tsha"
         continue
       fi
