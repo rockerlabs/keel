@@ -3162,12 +3162,28 @@ stages746() {  # "<mode> <sha> <stage>"… — f.txt unmerged with exactly these
   git -C "$r746" update-index --force-remove f.txt
   for e in "$@"; do printf '%s\tf.txt\n' "$e"; done | git -C "$r746" update-index --index-info
 }
-unmerged746="secret-scan: WARN unmerged, its working file (if any) and each stage's index copy scanned: f.txt"
+unmerged746="each stage's index copy scanned: f.txt"
 stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): the key in the working file of an unmerged path → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:')"
-check_eq "dir #746 A26(f): ...and one WARN naming the unmerged path" 1 "$(match "$OUT" -cF "$unmerged746")"
+check_eq "dir #746 A26(f): ...and one WARN naming the unmerged path and its working file" 1 \
+  "$(match "$OUT" -cF "secret-scan: WARN unmerged (its working file read), $unmerged746")"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_eq "dir #746 A26(f): the working file and stage 3 share the hit: printed once" 1 "$(match "$OUT" -c '^  f.txt:')"
+printf 'tok = %s\nx\ntok = %s\n' "$k746" "$k746" > "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
+run_in "$r746" "$scan" --tracked
+check_eq "dir #746 A26(f): one copy's repeated line is two hits (only earlier copies dedupe)" 2 \
+  "$(match "$OUT" -c '^  f.txt:')"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  chmod 000 "$r746/f.txt"
+  run_in "$r746" "$scan" --tracked
+  check_contains "dir #746 A26(f): an unreadable working file is said, not claimed read" "$OUT" \
+    "secret-scan: WARN unmerged (its working file unreadable), $unmerged746"
+  chmod 644 "$r746/f.txt"
+fi
 stages746 "160000 $c746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file (stages clean) → BLOCKED" 1 "$STATUS"
@@ -3185,6 +3201,9 @@ rm "$r746/f.txt"
 stages746 "100644 $b746 1" "100644 $kb746 2" "100644 $o746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, the key in stage 2 alone (stage 3 distinct and clean) → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...its WARN says there is no working file" "$OUT" \
+  "secret-scan: WARN unmerged (no working file), $unmerged746"
+check_absent "dir #746 A26(f): ...and no stage-0 'index copy instead' line" "$OUT" "index copy instead"
 stages746 "100644 $b746 1" "160000 $c746 2" "100644 $kb746 3"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, a gitlink stage 2 before the key in stage 3 → BLOCKED" 1 "$STATUS"
@@ -3204,6 +3223,7 @@ git -C "$r746" checkout -q "$main746"
 printf 'y\ntok = %s\n' "$k746" > "$r746/f.txt"
 commit746 "$r746" ours
 git -C "$r746" merge -q theirs746 >/dev/null 2>&1 || true
+check_ne "dir #746 A26(f) fixture: the merge left f.txt unmerged" "" "$(git -C "$r746" ls-files -u -- f.txt)"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a real text conflict holding the key → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...printed once, though the markers moved its line" 1 "$(match "$OUT" -c '^  f.txt:')"
