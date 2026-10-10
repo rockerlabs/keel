@@ -184,24 +184,25 @@ L005	tools/pre-pr-gate.sh	    else if (ch[j] == "`") return j	    else if (0) re
 L218	tools/pre-pr-gate.sh	function rseg(sb) { return (hd_sp && hd_seg < sb) ? hd_seg : sb }	function rseg(sb) { return hd_sp ? hd_seg : sb }	B10 scope: the earlier of the context’s own segment and the operator’s
 L220	tools/pre-pr-gate.sh	    if (ch[j] == "\\\\") j++\n    else if (ch[j] == "`") return j	    if (0) j++\n    else if (ch[j] == "`") return j	B2 BQ: an escaped backtick does not end it
 L219	tools/pre-pr-gate.sh	  if (sp > k) bq_region(k)	  if (0) bq_region(k)	B10(f): a context left open at a BQ’s end
-L221	tools/pre-pr-gate.sh	    if (lim <= n && after > lim) { bq_region(bq_open()	    if (0 && after > lim) { bq_region(bq_open()	B8: a heredoc body ends at its BQ’s end
-L222	tools/pre-pr-gate.sh	{ bq_region(bq_open()); after = lim;	{ after = lim;	B10(f): a heredoc body that runs past its BQ
 L224	tools/pre-pr-gate.sh	  restack(); if (clim[sp] < lim) lim = clim[sp]	  restack()	B2: a context’s end bounds every read inside it
 L225	tools/pre-pr-gate.sh	  while (sp > k) close_any(e)	  while (0) close_any(e)	B2: contexts open at a BQ’s end close there
 L226	tools/pre-pr-gate.sh	(cty[k] == "BQ" && clim[k] <= n)	(cty[k] == "BQ")	B10(a): a BQ with no closing backtick is unclosed, not closed at the end
 L227	tools/pre-pr-gate.sh	  pos = e; close_cmd(); pos = e + 1	  pos = e; close_cmd(); pos = e + 2	B2: reading resumes right after a BQ’s backtick
 L228	tools/pre-pr-gate.sh	clim[sp] = bstop; if (bstop < lim) lim = bstop	clim[sp] = n + 1	B8: an expanding body ends at its delimiter line
 L229	tools/pre-pr-gate.sh	L <= nlines && lstart[L] < lim; L++	L <= nlines; L++	B8: the body scan stops at its BQ’s end
-L084	tools/pre-pr-gate.sh	if (!found) region(pos, lim - 1, "heredoc "	if (0) region(pos, lim - 1, "heredoc "	B10(b)
-L230	tools/pre-pr-gate.sh	region(pos, lim - 1, "heredoc "	region(pos, n, "heredoc "	B10(b): a body clamped at its BQ’s end ends its region there
 L233	tools/pre-pr-gate.sh	  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]	  for (i = 1; i <= 1; i++) if (clim[i] < lim) lim = clim[i]	B2: the nearest end on the whole stack bounds every read
-L235	tools/pre-pr-gate.sh	after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : n + 1	after = found ? lend[L] + 2 : n + 1	B8: after a delimiter cut by a backtick, reading resumes at the backtick
-L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], n, "heredoc pending	    else if (0) region(hqop[s, k], n, "heredoc pending	B10(g)
-L232	tools/pre-pr-gate.sh	function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }	function pop_ctx() { flushrun(); sp--; restack() }	B2: a closed context’s end no longer bounds the reads after it
 L234	tools/pre-pr-gate.sh	function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }	function line_end(L) { return lend[L] }	B8: a body line is cut at its BQ’s backtick
-L236	tools/pre-pr-gate.sh	    if (cty[s] == "BQ") region(hqop[s, k], -1, "heredoc "	    if (0) region(hqop[s, k], -1, "heredoc "	B8: a heredoc pending when its BQ closes has an empty body
-L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { region(hqop[s, k], -1,	if (pos > n) { region(hqop[s, k], -1,	B8: no body left past the BQ’s end
-L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], -1,	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n,	B8/B10: a never-started body is empty, never refused
+L084	tools/pre-pr-gate.sh	if (!found && lim > n) region(pos, n, "heredoc "	if (0) region(pos, n, "heredoc "	B10(b)
+L221	tools/pre-pr-gate.sh	if (!found && lim > n) region(	if (!found) region(	B8: a body with no delimiter inside a BQ ends at its backtick, no region
+L235	tools/pre-pr-gate.sh	after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : lim	after = found ? lend[L] + 2 : lim	B8: after a delimiter cut by a backtick, reading resumes at the backtick
+L236	tools/pre-pr-gate.sh	    if (cty[s] == "BQ") empty_body(s, k)	    if (0) empty_body(s, k)	B8: a heredoc pending when its BQ closes has an empty body
+L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { empty_body(s, k); continue }	if (pos > n) { empty_body(s, k); continue }	B8: no body left past the BQ’s end
+L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	    else if (0) region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	B10(g)
+L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) empty_body(s, k)	    for (k = 1; k <= 0; k++) empty_body(s, k)	B8/B10: a never-started body is empty, never refused
+L232	tools/pre-pr-gate.sh	if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }	}	B2: a closed context’s end no longer bounds the reads after it
+L238	tools/pre-pr-gate.sh	j < nlines && lstart[j + 1] < lim) {	j < nlines) {	B10(h): a backslash join stops at its BQ’s backtick
+L239	tools/pre-pr-gate.sh	region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	region(hqop[s, k], n, "heredoc pending	B10(g): inside a BQ the region ends at its backtick
+L240	tools/pre-pr-gate.sh	region(lstart[L], line_end(L), ") line	region(lstart[L], lend[L], ") line	B10(k): the region ends at its BQ’s backtick
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass

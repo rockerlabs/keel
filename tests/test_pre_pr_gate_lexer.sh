@@ -817,7 +817,7 @@ lex_has() {   # lex_has <label> <command> <text the output must contain>
   lex_out "$2"
   check_contains "lex:$1" "$OUT" "$3"
 }
-for ctx in 'echo `a $(b`)`' 'echo `a ${b:-c`}`' 'echo `a $(( b`))`' 'echo `a "b`"`' "echo \`a 'b\`'\`" "echo \`a \$'b\`'\`" "$(printf 'echo `cat <<E\nb`c\nE\n`')"; do
+for ctx in 'echo `a $(b`)`' 'echo `a ${b:-c`}`' 'echo `a $(( b`))`' 'echo `a "b`"`' "echo \`a 'b\`'\`" "echo \`a \$'b\`'\`"; do
   lex_has "a backtick nested in backticks is a region [$ctx]" "$ctx" "refuse${T}backtick inside a nested context in backticks"
 done
 
@@ -825,7 +825,10 @@ net "a comment inside backticks ends at their backtick" push "$(printf 'echo `tr
 net "a literal heredoc body inside backticks ends at their backtick" push "$(printf "echo \`cat <<'E'\n\`; git push --no-verify; echo \`\nE\n\`")"
 net "a region in a body that the backticks own scopes from the operator" refuse "$(printf 'echo `git commit -F - <<E\n\\$x\nE\n`')"
 net "an escaped backtick inside a quote inside backticks ends nothing" allow "echo \`git log --format='%h\\\`'\`"
-lex_has "a heredoc body that runs past its backticks is a region" "$(printf "echo \`cat <<'E'\nx\`\nE\n\`")" "refuse${T}backtick inside a nested context in backticks"
+# A heredoc body that reaches its BQ's backtick without its delimiter ends there, as in every shell: no region; the
+# lines after the backtick are commands.
+lex_is "a heredoc body ends at its BQ's backtick" "$(printf "echo \`cat <<'E'\nx\`\nE\n\`")" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p20${T}u:E"$'\n'"TOP@4${T}d0${T}s0${T}p22${T}x:\$()"$'\n'"refuse${T}unclosed BQ${T}line 4${T}scope:no"
 
 lex_is "the character after a BQ that ends inside an unclosed delimiter quote is read" "x=\`cat <<'E\`;echo hi" \
   "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:echo${T}u:hi"$'\n'"refuse${T}heredoc E not closed${T}line 1${T}scope:empty"
@@ -851,6 +854,13 @@ lex_is "a second heredoc after a delimiter cut by the backtick has an empty body
 net "a heredoc pending when its BQ closes is never refused" allow 'x=`git log <<E`'
 
 lex_is "the body scan stops at its BQ's end (an empty delimiter does not match a line past it)" "$(printf "echo \`cat <<''\nx\` ; echo z\n\necho w")" \
-  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@2${T}d0${T}s0${T}p21${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p29${T}u:echo${T}u:w"$'\n'"refuse${T}backtick inside a nested context in backticks${T}line 1${T}scope:no"$'\n'"refuse${T}heredoc  not closed${T}line 2${T}scope:no"
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@2${T}d0${T}s0${T}p21${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p29${T}u:echo${T}u:w"
+
+lex_is "a backslash join stops at its BQ's backtick" "$(printf 'echo `cat <<E\nE\\\n`x')" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ux:\$()x"
+lex_is "a )-line region ends at its BQ's backtick" "$(printf 'echo `x=$(cat <<E\n) y` gh\nE\n)`')" \
+  "SUB@1${T}d2${T}s0.1.2${T}p11${T}u:cat"$'\n'"BQ@1${T}d1${T}s0.1${T}p7${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()${T}u:gh"$'\n'"TOP@3${T}d0${T}s0${T}p27${T}u:E"$'\n'"TOP@4${T}d0${T}s0${T}p30${T}x:\$()"$'\n'"refuse${T}backtick inside a nested context in backticks${T}line 1${T}scope:no"$'\n'"refuse${T}) line in a heredoc body inside \$(…)${T}line 2${T}scope:no"$'\n'"refuse${T}unclosed BQ${T}line 4${T}scope:no"
+net "a body with no delimiter inside backticks ends at the backtick" allow "$(printf 'x=`git log <<E\ny`')"
+net "a \$(…) heredoc region inside backticks ends at the backtick" allow 'x=`echo $(cat <<E)` ; git status'
 
 summary

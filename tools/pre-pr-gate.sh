@@ -1567,7 +1567,9 @@ function push_ctx(t, p) {
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
 }
-function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }
+# (the rescan only when the popped end was a real limit: with none, lim is already n + 1, and a rescan per pop costs
+# a quadratic time on deep nesting)
+function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }
 # A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
 # before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
 # clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
@@ -1855,8 +1857,8 @@ function close_cmd(   s, k) {
   s = sp
   seg_end(s, pos)
   for (k = 1; k <= hqn[s]; k++) {
-    if (cty[s] == "BQ") region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
-    else region(hqop[s, k], n, "heredoc pending when $(…) closed", hqsb[s, k])
+    if (cty[s] == "BQ") empty_body(s, k)
+    else region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending when $(…) closed", hqsb[s, k])
   }
   hqn[s] = 0
   if (bqreg[s]) rend[bqreg[s]] = (pos > n) ? n : pos
@@ -1926,9 +1928,9 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
   while (1) {
     k = ++hb_k
     if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }
-    # no body left: past the text, or past the BQ the heredoc sits in (a body that started mid-line, after a
-    # delimiter line its BQ’s backtick cut) — an empty body, as every shell gives it
-    if (pos > n || pos >= lim) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]); continue }
+    # no body left — past the text, or at the backtick that ends the BQ the heredoc sits in (the newline was the
+    # BQ’s last character, or an earlier delimiter line was cut at it): an empty body, as every shell gives it
+    if (pos > n || pos >= lim) { empty_body(s, k); continue }
     found = 0; hline = 0
     for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
       txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
@@ -1937,10 +1939,11 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
       if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], line_end(L), ") line in a heredoc body inside $(…)", hqsb[s, k])
       if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]
     }
-    bstop = found ? lstart[L] : n + 1
-    after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : n + 1
-    if (lim <= n && after > lim) { bq_region(bq_open()); after = lim; if (bstop > lim) bstop = lim }
-    if (!found) region(pos, lim - 1, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    # not found: the body runs to the end of the text — a region — or to the backtick of the BQ it sits in, where
+    # every shell ends it too
+    bstop = found ? lstart[L] : lim
+    after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : lim
+    if (!found && lim > n) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
       push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
@@ -1962,6 +1965,8 @@ function bs_joins(L, s, k,   txt, j, t2) {
   }
   return 0
 }
+# empty_body(s, k) — heredoc k of context s gets no body: an empty region, never refused (lex shows it).
+function empty_body(s, k) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]) }
 # line_end(L) — where line L ends for a body read: its last character, or the character before its BQ’s backtick.
 function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }
 function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
@@ -2091,7 +2096,7 @@ function region(a, b, why, sb) {
 function finish(   s, k, i) {
   # a heredoc still pending at the end: an empty body, never refused
   for (s = 1; s <= sp; s++) if (is_cmd(cty[s])) {
-    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    for (k = 1; k <= hqn[s]; k++) empty_body(s, k)
     hqn[s] = 0
   }
   if (sp > 1) region(cpos[2], n, "unclosed " cty[2], cseg[2])
