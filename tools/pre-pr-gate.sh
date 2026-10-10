@@ -82,7 +82,7 @@
 #                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
 #                                           ditto — commands/polish-guide.md § Step 5's (c) recipe uses this)
-#   pre-pr-gate.sh lex                     print how the hook reads a command (its text on stdin): the
+#   pre-pr-gate.sh lex                     print how the hook reads a command (its raw text on stdin): the
 #                                           words of each segment and the parts it could not read — a
 #                                           debugging and test aid (dir #745)
 #
@@ -1718,8 +1718,6 @@ function w_assign_name(i) { match(tok[i], /^[A-Za-z_][A-Za-z0-9_]*/); return sub
 
 # --- the main loop ----------------------------------------------------------------------------------------
 function lex_main(   i, L, t) {
-  # trailing newlines are no part of the command: the hook’s $(…) drops them, and so does lex here
-  sub(/\n+$/, "", src)
   n = split(src, ch, "")
   L = 1; lstart[1] = 1
   for (i = 1; i <= n; i++) { lno[i] = L; if (ch[i] == "\n") { lend[L] = i - 1; L++; lstart[L] = i + 1 } }
@@ -2002,9 +2000,10 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
-  # the join stops at lim: its BQ’s backtick (past it the join would keep the backtick, which no expanding heredoc’s
-  # delimiter holds unquoted) or the end of the text (lex_main drops trailing newlines, so no empty last line)
-  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
+  # the join stops at its BQ’s backtick (past it the join would keep the backtick, which no expanding heredoc’s
+  # delimiter holds unquoted); at the text’s end it runs to the last line, even the empty one after a final
+  # newline (lex’s raw input can end so; the hook’s $(…) never leaves one)
+  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && (lim > n || lstart[j + 1] < lim)) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
     # meet the delimiter there (bs_joins runs only for an expanding heredoc, and an unquoted backtick in its
