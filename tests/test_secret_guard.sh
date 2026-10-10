@@ -3177,15 +3177,17 @@ stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
 run_in "$r746" "$scan" --tracked
 check_eq "dir #746 A26(f): one copy's repeated line is two hits (only earlier copies dedupe)" 2 \
   "$(match "$OUT" -c '^  f.txt:')"
-# an unreadable working file (chmod is a no-op for root, CLAUDE.md trap 2: the WARN text is checked off root
-# only; the run itself, never exit 2, everywhere)
+# an unreadable working file holds what no stage does: exit 2 naming it, never clean (chmod is a no-op for root,
+# CLAUDE.md trap 2 — as root the file is read and its key blocks)
 chmod 000 "$r746/f.txt"
 run_in "$r746" "$scan" --tracked
-check_ne "dir #746 A26(f): an unmerged path with an unreadable working file is not a read failure" 2 "$STATUS"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  check_contains "dir #746 A26(f): ...and its WARN says unreadable, not read" "$OUT" \
-    "secret-scan: WARN unmerged (its working file unreadable), $unmerged746"
+  check_status "dir #746 A26(f): an unmerged path's unreadable working file → exit 2" 2 "$STATUS"
+  check_contains "dir #746 A26(f): ...naming it" "$OUT" "could not read the working file of the unmerged 'f.txt'"
+else
+  check_status "dir #746 A26(f): as root the working file is read → BLOCKED" 1 "$STATUS"
 fi
+check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
 chmod 644 "$r746/f.txt"
 # a type conflict resolved to a symlink: its target is read whatever the first stage's mode (review finding)
 printf 'somewhere' > "$d746/lnk-target"

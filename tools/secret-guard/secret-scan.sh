@@ -997,8 +997,8 @@ case "$mode" in
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
     # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
     # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
-    # not. A working-tree symlink is read as a symlink only for a tracked symlink (mode 120000); a tracked file
-    # replaced by one is "not a regular file" and read from the index. An unmerged path (a stage other than 0) is
+    # not. At stage 0 a working-tree symlink is read as a symlink only for a tracked symlink (mode 120000); a tracked
+    # file replaced by one is "not a regular file" and read from the index. An unmerged path (a stage other than 0) is
     # read whole: its working file if there is one, and every distinct non-gitlink stage's index copy — the
     # working file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs"
     # alone. A hit a later copy shares byte for byte with an earlier one is recorded once; one WARN names the path
@@ -1008,7 +1008,7 @@ case "$mode" in
     tracked_index_copy() {
       staged_shas+="$2 "
       git -C "$top" cat-file blob "$2" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$1'" $? "$terr"
-      [ "${#rec_path[@]}" -eq "$path_from" ] || { rec_dedupe_from="$path_from"; rec_dedupe_to="${#rec_path[@]}"; }
+      rec_dedupe_from="$path_from"; rec_dedupe_to="${#rec_path[@]}"
       emit_file "$1" "$tblob"
       rec_dedupe_to=""
     }
@@ -1031,20 +1031,22 @@ case "$mode" in
       fesc="${f//$'\n'/\\n}"
       if [ "$tstage" != 0 ]; then                   # unmerged: the working file, if any, and every stage
         # Unlike stage 0 below, any working symlink is read as one: the stages are read anyway, and the target the
-        # user set while resolving (a type conflict) is in no stage. The WARN goes first, so a read that then
-        # fails closed still says the path was unmerged.
-        if [ -L "$top/$f" ]; then wnote="its working symlink read"
-        elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then wnote="its working file read"
-        elif [ -f "$top/$f" ]; then wnote="its working file unreadable"
+        # user set while resolving (a type conflict) is in no stage. For the same reason an unreadable working file
+        # is a read failure here (exit 2), not a WARN: no index copy stands in for it. The WARN goes first, so a
+        # read that then fails closed still says the path was unmerged.
+        wkind="none"; wnote="no working file"
+        if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink read"
+        elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file read"
         elif [ -e "$top/$f" ]; then wnote="its working file not a regular file"
-        else wnote="no working file"
         fi
         echo "secret-scan: WARN unmerged ($wnote), each stage's index copy scanned: $fesc" >&2
-        case "$wnote" in
-          *symlink*)
+        case "$wkind" in
+          link)
             target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
             emit_stream "$f" <<< "$target" ;;
-          *"file read") emit_stream "$f" < "$top/$f" ;;
+          file)
+            cat < "$top/$f" > "$tblob" 2>"$terr" || _fail_closed "read the working file of the unmerged '$f'" $? "$terr"
+            emit_file "$f" "$tblob" ;;
         esac
         tracked_index_copy "$f" "$tsha"
         continue
