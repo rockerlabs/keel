@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/self/citation-resolvability.sh — keel-self-maintenance (dir #68 exemption, per
 # tools/self/prose-drift.sh's header): checks that every `dir #N` cited in KEEL'S OWN docs/*.md
-# resolves to exactly one ticket. There is no consumer-facing counterpart and install.sh never ships
+# (and, dir #729, in the unreleased changelog text) resolves to exactly one ticket. There is no consumer-facing counterpart and install.sh never ships
 # this file.
 #
 # Filed dir #266, 2026-08-27, after a day in which three separate tickets were filed for citations
@@ -66,6 +66,8 @@ usage() {
   cat <<'EOF'
 tools/self/citation-resolvability.sh — every `dir #N` cited in docs/*.md must resolve to exactly one
 ticket, across BACKLOG.md's live headings and the closed-ticket archive index.
+Also scanned (dir #729): CHANGELOG.md's [Unreleased] section and changelog.d/*.md fragments; a dead
+number that is also a merged PR number in the repo's history is flagged as a likely PR cited as a ticket.
 
 Usage:
   tools/self/citation-resolvability.sh [REPO_DIR]   scan REPO_DIR (default: current directory)
@@ -174,6 +176,23 @@ while IFS= read -r f; do scan_files+=("$f"); done < <(
 abs_files=()
 [ "${#scan_files[@]}" -gt 0 ] && abs_files=("${scan_files[@]/#/$repo_dir/}")
 
+# dir #729: the UNRELEASED changelog text is scanned too — CHANGELOG.md's `## [Unreleased]` section and
+# the tracked changelog.d/ fragments (dir #744; README.md is the how-to, not an entry). Fresh text cites
+# fresh tickets, so the aged-out false positives that keep released CHANGELOG sections out of the scan
+# (see above) do not apply; a PR number written as `dir #N` here (felt 0.14.0: four of them in one fix
+# brief) reads as DEAD. Released sections stay unscanned. The [Unreleased] slice goes to a scratch file so
+# the one fence-blank + extract pass below treats it like any doc; `labels` maps a path to what a DEAD
+# line prints as the first-cited location.
+cl_tmp="$(mktemp -d "${TMPDIR:-/tmp}/citation-resolvability.XXXXXX")"
+trap 'rm -rf "$cl_tmp"' EXIT
+if git -C "$repo_dir" ls-files --error-unmatch -- CHANGELOG.md >/dev/null 2>&1; then
+  awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' "$repo_dir/CHANGELOG.md" > "$cl_tmp/unreleased.md"
+  abs_files+=("$cl_tmp/unreleased.md")
+fi
+while IFS= read -r f; do
+  [ "$f" = changelog.d/README.md ] || abs_files+=("$repo_dir/$f")
+done < <(git -C "$repo_dir" ls-files -- 'changelog.d/*.md')
+
 # extract_dir_tickets (below, and the archive scan further down) can emit a non-numeric marker line
 # for an absurdly wide range ("dir #1-99999 (range too large to expand, dir #274)") rather than
 # silently dropping it — correct for its own WARN-surfacing caller in doctor.sh, but not a valid
@@ -215,7 +234,9 @@ if [ "${#abs_files[@]}" -gt 0 ]; then
       [ -n "$n" ] || continue
       var="cite_first_$n"
       if [ -z "${!var:-}" ]; then
-        printf -v "$var" '%s' "${f#"$repo_dir"/}"
+        label="${f#"$repo_dir"/}"
+        [ "$f" != "$cl_tmp/unreleased.md" ] || label="CHANGELOG.md [Unreleased]"
+        printf -v "$var" '%s' "$label"
         cited_numbers+=("$n")
       fi
     done < <(blank_fenced_blocks "$f" | extract_dir_tickets)
@@ -278,6 +299,21 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     done < <(heading_dir_numbers "$parked_file")
   fi
 
+  # dir #729: a DEAD number that is also a merged PR number in this repo's history is most likely a PR
+  # written as a ticket. A hint on a DEAD line only — never a finding of its own: ticket and PR numbers
+  # overlap (both run through the 500s-700s), so "is a PR number" alone proves nothing, and with no
+  # BACKLOG.md to say what is NOT a ticket the whole check already skipped above. Subjects are read
+  # lazily, only when a DEAD line needs them (merge commits and squash `(#N)` subjects).
+  pr_subjects=""; pr_loaded=0
+  pr_hint() {   # pr_hint N — prints the hint suffix, or nothing
+    if [ "$pr_loaded" = 0 ]; then
+      pr_subjects="$(git -C "$repo_dir" log --format=%s 2>/dev/null || true)"; pr_loaded=1
+    fi
+    if grep -Eq "^Merge pull request #$1 |\(#$1\)$" <<<"$pr_subjects"; then
+      printf ' — #%s is also a merged PR number in this repo (a PR cited as a ticket?)' "$1"
+    fi
+  }
+
   for n in "${cited_numbers[@]}"; do
     live_var="live_$n"; live_count="${!live_var:-0}"
     arch_var="arch_$n"; archive_hit="${!arch_var:-0}"
@@ -290,7 +326,7 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
       exit_code=1
     elif [ "$canonical_count" -eq 0 ] && [ "$archive_hit" != 1 ]; then
       var="cite_first_$n"
-      echo "  DEAD dir #$n — no live BACKLOG.md heading, not in the archive or BACKLOG-parked.md (first cited: ${!var:-?})"
+      echo "  DEAD dir #$n — no live BACKLOG.md heading, not in the archive or BACKLOG-parked.md (first cited: ${!var:-?})$(pr_hint "$n")"
       dead=$((dead + 1))
       exit_code=1
     fi
