@@ -666,7 +666,7 @@ shim_case line-with-exit1 1 'push\037\037\n'
 
 # --- dir #745: the header's residual paragraph tells the truth (B18) -------------------------------------------
 gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
-for kept in "\`sh -c '…'\`" '`eval' '"pr" create`' "a \`case\` pattern's" 'array assignment' 'repeat N cmd' 'function NAME' 'a path to `gh`' \
+for kept in "\`sh -c '…'\`" '`eval' '"pr" create`' "a \`case\` pattern's" 'array assignment' 'repeat N cmd' '`function' 'a path to `gh`' \
   "bash 3.2's misreading" 'brace expansion' 'glued to a bypass' "a wrapper's own flags" 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
@@ -771,5 +771,9 @@ lex_is "a heredoc inside a heredoc substitution" "$(printf 'cat <<E\n$(cat <<F\n
 
 net "a )-led line in a heredoc body inside \$(…) refuses" refuse "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\n  ) git push --no-verify\nEOF\n)')"
 net "a )-led line in a heredoc body outside \$(…) does not" allow "$(printf 'cat <<'"'"'EOF'"'"'\n) git push --no-verify\nEOF')"
+
+net "a quoted span in \${…} in double quotes with no } or \" in it is plain text" allow "echo \"\${v:-'x'}\" && git status"
+lex_is "a disagreeing quote in \${…} in double quotes: a region, the quote read as text" "echo \"\${v:-'}' '}'}\"" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}qx:\${v:-'}' '}'}"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
 
 summary
