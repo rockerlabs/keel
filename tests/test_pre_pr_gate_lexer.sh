@@ -791,8 +791,15 @@ net "an escaped \$ in \${…} inside backticks" refuse 'echo `echo ${v:-\$(git p
 net "an escaped backtick in \${…} inside backticks" refuse 'echo `echo ${v:-\`git push --no-verify\`}`'
 net "an escaped \$ in double quotes inside backticks" refuse 'echo `echo "\$(git push --no-verify)"`'
 net "an escaped backtick in arithmetic inside backticks" refuse 'echo `echo $(( \`git push --no-verify\` ))`'
-net "an escaped \$ in an ANSI quote inside backticks" refuse "echo \`echo \$'\\\$(git push)'\`"
+net "an escaped \$ in an ANSI quote inside backticks stays literal" allow "echo \`echo \$'\\\$(git push)'\`"
 net "a { in \${…} in double quotes is no region" allow 'echo "${v:-{}" && git status'
 net "a region in an expanding body: scope from the operator's segment" refuse "$(printf 'git commit -F - <<E\n${v:-'"'"'}'"'"'\nE')"
+
+net "a doubled backslash inside backticks moves a quote" refuse 'echo `echo \\'"'"' ; git push --no-verify #'"'"'`'
+net "a doubled backslash in an ANSI quote inside backticks" refuse 'echo `echo $'"'"'\\\'"'"' ; git push --no-verify #'"'"'`'
+net "a doubled backslash in double quotes inside backticks" refuse 'echo `echo "\\\" ; git push --no-verify #"`'
+net "a brace region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n$(echo ${v:-{})\nE')"
+net "a backtick region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n`echo \\$x`\nE')"
+net "an arithmetic region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n$(( 1) ))\nE')"
 
 summary

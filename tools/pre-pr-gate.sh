@@ -1714,13 +1714,14 @@ function dollar(   c, k) {
   if (c != "" && index("0123456789@*#?$!-", c)) { word_begin(pos); addsrc(pos, 2, "x"); pos += 2; return 1 }
   return 0
 }
-# bq_escape() — at a backslash: inside a backtick substitution the shell turns \` and \$ back into ` and $ before
-# it reads the text, so an escaped backtick (nested backticks) or an escaped $ there runs as a substitution in
-# every context — the BQ’s text is a region, once.
-function bq_escape(   b) {
-  if (at(1) != "`" && at(1) != "$") return
+# bq_escape(set) — at a backslash: inside a backtick substitution the shell turns \`, \$ and \\ back into `, $ and \
+# before it reads the text, so there an escaped backtick runs (nested backticks), an escaped $ expands, and a
+# doubled backslash moves a quote’s end. set: the escaped characters that matter in the current context (inside
+# $’…’ only \\ does). The BQ’s text is a region, once.
+function bq_escape(set,   b) {
+  if (at(1) == "" || !index(set, at(1))) return
   b = bq_open()
-  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`") ? "nested backticks" : "escaped $ inside backticks", segbeg[b])
+  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks", rseg(segbeg[b]))
 }
 # rseg(sb) — where a region’s scope starts: sb, or inside an expanding heredoc body the segment of its operator.
 function rseg(sb) { return hd_sp ? hd_seg : sb }
@@ -1761,7 +1762,7 @@ function cmd_char(   c, s, k, op) {
   if (c == "\\") {
     if (at(1) == "\n") { pos += 2; return }
     if (at(1) == "") { pos++; return }
-    bq_escape()
+    bq_escape(BQESC)
     if (at(1) == "\"" && bq_in_dq()) { pos++; return }
     word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return
   }
@@ -1949,7 +1950,7 @@ function dq_char(   c, k) {
   if (c == "\\") {
     if (at(1) == "\n") { pos += 2; return }
     if (at(1) == "\"" && bq_in_dq()) { pos++; return }
-    if (at(1) != "" && index("$`\"\\", at(1))) { bq_escape(); addsrc(pos + 1, 1, "q"); pos += 2; return }
+    if (at(1) != "" && index("$`\"\\", at(1))) { bq_escape(BQESC); addsrc(pos + 1, 1, "q"); pos += 2; return }
     addsrc(pos, 1, "q"); pos++; return
   }
   if (c == "$" && dollar()) return
@@ -1966,23 +1967,27 @@ function sq_char(   k) {
 }
 function aq_char() {
   if (ch[pos] == "\047") { pop_ctx(); pos++; return }
-  if (ch[pos] == "\\" && at(1) != "") { bq_escape(); addsrc(pos + 1, 1, "q"); pos += 2; return }
+  if (ch[pos] == "\\" && at(1) != "") { bq_escape("\\"); addsrc(pos + 1, 1, "q"); pos += 2; return }
   addsrc(pos, 1, "q"); pos++
 }
 # PARAM: closed by the first unquoted `}` (bash, busybox). Regions, where the shells disagree: a single quote in it
 # under a DQ or HDATA whose span to the next quote holds a } " $ ` or \ (or has no next quote), and an unquoted `{`
 # in it outside a DQ or HDATA (zsh counts it toward the closer).
+# param_quoted() — the ${…} on top sits, through any ${…} around it, in a DQ or an expanding heredoc body.
+function param_quoted(   i) {
+  for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
+  return cty[i] == "DQ" || cty[i] == "HDATA"
+}
 function param_char(   c, i, j, k) {
   c = ch[pos]
   if (c == "}") { pop_ctx(); addsrc(cpos[sp + 1], pos - cpos[sp + 1] + 1, "x"); pos++; return }
-  if (c == "\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   if (c == "$" && at(1) == "\047") { push_ctx("AQ", pos); pos += 2; return }
   if (c == "$" && dollar()) return
   if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   if (c == "\047") {
-    for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
-    if (cty[i] == "DQ" || cty[i] == "HDATA") {
+    if (param_quoted()) {
       # bash reads the quotes, zsh and busybox read them as text: the readings agree only on a span up to the next
       # quote holding no } or " (where they would end differently) and nothing that expands ($, a backtick, \) —
       # that span is plain text in every reading; anything else is a region, and the quote is read as text.
@@ -1994,8 +1999,7 @@ function param_char(   c, i, j, k) {
     push_ctx("SQ", pos); pos++; return
   }
   if (c == "{") {
-    for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
-    if (cty[i] != "DQ" && cty[i] != "HDATA" && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", cseg[sp]) }
+    if (!param_quoted() && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", rseg(cseg[sp])) }
     pos++; return
   }
   k = 1
@@ -2018,7 +2022,7 @@ function arith_char(   c) {
     if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "(( read as nested subshells", rseg(cseg[sp])) }
     pos++; return
   }
-  if (c == "\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
   if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   if (c == "\047") { push_ctx("SQ", pos); pos++; return }
@@ -2028,7 +2032,7 @@ function arith_char(   c) {
 # HDATA: an expanding heredoc body — only its substitutions are read.
 function hdata_char(   c, k) {
   c = ch[pos]
-  if (c == "\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
   if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   k = 1
@@ -2185,7 +2189,7 @@ function out(   i, r, v) {
   print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
   exit 0
 }
-BEGIN { CMDSPECIAL = " \t\n#\\\047\"`$<>&;|()~*?[{"; PARAMSPECIAL = "}\\\"$`\047{" }
+BEGIN { BQESC = "`$\\"; CMDSPECIAL = " \t\n#\\\047\"`$<>&;|()~*?[{"; PARAMSPECIAL = "}\\\"$`\047{" }
 '
 
 case "${1:-}" in
