@@ -938,8 +938,8 @@ net "a backslash join that meets its delimiter only on a line cut at its BQ's ba
 lex_out "$(printf 'echo `x $(cat <<")"\n)`')"
 check_contains "lex:a delimiter line cut at its BQ's backtick (the run reads it)" "$OUT" "refuse${T}backtick inside a nested context in backticks${T}line 1${T}"
 check_absent "lex:a delimiter line cut at its BQ's backtick is the delimiter, not a )-led body line" "$OUT" ") line in a heredoc body"
-lex_is "a backslash join stops at the end of the text (the empty line after a final newline is no line)" $'cat <<X\nX\\\n\n' \
-  "TOP@1${T}d0${T}s0${T}p1${T}u:cat"$'\n'"refuse${T}heredoc X not closed${T}line 2${T}scope:no"
+OUT="$(printf 'echo "x\n\n' | bash "$gate" lex 2>&1)"
+check_eq "lex:reads the text as the hook does (trailing newlines dropped)" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:x"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \

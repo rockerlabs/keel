@@ -2000,8 +2000,7 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
-  # the join stops at lim: its BQ’s backtick, or the end of the text (whose empty last line, after a final newline,
-  # is no line to join)
+  # the join stops at lim: its BQ’s backtick, or the end of the text
   while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
@@ -2335,9 +2334,11 @@ case "${1:-}" in
     # dir #745: how the hook reads a command. Raw command text on stdin (not a hook event); one line per segment —
     # `<context>@<line>`, `d<depth>`, `s<scope>`, `p<offset>`, then `<classes>:<text>` per word — then one line per
     # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
-    # from the $HOME guard above, like -h.
+    # from the $HOME guard above, like -h. The text is taken as the hook takes it: trailing newlines dropped, one
+    # added by the here-string.
     [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
-    awk -v MODE=lex "$PPG_AWK_PROG"
+    lex_cmd="$(cat)"
+    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"
     exit $?
     ;;
   repo-key)
