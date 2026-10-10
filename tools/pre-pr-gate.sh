@@ -1902,27 +1902,26 @@ function redirect(   c, op, s, t, m) {
 
 # Read a heredoc delimiter word after `<<`/`<<-` (quotes and escaping backslashes removed, nothing expanded; any
 # quoting makes the body literal) and queue the heredoc on its owner, the command context it was read in.
-function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
+function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r, why) {
   s = sp; op = pos; pos += strip ? 3 : 2
   while (pos < lim && (ch[pos] == " " || ch[pos] == "\t")) pos++
   d = ""; quoted = 0; got = 0; w = pos
   while (pos < lim) {
     c = ch[pos]
-    # what this reader does not model (delim_odd, and zsh’s glob syntax glued to the word: `E(x)`, `E<1-2>`) is a
-    # region, and the lexer reads the word again as the operator’s target
-    if (index(" \t\n;&|<>()", c)) { if (got && (c == "(" || c == "<")) { delim_redo(s, op, w); return }; break }
+    # what this reader does not model (delim_odd) is a region, and the lexer reads the word again as the target
+    if ((why = delim_odd(0, got)) != "") { delim_redo(s, op, w, why); return }
+    if (index(" \t\n;&|<>()", c)) break
     got = 1
-    if (delim_odd(0)) { delim_redo(s, op, w); return }
     if (c == "\047") {
       quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++
-      if (bq_open() && index(substr(src, r, pos - r), "\\")) { delim_redo(s, op, w); return }
+      if (index(substr(src, r, pos - r), "\\") && bq_open()) { delim_redo(s, op, w, "substitution or escape in a heredoc delimiter"); return }
       d = d substr(src, r, pos - r); pos++; continue
     }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") {
-        if (delim_odd(1)) { delim_redo(s, op, w); return }
-        if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) { d = d ch[pos + 1]; pos += 2; continue }
+        if ((why = delim_odd(1, 1)) != "") { delim_redo(s, op, w, why); return }
+        if (ch[pos] == "\\" && at(1) != "" && index("$`\"\\", at(1))) { d = d at(1); pos += 2; continue }
         r = pos++; while (pos < lim && !index("\"\\$`", ch[pos])) pos++
         d = d substr(src, r, pos - r)
       }
@@ -1936,15 +1935,19 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
   if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
   k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
 }
-# delim_odd(dq) — a delimiter character at pos whose reading this reader does not model: a substitution (`$(`,
-# `${`, `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or any
-# backslash inside backticks (the shells unescape the backticks first; in a single-quoted span too, heredoc_op)
-function delim_odd(dq,   c1) {
-  c1 = at(1)
-  if (ch[pos] == "`" || (ch[pos] == "\\" && (c1 == "\n" || bq_open()))) return 1
-  return ch[pos] == "$" && c1 != "" && index(dq ? "({[" : "({[\047\"", c1) > 0
+# delim_odd(dq, got) — why the delimiter character at pos is one this reader does not model, or "": zsh’s glob syntax
+# glued to the word (`E(x)`, `E<1-2>`; a plain `<` is a redirection in every shell); a substitution (`$(`, `${`,
+# `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or any backslash
+# inside backticks (the shells unescape the backticks first; in a single-quoted span too, heredoc_op)
+function delim_odd(dq, got,   c, c1) {
+  c = ch[pos]; c1 = at(1)
+  if (got && !dq && (c == "(" || (c == "<" && substr(src, pos, (lim - pos < 64) ? lim - pos : 64) ~ /^<[0-9]*-[0-9]*>/)))
+    return "zsh glob glued to a heredoc delimiter"
+  if (c == "`" || (c == "\\" && (c1 == "\n" || bq_open())) || (c == "$" && c1 != "" && index(dq ? "({[" : "({[\047\"", c1)))
+    return "substitution or escape in a heredoc delimiter"
+  return ""
 }
-function delim_redo(s, op, w) { region(op, n, "substitution or escape in a heredoc delimiter", rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }
+function delim_redo(s, op, w, why) { region(op, n, why, rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }
 
 # start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
 # order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.

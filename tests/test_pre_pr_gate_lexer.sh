@@ -819,7 +819,9 @@ net "a backslash in a delimiter inside backticks (the shells read Ex, the body e
 net "a backslash in a single-quoted delimiter inside backticks" push "$(printf 'echo `cat <<'"'"'E\\$'"'"'\nE$\ngit push --no-verify\nE\\$`')"
 net "an escaped backslash in a single-quoted delimiter inside backticks" refuse "$(printf 'echo `cat <<'"'"'E\\\\'"'"'\nE\\\ngit push --no-verify\nE\\\\`')"
 net "zsh glob syntax glued to a delimiter: (" push "$(printf 'cat <<E(x)\nE(x)\ngit push --no-verify\nE')"
-net "zsh glob syntax glued to a delimiter: <" push "$(printf 'cat <<E<1-2>\nE1\ngit push --no-verify\nE')"
+net "zsh glob syntax glued to a delimiter: <N-M> (zsh ends the body at E<1-2>)" push "$(printf 'cat <<E<1-2>\nE<1-2>\ngit push --no-verify\nE')"
+net "a plain < glued to a delimiter is a redirection" allow "$(printf 'cat <<EOF<notes.txt\nbody\nEOF\ngit status')"
+net "a second << glued to a delimiter is a heredoc" allow "$(printf 'cat <<A<<B\na\nA\nb\nB\ngit status')"
 net "the delimiter word is read again from its start (a # there begins a comment)" refuse 'cat <<#$(git push --no-verify)'
 net "a )-led line's region grows over the line's later heredoc bodies" refuse "$(printf 'MSG=$(cat <<'"'"'A'"'"' <<'"'"'B'"'"'\n)\nA\ngit push --no-verify\nB\n)')"
 net "a )-led line's region does not grow over a later \$(…)'s bodies" allow "$(printf 'x=$(cat <<'"'"'A'"'"'\n)\nA\n); y=$(cat <<'"'"'B'"'"'\ngit is named\nB\n)')"
@@ -920,6 +922,8 @@ lex_is "a second heredoc past a cut delimiter line has an empty body, more lines
 
 net "a heredoc inside a body substitution scopes from the body's operator" refuse "$(printf 'git commit -F - <<E\n$(cat <<F\nx\nF\n)\nE')"
 lex_has "a \$(…) in a heredoc delimiter is a region" 'cat <<$(echo x) ; echo hi' "refuse${T}substitution or escape in a heredoc delimiter${T}line 1${T}scope:no"
+lex_has "a ( right after the operator is no delimiter (B10(c)), not zsh glob syntax" 'cat << (x)' "refuse${T}heredoc operator without a delimiter${T}line 1"
+lex_has "zsh glob syntax glued to a delimiter has its own reason" 'cat <<E(x)' "refuse${T}zsh glob glued to a heredoc delimiter${T}line 1"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \

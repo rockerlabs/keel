@@ -88,7 +88,7 @@ L067	tools/pre-pr-gate.sh	(t ~ /^[0-9]+$/ && m ~ /^u+$/)	(0)	B7: a digits word i
 L068	tools/pre-pr-gate.sh	(t ~ /^\\{[A-Za-z_][A-Za-z0-9_]*\\}$/ && m ~ /^u+$/)	(0)	B7: a {name} word is the fd, dropped
 L069	tools/pre-pr-gate.sh	  if (wtgt[s]) return	  if (0) return	B7: the target is no word of the segment
 L070	tools/pre-pr-gate.sh	  sntok[s] = 0; tgtpend[s] = 0; segbeg[s] = nextp	  sntok[s] = 0; segbeg[s] = nextp	B7: a separator before the target: no target
-L071	tools/pre-pr-gate.sh	if (index(" \\t\\n;&|<>()", c)) { if (got	if (index(" \\t\\n", c)) { if (got	B8: the delimiter ends at a separator
+L071	tools/pre-pr-gate.sh	if (index(" \\t\\n;&|<>()", c)) break\n    got = 1	if (index(" \\t\\n", c)) break\n    got = 1	B8: the delimiter ends at a separator
 L072	tools/pre-pr-gate.sh	if (hqn[s] > 0) start_bodies(s)	if (0) start_bodies(s)	B8: bodies start at the owner's newline
 L073	tools/pre-pr-gate.sh	if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; kreg = 0; return }	if (k > 1) { hqn[s] = 0; hb_s = 0; kreg = 0; return }	B8: every queued body, in order
 L074	tools/pre-pr-gate.sh	cmp = txt; if (hqs[s, k]) sub(/^\\t+/, "", cmp)	cmp = txt	B8: <<- strips leading tabs
@@ -111,20 +111,23 @@ L097	tools/pre-pr-gate.sh	else if (substr(src, p + 1, 2) == "it") {	else if (0) 
 L098	tools/pre-pr-gate.sh	if (substr(src, p + 1, 1) == "h") {	if (0) {	B10 scope: gh
 L246	tools/pre-pr-gate.sh	"SUB" && !kline && txt	"SUB" && txt	B10(k): the region starts at the first )-led line
 L247	tools/pre-pr-gate.sh	else if (kline) kreg = region(kline, bstop - 1, ") line	else if (kline) kreg = region(kline, n, ") line	B10(k): the region ends at the body's end
-L270	tools/pre-pr-gate.sh	    if (delim_odd(0)) { delim_redo(s, op, w); return }	    if (0) { delim_redo(s, op, w); return }	B8: an unmodelled delimiter character is a region
-L271	tools/pre-pr-gate.sh	        if (delim_odd(1)) { delim_redo(s, op, w); return }	        if (0) { delim_redo(s, op, w); return }	B8: an unmodelled character in a double-quoted delimiter is a region
+L270	tools/pre-pr-gate.sh	    if ((why = delim_odd(0, got)) != "") { delim_redo(s, op, w, why); return }	    if (0) { delim_redo(s, op, w, why); return }	B8: an unmodelled delimiter character is a region
+L271	tools/pre-pr-gate.sh	        if ((why = delim_odd(1, 1)) != "") { delim_redo(s, op, w, why); return }	        if (0) { delim_redo(s, op, w, why); return }	B8: an unmodelled character in a double-quoted delimiter is a region
 L272	tools/pre-pr-gate.sh	rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }	rseg(segbeg[s])); tgtpend[s] = 1 }	B8: the delimiter word is read again from its start
 L273	tools/pre-pr-gate.sh	rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }	rseg(segbeg[s])); pos = w }	B8: the word read again is the operator's target
-L274	tools/pre-pr-gate.sh	  if (ch[pos] == "`" || (ch[pos] == "\\\\"	  if ((ch[pos] == "\\\\"	B8: a backtick in a delimiter
+L274	tools/pre-pr-gate.sh	  if (c == "`" || (c == "\\\\" && (c1	  if ((c == "\\\\" && (c1	B8: a backtick in a delimiter
 L275	tools/pre-pr-gate.sh	index(dq ? "({[" : "({[\\047\\"", c1)	index(dq ? "({[" : "({[\\"", c1)	B8: a $-single quote in a delimiter
 L276	tools/pre-pr-gate.sh	index(dq ? "({[" : "({[\\047\\"", c1)	index(dq ? "({[" : "({[\\047", c1)	B8: a $-double quote in a delimiter
 L277	tools/pre-pr-gate.sh	index(dq ? "({[" : "({[\\047\\"", c1)	index(dq ? "({" : "({\\047\\"", c1)	B8: $[ in a delimiter
 L278	tools/pre-pr-gate.sh	(c1 == "\\n" || bq_open())	(bq_open())	B8: a backslash-newline in a delimiter
 L279	tools/pre-pr-gate.sh	(c1 == "\\n" || bq_open())	(c1 == "\\n")	B8: a backslash in a delimiter inside backticks
 L280	tools/pre-pr-gate.sh	index(dq ? "({[" : "({[\\047\\"", c1)	index("({[\\047\\"", c1)	B8: a $-quote inside double quotes is two characters
-L281	tools/pre-pr-gate.sh	      if (bq_open() && index(substr(src, r, pos - r), "\\\\")) { delim_redo(s, op, w); return }	      if (0) { delim_redo(s, op, w); return }	B8: a backslash in a single-quoted delimiter inside backticks
-L282	tools/pre-pr-gate.sh	if (got && (c == "(" || c == "<")) { delim_redo	if (got && (c == "<")) { delim_redo	B8: zsh glob ( glued to a delimiter
-L283	tools/pre-pr-gate.sh	if (got && (c == "(" || c == "<")) { delim_redo	if (got && (c == "(")) { delim_redo	B8: zsh glob < glued to a delimiter
+L281	tools/pre-pr-gate.sh	      if (index(substr(src, r, pos - r), "\\\\") && bq_open()) {	      if (0) {	B8: a backslash in a single-quoted delimiter inside backticks
+L282	tools/pre-pr-gate.sh	  if (got && !dq && (c == "(" || (c == "<"	  if (got && !dq && (0 || (c == "<"	B8: zsh glob ( glued to a delimiter
+L283	tools/pre-pr-gate.sh	(c == "<" && substr(src, pos, (lim - pos < 64) ? lim - pos : 64) ~ /^<[0-9]*-[0-9]*>/)))	(0)))	B8: zsh glob <N-M> glued to a delimiter
+L284	tools/pre-pr-gate.sh	/^<[0-9]*-[0-9]*>/	/^</	B8: a plain < glued to a delimiter is a redirection
+L285	tools/pre-pr-gate.sh	  if (got && !dq && (c == "("	  if (!dq && (c == "("	B8: a ( right after the operator is B10(c), not zsh glob syntax
+L286	tools/pre-pr-gate.sh	return "zsh glob glued to a heredoc delimiter"	return "substitution or escape in a heredoc delimiter"	B8: the glob region has its own reason
 L261	tools/pre-pr-gate.sh	while (pos < lim && !index(" \\t\\n;&|<>()\\047\\"\\\\$`", ch[pos])) pos++	while (pos < lim && !index(" \\t\\n;&|<>()\\047\\"\\\\", ch[pos])) pos++	B8: a substitution after other characters of a delimiter
 L264	tools/pre-pr-gate.sh	while (pos < lim && !index("\\"\\\\$`", ch[pos])) pos++	while (pos < lim && !index("\\"\\\\", ch[pos])) pos++	B8: a substitution after other characters inside double quotes
 L262	tools/pre-pr-gate.sh	    if (kreg) rend[kreg] = bstop - 1	    if (0) rend[kreg] = bstop - 1	B10(k): the region grows over the line's later bodies
