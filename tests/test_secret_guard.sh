@@ -3047,10 +3047,12 @@ check_status "dir #746 A24 control: the key only under fixtures/ → exit 0" 0 "
 
 # A25 (B11's failure, and its laziness): a git that fails `log --raw` exits 2 on an exempted hit, and is never
 # called on a clean range.
-mkdir "$d746/shim-raw"
-printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = --raw ] && exit 128; done\nexec "%s" "$@"\n' "$(type -P git)" \
-  > "$d746/shim-raw/git"
-chmod +x "$d746/shim-raw/git"
+git_shim_any746() {  # dir word — a git that exits 128 when any argument is WORD
+  mkdir -p "$1"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = %s ] && exit 128; done\nexec "%s" "$@"\n' "$2" "$(type -P git)" > "$1/git"
+  chmod +x "$1/git"
+}
+git_shim_any746 "$d746/shim-raw" --raw
 run_in "$a24_repo746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a24_base746..HEAD"
 check_status "dir #746 A25: the pair enumeration fails → exit 2" 2 "$STATUS"
 check_contains "dir #746 A25: ...naming it" "$OUT" "secret-scan: could not list the range's paths"
@@ -3080,11 +3082,6 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 check_absent "dir #746 A26(a): no skip-worktree summary when there is none" "$OUT" "skip-worktree"
 check_eq "dir #746 A27: two hit lines start with two spaces (kb-doctor's count)" 2 "$(match "$OUT" -c '^  ')"
-git_shim_any746() {  # dir word — a git that exits 128 when any argument is WORD
-  mkdir -p "$1"
-  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = %s ] && exit 128; done\nexec "%s" "$@"\n' "$2" "$(type -P git)" > "$1/git"
-  chmod +x "$1/git"
-}
 git_shim_any746 "$d746/shim-catfile" cat-file
 run_in "$r746" env PATH="$d746/shim-catfile:$PATH" "$scan" --tracked
 check_status "dir #746 A26(c): the index copy cannot be read → exit 2" 2 "$STATUS"
@@ -3119,5 +3116,34 @@ check_status "dir #746 A26(d): a skip-worktree file is scanned from the index �
 check_contains "dir #746 A26(d): ...naming it" "$OUT" "  d/b.txt:1:"
 check_eq "dir #746 A26(d): ...and one summary line" 1 \
   "$(match "$OUT" -c '^secret-scan: WARN 1 skip-worktree file(s) scanned from the index$')"
+# (e) a skip-worktree file still PRESENT in the working tree is read from there, as before B12 — its working copy
+# may hold what the index does not (review finding)
+r746="$(new_repo)"
+printf 'clean\n' > "$r746/c.txt"
+commit746 "$r746" base
+git -C "$r746" update-index --skip-worktree c.txt
+printf 'tok = %s\n' "$k746" > "$r746/c.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
+check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
+# (f) an unmerged path missing from the working tree: every stage's index copy is scanned, not only the first —
+# the key here sits in stage 3 alone (review finding)
+r746="$(new_repo)"
+printf 'base\n' > "$r746/f.txt"
+commit746 "$r746" base
+main746="$(git -C "$r746" branch --show-current)"
+git -C "$r746" checkout -q -b theirs746
+printf 'tok = %s\n' "$k746" > "$r746/f.txt"
+commit746 "$r746" theirs
+git -C "$r746" checkout -q "$main746"
+printf 'mine\n' > "$r746/f.txt"
+commit746 "$r746" mine
+git -C "$r746" merge -q theirs746 >/dev/null 2>&1 || true
+check_eq "dir #746 A26(f) fixture: f.txt is unmerged (three stages)" 3 "$(git -C "$r746" ls-files -s -- f.txt | wc -l | tr -d ' ')"
+rm "$r746/f.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): an unmerged, deleted path's later stage holds the key → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...with one index-copy line for the path" 1 \
+  "$(match "$OUT" -c 'scanned its index copy instead: f.txt$')"
 
 summary

@@ -54,7 +54,8 @@
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
-#     <ERE>          drop any matched line from results
+#     <ERE>          drop a hit whose matched line matches (the line's content only — never its path or
+#                    line number; dir #741)
 #     path:<glob>    exclude a path
 #   or an inline  secret-scan:allow  comment on the offending line.
 #
@@ -984,40 +985,48 @@ case "$mode" in
     # under LC_ALL=C (B3, emit_blob's loop).
     # dir #746 (D1-4, spec 746 B12): `-s -t` — each record is `<tag> <mode> <sha> <stage>TAB<path>`, so a tracked
     # file the working tree cannot give us (unreadable, deleted, replaced by a directory, or a sparse checkout's
-    # skip-worktree entry, tag S) is scanned from its index copy instead of being skipped with a WARN and a
+    # skip-worktree entry, tag S, that is absent) is scanned from its index copy instead of being skipped with a
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
-    # (mode 160000) is a submodule — its content is its own repo's; an unmerged path's later stages repeat it.
+    # (mode 160000) is a submodule — its content is its own repo's. A skip-worktree file that IS present is read
+    # from the working tree, whose copy may hold what the index does not. An unmerged path is listed once per
+    # stage: read from the working tree once, or — when that copy is not there — every stage's index copy, since
+    # each stage's content differs.
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    tab=$'\t'; prev=""; sparse=0
+    tab=$'\t'; prev=""; prev_idx=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
       LC_ALL=C IFS=' ' read -r ttag tmode tsha _tstage <<< "${rec%%"$tab"*}"
-      [ -n "$f" ] && [ "$f" != "$prev" ] || continue
-      prev="$f"
-      [ "$tmode" != 160000 ] || continue
-      why=""
-      if [ "$ttag" = S ]; then
-        sparse=$((sparse + 1))
-      elif [ -L "$top/$f" ]; then
-        # a tracked symlink's committed content IS its target string — scan that (it can carry a
-        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-        # readlink read as an empty target, i.e. `clean` (dir #715).
-        target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
-        emit_stream "$f" <<< "$target"
-        continue
-      elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
-        emit_stream "$f" < "$top/$f"
-        continue
-      elif [ -f "$top/$f" ]; then
-        why="unreadable"
-      elif [ ! -e "$top/$f" ]; then
-        why="missing from the working tree"
+      [ -n "$f" ] || continue
+      if [ "$f" = "$prev" ]; then
+        [ -n "$prev_idx" ] || continue              # another stage, the path already read from the working tree
       else
-        why="not a regular file in the working tree"
+        prev="$f"; prev_idx=""
+        [ "$tmode" != 160000 ] || continue
+        why=""
+        if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
+          sparse=$((sparse + 1))
+        elif [ -L "$top/$f" ]; then
+          # a tracked symlink's committed content IS its target string — scan that (it can carry a
+          # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
+          # readlink read as an empty target, i.e. `clean` (dir #715).
+          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+          emit_stream "$f" <<< "$target"
+          continue
+        elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+          emit_stream "$f" < "$top/$f"
+          continue
+        elif [ -f "$top/$f" ]; then
+          why="unreadable"
+        elif [ ! -e "$top/$f" ]; then
+          why="missing from the working tree"
+        else
+          why="not a regular file in the working tree"
+        fi
+        [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
+        prev_idx=1
       fi
-      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
     done < "$tlist"
@@ -1209,14 +1218,14 @@ path_exempt() {
 }
 
 # dir #742 (spec 746 B11): --range names each blob by the first path rev-list reaches, so a `path:` glob on that
-# path exempted the same bytes introduced at another path in the same push. The first exempted --range blob hit
-# lists the range's (blob, path) pairs once — lazily: a clean push, or one with no exempted hit, never pays for
-# it — with the user's log/diff config pinned (dir #697's class): `log.diffMerges=combined` would fold an evil
+# path exempted the same bytes introduced at another path in the same push. When a --range blob hit falls under
+# a `path:` glob, the range's (blob, path) pairs are listed once — lazily: a clean push, or one with no such hit,
+# never pays for it — with the user's log/diff config pinned (dir #697's class): `log.diffMerges=combined` would fold an evil
 # merge's entry into a `::` header, `log.showRoot=false` drop the root commit's pairs, `diff.relative=true` cut
 # them to a subdirectory; `-m` keeps a merge's own entries. The stream is NUL-delimited header/path tokens, a
 # STRICT alternation: the token after a header is its path whatever its first byte (a path may start with `:`),
 # and a header that does not start with a single `:` is a refusal, never a pair with zeros.
-pairs_loaded=""; pair_blob=(); pair_path=()
+pair_blob=(); pair_path=()
 load_range_pairs() {
   local plist perr tok hdr="" _m1 _m2 _s1 dsha _st
   plist="$(spool)"; perr="$(spool)"
@@ -1235,8 +1244,19 @@ load_range_pairs() {
     fi
   done < "$plist"
   [ -z "$hdr" ] || _fail_closed "read the range's paths (unexpected record)"
-  pairs_loaded=1
+  rm -f "$plist" "$perr"
 }
+
+# The pairs are listed before the first hit line prints, so a failing listing exits 2 with no hit line out.
+if [ -n "${rng:-}" ] && [ "${#path_globs[@]}" -gt 0 ]; then
+  ri=0
+  while [ "$ri" -lt "${#rec_path[@]}" ]; do
+    if [ -n "${rec_blob[$ri]}" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
+      load_range_pairs; break
+    fi
+    ri=$((ri + 1))
+  done
+fi
 
 found=0
 # dir #741 (B10): each allow channel reads its own field — the inline marker and the ERE entries the matched
@@ -1264,15 +1284,16 @@ while [ "$ri" -lt "${#rec_path[@]}" ]; do
   # path-glob allowlist: file records only; a --range blob only when every path it is introduced at is exempt
   if [ -z "$rmsg" ] && path_exempt "$rpath"; then
     [ -n "$rblob" ] || continue
-    [ -n "$pairs_loaded" ] || load_range_pairs
-    paired=""; unexempt=""; pi=0
-    while [ "$pi" -lt "${#pair_blob[@]}" ]; do
-      if [ "${pair_blob[$pi]}" = "$rblob" ]; then
-        paired=1
-        path_exempt "${pair_path[$pi]}" || { unexempt="${pair_path[$pi]}"; break; }
-      fi
-      pi=$((pi + 1))
-    done
+    if [ "$rblob" != "${pair_last_blob:-}" ]; then   # one blob's hits are consecutive: decide once per blob
+      pair_last_blob="$rblob"; paired=""; unexempt=""; pi=0
+      while [ "$pi" -lt "${#pair_blob[@]}" ]; do
+        if [ "${pair_blob[$pi]}" = "$rblob" ]; then
+          paired=1
+          path_exempt "${pair_path[$pi]}" || { unexempt="${pair_path[$pi]}"; break; }
+        fi
+        pi=$((pi + 1))
+      done
+    fi
     [ -z "$paired" ] || [ -n "$unexempt" ] || continue
     [ -z "$unexempt" ] || rpath="$unexempt"     # no pair at all → reported under its rev-list path
   fi
