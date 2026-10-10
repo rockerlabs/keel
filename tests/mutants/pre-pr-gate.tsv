@@ -22,10 +22,6 @@
 #   that backtick line_end() reads every line as empty (substr with a negative length is "" on macOS awk, busybox
 #   awk and mawk, checked; a line past it can only match an empty delimiter, which is quoted, so its body is skipped)
 #   and at_limit() resumes right after the backtick, so both are equivalent (the stop saves the scan to the end).
-# - the backslash join's stop at its BQ's backtick (`lstart[j + 1] < lim`): a line past it either begins with that
-#   backtick or follows a line cut at it, and a cut line cannot end in an odd backslash (the backtick it is cut at is
-#   unescaped); the join reads whole lines, so the backtick stays in it and it never meets the delimiter (one holding
-#   a backtick is a region, delim_odd), so the stop is equivalent. It stays: it saves reading past the BQ's end.
 # - where a SUB/BQ's first segment starts (right after its opener, or at it): the opener's `$(`, `<(`, `>(` or
 #   backtick can never complete a `git` or `gh` in the scope text, so it is equivalent.
 # - the hook's fast exit for a command with no `g`: no rule can fire without git or gh in the text, so removing it
@@ -259,6 +255,7 @@ L233	tools/pre-pr-gate.sh	  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = c
 L234	tools/pre-pr-gate.sh	function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }	function line_end(L) { return lend[L] }	B8: a body line is cut at its BQ’s backtick
 L236	tools/pre-pr-gate.sh	    if (cty[s] == "BQ") empty_body(s, k)	    if (0) empty_body(s, k)	B8: a heredoc pending when its BQ closes has an empty body
 L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { empty_body(s, k); continue }	if (pos > n) { empty_body(s, k); continue }	B8: no body left past the BQ’s end
+L238	tools/pre-pr-gate.sh	j < nlines && lstart[j + 1] < lim) {	j < nlines) {	B10(h): a backslash join stops at lim (its BQ’s backtick, or the text’s end)
 L239	tools/pre-pr-gate.sh	region(hqop[s, k], lim - 1, "heredoc pending	region(hqop[s, k], n, "heredoc pending	B10(g): inside a BQ the region ends at its backtick
 L241	tools/pre-pr-gate.sh	function empty_body(s, k) { region(hqop[s, k], -1,	function empty_body(s, k) { region(hqop[s, k], n,	B8: an empty body is never refused
 L242	tools/pre-pr-gate.sh	    bstop = found ? lstart[L] : lim	    bstop = found ? lstart[L] : n + 1	B8: a body with no delimiter ends at the text’s end or its BQ’s backtick

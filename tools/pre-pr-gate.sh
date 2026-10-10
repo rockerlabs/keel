@@ -2000,11 +2000,14 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
+  # the join stops at lim: its BQ’s backtick, or the end of the text (whose empty last line, after a final newline,
+  # is no line to join)
   while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
-    # meet the delimiter there (a delimiter holding a backtick is a region, delim_odd) — every shell ends that
-    # body at the backtick, joined or not. Line L itself is cut (line_end): the caller tests it for a trailing \.
+    # meet the delimiter there (bs_joins runs only for an expanding heredoc, and an unquoted backtick in its
+    # delimiter is a region, delim_odd) — every shell ends that body at the backtick, joined or not. Line L itself
+    # is cut (line_end): the caller tests it for a trailing \.
     txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
     t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
     if (t2 == hqd[s, k]) return 1
