@@ -149,6 +149,11 @@ while IFS= read -r line; do
 done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
+# dir #746 (B7): decode_binary's built-in decoder runs only for a non-ASCII needle — a personal literal this
+# audit scans with, or a token (an ASCII one survives the NUL-strip pass, unless an ERE `.` or bracket in it
+# stands for a non-ASCII letter: a stated limit there).
+decode_nonascii=""
+case "$personal_re${tokens[*]:-}" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern
@@ -207,7 +212,12 @@ trap 'exit 143' TERM
 # see into binary content directly. Shared by scan_binary_blobs (history + dir #509's working-tree
 # pass) so there is exactly one place implementing this recipe inside this file — keep it IN SYNC with
 # secret-guard/secret-scan.sh's own emit_blob() (each tool stands alone, so an encoding gap fixed there
-# must be fixed here too).
+# must be fixed here too; pinned by tests/test_secret_guard.sh, dir #681).
+#
+# dir #746 (S2-2): the decode never stops at an invalid unit — iconv -c, or the built-in od + awk decoder
+# where the host's iconv cannot resume (musl) or is absent and a personal literal or a token is non-ASCII
+# (decode_nonascii). secret-scan.sh's emit_blob() comment has the details. A pass that cannot run ends the
+# group with its status, which this function returns.
 #
 # The whole joined stream is NUL-stripped once, after every pass (dir #250, mirrored from
 # secret-scan.sh's emit_blob() — see its comment for the full mechanism): decoding UTF-32 data
@@ -219,15 +229,44 @@ trap 'exit 143' TERM
 decode_binary() {  # $1 = source file, $2 = destination file for the decoded views
   local src="$1" dst="$2"
   {
-    LC_ALL=C tr -d '\000' < "$src"; echo                        # ASCII-range UTF-16/UTF-32, no deps
-    if command -v iconv >/dev/null 2>&1; then                   # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
-      iconv -f UTF-16LE -t UTF-8 "$src" 2>/dev/null || true; echo
-      iconv -f UTF-16BE -t UTF-8 "$src" 2>/dev/null || true; echo
-      iconv -f UTF-32LE -t UTF-8 "$src" 2>/dev/null || true; echo
-      iconv -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
+    LC_ALL=C tr -d '\000' < "$src" || exit $?; echo              # ASCII-range UTF-16, no deps
+    if command -v iconv >/dev/null 2>&1; then                     # non-ASCII UTF-16/UTF-32 (e.g. a Cyrillic name)
+      iconv -c -f UTF-16LE -t UTF-8 "$src" 2>/dev/null || true; echo
+      iconv -c -f UTF-16BE -t UTF-8 "$src" 2>/dev/null || true; echo
+      # UTF-32: an ASCII literal survives the NUL-strip pass above (3-of-4 bytes are NUL), but a
+      # NON-ASCII one (multi-byte code point) does not — decode it explicitly, symmetric with UTF-16.
+      iconv -c -f UTF-32LE -t UTF-8 "$src" 2>/dev/null || true; echo
+      iconv -c -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
     fi
-    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$src"; echo          # raw printable runs
-  } | LC_ALL=C tr -d '\000' > "$dst"
+    # the built-in decoder, only where iconv cannot resume and a personal literal is non-ASCII
+    if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
+      od -An -v -tu1 < "$src" | LC_ALL=C awk '
+        function o(v, k) {
+          if (v < 128) { if (v) s[k] = s[k] sprintf("%c", v) }
+          else if (v < 2048) s[k] = s[k] sprintf("%c%c", 192 + int(v / 64), 128 + v % 64)
+          else if (v < 65536) s[k] = s[k] sprintf("%c%c%c", 224 + int(v / 4096), 128 + int(v / 64) % 64, 128 + v % 64)
+          else s[k] = s[k] sprintf("%c%c%c%c", 240 + int(v / 262144), 128 + int(v / 4096) % 64, 128 + int(v / 64) % 64, 128 + v % 64)
+        }
+        function u16(u, k) {
+          if (u >= 55296 && u < 56320) { if (h[k]) s[k] = s[k] "\n"; h[k] = u; return }
+          if (u >= 56320 && u < 57344) { if (h[k]) o(65536 + (h[k] - 55296) * 1024 + u - 56320, k); else s[k] = s[k] "\n"; h[k] = 0; return }
+          if (h[k]) { s[k] = s[k] "\n"; h[k] = 0 }
+          o(u, k)
+        }
+        function u32(u, k) { if (u > 1114111 || (u >= 55296 && u < 57344)) s[k] = s[k] "\n"; else o(u, k) }
+        {
+          for (i = 1; i <= NF; i++) {
+            b[n % 4] = $i; n++
+            if (n % 2 == 0) { u16(b[(n - 2) % 4] + 256 * b[(n - 1) % 4], 1); u16(256 * b[(n - 2) % 4] + b[(n - 1) % 4], 2) }
+            if (n % 4 == 0) { u32(b[0] + 256 * b[1] + 65536 * b[2] + 16777216 * b[3], 3); u32(16777216 * b[0] + 65536 * b[1] + 256 * b[2] + b[3], 4) }
+          }
+          if (NR % 256 == 0) { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; s[k] = "" } }
+        }
+        END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
+      ' || exit $?; echo
+    fi
+    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$src" || exit $?; echo  # raw printable runs
+  } | LC_ALL=C tr -d '\000' > "$dst" || return $?
 }
 
 # --- binary-blob decode scan (shared by sections 5b and 6) ----------------------------------------
@@ -473,7 +512,8 @@ cyr="$( cd "$DIR" && git ls-files -z -- . "${excludes[@]}" 2>/dev/null \
 # --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
 # The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
 # We hit this leak class ourselves and the audit missed it — so surface it on purpose.
-# Mirrored by secret-guard/secret-scan.sh SESSION_META (the preventive pre-push block) — keep in sync.
+# Mirrored by secret-guard/secret-scan.sh SESSION_META (the preventive pre-push block) — keep in sync
+# (pinned by tests/test_secret_guard.sh, dir #681).
 session_re='([A-Za-z][A-Za-z0-9-]*-Session:|claude\.ai/code/session)'
 sess_tree="$(tree_grep "$session_re" | head -1 || true)"
 [ -n "$sess_tree" ] && warn "agent/session metadata in tracked tree — e.g. $sess_tree"
