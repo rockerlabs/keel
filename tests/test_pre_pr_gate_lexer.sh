@@ -666,7 +666,8 @@ shim_case line-with-exit1 1 'push\037\037\n'
 
 # --- dir #745: the header's residual paragraph tells the truth (B18) -------------------------------------------
 gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
-for kept in 'sh -c' 'eval' 'gh' '"pr" create' 'case' 'array assignment' 'repeat N cmd' 'function NAME' 'a path to `gh`' 'bash' '3.2' 'REFUSES'; do
+for kept in "\`sh -c '…'\`" '`eval' '"pr" create`' "a \`case\` pattern's" 'array assignment' 'repeat N cmd' 'function NAME' 'a path to `gh`' \
+  "bash 3.2's misreading" 'brace expansion' 'glued to a bypass' "a wrapper's own flags" 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do

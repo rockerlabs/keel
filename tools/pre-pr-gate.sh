@@ -27,15 +27,18 @@
 # and backticks (inside double quotes and expanding heredoc bodies too), heredocs, arithmetic, redirections,
 # comments, backslash-newline. Where bash, zsh and busybox read a part differently, or the reader cannot know,
 # and that part's segment mentions git or gh, the hook REFUSES the command and says why, so a bypass cannot
-# hide there; `pre-pr-gate.sh lex` shows how a command was read. Named residuals, caught only by the CI scan on
-# the PR: a variable exported earlier, or set in an earlier segment of the same command; an alias or wrapper
-# script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted subcommand word (`gh
-# "pr" create`, `git "push"`); a `git config` write in an earlier segment; a leading word outside the skip set
-# (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`); a `case` pattern's `)` inside `$(…)` within double quotes;
-# an array assignment's `(…)` (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`,
-# `repeat N cmd`) and a `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`); bash
-# 3.2's misreading of a heredoc body inside `$(…)` (refused only where it would run text); a missing jq,
-# another harness, the operator's own terminal. dir #731.
+# hide there; `pre-pr-gate.sh lex` shows how a command was read. It guards habits, not a deliberate disguise.
+# Named residuals, caught only by the CI scan on the PR: a variable exported earlier, or set in an earlier segment
+# of the same command; an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval
+# "…"`); a quoted subcommand word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a
+# brace expansion (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a
+# `git config` write in an earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`,
+# `/usr/bin/env …`, zsh's `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`,
+# `nohup --`); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)` (read as
+# commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`); bash 3.2's misreading of a
+# heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only when a
+# body line starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
