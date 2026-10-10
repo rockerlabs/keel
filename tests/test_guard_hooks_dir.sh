@@ -747,7 +747,7 @@ printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/locked/work.cfg"; chmo
 run genv "$isg" --global
 check_status "A13: a target under an unsearchable dir → refused (exit 3)" 3 "$STATUS"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  check_contains "A13 unsearchable dir: ...as an incomplete walk" "$OUT" "$incomplete (git config failed on $H/locked/work.cfg (a directory on its path cannot be searched))"
+  check_contains "A13 unsearchable dir: ...as an incomplete walk" "$OUT" "$incomplete (cannot tell whether $H/locked/work.cfg exists (a directory on its path cannot be searched))"
 fi
 chmod 700 "$H/locked"
 # A symlink to a target already read is that target: counted once, never a depth step.

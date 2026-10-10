@@ -37,7 +37,7 @@ Steps, in order:
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`), backgrounded with an explicit timeout past the suite's runtime, and show the real
    output; never claim "passed" without it. A cut-short run is not green: re-run the remainder. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
-   the gate unlocks only on a test run bound to the commit being shipped.
+   the gate unlocks only on a test run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** Proceed only if simplify left no open
    problems and tests are green or explicitly skipped; otherwise report what is left and stop (no receipt).
@@ -167,8 +167,7 @@ Steps, in order:
      refused, the review was voided for a missing findings list or quote (never for a changed tree — that stops), or
      the unchanged-HEAD case just above → today's in-session attempt, `Skill(code-review)` in this session
      with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
-     first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b). Each existing
-     path stays as written; this adds one layer in front of them.
+     first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b).
    - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
      other mechanism (dir #183).
@@ -198,8 +197,7 @@ Steps, in order:
    then `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
    "The chain is intact" → do the one thing it names and retry; "This has discarded the receipt chain" →
    `tools/pre-pr-gate.sh init`, then `tools/pre-pr-gate.sh receipt --recover`.
-   *Rare — any deny, before you act on it:* load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md`
-   beside this file, § Step 8; guide unreachable → stop and report.
+   *Rare — any deny, before you act on it:* the guide, § Step 8.
 
 9. **Open the PR.** `gh pr create --head <branch>` — `--head` is mandatory. **Write every receipt in its own
    Bash call and invoke `gh pr create` alone in the next**. Compose the title and body (what changed,
@@ -208,11 +206,11 @@ Steps, in order:
    mechanism that ACTUALLY RAN, not only the receipt's one. Invoking `/polish` IS the authorization to push
    and open the PR; the merge stays the operator's. Return the PR URL. Waiting on CI: ONE backgrounded `gh pr checks <n> --watch` with a timeout; never wakeups, sleeps or short Monitors. *Rare — `gh pr create` fails (the PR
    is already open, or a non-gate failure that still spends the receipt chain), an add-on review's
-   disclosure:* load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside
-   this file, § Step 9 (§ Step 10 for the add-on summary forms); guide unreachable → stop and report.
+   disclosure:* the guide, § Step 9 (§ Step 10 for the add-on summary forms).
 
 10. **Summary.** Briefly: what `/simplify` tidied, the test status (any post-review re-run and the
-    self-check), the PR URL, step 9's `docs read:` line unchanged if it produced one, and the review depth
+    self-check), the PR URL, every fixed finding as `file:line` — what changed (never a bare "addressed"),
+    step 9's `docs read:` line unchanged if it produced one, and the review depth
     with its exact mechanism, never the depth alone — `/code-review <level>` run by a fresh-context
     subagent, a genuine in-session `/code-review <level>`, an independent agent review, plus every add-on
     that also ran, or the hand-off outcome.
