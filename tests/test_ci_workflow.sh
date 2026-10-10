@@ -58,11 +58,8 @@ job_block() {
     on { print }
   ' "$1"
 }
-# job_keys FILE — every job key under jobs:, one per line.
-job_keys() {
-  awk '/^jobs:[[:space:]]*$/ { in_jobs = 1; next } in_jobs && /^[^[:space:]#]/ { exit }
-       in_jobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { k = $1; sub(/:$/, "", k); print k }' "$1"
-}
+# job_keys FILE — every job key under jobs:, one per line (job_timeouts' own walk, keys only).
+job_keys() { job_timeouts "$1" | cut -d' ' -f1; }
 # job_field BLOCK KEY — a job-level (4-space) key's value from a job_block.
 job_field() { awk -v k="$2" '$0 ~ "^    " k ":" { v = $0; sub("^    " k ":[[:space:]]*", "", v); print v; exit }' <<< "$1"; }
 # job_names FILE — every check name the workflow produces: each job's `name:` with `${{ matrix.X }}` expanded
@@ -112,12 +109,11 @@ while IFS= read -r j; do
 done < <(job_keys "$ci")
 check_eq "A21: only the shard job runs on macOS" " macos-shards" "$mac_jobs"
 
-# KEEL_TEST_SHARD is set by the shard job's test step and by no other job.
-shard_env_jobs=""
-while IFS= read -r j; do
-  grep -q 'KEEL_TEST_SHARD:' <<< "$(job_block "$ci" "$j")" && shard_env_jobs="$shard_env_jobs $j"
-done < <(job_keys "$ci")
-check_eq "A21: only the shard job sets KEEL_TEST_SHARD" " macos-shards" "$shard_env_jobs"
+# KEEL_TEST_SHARD is set by the shard job's test step and nowhere else in the file — a workflow-level env:
+# would reach every job (the ubuntu leg would silently run one shard's files).
+# Code only: a mention after a `#` is a comment, not a setting.
+check_eq "A21: KEEL_TEST_SHARD appears in ci.yml (outside comments) only inside the shard job" \
+  "$(grep -cE '^[^#]*KEEL_TEST_SHARD' <<< "$shards")" "$(grep -cE '^[^#]*KEEL_TEST_SHARD' "$ci")"
 check_contains "A21: the shard step passes its own shard of 2" "$shards" 'KEEL_TEST_SHARD: ${{ matrix.shard }}/2'
 
 # The aggregator's verdict, executed: its one step's `run:` block with the shard result substituted.

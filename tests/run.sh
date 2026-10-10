@@ -371,12 +371,10 @@ main() {
   shard_spec="${KEEL_TEST_SHARD-}"
   unset KEEL_TEST_SHARD
   shard_k="" shard_n=""
+  shard_re='^[1-9][0-9]{0,8}/[1-9][0-9]{0,8}$'
   if [ -n "$shard_spec" ]; then
-    shard_k="${shard_spec%%/*}"; shard_n="${shard_spec#*/}"
-    case "$shard_spec" in */*) ;; *) shard_k="" ;; esac
-    case "$shard_k" in ''|0*|*[!0-9]*|??????????*) shard_k="" ;; esac
-    case "$shard_n" in ''|0*|*[!0-9]*|??????????*) shard_n="" ;; esac
-    if [ -z "$shard_k" ] || [ -z "$shard_n" ] || [ "$shard_k" -gt "$shard_n" ]; then
+    if [[ $shard_spec =~ $shard_re ]]; then shard_k="${shard_spec%/*}"; shard_n="${shard_spec#*/}"; fi
+    if [ -z "$shard_k" ] || [ "$shard_k" -gt "$shard_n" ]; then
       printf 'FATAL: KEEL_TEST_SHARD=%s is not K/N with 1 <= K <= N (decimal, no sign, no leading zero) — refusing to run.\n' "$shard_spec" >&2
       exit 2
     fi
@@ -612,15 +610,14 @@ SHIM
     shard_totals=()
     for ((k = 1; k <= shard_n; k++)); do shard_totals[k]=0; done
     while IFS="$(printf '\t')" read -r sz f; do
-      [ -n "$f" ] || continue
       best=1
       for ((k = 2; k <= shard_n; k++)); do
         [ "${shard_totals[k]}" -lt "${shard_totals[best]}" ] && best=$k
       done
       shard_totals[best]=$((shard_totals[best] + sz))
-      [ "$best" = "$shard_k" ] && run_files+=("$f")
-    done < <(for f in ${all_files[@]+"${all_files[@]}"}; do printf '%s\t%s\n' "$(wc -c < "$f" | tr -d ' ')" "$f"; done \
-               | LC_ALL=C sort -t "$(printf '\t')" -k1,1nr -k2,2)
+      [ "$best" = "$shard_k" ] && run_files+=("$here/$f")
+    done < <([ "${#all_files[@]}" -eq 0 ] || (cd "$here" && wc -c -- test_*.sh) \
+               | awk '$2 != "total" { print $1 "\t" $2 }' | LC_ALL=C sort -t "$(printf '\t')" -k1,1nr -k2,2)
     printf 'shard %s/%s: %d of %d test files\n' "$shard_k" "$shard_n" "${#run_files[@]}" "${#all_files[@]}"
   fi
 
