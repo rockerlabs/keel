@@ -345,6 +345,14 @@ run "$cr" "$d"
 check_status "no BACKLOG.md -> the changelog scan degrades to the same SKIP, exit 0" 0 "$STATUS"
 check_contains "...and says so" "$OUT" "SKIP"
 
+# --- dir #729 review: the other merge-subject shapes are recognised too ("#N: title" and a squash "(#N)" mid-subject)
+for subj in "Merge pull request #513: some title (dir #5)" "Fix the thing (#513) [skip ci]"; do
+  d="$(mk_cl_repo "$cl_pr")"
+  ( cd "$d" && git commit -q --allow-empty --amend -m "$subj" )
+  run "$cr" "$d" --quiet
+  check_contains "PR hint on merge-subject shape: $subj" "$OUT" "merged PR"
+done
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a

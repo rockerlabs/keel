@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tools/self/citation-resolvability.sh — keel-self-maintenance (dir #68 exemption, per
 # tools/self/prose-drift.sh's header): checks that every `dir #N` cited in KEEL'S OWN docs/*.md
-# (and, dir #729, in the unreleased changelog text) resolves to exactly one ticket. There is no consumer-facing counterpart and install.sh never ships
-# this file.
+# (and, dir #729, in the unreleased changelog text) resolves to exactly one ticket. There is no
+# consumer-facing counterpart and install.sh never ships this file.
 #
 # Filed dir #266, 2026-08-27, after a day in which three separate tickets were filed for citations
 # that looked resolvable and were not (dir #64's two-tickets-one-number collision, fixed as dir #259).
@@ -183,11 +183,13 @@ abs_files=()
 # brief) reads as DEAD. Released sections stay unscanned. The [Unreleased] slice goes to a scratch file so
 # the one fence-blank + extract pass below treats it like any doc; `labels` maps a path to what a DEAD
 # line prints as the first-cited location.
-cl_tmp="$(mktemp -d "${TMPDIR:-/tmp}/citation-resolvability.XXXXXX")"
-trap 'rm -rf "$cl_tmp"' EXIT
+cl_slice=""
 if git -C "$repo_dir" ls-files --error-unmatch -- CHANGELOG.md >/dev/null 2>&1; then
-  awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' "$repo_dir/CHANGELOG.md" > "$cl_tmp/unreleased.md"
-  abs_files+=("$cl_tmp/unreleased.md")
+  cl_tmp="$(mktemp -d "${TMPDIR:-/tmp}/citation-resolvability.XXXXXX")"
+  trap 'rm -rf "$cl_tmp"' EXIT   # this script sets no other EXIT trap; INT/TERM leave the scratch dir to the OS temp sweep
+  cl_slice="$cl_tmp/unreleased.md"
+  awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' "$repo_dir/CHANGELOG.md" > "$cl_slice"
+  abs_files+=("$cl_slice")
 fi
 while IFS= read -r f; do
   [ "$f" = changelog.d/README.md ] || abs_files+=("$repo_dir/$f")
@@ -235,7 +237,7 @@ if [ "${#abs_files[@]}" -gt 0 ]; then
       var="cite_first_$n"
       if [ -z "${!var:-}" ]; then
         label="${f#"$repo_dir"/}"
-        [ "$f" != "$cl_tmp/unreleased.md" ] || label="CHANGELOG.md [Unreleased]"
+        [ "$f" != "$cl_slice" ] || label="CHANGELOG.md [Unreleased]"
         printf -v "$var" '%s' "$label"
         cited_numbers+=("$n")
       fi
@@ -309,7 +311,7 @@ if [ "${#cited_numbers[@]}" -gt 0 ]; then
     if [ "$pr_loaded" = 0 ]; then
       pr_subjects="$(git -C "$repo_dir" log --format=%s 2>/dev/null || true)"; pr_loaded=1
     fi
-    if grep -Eq "^Merge pull request #$1 |\(#$1\)$" <<<"$pr_subjects"; then
+    if grep -Eq "^Merge pull request #$1([^0-9]|$)|\(#$1\)" <<<"$pr_subjects"; then
       printf ' — #%s is also a merged PR number in this repo (a PR cited as a ticket?)' "$1"
     fi
   }
