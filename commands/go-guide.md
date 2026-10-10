@@ -26,12 +26,13 @@ screenshot path, a named person's sign-off. "Done", "looks right" and "should wo
 ## Actions
 
 **I1 — reconcile.** Before you change anything:
-0. Handoff note: run `<keel-checkout>/tools/go-handoff.sh read "<ticket>"` from the project (as `/polish` runs its
-   tools; `<ticket>` is the id as the resolved heading spells it, without a trailing `.`, always in quotes; spec mode:
-   the file name without `.md`; ad-hoc work: skip). Found → a hint, live files win: each `done` item you re-prove live
+0. Handoff note: run `<keel-checkout>/tools/go-handoff.sh read "<ticket>"` from the project (as `/polish` does;
+   `<ticket>` is the id as the resolved heading spells it, without a trailing `.`, always in quotes; spec mode:
+   the file name without `.md`; ad-hoc work: skip). Found → a hint, live files win: each `done` item you re-prove
    stays done, unbuilt; `next` leads the change list. A `branch:` or `worktree:` not yours that still exists holds the
-   predecessor's uncommitted work → ask the operator, writing nothing first: continue there (absolute paths, `git -C`)
-   or go fresh. No note → say so, go on. The tool fails → say so once, make no more helper calls.
+   predecessor's uncommitted work → make step 4's offer (resume there, fresh branch, another ticket), writing
+   nothing first, unless step 4 already did. No note → say so, go on. The tool fails → say so once, make no more
+   helper calls.
 1. Read every live file the spec names. The spec is a snapshot; where it and the live file disagree,
    the file is the truth and the gap is an escape (I5).
 2. Walk the spec's Impact map, row by row (no Impact map → skip this item; say so). "changed in the same PR" (or in a PR this ticket names) → put it on your change list.
