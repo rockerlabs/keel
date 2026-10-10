@@ -16,13 +16,11 @@ sections real content going forward — see that page for exactly when each one 
 ## [Unreleased]
 
 - **Three review-and-autonomy rails, adapted from a public gated motion-design harness prompt.** `/polish`
-  step 10's summary names every fixed finding as `file:line` and what changed, never a bare "addressed"
-  (a stale rationale sentence in step 5 was cut to stay inside the command's word budget).
-  `docs/verification-economics.md` §7 names the operator's own review as the last net: a defect the
-  operator finds that nothing caught earns a check one layer up — an error does; a taste note goes to
-  the project's conventions only if it recurs, never into a check. `/go` stops for an obstacle only the
-  operator can clear only when it blocks every remaining step; otherwise that step is marked unverified
-  and the rest is finished.
+  step 10's summary names every fixed finding as `file:line` and what changed, never a bare "addressed".
+  `docs/verification-economics.md` §7 treats the operator's own review as the last net: an error it finds
+  that nothing caught earns a check one layer up; a taste note goes into the project's conventions only
+  if it recurs, never into a check. `/go` stops for an operator-only obstacle only if it blocks every
+  remaining step; otherwise it marks that step unverified and finishes the rest.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

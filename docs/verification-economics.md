@@ -337,9 +337,9 @@ problem; it is a missing check one layer up.
 review caught is the same shift-left signal, and the remedy is the same: a check one layer up, not a
 promise to look harder. Sort each operator note first. An **error** — something a check could have
 decided, such as a wrong fact, a broken reference, a stale count or two things that collide — earns
-that check. A **taste** note — a preference no stated rule implies — is fixed, and only if it recurs is
-it written into the project's conventions; it never becomes a check, which would encode one reader's
-preference as a defect.
+that check. A **taste** note — a preference no stated rule implies — is fixed; write it into the
+project's conventions only if it recurs, never into a check, which would encode one reader's preference
+as a defect.
 
 ## 8. Bootstrapping the class registry, if you have no history yet
 
