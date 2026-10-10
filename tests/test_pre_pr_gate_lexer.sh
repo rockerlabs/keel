@@ -666,4 +666,92 @@ for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment
   check_absent "header: no longer names [$dropped]" "$gate_head" "$dropped"
 done
 
+# --- dir #745: the mutation net — one case per reader clause the case table does not reach alone ----------------
+# Each is here so a single-clause mutant of tests/mutants/pre-pr-gate.tsv has a test to fail.
+net() {   # net <label> <verdict> <command>
+  gate "$3" "$hd"
+  check_eq "net:$1 → $2" "$2" "$(verdict_of)"
+}
+net "quoted api is not the subcommand" allow 'gh "api" repos/o/r/pulls -f head=x'
+net "a pulls list is a read" allow 'gh api repos/o/r/pulls'
+net "-X POST" pr 'gh api -X POST repos/o/r/pulls'
+net "--method POST" pr 'gh api --method POST repos/o/r/pulls'
+net "--method=POST" pr 'gh api --method=POST repos/o/r/pulls'
+net "-X GET with a field is a read" allow 'gh api -X GET repos/o/r/pulls -f state=open'
+net "-F" pr 'gh api repos/o/r/pulls -F head=x'
+net "--field" pr 'gh api repos/o/r/pulls --field head=x'
+net "--raw-field" pr 'gh api repos/o/r/pulls --raw-field head=x'
+net "--input" pr 'gh api repos/o/r/pulls --input body.json'
+net "a field on one PR is not a create" allow 'gh api repos/o/r/pulls/123 -f body=x'
+net "quoted create" allow 'gh pr "create" --fill'
+net "pr before create" allow 'gh create pr'
+net "env NAME with an expansion is the command" allow 'env $X=1 git push --no-verify'
+net "time wrapper takes -p" push 'nohup time -p git push --no-verify'
+net "\\\" in backticks inside double quotes is a quote" allow 'echo "`echo \"a && git push --no-verify\"`"'
+net "( raises the arithmetic depth" pr 'x=$(( (1+2) )); gh pr create --fill'
+net "a backslash in \${…} escapes" pr 'echo ${v:-\{}; gh pr create --fill'
+net "a double quote in \${…}" pr 'echo ${v:-"}"}; gh pr create --fill'
+net "an ANSI quote in \${…}" pr "echo \${v:-\$'}'}; gh pr create --fill"
+net "a single quote in \${…} outside double quotes" pr "echo \${v:-'}'}; gh pr create --fill"
+net "a substitution in \${…}" push 'echo ${v:-$(git push --no-verify)}'
+net "an escaped \$ in a heredoc body" allow "$(printf 'cat <<E\n\\$(git push --no-verify)\nE')"
+net "a redirect with no target" push 'echo > ; git push --no-verify'
+net "a heredoc delimiter made of a substitution" push "$(printf 'cat <<$(x)\ntext\n$(x)\ngit push --no-verify')"
+net "an unquoted { in \${…} refuses" refuse 'v=; echo ${v:-{}; gh pr create --fill'
+net "a quoted delimiter part makes the body literal" allow "$(printf 'cat <<E"F"\n$(git push --no-verify)\nEF')"
+net "a backslash in the delimiter makes the body literal" allow "$(printf 'cat <<\\E\n$(git push --no-verify)\nE')"
+net "arithmetic inside a body" push "$(printf 'cat <<E\n$((1<<2)) $(git push --no-verify)\nE')"
+net "a body ends at its own delimiter only" refuse "$(printf 'cat <<E\nX\ngit push --no-verify')"
+net "a here-string is no heredoc" push 'cat <<<x; git push --no-verify'
+net "a quoted backslash-newline" push "$(printf 'git push "--no-\\\nverify"')"
+
+# --head on the receipt path: the value is taken only from a word with no expansion.
+# An allowed PR command spends the receipt, so each case writes a fresh one: on feat-y (the cwd stays on the
+# default branch, which has none) or on the cwd's own branch.
+rd="$(mkrepo)"
+rd_main="$(git -C "$rd" branch --show-current)"
+git -C "$rd" branch feat-y >/dev/null 2>&1
+rcpt() {   # rcpt <label> <verdict> <command> <feat-y|cwd>
+  if [ "$4" = feat-y ]; then git -C "$rd" checkout -q feat-y; write_full_receipt "$rd"; git -C "$rd" checkout -q "$rd_main"
+  else write_full_receipt "$rd"; fi
+  gate "$3" "$rd"
+  check_eq "rcpt:$1 → $2" "$2" "$(verdict_of)"
+  rm -f "$(sentinel_for "$rd")"
+  git -C "$rd" checkout -q feat-y; rm -f "$(sentinel_for "$rd")"; git -C "$rd" checkout -q "$rd_main"
+}
+rcpt "-H names the branch" allow 'gh pr create -H feat-y --fill' feat-y
+rcpt "--head= names the branch" allow 'gh pr create --head=feat-y --fill' feat-y
+rcpt "gh api head= names the branch, owner prefix stripped" allow 'gh api repos/o/r/pulls -f head=me:feat-y -f base=main' feat-y
+rcpt "no --head: the cwd's branch, which has no receipt" pr 'gh pr create --fill' feat-y
+rcpt "--head= from a substitution is not taken" allow 'gh pr create --head="$(git branch --show-current)" --fill' cwd
+rcpt "gh api head= from a substitution is not taken" allow 'gh api repos/o/r/pulls -f head="$(git branch --show-current)"' cwd
+
+# The reader's own output for each word class and each operator.
+lex_is "tilde expansions" 'ls ~ ~/x ~user/y a=~/b:~/c x~y' "TOP@1${T}d0${T}s0${T}p1${T}u:ls${T}x:~${T}ux:~/x${T}ux:~user/y${T}ux:a=~/b:~/c${T}u:x~y"
+lex_is "brace expansions" 'echo {a,b} {x} {1..3} {' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ug:{a,b}${T}u:{x}${T}ug:{1..3}${T}u:{"
+lex_is "expansions keep their source text" 'echo $"a b" $1 $@ ${HOME}/x a$ $' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:a b${T}x:\$1${T}x:\$@${T}ux:\${HOME}/x${T}u:a\$${T}u:\$"
+lex_is "an arithmetic command is a word of its own; empty quotes are words" "((x++))y && echo \"\" ''" "TOP@1${T}d0${T}s0${T}p1${T}x:\$()${T}u:y"$'\n'"TOP@1${T}d0${T}s0${T}p13${T}u:echo${T}:${T}:"
+lex_is "every separator ends a segment" "$(printf 'a;b;;c;&d;;&e&f&&g|h||i|&j\nk')" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:a"$'\n'"TOP@1${T}d0${T}s0${T}p3${T}u:b"$'\n'"TOP@1${T}d0${T}s0${T}p6${T}u:c"$'\n'"TOP@1${T}d0${T}s0${T}p9${T}u:d"$'\n'"TOP@1${T}d0${T}s0${T}p13${T}u:e"$'\n'"TOP@1${T}d0${T}s0${T}p15${T}u:f"$'\n'"TOP@1${T}d0${T}s0${T}p18${T}u:g"$'\n'"TOP@1${T}d0${T}s0${T}p20${T}u:h"$'\n'"TOP@1${T}d0${T}s0${T}p23${T}u:i"$'\n'"TOP@1${T}d0${T}s0${T}p26${T}u:j"$'\n'"TOP@2${T}d0${T}s0${T}p28${T}u:k"
+lex_is "redirection targets and fds are not words" 'x 2>f 3<>g <&4 >>h >|i >&5 &>j &>>k <l <<<m n' "TOP@1${T}d0${T}s0${T}p1${T}u:x${T}u:n"
+lex_is "a brace group is no group" '{ a; }' "TOP@1${T}d0${T}s0${T}p1${T}u:{${T}u:a"$'\n'"TOP@1${T}d0${T}s0${T}p6${T}u:}"
+lex_is "an unquoted { in \${…}" 'echo ${v:-{}' "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\${v:-{}"$'\n'"refuse${T}brace inside \${…}${T}line 1${T}scope:no"
+lex_is "arithmetic and process substitutions" 'echo "$((1<<2))" <(a) >(b)' \
+  "SUB@1${T}d1${T}s0.1${T}p20${T}u:a"$'\n'"SUB@1${T}d1${T}s0.2${T}p25${T}u:b"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()${T}x:\$()${T}x:\$()"
+lex_is "a comment, and a mid-word #" "$(printf 'a#b # c d\ne')" "TOP@1${T}d0${T}s0${T}p1${T}u:a#b"$'\n'"TOP@2${T}d0${T}s0${T}p11${T}u:e"
+lex_is "an escaped character, a backslash-newline, an ANSI quote" "$(printf '%s\n%s' '\g\' "it \$'a\\'b'")" "TOP@1${T}d0${T}s0${T}p1${T}uq:git${T}q:a'b"
+
+net "a substitution in arithmetic" push 'x=$(( $(git push --no-verify) ))'
+net "a single quote in arithmetic" pr "x=\$(( ')' )); gh pr create --fill"
+net "a double quote in arithmetic" pr 'x=$(( ")" )); gh pr create --fill'
+net "a backslash in arithmetic" pr 'x=$(( \) )); gh pr create --fill'
+net "a single-quoted part glues to its word" push "git push --no-'verify'"
+net "a single-quoted subcommand word" allow "gh 'pr' create --fill"
+net "balanced parentheses in a body inside \$(…)" allow "$(printf 'git commit -m "$(cat <<'"'"'EOF'"'"'\nfix (dir #1) in git\nEOF\n)"')"
+net "a pipe" push 'echo x | git push --no-verify'
+lex_is "(( re-read as nested subshells" '((cd a && git push --no-verify) && (true))' \
+  "TOP@1${T}d0${T}s0${T}p1${T}x:\$()"$'\n'"refuse${T}(( read as nested subshells${T}line 1${T}scope:yes"$'\n'"refuse${T}unclosed ARITH${T}line 1${T}scope:yes"
+lex_is "a heredoc that never started is an empty region" 'git log <<E' "TOP@1${T}d0${T}s0${T}p1${T}u:git${T}u:log"$'\n'"refuse${T}heredoc E not closed${T}line 1${T}scope:empty"
+lex_is "a segment with no word is dropped" "$(printf 'a;\n\nb')" "TOP@1${T}d0${T}s0${T}p1${T}u:a"$'\n'"TOP@3${T}d0${T}s0${T}p5${T}u:b"
+
 summary

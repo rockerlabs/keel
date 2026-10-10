@@ -1566,6 +1566,8 @@ function bq_open(   i) {
   for (i = sp; i >= 1; i--) if (cty[i] == "BQ") return i
   return 0
 }
+# bq_in_dq() — the innermost BQ sits inside a DQ: there `\"` un-escapes to a plain `"` before the BQ is read.
+function bq_in_dq(   b) { b = bq_open(); return b > 1 && cty[b - 1] == "DQ" }
 
 # --- words ------------------------------------------------------------------------------------------------
 # A word keeps its text after quote removal and a mask, one letter per character: u unquoted, q quoted or
@@ -1740,7 +1742,7 @@ function cmd_char(   c, s, k, op) {
     if (at(1) == "\n") { pos += 2; return }
     if (at(1) == "") { pos++; return }
     if (at(1) == "`") nested_bq()
-    if (cty[s] == "BQ" && at(1) == "\"" && cty[s - 1] == "DQ") { pos++; return }
+    if (at(1) == "\"" && bq_in_dq()) { pos++; return }
     word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return
   }
   if (c == "'") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
@@ -1781,7 +1783,12 @@ function cmd_char(   c, s, k, op) {
     else if (cty[s] == "SUB") close_cmd()
     return
   }
-  if (c == "~") { word_begin(pos); k = 1; if (tilde_x()) { while (pos + k < lim && ch[pos + k] ~ /^[A-Za-z0-9_]$/) k++; addsrc(pos, k, "x") } else addsrc(pos, 1, "u"); pos += k; return }
+  if (c == "~") {
+    op = tilde_x(); word_begin(pos); k = 1
+    if (op) { while (pos + k < lim && ch[pos + k] ~ /^[A-Za-z0-9_]$/) k++; addsrc(pos, k, "x") }
+    else addsrc(pos, 1, "u")
+    pos += k; return
+  }
   if (c == "{") { word_begin(pos); addsrc(pos, 1, brace_g(pos) ? "g" : "u"); pos++; return }
   if (c == "#") { word_begin(pos); addsrc(pos, 1, "u"); pos++; return }
   # `*`, `?`, `[`
@@ -1933,6 +1940,7 @@ function dq_char(   c, k) {
   if (c == "\"") { pop_ctx(); pos++; return }
   if (c == "\\") {
     if (at(1) == "\n") { pos += 2; return }
+    if (at(1) == "\"" && bq_in_dq()) { pos++; return }
     if (at(1) != "" && index("$`\"\\", at(1))) { if (at(1) == "`") nested_bq(); addsrc(pos + 1, 1, "q"); pos += 2; return }
     addsrc(pos, 1, "q"); pos++; return
   }
