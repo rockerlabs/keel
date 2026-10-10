@@ -54,13 +54,12 @@ path_shape_bad() {
   return 1
 }
 # via_symlink ROOT REL — 0 when REL, or any directory on its way, is a symlink under ROOT: a write there leaves the
-# clone. Empty components (a//b, a trailing slash) are skipped, so a doubled slash cannot hide a link.
+# clone.
 via_symlink() {
   local p="$1" rest="$2" part
   while [ -n "$rest" ]; do
     part="${rest%%/*}"
     case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
-    [ -n "$part" ] || continue
     p="$p/$part"
     [ -L "$p" ] && return 0
   done
@@ -223,14 +222,14 @@ run_test() {
   ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out.$runs" 2>&1 || rc=$?
   summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out.$runs" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
-  rm -f "$tmp/out.$runs"   # an orphan still writing to it writes to an unlinked file
 }
 
 runs=0
 run_test
-if [ "$rc" -eq 142 ]; then refuse "the unmutated test file timed out after ${timeout}s: $tfile"; fi
-[ -n "$summary" ] || refuse "the unmutated test file printed no summary line (exit $rc): $tfile"
-[ "$nfailed" = 0 ] || refuse "the unmutated test file has failures — a broken baseline makes every mutant look killed: $summary"
+baseline_fail() { tail -n 8 "$tmp/out.1" >&2; refuse "$@"; }
+if [ "$rc" -eq 142 ]; then baseline_fail "the unmutated test file timed out after ${timeout}s: $tfile"; fi
+[ -n "$summary" ] || baseline_fail "the unmutated test file printed no summary line (exit $rc): $tfile"
+[ "$nfailed" = 0 ] || baseline_fail "the unmutated test file has failures — a broken baseline makes every mutant look killed: $summary"
 
 killed=0; survived=0; timed=0; crashed=0; bad=0
 while IFS=$'\t' read -r row id file; do
@@ -248,6 +247,7 @@ while IFS=$'\t' read -r row id file; do
   esac
   cat "$tmp/mutant" >"$work/$file"
   run_test
+  rm -f "$tmp/out.$runs"   # an orphan still writing to it writes to an unlinked file
   git -C "$work" checkout -q -- "$file"
   if [ "$rc" -eq 142 ]; then outcome=TIMEOUT; timed=$((timed + 1))
   elif [ -z "$summary" ]; then outcome=CRASHED; crashed=$((crashed + 1))
