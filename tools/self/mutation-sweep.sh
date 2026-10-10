@@ -215,18 +215,19 @@ if ! git -C "$work" checkout -q --detach "$sha" 2>/dev/null; then
 fi
 [ -f "$work/$tfile" ] || refuse "the test file is not in HEAD: $tfile"
 
-# run_test → sets rc, summary ('' when none) and nfailed (its failed count); the output goes to $tmp/out.
+# run_test → sets rc, summary ('' when none), nfailed (its failed count) and out_file (this run's output).
 run_test() {
   rc=0; runs=$((runs + 1))
   # a fresh output file per run: a child orphaned by an earlier TIMEOUT may still hold the previous one open
-  ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out.$runs" 2>&1 || rc=$?
-  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out.$runs" | tail -n 1 || true)"
+  out_file="$tmp/out.$runs"
+  ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$out_file" 2>&1 || rc=$?
+  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$out_file" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
 }
 
 runs=0
 run_test
-baseline_fail() { tail -n 8 "$tmp/out.1" >&2; refuse "$@"; }
+baseline_fail() { tail -n 8 "$out_file" >&2; refuse "$@"; }
 if [ "$rc" -eq 142 ]; then baseline_fail "the unmutated test file timed out after ${timeout}s: $tfile"; fi
 [ -n "$summary" ] || baseline_fail "the unmutated test file printed no summary line (exit $rc): $tfile"
 [ "$nfailed" = 0 ] || baseline_fail "the unmutated test file has failures — a broken baseline makes every mutant look killed: $summary"
@@ -247,7 +248,7 @@ while IFS=$'\t' read -r row id file; do
   esac
   cat "$tmp/mutant" >"$work/$file"
   run_test
-  rm -f "$tmp/out.$runs"   # an orphan still writing to it writes to an unlinked file
+  rm -f "$out_file"   # an orphan still writing to it writes to an unlinked file; the BASELINE's file is kept for a refusal
   git -C "$work" checkout -q -- "$file"
   if [ "$rc" -eq 142 ]; then outcome=TIMEOUT; timed=$((timed + 1))
   elif [ -z "$summary" ]; then outcome=CRASHED; crashed=$((crashed + 1))

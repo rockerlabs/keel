@@ -118,6 +118,7 @@ fxf="$(mkfixture "$(fixture_test | sed 's/^chk .c=3.$/chk "c=NOPE"/')")"
 sweep_in "$fxf" "$SANDBOX/one.tsv" t.sh
 check_status "a fixture test that fails unmutated: exit 2 (abort)" 2 "$STATUS"
 check_contains "…and says the baseline is broken" "$OUT" "broken baseline"
+check_contains "…and shows the tail of the baseline's own output" "$OUT" "t.sh: 2 passed, 1 failed"
 fxl="$(mkfixture 'while :; do :; done')"
 KEEL_SWEEP_TIMEOUT=1 sweep_in "$fxl" "$SANDBOX/one.tsv" t.sh
 check_status "a baseline run past KEEL_SWEEP_TIMEOUT: exit 2 (abort)" 2 "$STATUS"
@@ -178,6 +179,16 @@ check_contains "a symlink on the SECOND path component: BADNEEDLE" "$OUT" "m-nes
 check_contains "…named by id and file" "$OUT" "m-nested: sub/dl/target.txt is, or lies under, a symlink"
 check_contains "a doubled slash does not hide the link: BADNEEDLE" "$OUT" "m-double${TAB}BADNEEDLE${TAB}-"
 check_eq "…and still nothing outside the clone was written" "$outside_before" "$(cksum <"$SANDBOX/outside/target.txt")"
+
+# a real directory, a doubled slash, then a symlink leaf: the empty component must not hide the link
+mkdir "$fxs/real"
+ln -s "$SANDBOX/outside/target.txt" "$fxs/real/lk"
+git -C "$fxs" add real/lk
+git -C "$fxs" commit -qm real
+row m-realdbl real//lk 'a=1' 'a=9' 'a doubled slash after a real directory' >"$SANDBOX/realdbl.tsv"
+sweep_in "$fxs" "$SANDBOX/realdbl.tsv" t.sh
+check_contains "a symlink leaf behind a doubled slash: BADNEEDLE" "$OUT" "m-realdbl${TAB}BADNEEDLE${TAB}-"
+check_eq "…and nothing outside the clone was written" "$outside_before" "$(cksum <"$SANDBOX/outside/target.txt")"
 
 # --- 7c. overlapping occurrences count: `aa` in `aaa` is two matches, not one ------------------------------------------
 printf 'aaa\n' >"$fx/over.txt"
