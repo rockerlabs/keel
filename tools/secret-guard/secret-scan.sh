@@ -273,11 +273,11 @@ fi
 # `secret-scan:allow` or a colon can no longer exempt a hit. rec_path — the label (a path, its newlines
 # written `\n`, or `commit|tag <sha7> message`); rec_where — `-n`'s line number, `(binary)`, or empty;
 # rec_text — the matched line or `-o` match; rec_blob — the blob sha in --range's detailed pass (cur_blob,
-# set around that loop's emit_file); rec_msg — 1 for a commit or tag message (cur_msg, set around the message
+# set around that loop's emit_file); rec_msg — 1 for a commit or tag message (collect_matches' MSG argument,
 # passes): a message is never path-exempted. Iterated by index: bash 3.2 aborts on an empty "${a[@]}" under
 # set -u.
 rec_path=(); rec_where=(); rec_text=(); rec_blob=(); rec_msg=()
-cur_blob=""; cur_msg=""
+cur_blob=""
 
 # a file (or blob) is binary if it contains a NUL byte
 is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
@@ -354,7 +354,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
   printf '%s' "${n:-0}"
 }
 
-# collect_matches LABEL FILE FLAGS [EXTRA] — the one path from a match pass to records (dir #715):
+# collect_matches LABEL FILE FLAGS [EXTRA [MSG]] — the one path from a match pass to records (dir #715):
 # match_text FILE (FLAGS, EXTRA as there), fail closed on its status (STEP `match 'LABEL'`), and append
 # each hit as a record (B10): `-n` output splits at its FIRST colon (the number is digits only), `-o` output
 # is a binary match. Main shell only, so the appends land here. A newline inside a name is written as the two
@@ -368,7 +368,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
 # too: `-z` alone does not help), so EVERY `read` in this file runs under LC_ALL=C, which reads bytes and
 # never swallows a delimiter, on bash 3.2–5.2 (glibc and musl). The parser twin above is the one exemption.
 collect_matches() {
-  local label="$1" path="${1//$'\n'/\\n}" f="$2" flags="$3" m="$SCRATCH/matches" hit="" where
+  local label="$1" path="${1//$'\n'/\\n}" f="$2" flags="$3" msg="${5:-}" m="$SCRATCH/matches" hit="" where
   match_text "$flags" "$f" "${4:-}" > "$m" || _fail_closed "match '$label'" $?
   while LC_ALL=C IFS= read -r hit || [ -n "$hit" ]; do
     [ -n "$hit" ] || continue
@@ -377,7 +377,7 @@ collect_matches() {
       -n) where="${hit%%:*}"; hit="${hit#*:}" ;;
       -o) where="(binary)" ;;
     esac
-    rec_path+=("$path"); rec_where+=("$where"); rec_text+=("$hit"); rec_blob+=("$cur_blob"); rec_msg+=("$cur_msg")
+    rec_path+=("$path"); rec_where+=("$where"); rec_text+=("$hit"); rec_blob+=("$cur_blob"); rec_msg+=("$msg")
   done < "$m"
 }
 
@@ -894,14 +894,12 @@ case "$mode" in
       clist="$(spool)"; ctmp="$(spool)"
       # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
       git rev-list $rng > "$clist" 2>"$merr" || _fail_closed "list the range's commits" $? "$merr"
-      cur_msg=1                                     # dir #741: a message record is never path-exempted
       while LC_ALL=C IFS= read -r csha; do
         [ -n "$csha" ] || continue
         git log -1 --format=%B "$csha" > "$ctmp" 2>"$merr" \
           || _fail_closed "read the message of commit ${csha:0:7}" $? "$merr"
-        collect_matches "commit ${csha:0:7} message" "$ctmp" '' "$SESSION_META"
+        collect_matches "commit ${csha:0:7} message" "$ctmp" '' "$SESSION_META" 1   # 1: a message (dir #741)
       done < "$clist"
-      cur_msg=""
       rm -f "$clist" "$ctmp"
     fi
     rm -f "$msgtmp" "$merr"
@@ -919,13 +917,11 @@ case "$mode" in
       done <<< "$tagshas" > "$tagtmp"
       tag_hits="$(count_matches "$tagtmp" "$SESSION_META")" || _fail_closed "count matches in the range's tag messages" $?
       if [ "${tag_hits:-0}" -gt 0 ]; then
-        cur_msg=1
         while LC_ALL=C IFS= read -r tsha; do
           [ -n "$tsha" ] || continue
           tag_body "$tsha" "$terr" > "$tagtmp" || _fail_closed "read tag ${tsha:0:7}" $? "$terr"
-          collect_matches "tag ${tsha:0:7} message" "$tagtmp" '' "$SESSION_META"
+          collect_matches "tag ${tsha:0:7} message" "$tagtmp" '' "$SESSION_META" 1
         done <<< "$tagshas"
-        cur_msg=""
       fi
       rm -f "$tagtmp"
     fi
@@ -987,29 +983,30 @@ case "$mode" in
     # file the working tree cannot give us (unreadable, deleted, replaced by a directory, or a sparse checkout's
     # skip-worktree entry, tag S, that is absent) is scanned from its index copy instead of being skipped with a
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
-    # (mode 160000) is a submodule — its content is its own repo's. A skip-worktree file that IS present is read
-    # from the working tree, whose copy may hold what the index does not. An unmerged path is listed once per
-    # stage and read once — from the working tree when it is there; when it is not, from its first non-gitlink
-    # stage's index copy only (spec 746's stated limit; the conflict blocks a commit anyway), and a WARN names
-    # the stage read.
-    # A gitlink stage never claims its path, so it cannot hide the working file.
+    # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
+    # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
+    # not. An unmerged path is listed once per stage and read once — from the working tree when it is there; when
+    # it is not, from its first non-gitlink stage's index copy only (spec 746's stated limit; the conflict blocks a
+    # commit anyway), and a WARN names the stage read.
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
     tab=$'\t'; prev=""; prev_idx=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
-      LC_ALL=C IFS=' ' read -r ttag tmode tsha tstage <<< "${rec%%"$tab"*}"
+      thdr="${rec%%"$tab"*}"                        # `<tag> <mode> <sha> <stage>`: fixed fields, no spaces inside
+      ttag="${thdr%% *}"; thdr="${thdr#* }"; tmode="${thdr%% *}"; thdr="${thdr#* }"; tsha="${thdr%% *}"
+      tstage="${thdr#* }"
       [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
       if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
         if [ -n "$prev_idx" ]; then
-          echo "secret-scan: WARN unmerged, only stage $prev_idx was scanned: ${f//$'\n'/\\n}" >&2
+          echo "secret-scan: WARN unmerged, only stage $prev_idx was scanned: $fesc" >&2
           prev_idx=""
         fi
         continue
       fi
-      prev="$f"; prev_idx=""
+      prev="$f"; prev_idx=""; fesc="${f//$'\n'/\\n}"
       why=""
       if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
         sparse=$((sparse + 1))
@@ -1030,7 +1027,7 @@ case "$mode" in
       else
         why="not a regular file in the working tree"
       fi
-      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
+      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
       prev_idx="$tstage"                            # the stage read, named if a later one is skipped
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
@@ -1210,8 +1207,24 @@ if [ -f "$ALLOW_FILE" ]; then
   done < "$ALLOW_FILE"
 fi
 
-# path_exempt PATH — 0 when a `path:` glob matches the whole of PATH (a record's path, escaped as rec_path is).
-# Today's matcher, unchanged: `*` crosses `/`.
+# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow` marker, or an ERE
+# entry. A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
+# SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a false "not allowlisted"
+# under load (dir #280). `-e` (dir #746 B2): an entry starting with `-` is a pattern — `-e.` read positionally
+# was the option -e with the pattern `.`, exempting every record. LC_ALL=C (B5): bytes, as the records are; a
+# non-ASCII entry using `.` or a bracket can only over-block.
+allowed_text() {
+  local re
+  case "$1" in *secret-scan:allow*) return 0 ;; esac
+  for re in "${drop_res[@]:-}"; do
+    [ -n "$re" ] || continue
+    LC_ALL=C grep -qE -e "$re" <<< "$1" && return 0
+  done
+  return 1
+}
+
+# path_exempt PATH — 0 when a `path:` glob matches the whole of PATH (a record's path, escaped as rec_path is);
+# `*` crosses `/` (a bash `[[ == ]]` glob).
 path_exempt() {
   local g
   for g in "${path_globs[@]:-}"; do
@@ -1229,10 +1242,11 @@ path_exempt() {
 # merge's entry into a `::` header, `log.showRoot=false` drop the root commit's pairs, `diff.relative=true` cut
 # them to a subdirectory; `-m` keeps a merge's own entries. The stream is NUL-delimited header/path tokens, a
 # STRICT alternation: the token after a header is its path whatever its first byte (a path may start with `:`),
-# and a header that does not start with a single `:` is a refusal, never a pair with zeros.
-pair_blob=(); pair_path=()
+# and a header that does not start with a single `:` is a refusal, never a pair with zeros. Only the pairs of
+# the blobs in need_blobs (" sha sha … ") are kept.
+pair_blob=(); pair_path=(); pair_last_blob=""; need_blobs=" "
 load_range_pairs() {
-  local plist perr tok hdr="" _m1 _m2 _s1 dsha _st
+  local plist perr tok hdr="" dsha
   plist="$(spool)"; perr="$(spool)"
   # shellcheck disable=SC2086  # rng intentionally word-split into rev-list args
   git -c log.showRoot=true -c log.diffMerges=separate -c diff.relative=false log --root -m --raw -z --no-renames \
@@ -1243,8 +1257,8 @@ load_range_pairs() {
       case "$tok" in ::*|[!:]*) _fail_closed "read the range's paths (unexpected record)" ;; esac
       hdr="$tok"
     else
-      LC_ALL=C IFS=' ' read -r _m1 _m2 _s1 dsha _st <<< "$hdr"
-      pair_blob+=("$dsha"); pair_path+=("${tok//$'\n'/\\n}")
+      dsha="${hdr#* * * }"; dsha="${dsha%% *}"     # `:<mode> <mode> <sha> <sha> <status>`: the 4th field
+      case "$need_blobs" in *" $dsha "*) pair_blob+=("$dsha"); pair_path+=("${tok//$'\n'/\\n}") ;; esac
       hdr=""
     fi
   done < "$plist"
@@ -1258,32 +1272,22 @@ found=0
 # "${a[@]}" under set -u on bash 3.2). Two passes: the content channels first, so the range's pairs (B11) are
 # listed only for a hit they keep, and before the first hit line prints — a failing listing exits 2 with no
 # hit line out. The printed line is the pre-B10 record, byte for byte.
-rec_drop=(); rec_pex=(); need_pairs=""
+rec_drop=(); rec_pex=()
 ri=0
 while [ "$ri" -lt "${#rec_path[@]}" ]; do
-  drop=""
-  case "${rec_text[$ri]}" in *secret-scan:allow*) drop=1 ;; esac      # inline allow
-  if [ -z "$drop" ]; then                                             # ERE allowlist
-    for re in "${drop_res[@]:-}"; do
-      [ -z "$re" ] && continue
-      # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
-      # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
-      # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
-      # unreliable evidence in a security-facing scanner. `-e` (dir #746 B2): an entry starting with `-` is a
-      # pattern — `-e.` read positionally was the option -e with the pattern `.`, exempting every record.
-      # LC_ALL=C (B5): bytes, as the records are; a non-ASCII entry using `.` or a bracket can only over-block.
-      if LC_ALL=C grep -qE -e "$re" <<< "${rec_text[$ri]}"; then drop=1; break; fi
-    done
-  fi
-  pex=""                                                               # a path: glob covers it
-  if [ -z "$drop" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
+  drop=""; pex=""
+  if allowed_text "${rec_text[$ri]}"; then
+    drop=1
+  elif [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
     pex=1
-    [ -z "${rec_blob[$ri]}" ] || need_pairs=1
+    if [ -n "${rec_blob[$ri]}" ]; then                                # a --range blob: its pairs decide
+      case "$need_blobs" in *" ${rec_blob[$ri]} "*) ;; *) need_blobs+="${rec_blob[$ri]} " ;; esac
+    fi
   fi
   rec_drop+=("$drop"); rec_pex+=("$pex")
   ri=$((ri + 1))
 done
-[ -z "$need_pairs" ] || load_range_pairs
+[ "$need_blobs" = " " ] || load_range_pairs
 
 ri=0
 while [ "$ri" -lt "${#rec_path[@]}" ]; do
@@ -1293,7 +1297,7 @@ while [ "$ri" -lt "${#rec_path[@]}" ]; do
   # path-glob allowlist: file records only; a --range blob only when every path it is introduced at is exempt
   if [ -n "$rpex" ]; then
     [ -n "$rblob" ] || continue
-    if [ "$rblob" != "${pair_last_blob:-}" ]; then   # one blob's hits are consecutive: decide once per blob
+    if [ "$rblob" != "$pair_last_blob" ]; then   # one blob's hits are consecutive: decide once per blob
       pair_last_blob="$rblob"; paired=""; unexempt=""; pi=0
       while [ "$pi" -lt "${#pair_blob[@]}" ]; do
         if [ "${pair_blob[$pi]}" = "$rblob" ]; then

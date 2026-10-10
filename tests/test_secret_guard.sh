@@ -3049,7 +3049,7 @@ check_status "dir #746 A24 control: the key only under fixtures/ → exit 0" 0 "
 # called on a clean range.
 git_shim_any746() {  # dir word — a git that exits 128 when any argument is WORD
   mkdir -p "$1"
-  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = %s ] && exit 128; done\nexec "%s" "$@"\n' "$2" "$(type -P git)" > "$1/git"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = %s ] && exit 128; done\nexec "%s" "$@"\n' "$2" "$real_git715" > "$1/git"
   chmod +x "$1/git"
 }
 git_shim_any746 "$d746/shim-raw" --raw
