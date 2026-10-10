@@ -82,7 +82,7 @@
 #                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
 #                                           ditto — commands/polish-guide.md § Step 5's (c) recipe uses this)
-#   pre-pr-gate.sh lex                     print how the hook reads a command (its raw text on stdin): the
+#   pre-pr-gate.sh lex                     print how the hook reads a command (its text on stdin): the
 #                                           words of each segment and the parts it could not read — a
 #                                           debugging and test aid (dir #745)
 #
@@ -2000,10 +2000,10 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
-  # the join stops at its BQ’s backtick (past it the join would keep the backtick, which no expanding heredoc’s
-  # delimiter holds unquoted); at the text’s end it runs to the last line, even the empty one after a final
-  # newline (lex’s raw input can end so; the hook’s $(…) never leaves one)
-  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && (lim > n || lstart[j + 1] < lim)) {
+  # the join stops at lim: its BQ’s backtick (past it the join would keep the backtick, which no expanding
+  # heredoc’s delimiter holds unquoted) or the end of the text (which never ends in a newline: the hook and lex
+  # both read the command through $(…))
+  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
     # meet the delimiter there (bs_joins runs only for an expanding heredoc, and an unquoted backtick in its
@@ -2333,12 +2333,14 @@ case "${1:-}" in
     exit 0
     ;;
   lex)
-    # dir #745: how the hook reads a command. Raw command text on stdin (not a hook event); one line per segment —
+    # dir #745: how the hook reads a command. Command text on stdin (not a hook event); one line per segment —
     # `<context>@<line>`, `d<depth>`, `s<scope>`, `p<offset>`, then `<classes>:<text>` per word — then one line per
     # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
-    # from the $HOME guard above, like -h.
+    # from the $HOME guard above, like -h. It takes the text as the hook takes its command: through $(…), so
+    # trailing newlines are dropped, then into awk on a here-string.
     [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
-    awk -v MODE=lex "$PPG_AWK_PROG"
+    lex_cmd=$(cat 2>/dev/null)
+    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"
     exit $?
     ;;
   repo-key)

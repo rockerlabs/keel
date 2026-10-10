@@ -22,12 +22,13 @@
 #   that backtick line_end() reads every line as empty (substr with a negative length is "" on macOS awk, busybox
 #   awk and mawk, checked; a line past it can only match an empty delimiter, which is quoted, so its body is skipped)
 #   and at_limit() resumes right after the backtick, so both are equivalent (the stop saves the scan to the end).
-# - the backslash join's stop at its BQ's backtick (the `lstart[j + 1] < lim` clause, read only when a BQ bounds the
-#   reads): past the backtick the next line begins with it or follows a line cut at it, which cannot end in an odd
-#   backslash (the backtick is unescaped); the join reads whole lines, so the backtick stays in it and it never meets
-#   an expanding heredoc's delimiter (an unquoted backtick there is a region, delim_odd). An expanding body's end
-#   never bounds a body scan (a heredoc inside a heredoc substitution is a region, never queued: B10(d)). So the
-#   clause is equivalent; it stays, saving the read past the backtick.
+# - the backslash join's stop at lim (`lstart[j + 1] < lim`): lim is a BQ's backtick, the text's end, or an
+#   expanding body's end. Past a backtick, the next line begins with it or follows a line cut at it, which cannot end
+#   in an odd backslash (the backtick is unescaped), and the join reads whole lines, so the backtick stays in it and it
+#   never meets an expanding heredoc's delimiter (an unquoted backtick there is a region, delim_odd). At the text's
+#   end, a line past it would be the empty line after a final newline, which the text never has (the hook and lex
+#   both read it through $(…), L293). An expanding body's end never bounds a body scan (a heredoc inside a heredoc
+#   substitution is a region, never queued: B10(d)). So the stop is equivalent; it stays, saving the read past lim.
 # - where a SUB/BQ's first segment starts (right after its opener, or at it): the opener's `$(`, `<(`, `>(` or
 #   backtick can never complete a `git` or `gh` in the scope text, so it is equivalent.
 # - the hook's fast exit for a command with no `g`: no rule can fire without git or gh in the text, so removing it
@@ -299,4 +300,4 @@ L288	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++; at(k) ~ /^[0-9]$/; k++) 
 L289	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++;	if (1) { for (k++;	B8: <N-M>: the -; a < with digits, another character, digits and a > (<1x2>) is a redirection
 L290	tools/pre-pr-gate.sh	; if (at(k) == ">") return RDGLOB }	; return RDGLOB }	B8: <N-M>: the closing >
 L291	tools/pre-pr-gate.sh	    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)	    txt = txt substr(src, lstart[j], line_end(j) - lstart[j] + 1)	B10(h): a joined line cut at the BQ’s backtick keeps it, so the join is no disagreement
-L292	tools/pre-pr-gate.sh	(lim > n || lstart[j + 1] < lim)) {	(lstart[j + 1] < lim)) {	B10(h): at the text’s end the join runs to the last line, the empty one too
+L293	tools/pre-pr-gate.sh	    lex_cmd=$(cat 2>/dev/null)\n    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"	    awk -v MODE=lex "$PPG_AWK_PROG"	B17: lex takes the text through $(…) as the hook does (trailing newlines dropped)
