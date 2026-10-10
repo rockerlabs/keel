@@ -148,6 +148,25 @@ sweep_in "$fx" "$SANDBOX/twice.tsv" t.sh
 check_contains "a needle occurring more than once: BADNEEDLE" "$OUT" "m-twice${TAB}BADNEEDLE${TAB}-"
 check_contains "…and the reason names the count on stderr" "$OUT" "occurs"
 
+# --- 7b. a row naming a tracked symlink is BADNEEDLE (the write would follow the link out of the clone) -----------------
+fxs="$(mkfixture)"
+ln -s app.sh "$fxs/link.sh"
+git -C "$fxs" add link.sh
+git -C "$fxs" commit -qm link
+row m-link link.sh 'a=1' 'a=9' 'through a symlink' >"$SANDBOX/link.tsv"
+sweep_in "$fxs" "$SANDBOX/link.tsv" t.sh
+check_contains "a tracked symlink: BADNEEDLE, never written through" "$OUT" "m-link${TAB}BADNEEDLE${TAB}-"
+check_contains "…and the reason names the symlink" "$OUT" "is a symlink"
+
+# --- 7c. overlapping occurrences count: `aa` in `aaa` is two matches, not one ------------------------------------------
+printf 'aaa\n' >"$fx/over.txt"
+git -C "$fx" add over.txt
+git -C "$fx" commit -qm over
+row m-over over.txt 'aa' 'bb' 'overlapping' >"$SANDBOX/over.tsv"
+sweep_in "$fx" --check "$SANDBOX/over.tsv"
+check_status "--check: a needle matching at two overlapping offsets is not 'exactly once'" 1 "$STATUS"
+check_contains "…it occurs twice" "$OUT" "m-over: needle occurs 2 times in over.txt, want 1"
+
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
 sweep_in "$fx"
 check_status "no arguments: usage, exit 2" 2 "$STATUS"

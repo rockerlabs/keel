@@ -29,10 +29,12 @@
 # every mutant look killed.
 #
 # A run's summary is the last line of the test file's output matching `: N passed, M failed`; its failed count
-# is M. Per mutant the needle must occur exactly once in the file, counted as substring occurrences (else
-# BADNEEDLE); it is replaced literally; the file must change (else NOCHANGE). Outcome: TIMEOUT (exit status
-# 142), else CRASHED (no summary), else KILLED (failed >= 1) or SURVIVED (failed = 0). The file is restored
-# from git after each mutant. A mutant file that lacks a final newline gains one (awk reads lines).
+# is M. Per mutant the needle must occur exactly once in the file, counted as substring occurrences,
+# overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink); it is replaced literally; the file
+# must change (else NOCHANGE). Outcome: TIMEOUT (exit status 142), else CRASHED (no summary), else KILLED (failed >= 1)
+# or SURVIVED (failed = 0). The file is restored from git after each mutant. Known limits: the timeout kills the test
+# file's bash, not its children — a mutant that makes a child (the gate's awk) spin leaves that child running after
+# TIMEOUT; and a mutant file that lacks a final newline gains one (awk reads lines).
 #
 # Output: one line per mutant, `<id><TAB><outcome><TAB><summary, or ->`, then
 # `N killed, S survived, T timeout, C crashed, B bad` (B counts BADNEEDLE and NOCHANGE). Exit 0 when S = 0 and
@@ -77,7 +79,7 @@ function slurp(path,   line, rc, got) {
 function count(hay, n,   c, p) {
   c = 0
   if (n == "") return 0
-  while ((p = index(hay, n)) > 0) { c++; hay = substr(hay, p + length(n)) }
+  while ((p = index(hay, n)) > 0) { c++; hay = substr(hay, p + 1) }
   return c
 }
 function load(file) {
@@ -137,6 +139,7 @@ if [ "$mode" = check ]; then
   exit 0
 fi
 
+command -v perl >/dev/null 2>&1 || refuse "perl is required: the per-run timeout is a perl alarm"
 timeout="${KEEL_SWEEP_TIMEOUT:-600}"
 { _nonneg_int_valid "$timeout" && [ "$timeout" -gt 0 ]; } || refuse "KEEL_SWEEP_TIMEOUT must be a positive integer (got '$timeout')"
 
@@ -202,6 +205,10 @@ while IFS=$'\t' read -r row id file; do
       [ "$res" = NOCHANGE ] || printf 'mutation-sweep: %s: %s\n' "$id" "${res#*$'\t'}" >&2
       bad=$((bad + 1)); continue ;;
   esac
+  if [ -L "$work/$file" ]; then   # a tracked symlink: the write would follow it out of the clone
+    printf '%s\tBADNEEDLE\t-\n' "$id"; printf 'mutation-sweep: %s: %s is a symlink\n' "$id" "$file" >&2
+    bad=$((bad + 1)); continue
+  fi
   cat "$tmp/mutant" >"$work/$file"
   run_test
   git -C "$work" checkout -q -- "$file"
