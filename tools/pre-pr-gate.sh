@@ -2002,7 +2002,9 @@ function bs_joins(L, s, k,   txt, j, t2) {
   j = L
   while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
-    txt = txt substr(src, lstart[j], line_end(j) - lstart[j] + 1)
+    # a line cut at its BQ’s backtick ends the body there in every shell, joined or not: no disagreement
+    if (lend[j] >= lim) return 0
+    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
     t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
     if (t2 == hqd[s, k]) return 1
   }
