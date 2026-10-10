@@ -132,16 +132,17 @@ check_contains "same verdicts under LC_ALL=C (a multibyte dash is not a byte cla
 f="$(mk_releases "## v6.1.0 — cut readiness
 
 **Value claims (G5):**
-- **Residue:** the claim is that every ticket closes.
+- **Residue:** #12 deferred; the claim is that every other ticket closes.
 
 - **Row B:** closed.
 
   Subject set: row B's own tickets, on an indented paragraph after a blank line.
+- **Subject set:** the six known-issues items, diffed against the slate.
 - **Row C:** bare.
 ")"
 run "$vc" "$f"
-check_contains "a G5 word in a bullet's bold label does not rescue it; an indented paragraph after a blank line continues its bullet" "$OUT" "3 value-claim cell(s), 2 lacking a subject set"
-check_contains "the bullet whose label says Residue is flagged" "$OUT" "FLAG  v6.1.0 line 4"
+check_contains "a bullet whose bold lead IS a G5 form passes; only the bare bullet is flagged" "$OUT" "4 value-claim cell(s), 1 lacking a subject set"
+check_contains "the bare bullet is the one flagged" "$OUT" "FLAG  v6.1.0 line 10: - **Row C:**"
 check_absent "Row B passes through its blank-separated continuation" "$OUT" "line 6:"
 
 # --- sections: VERSION filters, no VERSION reads all, a duplicate heading is read twice --------------
