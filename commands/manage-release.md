@@ -25,7 +25,7 @@ before briefing anyone — never assign from headings alone.
 
 **M3 — wave plan (R2).**
 Cut waves by file overlap. Assume every PR collides in `CHANGELOG.md` at the `[Unreleased]` anchor,
-unless the project keeps changelog fragments (keel does, dir #744) — merges serialize as a consequence. Show the operator the wave plan before wave 1 starts.
+unless the project keeps changelog fragments (keel does, dir #744) — merges serialize as a consequence (strict up-to-date still forces it). Show the operator the wave plan before wave 1 starts.
 
 **M4 — launch workers (R3), one brief shape (see the doc's worker-brief section), single writer to
 the backlog (R8).**

@@ -261,7 +261,7 @@ pin "R2 still says merges serialize, and why (strict up-to-date)" "$doc" 'serial
 pin "manage-release M3 qualifies the CHANGELOG collision assumption with changelog fragments" "$cmd" \
   'unless the project keeps changelog fragments' \
   "expected M3 to carry the same qualifier as R2 (dir #744)"
-pin "manage-release M3 still says merges serialize" "$cmd" 'merges serialize as a consequence' \
+pin "manage-release M3 still says merges serialize, and why (strict up-to-date)" "$cmd" 'merges serialize as a consequence (strict up-to-date still forces it)' \
   "expected M3 to keep the serialization consequence"
 
 summary
