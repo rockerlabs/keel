@@ -96,8 +96,9 @@ blank_fenced_blocks "$releases_file" | awk -v want="$version" '
     sub(/^\|[^|]*\|/, "", t)         # a table row: judge the claim cell, not its label cell
     # A bullet is judged whole: its bold lead ("**Subject set:** ...", "**Residue:** ...") may itself
     # BE the G5 form, unlike the label cell of a table row, which only ever names the row.
+    gsub(/\*/, "", t)                 # bold markup is not content: "**Subject set:**" alone is an empty clause
     l = tolower(t)
-    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /(^|[^a-z])residue *(:|=|—)/ || l ~ /(^|[^a-z])no claim([^a-z]|$)/)
+    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /(^|[^a-z])residue *(:|=|—) *[^ ]/ || l ~ /(^|[^a-z])no claim([^a-z]|$)/)
   }
   function judge(t, at) {
     cells++

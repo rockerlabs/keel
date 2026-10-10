@@ -145,6 +145,24 @@ check_contains "a bullet whose bold lead IS a G5 form passes; only the bare bull
 check_contains "the bare bullet is the one flagged" "$OUT" "FLAG  v6.1.0 line 10: - **Row C:**"
 check_absent "Row B passes through its blank-separated continuation" "$OUT" "line 6:"
 
+# --- an EMPTY clause is not a clause: bold markup and bare labels carry no content -------------------------------
+f="$(mk_releases "## v6.2.0 — cut readiness
+
+**Value claims (G5):**
+- **Subject set:**
+- **Residue:**
+- **No subject set —**
+- **Row A:** closes everything. **Subject set:** the real list.
+- **Row B:** closes everything. Residue: none.
+")"
+run "$vc" "$f"
+check_contains "empty bold G5 clauses are flagged; a bold clause with content, and Residue: none, pass" "$OUT" "5 value-claim cell(s), 3 lacking a subject set"
+check_contains "an empty Subject set label is flagged" "$OUT" "FLAG  v6.2.0 line 4: - **Subject set:**"
+check_contains "an empty Residue label is flagged" "$OUT" "FLAG  v6.2.0 line 5: - **Residue:**"
+check_contains "an empty no-subject-set label is flagged" "$OUT" "FLAG  v6.2.0 line 6: - **No subject set"
+check_absent "a bold Subject set clause with content passes" "$OUT" "line 7:"
+check_absent "Residue: none passes" "$OUT" "line 8:"
+
 # --- sections: VERSION filters, no VERSION reads all, a duplicate heading is read twice --------------
 f="$(mk_releases "## v3.0.0 — cut readiness
 
