@@ -46,6 +46,19 @@ sections real content going forward — see that page for exactly when each one 
   goes through the same edit rule: a `CLAUDE.md` linked into the Keel checkout is refused instead of having
   the line appended to a tracked file, and repeated link-mode install/uninstall cycles no longer add a blank
   line each time (dir #748).
+- **`tools/public-audit.sh` never prints "no publication blockers found" over a read it could not complete.**
+  dir #738: a corrupt index or a failing `git log`/`cat-file`/`fetch` read as a clean audit (the git reads and
+  greps discarded their status). Every git read and grep now spools its output under a checked status; a
+  failure is a GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit
+  goes on, and the exit is 1. The content-reading `git log`s pass `--text --no-textconv --no-ext-diff` (a `-diff`
+  attribute or a textconv driver hid a literal from history), the history spools are NUL-stripped, a repository
+  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed. dir #746:
+  `public-audit.sh` on a directory that is not a git repository (or when `mktemp` fails) now exits 2 instead of
+  scanning nothing — so `keel audit` run from a non-git directory exits 2. dir #694, dir #740: the personal
+  literals are read from a pattern file, one pattern per line (two literals never fuse into one ERE), the byte
+  greps run under `LC_ALL=C`, and a non-ASCII literal or token gets a second pass in the caller's locale over a
+  UTF-8-sanitized copy, so a literal after an invalid byte is still found (a non-ASCII token with a bracket
+  expression can now also match raw bytes under the `LC_ALL=C` pass — it over-blocks, never under-blocks).
 - **`secret-scan.sh` reads every byte it reports on and matches each personal literal as written.** Personal
   literals now reach grep as a pattern file, one pattern per line, so two lines can no longer fuse into one
   pattern that matches neither (`zorb[` + `plugh]`), and the validity probe reads one input line, which busybox
