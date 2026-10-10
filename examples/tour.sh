@@ -17,7 +17,10 @@ step() { printf '\n%s== %s ==%s\n' "$bold" "$1" "$reset"; }
 note() { printf '%s   %s%s\n' "$dim" "$1" "$reset"; }
 show() { printf '\n$ %s\n' "$*"; "$@"; }
 
+# dir #753: no `-e` here, so a failed mktemp leaves $sandbox empty and "$sandbox/home" is "/home" — a write
+# outside any sandbox. The guard sits on the very next line, before the first write (tests pin the order).
 sandbox="$(mktemp -d)"
+[ -n "$sandbox" ] || exit 1
 trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home"; mkdir -p "$HOME"
 # dir #720 S10-3: HOME alone is not enough — tools/lib/impact-store.sh resolves these overrides BEFORE
@@ -31,6 +34,12 @@ unset $IMPACT_ISOLATION_VARS
 # guard NOT installed below and the key-shaped commit goes through. Unset, it falls back to
 # $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
 unset SECRET_SCAN_PERSONAL_FILE
+# dir #753: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface — the GIT_CONFIG_COUNT/KEY_n/VALUE_n
+# triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone) and GIT_CONFIG_SYSTEM
+# (an alternate system file) would carry an operator's ambient config in, e.g. a core.hooksPath that turns the
+# guard step into "commit succeeded". tests/test_sandbox_escapes.sh pins both. The stock /etc/gitconfig stays
+# readable on purpose: CI's safe.directory entry lives there.
+unset GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"
