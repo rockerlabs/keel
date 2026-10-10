@@ -97,6 +97,16 @@ sections real content going forward — see that page for exactly when each one 
   shipped scripts and proves, in a child that sources `tests/lib.sh` with each one poisoned, that none
   survives (only `PATH` and `TMPDIR` are exempt, with reasons); `tests/lib.sh` unsets the 27 it found. A
   self-default assignment (`AGY_BIN="${AGY_BIN:-d}"`) now counts as a read in the `KEEL_*` half too.
+- **`examples/tour.sh` and `docs/demo/record-demo.sh` no longer read the operator's git config through `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_PARAMETERS` or `GIT_CONFIG_SYSTEM`, and guard their sandbox right after `mktemp` (dir #753).** Both demos
+  redirected HOME and `GIT_CONFIG_GLOBAL` but not the rest of git's config surface: an ambient
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` triple, a parent `git -c` (`GIT_CONFIG_PARAMETERS`) or `GIT_CONFIG_SYSTEM`
+  carrying `core.hooksPath=/dev/null` turned the tour's guard step into "commit succeeded". Both now unset the three
+  (the stock `/etc/gitconfig` stays readable: CI's `safe.directory` entry lives there). The tour had no `$sandbox`
+  emptiness guard at all and `record-demo.sh`'s ran after its first writes, so a failed `mktemp` left
+  `"$sandbox/home"` as `/home`; both now guard on the line right after `mktemp`, and `record-demo.sh`'s outer mode
+  guards its `$castdir` too. `tests/test_sandbox_escapes.sh` pins the three env routes (behaviourally for the tour,
+  by a `git` shim for both demos) and the guard order.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
