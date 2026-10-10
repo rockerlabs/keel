@@ -21,7 +21,8 @@ set -uo pipefail
 # E19(c)) — so that combination bypasses the guard entirely and a git write from this process lands in
 # the real repo even though REPO_ROOT below is computed correctly. Unsetting every ambient
 # repo-selector var (the four above, plus GIT_OBJECT_DIRECTORY / GIT_ALTERNATE_OBJECT_DIRECTORIES /
-# GIT_NAMESPACE since dir #661) before this file's first git call — including ref_guard_arm's own
+# GIT_NAMESPACE since dir #661; the namespace's measured effect is on transport, not refs: an inherited value
+# makes a clone of a local repo come up empty — dir #712) before this file's first git call — including ref_guard_arm's own
 # `rev-parse --git-common-dir` on $REPO_ROOT further down — closes the vector: once unset, `-C` is the
 # only thing left that can select a repo for the rest of this process and everything it spawns (unset
 # removes the var from the exported environment table, not just this shell's view of it). A test that

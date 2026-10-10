@@ -15,6 +15,11 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tests/test_git_env_guard.sh` closes dir #661's residuals.** The guard detector no longer reads a shift after a
+  parenthesised operand (`$(( (1+2) << n ))`) or a `<<WORD` inside a comment or quoted string as a heredoc opener
+  (each has a passing fixture, and a real opener after a quoted `<<` still hides its body); the GIT_NAMESPACE clone
+  assertion gains a control that clones the same repo without the variable; the `env -u` pin names the missing or
+  extra variable; `tests/lib.sh` states the clone effect of the GIT_NAMESPACE unset (dir #712).
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
