@@ -490,8 +490,10 @@ check_contains "A44 …the lib line names CMD's status" "$OUT" "exited 3"
 check_eq "A44/A48 …no *.keeltmp.* is left" 0 "$(keeltmp_count "$w")"
 mkdir -p "$w/rodir"; chmod 555 "$w/rodir"
 run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/rodir/f'"
-check_status "A44 an unwritable directory → rc 1" 1 "$STATUS"
+# Root writes into a 0555 directory (CLAUDE.md "Linux-leg traps" 2), so on the alpine leg even the status
+# differs: the whole row is guarded.
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "A44 an unwritable directory → rc 1" 1 "$STATUS"
   check_eq "A44 …the lib line carries the cause: '(cause: ' then the system's message" 1 \
     "$(grep -c '(cause: [^)]' <<<"$OUT" || true)"
   check_eq "A44 …in one line" 1 "$(grep -c . <<<"$OUT" || true)"
