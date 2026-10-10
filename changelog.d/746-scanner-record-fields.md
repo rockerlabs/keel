@@ -10,7 +10,8 @@
   line naming why, and so does an absent sparse-checkout (skip-worktree) entry, counted in one summary line. It
   exits 2 only when git cannot read the index copy (dir #746). A tracked file replaced by a symlink is read from
   its index copy too, and a mid-merge (unmerged) file from its working file (or symlink) and each of its stages'
-  index copies, a hit they share printed once and one WARN naming the path; an unreadable working file of an
-  unmerged path exits 2, and so does one a directory that cannot be searched hides (at stage 0 such a file is
-  named "hidden", not "missing", and read from its index copy). Hit lines print in the same form as before. Upgrading: an ERE
+  index copies, a hit they share printed once and one WARN naming the path. When the working file of an
+  unmerged path is unreadable, or sits under a directory that cannot be searched, the scan exits 2; a file that
+  is not unmerged under such a directory is named "hidden" rather than "missing" and is read from its index copy,
+  and is no longer counted as a skip-worktree entry. Hit lines print in the same form as before. Upgrading: an ERE
   allowlist entry now matches the line's content only; use `path:` for a path.
