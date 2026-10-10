@@ -2733,6 +2733,20 @@ run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "
 check_status "dir #746 A6(e): one line per pass (same case, then upper case) → exit 1" 1 "$STATUS"
 check_contains "dir #746 A6(e): ...the same-case line is reported" "$OUT" "e.txt:1:"
 check_contains "dir #746 A6(e): ...and the upper-case line too" "$OUT" "e.txt:2:"
+# (f) an ASCII-only literal whose `.` stands for a non-ASCII letter: under LC_ALL=C `.` is one byte and misses a
+# two-byte character, so the caller-locale pass runs for every literal, not only a non-ASCII one (review finding;
+# origin/main matched it in the caller's locale)
+printf 'fran.ois\n' > "$d746/p-dot"
+printf 'author Fran\303\247ois\n' > "$d746/a6/f.txt"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-dot" "$scan" -- f.txt
+check_status "dir #746 A6(f): an ASCII literal 'fran.ois' still matches a two-byte letter under $loc746 → exit 1" 1 "$STATUS"
+r746="$(new_repo)"
+git -C "$r746" commit -q --allow-empty -m base
+cp "$d746/a6/f.txt" "$r746/f.txt"
+git -C "$r746" add f.txt
+git -C "$r746" commit -q -m f
+run_in "$r746" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-dot" "$scan" --range HEAD~1..HEAD
+check_status "dir #746 A6(f): ...and --range's fast-path count finds it too → exit 1" 1 "$STATUS"
 
 # A7 / A18 / A19 (B3's conditions): the pattern file lives in the scan's 0700 scratch dir and is removed on every
 # exit; a blank pattern never reaches it; no literal → no pattern file and no personal grep. A grep shim first on

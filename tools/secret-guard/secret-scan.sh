@@ -237,8 +237,9 @@ esac
 # only the first. A literal starting with `-` is a pattern too, never a grep option (S2-1). No literal → no
 # file and no personal grep: `grep -f` over an empty file disagrees across BSD, GNU and busybox. The file
 # lives in $SCRATCH (mktemp -d, mode 0700), which the EXIT trap removes on every exit.
-# has_personal — at least one literal; personal_nonascii — one holds a non-ASCII byte, which turns on the
-# caller-locale passes (match_text) and, through decode_nonascii, emit_blob's built-in decoder.
+# has_personal — at least one literal; personal_nonascii — one holds a non-ASCII byte, which skips --range's
+# NUL-strip fast path and, through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on
+# emit_blob's built-in decoder.
 has_personal=""
 personal_nonascii=""
 personal_pat="$SCRATCH/personal.pat"
@@ -252,10 +253,10 @@ decode_nonascii="$personal_nonascii"
 # which reads as "no match" and would silently disable personal-data detection — a security gate
 # must never fail open on its own config. grep exits >=2 only on a bad pattern; 1 (no match) is fine.
 # The probe reads one input line (dir #694, B4): busybox grep compiles a pattern only when it reads input,
-# so over empty input it passed every malformed ERE. It runs in each locale a personal grep runs in.
+# so over empty input it passed every malformed ERE. It runs in both locales a personal grep runs in.
 if [ -n "$has_personal" ]; then
   rc=0; printf 'x\n' | LC_ALL=C grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
-  if [ "$rc" -lt 2 ] && [ -n "$personal_nonascii" ]; then
+  if [ "$rc" -lt 2 ]; then
     printf 'x\n' | grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
   fi
   if [ "$rc" -ge 2 ]; then
@@ -280,9 +281,11 @@ is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
 # or a failed `sort` — out as this function's own. Callers spool the output and check that status.
 # dir #740 (spec 746 B5): under a UTF-8 locale BSD and busybox grep stop matching a line at its first invalid
 # byte, so a key after a stray Latin-1 byte read clean. Class 1 and the personal pass P-C therefore run under
-# LC_ALL=C, which reads every byte; P-C's `-i` then folds ASCII only, so a non-ASCII literal gets one more
-# pass, P-U (pu_grep below). LC_ALL is never exported: each `LC_ALL=C` is a per-command prefix. A line holding
-# an invalid byte may be reported twice (raw and sanitized).
+# LC_ALL=C, which reads every byte; there P-C's `-i` folds ASCII only and its `.` is one byte, so every
+# literal gets one more pass, P-U (pu_grep below), in the caller's locale — a non-ASCII literal for its case
+# folding, an ASCII one whose `.` or bracket stands for a non-ASCII letter (`fran.ois`) for its characters.
+# LC_ALL is never exported: each `LC_ALL=C` is a per-command prefix. A line holding an invalid byte may be
+# reported twice (raw and sanitized).
 match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = extra ERE ('' for none)
   local flags="$1" f="$2" extra="${3:-}"
   {
@@ -292,7 +295,7 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
     if [ -n "$has_personal" ]; then
       # shellcheck disable=SC2086
       LC_ALL=C grep -aiE $flags -f "$personal_pat" "$f" 2>/dev/null || rc2=$?
-      [ -z "$personal_nonascii" ] || pu_grep "$flags" "$f" || rc3=$?
+      pu_grep "$flags" "$f" || rc3=$?
     fi
     [ "$rc1" -le 1 ] || exit "$rc1"
     [ "$rc2" -le 1 ] || exit "$rc2"
@@ -300,12 +303,12 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
   } | LC_ALL=C sort -u
 }
 
-# pu_grep FLAGS FILE — P-U (dir #740, B5 (c)): the personal grep in the caller's locale, the only one that folds
-# a Cyrillic literal across case, over a copy of FILE with its invalid UTF-8 removed by `iconv -c` — padded with
-# newlines first, so a file ending in an incomplete sequence still converts whole (unpadded, iconv exits 1 on
-# macOS/glibc and truncates on musl); the padding adds lines after the last, so `-n` numbers hold. No iconv, or
-# a sanitizer that fails → FILE itself (the pre-746 behaviour), never no pass. Returns grep's status. One copy
-# at a time, overwritten in $SCRATCH: callers run one after another.
+# pu_grep FLAGS FILE — P-U (dir #740, B5 (c)): the personal grep in the caller's locale, over a copy of FILE
+# with its invalid UTF-8 removed by `iconv -c` — padded with newlines first, so a file ending in an incomplete
+# sequence still converts whole (unpadded, iconv exits 1 on macOS/glibc and truncates on musl); the padding
+# adds lines after the last, so `-n` numbers hold. No iconv, or a sanitizer that fails → FILE itself (the
+# pre-746 behaviour), never no pass. Returns grep's status. One copy at a time, overwritten in $SCRATCH:
+# callers run one after another.
 pu_grep() {
   local u8="$2"
   if command -v iconv >/dev/null 2>&1; then
@@ -324,8 +327,8 @@ pu_grep() {
 # real intermittent scanner hole (flaked on macOS CI). -c consumes the whole stream → deterministic.
 # Prints the count on stdout. dir #715 (B7): grep's exit 1 is a zero count; >= 2 (127 = no grep) is
 # returned, never read as zero — the caller captures the count into a variable and checks the status.
-# dir #740 (B5): the same passes as match_text — class 1 and P-C under LC_ALL=C, then P-U (a non-ASCII
-# literal, the caller's locale, the sanitized copy) only while the count is still zero.
+# dir #740 (B5): the same passes as match_text — class 1 and P-C under LC_ALL=C, then P-U (the caller's
+# locale, the sanitized copy) only while the count is still zero.
 count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 ('' for none)
   local f="$1" extra="${2:-}" n rc=0
   n="$(LC_ALL=C grep -acE -e "${extra:+$extra|}$joined" "$f")" || rc=$?
@@ -334,7 +337,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
     n="$(LC_ALL=C grep -aciE -f "$personal_pat" "$f")" || rc=$?
     [ "$rc" -le 1 ] || return "$rc"
   fi
-  if [ "${n:-0}" -eq 0 ] && [ -n "$personal_nonascii" ]; then
+  if [ "${n:-0}" -eq 0 ] && [ -n "$has_personal" ]; then
     n="$(pu_grep -c "$f")" || rc=$?
     [ "$rc" -le 1 ] || return "$rc"
   fi
