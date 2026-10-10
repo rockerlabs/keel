@@ -205,7 +205,8 @@ _keel_sw_check() {
 # _keel_sw_claim TMP WHAT — claim Keel's scratch name TMP for writing WHAT (header): `rm -f` whatever is
 # there, then a noclobber create under the caller's umask, which must leave a regular, non-link file.
 # Returns 1 with the lib's one line when the claim fails (a directory at TMP, something re-planted in the
-# instant between, an unwritable directory); nothing found at TMP is removed after that.
+# instant between, an unwritable directory); nothing found at TMP is removed after that. A FIFO planted
+# in that same instant can block the claim's open — the residual keel_backup names, not handled.
 _keel_sw_claim() {
   local err=""
   rm -f "$1" 2>/dev/null || :
