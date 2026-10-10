@@ -1012,6 +1012,10 @@ prior_checkout() {
 # one). The second test is what keeps an adopter's link that an older install recorded as Keel's from being
 # re-placed. A dangling link whose record carries the pre-dir-#369 `-` is Keel's too: that record never
 # named a target. Anything else — no usable prior manifest included — fails closed (T4 declines it).
+# STALE means stale: a live link into THIS checkout is never T3, whatever a prior manifest recorded for it.
+# Callers reach here only for a link that does not point at the file Keel would wire (keel_link_points_at),
+# so a live in-checkout link here leads somewhere else in the checkout — an adopter's alias, which a
+# manifest written before spec 685 round 2 could record as Keel's (its "in sync" test followed the chain).
 keel_own_stale_link() {
   local dest="$1" rec
   [ -L "$dest" ] || return 1
@@ -1021,6 +1025,9 @@ keel_own_stale_link() {
     [ ! -e "$dest" ]
     return
   fi
+  if [ -e "$dest" ] && keel_path_inside "$(readlink "$dest" 2>/dev/null || true)" "$root"; then
+    return 1
+  fi
   # The one link-record predicate (tools/lib/manifest.sh, B20): the recorded target, inside the recording
   # checkout. prior_symlink_extra answers only for a usable prior manifest, so the snapshot is usable here.
   manifest_link_is_keels "$prior_manifest" "${dest#"$HOME_DIR"/}" "$dest"
@@ -1028,7 +1035,9 @@ keel_own_stale_link() {
 
 # keel_link_class DEST SRC — what a link at DEST is, for SRC the Keel file that belongs there (B3): prints
 # T3 (Keel's own link gone stale), T3a (an adopter's link whose content already equals SRC) or T4 (any other
-# link, live or dangling). The caller has already ruled out T2 (DEST -ef SRC) and a link to a non-regular file.
+# link, live or dangling). The caller has already ruled out T2 (keel_link_points_at DEST SRC — the link's own
+# target, never `-ef`, so a chained or alias link that ends at SRC is classified here) and a link to a
+# non-regular file.
 keel_link_class() {
   if keel_own_stale_link "$1"; then echo T3
   elif [ -f "$1" ] && cmp -s "$2" "$1"; then echo T3a
@@ -1858,7 +1867,7 @@ fi
 # (dir #324): a real FILE you put at bin/keel is left untouched by a plain run — the refusal below
 # names the remedy — and --force takes it over, backing the file up first. A SYMLINK is classified by
 # whose it is (B3 of docs/specs/685-symlink-policy.md, the same table sync_product uses): Keel's own
-# correctly-wired link is left alone (`-ef`); Keel's own link gone stale (its checkout moved) is
+# correctly-wired link is left alone (keel_link_points_at); Keel's own link gone stale (its checkout moved) is
 # re-pointed; an adopter's link whose content already equals Keel's is left as is; ANY OTHER link — a live
 # or dangling one, an ADOPTER'S OWN program — is declined, --force included, with its target named and
 # "remove the link and re-run" as the remedy.
@@ -2136,6 +2145,8 @@ fi
 # The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral
 # run — the CLI is deliberately not wired there (see header).
 if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
+  # `-ef` on purpose here (unlike the wiring above): this grades whether the CLI WORKS from this home,
+  # not whose link it is — an adopter's dotfiles chain that ends at this checkout's keel works.
   if [ -L "$HOME_DIR/bin/keel" ] && [ "$HOME_DIR/bin/keel" -ef "$root/keel" ]; then
     echo "  OK   keel CLI (bin/keel)"
   else

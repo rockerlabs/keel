@@ -103,32 +103,66 @@ else
   pass "A40 case-only directory row not applicable — the checkout's file system tells names apart by case"
 fi
 # …but a differently-named sibling in the recorded target's own directory (`<checkout>/ALIAS.md -> CORE.md`)
-# is not the recorded entry: an adopter's link to it is kept — and a re-install in between must not record
-# it as Keel's either (it ends at CORE.md, so a chain-following "in sync" test would). (In the scratch
-# checkout, removed afterwards.)
+# is not the recorded entry. Three ways in, all in the scratch checkout (the alias is removed afterwards):
 ln -s CORE.md "$ck/ALIAS.md"
+# (a) uninstall's own arm: the record names CORE.md, the live link names ALIAS.md — kept, with the reason.
 h="$SANDBOX/a40a/h"
 run "$ck/install.sh" --link --home "$h" --no-hooks
 check_status "A40 sibling-alias fixture: linked install from the scratch checkout → exit 0" 0 "$STATUS"
 rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
-run "$ck/install.sh" --link --home "$h" --no-hooks
-check_status "A40 sibling-alias: a re-install over the adopter's alias link → exit 0" 0 "$STATUS"
-check_eq "A40 sibling-alias: …which is not recorded as Keel's" 0 \
-  "$(grep -c "^artifact=symlink	keel/CORE.md	$ck/ALIAS.md\$" "$h/.keel/install-manifest.claude" || true)"
-check_eq "A40 sibling-alias: …and is still the adopter's link" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
 run "$ck/uninstall.sh" --home "$h" --yes
 check_status "A40 sibling-alias: uninstall → exit 0" 0 "$STATUS"
 check_link "A40 sibling-alias: …the adopter's link to the alias stays" "$h/keel/CORE.md"
+check_contains "A40 sibling-alias: …named as pointing where Keel did not wire it" "$OUT" \
+  "keel/CORE.md: symlink no longer points where Keel would have wired it"
+# (b) a re-install over the adopter's alias link (it ends at CORE.md, so a chain-following "in sync" test
+# would record it) records nothing for that path, and the link stays the adopter's.
+h="$SANDBOX/a40b/h"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A40 sibling-alias: a re-install over the adopter's alias link → exit 0" 0 "$STATUS"
+check_eq "A40 sibling-alias: …records no symlink for keel/CORE.md at all" 0 \
+  "$(grep -c "^artifact=symlink	keel/CORE.md	" "$h/.keel/install-manifest.claude" || true)"
+check_eq "A40 sibling-alias: …and the link is still the adopter's" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
+# (c) the upgrade path: a manifest written before this fix recorded the alias link as Keel's (its "in sync"
+# test followed the chain). A re-install must not take that record as "Keel's own link gone stale" and
+# re-point the adopter's live link — a live link into this checkout is never stale.
+h="$SANDBOX/a40u/h"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
+m="$h/.keel/install-manifest.claude"
+awk -F'\t' -v OFS='\t' -v t="$ck/ALIAS.md" \
+  '$1 == "artifact=symlink" && $2 == "keel/CORE.md" { print $1, $2, t; next } { print }' "$m" > "$m.new" && mv "$m.new" "$m"
+check_eq "A40 upgrade fixture: the old manifest records the alias as Keel's" 1 \
+  "$(grep -c "^artifact=symlink	keel/CORE.md	$ck/ALIAS.md\$" "$m" || true)"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A40 upgrade: a re-install over that record → exit 0" 0 "$STATUS"
+check_eq "A40 upgrade: …the adopter's alias link is not re-pointed" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
+check_absent "A40 upgrade: …and not called Keel's own stale link" "$OUT" "CORE.md re-pointed"
 rm -f "$ck/ALIAS.md"
+# …and a dotfiles chain at keel/CORE.md is the adopter's at install too: --link --no-git declines it rather
+# than replacing it with the trimmed copy.
+h="$SANDBOX/a40n/h"; dots="$SANDBOX/a40n/dots"; mkdir -p "$dots"
+run "$install" --link --home "$h" --no-hooks
+ln -s "$REPO_ROOT/CORE.md" "$dots/CORE.md"
+rm -f "$h/keel/CORE.md"; ln -s "$dots/CORE.md" "$h/keel/CORE.md"
+run "$install" --link --no-git --home "$h" --no-hooks
+check_status "A40 chained --no-git: install → exit 0" 0 "$STATUS"
+check_eq "A40 chained --no-git: …the adopter's chain is left in place" "$dots/CORE.md" "$(readlink "$h/keel/CORE.md")"
+check_contains "A40 chained --no-git: …declined as the adopter's own wiring" "$OUT" "your own wiring; left untouched"
 # …and on a case-insensitive file system a case-only FILE name (`<checkout>/core.md`) is likewise not taken:
 # the link is kept (the safe direction — a separate `core.md` on a case-sensitive one must never pass).
 if [ -e "$REPO_ROOT/core.md" ] && [ "$REPO_ROOT/core.md" -ef "$REPO_ROOT/CORE.md" ]; then
   h="$SANDBOX/a40f/h"
   run "$install" --link --home "$h" --no-hooks
+  check_status "A40 case-only file name fixture: linked install → exit 0" 0 "$STATUS"
   rm -f "$h/keel/CORE.md"; ln -s "$REPO_ROOT/core.md" "$h/keel/CORE.md"
   run "$uninstall" --home "$h" --yes
   check_status "A40 case-only file name: uninstall → exit 0" 0 "$STATUS"
   check_link "A40 case-only file name: …the link is kept" "$h/keel/CORE.md"
+  check_contains "A40 case-only file name: …named as pointing where Keel did not wire it" "$OUT" \
+    "keel/CORE.md: symlink no longer points where Keel would have wired it"
 else
   pass "A40 case-only file name row not applicable — the checkout's file system tells names apart by case"
 fi

@@ -71,9 +71,10 @@ keel_path_inside() {
 # (`<checkout>/ALIAS.md -> CORE.md`, or a hard link) would pass; folding the name's case would let a
 # separate `core.md` beside `CORE.md` pass on a case-sensitive file system. None of them is "the same"
 # entry. (On a case-insensitive file system a case-only file name is then not matched either — the safe
-# direction: the link is kept, never taken.) The text half is what still answers once the directories are gone (a moved
-# checkout). The one definition of "a link points where the record says" (manifest_link_is_keels below,
-# uninstall.sh's symlink arm and its compatibility-link count).
+# direction: the link is kept, never taken.) The text half is what still answers once the directories are
+# gone (a moved checkout). The one definition of "a link points where the record says": install.sh's
+# keel_link_points_at, manifest_link_is_keels below, uninstall.sh's symlink arm and its
+# compatibility-link count.
 manifest_same_path() {
   [ "$1" = "$2" ] && return 0
   case "$1" in /*) ;; *) return 1 ;; esac
