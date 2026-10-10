@@ -30,7 +30,7 @@
 #
 # A run's summary is the last line of the test file's output matching `: N passed, M failed`; its failed count
 # is M. Per mutant the needle must occur exactly once in the file, counted as substring occurrences,
-# overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink); it is replaced literally; the file
+# overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink, or a file under one — --check reports it too); it is replaced literally; the file
 # must change (else NOCHANGE). Outcome: TIMEOUT (exit status 142), else CRASHED (no summary), else KILLED (failed >= 1)
 # or SURVIVED (failed = 0). The file is restored from git after each mutant. Known limits: the timeout kills the test
 # file's bash, not its children — a mutant that makes a child (the gate's awk) spin leaves that child running after
@@ -46,6 +46,17 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 
 usage() { printf 'usage: mutation-sweep.sh <list> [<test-file>]\n       mutation-sweep.sh --check <list>\n' >&2; exit 2; }
 refuse() { printf 'mutation-sweep: %s\n' "$*" >&2; exit 2; }
+# via_symlink ROOT REL — 0 when REL, or any directory on its way, is a symlink under ROOT: a write there leaves the clone.
+via_symlink() {
+  local p="$1" rest="$2" part
+  while [ -n "$rest" ]; do
+    part="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    p="$p/$part"
+    [ -L "$p" ] && return 0
+  done
+  return 1
+}
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/nonneg-int.sh"
 
@@ -135,6 +146,12 @@ top="$(git rev-parse --show-toplevel 2>/dev/null)" || refuse "not inside a git c
 
 if [ "$mode" = check ]; then
   problems="$(awk -F'\t' -v mode=check -v root="$top" "$AWK_PROG" "$list")"
+  while IFS=$'\t' read -r _row _id file; do
+    if via_symlink "$top" "$file"; then problems="$problems${problems:+
+}$_id: $file is, or lies under, a symlink"; fi
+  done <<EOF
+$(awk -F'\t' -v mode=list "$AWK_PROG" "$list")
+EOF
   if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi
   exit 0
 fi
@@ -185,12 +202,14 @@ fi
 
 # run_test → sets rc, summary ('' when none) and nfailed (its failed count); the output goes to $tmp/out.
 run_test() {
-  rc=0
-  ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out" 2>&1 || rc=$?
-  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out" | tail -n 1 || true)"
+  rc=0; runs=$((runs + 1))
+  # a fresh output file per run: a child orphaned by an earlier TIMEOUT may still hold the previous one open
+  ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$tmp/out.$runs" 2>&1 || rc=$?
+  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$tmp/out.$runs" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
 }
 
+runs=0
 run_test
 if [ "$rc" -eq 142 ]; then refuse "the unmutated test file timed out after ${timeout}s: $tfile"; fi
 [ -n "$summary" ] || refuse "the unmutated test file printed no summary line (exit $rc): $tfile"
@@ -198,6 +217,10 @@ if [ "$rc" -eq 142 ]; then refuse "the unmutated test file timed out after ${tim
 
 killed=0; survived=0; timed=0; crashed=0; bad=0
 while IFS=$'\t' read -r row id file; do
+  if via_symlink "$work" "$file"; then   # a write through a tracked symlink would leave the clone
+    printf '%s\tBADNEEDLE\t-\n' "$id"; printf 'mutation-sweep: %s: %s is, or lies under, a symlink\n' "$id" "$file" >&2
+    bad=$((bad + 1)); continue
+  fi
   res="$(awk -F'\t' -v mode=mutate -v root="$work" -v want="$row" -v out="$tmp/mutant" "$AWK_PROG" "$list")"
   case "$res" in
     BADNEEDLE*|NOCHANGE)
@@ -205,10 +228,6 @@ while IFS=$'\t' read -r row id file; do
       [ "$res" = NOCHANGE ] || printf 'mutation-sweep: %s: %s\n' "$id" "${res#*$'\t'}" >&2
       bad=$((bad + 1)); continue ;;
   esac
-  if [ -L "$work/$file" ]; then   # a tracked symlink: the write would follow it out of the clone
-    printf '%s\tBADNEEDLE\t-\n' "$id"; printf 'mutation-sweep: %s: %s is a symlink\n' "$id" "$file" >&2
-    bad=$((bad + 1)); continue
-  fi
   cat "$tmp/mutant" >"$work/$file"
   run_test
   git -C "$work" checkout -q -- "$file"

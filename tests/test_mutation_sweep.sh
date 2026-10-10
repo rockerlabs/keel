@@ -148,15 +148,25 @@ sweep_in "$fx" "$SANDBOX/twice.tsv" t.sh
 check_contains "a needle occurring more than once: BADNEEDLE" "$OUT" "m-twice${TAB}BADNEEDLE${TAB}-"
 check_contains "…and the reason names the count on stderr" "$OUT" "occurs"
 
-# --- 7b. a row naming a tracked symlink is BADNEEDLE (the write would follow the link out of the clone) -----------------
+# --- 7b. a row naming a tracked symlink (or a file under one) is BADNEEDLE: the write would leave the clone ---------------
+mkdir -p "$SANDBOX/outside"
+printf 'a=1\n' >"$SANDBOX/outside/target.txt"
+outside_before="$(cksum <"$SANDBOX/outside/target.txt")"
 fxs="$(mkfixture)"
-ln -s app.sh "$fxs/link.sh"
-git -C "$fxs" add link.sh
-git -C "$fxs" commit -qm link
-row m-link link.sh 'a=1' 'a=9' 'through a symlink' >"$SANDBOX/link.tsv"
+ln -s "$SANDBOX/outside/target.txt" "$fxs/link.sh"
+ln -s "$SANDBOX/outside" "$fxs/ldir"
+git -C "$fxs" add link.sh ldir
+git -C "$fxs" commit -qm links
+{ row m-link link.sh 'a=1' 'a=9' 'a leaf symlink'; row m-dirlink ldir/target.txt 'a=1' 'a=9' 'under a symlinked directory'; } >"$SANDBOX/link.tsv"
 sweep_in "$fxs" "$SANDBOX/link.tsv" t.sh
-check_contains "a tracked symlink: BADNEEDLE, never written through" "$OUT" "m-link${TAB}BADNEEDLE${TAB}-"
-check_contains "…and the reason names the symlink" "$OUT" "is a symlink"
+check_contains "a tracked symlink: BADNEEDLE" "$OUT" "m-link${TAB}BADNEEDLE${TAB}-"
+check_contains "a file under a tracked symlinked directory: BADNEEDLE" "$OUT" "m-dirlink${TAB}BADNEEDLE${TAB}-"
+check_contains "…and the reason names the symlink" "$OUT" "lies under, a symlink"
+check_eq "nothing outside the clone was written" "$outside_before" "$(cksum <"$SANDBOX/outside/target.txt")"
+sweep_in "$fxs" --check "$SANDBOX/link.tsv"
+check_status "--check agrees with the sweep: exit 1 on both symlink rows" 1 "$STATUS"
+check_contains "…naming the leaf symlink" "$OUT" "m-link: link.sh is, or lies under, a symlink"
+check_contains "…and the directory one" "$OUT" "m-dirlink: ldir/target.txt is, or lies under, a symlink"
 
 # --- 7c. overlapping occurrences count: `aa` in `aaa` is two matches, not one ------------------------------------------
 printf 'aaa\n' >"$fx/over.txt"
