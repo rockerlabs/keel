@@ -28,6 +28,10 @@ set -uo pipefail
 # deliberately EXERCISES an inherited GIT_DIR (test_lib_ref_guard.sh's T12(a)) is unaffected — it sets
 # the var only for one subprocess via `env VAR=... cmd`, which this shell-level unset does not touch.
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# dir #704: the two git config-SOURCE switches too, and for the same reason this early — git parses them itself
+# (a non-boolean GIT_CONFIG_NOSYSTEM makes every git call die), so they must be gone before the first git call
+# below. tests/test_env_census.sh poisons them with the rest of the non-KEEL_ census names.
+unset GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
@@ -199,6 +203,40 @@ unset \
   KEEL_TEST_REMOVE_BEFORE_VERIFY \
   KEEL_TOKENS_PROJECTS_DIR \
   KEEL_TOKENS_WEIGHTS
+
+# dir #704: the same census for the names a tool reads under a NON-KEEL_ spelling (the vendor-review client's
+# binary / model / timeout knobs, the secret guard's push-context switches, the CI scan's GITHUB_* inputs, the
+# drydock and delta-audit tunables, EDITOR, the git config-source switches, the LEAK_GATE_CWD hand-off). Same
+# reasoning and the same gate (tests/test_env_census.sh derives them from the shipped scripts and poisons each
+# in a child that sources this file); PATH and TMPDIR are the only names it exempts, with their reasons.
+# HOME and GIT_CONFIG_GLOBAL are redirected into the sandbox above, XDG_CONFIG_HOME is unset there. A test that
+# needs one of these sets it itself, per case, after this file is sourced. One name per line on purpose.
+unset \
+  AGY_BIN \
+  AGY_MODEL \
+  AGY_PRINT_TIMEOUT \
+  DELTA_HISTORICAL \
+  DELTA_INVARIANT_PATHS \
+  DELTA_SESSION_FILES \
+  DRYDOCK_BATCH_LINES \
+  DRYDOCK_CODE_BATCH_LINES \
+  DRYDOCK_COMMENT_BATCH_LINES \
+  DRYDOCK_HISTORICAL \
+  DRYDOCK_INVARIANT_PATHS \
+  DRYDOCK_SCOPE_A \
+  DRYDOCK_SCOPE_B \
+  DRYDOCK_SCOPE_C \
+  DRYDOCK_SOLO_LINES \
+  EDITOR \
+  GITHUB_BASE_SHA \
+  GITHUB_EVENT_AFTER \
+  GITHUB_EVENT_BEFORE \
+  GITHUB_EVENT_NAME \
+  GITHUB_HEAD_SHA \
+  LEAK_GATE_CWD \
+  SECRET_SCAN_CI_FORCE_PUSH_BASELINE \
+  SECRET_SCAN_LOCAL_PUSH \
+  SECRET_SCAN_PERSONAL_FILE
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
 # both always resolve their OWN checkout root from $0/dirname, which for every test in this suite IS
