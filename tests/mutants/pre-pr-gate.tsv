@@ -1,0 +1,52 @@
+# tests/mutants/pre-pr-gate.tsv — single-clause mutants of tools/pre-pr-gate.sh's push rule (dir #745).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_pre_pr_gate_lexer.sh) and
+# checked for staleness by tests/test_mutation_lists.sh.
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file
+# (substring occurrences); in needle and replacement \t, \n and \\ are decoded; the replacement may be empty.
+# Run: bash tools/self/mutation-sweep.sh tests/mutants/pre-pr-gate.tsv
+M01	tools/pre-pr-gate.sh	return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)	return 0	is_assign never true (both rules' assignment skip)
+M02	tools/pre-pr-gate.sh	return (t == "if" || t == "then"	return (t == "XX" || t == "then"	shell word if
+M03	tools/pre-pr-gate.sh	t == "then" || t == "elif"	t == "XX" || t == "elif"	shell word then
+M04	tools/pre-pr-gate.sh	t == "elif" || t == "else"	t == "XX" || t == "else"	shell word elif
+M05	tools/pre-pr-gate.sh	t == "else" || t == "do"	t == "XX" || t == "do"	shell word else
+M06	tools/pre-pr-gate.sh	t == "do" || t == "while"	t == "XX" || t == "while"	shell word do
+M07	tools/pre-pr-gate.sh	t == "while" ||	t == "XX" ||	shell word while
+M08	tools/pre-pr-gate.sh	t == "until" || t == "!"	t == "XX" || t == "!"	shell word until
+M09	tools/pre-pr-gate.sh	t == "!" || t == "{"	t == "XX" || t == "{"	shell word !
+M10	tools/pre-pr-gate.sh	t == "{" || t == "time"	t == "XX" || t == "time"	shell word {
+M11	tools/pre-pr-gate.sh	t == "time" || t == "nohup"	t == "XX" || t == "nohup"	shell word time
+M12	tools/pre-pr-gate.sh	t == "nohup" || t == "exec"	t == "XX" || t == "exec"	shell word nohup
+M13	tools/pre-pr-gate.sh	t == "exec" || t == "xargs")	t == "XX" || t == "xargs")	shell word exec
+M14	tools/pre-pr-gate.sh	t == "xargs")	t == "XX")	shell word xargs
+M15	tools/pre-pr-gate.sh	return (name == "GIT_CONFIG_GLOBAL" ||	return (name == "XX" ||	redirect GIT_CONFIG_GLOBAL
+M16	tools/pre-pr-gate.sh	name == "GIT_CONFIG_SYSTEM" ||	name == "XX" ||	redirect GIT_CONFIG_SYSTEM
+M17	tools/pre-pr-gate.sh	name == "GIT_CONFIG_NOSYSTEM" ||	name == "XX" ||	redirect GIT_CONFIG_NOSYSTEM
+M18	tools/pre-pr-gate.sh	name == "GIT_CONFIG_PARAMETERS" ||	name == "XX" ||	redirect GIT_CONFIG_PARAMETERS
+M19	tools/pre-pr-gate.sh	name == "HOME" ||	name == "XX" ||	redirect HOME
+M20	tools/pre-pr-gate.sh	name == "XDG_CONFIG_HOME")	name == "XX")	redirect XDG_CONFIG_HOME
+M21	tools/pre-pr-gate.sh	if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(t, eq + 1)) == "core.hookspath") return 1	if (0) return 1	GIT_CONFIG_KEY_n arm
+M22	tools/pre-pr-gate.sh	tolower(substr(t, eq + 1)) == "core.hookspath"	substr(t, eq + 1) == "core.hookspath"	GIT_CONFIG_KEY_n value not lowercased
+M23	tools/pre-pr-gate.sh	if (is_assign(t)) { if (assign_bypass(t)) bypass = 1; i++; continue }	if (is_assign(t)) { i++; continue }	leading assignment never a bypass
+M24	tools/pre-pr-gate.sh	if (is_assign(t)) { if (assign_bypass(t)) bypass = 1; i++; continue }	if (0) { i++; continue }	leading assignment not skipped (push rule only)
+M25	tools/pre-pr-gate.sh	if (is_shellword(t)) { i++; continue }	if (0) { i++; continue }	shell-word skip arm
+M26	tools/pre-pr-gate.sh	if (t == "env") {	if (t == "XXenv") {	env wrapper arm
+M27	tools/pre-pr-gate.sh	if (is_assign(tok[i])) { if (assign_bypass(tok[i])) bypass = 1; i++ }	if (is_assign(tok[i])) { i++ }	env's own assignment never a bypass
+M28	tools/pre-pr-gate.sh	else if (tok[i] == "-u" || tok[i] == "--unset") i += 2	else if (tok[i] == "XX" || tok[i] == "--unset") i += 2	env -u arity
+M29	tools/pre-pr-gate.sh	else if (tok[i] == "-u" || tok[i] == "--unset") i += 2	else if (tok[i] == "-u" || tok[i] == "XX") i += 2	env --unset arity
+M30	tools/pre-pr-gate.sh	if (t == "command") {	if (t == "XXcommand") {	command wrapper arm
+M31	tools/pre-pr-gate.sh	while (i <= ntok && substr(tok[i], 1, 1) == "-") i++	while (0) i++	command's flag skip
+M32	tools/pre-pr-gate.sh	if (t != "git" && !(length(t) > 4 && substr(t, length(t) - 3) == "/git")) return	if (t != "git") return	path-qualified git
+M33	tools/pre-pr-gate.sh	if (t == "push") found_push = 1	if (t == "XXpush") found_push = 1	push word
+M34	tools/pre-pr-gate.sh	if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1	if (0) bypass = 1	--no-verify rule
+M35	tools/pre-pr-gate.sh	if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1	if (length(t) >= 10 && index("--no-verify", t) == 1) bypass = 1	prefix threshold up
+M36	tools/pre-pr-gate.sh	if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1	if (length(t) >= 8 && index("--no-verify", t) == 1) bypass = 1	prefix threshold down
+M37	tools/pre-pr-gate.sh	if (t == "-c" && (nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)) bypass = 1	if (0) bypass = 1	-c rule
+M38	tools/pre-pr-gate.sh	(nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)	(index(nx, "core.hookspath=") == 1)	-c bare key
+M39	tools/pre-pr-gate.sh	(nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)	(nx == "core.hookspath")	-c key=value
+M40	tools/pre-pr-gate.sh	nx = (j + 1 <= ntok) ? tolower(tok[j + 1]) : ""	nx = (j + 1 <= ntok) ? tok[j + 1] : ""	-c / --config-env value not lowercased
+M41	tools/pre-pr-gate.sh	if (index(lt, "--config-env=core.hookspath=") == 1) bypass = 1	if (0) bypass = 1	--config-env= form
+M42	tools/pre-pr-gate.sh	t = tok[j]; lt = tolower(t)	t = tok[j]; lt = t	--config-env= not lowercased
+M43	tools/pre-pr-gate.sh	if (t == "--config-env" && index(nx, "core.hookspath=") == 1) bypass = 1	if (0) bypass = 1	--config-env separate form
+M44	tools/pre-pr-gate.sh	if (found_push && bypass) pushbypass = 1	if (bypass) pushbypass = 1	found_push requirement
+M45	tools/pre-pr-gate.sh	if (ntok > 0) { check_push(); check_segment() }	if (ntok > 0) { check_segment() }	check_push call
+M46	tools/pre-pr-gate.sh	if [ "${awk_out%%:*}" = 1 ]; then	if [ "${awk_out%%:*}" = 99 ]; then	shell-side push deny

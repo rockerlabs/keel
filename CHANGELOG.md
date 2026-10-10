@@ -91,6 +91,14 @@ sections real content going forward — see that page for exactly when each one 
   200-byte ticket bound (200 accepted, 201 refused) and the `head:` hex guard (a valid non-hex ref reads
   `unrelated`), which the suite previously survived without. Copy mode having no handoff note is now stated as
   a decided limit (the helper header, `FRAMEWORK.md`, `IDEAS.md`), not a candidate gap.
+- **A re-runnable mutation sweep, and the pre-PR gate's push-rule tests hardened to kill every mutant.**
+  dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
+  file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
+  CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
+  `tests/mutants/pre-pr-gate.tsv` lists 46 mutants of the bypassed-push deny; the dir #731 A18 block moved to
+  `tests/test_pre_pr_gate_lexer.sh` kills 29 of them before this change and all 46 after (17 new deny forms, and
+  every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
+  `commands/polish-guide.md` § Step 9 cite itself.
 
 ## [0.15.0] — 2026-10-09
 
