@@ -15,6 +15,19 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`/polish` step 5: the K2 review subagent quotes the skill's first line after `Result:`, and a bare `(none)` is clean only at `low`.**
+  dir #736: a forked `/code-review` that returned a bare `(none)` read as a clean pass, though no review body
+  existed to tell a clean run from an empty one. `(none)` is the `low` recipe's own clean output (all 8 bare
+  results in the transcripts came from `low` forks that had read the diff), so no new void case is added:
+  the subagent now writes `0 findings` and quotes that line, an empty or error quote is void, and so is
+  `(none)` unless it is a `low` review stating `0 findings`. A reply carrying dir #675's floor deny and no findings list is void too.
+  The load-the-guide instruction is now stated once, in **The guide.**, and steps 1, 2, 4 and 5 point to
+  "the guide, § Step N" (`commands/polish.md` 2,996 → 2,993 words). dir #711: no new pointer is added for
+  steps 3, 6, 7 or 10 (each is already reached); the guide's preamble and `docs/loading-and-cost.md` no
+  longer call its text "unchanged" or "the whole text of its step", and `docs/release-audit.md` names the
+  guide as the open-FLOOR file that grows. dir #745: the core's intro names the push-bypass deny
+  (`git push --no-verify`) and its header comment says only the gate's blocks are inert when unwired.
+
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

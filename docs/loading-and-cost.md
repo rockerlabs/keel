@@ -36,7 +36,7 @@ the table above.
 | `CHANGELOG.md` | on demand — release history | Reference. | ~170,000+ |
 | `commands/*.md` (excl. `polish.md`, `polish-guide.md`) | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–3,000+ each |
 | `commands/polish.md` | **only when you invoke** `/polish` | The core of the outlier: simplify + tests + a depth-matched review + the gate + the PR, kept to the text a normal run needs (a word budget pins it) — the rare branches live in `polish-guide.md`. | ~4,500+ |
-| `commands/polish-guide.md` | **only when a rare `/polish` branch fires** (a convergence round, a depth dialog, a refused review, an add-on, a deny, an already-open PR) | Hidden (`user-invocable: false`): every paragraph of the pre-split `polish.md`, unchanged, that the core only condenses or omits. A normal run never reads it. | ~18,000+ |
+| `commands/polish-guide.md` | **only when a rare `/polish` branch fires** (a convergence round, a depth dialog, a refused review, an add-on, a deny, an already-open PR) | Hidden (`user-invocable: false`): the pre-split `polish.md`'s rare-branch text, amended in place since, that the core only condenses or omits. A normal run never reads it. | ~18,000+ |
 | `install.sh`, `tools/*.sh`, `secret-guard/*` | **never loaded** — executed in the shell | The mechanized layer: blocks secrets, runs audits. Only their few lines of **output** reach the context. | **0** |
 
 ## The actual per-session cost

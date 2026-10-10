@@ -18,7 +18,7 @@ going="$REPO_ROOT/docs/going-public.md"
 go="$REPO_ROOT/commands/go.md"
 wrap="$REPO_ROOT/commands/wrap.md"
 # dir #670 (K1, slice 3): commands/polish.md is now a condensed core, and every pre-split paragraph lives,
-# unchanged, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
+# amended in place, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
 # GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
 guide="$REPO_ROOT/commands/polish-guide.md"
 readme="$REPO_ROOT/README.md"

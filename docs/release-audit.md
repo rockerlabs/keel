@@ -175,7 +175,7 @@ the 0.15.0 draft stated the operator's Clause A waiver before it was given, and 
 
 **Before that PR lands, re-check `docs/loading-and-cost.md`'s open-ended figures** — run
 `tests/test_doc_figures.sh` and read its output, not just its exit code: an open-FLOOR row
-(`CHANGELOG.md`, `commands/polish.md`) passes by design once actual size is above the floor (dir #105),
+(`CHANGELOG.md`, `commands/polish.md`, `commands/polish-guide.md` — the guide is the one that grows: the core is word-capped) passes by design once actual size is above the floor (dir #105),
 and the `commands/*.md` range row's own open CEILING (dir #245) passes the same way once a command
 outgrows it — both shapes drift silently by design, so either one shows up only as a non-failing
 `note` line naming how far actual has pulled ahead. Restate any figure a note names, in the same

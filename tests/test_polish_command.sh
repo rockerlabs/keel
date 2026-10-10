@@ -60,13 +60,33 @@ step_text() {
 instr='load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file'
 # ends_with_rare N — step N's text from its LAST "*Rare —" marker on, i.e. the pointer line the step ends with.
 ends_with_rare() { step_text "$1" | sed 's/.*\*Rare — /*Rare — /'; }
+# dir #739 (build A): the load instruction is stated ONCE, in **The guide.**; steps 1, 4 and 5 (and step 2)
+# end with the short form "the guide, § Step N." and carry neither the instruction nor "unreachable".
+# Steps 8 and 9 still carry the long form until slice 3 dedupes them, so each count below is 3.
 for n in 1 4 5 8 9; do
   t="$(ends_with_rare "$n")"
   check_contains "step $n ends with a rare-trigger marker" "$t" "*Rare — "
-  check_contains "step $n ends with the exact guide-loading instruction" "$t" "$instr"
   check_contains "step $n's closing pointer names its guide section" "$t" "§ Step $n"
+done
+for n in 1 4 5; do
+  t="$(ends_with_rare "$n")"
+  check_contains "step $n's closing pointer is the short form ending the step" "$t" "the guide, § Step $n."
+  check_absent "step $n's pointer does not repeat the guide-loading instruction" "$t" "$instr"
+  check_absent "step $n's pointer does not repeat the unreachable-guide clause" "$t" "unreachable"
+done
+for n in 8 9; do
+  t="$(ends_with_rare "$n")"
+  check_contains "step $n ends with the exact guide-loading instruction" "$t" "$instr"
   check_contains "step $n's closing pointer says an unreachable guide stops the run" "$t" "guide unreachable → stop and report"
 done
+# **The guide.** paragraph: from its bold lead to the sentence that follows it.
+gpara="${flat#*'**The guide.**'}"
+gpara="${gpara%%'Where the guide and this file disagree'*}"
+check_contains "**The guide.** states the guide-loading instruction" "$gpara" "$instr"
+check_contains "**The guide.** says an unreachable guide stops the run" "$gpara" "guide unreachable → stop and report"
+check_contains "**The guide.** forbids improvising a branch" "$gpara" "Never improvise a branch."
+check_eq "the guide-loading instruction appears 3 times in the core (The guide., steps 8, 9)" "3" "$(grep -oF "$instr" <<< "$flat" | wc -l | tr -d ' ')"
+check_eq "'unreachable' appears 3 times in the core (The guide., steps 8, 9)" "3" "$(grep -oF "unreachable" <<< "$flat" | wc -l | tr -d ' ')"
 check_contains "step 9's closing pointer also reaches step 10's add-on summary forms" "$(ends_with_rare 9)" "§ Step 10 for the add-on summary forms"
 check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
 check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
@@ -192,9 +212,9 @@ pinf "step 5: a changed tree voids the review and stops, never restored" \
 pinf "step 5: a changed tree never falls through to the in-session attempt" \
   'and never fall through to the in-session attempt on a tree the subagent changed.'
 pinf "step 5: a reply with no findings list or '0 findings' is void" \
-  'neither a findings list nor an explicit `0 findings`'
-pinf "step 5: the void reply goes to the in-session attempt" \
-  'go to the in-session attempt below. Otherwise verify every finding live against the file'
+  'neither a findings list nor an explicit `0 findings` and its quoted line'
+pinf "step 5: the void reply goes to the in-session attempt; an empty or error quote is void, (none) is clean only at low" \
+  'go to the in-session attempt below. An empty or error quote is void, and so is `(none)` except at `low` with `0 findings`. Otherwise verify every finding live against the file'
 pinf "step 5: a refuted finding is named in step 10" \
   'finding that fails live verification is named as refuted, with why, in step 10'"'"'s summary.'
 
@@ -253,8 +273,10 @@ guide_step() { awk -v h="## Step $1 " 'index($0, h) == 1 { f = 1; next } f && /^
 c2="$(step_text 2)"
 g2="$(guide_step 2)"
 check_contains "core: step 2's trigger is an md-only diff with no command, skill or runbook, and loads the guide's § Step 2" \
-  "$c2" 'Every changed file `*.md`, none a command, skill or runbook → load `polish-guide`, § Step 2'
-check_contains "core: step 2's guide pointer says an unreachable guide stops the run" "$c2" 'Guide unreachable → stop and report'
+  "$c2" 'Every changed file `*.md`, none a command, skill or runbook → the guide, § Step 2.'
+check_contains "core: step 2 ends with the short refused-or-unavailable pointer" "$c2" 'Refused or unavailable → § Step 2.'
+check_absent "core: step 2 does not repeat the guide-loading instruction" "$c2" "$instr"
+check_absent "core: step 2 does not repeat the unreachable-guide clause" "$c2" 'nreachable'
 check_contains "core: step 2 keeps the plain /simplify receipt" "$c2" '`tools/pre-pr-gate.sh receipt polish.2-simplify`'
 check_absent "core: the no-simplify-skill receipt moved to the guide" "$c2" 'inline:no-simplify-skill'
 check_contains "guide: § Step 2 names the prose-only class by its receipt" "$g2" '`tools/pre-pr-gate.sh receipt polish.2-simplify inline:prose-only`'
@@ -287,5 +309,36 @@ check_contains "guide: § Step 2 says the fallback is not the prose-only pass" "
 # dir #714: the fallback-within-a-fallback precondition names B4's agent-type-not-found case too.
 pinfg "guide: 'Fallback within a fallback' precondition names the agent-type-not-found case" \
   'unavailable/refuses, or the Agent call answers that the type `keel-polish-reviewer` was not found'
+
+# --- dir #736 (build A): the K2 subagent quotes the skill's first line after `Result:` -----------------------
+# Each needle sits where it must live, so a clause moved elsewhere in the core cannot satisfy it.
+kprompt="${flat#*'**Its prompt.**'}"
+kprompt="${kprompt%%'```'*}"
+check_contains "K2 prompt: the subagent writes 0 findings and quotes the skill's first line after Result:" "$kprompt" \
+  "and write \`0 findings\` explicitly when there are none, quoting the skill's first line after \`Result:\`;"
+kfall="${flat#*'**Fallbacks, in order.**'}"
+kfall="${kfall%% - \*\**}"
+check_contains "K2 fallbacks: a void quote takes the same route as a missing findings list" "$kfall" \
+  "voided for a missing findings list or quote"
+
+# --- dir #745 lines (build A): the intro names the push-bypass deny; the header comment is accurate ----------
+pinf "core intro: the gate also denies a bypassed git push" 'and always `git push --no-verify`'
+pinf "core header comment: unwired, only the gate's blocks are inert" 'only its blocks are inert'
+check_absent "core header comment: the retired 'only the gh pr create block' wording is gone" "$flat" 'only the gh pr create block is inert'
+
+# --- dir #711 (build A): the guide's preamble no longer claims "unchanged" or "the whole text of its step" ------
+check_absent "guide preamble: no 'whole text of its step' claim" "$gflat" 'whole text of its step'
+gpre="$(sed -n 1,12p "$guide")"
+check_absent "guide preamble: no 'unchanged' claim in its first lines" "$gpre" 'unchanged'
+pinfg "guide preamble: amended in place since the split" 'carried over from the pre-split `polish.md` and amended in place since'
+pinfg "guide preamble: the core can hold text the guide lacks" 'The core can also hold text this guide lacks'
+
+# --- dir #711 (build A): docs and test headers carry no "unchanged" claim about the pre-split text --------------
+check_eq "docs/loading-and-cost.md no longer calls the pre-split polish.md 'unchanged'" "0" \
+  "$(grep -c 'polish.md`, unchanged' "$REPO_ROOT/docs/loading-and-cost.md" || true)"
+hdr_hits="$(grep -l '^# unchanged, in commands/polish-guide.md' "$REPO_ROOT"/tests/*.sh 2>/dev/null || true)"
+check_eq "no test header says its pre-split text lives 'unchanged' in the guide" "" "$hdr_hits"
+check_eq "docs/release-audit.md names the guide as the growing open-FLOOR file" "1" \
+  "$(grep -c 'the guide is the one that grows' "$REPO_ROOT/docs/release-audit.md" || true)"
 
 summary
