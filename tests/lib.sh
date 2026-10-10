@@ -255,7 +255,7 @@ export KEEL_LEDGER_FILE="$SANDBOX/harness-installed-homes"
 # (chmod cannot make a path unremovable for root, alpine's CI user). The process list is `ps -A -o pid,args`
 # (BSD, busybox and procps all accept it) filtered in the shell, no grep pipe.
 sandbox_teardown() {
-  local left procs line n=0
+  local left procs line
   rm -rf "$SANDBOX" && return 0
   [ -e "$SANDBOX" ] || return 0
   left="$(find "$SANDBOX" 2>/dev/null)"
@@ -263,11 +263,7 @@ sandbox_teardown() {
   {
     printf 'NOTE: sandbox teardown failed once: %s\n' "$SANDBOX"
     printf '  still there (first 20):\n'
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      n=$((n + 1)); [ "$n" -le 20 ] || break
-      printf '    %s\n' "$line"
-    done <<< "$left"
+    awk 'NF && ++n <= 20 { print "    " $0 }' <<< "$left"
     printf '  live processes naming the sandbox or git:\n'
     while IFS= read -r line; do
       case "$line" in
@@ -276,7 +272,7 @@ sandbox_teardown() {
     done <<< "$procs"
   } >&2
   sleep 1
-  if rm -rf "$SANDBOX" && [ ! -e "$SANDBOX" ]; then
+  if rm -rf "$SANDBOX"; then
     printf 'NOTE: sandbox teardown needed a retry\n' >&2
   fi
   return 0
@@ -443,6 +439,13 @@ case "$_maint_n" in
     ;;
 esac
 unset _maint_n
+
+# dir #744 (B31): KEEL_TEST_HANG_BOUND, the seconds a test waits for a background process before calling it hung
+# (each site reads ${KEEL_TEST_HANG_BOUND:-120}). Normalized once here: anything but 1–9 digits is the default,
+# so a bad value cannot make every wait's `[ … -lt … ]` error out and report a running process as hung.
+case "${KEEL_TEST_HANG_BOUND:-}" in
+  ''|*[!0-9]*|??????????*) export KEEL_TEST_HANG_BOUND=120 ;;
+esac
 
 # dir #627, second fail-open: a test file calling an assertion this library does not define (e.g.
 # `check_eq` when only `check_ne` exists) loses that assertion SILENTLY — bash prints its own

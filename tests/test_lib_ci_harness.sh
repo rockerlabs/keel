@@ -96,11 +96,7 @@ check_contains "A13 (once): NOTE that the teardown failed once" "$OUT" "NOTE: sa
 check_contains "A13 (once): ...naming a surviving path" "$OUT" "$t1/keep/deep/file"
 check_contains "A13 (once): ...and the holder's process line" "$OUT" "$t1/holder"
 check_contains "A13 (once): NOTE that the retry succeeded" "$OUT" "NOTE: sandbox teardown needed a retry"
-if [ -n "$t1" ] && [ ! -e "$t1" ]; then
-  pass "A13 (once): nothing left behind"
-else
-  fail "A13 (once): nothing left behind" "still there: $t1"
-fi
+check_nodir "A13 (once): nothing left behind" "$t1"
 [ -s "$st1/holderpid" ] && kill "$(cat "$st1/holderpid")" 2>/dev/null
 
 # (ii) the removal always fails: the NOTE, no retry-success line, the path left for the residue gate.
@@ -111,11 +107,7 @@ run env PATH="$shimdir:$PATH" STATE="$st2" SHIM_MODE=always REAL_RM="$real_rm" b
 t2="$(cat "$st2/target" 2>/dev/null)"
 check_contains "A13 (always): NOTE that the teardown failed once" "$OUT" "NOTE: sandbox teardown failed once: $t2"
 check_absent "A13 (always): no retry-success line" "$OUT" "needed a retry"
-if [ -n "$t2" ] && [ -e "$t2" ]; then
-  pass "A13 (always): the path is left for the residue gate"
-else
-  fail "A13 (always): the path is left for the residue gate" "missing: $t2"
-fi
+check_dir "A13 (always): the path is left for the residue gate" "$t2"
 [ -s "$st2/holderpid" ] && kill "$(cat "$st2/holderpid")" 2>/dev/null
 # This file removes it, by the path the NOTE printed (the child's sandbox lives outside ours).
 case "$t2" in

@@ -29,8 +29,9 @@ job_timeouts() {
 # --- the parser itself: two wrong fixtures must read as MISSING -------------------------------------------
 fx="$SANDBOX/ci-missing.yml"
 printf 'name: CI\non: [push]\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    timeout-minutes: 5\n    steps:\n      - run: true\n  b:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: true\n' > "$fx"
-check_contains "A7 fixture: a job with no timeout-minutes reads MISSING" "$(job_timeouts "$fx")" "b MISSING"
-check_contains "A7 fixture: a job that has one reads its value" "$(job_timeouts "$fx")" "a 5"
+fx_out="$(job_timeouts "$fx")"
+check_contains "A7 fixture: a job with no timeout-minutes reads MISSING" "$fx_out" "b MISSING"
+check_contains "A7 fixture: a job that has one reads its value" "$fx_out" "a 5"
 fx="$SANDBOX/ci-step-only.yml"
 printf 'name: CI\non: [push]\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps:\n      - name: s\n        timeout-minutes: 5\n        run: true\n' > "$fx"
 check_eq "A7 fixture: a timeout-minutes only on a STEP does not count" "a MISSING" "$(job_timeouts "$fx")"

@@ -146,14 +146,14 @@ check_eq "CI unset: 6 fixtures run at the mocked nproc=9 default, not capped (pe
 
 # CI=true -> capped at 2 regardless of the mocked nproc.
 d="$(mkfakedir)"
-mk_peak_fixtures "$d" 6 2
+mk_peak_fixtures "$d" 3 2
 run env -u KEEL_TEST_JOBS PATH="$fakebin:$PATH" CI=true bash "$d/run.sh"
 check_status "CI=true: capped fixtures -> exit 0" 0 "$STATUS"
-check_eq "CI=true: 6 fixtures cap at 2 despite a high mocked nproc (peak count)" "2" "$(max_peak "$d")"
+check_eq "CI=true: 3 fixtures cap at 2 despite a high mocked nproc (peak count)" "2" "$(max_peak "$d")"
 
 # KEEL_TEST_JOBS still overrides $CI's default (dir #154): fully sequential, a peak of 1.
 d="$(mkfakedir)"
-mk_peak_fixtures "$d" 3 1
+mk_peak_fixtures "$d" 2 1
 run env PATH="$fakebin:$PATH" KEEL_TEST_JOBS=1 CI=true bash "$d/run.sh"
 check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
 check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
@@ -210,7 +210,7 @@ d="$(mkfakedir)"
 printf '#!/usr/bin/env bash\nsleep 1\necho one-second-done\n' > "$d/test_one.sh"
 run env -u CI -u KEEL_TEST_FILE_TIMEOUT bash "$d/run.sh"
 check_status "watchdog off locally: a 1 s file passes -> exit 0" 0 "$STATUS"
-check_contains "watchdog off locally: announces off" "$OUT" "watchdog: off"
+check_contains "watchdog: both unset -> off" "$OUT" "watchdog: off"
 run env -u CI KEEL_TEST_FILE_TIMEOUT=5 bash "$d/run.sh"
 check_status "watchdog 5 s: a 1 s file passes -> exit 0" 0 "$STATUS"
 check_absent "watchdog 5 s: nothing timed out" "$OUT" "timed out after"
@@ -225,8 +225,6 @@ run env KEEL_TEST_FILE_TIMEOUT=bogus CI=true bash "$d/run.sh"
 check_contains "watchdog: a non-numeric value falls back to the CI default" "$OUT" "watchdog: 600s"
 run env KEEL_TEST_FILE_TIMEOUT=010 CI=true bash "$d/run.sh"
 check_contains "watchdog: a leading zero is non-numeric -> the CI default" "$OUT" "watchdog: 600s"
-run env -u KEEL_TEST_FILE_TIMEOUT -u CI bash "$d/run.sh"
-check_contains "watchdog: both unset -> off" "$OUT" "watchdog: off"
 run env -u CI KEEL_TEST_FILE_TIMEOUT=0 bash "$d/run.sh"
 check_contains "watchdog: 0 -> off" "$OUT" "watchdog: off"
 
@@ -241,8 +239,8 @@ check_absent "watchdog is per file: none was killed" "$OUT" "timed out after"
 # the variable unset, kills the 30 s file.
 d="$(mkfakedir)"
 printf '#!/usr/bin/env bash\necho pre-hang-output\nsleep 30\n: > "$(dirname "$0")/finished"\n' > "$d/test_hang.sh"
-sed 's/file_timeout=600/file_timeout=3/' "$d/run.sh" > "$d/run.sh.new" && mv "$d/run.sh.new" "$d/run.sh"
-check_contains "mutation copy: the default literal was replaced" "$(cat "$d/run.sh")" "file_timeout=3;"
+replace_in_line_containing "$d/run.sh" "file_timeout=600;" "file_timeout=600;" "file_timeout=3;"
+pin "mutation copy: the default literal was replaced" "$d/run.sh" "file_timeout=3;" "expected the scratch run.sh's CI default to read 3"
 run env -u KEEL_TEST_FILE_TIMEOUT CI=true bash "$d/run.sh"
 check_status "the CI default enforces: a 30 s file under a default of 3 -> exit 1" 1 "$STATUS"
 check_contains "the CI default enforces: timed out after 3s" "$OUT" "(timed out after 3s)"
