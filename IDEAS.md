@@ -82,7 +82,7 @@ and that's fine.)
   three fields it carries, when `/go` writes and consumes it) — P2-native, no new tool required.
   **Promoted 2026-09-06 (first `/groom` G4(b) pass) to dir #401.** **Shipped 2026-10-06 (dir #401,
   `tools/go-handoff.sh`); the gap quoted above is closed where a kept checkout exists, and
-  `FRAMEWORK.md` now names only the copy-mode remainder, which dir #691 owns** (the 0.15.0 groom).
+  `FRAMEWORK.md` now names only the copy-mode remainder, which dir #691 has since decided to keep (copy mode needs a kept checkout)** (the 0.15.0 groom).
 - [2026-08-12] **Interview-loop refinements: frontier rounds, a closing shared-understanding gate, and
   prototype-resolved forks** — same video triage. Three mechanics their "grilling" skill adds over
   `FRAMEWORK.md`'s Interview loops section: (1) *frontier questions* — each round batches exactly the

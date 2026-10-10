@@ -87,13 +87,51 @@ check_status "A2 write 'dir' (a bare word) exits 2" 2 "$RC"
 check_contains "A2 the bare-word refusal says to quote" "$ERR" "quote"
 hrun "$r2" "$(body a2)" write "$(printf 'x\nverdict: fresh')"
 check_status "A2 a ticket with a newline is refused (exit 2)" 2 "$RC"
-hrun "$r2" "$(body a2)" write "$(printf 'k%.0s' $(seq 1 300))"
-check_status "A2 an over-long ticket is refused (exit 2)" 2 "$RC"
+# dir #691 (690-A1): the bound is exact. The ticket is NOT a bare word ("dir #" + k's), so the bare-word guard,
+# which runs after the bound, cannot stand in for it.
+pad() { printf 'dir #%s' "$(printf 'k%.0s' $(seq 1 "$1"))"; }
+hrun "$r2" "$(body a2)" write "$(pad 295)"
+check_status "A2 an over-long ticket (300 bytes) is refused (exit 2)" 2 "$RC"
+check_contains "A2 …and the refusal names the 200-byte bound" "$ERR" "200"
+hrun "$r2" "$(body a2)" write "$(pad 195)"
+check_status "690-A1 a 200-byte ticket is accepted" 0 "$RC"
+hrun "$r2" "$(body a2)" write "$(pad 196)"
+check_status "690-A1 a 201-byte ticket is refused (exit 2)" 2 "$RC"
+check_contains "690-A1 …and the refusal names the 200-byte bound" "$ERR" "200"
 hrun "$r2" "$(body a2)" write "KB.34"
 check_status "A2 write 'KB.34' exits 0" 0 "$RC"
 check_file "A2 'KB.34' keys the file 'KB.34'" "$(note_of "$r2" KB.34)"
 hrun "$r2" "$(body a2)" write "34"
 check_status "A2 write '34' (digits only) exits 0" 0 "$RC"
+
+# --- 690-A3 — a closed stdin is an empty one (dir #691) ------------------------------------------------
+# With fd 0 closed, `body="$(head -c N; printf x)"` hangs: the command substitution's pipe takes fd 0 and `head`
+# waits on itself. The shell must START with fd 0 closed (`exec <&-` before the exec), and the watchdog is the
+# test's bound — a hang is a red case, never an unbounded wait.
+r="$(mkrepo)"
+cs() { # cs closed|null — run write "dir #8" with stdin closed or </dev/null; sets RC and ERR
+  # No perl or timeout(1) (alpine has no perl, macOS no timeout): a backgrounded kill is the bound, and a hang dies as
+  # RC 137. 20 s, not tight: the tool derives its repo key before it reaches the guard, which is slow under a parallel
+  # wave. `set -m` gives the job its own process group so the kill also reaches the hung `head` (a grandchild).
+  local pre='exec <&-' pid wd
+  [ "$1" = null ] && pre='exec </dev/null'
+  set -m
+  ( cd "$r" && exec "${BASH:-bash}" -c "$pre"'; exec "$0" write "dir #8"' "$tool" ) >/dev/null 2>"$ERRF" &
+  pid=$!
+  ( sleep 20; kill -9 -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  wd=$!
+  set +m
+  wait "$pid"; RC=$?
+  kill -- "-$wd" 2>/dev/null; wait "$wd" 2>/dev/null   # the watchdog's own group, so its `sleep` goes too
+  ERR="$(<"$ERRF")"
+}
+cs closed
+check_status "690-A3 write with stdin closed exits 2, never hangs (a watchdog kill is 137)" 2 "$RC"
+check_contains "690-A3 …with the helper's own refusal" "$ERR" "stdin needs the three fields"
+cs null
+check_status "690-A3 write with stdin </dev/null exits 2" 2 "$RC"
+check_contains "690-A3 …with the same refusal" "$ERR" "stdin needs the three fields"
+check_nofile "690-A3 a refused closed-stdin write left no note" "$(note_of "$r" dir-8)"
 
 # --- A3 — worktree sharing ------------------------------------------------------------------------------
 r="$(mkrepo)"
@@ -129,6 +167,10 @@ sed 's/^head: .*/head: 0123456789abcdef0123456789abcdef01234567/' "$n5" > "$n5.n
 hrun "$r" - read "dir #5";   check_eq "A5 a head that does not exist → unrelated (rc 128)" "verdict: unrelated" "$(last_line)"
 sed 's/^head: .*/head: --not-a-sha/' "$n5" > "$n5.new" && mv "$n5.new" "$n5"
 hrun "$r" - read "dir #5";   check_eq "A5 a head that is not a sha → unrelated, never an option" "verdict: unrelated" "$(last_line)"
+# dir #691 (690-A2): a valid ref that is not hex. Without the hex guard git resolves `main` and the verdict reads
+# `behind 0`; `--not-a-sha` above never reaches the guard (git rejects it itself).
+sed 's/^head: .*/head: main/' "$n5" > "$n5.new" && mv "$n5.new" "$n5"
+hrun "$r" - read "dir #5";   check_eq "690-A2 a head that is a valid ref but not hex → unrelated" "verdict: unrelated" "$(last_line)"
 plain="$SANDBOX/plain5"; mkdir -p "$plain"
 hrun "$plain" "$(body a5p)" write "dir #5"
 check_status "A5 write in a non-git directory exits 0" 0 "$RC"

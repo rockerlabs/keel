@@ -71,6 +71,12 @@ sections real content going forward — see that page for exactly when each one 
 - **`docs/release-management.md` R13: the brief shows one cited event.** Naming the scoring tool's event
   kinds was not enough: most workers still reported bare tallies, which the tool cannot score. The brief's
   fixed line now carries the shape of one cited event beside the list of kinds.
+- **`tools/go-handoff.sh write` no longer hangs on a closed stdin, and its two guards are now bound by tests.**
+  dir #691: started with fd 0 closed (`<&-`), the helper waited on its own pipe forever (bash 3.2 and 5.2);
+  it now treats a closed stdin as an empty one and refuses with exit 2. `tests/test_go_handoff.sh` binds the
+  200-byte ticket bound (200 accepted, 201 refused) and the `head:` hex guard (a valid non-hex ref reads
+  `unrelated`), which the suite previously survived without. Copy mode having no handoff note is now stated as
+  a decided limit (the helper header, `FRAMEWORK.md`, `IDEAS.md`), not a candidate gap.
 
 ## [0.15.0] — 2026-10-09
 
