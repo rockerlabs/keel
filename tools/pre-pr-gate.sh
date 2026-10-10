@@ -1560,13 +1560,39 @@ function restack(   i) {
 function push_ctx(t, p) {
   flushrun()
   sp++; cty[sp] = t; cpos[sp] = p; cseg[sp] = segbeg[ownsp]; adepth[sp] = 0; flagged[sp] = 0; qflagged[sp] = 0
+  clim[sp] = (t == "BQ") ? bq_end(p) : n + 1
   if (t == "SUB" || t == "BQ") {
     cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p
     bqreg[sp] = 0
   }
-  restack()
+  restack(); set_lim()
 }
-function pop_ctx() { flushrun(); sp--; restack() }
+function pop_ctx() { flushrun(); sp--; restack(); set_lim() }
+# A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
+# before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
+# clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
+function bq_end(p,   j) {
+  for (j = p + 1; j <= n; j++) {
+    if (ch[j] == "\\") j++
+    else if (ch[j] == "`") return j
+  }
+  return n + 1
+}
+function set_lim(   i) {
+  lim = n + 1
+  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]
+}
+# at_limit() — pos reached the nearest end: an expanding body’s, or a BQ’s closing backtick. Anything still open
+# inside a BQ there is a region (the reader’s nesting and the shell’s end disagree), closed at the backtick.
+function at_limit(   k) {
+  for (k = sp; k >= 1; k--) if (clim[k] <= pos && (cty[k] == "HDATA" || (cty[k] == "BQ" && clim[k] <= n))) break
+  if (k < 1) return 0
+  if (cty[k] == "HDATA") { end_hdata(); return 1 }
+  if (sp > k && !bqreg[k]) bqreg[k] = region(cpos[k], -1, "backtick inside a nested context in backticks", rseg(segbeg[k]))
+  while (sp > k) close_any(pos)
+  close_cmd(); pos++
+  return 1
+}
 function bq_open(   i) {
   for (i = sp; i >= 1; i--) if (cty[i] == "BQ") return i
   return 0
@@ -1684,7 +1710,7 @@ function lex_main(   i, L) {
   push_ctx("TOP", 1); cid[1] = 0; gid = 0; segbeg[1] = 1
   lim = n + 1; pos = 1
   while (1) {
-    if (hd_sp && pos >= hd_lim) { end_hdata(); continue }
+    if (pos >= lim && at_limit()) continue
     if (pos > n) break
     t = cty[sp]
     if (t == "TOP" || t == "SUB" || t == "BQ") cmd_char()
@@ -1721,21 +1747,11 @@ function dollar(   c, k) {
 function bq_escape(set,   b) {
   if (at(1) == "" || !index(set, at(1))) return
   b = bq_open()
-  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks", rseg(segbeg[b], b))
+  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks", rseg(segbeg[b]))
 }
-# bq_tick() — an unescaped backtick read in a context nested inside a backtick substitution (a quote, ${…},
-# arithmetic, a $(…), a heredoc body): the shell ends the substitution at the first unescaped backtick, which the
-# reader’s nesting cannot follow — the BQ’s text is a region, once. Returns 1 when a BQ is open; the backtick is
-# then read as text.
-function bq_tick(   b) {
-  b = bq_open()
-  if (!b) return 0
-  if (!bqreg[b]) bqreg[b] = region(cpos[b], -1, "backtick inside a nested context in backticks", rseg(segbeg[b], b))
-  return 1
-}
-# rseg(sb, i) — where a region’s scope starts: sb, or — for a context i inside an expanding heredoc body — the
-# segment of the body’s operator.
-function rseg(sb, i) { return (hd_sp && i > hd_sp) ? hd_seg : sb }
+# rseg(sb) — where a region’s scope starts: sb, or inside an expanding heredoc body the segment of its operator when
+# that starts earlier (a context’s own segment restarts at the body’s first line).
+function rseg(sb) { return (hd_sp && hd_seg < sb) ? hd_seg : sb }
 # brace_g(p) — 1 when the unquoted `{` at p opens a brace expansion: its matching `}` in the same word comes
 # after an unquoted `,` or `..` at its nesting level.
 function brace_g(p,   d, j, c, seen) {
@@ -1779,11 +1795,7 @@ function cmd_char(   c, s, k, op) {
   }
   if (c == "\047") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { word_begin(pos); push_ctx("DQ", pos); pos++; return }
-  if (c == "`") {
-    if (cty[s] == "BQ") { close_cmd(); pos++; return }
-    if (bq_tick()) { word_begin(pos); addsrc(pos, 1, "q"); pos++; return }
-    word_begin(pos); push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return
-  }
+  if (c == "`") { word_begin(pos); push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   if (c == "$") {
     if (at(1) == "\047") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }
     if (at(1) == "\"") { word_begin(pos); push_ctx("DQ", pos); pos += 2; return }
@@ -1913,10 +1925,11 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
     }
     bstop = found ? lstart[L] : n + 1
     after = found ? lend[L] + 2 : n + 1
+    if (after > lim) { bq_cross(); after = lim; if (bstop > lim) bstop = lim }
     if (!found) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
     if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
     if (hqx[s, k] && pos < bstop) {
-      push_ctx("HDATA", pos); hd_sp = sp; hd_lim = bstop; hd_after = after; hd_seg = hqsb[s, k]; lim = bstop
+      push_ctx("HDATA", pos); hd_sp = sp; hd_lim = bstop; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; set_lim()
       return
     }
     pos = after
@@ -1924,6 +1937,11 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
 }
 # bs_joins(L, s, k) — line L ends in an unescaped backslash and its join with the next line(s) equals the
 # delimiter: bash and zsh end the body there, busybox and dash read on.
+# bq_cross() — a heredoc body runs past the end of the BQ it sits in: the BQ’s text is a region, once.
+function bq_cross(   b) {
+  b = bq_open()
+  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, "backtick inside a nested context in backticks", rseg(segbeg[b]))
+}
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
   j = L
@@ -1940,7 +1958,7 @@ function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c
 function end_hdata(   i) {
   if (sp > hd_sp) region(cpos[hd_sp + 1], hd_lim - 1, "substitution not closed in a heredoc body", hd_seg)
   while (sp > hd_sp) close_any(hd_lim)
-  pop_ctx(); hd_sp = 0; lim = n + 1; pos = hd_after
+  pop_ctx(); hd_sp = 0; pos = hd_after
   next_body()
 }
 # close_any(p) — close the top context as if its closer followed at p.
@@ -1966,22 +1984,20 @@ function dq_char(   c, k) {
     addsrc(pos, 1, "q"); pos++; return
   }
   if (c == "$" && dollar()) return
-  if (c == "`") { if (bq_tick()) { addsrc(pos, 1, "q"); pos++; return }; push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   k = 1
   while (pos + k < lim && index("\"\\$`", ch[pos + k]) == 0) k++
   addsrc(pos, k, "q"); pos += k
 }
 function sq_char(   k) {
   if (ch[pos] == "\047") { pop_ctx(); pos++; return }
-  if (ch[pos] == "`" && bq_tick()) { addsrc(pos, 1, "q"); pos++; return }
   k = 1
-  while (pos + k < lim && ch[pos + k] != "\047" && ch[pos + k] != "`") k++
+  while (pos + k < lim && ch[pos + k] != "\047") k++
   addsrc(pos, k, "q"); pos += k
 }
 function aq_char() {
   if (ch[pos] == "\047") { pop_ctx(); pos++; return }
   if (ch[pos] == "\\" && at(1) != "") { bq_escape("\\"); addsrc(pos + 1, 1, "q"); pos += 2; return }
-  if (ch[pos] == "`") bq_tick()
   addsrc(pos, 1, "q"); pos++
 }
 # PARAM: closed by the first unquoted `}` (bash, busybox). Regions, where the shells disagree: a single quote in it
@@ -1999,7 +2015,7 @@ function param_char(   c, i, j, k) {
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   if (c == "$" && at(1) == "\047") { push_ctx("AQ", pos); pos += 2; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { if (bq_tick()) { pos++; return }; push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   if (c == "\047") {
     if (param_quoted()) {
       # bash reads the quotes, zsh and busybox read them as text: the readings agree only on a span up to the next
@@ -2007,13 +2023,13 @@ function param_char(   c, i, j, k) {
       # that span is plain text in every reading; anything else is a region, and the quote is read as text.
       for (j = pos + 1; j < lim && ch[j] != "\047"; j++) if (index("}\"$`\\", ch[j])) break
       if (j < lim && ch[j] == "\047") { pos = j + 1; return }
-      if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, "quote inside ${…} in double quotes", rseg(segbeg[ownsp], sp)) }
+      if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, "quote inside ${…} in double quotes", rseg(segbeg[ownsp])) }
       pos++; return
     }
     push_ctx("SQ", pos); pos++; return
   }
   if (c == "{") {
-    if (!param_quoted() && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", rseg(cseg[sp], sp)) }
+    if (!param_quoted() && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", rseg(cseg[sp])) }
     pos++; return
   }
   k = 1
@@ -2033,12 +2049,12 @@ function arith_char(   c) {
     if (adepth[sp] > 0) { adepth[sp]--; pos++; return }
     if (akind[sp] == "$[") { pos++; return }
     if (at(1) == ")") { pos += 2; close_any(pos); return }
-    if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "(( read as nested subshells", rseg(cseg[sp], sp)) }
+    if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "(( read as nested subshells", rseg(cseg[sp])) }
     pos++; return
   }
   if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { if (bq_tick()) { pos++; return }; push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   if (c == "\047") { push_ctx("SQ", pos); pos++; return }
   if (c == "\"") { push_ctx("DQ", pos); pos++; return }
   pos++
@@ -2048,7 +2064,7 @@ function hdata_char(   c, k) {
   c = ch[pos]
   if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
   if (c == "$" && dollar()) return
-  if (c == "`") { if (bq_tick()) { pos++; return }; push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
+  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }
   k = 1
   while (pos + k < lim && index("\\$`", ch[pos + k]) == 0) k++
   pos += k

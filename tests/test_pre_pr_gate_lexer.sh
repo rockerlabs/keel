@@ -573,8 +573,9 @@ CASES
 # `s<scope>`, `p<offset>`, then `<classes>:<text>` per word (classes in the order u q x g); then one line per
 # region the reader could not read alike in every shell. Fields are TAB-separated.
 T=$'\t'
+lex_out() { OUT="$(printf '%s' "$1" | bash "$gate" lex 2>&1)"; STATUS=$?; }   # lex_out <command> → OUT, STATUS
 lex_is() {   # lex_is <label> <command> <expected output>
-  OUT="$(printf '%s' "$2" | bash "$gate" lex 2>&1)"; STATUS=$?
+  lex_out "$2"
   check_eq "lex:$1" "$3" "$OUT"
 }
 lex_is "partly quoted prefix assignment" 'VAR="x"y git push' "TOP@1${T}d0${T}s0${T}p1${T}uq:VAR=xy${T}u:git${T}u:push"
@@ -802,22 +803,28 @@ net "a brace region in an expanding body scopes from the operator" refuse "$(pri
 net "a backtick region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n`echo \\$x`\nE')"
 net "an arithmetic region in an expanding body scopes from the operator" refuse "$(printf 'git commit -F - <<E\n$(( 1) ))\nE')"
 
-# A backtick in a context nested inside backticks ends them where the shell reads it; the reader records the region
-# and reads on — so the push after it is either judged (push) or inside the region (refuse): a deny both ways.
-net "a backtick inside a quote inside backticks ends them" refuse "echo \`echo 'a\`; git push --no-verify; echo 'b\`"
-net "a backtick inside an ANSI quote inside backticks" refuse "echo \`echo \$'a\`; git push --no-verify; echo 'b\`"
+# A backtick in a context nested inside backticks ends them where the shell does (the first unescaped backtick); the
+# context left open there is a region, and the push after the backtick is judged at the top level.
+net "a backtick inside a quote inside backticks ends them" push "echo \`echo 'a\`; git push --no-verify; echo 'b\`"
+net "a backtick inside an ANSI quote inside backticks" push "echo \`echo \$'a\`; git push --no-verify; echo 'b\`"
 net "a backtick inside \$(…) inside backticks" push 'echo `echo $(echo a`); git push --no-verify; echo `'
-net "a backtick inside double quotes inside backticks" refuse 'echo `echo "a`; git push --no-verify; echo "b`'
+net "a backtick inside double quotes inside backticks" push 'echo `echo "a`; git push --no-verify; echo "b`'
 net "a backtick inside \${…} inside backticks" push 'echo `echo ${v:-a`}; git push --no-verify; echo `'
 net "a backtick in arithmetic inside backticks" push 'echo `echo $(( a`)); git push --no-verify; echo `'
 net "a backtick region scopes from its own segment, not a heredoc nested in it" refuse "$(printf 'echo `git log $(cat <<E\n\\$y\nE\n)`')"
 
 lex_has() {   # lex_has <label> <command> <text the output must contain>
-  OUT="$(printf '%s' "$2" | bash "$gate" lex 2>&1)"
+  lex_out "$2"
   check_contains "lex:$1" "$OUT" "$3"
 }
 for ctx in 'echo `a $(b`)`' 'echo `a ${b:-c`}`' 'echo `a $(( b`))`' 'echo `a "b`"`' "echo \`a 'b\`'\`" "echo \`a \$'b\`'\`" "$(printf 'echo `cat <<E\nb`c\nE\n`')"; do
   lex_has "a backtick nested in backticks is a region [$ctx]" "$ctx" "refuse${T}backtick inside a nested context in backticks"
 done
+
+net "a comment inside backticks ends at their backtick" push "$(printf 'echo `true #`; git push --no-verify; echo `\n`')"
+net "a literal heredoc body inside backticks ends at their backtick" push "$(printf "echo \`cat <<'E'\n\`; git push --no-verify; echo \`\nE\n\`")"
+net "a region in a body that the backticks own scopes from the operator" refuse "$(printf 'echo `git commit -F - <<E\n\\$x\nE\n`')"
+net "an escaped backtick inside a quote inside backticks ends nothing" allow "echo \`git log --format='%h\\\`'\`"
+lex_has "a heredoc body that runs past its backticks is a region" "$(printf "echo \`cat <<'E'\nx\`\nE\n\`")" "refuse${T}backtick inside a nested context in backticks"
 
 summary
