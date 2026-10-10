@@ -600,6 +600,39 @@ run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$
 check_status "enable on a not-yet-git dir still succeeds" 0 "$STATUS"
 check_dir "not-yet-git enable creates the store entry keyed by the dir as-is" "$ngdir_store"
 
+# --- dir #677: `enable` on a directory NESTED inside another repo refuses before any store write ------
+# `_impact_resolve_top` resolves upward by design (add/event/hooks need that from subdirectories and linked
+# worktrees), so a bare `enable ~/zone/site` used to enable the PARENT's root silently — dir #611's class,
+# outside init-project.sh. The guard lives in cmd_enable only; a non-empty `--show-prefix` means "not my own
+# toplevel" (a linked worktree's root has an empty one, so it still maps to its main checkout, above).
+nrepo="$(new_repo)"
+nrepo_real="$(cd "$nrepo" && pwd -P)"
+nrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$nrepo")"
+mkdir -p "$nrepo/sub/deeper"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$nrepo/sub"
+check_status "dir #677: enable on a dir nested inside a repo → exit 2" 2 "$STATUS"
+check_contains "dir #677: the refusal names the parent repo" "$OUT" "inside the git repo at $nrepo_real"
+check_contains "dir #677: the refusal names the fix (enable the parent, or git init the nested dir)" "$OUT" "git init"
+check_nodir "dir #677: the parent gained no store entry" "$nrepo_store"
+check_nodir "dir #677: the nested dir gained no store entry" "$KEEL_IMPACT_STORE/$(store_id_for "$nrepo/sub")"
+run_in "$nrepo/sub/deeper" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable
+check_status "dir #677: argument-less enable from a subdirectory → exit 2 too" 2 "$STATUS"
+check_nodir "dir #677: ...and writes no store entry for the parent" "$nrepo_store"
+# the fix the refusal names works: a nested dir that IS its own repo enables as itself, not as the parent
+git init -q "$nrepo/sub" 2>/dev/null
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$nrepo/sub"
+check_status "dir #677: a nested dir that is its own repo enables" 0 "$STATUS"
+check_dir "dir #677: ...keyed by its own root" "$KEEL_IMPACT_STORE/$(store_id_for "$nrepo/sub")"
+check_nodir "dir #677: ...and the parent still has no entry" "$nrepo_store"
+# a subdirectory of a LINKED WORKTREE is refused too, but the worktree ROOT (above) still enables the main
+check_dir "dir #677: (fixture) the linked worktree from the enable-from-a-worktree case exists" "$wwt"
+mkdir -p "$wwt/subdir"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$wwt/subdir"
+check_status "dir #677: a subdirectory of a linked worktree → exit 2" 2 "$STATUS"
+check_contains "dir #677: ...naming the worktree root as the parent" "$OUT" "inside the git repo at $(cd "$wwt" && pwd -P)"
+check_nodir "dir #677: ...writing no store entry keyed by the subdirectory" "$KEEL_IMPACT_STORE/$(store_id_for "$wwt/subdir")"
+check_contains "dir #677: the refusal's copy-paste command quotes the parent path" "$OUT" 'keel-impact.sh enable "'
+
 # --- add/rollup refuse on a never-enabled repo (dir #251 §3 — the OLD silent docs/keel-impact.md
 # fallback is gone; a hard, named refusal replaces it) -----------------------------------------------
 nrepo="$(new_repo)"
