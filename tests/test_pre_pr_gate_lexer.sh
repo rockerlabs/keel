@@ -863,4 +863,7 @@ lex_is "a )-line region ends at its BQ's backtick" "$(printf 'echo `x=$(cat <<E\
 net "a body with no delimiter inside backticks ends at the backtick" allow "$(printf 'x=`git log <<E\ny`')"
 net "a \$(…) heredoc region inside backticks ends at the backtick" allow 'x=`echo $(cat <<E)` ; git status'
 
+lex_is "an expanding heredoc body ends at its BQ's backtick" "$(printf 'echo `cat <<E\nb`c\nE\n`')" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ux:\$()c"$'\n'"TOP@3${T}d0${T}s0${T}p19${T}u:E"$'\n'"TOP@4${T}d0${T}s0${T}p21${T}x:\$()"$'\n'"refuse${T}unclosed BQ${T}line 4${T}scope:no"
+
 summary

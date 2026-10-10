@@ -1851,14 +1851,15 @@ function cmd_char(   c, s, k, op) {
 }
 
 # close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still
-# owns: in a $(…), a region (the shells disagree on the lines after it; they are read as commands); in a BQ, an
-# empty body — the BQ’s text ends at its backtick, so every shell gives it no lines.
+# owns: in a $(…), a region to the end of the text, or to the backtick of a BQ around it (the shells disagree on the
+# lines after it; they are read as commands); in a BQ, an empty body — the BQ’s text ends at its backtick, so every
+# shell gives it no lines.
 function close_cmd(   s, k) {
   s = sp
   seg_end(s, pos)
   for (k = 1; k <= hqn[s]; k++) {
     if (cty[s] == "BQ") empty_body(s, k)
-    else region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending when $(…) closed", hqsb[s, k])
+    else region(hqop[s, k], lim - 1, "heredoc pending when $(…) closed", hqsb[s, k])
   }
   hqn[s] = 0
   if (bqreg[s]) rend[bqreg[s]] = (pos > n) ? n : pos
@@ -1928,8 +1929,9 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
   while (1) {
     k = ++hb_k
     if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }
-    # no body left — past the text, or at the backtick that ends the BQ the heredoc sits in (the newline was the
-    # BQ’s last character, or an earlier delimiter line was cut at it): an empty body, as every shell gives it
+    # no body left — past the text, or at or past the backtick that ends the BQ the heredoc sits in (the newline was
+    # the BQ’s last character, or an earlier delimiter line was cut at it; after such a line pos may lie past the
+    # backtick, and at_limit() resumes right after it): an empty body, as every shell gives it
     if (pos > n || pos >= lim) { empty_body(s, k); continue }
     found = 0; hline = 0
     for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {

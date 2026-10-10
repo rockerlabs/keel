@@ -19,8 +19,9 @@
 # - separate flags for the quote and the brace regions of one ${…}: the quote region is only under a DQ or HDATA
 #   and the brace region only outside one, so the two never meet in one ${…}.
 # - the body line scan's stop at a BQ's backtick, and resuming right after a delimiter line the backtick cut: past
-#   that backtick line_end() reads every line as empty and at_limit() resumes right after the backtick, so both
-#   are equivalent (the stop saves the scan to the text's end).
+#   that backtick line_end() reads every line as empty (substr with a negative length is "" on macOS awk, busybox
+#   awk and mawk, checked; a line past it can only match an empty delimiter, which is quoted, so its body is skipped)
+#   and at_limit() resumes right after the backtick, so both are equivalent (the stop saves the scan to the end).
 # - B15 (a) and the candidate-line clauses of B14: no candidate tag is registered yet.
 L001	tools/pre-pr-gate.sh	src = (NR == 1) ? $0 : src "\\n" $0	src = (NR == 1) ? $0 : src " " $0	B1: lines joined with a newline
 L002	tools/pre-pr-gate.sh	    word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return	    word_begin(pos); addsrc(pos + 1, 1, "u"); pos += 2; return	B2 TOP: an escaped char is quoted
@@ -198,12 +199,14 @@ L084	tools/pre-pr-gate.sh	if (!found && lim > n) region(pos, n, "heredoc "	if (0
 L221	tools/pre-pr-gate.sh	if (!found && lim > n) region(	if (!found) region(	B8: a body with no delimiter inside a BQ ends at its backtick, no region
 L236	tools/pre-pr-gate.sh	    if (cty[s] == "BQ") empty_body(s, k)	    if (0) empty_body(s, k)	B8: a heredoc pending when its BQ closes has an empty body
 L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { empty_body(s, k); continue }	if (pos > n) { empty_body(s, k); continue }	B8: no body left past the BQ’s end
-L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	    else if (0) region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	B10(g)
 L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) empty_body(s, k)	    for (k = 1; k <= 0; k++) empty_body(s, k)	B8/B10: a never-started body is empty, never refused
 L232	tools/pre-pr-gate.sh	if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }	}	B2: a closed context’s end no longer bounds the reads after it
 L238	tools/pre-pr-gate.sh	j < nlines && lstart[j + 1] < lim) {	j < nlines) {	B10(h): a backslash join stops at its BQ’s backtick
-L239	tools/pre-pr-gate.sh	region(hqop[s, k], (lim <= n) ? lim - 1 : n, "heredoc pending	region(hqop[s, k], n, "heredoc pending	B10(g): inside a BQ the region ends at its backtick
 L240	tools/pre-pr-gate.sh	region(lstart[L], line_end(L), ") line	region(lstart[L], lend[L], ") line	B10(k): the region ends at its BQ’s backtick
+L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], lim - 1, "heredoc pending	    else if (0) region(hqop[s, k], lim - 1, "heredoc pending	B10(g)
+L239	tools/pre-pr-gate.sh	region(hqop[s, k], lim - 1, "heredoc pending	region(hqop[s, k], n, "heredoc pending	B10(g): inside a BQ the region ends at its backtick
+L241	tools/pre-pr-gate.sh	function empty_body(s, k) { region(hqop[s, k], -1,	function empty_body(s, k) { region(hqop[s, k], n,	B8: an empty body is never refused
+L242	tools/pre-pr-gate.sh	    bstop = found ? lstart[L] : lim	    bstop = found ? lstart[L] : n + 1	B8: a body with no delimiter ends at the text’s end or its BQ’s backtick
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass
