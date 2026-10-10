@@ -7,6 +7,8 @@
 #        that appears between the pre-flight and the backup is never overwritten; a rollback restores each
 #        hook from the name ITS run claimed, executable exactly as it was
 #   A51/A52  a core.hooksPath set at any scope, the empty value included, is the user's wiring
+#   A38  (S16) _isg_place claims its staging name: a link planted there beforehand is removed and claimed fresh,
+#        one re-planted right after the removal (an `rm` PATH shim stages it) is refused, never followed
 #   A53/A54  the passengers: a stale comment, the doc paragraph naming the two exceptions this closes
 # The standalone installer ships copy-standalone (no tools/lib/), so the race is staged through a scratch
 # copy whose source secret-scan.sh --selftest plants the colliding file mid-run.
@@ -27,7 +29,8 @@ mk_foreign() {
 lines() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
 # mk_stub <label> <shebang> — a scratch copy of the installer whose source secret-scan.sh --selftest passes and,
 # for each path in $ISG_RACE_FILES that is still free, plants RACE there (the mid-run appearance A28 stages).
-# A shebang naming a missing interpreter passes the pre-copy `bash <file> --selftest` and fails the post-copy
+# With ISG_PLANT_DIR/ISG_PLANT_TARGET set it also links every staging name `<file>.isgtmp.<installer pid>` there
+# (the selftest's $PPID is the installer's $$), once — before the copy loop has placed anything. A shebang naming a missing interpreter passes the pre-copy `bash <file> --selftest` and fails the post-copy
 # direct exec — the existing post-copy-only failure the rollback tests use.
 mk_stub() {
   local d f
@@ -42,7 +45,7 @@ mk_stub() {
     printf '%s\n' "$2"
     printf '%s\n' 'if [ "${1:-}" = --selftest ]; then' \
       '  for t in ${ISG_RACE_FILES:-}; do [ -e "$t" ] || [ -L "$t" ] || printf "RACE\n" > "$t"; done' \
-      '  if [ -n "${ISG_PLANT_DIR:-}" ]; then' \
+      '  if [ -n "${ISG_PLANT_DIR:-}" ] && [ ! -e "$ISG_PLANT_DIR/pre-commit" ]; then' \
       '    for f in secret-scan.sh pre-commit pre-push range-lib.sh; do ln -s "$ISG_PLANT_TARGET" "$ISG_PLANT_DIR/$f.isgtmp.$PPID"; done' \
       '  fi' \
       '  echo "selftest: OK (stub)"' 'fi' 'exit 0'
@@ -207,14 +210,19 @@ for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
   [ "$f" = secret-scan.sh ] && continue   # the stub installer ships a stub scanner
   if cmp -s "$shipped/$f" "$h38/$f"; then pass "A38: $f holds the shipped bytes"; else fail "A38: $f holds the shipped bytes" "differs"; fi
 done
+# A match proves $PPID reached the names _isg_place stages: a mismatch would leave the planted links behind.
+check_eq "A38: ...and no staging link is left behind (the planted names were the staged ones)" "" \
+  "$(find "$h38" -name '*.isgtmp.*' 2>/dev/null)"
 mkdir -p "$SANDBOX/shim-rm"
-printf '%s\n' '#!/bin/sh' '/bin/rm "$@"; rc=$?' \
+real_rm="$(type -P rm)"
+printf '%s\n' '#!/bin/sh' "$real_rm"' "$@"; rc=$?' \
   'for a in "$@"; do case "$a" in *.isgtmp.*) ln -s "$ISG_REPLANT_TARGET" "$a" ;; esac; done' 'exit $rc' > "$SANDBOX/shim-rm/rm"
 chmod +x "$SANDBOX/shim-rm/rm"
 r38b="$(new_repo)"; h38b="$r38b/.git/hooks"; mkdir -p "$h38b"
 printf 'VICTIM\n' > "$victim"
 run env "PATH=$SANDBOX/shim-rm:$PATH" "ISG_REPLANT_TARGET=$victim" bash "$ok_stub/install-secret-guard.sh" "$r38b"
-check_ne "A38: a link re-planted after the removal → the install refuses (never follows)" 0 "$STATUS"
+check_status "A38: a link re-planted after the removal → the install refuses (exit 4, rolled back)" 4 "$STATUS"
+check_contains "A38: ...as a failed copy of the first staged file" "$OUT" "failed to copy secret-scan.sh"
 check_eq "A38: ...the re-planted link's target is unchanged" "VICTIM" "$(cat "$victim")"
 for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
   check_nolink "A38: ...no $f left as a link" "$h38b/$f"

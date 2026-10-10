@@ -115,8 +115,9 @@ fi
 # link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a
 # leftover-free `DEST.isgtmp.$$` (claimed by an exclusive create, so a planted file or link there is never
 # written through), fill it with `cat`, give it SRC's execute bit, `mv -f` it onto DEST. A directory at DEST is
-# the caller's pre-flight to refuse (`mv` would move INTO it). Returns 1, with the staging file removed, on any
-# failure; DEST is then untouched.
+# the caller's pre-flight to refuse (`mv` would move INTO it). Returns 1 on any failure and leaves DEST untouched;
+# a staging file it created is removed, one it could not claim (a link planted there is another party's) is
+# never touched — the next run, with another pid, never reuses that name.
 _isg_place() {
   local from="$1" dest="$2" tmp
   tmp="$dest.isgtmp.$$"
