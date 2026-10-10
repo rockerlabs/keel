@@ -866,4 +866,7 @@ net "a \$(…) heredoc region inside backticks ends at the backtick" allow 'x=`e
 lex_is "an expanding heredoc body ends at its BQ's backtick" "$(printf 'echo `cat <<E\nb`c\nE\n`')" \
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}ux:\$()c"$'\n'"TOP@3${T}d0${T}s0${T}p19${T}u:E"$'\n'"TOP@4${T}d0${T}s0${T}p21${T}x:\$()"$'\n'"refuse${T}unclosed BQ${T}line 4${T}scope:no"
 
+lex_is "a second heredoc past a cut delimiter line has an empty body, more lines after" "$(printf 'echo `cat <<E <<F\nx\nE` ; echo z\necho w')" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"TOP@4${T}d0${T}s0${T}p33${T}u:echo${T}u:w"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
+
 summary
