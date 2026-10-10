@@ -149,7 +149,7 @@ warn() { echo "  WARN $1"; }
 # failing `git log` print "no publication blockers found"; tests/test_public_audit.sh holds the register.
 personal_pat="$audit_tmp/personal.pat"
 has_personal=0
-personal_nonascii=0
+decode_nonascii=""
 pa_line=""
 pa_hit=""
 pa_u8=""
@@ -217,15 +217,15 @@ pa_token_first() {
 }
 # pa_personal_first STEP FLAGS FILE — pa_hit = the first line of FILE a personal literal matches (FLAGS is the
 # grep flag cluster, e.g. -aoiE), or empty; 1 when the grep failed. Pass C: every byte, ASCII case-folded.
-# Pass U (only when a literal is non-ASCII): the caller's locale over the sanitized copy, which folds
-# non-ASCII case. The caller checks $has_personal first.
+# Pass U (only when $decode_nonascii — a literal or a token holds a non-ASCII byte): the caller's locale over
+# the sanitized copy, which folds non-ASCII case. The caller checks $has_personal first.
 pa_personal_first() {
   local step="$1" flags="$2" f="$3"
   pa_hit=""
   pa_match "$step" "$audit_tmp/per.c" pa_c grep "$flags" -f "$personal_pat" -- "$f" || return 1
   pa_first "$audit_tmp/per.c"; pa_hit="$pa_line"
   [ -n "$pa_hit" ] && return 0
-  [ "$personal_nonascii" = 1 ] || return 0
+  [ -n "$decode_nonascii" ] || return 0
   pa_sanitize "$f"
   pa_match "$step" "$audit_tmp/per.u" grep "$flags" -f "$personal_pat" -- "$pa_u8" || return 1
   pa_first "$audit_tmp/per.u"; pa_hit="$pa_line"
@@ -310,13 +310,20 @@ while IFS= LC_ALL=C read -r line; do
   if valid_ere -iE "$line"; then
     printf '%s\n' "$line" >> "$personal_pat" || personal_wr_rc=$?
     has_personal=1
-    case "$line" in *[![:ascii:]]*) personal_nonascii=1 ;; esac
+    case "$line" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
   else
     bad_personal=$((bad_personal + 1))
   fi
 done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
+# dir #746 (B7): the non-ASCII needle flag — set above for a personal literal, here for a token (an ASCII one
+# already survives decode_binary's NUL-strip pass). It gates decode_binary's built-in decoder and pass U.
+if [ "${#tokens[@]}" -gt 0 ]; then
+  for t in "${tokens[@]}"; do
+    case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
+  done
+fi
 # A pattern file that could not be written is no coverage at all: report it, and run no personal grep.
 [ "$personal_wr_rc" -ne 0 ] && has_personal=0
 
