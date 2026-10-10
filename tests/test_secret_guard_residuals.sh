@@ -17,7 +17,7 @@ isg="$REPO_ROOT/tools/install-secret-guard.sh"
 kh_rel=".config/git/keel-hooks"
 
 # One isolated HOME per shape; GIT_CONFIG_SYSTEM points inside it (tests/test_guard_hooks_dir.sh's plumbing).
-mk_home() { H="$SANDBOX/fx-$1"; mkdir -p "$H/work" "$H/work-hooks"; : > "$H/system.cfg"; git init -q "$H/work/proj"; }
+mk_home() { H="$SANDBOX/fx-$1"; mkdir -p "$H/work" "$H/work-hooks"; : > "$H/system.cfg"; }
 genv() { env "HOME=$H" "GIT_CONFIG_GLOBAL=$H/.gitconfig" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$@"; }
 # run_bounded CMD… — `run`, in the background with a bounded wait: a loop fails here instead of hanging the suite.
 run_bounded() {

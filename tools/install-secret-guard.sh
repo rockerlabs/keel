@@ -111,6 +111,9 @@ if [ "$uninstall" = 1 ]; then
   esac
 fi
 
+# _isg_count_values KEY — how many values the global config holds for KEY (an empty value counts as one).
+_isg_count_values() { { git config --global --get-all "$1" 2>/dev/null || true; } | wc -l | tr -d ' '; }
+
 # _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
 # link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a
 # leftover-free `DEST.isgtmp.$$` (claimed by an exclusive create, so a planted file or link there is never
@@ -600,10 +603,13 @@ _isg_cond_list() {
     [ -n "$raw" ] || continue
     # git expands `~`, `~/…`, `~user/…` and `%(prefix)/…` itself — ONE call, so this walk keeps no expansion
     # rules of its own (a bare `~` is $HOME, a `~user/` is that user's home); a path git cannot expand leaves
-    # the walk incomplete (dir #743, item 4). A relative result resolves beside the file that names it.
-    exp="$(git config --type=path --default "$raw" --get isg.unset.name 2>/dev/null)" \
-      || { c_cause="an include path this walk cannot resolve: $raw"; return 1; }
-    raw="$exp"
+    # the walk incomplete (dir #743). A relative result resolves beside the file that names it.
+    case "$raw" in
+      "~"*|"%(prefix)/"*)
+        exp="$(git config --type=path --default "$raw" --get isg.unset.name 2>/dev/null)" \
+          || { c_cause="an include path this walk cannot resolve: $raw"; return 1; }
+        raw="$exp" ;;
+    esac
     case "$raw" in
       /*) ;;
       *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
@@ -631,9 +637,9 @@ _isg_seen() {
 
 # 0 when path $1 is absent for certain. A dir that cannot be searched hides what is under it, and git fails reading
 # an include there — and so does a DANGLING symlink whose target sits under one: `-e` is false for it, yet it is not
-# "missing" (dir #743, item 3; an edge fail-open). So every missing component that is a link is followed (one
+# "missing" (dir #743; an edge fail-open). So every missing component that is a link is followed (one
 # readlink at a time, bounded) and its target classified the same way; the deepest existing ancestor must be
-# searchable. A path with no slash cannot be classified here at all (item 6: it used to loop forever).
+# searchable. A path with no slash cannot be classified here at all.
 _isg_absent_for_sure() {
   local cur="$1" depth="${2:-0}" link
   case "$cur" in */*) ;; *) return 1 ;; esac
@@ -668,7 +674,7 @@ _isg_conditional_reads() {
       # git reports an unreadable include as a warning and exit 1 — the same exit as "not set" — so test it here
       [ -r "$tgt" ] || { c_cause="git config failed on $tgt (unreadable)"; return 0; }
       # an include that names a directory (a bare `path = ~` is $HOME): git warns "Is a directory" and then fails
-      # the whole config read in the trees that match — while `--file <dir>` exits 1, the "not set" exit (item 4)
+      # the whole config read in the trees that match — while `--file <dir>` exits 1, the "not set" exit
       [ ! -d "$tgt" ] || { c_cause="git config failed on $tgt (a directory)"; return 0; }
       if _isg_seen "$tgt" "$visited"; then
         # Read once, but reported once per (condition, file): a file reached again under an INDEPENDENT condition
@@ -873,8 +879,7 @@ case "${1:-}" in
     # sees the XDG file behind an existing ~/.gitconfig, an [include], and SYSTEM scope, any of which
     # governs every commit while `--global` reports "unset" (so this used to overwrite it, or say
     # "nothing to unwire"). m_scope/m_origin name where $existing came from.
-    eg_rc=0
-    existing_global="$(git config --global core.hooksPath 2>/dev/null)" || eg_rc=$?
+    existing_global="$(git config --global core.hooksPath 2>/dev/null || true)"
     # dir #748 S4-1 / dir #684 (B27): "set" is the read's EXIT STATUS, never a non-empty value — an empty
     # `hooksPath =` is set (it turns every hook off), and so is a record holding the empty string. $m_set /
     # $m_novalue come from the machine-wide read below, $rec_set from the record's own read.
@@ -882,25 +887,22 @@ case "${1:-}" in
     # writes one — its --unset gives a conditional setting its trees back on its own.
     if [ "$uninstall" = 1 ]; then _isg_machine_read; else _isg_machine_read walk; fi
     existing="$m_value"
-    rec_set=0 rec_rc=0
-    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || rec_rc=$?
-    [ "$rec_set" = 1 ] || recorded=""
+    rec_set=0
+    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || recorded=""
     # A bare `displacedHooksPath` line (hand-edited or merged) reads like an empty record, and restoring "" would
     # turn every hook off though nothing was displaced: it records nothing. Left in place, never written to here —
     # a refusal below must stay "Nothing was changed", and a record may sit beside it (the several-values guard
     # below still counts every value).
     if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then rec_set=0; fi
-    # dir #743 (M1): a config git cannot read is not "nothing set" — every `|| true` read above used to turn it
-    # into one, and the install then wrote over a file it could not parse. Refuse, before any write.
-    for e_rc in "$eg_rc" "$rec_rc" "$m_err"; do
-      case "$e_rc" in 0|1) ;; *)
-        echo "secret-guard: git could not read the machine-wide config (git config exited $e_rc) — fix it ('git config --global --list' shows git's own message), then re-run. Nothing was changed." >&2
-        exit 3 ;;
-      esac
-    done
+    # dir #743 (M1): a config git cannot read is not "nothing set" — the `|| true` reads above turn it into one, and
+    # the install then wrote over a file it could not parse. The machine read fails on it too: refuse before any write.
+    if [ "$m_err" != 0 ]; then
+      echo "secret-guard: git could not read the machine-wide config (git config exited $m_err) — fix it ('git config --global --list' shows git's own message), then re-run. Nothing was changed." >&2
+      exit 3
+    fi
     # dir #743 (M2): git exits 5 when asked to replace or unset a key the file sets more than once — after the
     # hooks were already placed, with a generic message. Refuse up front, in words.
-    n_hp="$( { git config --global --get-all core.hooksPath 2>/dev/null || true; } | wc -l | tr -d ' ')"
+    n_hp="$(_isg_count_values core.hooksPath)"
     if [ "$n_hp" -gt 1 ]; then
       echo "secret-guard: core.hooksPath is set more than once in the global config ($n_hp values) — git cannot replace or unset it;" >&2
       echo "  keep the one you want (git config --global --get-all core.hooksPath), then re-run. Nothing was changed." >&2
@@ -912,7 +914,7 @@ case "${1:-}" in
     [ "$m_novalue" != 1 ] || existing_desc="no value at all (a bare \`hooksPath\` line)"
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
-    if [ "$( { git config --global --get-all "$isg_displaced_key" 2>/dev/null || true; } | wc -l | tr -d ' ')" -gt 1 ]; then
+    if [ "$(_isg_count_values "$isg_displaced_key")" -gt 1 ]; then
       echo "secret-guard: $isg_displaced_key holds several values (git config --global --get-all $isg_displaced_key);" >&2
       echo "  keep the one hooksPath to restore, then re-run. Nothing was changed." >&2
       exit 3
