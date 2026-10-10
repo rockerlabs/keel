@@ -16,6 +16,8 @@
 #   the assignment pattern never matches, so dropping the check is equivalent.
 # - the owner-prefix strip of a `gh api … head=owner:branch` value: the shell side strips `owner:` again before it
 #   resolves the branch, so dropping the reader's strip is equivalent.
+# - separate flags for the quote and the brace regions of one ${…}: the quote region is only under a DQ or HDATA
+#   and the brace region only outside one, so the two never meet in one ${…}.
 # - B15 (a) and the candidate-line clauses of B14: no candidate tag is registered yet.
 L001	tools/pre-pr-gate.sh	src = (NR == 1) ? $0 : src "\\n" $0	src = (NR == 1) ? $0 : src " " $0	B1: lines joined with a newline
 L002	tools/pre-pr-gate.sh	    word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return	    word_begin(pos); addsrc(pos + 1, 1, "u"); pos += 2; return	B2 TOP: an escaped char is quoted
@@ -23,14 +25,11 @@ L003	tools/pre-pr-gate.sh	    if (at(1) == "\\n") { pos += 2; return }\n    if (
 L004	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") close_cmd()	else if (cty[s] == "XSUB") close_cmd()	B2 SUB: closed by ) with no group
 L005	tools/pre-pr-gate.sh	if (cty[s] == "BQ") { close_cmd(); pos++; return }	if (0) { close_cmd(); pos++; return }	B2 BQ: closed by a backtick
 L006	tools/pre-pr-gate.sh	  while (pos + k < lim && ch[pos + k] != "\\047") k++	  while (pos + k < lim && ch[pos + k] != "X") k++	B2 SQ: closed by a quote
-L007	tools/pre-pr-gate.sh	if (ch[pos] == "\\\\" && at(1) != "") { addsrc(pos + 1, 1, "q"); pos += 2; return }	if (0) { addsrc(pos + 1, 1, "q"); pos += 2; return }	B2 AQ: backslash escapes
 L008	tools/pre-pr-gate.sh	  if (c == "\\"") { pop_ctx(); pos++; return }	  if (c == "X") { pop_ctx(); pos++; return }	B2 DQ: closed by a double quote
-L009	tools/pre-pr-gate.sh	index("$`\\"\\\\", at(1))) { if (at(1) == "`") nested_bq()	index("$`\\\\", at(1))) { if (at(1) == "`") nested_bq()	B2 DQ: \" is escaped
 L010	tools/pre-pr-gate.sh	    if (at(1) == "\\n") { pos += 2; return }\n    if (at(1) == "\\"" && bq_in_dq())	    if (at(1) == "\\"" && bq_in_dq())	B2 DQ: backslash-newline removed
 L011	tools/pre-pr-gate.sh	  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\"\\\\$`"	  if (0 && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\"\\\\$`"	B2 DQ: opens $(…)
 L012	tools/pre-pr-gate.sh	  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\"\\\\$`"	  if (0) { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1\n  while (pos + k < lim && index("\\"\\\\$`"	B2 DQ: opens backticks
 L013	tools/pre-pr-gate.sh	  if (c == "}") { pop_ctx(); addsrc(	  if (c == "X") { pop_ctx(); addsrc(	B2 PARAM: closed by the first unquoted }
-L014	tools/pre-pr-gate.sh	  if (c == "\\\\") { pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }	  if (c == "\\\\") { pos += 1; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }	B2 PARAM: backslash escapes
 L015	tools/pre-pr-gate.sh	  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }\n  if (c == "$" && at(1) == "\\047")	  if (0) { push_ctx("DQ", pos); pos++; return }\n  if (c == "$" && at(1) == "\\047")	B2 PARAM: opens DQ
 L016	tools/pre-pr-gate.sh	if (c == "$" && at(1) == "\\047") { push_ctx("AQ", pos); pos += 2; return }	if (0) { push_ctx("AQ", pos); pos += 2; return }	B2 PARAM: opens AQ
 L017	tools/pre-pr-gate.sh	    push_ctx("SQ", pos); pos++; return\n  }\n  if (c == "{")	    pos++; return\n  }\n  if (c == "{")	B2 PARAM: opens SQ outside DQ/HDATA
@@ -41,9 +40,6 @@ L021	tools/pre-pr-gate.sh	    if (at(1) == ")") { pos += 2; close_any(pos); retu
 L022	tools/pre-pr-gate.sh	  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	  if (0 && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	B2 ARITH: opens $(…)
 L023	tools/pre-pr-gate.sh	  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }\n  pos++\n}	  if (0) { push_ctx("SQ", pos); pos++; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }\n  pos++\n}	B2 ARITH: opens SQ
 L024	tools/pre-pr-gate.sh	  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }\n  pos++\n}\n# HDATA	  if (0) { push_ctx("DQ", pos); pos++; return }\n  pos++\n}\n# HDATA	B2 ARITH: opens DQ
-L025	tools/pre-pr-gate.sh	  if (c == "\\\\") { pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	  if (c == "\\\\") { pos += 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	B2 ARITH: backslash as in DQ
-L026	tools/pre-pr-gate.sh	if (c == "\\\\") { if (at(1) == "`") nested_bq(); pos += (at(1) != "") ? 2 : 1; return }	if (c == "\\\\") { if (at(1) == "`") nested_bq(); pos += 1; return }	B2 HDATA: \$ escaped
-L029	tools/pre-pr-gate.sh	    if (at(1) == "`") nested_bq()\n    if (at(1) == "\\"" && bq_in_dq()) { pos++; return }	    if (at(1) == "`") nested_bq()\n    if (0 && bq_in_dq()) { pos++; return }	B2 BQ: \" is a quote when the BQ sits in DQ
 L030	tools/pre-pr-gate.sh	if (at(1) == "\\047") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }	if (0) { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }	B2: $' opens AQ
 L031	tools/pre-pr-gate.sh	if (c == "(" && at(2) == "(") { word_begin(pos); push_ctx("ARITH", pos)	if (0) { word_begin(pos); push_ctx("ARITH", pos)	B2: $(( opens ARITH, not SUB
 L032	tools/pre-pr-gate.sh	    if (cty[i] == "PARAM" || cty[i] == "ARITH" || cty[i] == "HDATA") opq = 1	    if (cty[i] == "PARAM" || cty[i] == "ARITH" || cty[i] == "HDATA") opq = 0	B3: a whole ${…} or $(( )) counts once in its word
@@ -103,13 +99,11 @@ L085	tools/pre-pr-gate.sh	if (!got) { region(op, n, "heredoc operator without a 
 L086	tools/pre-pr-gate.sh	if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution"	if (0) { region(op, n, "heredoc inside a heredoc substitution"	B10(d)
 L087	tools/pre-pr-gate.sh	if (sp > hd_sp) region(cpos[hd_sp + 1]	if (0) region(cpos[hd_sp + 1]	B10(e)
 L088	tools/pre-pr-gate.sh	if (b && !bqreg[b]) bqreg[b] = region(	if (0) bqreg[b] = region(	B10(f)
-L089	tools/pre-pr-gate.sh	{ if (at(1) == "`") nested_bq(); addsrc(pos + 1, 1, "q"); pos += 2; return }	{ addsrc(pos + 1, 1, "q"); pos += 2; return }	B10(f): a nested backtick inside DQ inside BQ
 L090	tools/pre-pr-gate.sh	for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n, "heredoc pending	for (k = 1; k <= 0; k++) region(hqop[s, k], n, "heredoc pending	B10(g)
 L091	tools/pre-pr-gate.sh	if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]	if (0) hline = lstart[L]	B10(h)
 L093	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "((	if (0) { flagged[sp] = 1; region(cpos[sp], n, "((	B10(j)
 L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && txt ~ /^[ \\t]*\\)/)	if (0 && txt ~ /^[ \\t]*\\)/)	B10(k)
 L095	tools/pre-pr-gate.sh	txt ~ /^[ \\t]*\\)/) region(	txt ~ /^\\)/) region(	B10(k): blanks before the ) still count
-L096	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace	if (0) { flagged[sp] = 1; region(cpos[sp], n, "brace	B10(l)
 L097	tools/pre-pr-gate.sh	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "git") ||	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "XgitX") ||	B10 scope: git
 L098	tools/pre-pr-gate.sh	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "gh")) ?	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "XghX")) ?	B10 scope: gh
 L099	tools/pre-pr-gate.sh	rsb[nreg] = sb;	rsb[nreg] = a;	B10 scope: from the segment start, not the region
@@ -169,8 +163,21 @@ L092	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, 
 L201	tools/pre-pr-gate.sh	if (j < lim && ch[j] == "\\047") { pos = j + 1; return }	if (0) { pos = j + 1; return }	B10(i): a quoted span with no } " $ ` or \ before the next quote is text in every reading
 L203	tools/pre-pr-gate.sh	if (index("}\\"$`\\\\", ch[j])) break	if (index("}\\"", ch[j])) break	B10(i): a span holding an expansion is no agreeing span
 L204	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1;	if (1) { qflagged[sp] = 1;	B10(i): one region per ${…}
-L205	tools/pre-pr-gate.sh	if (!qflagged[sp]) { qflagged[sp] = 1;	if (!flagged[sp]) { flagged[sp] = 1;	B10(i) and (l) keep separate flags
-L206	tools/pre-pr-gate.sh	while (pos + k < lim && index("}\\\\\\"$`\\047{", ch[pos + k]) == 0) k++	while (pos + k < lim && index("}\\\\\\"`\\047{", ch[pos + k]) == 0) k++	B2 PARAM: the scan stops at a $
+L007	tools/pre-pr-gate.sh	if (ch[pos] == "\\\\" && at(1) != "") { bq_escape(); addsrc(pos + 1, 1, "q"); pos += 2; return }	if (0) { bq_escape(); addsrc(pos + 1, 1, "q"); pos += 2; return }	B2 AQ: backslash escapes
+L009	tools/pre-pr-gate.sh	index("$`\\"\\\\", at(1))) { bq_escape(); addsrc	index("$`\\\\", at(1))) { bq_escape(); addsrc	B2 DQ: \" is escaped
+L014	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }	  if (c == "\\\\") { bq_escape(); pos += 1; return }\n  if (c == "\\"") { push_ctx("DQ", pos); pos++; return }	B2 PARAM: backslash escapes
+L025	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	  if (c == "\\\\") { bq_escape(); pos += 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047") { push_ctx("SQ", pos); pos++; return }	B2 ARITH: backslash as in DQ
+L026	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1	  if (c == "\\\\") { bq_escape(); pos += 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  k = 1	B2 HDATA: \$ escaped
+L029	tools/pre-pr-gate.sh	    bq_escape()\n    if (at(1) == "\\"" && bq_in_dq())	    bq_escape()\n    if (0 && bq_in_dq())	B2 BQ: \" is a quote when the BQ sits in DQ
+L089	tools/pre-pr-gate.sh	index("$`\\"\\\\", at(1))) { bq_escape(); addsrc	index("$`\\"\\\\", at(1))) { addsrc	B10(f): an escaped backtick or $ in DQ inside BQ
+L096	tools/pre-pr-gate.sh	if (cty[i] != "DQ" && cty[i] != "HDATA" && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace	if (0) { flagged[sp] = 1; region(cpos[sp], n, "brace	B10(l)
+L206	tools/pre-pr-gate.sh	PARAMSPECIAL = "}\\\\\\"$`\\047{"	PARAMSPECIAL = "}\\\\\\"`\\047{"	B2 PARAM: the scan stops at a $
+L207	tools/pre-pr-gate.sh	if (cty[i] != "DQ" && cty[i] != "HDATA" && !flagged[sp])	if (!flagged[sp])	B10(l): only an unquoted {
+L208	tools/pre-pr-gate.sh	if (at(1) != "`" && at(1) != "$") return	if (at(1) != "`") return	B10(f): an escaped $ inside backticks
+L209	tools/pre-pr-gate.sh	function rseg(sb) { return hd_sp ? hd_seg : sb }	function rseg(sb) { return sb }	B10 scope: inside an expanding body, from the operator’s segment
+L210	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "\\"") { push_ctx("DQ"	  if (c == "\\\\") { pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "\\"") { push_ctx("DQ"	B10(f): an escape in ${…} inside backticks
+L211	tools/pre-pr-gate.sh	  if (c == "\\\\") { bq_escape(); pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047")	  if (c == "\\\\") { pos += (at(1) != "") ? 2 : 1; return }\n  if (c == "$" && dollar()) return\n  if (c == "`") { push_ctx("BQ", pos); pos++; segbeg[sp] = pos; return }\n  if (c == "\\047")	B10(f): an escape in arithmetic inside backticks
+L212	tools/pre-pr-gate.sh	if (ch[pos] == "\\\\" && at(1) != "") { bq_escape();	if (ch[pos] == "\\\\" && at(1) != "") {	B10(f): an escape in an ANSI quote inside backticks
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass

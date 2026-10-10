@@ -668,7 +668,8 @@ shim_case line-with-exit1 1 'push\037\037\n'
 gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
 for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` pattern's" "an array assignment's" '`repeat N cmd`' \
   '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
-  "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' 'REFUSES'; do
+  "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' '`sudo`' '`timeout`' '`env -C`' '`/usr/bin/env …`' '`exec -a x`' \
+  '`xargs -r`' '`nohup --`' '`git "push"`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
@@ -783,7 +784,15 @@ net "gh in such a span (the region outranks pr)" refuse "echo \"\${v:-'\$(gh pr 
 net "such a span in an expanding heredoc body" push "$(printf 'cat <<E\n${v:-'"'"'$(git push --no-verify)'"'"'}\nE')"
 lex_is "two disagreeing quotes in one \${…}: one region" "echo \"\${v:-'\$x'\$y'}\"" \
   "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\${v:-'\$x'\$y'}"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
-lex_is "a brace and a disagreeing quote in one \${…}: both regions" "echo \"\${v:-{'}'}\"" \
-  "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}qx:\${v:-{'}'}"$'\n'"refuse${T}brace inside \${…}${T}line 1${T}scope:no"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
+lex_is "a { in \${…} in double quotes is quoted: no brace region" "echo \"\${v:-{'}'}\"" \
+  "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}qx:\${v:-{'}'}"$'\n'"refuse${T}quote inside \${…} in double quotes${T}line 1${T}scope:no"
+
+net "an escaped \$ in \${…} inside backticks" refuse 'echo `echo ${v:-\$(git push --no-verify)}`'
+net "an escaped backtick in \${…} inside backticks" refuse 'echo `echo ${v:-\`git push --no-verify\`}`'
+net "an escaped \$ in double quotes inside backticks" refuse 'echo `echo "\$(git push --no-verify)"`'
+net "an escaped backtick in arithmetic inside backticks" refuse 'echo `echo $(( \`git push --no-verify\` ))`'
+net "an escaped \$ in an ANSI quote inside backticks" refuse "echo \`echo \$'\\\$(git push)'\`"
+net "a { in \${…} in double quotes is no region" allow 'echo "${v:-{}" && git status'
+net "a region in an expanding body: scope from the operator's segment" refuse "$(printf 'git commit -F - <<E\n${v:-'"'"'}'"'"'\nE')"
 
 summary
