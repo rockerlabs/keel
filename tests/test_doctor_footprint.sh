@@ -57,7 +57,7 @@ check_contains "the hint states the 16000 budget" "$OUT" "budget 16000"
 exc() { # exc PROJECT DATE NOTE — append a one-row exceptions section to the project's CLAUDE.md
   printf '\n## Footprint exceptions\n\n| Expires (YYYY-MM-DD) | Ticket/note |\n|---|---|\n| %s | %s |\n' "$2" "$3" >> "$1/CLAUDE.md"
 }
-d="$(fproj 400)"; m="$(fmem 800)"; exc "$d" "$(date -v+30d +%Y-%m-%d 2>/dev/null || date -d '+30 days' +%Y-%m-%d)" "dir #999 trim planned"
+d="$(fproj 400)"; m="$(fmem 800)"; exc "$d" "2099-12-31" "dir #999 trim planned"  # a fixed far-future date: always live, and no date arithmetic (busybox date has neither -v nor -d '+30 days')
 frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
 check_absent "a live exception row silences the hint" "$OUT" "[H-FOOTPRINT]"
 check_contains "a live exception is still said, with its note" "$OUT" "acknowledged until"
@@ -123,3 +123,5 @@ d="$(fproj 400)"; m="$(fmem 800)"
 printf '\n## Footprint exceptions (until the split)\n\n| 2020-01-01 | suffixed |\n' >> "$d/CLAUDE.md"
 frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
 check_contains "a suffixed heading still opens the section" "$OUT" "EXPIRED 2020-01-01"
+
+summary
