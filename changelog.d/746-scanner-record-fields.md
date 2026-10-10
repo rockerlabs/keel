@@ -11,5 +11,6 @@
   exits 2 only when git cannot read the index copy (dir #746). A tracked file replaced by a symlink is read from
   its index copy too, and a mid-merge (unmerged) file from its working file (or symlink) and each of its stages'
   index copies, a hit they share printed once and one WARN naming the path; an unreadable working file of an
-  unmerged path exits 2. Hit lines print in the same form as before. Upgrading: an ERE
+  unmerged path exits 2, and so does one a directory that cannot be searched hides (at stage 0 such a file is
+  named "hidden", not "missing", and read from its index copy). Hit lines print in the same form as before. Upgrading: an ERE
   allowlist entry now matches the line's content only; use `path:` for a path.

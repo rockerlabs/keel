@@ -1065,7 +1065,7 @@ case "$mode" in
         continue
       fi
       why=""
-      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
+      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ] && ! hidden_by_dir "$f"; then
         sparse=$((sparse + 1))
       elif [ -L "$top/$f" ] && [ "$tmode" = 120000 ]; then
         # a tracked symlink's committed content IS its target string — scan that (it can carry a
