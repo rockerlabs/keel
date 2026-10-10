@@ -64,8 +64,9 @@ Steps, in order:
   session's size (83–115k measured). For a window opened at the default 250k or more, that roughly halves
   the tail (median 16.8M → an estimated 8.9M).
 - (c) **No `init` and no receipt** in this run before the stop.
-- (d) **Commit all work** on the branch being shipped; on the default branch, stop and report. `git status --porcelain --untracked-files=no` prints nothing. A tree that cannot be
-  committed → stop and report.
+- (d) **Commit all work** on the branch being shipped, so that `git status --porcelain --untracked-files=no`
+  prints nothing. On the default branch, or with a tree that cannot be committed → stop and report (the whole
+  run, not only this stop).
 - (e) **Write the hand-over file** outside the repo (the scratch dir, else `mktemp -d`). It holds:
   - the ticket or done-criterion;
   - what changed and why;

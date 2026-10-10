@@ -37,7 +37,8 @@ token bill nothing else currently shows you:
 ## The `--context` line (dir #739)
 
 `keel tokens --context` answers one question for `/polish`'s step 1: is the session running it already carrying
-so much context that compacting first would cut the rest of the run's cost? It prints exactly one line and exits 0:
+so much context that compacting first would cut the rest of the run's cost? It prints exactly one line and exits 0
+(a malformed threshold is the one exception, below):
 
 ```
 context: 300000 threshold: 250000 verdict: compact
@@ -49,13 +50,17 @@ The number is `input + cache_read + cache_creation` tokens of the **last** turn 
 again, and a wrong file would stop a run for nothing). The verdict is `compact` when that number reaches the
 threshold. A session id that is unset, not on disk, ambiguous, a missing `jq`, or a transcript with no usage turn
 prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't know", never a guess. `--context`
-takes no other option. A malformed `KEEL_POLISH_COMPACT_TOKENS` exits 2 with no line, which is not `compact`, so `/polish` continues. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
+takes no other option.
+
+A malformed `KEEL_POLISH_COMPACT_TOKENS` is the exception: exit 2, nothing on stdout. That is not `compact`, so
+`/polish` continues. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
 can send `/compact`; see the guide's § Step 1 "Compaction stop".
 
-One thing was checked when this was built. On the desktop app (entrypoint `claude-desktop`), `CLAUDE_CODE_SESSION_ID`
-is the transcript's own file name. Not yet checked: whether the terminal `claude` CLI sets it the same way, and whether it
-follows the new transcript after the conversation is cleared — a stale id there would cost one spurious stop, which the operator declines
-(the guide's clause (g)). If the id is absent, the line is `unknown` and the run continues.
+One thing was checked when this was built. On the desktop app (entrypoint `claude-desktop`),
+`CLAUDE_CODE_SESSION_ID` is the transcript's own file name. Not yet checked: whether the terminal `claude` CLI sets
+it the same way, and whether it follows the new transcript after the conversation is cleared — a stale id there
+would cost one spurious stop, which the operator declines (the guide's clause (g)). If the id is absent, the line is
+`unknown` and the run continues.
 
 ## Sample output
 
