@@ -107,16 +107,18 @@ guard_line() {
   awk -v g="$GUARD" -v q="'" '
     # not_opener(pre) — is a `<<` that follows PRE (the line text before it) no heredoc opener: inside an open
     # `((` arithmetic group (parens balanced left to right, so `$(( (1+2) << n ))` still counts as open), inside
-    # a quoted string, or in a comment (dir #712). A backslash escapes the next character.
-    function not_opener(pre,    i, n, c, c2, depth, ar, sq, dq, stk) {
-      n = length(pre); depth = 0; sq = 0; dq = 0
+    # a quoted string, or in a comment (dir #712). A backslash escapes the next character. An approximation of shell
+    # lexing, disclosed: ANSI-C `$'"'"'..'"'"'` strings, a `#` inside an expansion and a `((` that opens a subshell are not
+    # modelled; the old `((` regex had the same blind spots.
+    function not_opener(pre,    i, n, c, c2, depth, sq, indq, stk) {
+      n = length(pre); depth = 0; sq = 0; indq = 0
       for (i = 1; i <= n; i++) {
         c = substr(pre, i, 1); c2 = substr(pre, i, 2)
         if (c == "\\" && !sq) { i++; continue }
         if (sq) { if (c == q) sq = 0; continue }
-        if (dq) { if (c == "\"") dq = 0; continue }
+        if (indq) { if (c == "\"") indq = 0; continue }
         if (c == q) { sq = 1; continue }
-        if (c == "\"") { dq = 1; continue }
+        if (c == "\"") { indq = 1; continue }
         if (c == "#" && (i == 1 || substr(pre, i - 1, 1) ~ /[[:space:];&|(]/)) return 1
         if (c2 == "((") { stk[++depth] = "A"; i++; continue }
         if (c == "(") { stk[++depth] = "P"; continue }
@@ -125,7 +127,7 @@ guard_line() {
           if (depth > 0) depth--
         }
       }
-      if (sq || dq) return 1
+      if (sq || indq) return 1
       for (i = 1; i <= depth; i++) if (stk[i] == "A") return 1
       return 0
     }
@@ -496,12 +498,19 @@ printf '%s\n' '#!/usr/bin/env bash' 'n=3; x=$(( (1+2) << n ))' "$GUARD" 'git -C 
 git -C "$sb" add -A
 census "$sb" "$real_libs"
 if grep -q -- '^scratch-shift-paren.sh|' <<< "$C_OFF"; then fail "dir #712: a shift after a parenthesised operand is not a heredoc opener — a real guard after it still counts" "the census named scratch-shift-paren.sh: $C_OFF"; else pass "dir #712: a shift after a parenthesised operand is not a heredoc opener — a real guard after it still counts"; fi
-# dir #712 (2): a `<<WORD` inside a comment or a quoted string opens no heredoc
-sb="$(build_sandbox)"
-printf '%s\n' '#!/usr/bin/env bash' '# usage: cat <<EOF in a comment only' 'echo "write cat <<EOF to start one"' "echo 'or cat <<EOF'" "$GUARD" 'git -C "$1" status' > "$sb/scratch-opener-prose.sh"
-git -C "$sb" add -A
-census "$sb" "$real_libs"
-if grep -q -- '^scratch-opener-prose.sh|' <<< "$C_OFF"; then fail "dir #712: a <<WORD in a comment or quoted string is not a heredoc opener — a real guard after it still counts" "the census named scratch-opener-prose.sh: $C_OFF"; else pass "dir #712: a <<WORD in a comment or quoted string is not a heredoc opener — a real guard after it still counts"; fi
+# dir #712 (2): a `<<WORD` inside a comment or a quoted string opens no heredoc — one fixture per shape
+for shape in comment dquote squote; do
+  case "$shape" in
+    comment) line='# usage: cat <<EOF in a comment only' ;;
+    dquote)  line='echo "write cat <<EOF to start one"' ;;
+    squote)  line="echo 'or cat <<EOF'" ;;
+  esac
+  sb="$(build_sandbox)"
+  printf '%s\n' '#!/usr/bin/env bash' "$line" "$GUARD" 'git -C "$1" status' > "$sb/scratch-opener-$shape.sh"
+  git -C "$sb" add -A
+  census "$sb" "$real_libs"
+  if grep -q -- "^scratch-opener-$shape.sh|" <<< "$C_OFF"; then fail "dir #712: a <<WORD in a $shape is not a heredoc opener — a real guard after it still counts" "the census named scratch-opener-$shape.sh: $C_OFF"; else pass "dir #712: a <<WORD in a $shape is not a heredoc opener — a real guard after it still counts"; fi
+done
 # ...and a REAL opener after a quoted `<<` on the same line still hides its body's guard (the skip is not blanket)
 sb="$(build_sandbox)"
 printf '%s\n' '#!/usr/bin/env bash' 'echo "a <<X"; cat <<EOF' "$GUARD" 'EOF' 'git -C "$1" status' > "$sb/scratch-quoted-then-real.sh"
@@ -520,6 +529,7 @@ env_u_gap() {
   printf '%s%s' "${miss:+missing: $miss}" "${extra:+${miss:+; }extra: $extra}"
 }
 has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
+check_eq "dir #712: the scoped env -u form was found (a rename would otherwise read as every variable missing)" 1 "$([ -n "$impact_names" ] && echo 1 || echo 0)"
 check_eq "dir #661: tools/lib/impact-store.sh's scoped env -u names exactly the variables of the guard line" "" "$(env_u_gap "$guard_names" "$impact_names")"
 check_eq "dir #712: the pin names a variable the scoped form lacks" "missing: GIT_NAMESPACE" "$(env_u_gap "$guard_names" "${impact_names/GIT_NAMESPACE /}")"
 check_eq "dir #712: the pin names a variable the scoped form adds" "extra: GIT_FOO" "$(env_u_gap "$guard_names" "${impact_names}GIT_FOO ")"
