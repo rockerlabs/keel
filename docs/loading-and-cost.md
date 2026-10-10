@@ -60,8 +60,10 @@ Put in perspective:
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
 when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (its `@…/keel/CORE.md` import
-followed, when one is wired) together pass **10,000 tokens** (`KEEL_STARTUP_WARN_TOKENS`), naming both
-figures separately. For scale, the typical project file above is ~330 and the global core ~2,490 —
+followed, when one is wired) PLUS the harness's `MEMORY.md` index together pass **16,000 tokens**
+(`KEEL_STARTUP_WARN_TOKENS` — the former 10,000 plus ~6,000 for the index, which the harness caps near
+25 KB), naming the three figures separately. A live dated row under `## Footprint exceptions` in the
+project's `CLAUDE.md` silences it until its expiry. For scale, the typical project file above is ~330 and the global core ~2,490 —
 together roughly 28% of the budget — so the hint fires only once one side has grown into a roadmap,
 which is exactly what it then tells you to move to the on-demand tier.
 

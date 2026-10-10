@@ -132,8 +132,11 @@ honest. Two signals drive placement, not intuition:
 
 - **Footprint drift = the demote signal.** `doctor` estimates the token count of the project's own
   `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (following its `@…/keel/CORE.md` import when one is
-  wired) and emits a HINT (`H-FOOTPRINT`) once the sum exceeds `KEEL_STARTUP_WARN_TOKENS` (default
-  10,000), reporting both figures. That hint means: trim — move roadmap/changelog detail to the
+  wired) PLUS the harness's `MEMORY.md` index (all three load every session) and emits a HINT
+  (`H-FOOTPRINT`) once the sum exceeds `KEEL_STARTUP_WARN_TOKENS` (default 16,000), reporting all three
+  figures. A dated row under `## Footprint exceptions` in the project's `CLAUDE.md`
+  (`| Expires (YYYY-MM-DD) | Ticket/note |`) silences the hint until its expiry day; once expired the hint
+  returns, flagged EXPIRED. That hint means: trim — move roadmap/changelog detail to the
   on-demand tier.
 - **Retrieval miss = the promote signal.** A footprint too *small* fails silently — a needed fact wasn't
   loaded and the session ran on a guess. There's no automated hook for this, so capture it by a light
