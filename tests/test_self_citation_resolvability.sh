@@ -352,6 +352,12 @@ for subj in "Merge pull request #513: some title (dir #5)" "Fix the thing (#513)
   run "$cr" "$d" --quiet
   check_contains "PR hint on merge-subject shape: $subj" "$OUT" "merged PR"
 done
+# ...and a DIFFERENT PR number in history earns no hint (the match is on the cited number, not on any PR)
+d="$(mk_cl_repo "$cl_pr")"
+( cd "$d" && git commit -q --allow-empty --amend -m "Merge pull request #514 from org/other" )
+run "$cr" "$d" --quiet
+check_contains "a number that is not a merged PR is still DEAD" "$OUT" "DEAD dir #513"
+check_absent "...with no PR hint" "$OUT" "merged PR"
 
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
