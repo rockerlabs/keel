@@ -350,7 +350,7 @@ if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; th
     # A48: the release itself is bounded too — a pure-bash watchdog (no perl on the alpine image, no
     # timeout on stock macOS) kills the row's pid if the reader did not free it; cancelled on completion.
     # The trap takes the watchdog's own sleep down with it, so cancelling it leaves no stray process.
-    ( sleep 20 & s=$!; trap 'kill "$s"; exit 0' TERM; wait "$s"; kill "$qpid" ) > /dev/null 2>&1 &
+    ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep 20 & s=$!; wait "$s"; kill "$qpid" ) > /dev/null 2>&1 &
     qdog=$!
     wait "$qpid" 2>/dev/null || true
     kill "$qdog" 2>/dev/null || true; wait "$qdog" 2>/dev/null || true
@@ -499,6 +499,14 @@ run bash -c "umask 022; . '$lib'
 check_status "r1 write_through over a 0600 file under umask 022 → rc 0" 0 "$STATUS"
 check_eq "r1 …the temp is 0600 while cp -p fills it" "-rw-------" "$(cat "$w/seen" 2>/dev/null)"
 check_eq "r1 …and the file stays 0600" 600 "$(stat_portable_mode "$w/p")"
+# the mode now reaches the result only through cp -p, so a target MORE open than the claim must keep it.
+for m in 644 755; do
+  printf 'x\n' > "$w/m$m"; chmod "$m" "$w/m$m"
+  ( umask 022; printf 'y\n' | keel_write_through "$w/m$m" )
+  check_eq "r2 a $m target keeps $m (the 077 claim does not narrow it)" "$m" "$(stat_portable_mode "$w/m$m")"
+  ( umask 022; printf 'z\n' | keel_write_state "$w/m$m" )
+  check_eq "r2 …and through a STATE write" "$m" "$(stat_portable_mode "$w/m$m")"
+done
 printf 'old\n' > "$w/c"
 run bash -c "set -C; . '$lib'; printf 'n\n' | keel_write_replace '$w/g' && printf 'n\n' | keel_write_through '$w/fresh' \
   && keel_backup_write_through '$w/c' printf 'new\n' && keel_write_state '$w/c' printf 'state\n'"

@@ -230,12 +230,10 @@ _keel_sw_claim() {
 _keel_sw_write() {
   local target="$1" tmp="$1.keeltmp.$$" err="" rc=0
   shift
-  if [ -f "$target" ]; then
-    _keel_sw_claim "$tmp" "$target" 077 || return 1
-  else
+  if [ ! -f "$target" ]; then
     _keel_sw_claim "$tmp" "$target" || return 1
-  fi
-  if [ -f "$target" ]; then
+  else
+    _keel_sw_claim "$tmp" "$target" 077 || return 1
     if ! err="$(cp -p "$target" "$tmp" 2>&1)"; then
       _keel_sw_fail "$tmp" "could not write $target (it cannot be read, or its directory is not writable)$(_keel_sw_cause "$err")"
       return 1
