@@ -11,8 +11,11 @@
 #
 # Reads GitHub Actions' own event fields, passed in by ci.yml as plain env vars (never interpolated
 # into this script's text, so a branch name or PR title can't inject shell):
-#   GITHUB_EVENT_NAME                    "pull_request" or "push"
-#   GITHUB_BASE_SHA / GITHUB_HEAD_SHA    pull_request: base/head commit shas
+#   GITHUB_EVENT_NAME                    "pull_request", "merge_group" or "push"
+#   GITHUB_BASE_SHA / GITHUB_HEAD_SHA    pull_request: base/head commit shas; merge_group (dir #744: the
+#                                        merge queue's event): the group's parent commit (the payload's
+#                                        merge_group.base_sha) and the group's own sha — scanned exactly
+#                                        like a pull_request. Never invented here: an empty base exits 2.
 #   GITHUB_EVENT_BEFORE / GITHUB_EVENT_AFTER
 #                                        push: before/after commit shas ("before" is the all-zero sha
 #                                        on a new ref's first push; "after" is the all-zero sha on a
@@ -122,11 +125,11 @@ resolve_force_push_before() {
 }
 
 case "${GITHUB_EVENT_NAME:-}" in
-  pull_request)
+  pull_request|merge_group)
     base="${GITHUB_BASE_SHA:-}"
     head="${GITHUB_HEAD_SHA:-}"
     if [ -z "$base" ] || [ -z "$head" ]; then
-      echo "ci-scan: GITHUB_BASE_SHA and GITHUB_HEAD_SHA required for a pull_request event" >&2
+      echo "ci-scan: GITHUB_BASE_SHA and GITHUB_HEAD_SHA required for a $GITHUB_EVENT_NAME event" >&2
       exit 2
     fi
     range="$(resolve_range_ci "$base" "$head")"
@@ -160,7 +163,7 @@ case "${GITHUB_EVENT_NAME:-}" in
     range="$(resolve_range_ci "$before" "$after")"
     ;;
   *)
-    echo "ci-scan: unsupported GITHUB_EVENT_NAME '${GITHUB_EVENT_NAME:-}' (want pull_request or push)" >&2
+    echo "ci-scan: unsupported GITHUB_EVENT_NAME '${GITHUB_EVENT_NAME:-}' (want pull_request, merge_group or push)" >&2
     exit 2
     ;;
 esac

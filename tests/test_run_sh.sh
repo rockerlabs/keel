@@ -298,6 +298,70 @@ else
 fi
 check_contains "slowest block: the verdict keeps its exact text" "$OUT" "1 TEST FILE(S) FAILED"
 
+# --- dir #744 B16 (A17): KEEL_TEST_SHARD=K/N — size-greedy shards whose union is every file, once ---------
+# mk_sized DIR NAME BYTES — a passing fixture DIR/test_NAME.sh of exactly BYTES bytes that echoes "ran-NAME".
+mk_sized() {
+  local f="$1/test_$2.sh" body pad
+  body="$(printf '#!/usr/bin/env bash\necho ran-%s\n' "$2")"$'\n'
+  pad=$(( $3 - ${#body} - 2 ))
+  { printf '%s' "$body"; printf '#%*s\n' "$pad" ''; } > "$f"
+}
+mk_shard_dir() {
+  local d; d="$(mkfakedir)"
+  mk_sized "$d" a 700; mk_sized "$d" b 600; mk_sized "$d" c 500; mk_sized "$d" d 400
+  mk_sized "$d" e 300; mk_sized "$d" f 200; mk_sized "$d" g 100
+  printf '%s' "$d"
+}
+# ran_set OUT — the fixture letters whose header OUT carries, SORTED (e.g. "a d e"): headers print in reap order,
+# which concurrent files can swap.
+ran_set() { grep -oE '^=== test_[a-g]\.sh ===$' <<< "$1" | sed 's/^=== test_\(.\)\.sh ===$/\1/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
+
+d="$(mk_shard_dir)"
+check_eq "shard fixture: test_a.sh is exactly 700 bytes" "700" "$(wc -c < "$d/test_a.sh" | tr -d ' ')"
+check_eq "shard fixture: test_g.sh is exactly 100 bytes" "100" "$(wc -c < "$d/test_g.sh" | tr -d ' ')"
+run env KEEL_TEST_SHARD=1/2 bash "$d/run.sh"
+check_status "KEEL_TEST_SHARD=1/2 -> exit 0" 0 "$STATUS"
+check_eq "shard 1/2 runs exactly {a, d, e} (size-greedy; the 1100/1100 tie goes to shard 1)" "a d e" "$(ran_set "$OUT")"
+check_contains "shard 1/2 announces itself" "$OUT" "shard 1/2: 3 of 7 test files"
+run env KEEL_TEST_SHARD=2/2 bash "$d/run.sh"
+check_status "KEEL_TEST_SHARD=2/2 -> exit 0" 0 "$STATUS"
+check_eq "shard 2/2 runs exactly {b, c, f, g}" "b c f g" "$(ran_set "$OUT")"
+check_contains "shard 2/2 announces itself" "$OUT" "shard 2/2: 4 of 7 test files"
+
+run env KEEL_TEST_SHARD=1/999999999 bash "$d/run.sh"
+check_status "a huge N is no loop over N slots: KEEL_TEST_SHARD=1/999999999 -> exit 0" 0 "$STATUS"
+check_eq "...and shard 1 gets only the largest file" "a" "$(ran_set "$OUT")"
+run env KEEL_TEST_SHARD=9/9 bash "$d/run.sh"
+check_status "KEEL_TEST_SHARD=9/9 (an empty shard) -> exit 0" 0 "$STATUS"
+check_contains "an empty shard says so" "$OUT" "shard 9/9: 0 of 7 test files"
+check_eq "an empty shard runs no file" "" "$(ran_set "$OUT")"
+check_contains "an empty shard still runs the residue gate" "$OUT" "residue gate (dir #663)"
+
+run env KEEL_TEST_SHARD= bash "$d/run.sh"
+check_eq "KEEL_TEST_SHARD set but empty -> every file" "a b c d e f g" "$(ran_set "$OUT")"
+check_absent "KEEL_TEST_SHARD set but empty -> no shard line" "$OUT" "shard "
+run env -u KEEL_TEST_SHARD bash "$d/run.sh"
+check_eq "KEEL_TEST_SHARD unset -> every file" "a b c d e f g" "$(ran_set "$OUT")"
+check_absent "KEEL_TEST_SHARD unset -> no shard line" "$OUT" "shard "
+
+for bad in 3/2 0/2 x 1/0 1/2/3 01/2 1/02 -1/2; do
+  run env KEEL_TEST_SHARD="$bad" bash "$d/run.sh"
+  check_status "KEEL_TEST_SHARD=$bad -> exit 2" 2 "$STATUS"
+  check_contains "KEEL_TEST_SHARD=$bad -> FATAL names the variable" "$OUT" "FATAL: KEEL_TEST_SHARD"
+  check_eq "KEEL_TEST_SHARD=$bad -> no file ran" "" "$(ran_set "$OUT")"
+done
+
+# The runner removes the variable before launching anything: a nested runner inside a shard run sees all of
+# its own fixtures (tests/test_run_sh.sh itself is the real case — ~30 nested runs).
+inner="$(mk_shard_dir)"
+outer="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nbash %q | grep -c "^=== test_[a-g]\\.sh ===$"\n' "$inner/run.sh" > "$outer/test_nested.sh"
+# 1/2, not 1/1: an inherited 1/2 would cut the inner run to its shard 1 (3 files), so this binds the unset.
+run env KEEL_TEST_SHARD=1/2 bash "$outer/run.sh"
+check_status "a nested runner inside a shard run -> exit 0" 0 "$STATUS"
+check_contains "the outer run is a shard run" "$OUT" "shard 1/2: 1 of 1 test files"
+check_contains "the nested runner ran all 7 of its own fixtures" "$OUT" "$(printf '=== test_nested.sh ===\n7')"
+
 # --- dir #480's cheap discrimination: a failing run's per-file logs must survive the process, not
 # vanish with the EXIT-trap cleanup, so a one-off local failure (the shape dir #480 itself was filed
 # from — a single unreproduced report with nothing preserved to inspect afterward) leaves real

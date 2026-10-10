@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # dir #744 (B25): the merge queue's event. Every required job runs on it as on pull_request; inert until the
+  # queue is enabled in branch protection (the operator's step), since no such event fires before that.
+  merge_group:
 
 permissions:
   contents: read
@@ -13,21 +16,57 @@ permissions:
 # by tests/test_ci_workflow.sh. tests/run.sh's per-file watchdog (600 s under CI) fires first for a hung
 # test file and prints its log; this bound catches a hang outside any test file.
 jobs:
+  # Images pinned to explicit versions (not the drifting -latest aliases) for reproducible runs.
   tests:
-    name: tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        # Pinned to explicit images (not the drifting -latest aliases) for reproducible runs.
-        os: [ubuntu-24.04, macos-14]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    name: tests (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: bash version
         run: bash --version | head -1
       - name: Run test suite
         run: bash tests/run.sh
+
+  # dir #744 (B16): macOS is the long pole (one unsharded leg ran 12-16 min), so it runs as two shards — each
+  # takes tests/run.sh's KEEL_TEST_SHARD=K/2 share (size-greedy by file bytes, every file exactly once) — and
+  # an aggregator below reports the one required check name, `tests (macos-14)`. No branch-protection change.
+  macos-shards:
+    name: tests (macos-14, shard ${{ matrix.shard }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: bash version
+        run: bash --version | head -1
+      - name: Run test suite (one shard)
+        env:
+          KEEL_TEST_SHARD: ${{ matrix.shard }}/2
+        run: bash tests/run.sh
+
+  # The required `tests (macos-14)` check: green only when BOTH shards succeeded. `if: always()` so a failed,
+  # cancelled or skipped shard still yields a red check here rather than a skipped one (branch protection
+  # treats a skipped required check as passing). On ubuntu: it must not take one of the account's macOS slots.
+  macos:
+    name: tests (macos-14)
+    needs: macos-shards
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require both macOS shards to succeed
+        env:
+          SHARDS_RESULT: ${{ needs.macos-shards.result }}
+        run: |
+          if [ "$SHARDS_RESULT" != success ]; then
+            echo "macOS shards: $SHARDS_RESULT (both must succeed)" >&2
+            exit 1
+          fi
+          echo "macOS shards: success"
 
   alpine:
     name: tests (alpine-busybox)
@@ -116,8 +155,11 @@ jobs:
         # deliberately — see ci-scan.sh's header. It is not set here: unset is the safe default.
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # dir #744 (B26): on merge_group the base is the group's parent commit (the payload's
+          # merge_group.base_sha — a required field of GitHub's merge_group schema) and the head is the
+          # group's own sha (github.sha); on pull_request, the PR's base/head as before.
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          GITHUB_HEAD_SHA: ${{ github.event_name == 'merge_group' && github.sha || github.event.pull_request.head.sha }}
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           GITHUB_EVENT_AFTER: ${{ github.event.after }}
         run: tools/secret-guard/ci-scan.sh
