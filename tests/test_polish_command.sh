@@ -62,23 +62,20 @@ instr='load the `polish-guide` skill (`keel-polish-guide` if aliased), else `pol
 ends_with_rare() { step_text "$1" | sed 's/.*\*Rare — /*Rare — /'; }
 # dir #739 (build A): the load instruction is stated ONCE, in **The guide.**; steps 1, 4 and 5 (and step 2)
 # end with the short form "the guide, § Step N." and carry neither the instruction nor "unreachable".
-# Steps 8 and 9 still carry the long form until slice 3 dedupes them, so each count below is 3.
+# dir #673 (build C, A13): steps 8 and 9 are deduped too, so the instruction and "unreachable" each occur once.
 for n in 1 4 5 8 9; do
   t="$(ends_with_rare "$n")"
   check_contains "step $n ends with a rare-trigger marker" "$t" "*Rare — "
   check_contains "step $n's closing pointer names its guide section" "$t" "§ Step $n"
 done
-for n in 1 4 5; do
+for n in 1 4 5 8 9; do
   t="$(ends_with_rare "$n")"
-  check_contains "step $n's closing pointer is the short form ending the step" "$t" "the guide, § Step $n."
+  check_contains "step $n's closing pointer is the short form" "$t" "the guide, § Step $n"
   check_absent "step $n's pointer does not repeat the guide-loading instruction" "$t" "$instr"
   check_absent "step $n's pointer does not repeat the unreachable-guide clause" "$t" "unreachable"
 done
-for n in 8 9; do
-  t="$(ends_with_rare "$n")"
-  check_contains "step $n ends with the exact guide-loading instruction" "$t" "$instr"
-  check_contains "step $n's closing pointer says an unreachable guide stops the run" "$t" "guide unreachable → stop and report"
-done
+check_contains "step 8 ends with the short pointer" "$(ends_with_rare 8)" "the guide, § Step 8."
+check_contains "step 9's pointer starts with the short form" "$(ends_with_rare 9)" "the guide, § Step 9 (§ Step 10 for the add-on summary forms)."
 # **The guide.** paragraph: from its bold lead to the sentence that follows it.
 gpara="${flat#*'**The guide.**'}"
 gpara="${gpara%%'Where the guide and this file disagree'*}"
@@ -88,8 +85,8 @@ check_contains "**The guide.** forbids improvising a branch" "$gpara" "Never imp
 # occurrences HAYSTACK NEEDLE — how often NEEDLE occurs in HAYSTACK, in bash alone: busybox's `grep -oF` prints
 # only the FIRST match of a line, and the flattened core is one line.
 occurrences() { local rest="${1//"$2"/}"; echo $(( (${#1} - ${#rest}) / ${#2} )); }
-check_eq "the guide-loading instruction appears 3 times in the core (The guide., steps 8, 9)" "3" "$(occurrences "$flat" "$instr")"
-check_eq "'unreachable' appears 3 times in the core (The guide., steps 8, 9)" "3" "$(occurrences "$flat" "unreachable")"
+check_eq "the guide-loading instruction appears once in the core, inside **The guide.** (dir #673, A13)" "1" "$(occurrences "$flat" "$instr")"
+check_eq "'unreachable' appears once in the core, inside **The guide.** (dir #673, A13)" "1" "$(occurrences "$flat" "unreachable")"
 check_contains "step 9's closing pointer also reaches step 10's add-on summary forms" "$(ends_with_rare 9)" "§ Step 10 for the add-on summary forms"
 check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
 check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
@@ -388,5 +385,31 @@ check_eq "compaction stop (f): exactly one fenced block is the verbatim /polish 
 check_contains "guide description names a compaction stop" "$guide_head" 'a compaction stop'
 check_contains "docs/loading-and-cost.md's guide row names a compaction stop" "$(grep -F '`commands/polish-guide.md`' "$REPO_ROOT/docs/loading-and-cost.md" || true)" 'a compaction stop'
 check_contains "docs/reference.md's polish-guide sentence names a compaction stop" "$(grep -F '`polish-guide` is not one either' "$REPO_ROOT/docs/reference.md" || true)" 'a compaction stop'
+
+# --- dir #673 (a) (build C, A11/A13): the mutation pass — the core's trigger, the guide's procedure ---------------
+# The trigger names CODE (a prose rule has nothing to mutate) and avoids "gate" (in polish.md it means the pre-PR gate).
+s3="$(step_text 3)"
+check_contains "core: step 3 carries the mutation-pass trigger, before the receipt" "$s3" \
+  "A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt."
+check_absent "core: the mutation-pass trigger does not say 'gate'" "${s3#*A diff whose code}" "a gate"
+g3="$(guide_step 3)"
+check_contains "guide § Step 3 holds the mutation pass" "$g3" '**Mutation pass (dir #673).**'
+check_contains "guide: the pass fires on code, never on a prose-only rule" "$g3" \
+  "adds or changes a filter, threshold, guard or exclusion rule; a rule written only in prose has nothing to mutate"
+check_contains "guide: one clause at a time — flip, drop, widen and narrow" "$g3" \
+  "Mutate one clause of a changed rule at a time: flip a comparison, drop a clause, widen and narrow a bound"
+check_contains "guide: mutate only in a scratch clone, never the worktree, never under a running suite (dir #505)" "$g3" \
+  "Mutate only in a scratch clone of the committed work"
+check_contains "guide: never the worktree while a suite runs" "$g3" "never the worktree — least of all while a suite runs there (dir #505)"
+check_contains "guide: run only the test files that pin the rule" "$g3" "run only the test files that pin the rule"
+check_contains "guide: a survivor is a finding, fixed with a test or recorded with why" "$g3" \
+  "A survivor is a finding: add the missing test (step 6's retest then runs) or record the mutant in the PR body with why"
+check_contains "guide: the pass is disclosed in step 10 and has no receipt of its own" "$g3" \
+  "Disclose the pass in step 10. It has no receipt of its own."
+check_contains "guide § Step 10 carries the mutation-pass disclosure form" "$(guide_step 10)" "mutation pass: <N> mutants, <M> survived"
+for f in "$guide_head" "$(grep -F '`commands/polish-guide.md`' "$REPO_ROOT/docs/loading-and-cost.md" || true)" \
+  "$(grep -F '`polish-guide` is not one either' "$REPO_ROOT/docs/reference.md" || true)"; do
+  check_contains "a trigger list names a mutation pass (B12a, A11)" "$f" 'a mutation pass'
+done
 
 summary
