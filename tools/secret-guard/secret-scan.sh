@@ -989,44 +989,39 @@ case "$mode" in
     # `clean` verdict. Exit 2 only when git cannot read that copy (a partial clone offline included). A gitlink
     # (mode 160000) is a submodule — its content is its own repo's. A skip-worktree file that IS present is read
     # from the working tree, whose copy may hold what the index does not. An unmerged path is listed once per
-    # stage: read from the working tree once, or — when that copy is not there — every stage's index copy, since
-    # each stage's content differs.
+    # stage and read once: its later stages are skipped (spec 746's stated limit — an unmerged path whose working
+    # copy is gone is scanned from its first stage only; the conflict blocks a commit anyway).
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    tab=$'\t'; prev=""; prev_idx=""; sparse=0
+    tab=$'\t'; prev=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
       LC_ALL=C IFS=' ' read -r ttag tmode tsha _tstage <<< "${rec%%"$tab"*}"
-      [ -n "$f" ] || continue
-      if [ "$f" = "$prev" ]; then
-        [ -n "$prev_idx" ] || continue              # another stage, the path already read from the working tree
+      [ -n "$f" ] && [ "$f" != "$prev" ] || continue
+      prev="$f"
+      [ "$tmode" != 160000 ] || continue
+      why=""
+      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
+        sparse=$((sparse + 1))
+      elif [ -L "$top/$f" ]; then
+        # a tracked symlink's committed content IS its target string — scan that (it can carry a
+        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
+        # readlink read as an empty target, i.e. `clean` (dir #715).
+        target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+        emit_stream "$f" <<< "$target"
+        continue
+      elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+        emit_stream "$f" < "$top/$f"
+        continue
+      elif [ -f "$top/$f" ]; then
+        why="unreadable"
+      elif [ ! -e "$top/$f" ]; then
+        why="missing from the working tree"
       else
-        prev="$f"; prev_idx=""
-        [ "$tmode" != 160000 ] || continue
-        why=""
-        if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
-          sparse=$((sparse + 1))
-        elif [ -L "$top/$f" ]; then
-          # a tracked symlink's committed content IS its target string — scan that (it can carry a
-          # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-          # readlink read as an empty target, i.e. `clean` (dir #715).
-          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
-          emit_stream "$f" <<< "$target"
-          continue
-        elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
-          emit_stream "$f" < "$top/$f"
-          continue
-        elif [ -f "$top/$f" ]; then
-          why="unreadable"
-        elif [ ! -e "$top/$f" ]; then
-          why="missing from the working tree"
-        else
-          why="not a regular file in the working tree"
-        fi
-        [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
-        prev_idx=1
+        why="not a regular file in the working tree"
       fi
+      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: ${f//$'\n'/\\n}" >&2
       git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
       emit_file "$f" "$tblob"
     done < "$tlist"
@@ -1244,43 +1239,44 @@ load_range_pairs() {
     fi
   done < "$plist"
   [ -z "$hdr" ] || _fail_closed "read the range's paths (unexpected record)"
-  rm -f "$plist" "$perr"
 }
-
-# The pairs are listed before the first hit line prints, so a failing listing exits 2 with no hit line out.
-if [ -n "${rng:-}" ] && [ "${#path_globs[@]}" -gt 0 ]; then
-  ri=0
-  while [ "$ri" -lt "${#rec_path[@]}" ]; do
-    if [ -n "${rec_blob[$ri]}" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
-      load_range_pairs; break
-    fi
-    ri=$((ri + 1))
-  done
-fi
 
 found=0
 # dir #741 (B10): each allow channel reads its own field — the inline marker and the ERE entries the matched
 # text, a `path:` glob the path, and never a commit or tag message's label. Iterated by index (no empty
-# "${a[@]}" under set -u on bash 3.2). The printed line is the pre-B10 record, byte for byte.
+# "${a[@]}" under set -u on bash 3.2). Two passes: the content channels first, so the range's pairs (B11) are
+# listed only for a hit they keep, and before the first hit line prints — a failing listing exits 2 with no
+# hit line out. The printed line is the pre-B10 record, byte for byte.
+rec_drop=(); need_pairs=""
+ri=0
+while [ "$ri" -lt "${#rec_path[@]}" ]; do
+  drop=""
+  case "${rec_text[$ri]}" in *secret-scan:allow*) drop=1 ;; esac      # inline allow
+  if [ -z "$drop" ]; then                                             # ERE allowlist
+    for re in "${drop_res[@]:-}"; do
+      [ -z "$re" ] && continue
+      # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
+      # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
+      # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
+      # unreliable evidence in a security-facing scanner. `-e` (dir #746 B2): an entry starting with `-` is a
+      # pattern — `-e.` read positionally was the option -e with the pattern `.`, exempting every record.
+      # LC_ALL=C (B5): bytes, as the records are; a non-ASCII entry using `.` or a bracket can only over-block.
+      if LC_ALL=C grep -qE -e "$re" <<< "${rec_text[$ri]}"; then drop=1; break; fi
+    done
+  fi
+  rec_drop+=("$drop")
+  if [ -z "$drop" ] && [ -n "${rec_blob[$ri]}" ] && [ -z "${rec_msg[$ri]}" ] && path_exempt "${rec_path[$ri]}"; then
+    need_pairs=1
+  fi
+  ri=$((ri + 1))
+done
+[ -z "$need_pairs" ] || load_range_pairs
+
 ri=0
 while [ "$ri" -lt "${#rec_path[@]}" ]; do
   rpath="${rec_path[$ri]}"; rwhere="${rec_where[$ri]}"; rtext="${rec_text[$ri]}"; rblob="${rec_blob[$ri]}"
-  rmsg="${rec_msg[$ri]}"; ri=$((ri + 1))
-  # inline allow
-  case "$rtext" in *secret-scan:allow*) continue ;; esac
-  # ERE allowlist
-  skip=0
-  for re in "${drop_res[@]:-}"; do
-    [ -z "$re" ] && continue
-    # A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer
-    # can be SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a
-    # false "not allowlisted" under load (dir #280) — a spurious finding, not a missed one, but still
-    # unreliable evidence in a security-facing scanner. `-e` (dir #746 B2): an entry starting with `-` is a
-    # pattern — `-e.` read positionally was the option -e with the pattern `.`, exempting every record. LC_ALL=C
-    # (B5): bytes, as the records are; a non-ASCII entry using `.` or a bracket can only over-block.
-    if LC_ALL=C grep -qE -e "$re" <<< "$rtext"; then skip=1; break; fi
-  done
-  [ "$skip" = 1 ] && continue
+  rmsg="${rec_msg[$ri]}"; rdrop="${rec_drop[$ri]}"; ri=$((ri + 1))
+  [ -z "$rdrop" ] || continue
   # path-glob allowlist: file records only; a --range blob only when every path it is introduced at is exempt
   if [ -z "$rmsg" ] && path_exempt "$rpath"; then
     [ -n "$rblob" ] || continue

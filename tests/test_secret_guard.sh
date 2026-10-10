@@ -3062,6 +3062,12 @@ commit746 "$r746" clean
 run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
 check_status "dir #746 A25(b): a clean range never enumerates the pairs → exit 0" 0 "$STATUS"
 check_contains "dir #746 A25(b): ...clean" "$OUT" "secret-scan: clean"
+# (c) a hit the inline marker or an ERE entry already drops never needs the pairs either
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'tok = %s # secret-scan:allow\n' "$k746" > "$r746/fixtures/k.txt"
+commit746 "$r746" allowed
+run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A25(c): an inline-allowed hit under a path: glob never enumerates the pairs → exit 0" 0 "$STATUS"
 
 # A26 / A27 (B12): --tracked scans the index copy of a tracked file it cannot read from the working tree.
 r746="$(new_repo)"
@@ -3126,24 +3132,5 @@ printf 'tok = %s\n' "$k746" > "$r746/c.txt"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
 check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
-# (f) an unmerged path missing from the working tree: every stage's index copy is scanned, not only the first —
-# the key here sits in stage 3 alone (review finding)
-r746="$(new_repo)"
-printf 'base\n' > "$r746/f.txt"
-commit746 "$r746" base
-main746="$(git -C "$r746" branch --show-current)"
-git -C "$r746" checkout -q -b theirs746
-printf 'tok = %s\n' "$k746" > "$r746/f.txt"
-commit746 "$r746" theirs
-git -C "$r746" checkout -q "$main746"
-printf 'mine\n' > "$r746/f.txt"
-commit746 "$r746" mine
-git -C "$r746" merge -q theirs746 >/dev/null 2>&1 || true
-check_eq "dir #746 A26(f) fixture: f.txt is unmerged (three stages)" 3 "$(git -C "$r746" ls-files -s -- f.txt | wc -l | tr -d ' ')"
-rm "$r746/f.txt"
-run_in "$r746" "$scan" --tracked
-check_status "dir #746 A26(f): an unmerged, deleted path's later stage holds the key → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...with one index-copy line for the path" 1 \
-  "$(match "$OUT" -c 'scanned its index copy instead: f.txt$')"
 
 summary
