@@ -103,7 +103,9 @@ else
   pass "A40 case-only directory row not applicable — the checkout's file system tells names apart by case"
 fi
 # …but a differently-named sibling in the recorded target's own directory (`<checkout>/ALIAS.md -> CORE.md`)
-# is not the recorded entry. Three ways in, all in the scratch checkout (the alias is removed afterwards):
+# is not the recorded entry. Two ways in, both in the scratch checkout (the alias is removed afterwards).
+# (A manifest written before this slice may still record such an alias as Keel's: a named residual, see
+# install.sh keel_own_stale_link.)
 ln -s CORE.md "$ck/ALIAS.md"
 # (a) uninstall's own arm: the record names CORE.md, the live link names ALIAS.md — kept, with the reason.
 h="$SANDBOX/a40a/h"
@@ -119,32 +121,36 @@ check_contains "A40 sibling-alias: …named as pointing where Keel did not wire 
 # would record it) records nothing for that path, and the link stays the adopter's.
 h="$SANDBOX/a40b/h"
 run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A40 sibling-alias (b) fixture: linked install → exit 0" 0 "$STATUS"
 rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
 run "$ck/install.sh" --link --home "$h" --no-hooks
 check_status "A40 sibling-alias: a re-install over the adopter's alias link → exit 0" 0 "$STATUS"
 check_eq "A40 sibling-alias: …records no symlink for keel/CORE.md at all" 0 \
   "$(grep -c "^artifact=symlink	keel/CORE.md	" "$h/.keel/install-manifest.claude" || true)"
 check_eq "A40 sibling-alias: …and the link is still the adopter's" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
-# (c) the upgrade path: a manifest written before this fix recorded the alias link as Keel's (its "in sync"
-# test followed the chain). A re-install must not take that record as "Keel's own link gone stale" and
-# re-point the adopter's live link — a live link into this checkout is never stale.
-h="$SANDBOX/a40u/h"
-run "$ck/install.sh" --link --home "$h" --no-hooks
-rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
-m="$h/.keel/install-manifest.claude"
-awk -F'\t' -v OFS='\t' -v t="$ck/ALIAS.md" \
-  '$1 == "artifact=symlink" && $2 == "keel/CORE.md" { print $1, $2, t; next } { print }' "$m" > "$m.new" && mv "$m.new" "$m"
-check_eq "A40 upgrade fixture: the old manifest records the alias as Keel's" 1 \
-  "$(grep -c "^artifact=symlink	keel/CORE.md	$ck/ALIAS.md\$" "$m" || true)"
-run "$ck/install.sh" --link --home "$h" --no-hooks
-check_status "A40 upgrade: a re-install over that record → exit 0" 0 "$STATUS"
-check_eq "A40 upgrade: …the adopter's alias link is not re-pointed" "$ck/ALIAS.md" "$(readlink "$h/keel/CORE.md")"
-check_absent "A40 upgrade: …and not called Keel's own stale link" "$OUT" "CORE.md re-pointed"
 rm -f "$ck/ALIAS.md"
+# …while Keel's own links into an old checkout NESTED inside the new one (a worktree at
+# `<main>/.claude/worktrees/x`, then an install from `<main>`) are still its own links gone stale (T3):
+# re-pointed into the new checkout and kept on record. (The nested copy sits under the scratch checkout's
+# git-ignored .claude/, removed afterwards.)
+nested="$ck/.claude/worktrees/x"
+tracked_tree_copy "$nested" || exit 1
+h="$SANDBOX/a40w/h"
+run "$nested/install.sh" --link --home "$h" --no-hooks
+check_status "A40 nested checkout fixture: linked install from the nested checkout → exit 0" 0 "$STATUS"
+run "$ck/install.sh" --link --home "$h" --no-hooks
+check_status "A40 nested checkout: a linked install from the outer checkout → exit 0" 0 "$STATUS"
+check_contains "A40 nested checkout: …Keel's links are re-pointed" "$OUT" "CORE.md re-pointed"
+check_eq "A40 nested checkout: …into the outer checkout" "$ck/CORE.md" "$(readlink "$h/keel/CORE.md")"
+check_ne "A40 nested checkout: …and stay on record" 0 \
+  "$(grep -c '^artifact=symlink	' "$h/.keel/install-manifest.claude" || true)"
+rm -rf "$ck/.claude"
+check_eq "A40 nested checkout: the scratch checkout is clean again" "" "$(git -C "$ck" status --porcelain)"
 # …and a dotfiles chain at keel/CORE.md is the adopter's at install too: --link --no-git declines it rather
 # than replacing it with the trimmed copy.
 h="$SANDBOX/a40n/h"; dots="$SANDBOX/a40n/dots"; mkdir -p "$dots"
 run "$install" --link --home "$h" --no-hooks
+check_status "A40 chained --no-git fixture: linked install → exit 0" 0 "$STATUS"
 ln -s "$REPO_ROOT/CORE.md" "$dots/CORE.md"
 rm -f "$h/keel/CORE.md"; ln -s "$dots/CORE.md" "$h/keel/CORE.md"
 run "$install" --link --no-git --home "$h" --no-hooks

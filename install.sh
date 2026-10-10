@@ -1012,10 +1012,12 @@ prior_checkout() {
 # one). The second test is what keeps an adopter's link that an older install recorded as Keel's from being
 # re-placed. A dangling link whose record carries the pre-dir-#369 `-` is Keel's too: that record never
 # named a target. Anything else — no usable prior manifest included — fails closed (T4 declines it).
-# STALE means stale: a live link into THIS checkout is never T3, whatever a prior manifest recorded for it.
-# Callers reach here only for a link that does not point at the file Keel would wire (keel_link_points_at),
-# so a live in-checkout link here leads somewhere else in the checkout — an adopter's alias, which a
-# manifest written before spec 685 round 2 could record as Keel's (its "in sync" test followed the chain).
+# Named residual, not handled: an adopter's link to a differently-named file INSIDE the checkout (an alias)
+# that a manifest written before spec 685 round 2 recorded as Keel's (its "in sync" test followed the
+# chain) is still taken as Keel's here — re-pointed — and by uninstall — removed. It cannot be told apart
+# on disk from Keel's own link to a file it has since remapped, or into an old checkout nested inside the
+# new one (a worktree), both of which must stay T3; this run records such a link correctly, so only that
+# older record carries it.
 keel_own_stale_link() {
   local dest="$1" rec
   [ -L "$dest" ] || return 1
@@ -1024,9 +1026,6 @@ keel_own_stale_link() {
   if [ "$rec" = "-" ]; then
     [ ! -e "$dest" ]
     return
-  fi
-  if [ -e "$dest" ] && keel_path_inside "$(readlink "$dest" 2>/dev/null || true)" "$root"; then
-    return 1
   fi
   # The one link-record predicate (tools/lib/manifest.sh, B20): the recorded target, inside the recording
   # checkout. prior_symlink_extra answers only for a usable prior manifest, so the snapshot is usable here.
