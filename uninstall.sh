@@ -1114,19 +1114,21 @@ if [ "$DRY_RUN" = 0 ]; then
     # .keel/{impact,read-trace} for each moved entry, pointing at its new home under $HOME/.keel; those
     # links keep .keel non-empty. They are named as what they are, not blamed on rmdir (dir #748).
     if [ -d "$HOME_DIR/.keel" ] && ! rmdir "$HOME_DIR/.keel" 2>/dev/null; then
-      # A compatibility link is exactly the shape the move leaves: .keel/<store>/<entry> → …/<store>/<entry>
-      # (the same store and entry name at the new root). Any other link there is not counted as Keel's.
+      # A compatibility link is exactly what the move leaves: .keel/<store>/<entry> → $HOME/.keel/<store>/<entry>
+      # (tools/lib/state-root.sh's keel_state_root, the same entry name). Any other link there is not Keel's.
       compat_links=0
-      for cl in "$HOME_DIR"/.keel/impact/* "$HOME_DIR"/.keel/impact/.[!.]* \
-                "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]*; do
-        [ -L "$cl" ] || continue
-        cl_store="${cl%/*}"; cl_store="${cl_store##*/}"
-        case "$(readlink "$cl" 2>/dev/null || true)" in
-          */"$cl_store"/"${cl##*/}") compat_links=$((compat_links + 1)) ;;
-        esac
-      done
+      if [ -n "${HOME:-}" ]; then
+        for cl in "$HOME_DIR"/.keel/impact/* "$HOME_DIR"/.keel/impact/.[!.]* \
+                  "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]*; do
+          [ -L "$cl" ] || continue
+          cl_store="${cl%/*}"; cl_store="${cl_store##*/}"
+          if [ "$(readlink "$cl" 2>/dev/null || true)" = "$HOME/.keel/$cl_store/${cl##*/}" ]; then
+            compat_links=$((compat_links + 1))
+          fi
+        done
+      fi
       if [ "$compat_links" -gt 0 ]; then
-        echo "  kept $HOME_DIR/.keel — could not remove; among what it still contains are $compat_links compatibility links Keel left (impact/read-trace entries that now live under the state root; the data there is untouched):"
+        echo "  kept $HOME_DIR/.keel — could not remove; what it still contains includes compatibility links Keel left ($compat_links, for impact/read-trace entries that now live under $HOME/.keel; the data there is untouched):"
       else
         echo "  kept $HOME_DIR/.keel — could not remove; it still contains (if anything):"
       fi

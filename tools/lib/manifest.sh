@@ -63,14 +63,28 @@ keel_path_inside() {
   return 1
 }
 
+# _manifest_same_path A B — absolute paths A and B name the same directory entry: the same basename, and
+# directories that resolve (`cd -P`) to one physical path. Never follows A or B themselves, so a link at A
+# is not "the same" as the file it points to. False when either directory cannot be resolved.
+_manifest_same_path() {
+  local da db
+  case "$1" in /*) ;; *) return 1 ;; esac
+  [ "${1##*/}" = "${2##*/}" ] || return 1
+  da="$(cd -P "${1%/*}/" 2>/dev/null && pwd -P)" || return 1
+  db="$(cd -P "${2%/*}/" 2>/dev/null && pwd -P)" || return 1
+  [ "$da" = "$db" ]
+}
+
 # manifest_link_is_keels MANIFEST REL LINK — the ONE test that a link a manifest recorded is provably Keel's
 # (spec 685 round 2 B20): MANIFEST is usable and holds a `symlink` record for REL whose target is not the
-# pre-dir-#369 `-`, LINK leads to that recorded target — its own text equals it, or (both resolving) it
-# names the same file, so a spelling that differs only by a symlinked parent or /tmp vs /private/tmp still
-# counts, as uninstall's `-ef` match always has — and the target lies inside the
+# pre-dir-#369 `-`, LINK's own target IS that recorded target — the same text, or the same path spelled
+# through a different directory (a symlinked parent, /tmp vs /private/tmp: the same basename in the same
+# physical directory, as uninstall's `-ef` match always tolerated) — and the target lies inside the
 # checkout MANIFEST's `checkout=` header names (keel_path_inside — the checkout that WROTE the record, the
 # old one after a move). An adopter's link that an older manifest recorded as Keel's fails the last test,
-# so nothing that asks this moves or re-places it. install.sh's stale-link class, tools/doctor.sh's
+# so nothing that asks this moves or re-places it. A link that only ENDS at the recorded target through
+# another link (a dotfiles manager's `~/.claude/x -> ~/dots/x -> <checkout>/x`) is not Keel's: the test
+# compares where LINK itself points, never the end of its chain. install.sh's stale-link class, tools/doctor.sh's
 # dangling-link advice and uninstall.sh's symlink arm all ask it; each keeps its own handling of a `-`
 # record at the call site.
 manifest_link_is_keels() {
@@ -79,7 +93,7 @@ manifest_link_is_keels() {
   rec="$(manifest_symlink_extra "$man" "$rel")"
   [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
   cur="$(readlink "$link" 2>/dev/null)" || return 1
-  [ "$cur" = "$rec" ] || [ "$link" -ef "$rec" ] || return 1
+  [ "$cur" = "$rec" ] || _manifest_same_path "$cur" "$rec" || return 1
   ck="$(manifest_field "$man" checkout)"
   keel_path_inside "$rec" "$ck"
 }

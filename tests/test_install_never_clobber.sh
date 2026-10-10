@@ -85,6 +85,18 @@ run "$uninstall" --home "$h" --yes
 check_status "A40 respelled: uninstall → exit 0" 0 "$STATUS"
 check_nolink "A40 respelled: …Keel's respelled link is removed" "$h/keel/CORE.md"
 check_absent "A40 respelled: …never reported as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably"
+# …but a link that only ENDS at the recorded target through another link (a dotfiles manager's
+# `<home>/keel/CORE.md -> dots/CORE.md -> <checkout>/CORE.md`) is the adopter's: kept, not moved.
+h="$SANDBOX/a40c/h"; dots="$SANDBOX/a40c/dots"; mkdir -p "$dots"
+run "$install" --link --home "$h" --no-hooks
+check_status "A40 chained fixture: linked install → exit 0" 0 "$STATUS"
+ln -s "$REPO_ROOT/CORE.md" "$dots/CORE.md"
+rm -f "$h/keel/CORE.md"; ln -s "$dots/CORE.md" "$h/keel/CORE.md"
+run "$uninstall" --home "$h" --yes
+check_status "A40 chained: uninstall → exit 0" 0 "$STATUS"
+check_link "A40 chained: …the adopter's chained link stays" "$h/keel/CORE.md"
+check_eq "A40 chained: …still pointing at the dotfiles link" "$dots/CORE.md" "$(readlink "$h/keel/CORE.md")"
+check_contains "A40 chained: …named as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably Keel's — kept"
 # doctor and install ask the same predicate (one definition).
 body="$(awk '/doctor_link_is_keels_own\(\) \{/,/^  \}/' "$REPO_ROOT/tools/doctor.sh")"
 check_contains "A40 doctor_link_is_keels_own calls manifest_link_is_keels" "$body" "manifest_link_is_keels"
@@ -174,6 +186,14 @@ check_link "A50(4) fixture: .keel/impact/-p-a50 is now a compatibility link" "$h
 run "$uninstall" --home "$h" --yes
 check_status "A50(4) uninstall → exit 0" 0 "$STATUS"
 check_contains "A50(4) …the kept-.keel line names Keel's compatibility links" "$OUT" "compatibility links Keel left"
+# …and a link there of some other shape is not counted as one of Keel's.
+h="$SANDBOX/a50-4n/h"
+run "$install" --home "$h" --no-hooks
+mkdir -p "$h/.keel/impact"; ln -s "$SANDBOX/elsewhere/old/impact/-p-mine" "$h/.keel/impact/-p-mine"
+run "$uninstall" --home "$h" --yes
+check_status "A50(4) a foreign link under .keel/impact: uninstall → exit 0" 0 "$STATUS"
+check_absent "A50(4) …is not called a compatibility link Keel left" "$OUT" "compatibility links Keel left"
+check_contains "A50(4) …the generic kept line is printed" "$OUT" "could not remove; it still contains (if anything)"
 # (5) copy mode, a foreign CLAUDE.md after an uninstall: the WARN says it carries no rails block.
 h="$SANDBOX/a50-5/h"
 run "$install" --home "$h" --no-hooks

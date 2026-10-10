@@ -694,8 +694,8 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 # a backup uninstall removes is not a backup.
 # Guarded against a non-regular DEST (dir #349): a plain `cp` hangs on a FIFO and fails outright on a
 # directory/device/socket — reached live at the bin/keel call site below (a directory there + --force
-# used to abort the whole run under `set -euo pipefail`, verified). One guard here covers all three call
-# sites, present and future, instead of asking each to re-derive it — same reasoning, and the same
+# used to abort the whole run under `set -euo pipefail`, verified). One guard here covers every call
+# site, present and future, instead of asking each to re-derive it — same reasoning, and the same
 # $NON_REGULAR_MSG wording, as sync_product's own $dest_nonregular (dir #351). Declines, prints why, and
 # returns 1 rather than letting `cp` abort.
 #
@@ -709,11 +709,13 @@ manifest_usable "$prior_manifest" && prior_manifest_usable=1
 #   - sync_product's `y` at "Overwrite your copy" and `[u]` at the alias prompt (B23, dir #754) test it
 #     too (`if force_backup "$dest" "overwrite"; then place …`): a backup that cannot be taken — no free
 #     name, a failed copy — leaves the file untouched and the run goes on, a decline like any other.
-#   - sync_product's two --force call sites are bare statements and rely entirely on an upstream gate instead:
+#   - sync_product's two --force call sites are bare statements and rely on an upstream gate for the
+#     NON-REGULAR decline (a failed copy there still aborts the run, as it always has — nothing is
+#     overwritten without its backup):
 #     the first is reached only when `dest_differs=1`, which itself requires `[ -f "$dest" ]`; the
 #     second sits below dir #351's own `dest_nonregular` decline branch, which already intercepts and
 #     returns before this call is ever reached. Neither site checks this function's return value, so a
-#     decline there is unreachable ONLY as long as its one upstream gate keeps holding.
+#     non-regular decline there is unreachable ONLY as long as its one upstream gate keeps holding.
 # A future bare call site added without its own gate, or the removal of either gate above, silently
 # turns this guard from a clean decline back into the mid-sync abort dir #349 exists to remove — the
 # exact shape that bit dir #342/#343's `ensure_ledger` the same week. Whoever adds a sixth call site
@@ -735,7 +737,7 @@ force_backup() {
     return 1
   fi
   # Explicit check, not ambient `set -e` (dir #349, found live by a fresh /code-review pass): the
-  # bin/keel call site below tests this function's own return value (`elif force_backup ...; then`),
+  # bin/keel call site below (and sync_product's two B23 sites) test this function's own return value,
   # and bash suspends errexit for the WHOLE body of a command invoked in test position — not just its
   # final exit status. Without this check, a real copy failure (permission denied, disk full, a
   # transient I/O error) would silently fall through to the success echo below and return 0: the
