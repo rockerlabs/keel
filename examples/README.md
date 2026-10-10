@@ -89,6 +89,7 @@ $ ./tools/install-secret-guard.sh /tmp/demo/my-project
   selftest: OK   — malformed personal regex fails CLOSED (config error, not a silent pass)
   selftest: OK   — caught a personal literal inside a UTF-16LE blob
   selftest: OK   — caught a non-ASCII personal literal inside a UTF-32LE blob
+  selftest: OK   — caught a non-ASCII personal literal after an invalid UTF-16 unit
   selftest: OK   — caught a session trailer in a pushed commit message
   selftest: OK   — caught a session trailer in a pushed annotated-tag message
   selftest: OK   — caught a same-pushed-range allowlist entry ('A..B' baseline resolution)

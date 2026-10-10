@@ -28,6 +28,20 @@ sections real content going forward — see that page for exactly when each one 
   greps run under `LC_ALL=C`, and a non-ASCII literal or token gets a second pass in the caller's locale over a
   UTF-8-sanitized copy, so a literal after an invalid byte is still found (a non-ASCII token with a bracket
   expression can now also match raw bytes under the `LC_ALL=C` pass — it over-blocks, never under-blocks).
+- **`secret-scan.sh` reads every byte it reports on and matches each personal literal as written.** Personal
+  literals now reach grep as a pattern file, one pattern per line, so two lines can no longer fuse into one
+  pattern that matches neither (`zorb[` + `plugh]`), and the validity probe reads one input line, which busybox
+  grep needs before it rejects a malformed pattern (dir #694). A literal or an allowlist pattern starting with
+  `-` is a pattern, never a grep option: an allow entry `-e.` exempted every key (dir #746). Under a UTF-8 locale,
+  BSD and busybox grep stopped matching a line at its first invalid byte, so a key after a stray Latin-1 byte
+  read clean: key shapes and the allowlist now match bytes under `LC_ALL=C`, and personal literals run once
+  there and once in your locale over a copy cleaned of invalid UTF-8 (dir #740). A NUL past the first 8000
+  bytes of a staged text file no longer hides the rest of its line, and the binary decode resumes after an
+  invalid UTF-16/UTF-32 unit (iconv `-c`, or a built-in decoder where the host's iconv cannot, as on musl);
+  `--selftest` proves it with a new probe line. `public-audit.sh`'s decode is the same recipe, and each of the
+  three twins the two tools share is now pinned to its twin by a test (dir #681). Upgrading: re-vendor the
+  scanner into each repo (`tools/install-secret-guard.sh <repo>`); an allowlist pattern holding a non-ASCII
+  character with `.` or a bracket now matches bytes, so it may stop exempting a line — it can only block more.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

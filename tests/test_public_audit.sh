@@ -700,16 +700,7 @@ else
   pass "dir #719 A22/A26 skipped (this filesystem refuses a name ending in an invalid byte)"
 fi
 
-# A23: decode_binary is untouched (the dir #681 twin) — byte-identical to origin/main's.
-extract_decode() { awk '/^decode_binary\(\) \{/{p=1} p{print} p&&/^\}$/{exit}'; }
-if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  base_dec="$(git -C "$REPO_ROOT" show origin/main:tools/public-audit.sh | extract_decode)"
-  here_dec="$(extract_decode < "$pa")"
-  check_eq "dir #719 A23: decode_binary is byte-identical to origin/main's (the dir #681 twin)" \
-    "$base_dec" "$here_dec"
-else
-  pass "dir #719 A23 skipped (no origin/main to compare against)"
-fi
+# A23 retired (dir #746 S2-5): decode_binary is pinned to its twin, emit_blob, by tests/test_secret_guard.sh (T2).
 
 # A27 (B14): SECRET_SCAN_PERSONAL_FILE set to a missing path / a directory / a symlink to a directory →
 # one GAP naming the variable; a dangling symlink → only the existing could-not-be-parsed GAP; /dev/null
@@ -874,16 +865,10 @@ check_contains "dir #738 A33e: found in the tag message" "$OUT" "in an annotated
 d="$(repo_by dev@example.com)"
 { printf 'AB\000\330'; printf 'x\000 \000\030\004\062\004\060\004\075\004 \000y\000'; } > "$d/s.bin"
 commit_in "$d" "add s.bin"
-# BRIDGE (dir #746 slice 1): the assertion below needs slice 1's resuming decode_binary. Whoever merges SECOND deletes
-# this guard (the assertion becomes unconditional) in the rebase and says so in the PR.
-dec738="$(sed -n '/^decode_binary() {/,/^}$/p' "$pa")"
-if grep -qE 'iconv.* -c( |$)' <<< "$dec738"; then
-  run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
-  check_status "dir #738 A33e: a non-ASCII token behind a lone surrogate in a binary → exit 1" 1 "$STATUS"
-  check_contains "dir #738 A33e: found in the binary blob" "$OUT" "in a binary blob in git history"
-else
-  pass "dir #738 A33e skipped (the surrogate-resuming decode is slice 1's; rerun after it merges)"
-fi
+# A33e: the lone-surrogate half rides on slice 1's resuming decode (dir #746 S2-2, merged in the same integration).
+run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
+check_status "dir #738 A33e: a non-ASCII token behind a lone surrogate in a binary → exit 1" 1 "$STATUS"
+check_contains "dir #738 A33e: found in the binary blob" "$OUT" "in a binary blob in git history"
 # the same token, no surrogate: the plain UTF-16 decode must still find it under the token's two passes.
 d="$(repo_by dev@example.com)"
 { printf 'x\000 \000\030\004\062\004\060\004\075\004 \000y\000'; } > "$d/p.bin"
@@ -1015,5 +1000,16 @@ cp "$pa" "$mut738"; printf 'f() { local x="$(cmd)" || rc=$?; }\n' >> "$mut738"
 check_ne "dir #738 A36 mutation: local x=\"\$(cmd)\" || rc=\$? turns the register red" "" "$(register738 "$mut738")"
 cp "$pa" "$mut738"; printf 'echo hi || true  # fail-open-ok: control\n' >> "$mut738"
 check_eq "dir #738 A36 control: a tagged line is accepted" "" "$(register738 "$mut738")"
+
+# --- dir #746 (slice 1, S2-2): decode_binary resumes after an invalid UTF-16 unit — iconv -c, or the built-in
+# decoder where the host's iconv cannot resume (musl). A9(d): a Cyrillic literal after a lone surrogate.
+d="$(repo_by dev@example.com)"
+printf '\320\230\320\262\320\260\320\275\n' > "$SANDBOX/pa-personal-cyr746"      # "Ivan" (Cyrillic), UTF-8
+printf 'AB\000\330l\000e\000a\000d\000 \000\030\004\062\004\060\004\075\004 \000t\000r\000a\000i\000l\000' \
+  > "$d/bad16le.bin"
+commit_in "$d" "binary with a lone surrogate before the literal"
+run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr746" bash "$pa" --no-history "$d"
+check_status "dir #746 A9(d): a Cyrillic literal after an invalid unit in a binary → GAP exit 1" 1 "$STATUS"
+check_contains "dir #746 A9(d): ...naming bad16le.bin" "$OUT" "in a binary file in the working tree — bad16le.bin"
 
 summary
