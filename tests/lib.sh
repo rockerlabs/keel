@@ -664,7 +664,8 @@ tracked_tree_copy() {
   mkdir -p "$dest"
   tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
   while IFS= read -r e; do
-    [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$dest/"
+    [ -e "$REPO_ROOT/$e" ] || continue
+    cp -R "$REPO_ROOT/$e" "$dest/" || { echo "FATAL: tracked_tree_copy: cp $e into $dest failed" >&2; return 1; }
   done <<<"$tops"
   return 0
 }

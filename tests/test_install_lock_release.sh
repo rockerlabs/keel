@@ -107,6 +107,40 @@ else
   fail "takeover fixture: the install reached its pause checkpoint" "no $mk.ready"
 fi
 
+# …and the success path's release reads the same pid file: a run that finishes normally leaves a
+# taken-over lock in place too.
+h="$SANDBOX/r-takeover-ok/h"; mk="$SANDBOX/r-takeover-ok.marker"; mkdir -p "$h"; : > "$mk"
+KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
+  "$install" --home "$h" --no-hooks > "$SANDBOX/r-takeover-ok.out" 2>&1 </dev/null &
+pid=$!
+if wait_ready "$mk"; then
+  printf '%s' "$$" > "$h/.install.lock/pid"   # no final newline: the release still reads it
+  rm -f "$mk"
+  reap "$pid"
+  check_status "takeover (success path): the run finishes → exit 0" 0 "$REAPED"
+  check_eq "takeover (success path): …and leaves the lock that now names another live process" "$$" \
+    "$(cat "$h/.install.lock/pid" 2>/dev/null)"
+else
+  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+  fail "takeover (success path) fixture: the install reached its pause checkpoint" "no $mk.ready"
+fi
+
+# …and a pid file that names this run without a final newline is still read as this run's: released.
+h="$SANDBOX/r-nonl/h"; mk="$SANDBOX/r-nonl.marker"; mkdir -p "$h"; : > "$mk"
+KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
+  "$install" --home "$h" --no-hooks > "$SANDBOX/r-nonl.out" 2>&1 </dev/null &
+pid=$!
+if wait_ready "$mk"; then
+  printf '%s' "$pid" > "$h/.install.lock/pid"
+  rm -f "$mk"
+  reap "$pid"
+  check_status "own pid, no final newline: the run finishes → exit 0" 0 "$REAPED"
+  check_nodir "own pid, no final newline: …and releases its lock" "$h/.install.lock"
+else
+  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+  fail "own-pid fixture: the install reached its pause checkpoint" "no $mk.ready"
+fi
+
 # --- A34 / K30: after our release, a sibling's lock is never ours to remove --------------------------
 # The first install pauses right after its success-path release; a second install then takes the lock
 # and pauses holding it; the first finishes. A trap still armed at the first's exit would delete the

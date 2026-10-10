@@ -486,10 +486,14 @@ done
 # _keel_install_release_lock — the ONE release, used by the trap and by the success path: the lock is
 # removed only while its pid file still names this run. A lock reclaimed out from under a live run (two
 # runs recovering one stale lock at once, or a sibling whose `kill -0` met EPERM — the residuals named at
-# the acquire) now belongs to the run that took it, and an exit of ours must not delete it.
+# the acquire) now belongs to the run that took it, and an exit of ours must not delete it. Named residual,
+# not closed: the read and the removal are two steps, so a sibling that reclaims the lock in the instant
+# between them still loses it — as narrow as the reclaim races it follows from.
 _keel_install_release_lock() {
   local holder=""
-  IFS= read -r holder 2>/dev/null < "$install_lock_dir/pid" || holder=""
+  # `|| :`, not `|| holder=""`: a pid file without a final newline makes `read` return 1 with the value
+  # read; a missing file leaves holder empty.
+  IFS= read -r holder 2>/dev/null < "$install_lock_dir/pid" || :
   if [ "$holder" = "$$" ]; then
     rm -rf "$install_lock_dir" 2>/dev/null || true
   fi
@@ -530,26 +534,13 @@ else
   manifest_usable() { return 1; }
 fi
 
-# stat-portable, sourced the same conditional way and for the same reason: keel_own_untouched needs a
-# hard-link count, and that is the one thing POSIX gives no portable spelling for (GNU/busybox
-# `stat -c '%h'` vs BSD `stat -f '%l'`). Reused rather than re-inlined — the flavor probe already ships
-# here with its own tests. If the lib is missing or corrupt the fallback answers empty, and the
-# predicate below treats an empty count as UNKNOWN and refuses, which is the fail-closed direction:
-# a checkout too broken to carry tools/ is not one to auto-refresh an adopter's files from.
-# safe-write.sh (loaded near the top) has normally already loaded it — or its empty-answer stub — and primed
-# the flavor cache; that copy is kept, since re-sourcing would only reset the cache and probe again.
-if declare -F stat_portable_nlink >/dev/null 2>&1; then
-  :
-elif [ -s "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/stat-portable.sh
-  . "$root/tools/lib/stat-portable.sh"
-  # Prime the flavor cache HERE, once, as that lib's own header instructs for a hot loop: the predicate
-  # calls stat_portable_nlink inside a `$( )`, so a lazily-probed flavor would be cached in a subshell
-  # that dies immediately and re-probed — one extra `stat` exec per synced file, every run.
-  _stat_portable_ensure_flavor
-else
-  stat_portable_nlink() { :; }
-fi
+# stat-portable: keel_own_untouched needs a hard-link count, the one thing POSIX gives no portable spelling
+# for (GNU/busybox `stat -c '%h'` vs BSD `stat -f '%l'`). It is already loaded: tools/lib/safe-write.sh
+# (REQUIRED, sourced near the top) loads it OPTIONALLY and primes its flavor cache once — the predicate
+# calls stat_portable_nlink inside a `$( )`, where a lazily-probed flavor would be re-probed per synced
+# file — or, when the lib is missing or corrupt, defines an empty-answer stub. The predicate below treats
+# an empty count as UNKNOWN and refuses, which is the fail-closed direction: a checkout too broken to carry
+# tools/ is not one to auto-refresh an adopter's files from.
 
 # artifact-cksum (dir #362) — REQUIRED, not optional, unlike the two libs above: its output
 # (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
