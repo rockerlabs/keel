@@ -113,12 +113,19 @@ fi
 
 # _isg_count_values KEY — how many values the global config holds for KEY across every file (an empty value is one).
 _isg_count_values() { { git config --global --get-all "$1" 2>/dev/null || true; } | wc -l | tr -d ' '; }
-# _isg_count_per_file KEY — the most values any ONE global config file holds for KEY: a write replaces or unsets in a
-# single file, and git exits 5 only when THAT file sets the key more than once — one value each in ~/.gitconfig and
-# the XDG file is no obstacle.
-_isg_count_per_file() {
+# _isg_count_target KEY — how many values KEY has in the ONE file a `git config --global` write goes to: git exits 5
+# only when that file sets the key more than once, so a duplicate in another global file (the XDG file behind an
+# existing ~/.gitconfig) is no obstacle. The write target is $GIT_CONFIG_GLOBAL, else ~/.gitconfig, else the XDG
+# file. If no value's origin spells that path (a symlinked spelling), fall back to the most any one file holds —
+# it can only over-count, i.e. refuse early. Deliberately NOT _isg_count_values' all-files count: that one guards
+# the displaced-key RECORD, which is read as the last of all files but replaced in one.
+_isg_count_target() {
+  local t
+  if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then t="$GIT_CONFIG_GLOBAL"
+  elif [ -e "${HOME:-/nonexistent}/.gitconfig" ]; then t="$HOME/.gitconfig"
+  else t="${XDG_CONFIG_HOME:-${HOME:-}/.config}/git/config"; fi
   { git config --global --show-origin --get-all "$1" 2>/dev/null || true; } \
-    | awk -F'\t' '{ c[$1]++ } END { m = 0; for (k in c) if (c[k] > m) m = c[k]; print m }'
+    | awk -F'\t' -v t="file:$t" '{ c[$1]++ } END { m = 0; for (k in c) if (c[k] > m) m = c[k]; print (t in c) ? c[t] : m }'
 }
 
 # _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
@@ -574,7 +581,8 @@ _isg_machine_read_files() {
 #   - nested includeIfs inside a target are followed, their condition `<outer> and <inner>`; a target seen
 #     before (compared with `-ef`, so `./work.cfg` or a symlink to it is work.cfg) is read once — a conditional
 #     self-include is complete — but reported, and its nested includes walked, under each independent condition
-#     that reaches it (a route whose condition extends an earlier one's is a cycle returning, and is skipped);
+#     that reaches it (a route whose condition extends an earlier one's — a cycle returning, or a diamond below
+#     it — is skipped: its trees are a subset of the earlier route's);
 #     depth stops at $isg_include_depth_max;
 #   - "sets a hooksPath" is the read's EXIT CODE, not a non-empty value: an empty `hooksPath =` turns every
 #     hook off in its trees, and a valueless `hooksPath` makes git fail there.
@@ -923,7 +931,7 @@ case "${1:-}" in
     fi
     # dir #743 (M2): git exits 5 when asked to replace or unset a key the file sets more than once — after the
     # hooks were already placed, with a generic message. Refuse up front, in words.
-    n_hp="$(_isg_count_per_file core.hooksPath)"
+    n_hp="$(_isg_count_target core.hooksPath)"
     if [ "$n_hp" -gt 1 ]; then
       echo "secret-guard: core.hooksPath is set more than once in one global config file ($n_hp times) — git cannot replace or unset it;" >&2
       echo "  keep the one you want (git config --global --show-origin --get-all core.hooksPath names the file), then re-run. Nothing was changed." >&2

@@ -163,4 +163,15 @@ check_absent "M2: ...nor called 'more than once'" "$OUT" "more than once"
 check_eq "M2: ...~/.gitconfig now holds Keel's dir" "$H/$kh_rel" "$(git config --file "$H/.gitconfig" --get core.hooksPath || true)"
 check_eq "M2: ...and the effective value it displaced (~/.gitconfig wins over the XDG file) is recorded" "$H/a" "$(git config --file "$H/.gitconfig" --get keel.displacedHooksPath || true)"
 
+# a duplicate in the XDG file only: the write goes to ~/.gitconfig (one value), so it is no obstacle
+mk_home xdgdup
+mkdir -p "$H/xdg/git"; printf '[core]\n\thooksPath = %s/b\n\thooksPath = %s/c\n' "$H" "$H" > "$H/xdg/git/config"; printf '[core]\n\thooksPath = %s/a\n' "$H" > "$H/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --force
+check_status "M2: a duplicate only in the file the write does not touch → exit 0" 0 "$STATUS"
+# --uninstall over one value in each of two files (Keel's in ~/.gitconfig): not refused either
+mk_home twofiles-un
+mkdir -p "$H/xdg/git"; printf '[core]\n\thooksPath = %s/b\n' "$H" > "$H/xdg/git/config"; printf '[core]\n\thooksPath = %s/%s\n' "$H" "$kh_rel" > "$H/.gitconfig"
+run env -u GIT_CONFIG_GLOBAL "HOME=$H" "XDG_CONFIG_HOME=$H/xdg" "GIT_CONFIG_SYSTEM=$H/system.cfg" "$isg" --global --uninstall
+check_absent "M2: --uninstall over one value in each of two files is not 'more than once'" "$OUT" "more than once"
+
 summary
