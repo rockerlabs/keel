@@ -25,7 +25,8 @@
 # Axis, named: this binds the names a script spells out literally. It does not see a name built at run
 # time (`"KEEL_${x}"`), a variable read only by a tests/ helper (KEEL_TEST_JOBS, a *_SKIP_MUTATIONS
 # switch — those are the suite's own knobs, not tool reads), a non-KEEL_ name read bare under a name that is
-# not credential-shaped and never default-expanded, or an indirect read (`${!v}`).
+# not credential-shaped and never default-expanded (`$FOO_BIN`, `[ -n "$FOO_BIN" ]`, `${FOO_BIN%/}`,
+# `${FOO_BIN:0:3}`), or an indirect read (`${!v}`).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -46,16 +47,25 @@ owns_name() {
         if (pos > 1 && substr($0, pos - 1, 1) ~ /[A-Za-z0-9_]/) ok = 0
         pre = substr($0, 1, pos - 1)
         dq = gsub(/"/, "&", pre); sq = gsub(/\047/, "&", pre)
-        # the value word of the assignment: up to the first unquoted space, semicolon, ampersand, pipe or paren
-        rest = substr($0, pos + length(n) + 1); val = ""; qd = 0; qs = 0
+        # the value word of the assignment: up to the first unquoted space, semicolon, ampersand, pipe or
+        # closing paren at depth 0 (a $( … ) substitution is part of the value, spaces and all)
+        rest = substr($0, pos + length(n) + 1); val = ""; qd = 0; qs = 0; depth = 0
         for (k = 1; k <= length(rest); k++) {
           c = substr(rest, k, 1)
           if (c == "\"" && !qs) qd = !qd
           else if (c == "\047" && !qd) qs = !qs
-          else if (!qd && !qs && c ~ /[ \t;&|)]/) break
+          else if (!qd && !qs && c == "(") depth++
+          else if (!qd && !qs && c == ")") { if (depth == 0) break; depth-- }
+          else if (!qd && !qs && depth == 0 && c ~ /[ \t;&|]/) break
           val = val c
         }
-        if (index(val, "$" n) > 0 || index(val, "${" n) > 0) ok = 0   # self-default: a read
+        # self-default: the value reads the SAME name (not a longer one sharing the prefix) -> a read
+        for (m = 1; (j = index(substr(val, m), n)) > 0; m += j) {
+          b = m + j - 1
+          pc = (b > 1) ? substr(val, b - 1, 1) : ""
+          nc = substr(val, b + length(n), 1)
+          if ((pc == "$" || (pc == "{" && substr(val, b - 2, 1) == "$")) && nc !~ /[A-Za-z0-9_]/) { ok = 0; break }
+        }
         if (ok && dq % 2 == 0 && sq % 2 == 0) { found = 1; exit }
         off = pos + length(n); s = substr($0, off + 1)
       }
@@ -64,11 +74,6 @@ owns_name() {
 }
 
 # census_files ROOT... — every regular file under the given files/dirs, sorted per root.
-# inherited_reads ROOT... — the KEEL_* names the shipped scripts under the given files/dirs read from the
-# environment, one per line, sorted. A READ is `$KEEL_X`, `${KEEL_X…}` or `ENVIRON["KEEL_X"]` on a
-# non-comment line. A file that also ASSIGNS the name (`KEEL_X=…` at a word start — a script-owned
-# variable, or an inline `KEEL_X=… awk` hand-off) is not reading the caller's value; the verdict is per
-# file, so a read in one file is not excused by an assignment in another.
 census_files() {
   local root
   for root in "$@"; do
@@ -79,6 +84,11 @@ census_files() {
     fi
   done
 }
+# inherited_reads ROOT... — the KEEL_* names the shipped scripts under the given files/dirs read from the
+# environment, one per line, sorted. A READ is `$KEEL_X`, `${KEEL_X…}` or `ENVIRON["KEEL_X"]` on a
+# non-comment line. A file that also ASSIGNS the name (`KEEL_X=…` at a word start — a script-owned
+# variable, or an inline `KEEL_X=… awk` hand-off) is not reading the caller's value; the verdict is per
+# file, so a read in one file is not excused by an assignment in another.
 inherited_reads() {
   local root f name
   local -a files=()
@@ -133,6 +143,8 @@ plant="$(mktemp -d "$SANDBOX/plant.XXXXXX")"
   printf '%s\n' 'echo "hint (KEEL_PLANT_PROSE=x)"; echo "$KEEL_PLANT_PROSE"'
   printf '%s\n' '( cd "$d" && KEEL_PLANT_SUBSHELL=1 ./run ); echo "$KEEL_PLANT_SUBSHELL"'
   printf '%s\n' 'KEEL_PLANT_SELF="${KEEL_PLANT_SELF:-d}"'
+  printf '%s\n' 'KEEL_PLANT_PREFIX=$KEEL_PLANT_PREFIX_DIR/x; echo "$KEEL_PLANT_PREFIX"'
+  printf '%s\n' 'KEEL_PLANT_SUBST=$(printf %s "${KEEL_PLANT_SUBST:-d}")'
 } > "$plant/a.sh"
 printf '%s\n' 'KEEL_PLANT_SPLIT=assigned-in-the-OTHER-file' > "$plant/b.sh"
 planted="$(inherited_reads "$plant")"
@@ -146,7 +158,10 @@ check_contains "an assignment in ANOTHER file does not excuse a read (the verdic
 check_contains "an assignment spelled inside a quoted message is prose, not ownership" "$planted" 'KEEL_PLANT_PROSE'
 check_absent "an assignment after a quoted word in a subshell still counts as ownership" "$planted" 'KEEL_PLANT_SUBSHELL'
 check_contains "a self-default assignment (X=\"\${X:-d}\") is a read, not ownership (dir #704)" "$planted" 'KEEL_PLANT_SELF'
-check_eq "exactly the six reads are reported" 6 "$(printf '%s\n' "$planted" | grep -c .)"
+check_contains "a self-default inside a \$( … ) substitution (spaces and all) is a read" "$planted" 'KEEL_PLANT_SUBST'
+check_contains "the longer name on the right-hand side is itself a read" "$planted" 'KEEL_PLANT_PREFIX_DIR'
+check_eq "a longer name sharing the prefix is not a self-read: the assignment still owns the name" 0 "$(printf '%s\n' "$planted" | grep -cx 'KEEL_PLANT_PREFIX')"
+check_eq "exactly the eight reads are reported" 8 "$(printf '%s\n' "$planted" | grep -c .)"
 check_eq "an empty root reports nothing, not an error" "" "$(inherited_reads "$SANDBOX/no-such-root")"
 
 # --- the runtime half -----------------------------------------------------------------------------------------
