@@ -460,8 +460,17 @@ check_contains "dir #695: ...naming the file it rejected" "$OUT" "$H/bad-persona
 printf 'a(\n' > "$H/bad-personal"
 inst_run sfenv --no-hooks
 check_contains "dir #695: an invalid-regex personal file gets its own reason" "$OUT" "invalid regex in $H/bad-personal"
+# A non-fatal `selftest: WARN` printed BEFORE the real refusal must not be what the operator reads as the reason.
+printf '#!/bin/sh\necho "selftest: WARN — iconv absent; passes degraded" >&2\necho "secret-scan: stub refusal reason" >&2\necho "second line" >&2\nexit 2\n' > "$H/.config/git/keel-hooks/secret-scan.sh"
+chmod +x "$H/.config/git/keel-hooks/secret-scan.sh"
 inst_run genv --no-hooks
-check_absent "dir #695: a clean run prints no reason line" "$OUT" "selftest FAILS"
+check_contains "dir #695: a leading WARN is skipped: the refusal line is the reason" "$OUT" "Reason:   secret-scan: stub refusal reason"
+check_absent "dir #695: ...the WARN is not shown as the reason" "$OUT" "Reason:   selftest: WARN"
+mk_home i-sok
+run genv "$isg" --global
+inst_run genv --no-hooks
+check_absent "dir #695: a clean run prints no reason line" "$OUT" "Reason:"
+check_absent "dir #695: ...and no failing-selftest warning" "$OUT" "selftest FAILS"
 
 # =================================================================================================
 # 7. dir #688 / dir #717 S5-2 — doctor's machine-wide reads go through the producer (`--where --global`),

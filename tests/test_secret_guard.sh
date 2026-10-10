@@ -3341,5 +3341,4 @@ run env SECRET_SCAN_PERSONAL_FILE="$rule" "$scan" --selftest
 check_status "dir #695: an ODD run is refused" 2 "$STATUS"
 check_contains "dir #695: ...with the reason as the first stderr line" "${OUT%%$'\n'*}" "ends in a backslash"
 
-
 summary
