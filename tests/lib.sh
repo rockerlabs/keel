@@ -730,6 +730,36 @@ match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 # pair), the "second use = promote" convention above.
 inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 
+# wait_ready MARKER [PID] — wait (bounded, 60s, polled every 0.1s like install.sh's own pause loop) for an
+# install paused by _keel_test_pause_after (KEEL_TEST_PAUSE_AFTER / KEEL_TEST_PAUSE_MARKER) to touch
+# "$MARKER.ready"; 0 once it has. With PID, the wait ends early once that process is gone (an install that
+# fails before its checkpoint costs one poll, not the whole bound).
+wait_ready() {
+  local n=0
+  while [ ! -e "$1.ready" ] && [ "$n" -lt 600 ]; do
+    if [ -n "${2:-}" ] && ! kill -0 "$2" 2>/dev/null; then break; fi
+    sleep 0.1; n=$((n + 1))
+  done
+  [ -e "$1.ready" ]
+}
+
+# tracked_tree_copy DEST — a copy of this checkout's tracked top-level entries (uncommitted edits to them
+# included) into DEST, for a test that runs install.sh / uninstall.sh from a scratch checkout. Only the
+# tracked entries: a run from the main checkout would otherwise drag its .git/, private/ and nested
+# worktrees along. DEST is not a git repository; a test that needs one runs `git init` itself. Returns 1
+# (one FATAL line) when a copy fails — callers stop the file (`|| exit 1`) rather than test a partial tree.
+tracked_tree_copy() {
+  local dest="$1" e tops
+  require_sandbox_path "$dest" tracked_tree_copy
+  mkdir -p "$dest"
+  tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
+  while IFS= read -r e; do
+    [ -e "$REPO_ROOT/$e" ] || continue
+    cp -R "$REPO_ROOT/$e" "$dest/" || { echo "FATAL: tracked_tree_copy: cp $e into $dest failed" >&2; return 1; }
+  done <<<"$tops"
+  return 0
+}
+
 # STRICT_SEMVER_TAG_RE — a v-prefixed strict-semver tag name (`v<x.y.z>`, the `v` kept), anchored.
 # Exposed as its own variable (dir #318) so a second data source for the same tag SHAPE —
 # all_release_tag_versions()'s own `ls-remote` leg below, which release_tag_versions() can't cover

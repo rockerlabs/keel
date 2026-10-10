@@ -178,12 +178,26 @@ CONTEXT_FILE="CLAUDE.md"
 # step with it. Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see
 # tools/lib/manifest.sh's own guard further down for why; a bare `.` can't be guarded against a
 # parse-time syntax-error abort under `set -e`). A checkout without tools/ stops here, with nothing
-# written (tools/lib/safe-write.sh is REQUIRED further down too, so it could not install anyway).
+# written.
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/core-ownership.sh
   . "$root/tools/lib/core-ownership.sh"
 else
   echo "install: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely tell Keel's own files from yours; re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
+fi
+# safe-write (dir #679) — REQUIRED, like core-ownership: every temp-and-rename write below goes through
+# it (the rule it carries — a write through a symlink, a kept mode, a refused hard link, a backup that
+# never overwrites one — is stated once, in its header). A degrade-and-continue fallback would be the
+# detaching write it exists to remove, so a missing or corrupt copy refuses the whole run. Loaded here,
+# before the home is created and before the run lock is taken (spec 685 round 2 B18), so its refusal
+# leaves nothing behind — not even the home. It loads stat-portable itself and primes its flavor cache, so
+# install.sh loads no copy of its own.
+if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/safe-write.sh
+  . "$root/tools/lib/safe-write.sh"
+else
+  echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run '$advise_install'" >&2
   exit 1
 fi
 
@@ -351,10 +365,10 @@ fi
 #
 # Lives at $HOME_DIR/.install.lock, a SIBLING of $manifest_dir ($HOME_DIR/.keel) — deliberately NOT
 # nested inside it. uninstall.sh's own cleanup ends with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`,
-# which only succeeds on an EMPTY directory; a lock dir left behind by a crashed install (no EXIT trap
-# releases it — see the release site far below) would sit inside .keel forever if the lock lived there,
-# silently defeating that rmdir on every future uninstall until some LATER install happened to reclaim
-# it first. Nothing else about $manifest_dir needs that .keel nesting — the lock doesn't gate or record
+# which only succeeds on an EMPTY directory; a lock dir left behind by a crashed install (a SIGKILL or a
+# power loss, where no handler runs — see the EXIT trap armed below) would sit inside .keel forever if the
+# lock lived there, silently defeating that rmdir on every future uninstall until some LATER install
+# happened to reclaim it first. Nothing else about $manifest_dir needs that .keel nesting — the lock doesn't gate or record
 # anything manifest-specific — so it costs nothing to keep it out.
 #
 # Cost accepted: a second install into the same home now fails fast (exit 1, before touching anything)
@@ -448,15 +462,56 @@ while :; do
     echo "         to run concurrently (lock: $install_lock_dir). Wait for it to finish and re-run." >&2
     exit 1
   fi
-  # Stale lock — the recorded holder is gone (or never recorded, per the retry above). No EXIT trap
-  # released it (see the release site far below, right after the final manifest write, for why: the
-  # prior_manifest snapshot's own comment further down this file already measured live, on this repo's
-  # own bash 3.2.57, that a bare EXIT trap masks a genuine crash — an unset-variable abort — into a false
-  # exit 0, which is worse than a leftover lock). Reclaim it and retry. Named residual, not fixed: two
-  # fresh installs finding the same stale lock at the same instant could both recover it — revisit only
-  # if ever actually felt.
+  # Stale lock — the recorded holder is gone (or never recorded, per the retry above). Every exit of a
+  # run that held it releases it (the EXIT trap below), so only a run that no handler could follow — a
+  # SIGKILL, a power loss, dir #381's simulated crash — leaves one. Reclaim it and retry. Named residual,
+  # not fixed: two fresh installs finding the same stale lock at the same instant could both recover it —
+  # revisit only if ever actually felt.
   rm -rf "$install_lock_dir" 2>/dev/null || true
 done
+
+# The lock is held (the loop leaves only through the `break` after the pid write). From here, EVERY exit
+# releases it (dir #757, dir #756 (b); spec 685 round 2 B18): one EXIT trap in dir #692's completion-marker
+# form, since a bare `trap 'rm …' EXIT` was measured on bash 3.2.57 to turn a `set -u` abort into exit 0.
+# No exit 0 is legitimate while the lock is held — the run's only exit-0 path passes the success-path
+# release far below first — so that release is the completion marker: it removes the lock
+# (_keel_install_release_lock) and then disarms this trap (`trap - EXIT INT TERM`, the line after), and
+# any status-0 exit the trap still sees is an abort, made 1. An early exit-0 path added later needs both.
+# Disarming at release (not just setting a flag there) also means a later exit can never remove a lock
+# that another install took after ours. INT and TERM exit with their conventional statuses, so an
+# interrupted run removes the lock too (bash 3.2 otherwise shows the EXIT trap `$?` = 0 on them).
+# A SIGKILL or a power loss still leaves the lock (no handler runs); the next run reclaims it as stale. So
+# does an exit in the instant between the acquire's `mkdir` and its pid write, before this trap exists —
+# the lock is then pid-less, and the next run's bounded retry reclaims it.
+# _keel_install_release_lock — the ONE release, used by the trap and by the success path: the lock is
+# removed only while its pid file still names this run. A lock reclaimed out from under a live run (two
+# runs recovering one stale lock at once, or a sibling whose `kill -0` met EPERM — the residuals named at
+# the acquire) now belongs to the run that took it, and an exit of ours must not delete it. Named residual,
+# not closed: the read and the removal are two steps, so a sibling that reclaims the lock in the instant
+# between them still loses it — as narrow as the reclaim races it follows from. The cost of the check: a
+# lock whose pid file went missing or empty mid-run is not removed by its own run either; the next run's
+# empty-pid retry (about 1s) reclaims it.
+_keel_install_release_lock() {
+  local holder=""
+  # `|| :`, not `|| holder=""`: a pid file without a final newline makes `read` return 1 with the value
+  # read; a missing file leaves holder empty.
+  IFS= read -r holder 2>/dev/null < "$install_lock_dir/pid" || :
+  if [ "$holder" = "$$" ]; then
+    rm -rf "$install_lock_dir" 2>/dev/null || true
+  fi
+}
+_keel_install_on_exit() {
+  local rc=$?
+  # A second signal (a double Ctrl-C, TERM then INT) must not cut the release short: its `exit` would end
+  # the shell inside this handler and leave the lock.
+  trap '' INT TERM
+  _keel_install_release_lock
+  [ "$rc" != 0 ] || rc=1
+  exit "$rc"
+}
+trap _keel_install_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # A checkout this minimal (a test fixture, or a corrupted install) may not ship tools/ at all — degrade
 # to "provenance unavailable" rather than aborting the whole install over an optional refinement; every
@@ -484,24 +539,15 @@ else
   manifest_usable() { return 1; }
 fi
 
-# stat-portable, sourced the same conditional way and for the same reason: keel_own_untouched needs a
-# hard-link count, and that is the one thing POSIX gives no portable spelling for (GNU/busybox
-# `stat -c '%h'` vs BSD `stat -f '%l'`). Reused rather than re-inlined — the flavor probe already ships
-# here with its own tests. If the lib is missing or corrupt the fallback answers empty, and the
-# predicate below treats an empty count as UNKNOWN and refuses, which is the fail-closed direction:
-# a checkout too broken to carry tools/ is not one to auto-refresh an adopter's files from.
-if [ -s "$root/tools/lib/stat-portable.sh" ] && bash -n "$root/tools/lib/stat-portable.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/stat-portable.sh
-  . "$root/tools/lib/stat-portable.sh"
-  # Prime the flavor cache HERE, once, as that lib's own header instructs for a hot loop: the predicate
-  # calls stat_portable_nlink inside a `$( )`, so a lazily-probed flavor would be cached in a subshell
-  # that dies immediately and re-probed — one extra `stat` exec per synced file, every run.
-  _stat_portable_ensure_flavor
-else
-  stat_portable_nlink() { :; }
-fi
+# stat-portable: keel_own_untouched needs a hard-link count, the one thing POSIX gives no portable spelling
+# for (GNU/busybox `stat -c '%h'` vs BSD `stat -f '%l'`). It is already loaded: tools/lib/safe-write.sh
+# (REQUIRED, sourced near the top) loads it OPTIONALLY and primes its flavor cache once — the predicate
+# calls stat_portable_nlink inside a `$( )`, where a lazily-probed flavor would be re-probed per synced
+# file — or, when the lib is missing or corrupt, defines an empty-answer stub. The predicate below treats
+# an empty count as UNKNOWN and refuses, which is the fail-closed direction: a checkout too broken to carry
+# tools/ is not one to auto-refresh an adopter's files from.
 
-# artifact-cksum (dir #362) — REQUIRED, not optional, unlike the two libs above: its output
+# artifact-cksum (dir #362) — REQUIRED, not optional, unlike manifest.sh and stat-portable above: its output
 # (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
 # which uninstall.sh later trusts for a destructive (removal) decision. A same-shape "degrade and
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
@@ -518,18 +564,6 @@ if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifa
   . "$root/tools/lib/artifact-cksum.sh"
 else
   echo "install: tools/lib/artifact-cksum.sh is missing or corrupted — this checkout is incomplete and cannot safely record what it installs; re-clone or re-download Keel and re-run '$advise_install'" >&2
-  exit 1
-fi
-# safe-write (dir #679) — REQUIRED, like artifact-cksum: every temp-and-rename write below goes through
-# it (the rule it carries — a write through a symlink, a kept mode, a refused hard link, a backup that
-# never overwrites one — is stated once, in its header). A degrade-and-continue fallback would be the
-# detaching write it exists to remove, so a missing or corrupt copy refuses the whole run. It loads
-# stat-portable itself; the one sourced above is reused, not re-read.
-if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/safe-write.sh
-  . "$root/tools/lib/safe-write.sh"
-else
-  echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
 
@@ -571,8 +605,8 @@ product_dir() {
 # anything is placed or edited, so the refusal is atomic (exit 2, like the self-link guard above) —
 # rather than skipping: a skipped keel/ would leave the import line aimed at a CORE.md never placed.
 if [ "$LINK" = 1 ]; then
-  # (The run lock taken above is released first: this exit would otherwise leave it on disk.)
-  product_dir "$link_dir" "Keel's linked core" >&2 || { rm -rf "$install_lock_dir" 2>/dev/null || true; exit 2; }
+  # (The run lock taken above is released by the EXIT trap.)
+  product_dir "$link_dir" "Keel's linked core" >&2 || exit 2
 fi
 
 # prior_manifest — a snapshot of the manifest as it stood before this run touches anything. keel_own_untouched
@@ -582,11 +616,9 @@ fi
 # by this ticket's own /code-review high pass, reproduced live: any failure between here and this run's
 # own cleanup near the manifest-write step — e.g. a corrupted checkout missing a shipped source file —
 # leaves a `.prior-manifest.<pid>` behind with nothing to sweep it, since each run's own is uniquely
-# named by that run's PID). A `trap ... EXIT` was considered and rejected: verified live on this
-# machine's bash (3.2.57) that a bare EXIT trap masks a genuine crash — e.g. an unset-variable abort
-# under `set -u` — into a false exit 0, which is a far worse failure mode than a leftover scratch file.
-# This sweep instead just bounds the litter to at most the PREVIOUS run's leftover, cleaned up by the
-# NEXT run regardless of how that run itself ends.
+# named by that run's PID). The run lock's EXIT trap (above) removes only the lock, on purpose: this
+# sweep bounds the litter to at most the PREVIOUS run's leftover, cleaned up by the NEXT run regardless
+# of how that run itself ended — including the SIGKILL no trap can follow.
 # `.artifacts.*` joins the sweep with this batch's fix below: before it, an unreadable manifest killed
 # the run at the snapshot read, so the merge step's own `.artifacts.<pid>` scratch was never created.
 # Now the run survives to reach it, and the merge step can still fail there (its `awk` reads
@@ -739,8 +771,13 @@ force_backup() {
 # call site (exempt from errexit because it's the non-final command of its own && list), a FUNCTION's
 # own return status is what the caller sees — without this, a false `[ cond ]` here would make the
 # whole function return 1 and abort the script even when no crash was requested.
+# A simulated crash leaves the lock exactly as a real crash (a SIGKILL) does: the run lock's EXIT trap is
+# disarmed before the `exit 99`, so the stale-lock reclaim is still what the tests exercise.
 _keel_test_checkpoint() {
-  [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ] && exit 99
+  if [ "${KEEL_TEST_CRASH_AFTER:-}" = "$1" ]; then
+    trap - EXIT
+    exit 99
+  fi
   return 0
 }
 
@@ -2278,10 +2315,11 @@ manifest_body() {
 keel_write_state "$manifest_file" manifest_body || exit 1
 echo "  +    install manifest ($manifest_file)"
 
-# dir #381: crash-simulation checkpoint right in the window the comment below already names — "if this
-# run aborts for any reason before this line, the lock is simply left behind." Lets a test drive a REAL
-# crash here (manifest genuinely written, lock genuinely still held, at its REAL placement) instead of
-# hand-building a fixture that only guesses at what a crash leaves behind.
+# dir #381: crash-simulation checkpoint in the window between the manifest write and the lock release
+# below — where a crash no handler can follow (a SIGKILL) leaves the lock behind; the checkpoint disarms
+# the EXIT trap first, so it leaves the lock exactly so. Lets a test drive a REAL crash here (manifest
+# genuinely written, lock genuinely still held, at its REAL placement) instead of hand-building a fixture
+# that only guesses at what a crash leaves behind.
 _keel_test_checkpoint manifest-written
 
 # dir #637 B5: move keel's durable stores (impact, read-trace) out of the harness home into
@@ -2300,23 +2338,16 @@ if [ -s "$root/tools/state-root-migrate.sh" ]; then
   } | sed 's/^/  /' || true
 fi
 
-# Release the run-duration lock (dir #350, Fork 2) — the SUCCESS path only, one explicit `rmdir`-shaped
-# `rm -rf`, right after the final manifest write above completes. No `trap ... EXIT`, of any kind: the
-# prior_manifest snapshot's own comment further up this file already measured, live, on this repo's own
-# bash (3.2.57), that a bare EXIT trap masks a genuine crash — e.g. an unset-variable abort under
-# `set -u` — into a false exit 0, which is a far worse failure mode than a leftover lock. If this run
-# aborts for any reason before this line, the lock is simply left behind; the NEXT install's own
-# mkdir-retry loop above reclaims it via the same `kill -0` stale-pid check used for ordinary contention.
-# This is the cleanup mechanism (the one other release, the linked keel/ refusal's `rm -rf` right after the
-# libs load, is a deliberate early exit with nothing to record) — do not "improve" this with an EXIT trap,
-# that is the exact mechanism this script's own history already ruled out at the citation above.
-# `|| true` at the end: a failed release must not abort an otherwise-successful run under `set -euo
-# pipefail` — worst case it leaves the lock behind, which the next install's own stale-pid check already
-# knows how to reclaim, exactly as an abort-before-this-line would. No acquired-flag guard needed: the
-# acquire loop above only ever reaches code past itself via its own `break`, which always follows a
-# successful `mkdir` — every other exit from that loop is a bare `exit 1`, so reaching this line at all
-# already proves the lock is held.
-rm -rf "$install_lock_dir" 2>/dev/null || true
+# Release the run-duration lock (dir #350, Fork 2) on the success path, right after the final manifest write
+# above — and with it the EXIT trap armed at the acquire (spec 685 round 2 B18): this release IS that trap's
+# completion marker. The trap is disarmed on the very next line, so nothing after them (the ledger, the
+# summary) can remove a lock a sibling install takes once ours is gone, and a later abort exits with its
+# own status, never a masked 0. (A signal landing between the two lines only runs the trap's own release
+# again, a no-op once the lock is gone.) The release never aborts the run under `set -euo pipefail`: worst case it
+# leaves the lock behind, which the next install's stale-pid check reclaims.
+_keel_install_release_lock
+trap - EXIT INT TERM
+_keel_test_pause_after lock-released
 
 # Checkout-side ledger — the discovery index consumers use to find every recorded home from the
 # checkout side; deduped on append (tools/lib/ledger.sh — shared with install-pre-pr-gate.sh's own
