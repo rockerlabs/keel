@@ -96,7 +96,9 @@ run "$uninstall" --home "$h" --yes
 check_status "A40 chained: uninstall → exit 0" 0 "$STATUS"
 check_link "A40 chained: …the adopter's chained link stays" "$h/keel/CORE.md"
 check_eq "A40 chained: …still pointing at the dotfiles link" "$dots/CORE.md" "$(readlink "$h/keel/CORE.md")"
-check_contains "A40 chained: …named as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably Keel's — kept"
+check_contains "A40 chained: …named as pointing where Keel did not wire it" "$OUT" \
+  "keel/CORE.md: symlink no longer points where Keel would have wired it — left in place"
+check_absent "A40 chained: …never blamed on the recorded target's checkout" "$OUT" "keel/CORE.md: a link not provably"
 # doctor and install ask the same predicate (one definition).
 body="$(awk '/doctor_link_is_keels_own\(\) \{/,/^  \}/' "$REPO_ROOT/tools/doctor.sh")"
 check_contains "A40 doctor_link_is_keels_own calls manifest_link_is_keels" "$body" "manifest_link_is_keels"

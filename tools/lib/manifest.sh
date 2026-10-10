@@ -63,10 +63,12 @@ keel_path_inside() {
   return 1
 }
 
-# _manifest_same_path A B — absolute paths A and B name the same directory entry: the same basename, and
+# manifest_same_path A B — absolute paths A and B name the same directory entry: the same basename, and
 # directories that resolve (`cd -P`) to one physical path. Never follows A or B themselves, so a link at A
-# is not "the same" as the file it points to. False when either directory cannot be resolved.
-_manifest_same_path() {
+# is not "the same" as the file it points to. False when either directory cannot be resolved. The one
+# definition of "a link points where the record says" (manifest_link_is_keels below, uninstall.sh's
+# symlink arm and its compatibility-link count).
+manifest_same_path() {
   local da db
   case "$1" in /*) ;; *) return 1 ;; esac
   [ "${1##*/}" = "${2##*/}" ] || return 1
@@ -93,7 +95,7 @@ manifest_link_is_keels() {
   rec="$(manifest_symlink_extra "$man" "$rel")"
   [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
   cur="$(readlink "$link" 2>/dev/null)" || return 1
-  [ "$cur" = "$rec" ] || _manifest_same_path "$cur" "$rec" || return 1
+  [ "$cur" = "$rec" ] || manifest_same_path "$cur" "$rec" || return 1
   ck="$(manifest_field "$man" checkout)"
   keel_path_inside "$rec" "$ck"
 }

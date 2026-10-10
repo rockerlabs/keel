@@ -766,7 +766,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
   # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for
   # it, and that target lies inside the checkout the manifest names (the one that wrote the record — the OLD
-  # one after a move; a dangling target is judged on the strings alone). The pre-dir-#369 `-` placeholder
+  # one after a move; a dangling target's checkout is judged on the strings). The pre-dir-#369 `-` placeholder
   # stays a call-site branch here, as at install. No usable manifest proves nothing, so a link is then not
   # provably Keel's.
   # Both modes' manifests are read: a home can hold a Claude-mode install audited with --codex (dir #124's shape).

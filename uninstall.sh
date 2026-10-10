@@ -894,16 +894,13 @@ if [ "$this_usable" = 1 ]; then
         # diagnostic at all under errexit.
         live_target="$(readlink "$apath" 2>/dev/null || true)"
         if [ -n "$extra" ] && [ "$extra" != "-" ]; then
-          # `-ef` first, string-equality fallback (found missing by this ticket's own
-          # /code-review max pass, reproduced live): `-ef` resolves both sides and compares by
-          # device+inode, tolerant of the same path-spelling drift install.sh's own in_sync()
-          # already names ("/tmp vs /private/tmp on macOS, a symlinked parent") — a live symlink
-          # reached through a different-but-identical-file spelling than what was recorded still
-          # matches. The string fallback stays for the case `-ef` can't answer: $extra's target no
-          # longer exists (a moved/reaped checkout) but the live symlink's own text still matches
-          # exactly what was recorded — the manifest-is-a-snapshot design this whole mechanism
-          # relies on, which a live-resolution-only test would break.
-          if ! { [ "$apath" -ef "$extra" ] 2>/dev/null || [ "$live_target" = "$extra" ]; }; then
+          # The link's own target is the recorded one: the same text (which still answers when the
+          # recorded target no longer exists — a moved or reaped checkout; the manifest is a snapshot), or
+          # the same entry spelled through another directory, the path-spelling drift install.sh's own
+          # in_sync() names ("/tmp vs /private/tmp on macOS, a symlinked parent") — manifest_same_path,
+          # which never follows the link, so the end of a chain of links (someone's dotfiles wiring, spec
+          # 685 round 2 B20) is not taken for Keel's. Anything else points somewhere Keel did not wire.
+          if ! { [ "$live_target" = "$extra" ] || manifest_same_path "$live_target" "$extra"; }; then
             echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
           elif manifest_link_is_keels "$this_manifest" "$rel" "$apath"; then
             # The one link-record predicate (tools/lib/manifest.sh, B20): it also asks that the recorded
@@ -1122,7 +1119,9 @@ if [ "$DRY_RUN" = 0 ]; then
                   "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]*; do
           [ -L "$cl" ] || continue
           cl_store="${cl%/*}"; cl_store="${cl_store##*/}"
-          if [ "$(readlink "$cl" 2>/dev/null || true)" = "$HOME/.keel/$cl_store/${cl##*/}" ]; then
+          cl_target="$(readlink "$cl" 2>/dev/null || true)"
+          if [ "$cl_target" = "$HOME/.keel/$cl_store/${cl##*/}" ] \
+             || manifest_same_path "$cl_target" "$HOME/.keel/$cl_store/${cl##*/}"; then
             compat_links=$((compat_links + 1))
           fi
         done
