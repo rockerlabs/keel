@@ -109,14 +109,16 @@ check_status "A2 write '34' (digits only) exits 0" 0 "$RC"
 # waits on itself. The shell must START with fd 0 closed (`exec <&-` before the exec), and the watchdog is the
 # test's bound — a hang is a red case, never an unbounded wait.
 r="$(mkrepo)"
-cs() { # cs closed|null — run write "dir #8" with stdin closed or </dev/null; sets RC and ERR. No perl or timeout(1)
-  # (alpine has no perl, macOS no timeout): a backgrounded kill after 6 s is the bound, and a hang dies as RC 137.
-  # `set -m` gives the job its own process group so the kill also reaches the hung `head` (a grandchild).
-  local pre='exec <&-' pid wd; [ "$1" = null ] && pre='exec </dev/null'
+cs() { # cs closed|null — run write "dir #8" with stdin closed or </dev/null; sets RC and ERR
+  # No perl or timeout(1) (alpine has no perl, macOS no timeout): a backgrounded kill is the bound, and a hang dies as
+  # RC 137. 20 s, not tight: the tool derives its repo key before it reaches the guard, which is slow under a parallel
+  # wave. `set -m` gives the job its own process group so the kill also reaches the hung `head` (a grandchild).
+  local pre='exec <&-' pid wd
+  [ "$1" = null ] && pre='exec </dev/null'
   set -m
-  ( cd "$r" && exec /bin/bash -c "$pre"'; exec "$0" write "dir #8"' "$tool" ) >/dev/null 2>"$ERRF" &
+  ( cd "$r" && exec "$BASH" -c "$pre"'; exec "$0" write "dir #8"' "$tool" ) >/dev/null 2>"$ERRF" &
   pid=$!
-  ( sleep 6; kill -9 -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  ( sleep 20; kill -9 -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   wd=$!
   set +m
   wait "$pid"; RC=$?
@@ -129,7 +131,7 @@ check_contains "690-A3 …with the helper's own refusal" "$ERR" "stdin needs the
 cs null
 check_status "690-A3 write with stdin </dev/null exits 2" 2 "$RC"
 check_contains "690-A3 …with the same refusal" "$ERR" "stdin needs the three fields"
-check_absent "690-A3 a refused closed-stdin write left no note" "$(ls "$ROOT/$(repo_key_for "$r")" 2>/dev/null)" "dir-8"
+check_nofile "690-A3 a refused closed-stdin write left no note" "$(note_of "$r" dir-8)"
 
 # --- A3 — worktree sharing ------------------------------------------------------------------------------
 r="$(mkrepo)"

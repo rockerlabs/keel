@@ -29,7 +29,8 @@
 #   carry: <what exists only outside the commit: uncommitted files, scratch paths, red tests | none>
 # stdin rules: the keys done:/next:/carry: each appear exactly once, at a line start, in that order, each
 # with non-empty text; a line that starts a key the tool owns (ticket: branch: worktree: head: written:
-# verdict:) is refused, so a caller cannot spoof a header or `read`'s last line.
+# verdict:) is refused, so a caller cannot spoof a header or `read`'s last line. A closed stdin (`<&-`) counts
+# as an empty one: `write` refuses it (exit 2) like any note without the three fields.
 #
 # `read`'s verdict compares the note's `head` with the reader's HEAD: `fresh` (equal), `behind <n>` (the
 # note's head is an ancestor, n commits behind), `ahead <n>` (HEAD is an ancestor of the note's head — the
