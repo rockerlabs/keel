@@ -71,11 +71,13 @@ run env TMPDIR="$tmproot" bash "$sim" --repo "$probe_src"
 check_status "the clone has a committed 9999.0.0 section dated today (UTC), no fragments, the cut-sim author" 0 "$STATUS"
 
 # --- a signal removes the clone too, AFTER the suite and its descendants are gone ---------------------------
-# The fixture suite is a well-behaved runner: it starts a descendant (sleep), records its pid, announces itself
-# with a sentinel file, and on TERM kills the descendant and exits. cut-sim must TERM the suite, WAIT for it,
-# and only then remove the clone — so when the tool has exited the descendant is gone and so is the clone.
+# The fixture suite starts a descendant (sleep), records its pid and announces itself with a sentinel file; on
+# TERM it exits WITHOUT stopping the descendant. cut-sim must signal the suite's whole process group, wait, and
+# only then remove the clone — so when the tool has exited the descendant is gone and so is the clone.
 pidfile="$SANDBOX/sig-desc.pid"; ready="$SANDBOX/sig-ready"
-sig_src="$(mk_src 'trap "kill \$p 2>/dev/null; exit 143" TERM; sleep 61 & p=$!; echo $p > '"$pidfile"'; : > '"$ready"'; wait')"
+# NOT well-behaved: on TERM it exits at once and leaves the descendant running (as tests/run.sh does for a
+# grandchild its test file spawned) — only a signal to the whole process group reaches the sleep.
+sig_src="$(mk_src 'trap "exit 143" TERM; sleep 61 & p=$!; echo $p > '"$pidfile"'; : > '"$ready"'; wait')"
 env TMPDIR="$tmproot" bash "$sim" --repo "$sig_src" >/dev/null 2>&1 &
 sim_pid=$!
 n=0
@@ -108,9 +110,17 @@ check_eq "...and nothing was cloned" "" "$(ls -A "$tmproot")"
 git config --global --add safe.directory '*'
 shallow_dst="$SANDBOX/shallow-copy"
 git clone -q --depth 1 "file://$pass_src" "$shallow_dst" 2>/dev/null
+check_contains "(fixture) the shallow copy kept its v* tag, so only the shallow check can refuse it" "$(git -C "$shallow_dst" tag -l 'v*')" "v1.0.0"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$shallow_dst"
 check_status "a shallow source -> exit 2" 2 "$STATUS"
+check_contains "...saying it is a shallow checkout" "$OUT" "shallow checkout"
 check_contains "...naming fetch-depth: 0" "$OUT" "fetch-depth: 0"
+# an uncommitted change in the source is announced (only HEAD is simulated), and left alone
+dirty_src="$(mk_src 'true')"
+printf 'x\n' >> "$dirty_src/CHANGELOG.md"
+run env TMPDIR="$tmproot" bash "$sim" --repo "$dirty_src"
+check_status "a dirty source still simulates its committed HEAD -> exit 0" 0 "$STATUS"
+check_contains "...with a NOTE that only the committed HEAD is simulated" "$OUT" "uncommitted changes"
 # --repo on a SUBDIRECTORY of a work tree simulates that work tree's root
 run env TMPDIR="$tmproot" bash "$sim" --repo "$pass_src/tests"
 check_status "--repo on a subdirectory simulates the work tree root -> exit 0" 0 "$STATUS"

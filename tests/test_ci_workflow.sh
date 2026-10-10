@@ -141,6 +141,7 @@ check_contains "B26: secret-scan's head sha is github.sha on merge_group" "$scan
 cutsim="$(job_block "$ci" cut-simulation)"
 check_eq "B19: cut-simulation runs on ubuntu-24.04" "ubuntu-24.04" "$(job_field "$cutsim" runs-on)"
 check_contains "B19: cut-simulation checks out with fetch-depth: 0 (cut-sim.sh refuses a tagless checkout)" "$cutsim" "fetch-depth: 0"
+check_contains "B19: cut-simulation runs on pull_request only (no full suite per main push / merge group)" "$cutsim" "if: github.event_name == 'pull_request'"
 check_contains "B19: cut-simulation runs tools/self/cut-sim.sh" "$cutsim" "run: bash tools/self/cut-sim.sh"
 check_eq "B19: cut-simulation's check name is exactly cut-simulation" "cut-simulation" "$(job_field "$cutsim" name)"
 # Not required: its name is none of the four names branch protection lists (A21's set).

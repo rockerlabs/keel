@@ -47,7 +47,7 @@ repo_dir="$(cd "$repo_dir" && pwd)"
 # --repo may name any directory inside a work tree; simulate that work tree's root, not the subdirectory.
 top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)" || refuse "$repo_dir is not inside a git work tree"
 repo_dir="$top"
-shallow="$(git -C "$repo_dir" rev-parse --is-shallow-repository)"
+shallow="$(git -C "$repo_dir" rev-parse --is-shallow-repository 2>/dev/null)" || shallow=unknown
 [ "$shallow" != "true" ] || refuse "$repo_dir is a shallow checkout — the history- and tag-reading tests would fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
 # Capture, then test: a producer piped into `grep -q` under pipefail is the dir #280 SIGPIPE race.
 tags="$(git -C "$repo_dir" tag -l 'v*')"
@@ -61,11 +61,14 @@ child=""
 # still finishing can make the first rm fail (dir #744 R2-6); a second failure is a NOTE, never a hidden leak.
 cleanup() {
   local rc=$? n=0
-  trap - EXIT INT TERM HUP
+  trap - EXIT
+  trap '' INT TERM HUP   # a second Ctrl-C / TERM during the wait below must not abandon the clone
   if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then
-    kill -TERM "$child" 2>/dev/null || true
+    # The suite runs as its own process-group leader (set -m at the launch), so the signal reaches every
+    # descendant a test file spawned, not only tests/run.sh (whose own handler stops its direct children).
+    kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
     while kill -0 "$child" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
-    if kill -0 "$child" 2>/dev/null; then kill -KILL "$child" 2>/dev/null || true; fi
+    if kill -0 "$child" 2>/dev/null; then kill -KILL -- "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null || true; fi
     wait "$child" 2>/dev/null || true
   fi
   case "$work" in
@@ -86,6 +89,8 @@ trap 'exit 129' HUP
 work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
 clone="$work/clone"
 head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
+dirty="$(git -C "$repo_dir" status --porcelain --untracked-files=no)"
+[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted changes — only the committed HEAD is simulated" >&2
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
@@ -96,7 +101,7 @@ cs_git() { git -C "$clone" -c maintenance.auto=false -c gc.auto=0 -c user.name=k
 
 echo "cut-sim: cutting 9999.0.0 in a clone of $head_sha"
 if ! bash "$clone/tools/self/changelog-cut.sh" --repo "$clone" 9999.0.0 "$(date -u +%Y-%m-%d)"; then
-  echo "cut-sim: the clone's changelog-cut.sh refused — the cut shape cannot be produced" >&2
+  echo "cut-sim: the clone's changelog-cut.sh refused — the cut shape cannot be produced"
   fail
 fi
 cs_git add -A
@@ -105,8 +110,10 @@ cs_git commit -q -m "cut-sim: 9999.0.0"
 echo "cut-sim: running the clone's tests/run.sh on the cut shape"
 # Background + wait, never a foreground child: bash defers a trap until the foreground command exits, so a
 # TERM would otherwise leave the suite running (and the clone in place) until it finished by itself.
+set -m
 (cd "$clone" && exec bash tests/run.sh) &
 child=$!
+set +m
 rc=0
 wait "$child" || rc=$?
 child=""
