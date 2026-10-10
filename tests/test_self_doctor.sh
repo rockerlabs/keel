@@ -291,6 +291,14 @@ printf 'Then run `/code-review high`.\n' > "$d/README.md"
 run "$sd" "$d" --quiet
 check_status "a harness-allowlisted command -> exit 0" 0 "$STATUS"
 
+# dir #739: `/compact` is a Claude Code builtin the /polish compaction stop asks the OPERATOR to send; it is never
+# shipped as a commands/*.md file, and the stop already handles its failure or absence (guide § Step 1 (g)).
+d="$(mk_clean_repo)"
+printf 'Send `/compact`, then continue.\n' > "$d/README.md"
+( cd "$d" && git add -A && git commit -qm "harness-builtin compact" )
+run "$sd" "$d" --quiet
+check_status "a harness-builtin /compact reference -> exit 0" 0 "$STATUS"
+
 # the not_commands allowlist (dir #110): a token that only looks like a command (a filesystem path
 # or an adopter's own pre-existing name) must not false-GAP.
 d="$(mk_clean_repo)"
