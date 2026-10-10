@@ -1908,15 +1908,20 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
   d = ""; quoted = 0; got = 0; w = pos
   while (pos < lim) {
     c = ch[pos]
-    if (index(" \t\n;&|<>()", c)) break
+    # what this reader does not model (delim_odd, and zsh’s glob syntax glued to the word: `E(x)`, `E<1-2>`) is a
+    # region, and the lexer reads the word again as the operator’s target
+    if (index(" \t\n;&|<>()", c)) { if (got && (c == "(" || c == "<")) { delim_redo(s, op, w); return }; break }
     got = 1
-    # what this reader does not model (delim_odd) is a region, and the lexer reads the word again as the target
-    if (delim_odd(pos, 0)) { delim_redo(s, op, w); return }
-    if (c == "\047") { quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++; d = d substr(src, r, pos - r); pos++; continue }
+    if (delim_odd(0)) { delim_redo(s, op, w); return }
+    if (c == "\047") {
+      quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++
+      if (bq_open() && index(substr(src, r, pos - r), "\\")) { delim_redo(s, op, w); return }
+      d = d substr(src, r, pos - r); pos++; continue
+    }
     if (c == "\"") {
       quoted = 1; pos++
       while (pos < lim && ch[pos] != "\"") {
-        if (delim_odd(pos, 1)) { delim_redo(s, op, w); return }
+        if (delim_odd(1)) { delim_redo(s, op, w); return }
         if (ch[pos] == "\\" && ch[pos + 1] != "" && index("$`\"\\", ch[pos + 1])) { d = d ch[pos + 1]; pos += 2; continue }
         r = pos++; while (pos < lim && !index("\"\\$`", ch[pos])) pos++
         d = d substr(src, r, pos - r)
@@ -1931,12 +1936,13 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r) {
   if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
   k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
 }
-# delim_odd(p, dq) — a delimiter character whose reading this reader does not model: a substitution (`$(`, `${`,
-# `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or any backslash
-# inside backticks (the shells unescape the backticks first)
-function delim_odd(p, dq) {
-  if (ch[p] == "`" || (ch[p] == "\\" && (ch[p + 1] == "\n" || bq_open()))) return 1
-  return ch[p] == "$" && ch[p + 1] != "" && index(dq ? "({[" : "({[\047\"", ch[p + 1]) > 0
+# delim_odd(dq) — a delimiter character at pos whose reading this reader does not model: a substitution (`$(`,
+# `${`, `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or any
+# backslash inside backticks (the shells unescape the backticks first; in a single-quoted span too, heredoc_op)
+function delim_odd(dq,   c1) {
+  c1 = at(1)
+  if (ch[pos] == "`" || (ch[pos] == "\\" && (c1 == "\n" || bq_open()))) return 1
+  return ch[pos] == "$" && c1 != "" && index(dq ? "({[" : "({[\047\"", c1) > 0
 }
 function delim_redo(s, op, w) { region(op, n, "substitution or escape in a heredoc delimiter", rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }
 

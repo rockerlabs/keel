@@ -815,7 +815,12 @@ net "a \$'…' delimiter" push "cat <<\$'\\'' ; git push --no-verify #'"
 net "a \$\"…\" delimiter" push 'cat <<$"E" ; git push --no-verify'
 net "a \$[…] delimiter" push "$(printf 'cat <<$[ ; x ]\n$[ ; x ]\ng"it" push --no-verify\n$[')"
 net "a backslash-newline in a delimiter" push "$(printf 'cat <<E\\\nF\n$(git push --no-verify)\nEF')"
-net "a backslash in a delimiter inside backticks" refuse "echo \`cat <<\\\\\\\\'E ; git push --no-verify ; echo \\\\\\\\'\`"
+net "a backslash in a delimiter inside backticks (the shells read Ex, the body ends at line 2)" push "$(printf 'echo `cat <<E\\\\x\nEx\ngit push --no-verify\nE\\\\x`')"
+net "a backslash in a single-quoted delimiter inside backticks" push "$(printf 'echo `cat <<'"'"'E\\$'"'"'\nE$\ngit push --no-verify\nE\\$`')"
+net "an escaped backslash in a single-quoted delimiter inside backticks" refuse "$(printf 'echo `cat <<'"'"'E\\\\'"'"'\nE\\\ngit push --no-verify\nE\\\\`')"
+net "zsh glob syntax glued to a delimiter: (" push "$(printf 'cat <<E(x)\nE(x)\ngit push --no-verify\nE')"
+net "zsh glob syntax glued to a delimiter: <" push "$(printf 'cat <<E<1-2>\nE1\ngit push --no-verify\nE')"
+net "the delimiter word is read again from its start (a # there begins a comment)" refuse 'cat <<#$(git push --no-verify)'
 net "a )-led line's region grows over the line's later heredoc bodies" refuse "$(printf 'MSG=$(cat <<'"'"'A'"'"' <<'"'"'B'"'"'\n)\nA\ngit push --no-verify\nB\n)')"
 net "a )-led line's region does not grow over a later \$(…)'s bodies" allow "$(printf 'x=$(cat <<'"'"'A'"'"'\n)\nA\n); y=$(cat <<'"'"'B'"'"'\ngit is named\nB\n)')"
 
