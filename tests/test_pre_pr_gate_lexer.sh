@@ -820,6 +820,13 @@ net "a backslash in a single-quoted delimiter inside backticks" push "$(printf '
 net "an escaped backslash in a single-quoted delimiter inside backticks" refuse "$(printf 'echo `cat <<'"'"'E\\\\'"'"'\nE\\\ngit push --no-verify\nE\\\\`')"
 net "zsh glob syntax glued to a delimiter: (" push "$(printf 'cat <<E(x)\nE(x)\ngit push --no-verify\nE')"
 net "zsh glob syntax glued to a delimiter: <N-M> (zsh ends the body at E<1-2>)" push "$(printf 'cat <<E<1-2>\nE<1-2>\ngit push --no-verify\nE')"
+net "a process substitution <(…) glued to a delimiter" push "$(printf 'cat <<E<(true)\nE<(true)\ngit push --no-verify\nE')"
+net "a process substitution >(…) glued to a delimiter" push "$(printf 'cat <<E>(true)\nE>(true)\ngit push --no-verify\nE')"
+d70="$(printf '%070d' 0)"
+net "zsh's <N-M> glued to a delimiter, of any length" push "$(printf 'cat <<E<%s-2>x\nE<%s-2>x\ngit push --no-verify\nE' "$d70" "$d70")"
+net "zsh's <-> glued to a delimiter" push "$(printf 'cat <<E<->\nE<->\ngit push --no-verify\nE')"
+net "a < glued to a delimiter, a range with no closing >, is a redirection" allow "$(printf 'cat <<E<1-2\nbody\nE\ngit status')"
+net "a < glued to a delimiter, digits but no range, is a redirection" allow "$(printf 'cat <<E<12\nbody\nE\ngit status')"
 net "a plain < glued to a delimiter is a redirection" allow "$(printf 'cat <<EOF<notes.txt\nbody\nEOF\ngit status')"
 net "a second << glued to a delimiter is a heredoc" allow "$(printf 'cat <<A<<B\na\nA\nb\nB\ngit status')"
 net "the delimiter word is read again from its start (a # there begins a comment)" refuse 'cat <<#$(git push --no-verify)'
