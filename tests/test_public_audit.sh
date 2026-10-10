@@ -945,6 +945,25 @@ run env LC_ALL="$loc738" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-ivan-73
 check_status "dir #738 A35b: a non-ASCII literal in another case in a UTF-16 binary → exit 1" 1 "$STATUS"
 check_contains "dir #738 A35b: found in the binary file" "$OUT" "personal literal (secret-scan-personal) in a binary file in the working tree — u.bin"
 
+# A35c (the analogue of secret-scan's A6(f), found by the 0.16.0 integration): an ASCII literal or token whose `.` stands
+# for a NON-ASCII letter ("fran.ois" for a two-byte letter) matches only in the caller's locale — under LC_ALL=C the dot
+# is one byte. Pass U must therefore run for every literal and token, not only non-ASCII ones, or the audit reads clean
+# where main's single caller-locale grep found it.
+cced738="$(printf '\303\247')"                                              # a two-byte Latin letter
+printf 'fran.ois\n' > "$SANDBOX/pa-personal-dot-738.rx"
+d="$(repo_by dev@example.com)"
+printf 'name fran%sois here\n' "$cced738" > "$d/n.txt"; commit_in "$d" "add n.txt"
+git -C "$d" rm -q n.txt; commit_in "$d" "remove n.txt"
+run env LC_ALL="$loc738" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-dot-738.rx" bash "$pa" "$d"
+check_status "dir #738 A35c: an ASCII literal whose dot stands for a non-ASCII letter, in history → exit 1" 1 "$STATUS"
+check_contains "dir #738 A35c: found in the history" "$OUT" "personal literal (secret-scan-personal) in git history"
+d="$(repo_by dev@example.com)"
+printf 'name fran%sois here\n' "$cced738" > "$d/n.txt"; commit_in "$d" "add n.txt"
+git -C "$d" tag -a v1 -m "$(printf 'tag fran%sois' "$cced738")"
+run env LC_ALL="$loc738" bash "$pa" --token 'fran.ois' "$d"
+check_status "dir #738 A35c: an ASCII token whose dot stands for a non-ASCII letter, in a tag message → exit 1" 1 "$STATUS"
+check_contains "dir #738 A35c: found in the annotated-tag message" "$OUT" "in an annotated-tag message"
+
 # A38 (B14, unborn HEAD): no commits is not a failure — the untracked binary is still audited.
 d="$(mktemp -d "$SANDBOX/pa.XXXXXX")"
 git -C "$d" init -q

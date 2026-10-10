@@ -200,33 +200,32 @@ pa_sanitize() {
   { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null && pa_u8="$u8"
   return 0
 }
-# pa_grep2 STEP USE_U FILE GREP-ARGS… — pa_hit = the first line of FILE that `grep GREP-ARGS -- FILE` selects,
-# or empty; 1 when a grep itself failed. Pass C reads every byte under LC_ALL=C. Pass U (only when USE_U is
-# non-empty) runs in the caller's locale over the sanitized copy, where a non-ASCII literal still folds and
-# matches after an invalid byte; it runs only when pass C found nothing.
+# pa_grep2 STEP FILE GREP-ARGS… — pa_hit = the first line of FILE that `grep GREP-ARGS -- FILE` selects, or
+# empty; 1 when a grep itself failed. Pass C reads every byte under LC_ALL=C, where an ERE `.` is one byte and
+# `-i` folds ASCII only. Pass U runs in the caller's locale over the sanitized copy — for the characters a `.` or
+# bracket stands for (an ASCII `fran.ois` for a two-byte letter), for non-ASCII case folding, and for a match
+# after an invalid byte — and only when pass C found nothing. It runs for EVERY literal and token: gating it on a
+# non-ASCII needle read clean where the single caller-locale grep of origin/main found the leak (the analogue of
+# secret-scan's A6(f)).
 pa_grep2() {
-  local step="$1" use_u="$2" f="$3"
-  shift 3
+  local step="$1" f="$2"
+  shift 2
   pa_hit=""
   pa_match "$step" "$audit_tmp/g2.c" pa_c grep "$@" -- "$f" || return 1
   pa_first "$audit_tmp/g2.c"; pa_hit="$pa_line"
-  if [ -z "$pa_hit" ] && [ -n "$use_u" ]; then
+  if [ -z "$pa_hit" ]; then
     pa_sanitize "$f"
     pa_match "$step" "$audit_tmp/g2.u" grep "$@" -- "$pa_u8" || return 1
     pa_first "$audit_tmp/g2.u"; pa_hit="$pa_line"
   fi
   return 0
 }
-# pa_token_first STEP TOKEN FILE — pa_hit = the first line of FILE a declared token matches. A token is a user
-# ERE and may be non-ASCII: its caller-locale pass runs when the token holds a non-ASCII byte. Case-sensitive.
-pa_token_first() {
-  local use_u=""
-  case "$2" in *[![:ascii:]]*) use_u=1 ;; esac
-  pa_grep2 "$1" "$use_u" "$3" -aE -e "$2"
-}
+# pa_token_first STEP TOKEN FILE — pa_hit = the first line of FILE a declared token matches (a user ERE; both
+# passes, case-sensitive).
+pa_token_first() { pa_grep2 "$1" "$3" -aE -e "$2"; }
 # pa_personal_first STEP FLAGS FILE — pa_hit = the first line of FILE a personal literal matches (FLAGS is the
-# grep flag cluster, e.g. -aoiE). Pass U runs when $decode_nonascii. The caller checks $has_personal first.
-pa_personal_first() { pa_grep2 "$1" "$decode_nonascii" "$3" "$2" -f "$personal_pat"; }
+# grep flag cluster, e.g. -aoiE; both passes). The caller checks $has_personal first.
+pa_personal_first() { pa_grep2 "$1" "$3" "$2" -f "$personal_pat"; }
 # pa_report LEVEL STEP OUT TEXT CMD… — run CMD (exit 1 = no match); on a first output line, LEVEL "TEXT — e.g. LINE".
 pa_report() {
   local level="$1" step="$2" out="$3" text="$4"
@@ -348,7 +347,7 @@ $personal_lines
 EOF_PERSONAL
 # dir #746 (B7): the non-ASCII needle flag — set above for a personal literal, here for a token (an ASCII one
 # survives decode_binary's NUL-strip pass, unless an ERE `.` or bracket in it stands for a non-ASCII letter: a
-# stated limit there). It gates decode_binary's built-in decoder and pass U.
+# stated limit there). It gates decode_binary's built-in decoder only; pass U runs for every needle.
 if [ "${#tokens[@]}" -gt 0 ]; then
   for t in "${tokens[@]}"; do
     case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
