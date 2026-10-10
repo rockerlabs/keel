@@ -157,13 +157,17 @@ check_eq "A24 …one line names the refusal" 1 "$(grep -c 'inside the Keel check
 
 # --- A11: the lib is REQUIRED; stat-portable stays OPTIONAL ------------------------------------------
 : > "$ck/tools/lib/safe-write.sh"
-h="$SANDBOX/a11/h"; mkdir -p "$h"
+# A31 (1): the guard runs before the home is created and before the run lock (round 2 B18), so a home
+# that does not exist yet still does not exist afterwards.
+h="$SANDBOX/a11/not-yet"
 run "$ck/install.sh" --home "$h" --no-hooks
 check_status "A11 install with a 0-byte safe-write.sh → exit 1" 1 "$STATUS"
 check_contains "A11 …one message naming the lib" "$OUT" "tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted"
-# install.sh makes .keel/ and takes its run lock (.install.lock) before any lib guard; nothing else.
-check_eq "A11 …nothing created under --home but .keel/ and the run lock" "" \
-  "$(find "$h" -mindepth 1 -not -path "$h/.keel" -not -path "$h/.keel/*" -not -path "$h/.install.lock" -not -path "$h/.install.lock/*")"
+check_nodir "A31 …and the home it was given is never created" "$h"
+h="$SANDBOX/a11/h"; mkdir -p "$h"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "A11 …into an existing home → exit 1" 1 "$STATUS"
+check_eq "A31 …nothing created under --home, not even .keel/ or the run lock" "" "$(find "$h" -mindepth 1)"
 run "$ck/uninstall.sh" --home "$h" --dry-run
 check_status "A11 uninstall --dry-run → exit 1" 1 "$STATUS"
 check_contains "A11 …naming the lib" "$OUT" "tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted"

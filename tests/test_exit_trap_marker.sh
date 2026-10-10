@@ -196,11 +196,44 @@ run env KEEL_REPO="$REPO_ROOT" "$sh" "$REPO_ROOT/bootstrap.sh" --home "$SANDBOX/
 check_status "dir #692 bootstrap.sh under $sh: a real run still exits 0" 0 "$STATUS"
 check_file "dir #692 bootstrap.sh under $sh: ...and installs" "$SANDBOX/pl692-boot-home-ok/CLAUDE.md"
 
+# --- install.sh (dir #757 / dir #756 (b), spec 685 round 2 B18) -------------------------------------
+# The run lock's EXIT trap is armed right after the pid write and disarmed by the success-path release.
+# Two probes, each in a copy of the whole tracked tree (install.sh needs its checkout beside it):
+#   (a) a fatal right AFTER the trap is armed (at the first lib guard that follows the lock): non-zero,
+#       never the "Done" summary, and no lock left;
+#   (b) the same fatal right AFTER the success-path release: still non-zero — the release disarms the
+#       trap, so nothing is left to read a status-0 abort as success (a build that only sets a flag at
+#       release and leaves the trap armed turns this into exit 0).
+for probe in a b; do
+  itree="$SANDBOX/pl757-$probe"; mkdir -p "$itree"
+  while IFS= read -r e; do
+    [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$itree/"
+  done <<<"$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
+  case "$probe" in
+    a) ianchor='if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then' ;;
+    b) ianchor='# Checkout-side ledger — the discovery index' ;;
+  esac
+  probe_copy "dir #757 install.sh ($probe)" "$REPO_ROOT/install.sh" "$itree/install.sh" "$ianchor" "$fatal"
+  for sh in $shells; do
+    ih="$SANDBOX/pl757-$probe-home-${sh//\//_}"
+    run "$sh" "$itree/install.sh" --home "$ih" --no-hooks
+    if [ "$STATUS" -ne 0 ]; then
+      pass "dir #757 install.sh ($probe) under $sh: a top-level fatal error exits non-zero (status $STATUS)"
+    else
+      fail "dir #757 install.sh ($probe) under $sh: a top-level fatal error exits non-zero" "exit 0 (masked): $OUT"
+    fi
+    check_absent "dir #757 install.sh ($probe) under $sh: never prints the Done summary" "$OUT" "Done"
+    check_nodir "dir #757 install.sh ($probe) under $sh: no run lock is left" "$ih/.install.lock"
+  done
+done
+
 # --- the audit: no bare quoted-command EXIT trap is left in the five (only a named handler) -----------
 bare="$(grep -nE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" \
   "$REPO_ROOT/tools/delta-audit/derive.sh" "$REPO_ROOT/tools/vendor-review/agy.sh" \
   "$REPO_ROOT/tools/changelog-section.sh" "$REPO_ROOT/tools/keel-impact.sh" "$REPO_ROOT/bootstrap.sh" || true)"
 check_eq "dir #692: no bare quoted-command EXIT trap in the five scripts" "" "$bare"
+bare_inst="$(grep -nE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/install.sh" || true)"
+check_eq "dir #757: no bare quoted-command EXIT trap in install.sh" "" "$bare_inst"
 bare_vr="$(grep -nE "^[[:space:]]*trap ['\"].*['\"][[:space:]]+EXIT" "$REPO_ROOT/tools/vendor-review.sh" || true)"
 check_eq "dir #662: no bare quoted-command EXIT trap in vendor-review.sh" "" "$bare_vr"
 
