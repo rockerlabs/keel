@@ -78,5 +78,5 @@ workers are real, gated sessions per R3, never subagents; that boundary is
 
 **DELEGATION RUN does not apply to this session** — the manager is the orchestrator, not a delegation
 worker, and owns wrap duties for the whole release (R13). Every worker session you launch or brief
-carries the `WRAP CENTRALIZED (R13)` marker instead, verbatim as R13 gives it — not the DELEGATION RUN
+carries the `WRAP CENTRALIZED (R13)` marker instead, verbatim from R13's quoted block — not the DELEGATION RUN
 line, which also forbids the log and backlog writes R8 sanctions for a worker.

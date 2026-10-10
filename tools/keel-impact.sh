@@ -299,7 +299,7 @@ EOF
 
 # --- the ledger's column list: the ONE ordered source of truth for the table's shape (dir #151) ----
 # cmd_add's row-printf (the WRITER), _ledger_parse (the READER), and the table header below all derive
-# their column positions/order from this single array instead of each hand-listing the same 13 columns.
+# their column positions/order from this single array instead of each hand-listing the same columns.
 # Position in the array is the invariant: table field N = array-index + 2 (field 1 is the empty cell
 # before the table's leading "|"; array indices are 0-based, so "date" at index 0 is field 2, "guard"
 # at index 3 is field 5, etc — the same numbering _ledger_parse's old header comment already documented).
@@ -1755,14 +1755,16 @@ cmd_restore() {
 
 # shape — print the event vocabulary and the ONE-event line a checkpoint copies (dir #732). A pure printer: no
 # repo, store or flag needed, so a manager can paste it into a worker brief and a worker can read it cold. The
-# kinds come from $EVENT_TYPES (plus the count-only silent), so the list cannot drift from what `add` accepts.
+# first line takes the kinds from $EVENT_TYPES (plus the count-only silent); the example lines and the flags in
+# the last paragraph are prose, pinned by tests/test_keel_impact.sh.
 cmd_shape() {
   [ "$#" -eq 0 ] || { printf 'keel-impact: shape takes no arguments\n' >&2; usage >&2; exit 2; }
   cat <<EOF
 Event kinds this tool scores: $EVENT_TYPES — plus silent (a COUNT of always-loaded rules that did not fire; no cite line).
 
-One event is ONE line: the kind, a dash, then what fired or was caught and where. A bare tally ("hit 1, friction 1")
-cannot be scored — no citation, no count. Each non-zero kind is followed by one such line per event:
+One event is ONE line: the kind, a dash, then the cite — what fired or was caught, and where. A bare tally
+("hit 1, friction 1") cannot be scored — no citation, no count. Each non-zero kind is followed by one such line
+per event; the cite is the text after the dash, without the kind:
 
   hit — read docs/delegation.md's rails block before spawning the review subagent; it named the scratch-clone rule I needed
   friction — the pre-pr-gate denied gh pr create after an amend invalidated the receipts; re-ran /polish's steps 3-5

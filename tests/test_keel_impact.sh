@@ -139,6 +139,22 @@ check_contains "a pipe inside --session is escaped in the table cell" "$(tail -1
 run bash "$TOOL" add --fire "x" --gap none --session
 check_status "a bare --session with no value aborts (matches --ticket)" 1 "$STATUS"
 
+# An on-disk ledger written BEFORE this column (13-cell header, 13-field rows) keeps working: the old row reads
+# an empty session, the new row lands as a 14th cell, and rollup still counts both (dir #406's additive precedent).
+legacy732="$SANDBOX/legacy732-ledger.md"
+{ printf '%s\n' '# Keel impact ledger' ''
+  printf '%s\n' '| date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) | ticket |'
+  printf '%s\n' '|------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|--------|'
+  printf '%s\n' '| 2026-07-20 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | an old cite | none | dir #1 |'
+} > "$legacy732"
+run env KEEL_IMPACT_LEDGER="$legacy732" bash "$TOOL" add --fire "scored after the column landed" --gap none --session W27
+check_status "add --session onto a 13-column ledger succeeds" 0 "$STATUS"
+check_eq "the legacy ledger now holds two data rows" 2 "$(grep -c '^| 20' "$legacy732")"
+check_contains "the new row's session lands as the 14th cell" "$(tail -1 "$legacy732")" "| — | W27 |"
+run env KEEL_IMPACT_LEDGER="$legacy732" bash "$TOOL" rollup
+check_status "rollup reads the mixed-width ledger" 0 "$STATUS"
+check_contains "rollup counts both rows" "$OUT" "impact ledger: 2 session(s)"
+
 # `shape` prints the vocabulary and ONE event line a checkpoint copies — no state, no repo, no flags needed.
 run bash "$TOOL" shape
 check_status "shape succeeds with no repo or store" 0 "$STATUS"
@@ -147,6 +163,7 @@ for kind in hold guard fire hit miss friction silent; do
 done
 check_contains "shape shows the one-event form: kind, then a cite line" "$OUT" "hit — "
 check_contains "shape says a bare tally cannot be scored" "$OUT" "bare tally"
+check_contains "shape says the cite is the text after the dash, without the kind" "$OUT" "without the kind"
 check_contains "shape names the session flag" "$OUT" "--session"
 run bash "$TOOL" shape --bogus
 check_status "shape takes no arguments" 2 "$STATUS"
