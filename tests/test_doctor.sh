@@ -1403,6 +1403,7 @@ a2_stub() {  # a2_stub <body> — replace the copy's installer with a script run
 }
 a2h="$SANDBOX/a2-home"; mkdir -p "$a2h/claude" "$a2h/stub" "$a2h/gitdir"
 printf '#!/bin/sh\nexit 0\n' > "$a2h/stub/pre-commit"; chmod +x "$a2h/stub/pre-commit"
+printf '#!/bin/sh\nexit 0\n' > "$a2h/stub/pre-push"; chmod +x "$a2h/stub/pre-push"   # the stub claims pre-push=keel: dir #747 holds it to that
 printf '#!/bin/sh\nexit 0\n' > "$a2h/gitdir/pre-commit"; chmod +x "$a2h/gitdir/pre-commit"
 fresh_home_env "$a2h"
 env "${FRESH_HOME_ENV[@]}" git config --global core.hooksPath "$a2h/gitdir" >/dev/null 2>&1
@@ -1412,7 +1413,7 @@ check_contains "A2: --install names the producer's dir" "$OUT" "OK   secret-guar
 check_absent "A2: ...and never the dir git's own config names" "$OUT" "$a2h/gitdir"
 a2_stub ":"
 run env "${FRESH_HOME_ENV[@]}" bash "$a2/tools/doctor.sh" --install "$a2h/claude"
-check_contains "A2: a silent resolver → 'state unknown'" "$OUT" "state unknown"
+check_contains "A2: a silent resolver → 'state unknown'" "$OUT" "secret-guard state unknown: the hooks-dir resolver"
 check_contains "A2: ...as a W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
 check_absent "A2: ...never the OK line" "$OUT" "OK   secret-guard: machine-global"
 a2_stub "printf 'scope=global\nvalue=$a2h/stub\ndir=$a2h/stub\n'"
