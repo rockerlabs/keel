@@ -13,16 +13,28 @@
 
 install="$REPO_ROOT/install.sh"
 
-# wait_ready MARKER — wait (bounded) for a paused install's "$MARKER.ready"; 0 when it appeared.
-wait_ready() {
-  local n=0
-  while [ ! -e "$1.ready" ] && [ "$n" -lt 60 ]; do sleep 1; n=$((n + 1)); done
-  [ -e "$1.ready" ]
+# start_paused TAG CHECKPOINT [monitor] — start an install into "$SANDBOX/TAG/h" in the background, paused at
+# CHECKPOINT (KEEL_TEST_PAUSE_AFTER); sets $h, $mk (the pause marker) and $pid, and returns wait_ready's
+# answer. `monitor` starts it under `set -m`, in its own process group (the SIGINT row). Called in the test's
+# own shell, so the install stays this shell's child for reap.
+start_paused() {
+  h="$SANDBOX/$1/h"; mk="$SANDBOX/$1.marker"; mkdir -p "$h"; : > "$mk"
+  [ "${3:-}" = monitor ] && set -m
+  KEEL_TEST_PAUSE_AFTER="$2" KEEL_TEST_PAUSE_MARKER="$mk" \
+    "$install" --home "$h" --no-hooks > "$SANDBOX/$1.out" 2>&1 </dev/null &
+  pid=$!
+  set +m
+  wait_ready "$mk"
+}
+# abandon PID LABEL — a paused install that never reached its checkpoint: kill it, reap it, fail the row.
+abandon() {
+  kill -9 "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true
+  fail "$2: the install reached its pause checkpoint" "no $mk.ready"
 }
 # reap PID — a bounded wait for PID, its exit status in $REAPED. Called in the test's own shell, never
-# inside `$( )`: a subshell cannot wait for its parent's child. A pid still alive after 30s is killed
-# (status 137), so a build that ignores the signal fails its row instead of hanging the suite. 120s, not
-# less: a full install after the pause, under a parallel test wave's load, can take well past 30s.
+# inside `$( )`: a subshell cannot wait for its parent's child. A pid still alive after 120s is killed
+# (status 137), so a build that ignores the signal fails its row instead of hanging the suite — 120s
+# because a full install after the pause, under a parallel test wave's load, can take well past 30s.
 reap() {
   local p="$1" dog
   ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep 120 & s=$!; wait "$s"; kill -9 "$p" ) > /dev/null 2>&1 &
@@ -72,30 +84,25 @@ check_nodir "A32 …and no run lock is left" "$h/.install.lock"
 # standalone (`bash tests/test_install_lock_release.sh`), or from a terminal, it runs.
 int_probe=0
 ( set -m; bash -c 'trap "exit 7" INT; kill -INT $$; exit 0' ) || int_probe=$?
-int_trappable=0; [ "$int_probe" = 7 ] && int_trappable=1
 for sig in TERM INT; do
-  case "$sig" in TERM) want=143 ;; INT) want=130 ;; esac
-  if [ "$sig" = INT ] && [ "$int_trappable" != 1 ]; then
-    pass "A33/K29a SIGINT row skipped — SIGINT is ignored in this test's environment (ignored on entry, so untrappable)"
-    continue
-  fi
-  h="$SANDBOX/a33-$sig/h"; mk="$SANDBOX/a33-$sig.marker"; mkdir -p "$h"; : > "$mk"
-  set -m
-  KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
-    "$install" --home "$h" --no-hooks > "$SANDBOX/a33-$sig.out" 2>&1 </dev/null &
-  pid=$!
-  set +m
-  if wait_ready "$mk"; then
+  # TERM goes to the install's own pid; INT to its whole process group, as a terminal's Ctrl-C does (bash
+  # treats an INT its foreground child survived as handled, so an INT to the shell alone proves nothing).
+  case "$sig" in
+    TERM) want=143; target="$sig" ;;
+    INT)  want=130; target="-$sig"
+          if [ "$int_probe" != 7 ]; then
+            pass "A33/K29a SIGINT row skipped — SIGINT is ignored in this test's environment (ignored on entry, so untrappable)"
+            continue
+          fi ;;
+  esac
+  if start_paused "a33-$sig" merge-write monitor; then
     check_dir "A33 $sig fixture: the paused run holds the lock" "$h/.install.lock"
-    # TERM goes to the install's own pid; INT to its whole process group, as a terminal's Ctrl-C does (bash
-    # treats an INT its foreground child survived as handled, so an INT to the shell alone proves nothing).
-    case "$sig" in TERM) kill -TERM "$pid" ;; INT) kill -INT -- -"$pid" ;; esac
+    if [ "$target" = TERM ]; then kill -TERM "$pid"; else kill -INT -- -"$pid"; fi
     reap "$pid"
     check_status "A33/K29a SIG$sig during the run → exit $want" "$want" "$REAPED"
     check_nodir "A33/K29a …and no run lock is left" "$h/.install.lock"
   else
-    kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-    fail "A33 $sig fixture: the install reached its pause checkpoint" "no $mk.ready"
+    abandon "$pid" "A33 $sig fixture"
   fi
 done
 
@@ -103,11 +110,7 @@ done
 # Two runs recovering one stale lock at once (or a sibling whose `kill -0` met EPERM) can leave a live run
 # whose lock now names another process. Staged: pause a run holding the lock, rewrite the pid file to a
 # live process (this test's own shell), then TERM the run — its exit must leave that lock in place.
-h="$SANDBOX/r-takeover/h"; mk="$SANDBOX/r-takeover.marker"; mkdir -p "$h"; : > "$mk"
-KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
-  "$install" --home "$h" --no-hooks > "$SANDBOX/r-takeover.out" 2>&1 </dev/null &
-pid=$!
-if wait_ready "$mk"; then
+if start_paused r-takeover merge-write; then
   printf '%s\n' "$$" > "$h/.install.lock/pid"
   kill -TERM "$pid"
   reap "$pid"
@@ -115,17 +118,12 @@ if wait_ready "$mk"; then
   check_eq "takeover: …and the lock that now names another live process is left in place" "$$" \
     "$(cat "$h/.install.lock/pid" 2>/dev/null)"
 else
-  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-  fail "takeover fixture: the install reached its pause checkpoint" "no $mk.ready"
+  abandon "$pid" "takeover fixture"
 fi
 
 # …and the success path's release reads the same pid file: a run that finishes normally leaves a
 # taken-over lock in place too.
-h="$SANDBOX/r-takeover-ok/h"; mk="$SANDBOX/r-takeover-ok.marker"; mkdir -p "$h"; : > "$mk"
-KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
-  "$install" --home "$h" --no-hooks > "$SANDBOX/r-takeover-ok.out" 2>&1 </dev/null &
-pid=$!
-if wait_ready "$mk"; then
+if start_paused r-takeover-ok merge-write; then
   printf '%s\n' "$$" > "$h/.install.lock/pid"
   rm -f "$mk"
   reap "$pid"
@@ -133,24 +131,18 @@ if wait_ready "$mk"; then
   check_eq "takeover (success path): …and leaves the lock that now names another live process" "$$" \
     "$(cat "$h/.install.lock/pid" 2>/dev/null)"
 else
-  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-  fail "takeover (success path) fixture: the install reached its pause checkpoint" "no $mk.ready"
+  abandon "$pid" "takeover (success path) fixture"
 fi
 
 # …and a pid file that names this run without a final newline is still read as this run's: released.
-h="$SANDBOX/r-nonl/h"; mk="$SANDBOX/r-nonl.marker"; mkdir -p "$h"; : > "$mk"
-KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
-  "$install" --home "$h" --no-hooks > "$SANDBOX/r-nonl.out" 2>&1 </dev/null &
-pid=$!
-if wait_ready "$mk"; then
+if start_paused r-nonl merge-write; then
   printf '%s' "$pid" > "$h/.install.lock/pid"
   rm -f "$mk"
   reap "$pid"
   check_status "own pid, no final newline: the run finishes → exit 0" 0 "$REAPED"
   check_nodir "own pid, no final newline: …and releases its lock" "$h/.install.lock"
 else
-  kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-  fail "own-pid fixture: the install reached its pause checkpoint" "no $mk.ready"
+  abandon "$pid" "own-pid fixture"
 fi
 
 # --- A34 / K30: after our release, a sibling's lock is never ours to remove --------------------------

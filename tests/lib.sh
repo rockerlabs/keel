@@ -654,6 +654,15 @@ match() { local h="$1"; shift; grep "$@" <<< "$h"; }
 # pair), the "second use = promote" convention above.
 inode_of() { local i _; read -r i _ <<<"$(ls -i "$1")"; printf '%s' "$i"; }
 
+# wait_ready MARKER — wait (bounded, 60s, polled every 0.1s like install.sh's own pause loop) for an install
+# paused by _keel_test_pause_after (KEEL_TEST_PAUSE_AFTER / KEEL_TEST_PAUSE_MARKER) to touch "$MARKER.ready";
+# 0 once it has.
+wait_ready() {
+  local n=0
+  while [ ! -e "$1.ready" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$1.ready" ]
+}
+
 # tracked_tree_copy DEST — a copy of this checkout's tracked top-level entries (uncommitted edits to them
 # included) into DEST, for a test that runs install.sh / uninstall.sh from a scratch checkout. Only the
 # tracked entries: a run from the main checkout would otherwise drag its .git/, private/ and nested

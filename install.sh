@@ -367,9 +367,8 @@ fi
 # nested inside it. uninstall.sh's own cleanup ends with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`,
 # which only succeeds on an EMPTY directory; a lock dir left behind by a crashed install (a SIGKILL or a
 # power loss, where no handler runs — see the EXIT trap armed below) would sit inside .keel forever if the
-# lock lived there,
-# silently defeating that rmdir on every future uninstall until some LATER install happened to reclaim
-# it first. Nothing else about $manifest_dir needs that .keel nesting — the lock doesn't gate or record
+# lock lived there, silently defeating that rmdir on every future uninstall until some LATER install
+# happened to reclaim it first. Nothing else about $manifest_dir needs that .keel nesting — the lock doesn't gate or record
 # anything manifest-specific — so it costs nothing to keep it out.
 #
 # Cost accepted: a second install into the same home now fails fast (exit 1, before touching anything)
@@ -545,7 +544,7 @@ fi
 # an empty count as UNKNOWN and refuses, which is the fail-closed direction: a checkout too broken to carry
 # tools/ is not one to auto-refresh an adopter's files from.
 
-# artifact-cksum (dir #362) — REQUIRED, not optional, unlike the two libs above: its output
+# artifact-cksum (dir #362) — REQUIRED, not optional, unlike manifest.sh and stat-portable above: its output
 # (CKSUM_UNREADABLE/artifact_cksum) is written unconditionally into a manifest `file` record below,
 # which uninstall.sh later trusts for a destructive (removal) decision. A same-shape "degrade and
 # continue" fallback here would write the unreadable-sentinel into every record for a tools/-less
