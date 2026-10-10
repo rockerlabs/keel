@@ -1406,7 +1406,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null || true)"
     late_fragments="${late_fragments//$'\n'/ }"
     if [ -n "$late_fragments" ]; then
-      gap "fragments merged after the cut ($late_fragments) — for each, either its bullet is already in [$pending] (delete the file) or it is not (move the bullet in, then delete the file) — tools/self/changelog-cut.sh VERSION DATE run again labels which is which"
+      gap "fragments merged after the cut ($late_fragments) — move each one's bullets into [$pending] unless already there, then delete the file; 'tools/self/changelog-cut.sh $pending <DATE>' refuses and labels which is which (give it no other version: that would cut for real)"
       changelog_bad=1
     fi
   fi

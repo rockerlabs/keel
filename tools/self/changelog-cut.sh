@@ -24,8 +24,8 @@
 # Exit 0 done. Exit 2 REFUSED, changing nothing: a bad VERSION or DATE, no CHANGELOG.md, not exactly one
 # `## [Unreleased]` heading (fenced examples do not count), a `## [VERSION]` heading already present, or
 # `changelog-fragments.sh --check` failing. A `## [VERSION]` already present while fragment files are
-# still on disk: the refusal labels each fragment `assembled` (its first bullet line already appears
-# verbatim in that section — a cut that stopped before deleting it; delete the file) or `late` (it does
+# still on disk: the refusal labels each fragment `assembled` (every one of its top-level bullet lines
+# already appears verbatim in that section — a cut that stopped before deleting it; delete the file) or `late` (it does
 # not — merged after the cut ran; append it to that section by hand, then delete it). Running the cut
 # twice therefore refuses the second time.
 set -euo pipefail
@@ -100,10 +100,15 @@ if grep -qE "^## \[${version//./\\.}\]" <<< "$blanked"; then
     section="$(awk -v h="## [$version]" 'index($0, h) == 1 { on = 1; next } on && /^## / { exit } on { print }' <<< "$blanked")"
     labelled=""
     for f in $frag_files; do
-      first="$(awk 'NF { print; exit }' "$repo_dir/changelog.d/$f")"
-      if grep -qxF -- "$first" <<< "$section"; then
+      # assembled = EVERY top-level bullet line of the fragment is already in the section; one missing and
+      # deleting the file would lose content, so it reads as late.
+      assembled=1
+      while IFS= read -r bullet; do
+        grep -qxF -- "$bullet" <<< "$section" || { assembled=0; break; }
+      done < <(grep '^- ' "$repo_dir/changelog.d/$f" || true)
+      if [ "$assembled" = 1 ]; then
         labelled="$labelled
-  changelog.d/$f — assembled (its first bullet is already in [$version]: a cut stopped before deleting it; delete the file)"
+  changelog.d/$f — assembled (every bullet is already in [$version]: a cut stopped before deleting it; delete the file)"
       else
         labelled="$labelled
   changelog.d/$f — late (not in [$version]: merged after the cut ran; append it to that section by hand, then delete the file)"

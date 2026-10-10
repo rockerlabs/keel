@@ -230,4 +230,24 @@ d="$(mk_repo)"
 printf '# Changelog\n\n## [Unreleased]\n\n- bullet:\n  ```\n  never closed\n\n## [1.0.0] — 2025-12-31\n\n- the first release\n' > "$d/CHANGELOG.md"
 refuses "an unclosed fence in CHANGELOG.md" "odd number of fence markers" "$d" 9.9.9 2026-01-01
 
+# The lint runs BEFORE the already-present diagnosis: a malformed leftover fragment is refused with the lint's
+# own message, never labelled assembled/late (it can be neither carried nor honestly judged).
+d="$(mk_repo)"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+printf '%s\n' '### Added' '- dir #4: malformed leftover' > "$d/changelog.d/4-bad.md"
+before="$(cat "$d/CHANGELOG.md")"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_status "already-present version + a malformed fragment -> exit 2" 2 "$STATUS"
+check_contains "...the lint's message, not an assembled/late label" "$OUT" "changelog-fragments.sh --check fails"
+check_absent "...and no label is invented for it" "$OUT" "4-bad.md — "
+check_eq "...CHANGELOG.md unchanged" "$before" "$(cat "$d/CHANGELOG.md")"
+
+# 'assembled' needs EVERY bullet of the fragment in the section: one missing and deleting the file would lose it.
+d="$(mk_repo)"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+printf '%s\n' '- dir #1: the first one' '- dir #5: a second bullet that was never carried' > "$d/changelog.d/1-a.md"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_status "partly-carried leftover -> exit 2" 2 "$STATUS"
+check_contains "a fragment with a bullet missing from the section is labelled late, not assembled" "$OUT" "changelog.d/1-a.md — late"
+
 summary

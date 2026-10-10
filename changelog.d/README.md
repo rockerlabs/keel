@@ -15,7 +15,8 @@ falls behind turns DIRTY, with no CI run); two PRs that each add their own file 
   your PR's purpose.
 - **Content** is only the bullets, exactly as they would sit under `## [Unreleased]`: the first non-blank
   line starts `- `, continuation lines are indented (fenced blocks too: indent the fence markers and what is
-  inside), every fence is closed, and no line starts with `#` (a heading would split the cut's section). Cite a ticket as `dir #N` in full, never wrapped in backticks.
+  inside), fence markers come in pairs, and no line starts with `#` (a heading would split the cut's
+  section). Cite a ticket as `dir #N` in full, never wrapped in backticks.
 - **Links** to a file in the repo are root-anchored, `[text](/docs/x.md)`, never relative; a bare `#anchor`
   or any scheme other than `http(s)` and `mailto` is rejected too. The cut moves
   the text into `CHANGELOG.md` verbatim, and `tools/self/prose-drift.sh` resolves a bare relative target
@@ -54,5 +55,5 @@ It appends the fragments after the last line of `[Unreleased]`, renames that hea
 README stays). It never runs git, and it refuses without changing anything on a bad version or date, a
 second `[Unreleased]`, a `## [VERSION]` that already exists, or a fragment that fails the lint. Running it
 twice therefore refuses the second time; a fragment that merges after the cut ran (before the tag) fails
-`tools/self/doctor.sh` until it is moved into the cut section. See [`docs/release-audit.md`](/docs/release-audit.md) Phase 7 for
-where it sits in the release order.
+`tools/self/doctor.sh` until it is moved into the cut section. See
+[`docs/release-audit.md`](/docs/release-audit.md) Phase 7 for where it sits in the release order.
