@@ -874,6 +874,8 @@ check_contains "dir #738 A33e: found in the tag message" "$OUT" "in an annotated
 d="$(repo_by dev@example.com)"
 { printf 'AB\000\330'; printf 'x\000 \000\030\004\062\004\060\004\075\004 \000y\000'; } > "$d/s.bin"
 commit_in "$d" "add s.bin"
+# BRIDGE (dir #746 slice 1): the assertion below needs slice 1's resuming decode_binary. Whoever merges SECOND deletes
+# this guard (the assertion becomes unconditional) in the rebase and says so in the PR.
 if grep -qF 'iconv -c -f UTF-16LE' "$pa"; then
   run env LC_ALL="$loc738" bash "$pa" --token "$ivdot738" "$d"
   check_status "dir #738 A33e: a non-ASCII token behind a lone surrogate in a binary → exit 1" 1 "$STATUS"

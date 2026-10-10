@@ -26,7 +26,8 @@ sections real content going forward — see that page for exactly when each one 
   scanning nothing — so `keel audit` run from a non-git directory exits 2. dir #694, dir #740: the personal
   literals are read from a pattern file, one pattern per line (two literals never fuse into one ERE), the byte
   greps run under `LC_ALL=C`, and a non-ASCII literal or token gets a second pass in the caller's locale over a
-  UTF-8-sanitized copy, so a literal after an invalid byte is still found.
+  UTF-8-sanitized copy, so a literal after an invalid byte is still found (a non-ASCII token with a bracket
+  expression can now also match raw bytes under the `LC_ALL=C` pass — it over-blocks, never under-blocks).
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

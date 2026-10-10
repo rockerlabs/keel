@@ -29,7 +29,8 @@
 #
 # A git read or grep this audit could not complete is never read as "nothing found" (dir #738): it is a
 # GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit goes
-# on, and the exit is 1. DIR must be a git repository: anything else exits 2.
+# on, and the exit is 1. DIR must be a git repository: anything else exits 2. Needs git >= 2.28
+# (`git diff --no-relative`); on an older git the changed-files step is a GAP, not a silent skip.
 #
 # Config (.public-audit) — ERE values, '#' comments:
 #   token: <ERE>         a private string to flag in tree + history (an internal name, host, ...)
@@ -346,7 +347,8 @@ done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
 # dir #746 (B7): the non-ASCII needle flag — set above for a personal literal, here for a token (an ASCII one
-# already survives decode_binary's NUL-strip pass). It gates decode_binary's built-in decoder and pass U.
+# already survives decode_binary's NUL-strip pass). It gates pass U, and is the same flag the built-in decoder
+# gate in decode_binary reads (dir #746 slice 1).
 if [ "${#tokens[@]}" -gt 0 ]; then
   for t in "${tokens[@]}"; do
     case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
