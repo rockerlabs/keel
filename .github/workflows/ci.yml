@@ -190,3 +190,21 @@ jobs:
       # here even if the underlying checks it wraps still pass individually.
       - name: keel self-check
         run: bash tools/self/doctor.sh
+
+  # dir #744 slice 4 (B19, dir #722): the suite on the CUT shape of the changelog. NOT a required check — its name
+  # is deliberately absent from branch protection; requiring it is the operator's call, recommended after 10 green
+  # runs and only if its p90 is within 2 minutes of the slowest required job (else it lengthens every PR).
+  # tools/self/cut-sim.sh clones HEAD, runs the clone's changelog-cut.sh 9999.0.0, commits it and runs the clone's
+  # tests/run.sh; a test that pins `## [Unreleased]` or one fragment file goes red here, before the real cut PR.
+  cut-simulation:
+    name: cut-simulation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # History + tags, as the self-check job: cut-sim.sh refuses a tagless checkout (the tag-reading tests
+          # would be red before any cut).
+          fetch-depth: 0
+      - name: Run the suite on the cut CHANGELOG shape
+        run: bash tools/self/cut-sim.sh

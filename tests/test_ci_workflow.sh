@@ -39,14 +39,14 @@ check_eq "A7 fixture: a timeout-minutes only on a STEP does not count" "a MISSIN
 # --- the real workflow ------------------------------------------------------------------------------------
 real="$(job_timeouts "$ci")"
 check_absent "A7: every ci.yml job has a job-level timeout-minutes" "$real" "MISSING"
-for want in "tests 20" "macos-shards 25" "macos 15" "alpine 20" "shellcheck 15" "secret-scan 15" "self-check 15"; do
+for want in "tests 20" "macos-shards 25" "macos 15" "alpine 20" "shellcheck 15" "secret-scan 15" "self-check 15" "cut-simulation 20"; do
   if grep -qxF -- "$want" <<< "$real"; then
     pass "A7: job ${want% *} times out at B9's ${want#* } minutes"
   else
     fail "A7: job ${want% *} times out at B9's ${want#* } minutes" "job_timeouts read: $(tr '\n' ';' <<< "$real")"
   fi
 done
-check_eq "A7: exactly the seven jobs B9 names (a new job needs its own value here)" "7" "$(grep -c . <<< "$real")"
+check_eq "A7: exactly the eight jobs B9 and B19 name (a new job needs its own value here)" "8" "$(grep -c . <<< "$real")"
 
 # --- dir #744 B16/B25/B26 (A21): two macOS shards behind the stable required names, and the queue trigger ----
 # job_block FILE JOB — the lines of one job (its key line excluded), up to the next job key.
@@ -136,5 +136,17 @@ check_contains "A21: on: still pushes on main" "$on_block" "    branches: [main]
 scan="$(job_block "$ci" secret-scan)"
 check_contains "B26: secret-scan's base sha falls back to merge_group.base_sha" "$scan" "github.event.merge_group.base_sha"
 check_contains "B26: secret-scan's head sha is github.sha on merge_group" "$scan" "github.event_name == 'merge_group' && github.sha"
+
+# --- dir #744 B19 (A16): the cut-simulation job — full history, the one command, and NOT a required check ----
+cutsim="$(job_block "$ci" cut-simulation)"
+check_eq "B19: cut-simulation runs on ubuntu-24.04" "ubuntu-24.04" "$(job_field "$cutsim" runs-on)"
+check_contains "B19: cut-simulation checks out with fetch-depth: 0 (cut-sim.sh refuses a tagless checkout)" "$cutsim" "fetch-depth: 0"
+check_contains "B19: cut-simulation runs tools/self/cut-sim.sh" "$cutsim" "run: bash tools/self/cut-sim.sh"
+check_eq "B19: cut-simulation's check name is exactly cut-simulation" "cut-simulation" "$(job_field "$cutsim" name)"
+# Not required: its name is none of the four names branch protection lists (A21's set).
+for req in "tests (ubuntu-24.04)" "tests (alpine-busybox)" "tests (macos-14)" "shellcheck"; do
+  [ "$(job_field "$cutsim" name)" != "$req" ] && pass "B19: cut-simulation is not the required check '$req'" \
+    || fail "B19: cut-simulation is not the required check '$req'" "the job reuses a required name"
+done
 
 summary
