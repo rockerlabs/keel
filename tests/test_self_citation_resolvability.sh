@@ -277,6 +277,88 @@ check_status "a repo path containing a literal dot still finds its real archive"
 check_contains "the announced path has the dot slugged to a dash, not left literal" "$OUT" "$real_archive_dir/CLAUDE-archive.md"
 rm -rf "$real_archive_dir"
 
+# --- dir #729: the unreleased changelog text (CHANGELOG.md [Unreleased] + changelog.d/ fragments) is scanned too,
+# and a DEAD number that is also a merged PR number in the repo's history carries a PR-number hint ----------
+# mk_cl_repo CHANGELOG_BODY [FRAGMENT_NAME FRAGMENT_BODY] — BACKLOG.md live only for dir #5; one merge commit
+# whose subject is "Merge pull request #513 ..." so #513 is a merged PR number here.
+mk_cl_repo() {
+  local d; d="$(new_repo)"
+  mkdir -p "$d/docs" "$d/changelog.d"
+  printf '%s' "$backlog_ok" > "$d/BACKLOG.md"
+  printf '# doc\n' > "$d/docs/doc.md"
+  printf '%s' "$1" > "$d/CHANGELOG.md"
+  [ -z "${2:-}" ] || printf '%s' "$3" > "$d/changelog.d/$2"
+  ( cd "$d" && git add -A && git commit -q -m fixture && git commit -q --allow-empty -m "Merge pull request #513 from org/some-branch" )
+  printf '%s' "$d"
+}
+cl_pr="# Changelog
+
+## [Unreleased]
+
+- A bullet that cites dir #513, which is a PR number, not a ticket.
+
+## [0.1.0]
+
+- Old history that cites dir #999, long since aged out of every ticket source.
+"
+d="$(mk_cl_repo "$cl_pr")"
+run "$cr" "$d" --quiet
+check_status "a PR number cited as dir #N in CHANGELOG [Unreleased] -> exit 1" 1 "$STATUS"
+check_contains "reports it DEAD, first cited in CHANGELOG.md" "$OUT" "DEAD dir #513"
+check_contains "...with the merged-PR-number hint" "$OUT" "merged PR"
+check_absent "a released section's aged-out citation is history, not scanned" "$OUT" "dir #999"
+
+cl_dead="# Changelog
+
+## [Unreleased]
+
+- Cites dir #777, dead and not any PR number.
+"
+d="$(mk_cl_repo "$cl_dead")"
+run "$cr" "$d" --quiet
+check_contains "a dead non-PR number in [Unreleased] is DEAD" "$OUT" "DEAD dir #777"
+check_absent "...without the PR hint" "$OUT" "merged PR"
+
+d="$(mk_cl_repo "# Changelog
+
+## [Unreleased]
+
+- Cites dir #5, a live ticket.
+" "5-x.md" "- Also dir #9, live.
+")"
+run "$cr" "$d" --quiet
+check_status "live tickets cited in [Unreleased] and a fragment -> exit 0" 0 "$STATUS"
+
+d="$(mk_cl_repo "# Changelog
+
+## [Unreleased]
+
+" "513-x.md" "- A fragment citing dir #513, a PR number.
+")"
+run "$cr" "$d" --quiet
+check_status "a PR number cited as dir #N in a changelog.d fragment -> exit 1" 1 "$STATUS"
+check_contains "names the fragment as where it was first cited" "$OUT" "changelog.d/513-x.md"
+
+d="$(mk_cl_repo "$cl_pr")"
+rm -f "$d/BACKLOG.md"
+run "$cr" "$d"
+check_status "no BACKLOG.md -> the changelog scan degrades to the same SKIP, exit 0" 0 "$STATUS"
+check_contains "...and says so" "$OUT" "SKIP"
+
+# --- dir #729 review: the other merge-subject shapes are recognised too ("#N: title" and a squash "(#N)" mid-subject)
+for subj in "Merge pull request #513: some title (dir #5)" "Fix the thing (#513) [skip ci]"; do
+  d="$(mk_cl_repo "$cl_pr")"
+  ( cd "$d" && git commit -q --allow-empty --amend -m "$subj" )
+  run "$cr" "$d" --quiet
+  check_contains "PR hint on merge-subject shape: $subj" "$OUT" "merged PR"
+done
+# ...and a DIFFERENT PR number in history earns no hint (the match is on the cited number, not on any PR)
+d="$(mk_cl_repo "$cl_pr")"
+( cd "$d" && git commit -q --allow-empty --amend -m "Merge pull request #514 from org/other" )
+run "$cr" "$d" --quiet
+check_contains "a number that is not a merged PR is still DEAD" "$OUT" "DEAD dir #513"
+check_absent "...with no PR hint" "$OUT" "merged PR"
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a

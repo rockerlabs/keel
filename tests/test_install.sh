@@ -945,7 +945,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >"$SANDBOX/fifo-install.out" 2>&1 </dev/null &
   fifo_pid=$!
   fifo_waited=0
-  while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt 30 ]; do
+  while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; fifo_waited=$((fifo_waited + 1))
   done
   if kill -0 "$fifo_pid" 2>/dev/null; then
@@ -1022,7 +1022,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15home" --no-hooks > "$t15_outfile" 2>&1 </dev/null &
   t15_pid=$!
   t15_waited=0
-  while kill -0 "$t15_pid" 2>/dev/null && [ "$t15_waited" -lt 30 ]; do
+  while kill -0 "$t15_pid" 2>/dev/null && [ "$t15_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t15_waited=$((t15_waited + 1))
   done
   if kill -0 "$t15_pid" 2>/dev/null; then
@@ -1081,7 +1081,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$d351ck/install.sh" --home "$t15bhome" --no-hooks > "$t15b_outfile" 2>&1 </dev/null &
   t15b_pid=$!
   t15b_waited=0
-  while kill -0 "$t15b_pid" 2>/dev/null && [ "$t15b_waited" -lt 30 ]; do
+  while kill -0 "$t15b_pid" 2>/dev/null && [ "$t15b_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t15b_waited=$((t15b_waited + 1))
   done
   if kill -0 "$t15b_pid" 2>/dev/null; then
@@ -1320,7 +1320,7 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   env "${FRESH_HOME_ENV[@]}" "$install" --home "$t20home" --no-hooks > "$t20out" 2>&1 </dev/null &
   t20_pid=$!
   t20_waited=0
-  while kill -0 "$t20_pid" 2>/dev/null && [ "$t20_waited" -lt 15 ]; do
+  while kill -0 "$t20_pid" 2>/dev/null && [ "$t20_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t20_waited=$((t20_waited + 1))
   done
   if kill -0 "$t20_pid" 2>/dev/null; then
@@ -1348,9 +1348,9 @@ fi
 
 # T21 (dir #350, rewritten dir #381) — the lock's placement is load-bearing for uninstall.sh's own
 # cleanup, not just tidiness. uninstall.sh finishes with `rmdir "$HOME_DIR/.keel" 2>/dev/null || true`,
-# which only succeeds on an EMPTY directory; had a crashed install's lock (no EXIT trap — see
-# install.sh's own comment at its release site) landed INSIDE .keel instead of beside it, that rmdir
-# would silently fail forever (the `|| true` swallows it) with nothing said.
+# which only succeeds on an EMPTY directory; had a crashed install's lock (a crash no handler follows — a
+# SIGKILL; install.sh's EXIT trap releases it on every other exit) landed INSIDE .keel instead of beside
+# it, that rmdir would silently fail forever (the `|| true` swallows it) with nothing said.
 #
 # dir #381: the ORIGINAL fixture here hand-built a lock at the "correct" sibling path and asserted the
 # WRONG path was empty — nothing in it exercised install.sh's own placement code, so it stayed GREEN
@@ -1365,10 +1365,10 @@ fi
 # state a crashed run leaves. So a REAL crash, via a REAL install.sh run and a REAL uninstall.sh run, now
 # binds this claim directly instead of two fixtures glued together by hand.
 #
-# KEEL_TEST_CRASH_AFTER=manifest-written (install.sh, dir #381) fires right where install.sh's own lock-
-# release comment already names the risk: "if this run aborts for any reason before this line, the lock
-# is simply left behind" — after the manifest is genuinely written, before the lock is genuinely
-# released, so everything else about the install has genuinely completed.
+# KEEL_TEST_CRASH_AFTER=manifest-written (install.sh, dir #381) fires after the manifest is genuinely
+# written and before the lock is genuinely released, so everything else about the install has genuinely
+# completed. The checkpoint disarms install.sh's EXIT trap before its `exit 99`, so the lock stays exactly
+# as a SIGKILL there would leave it.
 t21home="$SANDBOX/crash-lock-vs-uninstall-cleanup"; mkdir -p "$t21home"
 fresh_home_env "$t21home"
 run env "${FRESH_HOME_ENV[@]}" KEEL_TEST_CRASH_AFTER=manifest-written "$install" --home "$t21home" --no-hooks

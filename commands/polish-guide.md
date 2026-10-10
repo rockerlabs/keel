@@ -1,5 +1,5 @@
 ---
-description: The /polish rare-branch guide — convergence rounds, the depth dialogs and hand-off, refused or void reviews, the add-ons, deny handling, an already-open PR. /polish loads it on a trigger; never run directly.
+description: The /polish rare-branch guide — convergence rounds, a compaction stop, the depth dialogs and hand-off, refused or void reviews, the add-ons, deny handling, an already-open PR. /polish loads it on a trigger; never run directly.
 user-invocable: false
 ---
 `/polish` sent you here from one of its steps. Where this guide and `polish.md` (the core) disagree, the
@@ -52,6 +52,54 @@ the hard way, and neither waits on that ticket's own eventual fix:**
 Steps, in order:
 
 ## Step 1 — diff, init, and the convergence round
+
+**Compaction stop (dir #739).** Reached from the core's step 1 when `tools/token-report.sh --context` printed
+`verdict: compact`: this session's last turn already carries at least the printed `threshold:` tokens of context
+(`KEEL_POLISH_COMPACT_TOKENS`, default 250000). Do these, in order:
+
+- (a) **Already stopped → continue.** A run whose `/polish` arguments say `after a compaction stop` never stops
+  again, even when `--context` still prints `verdict: compact`: continue with step 1's `init`, and tell the
+  operator the post-compaction context in one line. This is the loop guard.
+- (b) **Why.** Every remaining turn re-reads this context, and a compacted session resumes at about a fresh
+  session's size (83–115k measured). For a window opened at the default 250k or more, that roughly halves
+  the tail (median 16.8M → an estimated 8.9M).
+- (c) **No `init` and no receipt** in this run before the stop.
+- (d) **Commit all work** on the branch being shipped, so that `git status --porcelain --untracked-files=no`
+  prints nothing. On the default branch, or with a tree that cannot be committed → stop and report (the whole
+  run, not only this stop).
+- (e) **Write the hand-over file** outside the repo (the scratch dir, else `mktemp -d`). It holds:
+  - the ticket or done-criterion;
+  - what changed and why;
+  - the test command;
+  - everything the PR body must carry — for a `/go` run, its final report in `go-guide.md`'s form with the PR
+    URL left blank, its escapes, and the defects recorded but not fixed;
+  - anything that exists only outside git.
+
+  A `/go` run also writes its handoff note under `go-guide.md` I3.4, with `next: /polish (compaction stop,
+  dir #739)` and the hand-over file's absolute path in `carry:`.
+- (f) **End the turn with two paste-ready lines for the operator, each in its own fenced block, to be sent as
+  two messages in this order**, then make no further tool call:
+
+  ```
+  /compact
+  ```
+
+  ```
+  /polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first
+  ```
+
+  The second line is a real `/polish` invocation, so the whole procedure reloads: a manual `/compact`
+  re-injects no skill body. The blocks are separate because text sent together with `/compact` becomes its
+  summary instructions. A managed-release worker also sends one line to its manager: it stopped for `/compact`
+  in its own chat.
+- (g) **The continued run.**
+  - It re-reads the hand-over file.
+  - Step 5's conformance mandate takes the done-criterion from the file, and steps 9–10 take the PR body and
+    the report from it.
+  - If the file is missing, recompose it from `git log origin/<default>..HEAD` and the ticket, and say so.
+  - The operator may decline the stop ("continue without compacting") → continue with `init`.
+  - `/compact` fails or is skipped and the second line arrives anyway → (a) applies: continue at the large
+    context, and say so.
 
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (or the working-tree `git diff` if
    nothing is committed yet) — that is the scope of this pass. If there is no diff, say so and stop; leave the

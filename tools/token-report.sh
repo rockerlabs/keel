@@ -30,6 +30,9 @@
 #   token-report.sh --json                 machine-readable, combinable with the above (the
 #                                           statusline's future entry point, SPEC §7.1 — deferred, not
 #                                           built here)
+#   token-report.sh --context              dir #739: ONE line, exit 0 — this session's last-turn context
+#                                           against the /polish compaction threshold (see _tr_context);
+#                                           takes no other option
 #
 # Env overrides (SPEC §5, matching KEEL_IMPACT_STORE's shape — required for test isolation so this
 # tool's own test file never touches the real ~/.claude/projects/):
@@ -39,6 +42,8 @@
 #   KEEL_TOKENS_WEIGHTS        "input,write,read" — overrides the default comparison vector
 #                              1.0,2.0,0.1 (SPEC §3); a malformed value is ignored with a warning
 #                              rather than silently corrupting every downstream figure.
+#   KEEL_POLISH_COMPACT_TOKENS --context's threshold M (dir #739): a positive integer, default 250000;
+#                              a malformed value exits 2 (a huge value, e.g. 999999999, is the off switch).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -72,6 +77,7 @@ Usage:
   token-report.sh --session UUID|FILE    one session (+ its own subagents)
   token-report.sh --since YYYY-MM-DD     sessions with a turn on/after DATE
   token-report.sh --json                 machine-readable (combinable with the above)
+  token-report.sh --context              one line: this session's last-turn context vs the compaction threshold
   token-report.sh -h | --help
 EOF
 }
@@ -473,7 +479,68 @@ _tr_print_human() {
   fi
 }
 
+# _tr_ge N M — N >= M for two positive-integer strings without leading zeros, by length then digits: a
+# threshold wider than the shell's integer must not wrap (`(( ))` would, and read "compact" for a huge M).
+_tr_ge() {
+  local n="$1" m="$2"
+  if [ "${#n}" -ne "${#m}" ]; then [ "${#n}" -gt "${#m}" ]; return; fi
+  [[ ! "$n" < "$m" ]]
+}
+
+# _tr_context — dir #739 (spec 739 B1): one stdout line, exit 0, for /polish step 1's compaction stop.
+#   context: <N> threshold: <M> verdict: <compact|stay>
+#   context: unknown (<reason>) threshold: <M> verdict: stay
+# N = input + cache_read + cache_creation of the LAST deduped primary turn of the transcript named by
+# $CLAUDE_CODE_SESSION_ID, resolved as <projects-root>/*/<id>.jsonl — never another file (a wrong N stops a run
+# spuriously), never a max or a sum over turns (a compacted session's last turn is small). M comes from
+# KEEL_POLISH_COMPACT_TOKENS (unset or empty -> 250000); anything else must be a positive integer with no
+# sign, space or leading zero, or this exits 2 with the key on stderr and nothing on stdout. 0 is not "off".
+# Nothing is piped into head/grep -q here (the dir #280 SIGPIPE race): each producer is captured first.
+_tr_context() {
+  local m="${KEEL_POLISH_COMPACT_TOKENS:-250000}" id="${CLAUDE_CODE_SESSION_ID-}" why="" n="" hits turns ctx verdict=stay
+  # Not tools/lib/nonneg-int.sh: its default digit cap rejects the huge off-switch value this accepts, and it
+  # allows the leading zero this rejects (a `0250000` reads as octal under `(( ))`).
+  if [[ ! "$m" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'token-report.sh: KEEL_POLISH_COMPACT_TOKENS must be a positive integer without sign, space or leading zero\n' >&2
+    exit 2
+  fi
+  if [ -z "$id" ]; then
+    why="no session id"
+  elif [[ ! "$id" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    why="session id not a plain name"
+  elif ! command -v jq >/dev/null 2>&1; then
+    why="jq missing"
+  else
+    # Not _tr_resolve_session: this needs "ambiguous" to be unknown, where that one takes the first hit.
+    # The trailing slash makes find descend into a projects root that is itself a symlink (this machine's
+    # ~/.claude/projects is one); without it find lists nothing and every run reads "transcript not found".
+    hits="$(find "$(tu_projects_root)/" -mindepth 2 -maxdepth 2 -type f -name "$id.jsonl" 2>/dev/null || true)"
+    if [ -z "$hits" ]; then
+      why="transcript not found"
+    elif [[ "$hits" == *$'\n'* ]]; then
+      why="ambiguous transcript"
+    else
+      turns="$(tu_turns primary "$hits" 2>/dev/null || true)"
+      n="$(jq -r -s 'last // empty | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) | floor | tostring' <<<"$turns" 2>/dev/null || true)"
+      [[ "$n" =~ ^[0-9]+$ ]] || { n=""; why="no usage turn"; }
+    fi
+  fi
+  ctx="${n:-unknown ($why)}"
+  if [ -n "$n" ] && _tr_ge "$n" "$m"; then verdict=compact; fi
+  printf 'context: %s threshold: %s verdict: %s\n' "$ctx" "$m" "$verdict"
+}
+
 main() {
+  # --context is the one mode that must still answer (as `unknown`) when jq is missing, so it is dispatched before
+  # the jq check below; it takes no other option, in either order.
+  local a
+  for a in "$@"; do
+    if [ "$a" = "--context" ]; then
+      [ "$#" -eq 1 ] || { printf 'token-report.sh: --context takes no other option\n' >&2; usage >&2; exit 2; }
+      _tr_context
+      exit 0
+    fi
+  done
   if ! command -v jq >/dev/null 2>&1; then
     printf 'unavailable: keel tokens needs jq\n' >&2
     exit 1

@@ -329,7 +329,7 @@ scan_files_cmd=()
 while IFS= read -r f; do [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done < <(
   git -C "$repo_root" ls-files -- "${adopter_docs[@]}"
 )
-harness_commands=(code-review simplify review)
+harness_commands=(code-review simplify review compact)
 not_commands=(tmp setup)
 # Joined once into a plain string, then fed to grep via `<<<` (a here-string, not a pipe) — the
 # fix shape dir #195 already established just below (see its comment on `cited_in`) and dir #280

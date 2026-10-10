@@ -98,13 +98,8 @@ check_contains "A10 …the drifted content went to the next name" "$(cat "$h/doc
 check_contains "A10 …and the output names it" "$OUT" "delegation.md.$ts.2.bak"
 
 # --- scratch checkout for A11 / A24: a copy of this tree, committed, so `git status` can tell -------
-# Only the tracked top-level entries are copied (uncommitted edits to them included): a run from the
-# main checkout would otherwise drag its .git/, private/ and nested worktrees along.
-ck="$SANDBOX/ck"; mkdir -p "$ck"
-tops="$(git -C "$REPO_ROOT" ls-files | cut -d/ -f1 | sort -u)"
-while IFS= read -r e; do
-  [ -e "$REPO_ROOT/$e" ] && cp -R "$REPO_ROOT/$e" "$ck/"
-done <<<"$tops"
+ck="$SANDBOX/ck"
+tracked_tree_copy "$ck" || exit 1
 git -C "$ck" init -q
 git -C "$ck" add -A
 git -C "$ck" commit -qm base
@@ -157,13 +152,17 @@ check_eq "A24 …one line names the refusal" 1 "$(grep -c 'inside the Keel check
 
 # --- A11: the lib is REQUIRED; stat-portable stays OPTIONAL ------------------------------------------
 : > "$ck/tools/lib/safe-write.sh"
-h="$SANDBOX/a11/h"; mkdir -p "$h"
+# A31 (1): the guard runs before the home is created and before the run lock (round 2 B18), so a home
+# that does not exist yet still does not exist afterwards.
+h="$SANDBOX/a11/not-yet"
 run "$ck/install.sh" --home "$h" --no-hooks
 check_status "A11 install with a 0-byte safe-write.sh → exit 1" 1 "$STATUS"
 check_contains "A11 …one message naming the lib" "$OUT" "tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted"
-# install.sh makes .keel/ and takes its run lock (.install.lock) before any lib guard; nothing else.
-check_eq "A11 …nothing created under --home but .keel/ and the run lock" "" \
-  "$(find "$h" -mindepth 1 -not -path "$h/.keel" -not -path "$h/.keel/*" -not -path "$h/.install.lock" -not -path "$h/.install.lock/*")"
+check_nodir "A31 …and the home it was given is never created" "$h"
+h="$SANDBOX/a11/h"; mkdir -p "$h"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "A11 …into an existing home → exit 1" 1 "$STATUS"
+check_eq "A31 …nothing created under --home, not even .keel/ or the run lock" "" "$(find "$h" -mindepth 1)"
 run "$ck/uninstall.sh" --home "$h" --dry-run
 check_status "A11 uninstall --dry-run → exit 1" 1 "$STATUS"
 check_contains "A11 …naming the lib" "$OUT" "tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted"
@@ -341,7 +340,7 @@ if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; th
   printf 'q\n' > "$w/q"; ln -s "$w/nobody-reads" "$w/q.20260101T000000Z.bak"
   ( KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/q" && printf '%s' "$KEEL_BACKUP" > "$w/q.result" ) &
   qpid=$!; qwait=0
-  while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt 10 ]; do sleep 1; qwait=$((qwait + 1)); done
+  while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; qwait=$((qwait + 1)); done
   if kill -0 "$qpid" 2>/dev/null; then
     # A READER releases the claim blocked in open() (a second writer would block too); the claim then
     # runs to its end, so no process is left orphaned in open() for the rest of the suite.

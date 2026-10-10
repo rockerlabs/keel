@@ -126,7 +126,7 @@ check_status "--since from session A's own start date keeps both sessions" "0" "
 check_contains "--since 2026-09-01 keeps both A and B" "$OUT" "2 session(s)"
 
 run_in "$repo" bash "$tool" --since 2099-01-01
-check_status "--since far in the future exits 0, not an error" "0" "$STATUS"
+check_status_out "--since far in the future exits 0, not an error" "0"
 check_contains "--since with no matching session reports zero, not a crash" "$OUT" "0 session(s)"
 check_contains "zero-session report explains why, and names the harness boundary (R3)" "$OUT" "Claude Code transcripts"
 
@@ -261,5 +261,146 @@ check_contains "the no-usage record is surfaced, not silently dropped" "$OUT" \
 run_in "$repo" env KEEL_TOKENS_PROJECTS_DIR="$no_usage_root" bash "$tool" --json
 check_status "no-usage-object fixture --json exits 0" "0" "$STATUS"
 check_contains "--json surfaces the assistantNoUsage count" "$OUT" '"assistantNoUsage":1'
+
+# --- dir #739 (spec 739 B1, A9): --context — the session's LAST-turn context against the compaction threshold ----
+# One stdout line, exit 0: `context: <N> threshold: <M> verdict: <compact|stay>`, or `context: unknown (<why>)
+# threshold: <M> verdict: stay`. N = input + cache_read + cache_creation of the LAST deduped primary turn of
+# $CLAUDE_CODE_SESSION_ID's own transcript — never another file, never a max or a sum over turns. M =
+# KEEL_POLISH_COMPACT_TOKENS (default 250000); a malformed M is exit 2 with the key on stderr and NOTHING on
+# stdout. Every fixture session has >= 2 assistant turns, the EARLIER one smaller, and non-zero input, cache_read,
+# cache_creation and output tokens, so a first-turn, max or output-only build reads wrong. Ids and paths are fake.
+ctxroot="$SANDBOX/ctx-root"
+ctxdir="$ctxroot/-x-proj"
+mkdir -p "$ctxdir"
+# ctx_rec RID TS INPUT CACHE_CREATION CACHE_READ OUTPUT — one assistant record with a usage object.
+ctx_rec() {
+  printf '{"type":"assistant","requestId":"%s","sessionId":"S","timestamp":"%s","message":{"model":"m","content":[],"usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s}}}\n' "$@"
+}
+# ctx_early — the earlier, smaller (100,010-token) turn every fixture session starts with.
+ctx_early() { ctx_rec e1 2026-10-01T10:00:00.000Z 10 20000 80000 100; }
+# ctx_session ID LAST_INPUT LAST_CACHE_CREATION LAST_CACHE_READ — ctx_early, then the last turn.
+ctx_session() {
+  { ctx_early
+    ctx_rec l1 2026-10-01T10:05:00.000Z "$2" "$3" "$4" 500; } > "$ctxdir/$1.jsonl"
+}
+id_hi="c0000000-0000-4000-8000-0000000000a1"
+id_eq="c0000000-0000-4000-8000-0000000000a2"
+id_lo="c0000000-0000-4000-8000-0000000000a3"
+ctx_session "$id_hi" 40 60000 239960   # 300,000, 60,000 of it cache_creation
+ctx_session "$id_eq" 50 100000 149950  # exactly 250,000
+ctx_session "$id_lo" 49 100000 149950  # 249,999
+# ctx_run ID [ENV=VAL ...] — run `--context` for session ID with the given extra env; stdout and stderr kept apart.
+ctx_run() {
+  local id="$1"; shift
+  CTX_OUT="$(env CLAUDE_CODE_SESSION_ID="$id" KEEL_TOKENS_PROJECTS_DIR="$ctxroot" "$@" bash "$tool" --context 2>"$SANDBOX/ctx.err" </dev/null)"
+  CTX_STATUS=$?
+  CTX_ERR="$(cat "$SANDBOX/ctx.err")"
+}
+
+# (i) the last turn is 300,000 -> compact; the threshold prints as 250000.
+ctx_run "$id_hi"
+check_status "--context: a 300,000-token last turn exits 0" "0" "$CTX_STATUS"
+check_eq "--context (i): last turn 300,000 -> compact (cache_creation counts)" \
+  "context: 300000 threshold: 250000 verdict: compact" "$CTX_OUT"
+# A projects root that is itself a symlink (this machine's ~/.claude/projects is one) must still resolve: find(1)
+# does not descend into a symlinked start path unless it is spelled with a trailing slash.
+ln -s "$ctxroot" "$SANDBOX/ctx-root-link"
+ctx_run "$id_hi" KEEL_TOKENS_PROJECTS_DIR="$SANDBOX/ctx-root-link"
+check_eq "--context: a symlinked projects root still resolves the session" "context: 300000 threshold: 250000 verdict: compact" "$CTX_OUT"
+# (ii) the boundary is >=.
+ctx_run "$id_eq"
+check_eq "--context (ii): exactly 250,000 -> compact (>=, not >)" "context: 250000 threshold: 250000 verdict: compact" "$CTX_OUT"
+ctx_run "$id_lo"
+check_eq "--context (ii): 249,999 -> stay" "context: 249999 threshold: 250000 verdict: stay" "$CTX_OUT"
+
+# (iii) no session id -> unknown, never another file's number, even over a populated root.
+CTX_OUT="$(env -u CLAUDE_CODE_SESSION_ID KEEL_TOKENS_PROJECTS_DIR="$ctxroot" bash "$tool" --context 2>/dev/null </dev/null)"
+CTX_STATUS=$?
+check_status "--context (iii): an unset session id exits 0" "0" "$CTX_STATUS"
+check_eq "--context (iii): an unset session id -> unknown, stay" "context: unknown (no session id) threshold: 250000 verdict: stay" "$CTX_OUT"
+# (iv) an id that is not on disk.
+ctx_run "c0000000-0000-4000-8000-00000000ffff"
+check_status "--context (iv): an id not on disk exits 0" "0" "$CTX_STATUS"
+check_eq "--context (iv): an id not on disk -> unknown, stay" "context: unknown (transcript not found) threshold: 250000 verdict: stay" "$CTX_OUT"
+# An id that is not a plain file-name stem never reaches find(1)'s -name pattern.
+ctx_run '*'
+check_eq "--context: a glob-shaped session id -> unknown, never a match" "context: unknown (session id not a plain name) threshold: 250000 verdict: stay" "$CTX_OUT"
+# The same id under two project slugs is ambiguous -> unknown, not a guess.
+mkdir -p "$ctxroot/-x-other"
+cp "$ctxdir/$id_hi.jsonl" "$ctxroot/-x-other/$id_hi.jsonl"
+ctx_run "$id_hi"
+check_eq "--context: the same id in two project dirs -> unknown, never a guess" "context: unknown (ambiguous transcript) threshold: 250000 verdict: stay" "$CTX_OUT"
+rm -f "$ctxroot/-x-other/$id_hi.jsonl"
+
+# (v) a malformed threshold: exit 2, the key named on stderr, nothing on stdout. 0 is NOT "off".
+for bad in abc 0 -1 ' 250000' 0250000 '250000 ' 2.5e5 +5; do
+  ctx_run "$id_lo" KEEL_POLISH_COMPACT_TOKENS="$bad"
+  check_status "--context (v): KEEL_POLISH_COMPACT_TOKENS='$bad' exits 2" "2" "$CTX_STATUS"
+  check_contains "--context (v): '$bad' names the key on stderr" "$CTX_ERR" "KEEL_POLISH_COMPACT_TOKENS"
+  check_eq "--context (v): '$bad' prints nothing on stdout" "" "$CTX_OUT"
+done
+ctx_run "$id_lo" KEEL_POLISH_COMPACT_TOKENS=
+check_eq "--context (v): set-but-empty -> the default" "context: 249999 threshold: 250000 verdict: stay" "$CTX_OUT"
+ctx_run "$id_lo" KEEL_POLISH_COMPACT_TOKENS=100000
+check_eq "--context: a valid lower threshold is honoured" "context: 249999 threshold: 100000 verdict: compact" "$CTX_OUT"
+# A malformed M is exit 2 even when the session is unknowable.
+CTX_OUT="$(env -u CLAUDE_CODE_SESSION_ID KEEL_POLISH_COMPACT_TOKENS=abc KEEL_TOKENS_PROJECTS_DIR="$ctxroot" bash "$tool" --context 2>/dev/null </dev/null)"
+CTX_STATUS=$?
+check_status "--context: a malformed threshold is exit 2 even with no session id" "2" "$CTX_STATUS"
+# (vi) the off switch is a huge value; a value longer than the shell's integer width must not wrap.
+ctx_run "$id_hi" KEEL_POLISH_COMPACT_TOKENS=999999999
+check_eq "--context (vi): 999999999 -> stay" "context: 300000 threshold: 999999999 verdict: stay" "$CTX_OUT"
+ctx_run "$id_hi" KEEL_POLISH_COMPACT_TOKENS=99999999999999999999999
+check_eq "--context (vi): a 23-digit threshold does not overflow into compact" \
+  "context: 300000 threshold: 99999999999999999999999 verdict: stay" "$CTX_OUT"
+
+# (vii) the last turn's requestId in two records, and the file's last RAW line a tool-result record: N is that turn's, once.
+id_dup="c0000000-0000-4000-8000-0000000000b1"
+{ ctx_early
+  ctx_rec l1 2026-10-01T10:05:00.000Z 40 60000 239960 500
+  ctx_rec l1 2026-10-01T10:05:01.000Z 40 60000 239960 500
+  printf '{"type":"user","timestamp":"2026-10-01T10:05:02.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}\n'; } > "$ctxdir/$id_dup.jsonl"
+ctx_run "$id_dup"
+check_eq "--context (vii): a duplicated requestId and a trailing tool-result line -> the last turn, counted once" \
+  "context: 300000 threshold: 250000 verdict: compact" "$CTX_OUT"
+# (viii) a newer second session file in the same dir is ignored.
+id_new="c0000000-0000-4000-8000-0000000000b2"
+{ ctx_rec n1 2026-10-02T10:00:00.000Z 10 20000 80000 100
+  ctx_rec n2 2026-10-02T10:05:00.000Z 40 100000 799960 500; } > "$ctxdir/$id_new.jsonl"
+touch -t 203012312359 "$ctxdir/$id_new.jsonl"
+ctx_run "$id_lo"
+check_eq "--context (viii): a newer, larger session file is ignored" "context: 249999 threshold: 250000 verdict: stay" "$CTX_OUT"
+# (ix) jq off PATH -> unknown, exit 0 (the jq check lives inside the mode, after argument parsing).
+nojq_ctx="$SANDBOX/nojq-ctx-path"
+path_farm "$nojq_ctx" jq
+ctx_run "$id_hi" PATH="$nojq_ctx"
+check_status "--context (ix): jq off PATH exits 0" "0" "$CTX_STATUS"
+check_eq "--context (ix): jq off PATH -> unknown, stay" "context: unknown (jq missing) threshold: 250000 verdict: stay" "$CTX_OUT"
+# (x) --context combined with any other option is a usage error, in either order.
+for combo in "--context --json" "--json --context" "--context --session X" "--session --context" "--context --since 2026-01-01" "--context --context" "--context -h"; do
+  # shellcheck disable=SC2086 # the combo is a deliberate word list
+  run env CLAUDE_CODE_SESSION_ID="$id_hi" KEEL_TOKENS_PROJECTS_DIR="$ctxroot" bash "$tool" $combo
+  check_status "--context (x): '$combo' exits 2" "2" "$STATUS"
+done
+# (xi) an earlier 900,000 turn, a compact_boundary line, then a last turn of 90,000: N is the LAST turn.
+id_cmp="c0000000-0000-4000-8000-0000000000b3"
+{ ctx_early
+  ctx_rec e2 2026-10-01T10:30:00.000Z 60 100000 799940 100
+  printf '{"type":"system","subtype":"compact_boundary","timestamp":"2026-10-01T10:40:00.000Z","compactMetadata":{"trigger":"manual","preTokens":900000}}\n'
+  ctx_rec l1 2026-10-01T10:45:00.000Z 30 20000 69970 500; } > "$ctxdir/$id_cmp.jsonl"
+ctx_run "$id_cmp"
+check_eq "--context (xi): after a compact_boundary the LAST turn (90,000) is N, never the 900,000 max" \
+  "context: 90000 threshold: 250000 verdict: stay" "$CTX_OUT"
+# A transcript with no assistant usage at all.
+id_empty="c0000000-0000-4000-8000-0000000000b4"
+printf '{"type":"user","timestamp":"2026-10-01T10:00:00.000Z","message":{"role":"user","content":"hi"}}\n' > "$ctxdir/$id_empty.jsonl"
+ctx_run "$id_empty"
+check_eq "--context: a transcript with no usage turn -> unknown, stay" "context: unknown (no usage turn) threshold: 250000 verdict: stay" "$CTX_OUT"
+# The other modes still report a missing jq loudly (--context is the one mode that degrades to unknown).
+run env PATH="$nojq_ctx" bash "$tool" --json
+check_status "a non-context mode without jq still exits 1" "1" "$STATUS"
+
+# tests/lib.sh neutralizes the operator's own exported threshold for every test.
+check_contains "tests/lib.sh unsets KEEL_POLISH_COMPACT_TOKENS" "$(cat "$REPO_ROOT/tests/lib.sh")" "KEEL_POLISH_COMPACT_TOKENS"
 
 summary
