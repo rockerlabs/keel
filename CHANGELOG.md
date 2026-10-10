@@ -15,6 +15,7 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/self/session-cost.sh tail` prints a coverage line.** Each session in the human form now ends with `coverage: <session> pr-create=<n> closed-windows=<m> outside-any-window=<k>` and the URL of each successful `gh pr create` that closed no window, so a PR the window walk loses shows itself in the tool's own output instead of needing a separate script; `--json` stays one object per window, with a new `closed_by` field (dir #737).
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

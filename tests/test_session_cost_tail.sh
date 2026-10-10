@@ -552,4 +552,34 @@ check_contains "A6: the header comment names SC_INIT_LINE_RE" "$hdr" "SC_INIT_LI
 check_contains "A6: the header comment binds a window to its branch" "$hdr" "branch it opened on"
 check_absent "A6: the header comment no longer states the Skill-only open rule" "$hdr" "A window opens at the first primary turn attributed"
 
+# --- dir #737: the human form ends with ONE coverage line — PRs created vs windows, naming each PR outside any window ---
+PRURL2='https://github.com/example-org/example-repo/pull/77'
+mk_session cov
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:05:00 polish b1 200 "$(bash_use toolu_a 'gh pr create --title mine')"
+  rec_result 10:05:05 toolu_a false "$PRURL"
+  rec_turn R3 11:00:00 "" b2 300 "$(bash_use toolu_b 'gh pr create --title orphan')"
+  rec_result 11:00:05 toolu_b false "$PRURL2"
+  rec_turn R4 11:10:00 "" b3 300 "$(bash_use toolu_c 'gh pr create --title denied')"
+  rec_result 11:10:05 toolu_c true "gate denied: no receipt"
+} > "$SF"
+run bash "$tool" tail "$SF"
+check_status "(737) tail with a PR outside any window exits 0" "0" "$STATUS"
+check_eq "(737) exactly one coverage line" "1" "$(printf '%s\n' "$OUT" | grep -c '^coverage:')"
+check_contains "(737) the line counts both successful PRs (the denied one is not a PR) and the one closed window" "$OUT" "pr-create=2 closed-windows=1 outside-any-window=1"
+check_contains "(737) the line names the PR outside any window" "$OUT" "$PRURL2"
+check_absent "(737) the covered PR is not named as lost" "$OUT" "outside-any-window=1 $PRURL "
+tail_json
+check_absent "(737) --json stays one object per window: no coverage line" "$OUT" "coverage:"
+
+mk_session covok
+{
+  rec_turn R1 10:00:00 polish b1 100 '[{"type":"text","text":"x"}]'
+  rec_turn R2 10:05:00 polish b1 200 "$(bash_use toolu_a 'gh pr create --title mine')"
+  rec_result 10:05:05 toolu_a false "$PRURL"
+} > "$SF"
+run bash "$tool" tail "$SF"
+check_contains "(737) every PR in a window: outside-any-window=0" "$OUT" "pr-create=1 closed-windows=1 outside-any-window=0"
+
 summary
