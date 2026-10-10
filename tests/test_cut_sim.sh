@@ -54,7 +54,7 @@ check_eq "...and the source repo is unchanged" "$before" "$(snap "$pass_src")"
 check_eq "...and the clone is removed" "" "$(ls -A "$tmproot")"
 
 # --- FAIL: the test pins the CURRENT [Unreleased] bullet, which the cut moves ------------------------
-fail_src="$(mk_src 'awk "/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p" CHANGELOG.md | grep -q "legacy bullet"')"
+fail_src="$(mk_src 'body="$(awk "/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p" CHANGELOG.md)"; grep -q "legacy bullet" <<< "$body"')"
 before="$(snap "$fail_src")"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$fail_src"
 check_status "a suite pinning [Unreleased] -> exit 1" 1 "$STATUS"
