@@ -2003,7 +2003,8 @@ function bs_joins(L, s, k,   txt, j, t2) {
   while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
-    # meet the delimiter there — every shell ends that body at the backtick, joined or not
+    # meet the delimiter there (a delimiter holding a backtick is a region, delim_odd) — every shell ends that
+    # body at the backtick, joined or not. Line L itself is cut (line_end): the caller tests it for a trailing \.
     txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
     t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
     if (t2 == hqd[s, k]) return 1
