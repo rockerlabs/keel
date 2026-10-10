@@ -327,18 +327,19 @@ pinf "core header comment: unwired, only the gate's blocks are inert" 'only its 
 check_absent "core header comment: the retired 'only the gh pr create block' wording is gone" "$flat" 'only the gh pr create block is inert'
 
 # --- dir #711 (build A): the guide's preamble no longer claims "unchanged" or "the whole text of its step" ------
-check_absent "guide preamble: no 'whole text of its step' claim" "$gflat" 'whole text of its step'
+pinfgn "guide preamble: no 'whole text of its step' claim" 'whole text of its step'
 gpre="$(sed -n 1,12p "$guide")"
 check_absent "guide preamble: no 'unchanged' claim in its first lines" "$gpre" 'unchanged'
 pinfg "guide preamble: amended in place since the split" 'carried over from the pre-split `polish.md` and amended in place since'
 pinfg "guide preamble: the core can hold text the guide lacks" 'The core can also hold text this guide lacks'
 
 # --- dir #711 (build A): docs and test headers carry no "unchanged" claim about the pre-split text --------------
-check_eq "docs/loading-and-cost.md no longer calls the pre-split polish.md 'unchanged'" "0" \
-  "$(grep -c 'polish.md`, unchanged' "$REPO_ROOT/docs/loading-and-cost.md" || true)"
-hdr_hits="$(grep -l '^# unchanged, in commands/polish-guide.md' "$REPO_ROOT"/tests/*.sh 2>/dev/null || true)"
+check_count "docs/loading-and-cost.md no longer calls the pre-split polish.md 'unchanged'" \
+  "$REPO_ROOT/docs/loading-and-cost.md" 'polish.md`, unchanged' 0
+# The needle is split so this file's own line does not match it.
+hdr_hits="$(grep -l 'unchanged, in commands/''polish-guide.md' "$REPO_ROOT"/tests/*.sh 2>/dev/null || true)"
 check_eq "no test header says its pre-split text lives 'unchanged' in the guide" "" "$hdr_hits"
-check_eq "docs/release-audit.md names the guide as the growing open-FLOOR file" "1" \
-  "$(grep -c 'the guide is the one that grows' "$REPO_ROOT/docs/release-audit.md" || true)"
+check_count "docs/release-audit.md names the guide as the growing open-FLOOR file" \
+  "$REPO_ROOT/docs/release-audit.md" 'the guide is the one that grows' 1
 
 summary
