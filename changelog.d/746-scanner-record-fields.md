@@ -8,7 +8,7 @@
   A tracked file `--tracked` could not read from the working tree used to be skipped — an unreadable one with a
   WARN, a deleted one silently — and the run reported clean; it now scans that file's index copy, with one WARN
   line naming why, and so does an absent sparse-checkout (skip-worktree) entry, counted in one summary line. It
-  exits 2 only when git cannot read the index copy (dir #746). A mid-merge (unmerged) file the working tree
-  cannot give is read from each of its stages, and a tracked file replaced by a symlink from its index copy.
-  Printed hit lines are unchanged. Upgrading: an ERE allowlist entry now matches the line's content only; use
-  `path:` for a path.
+  exits 2 only when git cannot read the index copy (dir #746). A tracked file replaced by a symlink is read from
+  its index copy too, and a mid-merge (unmerged) file from each of its stages' index copies as well as its working
+  file, a hit line they share printed once. Hit lines print in the same form as before. Upgrading: an ERE
+  allowlist entry now matches the line's content only; use `path:` for a path.

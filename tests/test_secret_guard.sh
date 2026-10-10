@@ -3142,15 +3142,17 @@ printf 'tok = %s\n' "$k746" > "$r746/c.txt"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
 check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
-# (f) an unmerged path: its stages are one path, read once from the working tree when it is there (one hit line,
-# not one per stage); a gitlink stage never claims the path (a gitlink stage 1 once hid the working file); with no
-# working copy, every distinct non-gitlink stage is read from the index — the key may sit in "ours" or "theirs"
-# alone, never in the merge base — and a hit line the stages share prints once (review findings)
+# (f) an unmerged path: every distinct non-gitlink stage's index copy is read as well as its working file, if any —
+# the working file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs" alone;
+# a gitlink stage never claims the path (a gitlink stage 1 once hid the working file); a hit line the copies share
+# prints once; one WARN says the stages were read (review findings)
 r746="$(new_repo)"
 printf 'base\n' > "$r746/f.txt"
 commit746 "$r746" base
 c746="$(git -C "$r746" rev-parse HEAD)"
 b746="$(git -C "$r746" hash-object -w f.txt)"
+printf 'other\n' > "$r746/f.txt"
+o746="$(git -C "$r746" hash-object -w f.txt)"
 printf 'tok = %s\nmore\n' "$k746" > "$r746/f.txt"
 kb2_746="$(git -C "$r746" hash-object -w f.txt)"
 printf 'tok = %s\n' "$k746" > "$r746/f.txt"
@@ -3162,18 +3164,27 @@ stages746() {  # mode1 sha1 mode2 sha2 sha3 — f.txt unmerged with these three 
 }
 stages746 100644 "$b746" 100644 "$b746" "$b746"
 run_in "$r746" "$scan" --tracked
-check_status "dir #746 A26(f): an unmerged path present in the working tree → BLOCKED" 1 "$STATUS"
+check_status "dir #746 A26(f): the key in the working file of an unmerged path → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...one hit line, not one per stage" 1 "$(match "$OUT" -c '^  f.txt:1:')"
-stages746 160000 "$c746" 100644 "$b746" "$b746"
+check_eq "dir #746 A26(f): ...and one WARN that the stages were read" 1 \
+  "$(match "$OUT" -c "^secret-scan: WARN unmerged, each stage's index copy scanned too: f.txt\$")"
+stages746 160000 "$c746" 100644 "$kb746" "$kb746"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file → BLOCKED" 1 "$STATUS"
-check_eq "dir #746 A26(f): ...read once" 1 "$(match "$OUT" -c '^  f.txt:1:')"
-rm "$r746/f.txt"
+check_eq "dir #746 A26(f): ...the working file and the stages share the line: printed once" 1 \
+  "$(match "$OUT" -c '^  f.txt:1:')"
+printf 'clean\n' > "$r746/f.txt"
 stages746 100644 "$b746" 100644 "$b746" "$kb746"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a clean working file, the key in stage 3 alone → BLOCKED" 1 "$STATUS"
+rm "$r746/f.txt"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, the key in stage 3 alone → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:1:')"
 check_eq "dir #746 A26(f): ...and one index-copy WARN for the path" 1 "$(match "$OUT" -c 'index copy instead: f.txt$')"
+stages746 100644 "$b746" 100644 "$kb746" "$o746"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): no working copy, the key in stage 2 alone (stage 3 distinct and clean) → BLOCKED" 1 "$STATUS"
 stages746 100644 "$b746" 160000 "$c746" "$kb746"
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): no working copy, a gitlink stage 2 before the key in stage 3 → BLOCKED" 1 "$STATUS"

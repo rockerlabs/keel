@@ -278,8 +278,8 @@ fi
 # set -u.
 rec_path=(); rec_where=(); rec_text=(); rec_blob=(); rec_msg=()
 cur_blob=""
-# --tracked reads several stages of one unmerged path: a hit line they share is recorded once — set to the first
-# record index of that path, empty otherwise
+# --tracked reads several copies of one unmerged path (its stages, its working file): while it reads a later one, a
+# hit line already recorded for the path is not recorded again — set to the path's first record index, else empty
 rec_dedupe_from=""
 
 # a file (or blob) is binary if it contains a NUL byte
@@ -997,12 +997,22 @@ case "$mode" in
     # (mode 160000), as an entry or as an unmerged stage, is a submodule: skipped, and it never claims its path.
     # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
     # not. A working-tree symlink is read as a symlink only for a tracked symlink (mode 120000); a tracked file
-    # replaced by one is "not a regular file" and read from the index. An unmerged path is listed once per stage:
-    # read once from the working tree when it is there; when it is not, every distinct non-gitlink stage's index
-    # copy is read — a key may sit in "ours" or "theirs" alone — and a hit line the stages share is kept once.
+    # replaced by one is "not a regular file" and read from the index. An unmerged path is listed once per stage,
+    # and every distinct non-gitlink stage's index copy is read as well as its working file, if any: the working
+    # file of a binary or type conflict holds one side only, and a key may sit in "ours" or "theirs" alone. A hit
+    # line the copies share is recorded once; one WARN says the stages were read.
+    # tracked_index_copy SHA — scan the index copy SHA of the current path $f (once per path and sha), keeping a
+    # hit line already recorded for the path out; exit 2 when git cannot read it.
+    tracked_index_copy() {
+      staged_shas+="$1 "
+      git -C "$top" cat-file blob "$1" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
+      rec_dedupe_from="$path_from"
+      emit_file "$f" "$tblob"
+      rec_dedupe_from=""
+    }
     tlist="$(spool)"; terr="$(spool)"; tblob="$(spool)"
     git -C "$top" ls-files -s -t -z > "$tlist" 2>"$terr" || _fail_closed "list the tracked files" $? "$terr"
-    tab=$'\t'; prev=""; staged_shas=""; sparse=0
+    tab=$'\t'; prev=""; sparse=0
     while LC_ALL=C IFS= read -r -d '' rec || [ -n "$rec" ]; do
       [ -n "$rec" ] || continue
       f="${rec#*"$tab"}"                            # everything after the FIRST tab: a name may hold one
@@ -1011,38 +1021,40 @@ case "$mode" in
       [ -n "$f" ] || continue
       [ "$tmode" != 160000 ] || continue
       if [ "$f" = "$prev" ]; then                   # a later stage of an unmerged path
-        [ -n "$staged_shas" ] || continue           # ...read from the working tree already
-        case "$staged_shas" in *" $tsha "*) continue ;; esac
-      else
-        prev="$f"; staged_shas=""; rec_dedupe_from=""; fesc="${f//$'\n'/\\n}"
-        why=""
-        if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
-          sparse=$((sparse + 1))
-        elif [ -L "$top/$f" ] && [ "$tmode" = 120000 ]; then
-          # a tracked symlink's committed content IS its target string — scan that (it can carry a
-          # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
-          # readlink read as an empty target, i.e. `clean` (dir #715).
-          target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
-          emit_stream "$f" <<< "$target"
-          continue
-        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
-          emit_stream "$f" < "$top/$f"
-          continue
-        elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
-          why="unreadable"
-        elif [ ! -L "$top/$f" ] && [ ! -e "$top/$f" ]; then
-          why="missing from the working tree"
-        else
-          why="not a regular file in the working tree"
+        if [ -z "$unmerged" ]; then
+          unmerged=1
+          echo "secret-scan: WARN unmerged, each stage's index copy scanned too: $fesc" >&2
+          # its first stage was read from the working tree: read that stage's index copy too
+          case "$staged_shas" in *" $first_sha "*) ;; *) tracked_index_copy "$first_sha" ;; esac
         fi
-        [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
-        staged_shas=" "; rec_dedupe_from="${#rec_path[@]}"
+        case "$staged_shas" in *" $tsha "*) ;; *) tracked_index_copy "$tsha" ;; esac
+        continue
       fi
-      staged_shas+="$tsha "
-      git -C "$top" cat-file blob "$tsha" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$f'" $? "$terr"
-      emit_file "$f" "$tblob"
+      prev="$f"; path_from="${#rec_path[@]}"; staged_shas=" "; first_sha="$tsha"; unmerged=""
+      fesc="${f//$'\n'/\\n}"
+      why=""
+      if [ "$ttag" = S ] && [ ! -e "$top/$f" ] && [ ! -L "$top/$f" ]; then
+        sparse=$((sparse + 1))
+      elif [ -L "$top/$f" ] && [ "$tmode" = 120000 ]; then
+        # a tracked symlink's committed content IS its target string — scan that (it can carry a
+        # personal path); the target file itself, if tracked, is scanned as its own entry. A failed
+        # readlink read as an empty target, i.e. `clean` (dir #715).
+        target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
+        emit_stream "$f" <<< "$target"
+        continue
+      elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ] && [ -r "$top/$f" ]; then
+        emit_stream "$f" < "$top/$f"
+        continue
+      elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
+        why="unreadable"
+      elif [ ! -L "$top/$f" ] && [ ! -e "$top/$f" ]; then
+        why="missing from the working tree"
+      else
+        why="not a regular file in the working tree"
+      fi
+      [ -z "$why" ] || echo "secret-scan: WARN $why, scanned its index copy instead: $fesc" >&2
+      tracked_index_copy "$tsha"
     done < "$tlist"
-    rec_dedupe_from=""
     [ "$sparse" -eq 0 ] || echo "secret-scan: WARN $sparse skip-worktree file(s) scanned from the index" >&2
     ;;
   --selftest)
