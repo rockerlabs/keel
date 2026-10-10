@@ -249,5 +249,15 @@ printf '%s\n' '- dir #1: the first one' '- dir #5: a second bullet that was neve
 run "$cut" --repo "$d" 9.9.9 2026-01-01
 check_status "partly-carried leftover -> exit 2" 2 "$STATUS"
 check_contains "a fragment with a bullet missing from the section is labelled late, not assembled" "$OUT" "changelog.d/1-a.md — late"
+check_contains "...and the late message says to add the missing bullet(s), not the whole file" "$OUT" "not the whole file"
+
+# A fully carried MULTI-bullet fragment is still 'assembled'.
+d="$(mk_repo)"
+printf '%s\n' '- dir #6: first of two' '- dir #7: second of two' > "$d/changelog.d/6-two.md"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_contains "precondition: bullet one was carried into the section" "$(cat "$d/CHANGELOG.md")" "- dir #6: first of two"
+printf '%s\n' '- dir #6: first of two' '- dir #7: second of two' > "$d/changelog.d/6-two.md"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_contains "a fully carried multi-bullet leftover is assembled" "$OUT" "changelog.d/6-two.md — assembled"
 
 summary

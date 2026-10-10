@@ -25,9 +25,9 @@
 # `## [Unreleased]` heading (fenced examples do not count), a `## [VERSION]` heading already present, or
 # `changelog-fragments.sh --check` failing. A `## [VERSION]` already present while fragment files are
 # still on disk: the refusal labels each fragment `assembled` (every one of its top-level bullet lines
-# already appears verbatim in that section — a cut that stopped before deleting it; delete the file) or `late` (it does
-# not — merged after the cut ran; append it to that section by hand, then delete it). Running the cut
-# twice therefore refuses the second time.
+# already appears verbatim in that section — a cut that stopped before deleting it; delete the file) or
+# `late` (at least one does not — merged after the cut ran, or only partly carried; add the missing
+# bullet(s) by hand, then delete it). Running the cut twice therefore refuses the second time.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -111,7 +111,7 @@ if grep -qE "^## \[${version//./\\.}\]" <<< "$blanked"; then
   changelog.d/$f — assembled (every bullet is already in [$version]: a cut stopped before deleting it; delete the file)"
       else
         labelled="$labelled
-  changelog.d/$f — late (not in [$version]: merged after the cut ran; append it to that section by hand, then delete the file)"
+  changelog.d/$f — late (at least one of its bullets is not in [$version]: merged after the cut ran, or only partly carried; add the missing bullet(s) to that section by hand — not the whole file — then delete the file)"
       fi
     done
     refuse "## [$version] is already in CHANGELOG.md and fragment files remain:$labelled"

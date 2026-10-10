@@ -1061,6 +1061,8 @@ run "$sd" "$d" --quiet
 check_status "A31: a fragment beside an untagged newest section -> exit 1" 1 "$STATUS"
 check_contains "A31: the GAP says the fragment merged after the cut" "$OUT" "fragments merged after the cut"
 check_contains "A31: the GAP names the fragment" "$OUT" "changelog.d/901-late.md"
+check_contains "A31: the GAP names the pending version in the remedy command" "$OUT" "changelog-cut.sh 1.1.0 <DATE>"
+check_contains "A31: ...and warns off any other version" "$OUT" "no other version"
 rm -f "$d/changelog.d/901-late.md"
 ( cd "$d" && git add -A && git commit -qm "the fragment is gone" )
 run "$sd" "$d" --quiet
