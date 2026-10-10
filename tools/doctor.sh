@@ -206,9 +206,9 @@ fi
 
 # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls back
 # to 16000 rather than crashing the later `-gt` token-count comparison (no `[: integer expected`).
-# dir #686: 16000 = the former 10000 + ~6000 for the MEMORY.md index now summed in. The index is capped
-# by the harness near 25 KB (~6250 tokens) and keel's own measured 5.8k (2026-10-05) sits just under that,
-# so summing it does not newly flag a project that was inside the old budget.
+# dir #686: 16000 = the former 10000 + ~6000 for the MEMORY.md index now summed in. The index is bounded
+# in practice; keel's own index measured 5.8k tokens (2026-10-05), so ~6000 keeps a project that was inside
+# the old budget from being newly flagged merely because the index is now counted.
 WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-16000}" 16000)"
 exit_code=0
 
@@ -1319,7 +1319,8 @@ _mem_note_date() {
 _footprint_exception() {
   [ -f "$1" ] || return 0
   awk '
-    /^## Footprint exceptions/ { insec=1; next }
+    { sub(/\r$/, "") }
+    /^## Footprint exceptions[ \t]*$/ { insec=1; next }
     insec && /^#/ { insec=0 }
     insec && /^\|/ && tolower($0) !~ /^\| *expires/ && $0 !~ /^\|[-:| ]+\|$/ { last=$0 }
     END { if (last != "") print last }
@@ -1327,7 +1328,7 @@ _footprint_exception() {
     {
       xdate=$2; gsub(/^[ \t]+|[ \t]+$/, "", xdate)
       note=$3;  gsub(/^[ \t]+|[ \t]+$/, "", note)
-      if (xdate !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) xdate=""
+      if (xdate !~ /^[0-9][0-9][0-9][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/) xdate=""
       print xdate "\t" note
     }
   ' || true
@@ -1479,6 +1480,8 @@ for d in "${DIRS[@]}"; do
         say "  footprint over budget, acknowledged until ${fp_date} (${fp_note}): ${fp_msg}"
       elif [ -n "$fp_date" ]; then
         hint H-FOOTPRINT "${fp_msg} — the Footprint exceptions row EXPIRED ${fp_date} (${fp_note}): trim, or renew the row with a new date and a ticket"
+      elif [ -n "$fp_exc" ]; then
+        hint H-FOOTPRINT "${fp_msg} — the Footprint exceptions row has no valid YYYY-MM-DD date, so it covers nothing: fix the date, or trim"
       else
         hint H-FOOTPRINT "${fp_msg} — move project detail to the on-demand tier (P2/P3)"
       fi

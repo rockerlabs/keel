@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # doctor H-FOOTPRINT (dir #686, dir #687): the figure sums the harness's MEMORY.md index next to the
 # project and global CLAUDE.md (it loads every session), the default budget is 16000 tokens (the old 10000
-# plus ~6000 for the index, which the harness caps near 25 KB), and a live `## Footprint exceptions` row
+# plus ~6000 for the index, keel's own measuring 5.8k), and a live `## Footprint exceptions` row
 # in the project's CLAUDE.md silences the hint until its expiry while an EXPIRED row is flagged. Own file,
 # not an extension of test_doctor.sh: that file's tail is where every other doctor PR appends.
 # shellcheck source=tests/lib.sh
@@ -94,3 +94,21 @@ check_contains "a table under another heading is not an exception row" "$OUT" "E
 d="$(fproj 400)"; m="$(fmem 40)"; exc "$d" "2020-01-01" "stale but moot"
 frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=100000
 check_absent "an expired row under budget is moot, not flagged" "$OUT" "EXPIRED"
+
+# a malformed date is named as such (not silently the same hint as no row)
+d="$(fproj 400)"; m="$(fmem 800)"; exc "$d" "never" "bad date"
+frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+check_contains "a malformed-date row is named, not ignored silently" "$OUT" "no valid YYYY-MM-DD date"
+# a calendar-invalid date never counts as live
+d="$(fproj 400)"; m="$(fmem 800)"; exc "$d" "9999-99-99" "impossible"
+frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+check_contains "9999-99-99 is not a live date" "$OUT" "no valid YYYY-MM-DD date"
+# CRLF line endings leave no \r on the note; the heading must match exactly
+d="$(fproj 400)"; m="$(fmem 800)"
+printf '\r\n## Footprint exceptions\r\n\r\n| Expires | Note |\r\n|---|---|\r\n| 2020-01-01 | crlf note |\r\n' >> "$d/CLAUDE.md"
+frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+check_contains "a CRLF CLAUDE.md row still parses" "$OUT" "EXPIRED 2020-01-01 (crlf note)"
+d="$(fproj 400)"; m="$(fmem 800)"
+printf '\n## Footprint exceptions-old\n\n| 2099-12-31 | not this heading |\n' >> "$d/CLAUDE.md"
+frun "$m" "$d" KEEL_STARTUP_WARN_TOKENS=1
+check_contains "a longer heading does not open the section" "$OUT" "HINT [H-FOOTPRINT]"
