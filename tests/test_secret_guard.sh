@@ -3301,15 +3301,20 @@ check_ne "dir #746 A26(f) fixture: the merge left f.txt unmerged" "" "$(git -C "
 run_in "$r746" "$scan" --tracked
 check_status "dir #746 A26(f): a real text conflict holding the key → BLOCKED" 1 "$STATUS"
 check_eq "dir #746 A26(f): ...printed once, though the markers moved its line" 1 "$(match "$OUT" -c '^  f.txt:')"
-# (g) a tracked regular file replaced by a symlink: its index copy is read — the readlink branch is for a tracked
-# symlink (mode 120000) only (review finding: the key read clean)
+# (g) a tracked regular file replaced by a symlink: its target string is scanned (what the next `git add` commits,
+# as v0.15.0 did) and its index copy too — the readlink-only branch is for a tracked symlink, mode 120000 (review
+# findings: the index copy read clean, then the target went unread)
 r746="$(new_repo)"
 printf 'tok = %s\n' "$k746" > "$r746/c.txt"
+printf 'clean\n' > "$r746/d.txt"
 commit746 "$r746" key
 rm "$r746/c.txt"; ln -s /nowhere/x "$r746/c.txt"
+rm "$r746/d.txt"; ln -s "/tmp/$aws746" "$r746/d.txt"
 run_in "$r746" "$scan" --tracked
-check_status "dir #746 A26(g): a tracked file replaced by a symlink → BLOCKED from its index copy" 1 "$STATUS"
-check_contains "dir #746 A26(g): ...named as not a regular file" "$OUT" \
-  "secret-scan: WARN not a regular file in the working tree, scanned its index copy instead: c.txt"
+check_status "dir #746 A26(g): tracked files replaced by symlinks → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(g): ...the index copy's key is reported" "$OUT" "  c.txt:1:tok = $k746"
+check_contains "dir #746 A26(g): ...the target string's key is reported" "$OUT" "  d.txt:1:/tmp/$aws746"
+check_contains "dir #746 A26(g): ...and each says both were scanned" "$OUT" \
+  "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: c.txt"
 
 summary
