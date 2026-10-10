@@ -439,6 +439,8 @@ _isg_same_dir() {
 #   own=        absolute dir a `<repo>` install writes (the LOCAL hooksPath, else the common dir's hooks)
 #   effective=  absolute dir git actually reads this repo's hooks from (any scope: `--git-path hooks`)
 #   scope=      none | local | worktree | global | system | command | unknown  — where core.hooksPath is set
+#   read-error=1  git could not read the config at all (a corrupt file): every other line is then a guess —
+#               omitted when the read worked (dir #743)
 #   set=        1 when core.hooksPath is set at any scope, the empty value included (decided by the read's EXIT
 #               STATUS, never by a non-empty value — an empty hooksPath turns every hook off and is the user's
 #               wiring); 0 when no scope sets it. Always printed (dir #684 / dir #748 S4-1)
@@ -468,21 +470,29 @@ _isg_valueless() {
 
 # One read of core.hooksPath as git sees it from directory $1: sets m_set (1 when ANY scope sets it — decided by
 # the read's EXIT STATUS, so the empty value counts; dir #748 S4-1) and m_scope m_origin m_value (all empty when
-# unset), plus m_novalue=1 for a VALUELESS `hooksPath` (_isg_valueless). `--show-scope` needs git 2.26; an
-# older git still yields the value, scope "unknown".
+# unset), plus m_novalue=1 for a VALUELESS `hooksPath` (_isg_valueless) and m_err=<git's exit> when the config
+# cannot be read at all (dir #743). `--show-scope` needs git 2.26; an older git still yields the value, scope
+# "unknown".
 _isg_cfg_read() {
   local out rest rc=0
-  m_set=0 m_novalue=0 m_scope="" m_origin="" m_value=""
+  m_set=0 m_novalue=0 m_err=0 m_scope="" m_origin="" m_value=""
   out="$(git -C "$1" config --show-scope --show-origin --get core.hooksPath 2>/dev/null)" || rc=$?
   if [ "$rc" = 0 ]; then
     m_set=1
     m_scope="${out%%$'\t'*}"; rest="${out#*$'\t'}"
     m_origin="${rest%%$'\t'*}"; m_value="${rest#*$'\t'}"
     m_origin="${m_origin#file:}"
-  else
+  elif [ "$rc" != 1 ]; then
+    # Not "unset" (exit 1): an older git without --show-scope (a usage error), or a config git cannot read.
+    # Ask once more without the display flags; a failure of THAT read is an unreadable config (dir #743 M1) —
+    # never `|| true`'d into "nothing set", which let an install write over a config it could not parse.
     rc=0
     out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" || rc=$?
-    if [ "$rc" = 0 ]; then m_set=1; m_scope="unknown"; m_value="$out"; fi
+    case "$rc" in
+      0) m_set=1; m_scope="unknown"; m_value="$out" ;;
+      1) ;;
+      *) m_err=$rc ;;
+    esac
   fi
   if [ "$m_set" = 1 ] && [ -z "$m_value" ] && _isg_valueless core.hooksPath -C "$1" config; then m_novalue=1; fi
   [ "$m_set" = 1 ] || { m_scope=""; m_origin=""; }
@@ -497,7 +507,20 @@ _isg_cfg_read() {
 # consumer reads the narrow answer as the full one. With `walk` as $1 it also runs the conditional-include
 # walk (_isg_conditional_reads) from the same scratch dir, or — with no usable one — sets c_cause.
 _isg_machine_read() {
-  local probe
+  # A command-scope setting (`git -c`, GIT_CONFIG_COUNT/PARAMETERS) applies to one command, not to the machine:
+  # reading with it in place recorded it as the displaced global and wrote it into ~/.gitconfig (dir #743 D1-6).
+  # The walk below already counts file origins only; the value read must too.
+  local had_p=0 had_c=0 sv_p="" sv_c=""
+  if [ "${GIT_CONFIG_PARAMETERS+set}" = set ]; then had_p=1; sv_p="$GIT_CONFIG_PARAMETERS"; fi
+  if [ "${GIT_CONFIG_COUNT+set}" = set ]; then had_c=1; sv_c="$GIT_CONFIG_COUNT"; fi
+  unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+  _isg_machine_read_files "$@"
+  if [ "$had_p" = 1 ]; then export GIT_CONFIG_PARAMETERS="$sv_p"; fi
+  if [ "$had_c" = 1 ]; then export GIT_CONFIG_COUNT="$sv_c"; fi
+  return 0
+}
+_isg_machine_read_files() {
+  local probe rc=0
   m_fallback=0
   probe="$(mktemp -d 2>/dev/null)" || probe=""
   if [ -n "$probe" ] && ! git -C "$probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -505,11 +528,14 @@ _isg_machine_read() {
     [ "${1:-}" != walk ] || _isg_conditional_reads "$probe"
   else
     m_fallback=1
-    m_set=0 m_novalue=0 m_scope="" m_origin=""
-    if m_value="$(git config --global core.hooksPath 2>/dev/null)"; then
-      m_set=1 m_scope="global"
-      if [ -z "$m_value" ] && _isg_valueless core.hooksPath config --global; then m_novalue=1; fi
-    fi
+    m_set=0 m_novalue=0 m_err=0 m_scope="" m_origin=""
+    m_value="$(git config --global core.hooksPath 2>/dev/null)" || rc=$?
+    case "$rc" in
+      0) m_set=1 m_scope="global"
+         if [ -z "$m_value" ] && _isg_valueless core.hooksPath config --global; then m_novalue=1; fi ;;
+      1) m_value="" ;;
+      *) m_value="" m_err=$rc ;;
+    esac
     if [ "${1:-}" = walk ]; then
       c_list=""
       if [ -n "$probe" ]; then
@@ -554,7 +580,7 @@ _isg_tab_nl_free() { case "$1" in *$'\t'*|*$'\n'*) return 1 ;; esac; return 0; }
 # the whole machine config ($2 empty) or for one target file ($2), each condition prefixed `$1 and `. Returns 1
 # with c_cause set when the listing cannot be trusted.
 _isg_cond_list() {
-  local outer="$1" f="${2:-}" out="$c_probe/.isg-list" rc=0 origin kv key cond raw base x
+  local outer="$1" f="${2:-}" out="$c_probe/.isg-list" rc=0 origin kv key cond raw base x exp
   git -C "$c_probe" config ${f:+--file} ${f:+"$f"} ${f:+--includes} --show-origin -z \
     --get-regexp '^includeif\..+\.path$' > "$out" 2>/dev/null || rc=$?
   case "$rc" in
@@ -572,10 +598,13 @@ _isg_cond_list() {
       _isg_tab_nl_free "$x" || { c_cause="a path holding a TAB or newline: $x"; return 1; }
     done
     [ -n "$raw" ] || continue
-    # shellcheck disable=SC2088  # matching a literal ~ on purpose
+    # git expands `~`, `~/…`, `~user/…` and `%(prefix)/…` itself — ONE call, so this walk keeps no expansion
+    # rules of its own (a bare `~` is $HOME, a `~user/` is that user's home); a path git cannot expand leaves
+    # the walk incomplete (dir #743, item 4). A relative result resolves beside the file that names it.
+    exp="$(git config --type=path --default "$raw" --get isg.unset.name 2>/dev/null)" \
+      || { c_cause="an include path this walk cannot resolve: $raw"; return 1; }
+    raw="$exp"
     case "$raw" in
-      "~/"*) raw="$(_isg_norm_path "$raw")" ;;
-      "~"[!/]*|"%(prefix)/"*) c_cause="an include path this walk cannot resolve: $raw"; return 1 ;;
       /*) ;;
       *) case "$origin" in */*) base="${origin%/*}" ;; *) base="." ;; esac
          raw="$base/$raw" ;;
@@ -588,22 +617,36 @@ _isg_cond_list() {
   return 0
 }
 
-# Is file $1 one of the newline-separated files in $2? Compared with `-ef`, so `./work.cfg`, a symlink to a file
-# and the file itself are one (both exist: the caller tested $1).
+# Is file $1 one of the files already read, listed in $2 as `file TAB condition TAB kind TAB value` lines? Compared
+# with `-ef`, so `./work.cfg`, a symlink to a file and the file itself are one (both exist: the caller tested $1).
+# Sets seen_cond seen_kind seen_val from the matching line.
 _isg_seen() {
-  local v
-  while IFS= read -r v; do
-    [ -n "$v" ] && [ "$v" -ef "$1" ] && return 0
+  local f v_cond v_kind v_val
+  seen_cond="" seen_kind="" seen_val=""
+  while IFS=$'\t' read -r f v_cond v_kind v_val; do
+    if [ -n "$f" ] && [ "$f" -ef "$1" ]; then seen_cond="$v_cond" seen_kind="$v_kind" seen_val="$v_val"; return 0; fi
   done <<< "$2"
   return 1
 }
 
-# 0 when absent path $1 is absent for certain: its deepest existing ancestor dir could be searched. A dir
-# without search permission hides what is under it, and git fails reading an include there.
+# 0 when path $1 is absent for certain. A dir that cannot be searched hides what is under it, and git fails reading
+# an include there — and so does a DANGLING symlink whose target sits under one: `-e` is false for it, yet it is not
+# "missing" (dir #743, item 3; an edge fail-open). So every missing component that is a link is followed (one
+# readlink at a time, bounded) and its target classified the same way; the deepest existing ancestor must be
+# searchable. A path with no slash cannot be classified here at all (item 6: it used to loop forever).
 _isg_absent_for_sure() {
-  local p="${1%/*}"
-  while [ -n "$p" ] && [ ! -e "$p" ]; do p="${p%/*}"; done
-  [ -z "$p" ] || [ -x "$p" ]
+  local cur="$1" depth="${2:-0}" link
+  case "$cur" in */*) ;; *) return 1 ;; esac
+  while [ -n "$cur" ] && [ ! -e "$cur" ]; do
+    if [ -L "$cur" ]; then
+      [ "$depth" -lt 40 ] || return 1
+      link="$(readlink "$cur")" || return 1
+      case "$link" in /*) ;; *) link="${cur%/*}/$link" ;; esac
+      _isg_absent_for_sure "$link" $((depth + 1)) || return 1
+    fi
+    case "$cur" in */*) cur="${cur%/*}" ;; *) cur="" ;; esac
+  done
+  [ -z "$cur" ] || [ -x "$cur" ]
 }
 
 # The walk itself, from scratch dir $1 (fresh, not inside a repo). Sets c_list and c_cause (see above).
@@ -619,18 +662,29 @@ _isg_conditional_reads() {
       [ -n "$tgt" ] || continue
       if [ ! -e "$tgt" ]; then
         # a missing include: git skips it — unless a dir on its path could not be searched, so "missing" is a guess
-        _isg_absent_for_sure "$tgt" || { c_cause="git config failed on $tgt (a directory on its path cannot be searched)"; return 0; }
+        _isg_absent_for_sure "$tgt" || { c_cause="cannot tell whether $tgt exists (a directory on its path cannot be searched)"; return 0; }
         continue
       fi
       # git reports an unreadable include as a warning and exit 1 — the same exit as "not set" — so test it here
       [ -r "$tgt" ] || { c_cause="git config failed on $tgt (unreadable)"; return 0; }
-      _isg_seen "$tgt" "$visited" && continue
-      visited="$visited$tgt"$'\n'
+      # an include that names a directory (a bare `path = ~` is $HOME): git warns "Is a directory" and then fails
+      # the whole config read in the trees that match — while `--file <dir>` exits 1, the "not set" exit (item 4)
+      [ ! -d "$tgt" ] || { c_cause="git config failed on $tgt (a directory)"; return 0; }
+      if _isg_seen "$tgt" "$visited"; then
+        # Read once, but reported once per (condition, file): a file reached again under an INDEPENDENT condition
+        # (a symlink alias, dir #743 item 2) governs that condition's trees too. A condition that merely extends
+        # the first one's is a cycle returning to it — counted once.
+        case "$cond" in
+          "$seen_cond and "*) ;;
+          *) [ -z "$seen_kind" ] || c_list="$c_list$seen_kind"$'\t'"$cond"$'\t'"$origin"$'\t'"$tgt"$'\t'"$seen_val"$'\n' ;;
+        esac
+        continue
+      fi
+      kind="" val=""
       rc=0
       git -C "$c_probe" config --file "$tgt" --includes -z --get-regexp '^core\.hookspath$' > "$vout" 2>/dev/null || rc=$?
       case "$rc" in
         0) # the last record is the value git ends up with; `key LF value NUL`, or `key NUL` when valueless
-           kind="" val=""
            while IFS= read -r -d '' kv; do
              case "$kv" in *$'\n'*) kind=v val="${kv#*$'\n'}" ;; *) kind=n val="" ;; esac
            done < "$vout"
@@ -639,6 +693,7 @@ _isg_conditional_reads() {
         1) ;;   # sets no hooksPath
         *) c_cause="git config failed on $tgt"; return 0 ;;
       esac
+      visited="$visited$tgt"$'\t'"$cond"$'\t'"$kind"$'\t'"$val"$'\n'
       _isg_cond_list "$cond" "$tgt" || return 0
     done <<< "$cur"
     depth=$((depth + 1))
@@ -765,6 +820,7 @@ _isg_where_repo() {
   echo "effective=$eff"
   echo "scope=${m_scope:-none}"
   echo "set=$m_set"
+  [ "$m_err" = 0 ] || echo "read-error=1"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   # machine-dir: the one place that decides "this repo's hooks are the machine-wide ones" (dir #688); a
@@ -781,6 +837,7 @@ _isg_where_machine() {
   _isg_machine_read walk
   echo "scope=${m_scope:-none}"
   echo "set=$m_set"
+  [ "$m_err" = 0 ] || echo "read-error=1"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   [ "$m_fallback" != 1 ] || echo "fallback=1"
@@ -816,7 +873,8 @@ case "${1:-}" in
     # sees the XDG file behind an existing ~/.gitconfig, an [include], and SYSTEM scope, any of which
     # governs every commit while `--global` reports "unset" (so this used to overwrite it, or say
     # "nothing to unwire"). m_scope/m_origin name where $existing came from.
-    existing_global="$(git config --global core.hooksPath 2>/dev/null || true)"
+    eg_rc=0
+    existing_global="$(git config --global core.hooksPath 2>/dev/null)" || eg_rc=$?
     # dir #748 S4-1 / dir #684 (B27): "set" is the read's EXIT STATUS, never a non-empty value — an empty
     # `hooksPath =` is set (it turns every hook off), and so is a record holding the empty string. $m_set /
     # $m_novalue come from the machine-wide read below, $rec_set from the record's own read.
@@ -824,17 +882,34 @@ case "${1:-}" in
     # writes one — its --unset gives a conditional setting its trees back on its own.
     if [ "$uninstall" = 1 ]; then _isg_machine_read; else _isg_machine_read walk; fi
     existing="$m_value"
-    # How the existing value reads in a message (the empty value is a value, so it is named, not shown as nothing).
-    existing_desc="'$existing'"
-    [ -n "$existing" ] || existing_desc="the empty value (it turns git's hooks off)"
-    [ "$m_novalue" != 1 ] || existing_desc="no value at all (a bare \`hooksPath\` line)"
-    rec_set=0
-    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || recorded=""
+    rec_set=0 rec_rc=0
+    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || rec_rc=$?
+    [ "$rec_set" = 1 ] || recorded=""
     # A bare `displacedHooksPath` line (hand-edited or merged) reads like an empty record, and restoring "" would
     # turn every hook off though nothing was displaced: it records nothing. Left in place, never written to here —
     # a refusal below must stay "Nothing was changed", and a record may sit beside it (the several-values guard
     # below still counts every value).
     if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then rec_set=0; fi
+    # dir #743 (M1): a config git cannot read is not "nothing set" — every `|| true` read above used to turn it
+    # into one, and the install then wrote over a file it could not parse. Refuse, before any write.
+    for e_rc in "$eg_rc" "$rec_rc" "$m_err"; do
+      case "$e_rc" in 0|1) ;; *)
+        echo "secret-guard: git could not read the machine-wide config (git config exited $e_rc) — fix it ('git config --global --list' shows git's own message), then re-run. Nothing was changed." >&2
+        exit 3 ;;
+      esac
+    done
+    # dir #743 (M2): git exits 5 when asked to replace or unset a key the file sets more than once — after the
+    # hooks were already placed, with a generic message. Refuse up front, in words.
+    n_hp="$( { git config --global --get-all core.hooksPath 2>/dev/null || true; } | wc -l | tr -d ' ')"
+    if [ "$n_hp" -gt 1 ]; then
+      echo "secret-guard: core.hooksPath is set more than once in the global config ($n_hp values) — git cannot replace or unset it;" >&2
+      echo "  keep the one you want (git config --global --get-all core.hooksPath), then re-run. Nothing was changed." >&2
+      exit 3
+    fi
+    # How the existing value reads in a message (the empty value is a value, so it is named, not shown as nothing).
+    existing_desc="'$existing'"
+    [ -n "$existing" ] || existing_desc="the empty value (it turns git's hooks off)"
+    [ "$m_novalue" != 1 ] || existing_desc="no value at all (a bare \`hooksPath\` line)"
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
     if [ "$( { git config --global --get-all "$isg_displaced_key" 2>/dev/null || true; } | wc -l | tr -d ' ')" -gt 1 ]; then
