@@ -457,29 +457,45 @@ check_nofile "a malformed line before the marker turn does not defeat the exclus
 # regression, kept smaller here so this test itself stays fast) precede the marker.
 # Run in the BACKGROUND with a bounded poll, not `timeout` — this suite ships no timeout helper and
 # `timeout` is absent on macOS (tests/test_install.sh's own T14f note, same reasoning here): a naive
-# foreground call would hang the whole suite on a regression instead of failing this one test. The
-# healthy path exits in well under a second; the wait is only ever paid in full when the fork-per-line
-# regression is back.
+# foreground call would hang the whole suite instead of failing this one test.
 d="$(mkrepo)"; rt_env manynoise
 feed_hook "$(read_json "$d" Edit "$d/src.sh")" log-tool
 tp="$SANDBOX/transcript.manynoise.jsonl"; : > "$tp"
 for _i in $(seq 1 5000); do write_noise_turn "$tp"; done
 write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
 manynoise_json="$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')"
-printf '%s' "$manynoise_json" | TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
+# dir #744: the regression is a jq fork PER LINE, so it is counted, not timed — a wall-clock bound tight enough
+# to catch it (the old 10 s) failed slow-but-healthy runs under load, and the hang bound below (120 s) is far too
+# loose to. A `jq` shim first on PATH logs each launch; the healthy path forks jq only for the few candidate
+# lines the grep pre-filter keeps, the regression once per raw line (5,000+).
+jq_count_bin="$SANDBOX/jq-count-bin"; mkdir -p "$jq_count_bin"
+jq_count_log="$SANDBOX/jq-count.log"; : > "$jq_count_log"
+printf '#!/bin/sh
+echo x >> %q
+exec %q "$@"
+' "$jq_count_log" "$(type -P jq)" > "$jq_count_bin/jq"
+chmod +x "$jq_count_bin/jq"
+printf '%s' "$manynoise_json" | PATH="$jq_count_bin:$PATH" TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
 manynoise_pid=$!
 manynoise_waited=0
-while kill -0 "$manynoise_pid" 2>/dev/null && [ "$manynoise_waited" -lt 10 ]; do
+while kill -0 "$manynoise_pid" 2>/dev/null && [ "$manynoise_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
   sleep 1; manynoise_waited=$((manynoise_waited + 1))
 done
 if kill -0 "$manynoise_pid" 2>/dev/null; then
   kill -9 "$manynoise_pid" 2>/dev/null || true
   wait "$manynoise_pid" 2>/dev/null || true
   fail "5,000 noise lines before the marker still completes well within the bound" \
-    "still running after ${manynoise_waited}s (the fork-per-raw-line regression is back)"
+    "still running after ${manynoise_waited}s — a hang (the fork-per-line regression is caught by the jq count below)"
 else
   wait "$manynoise_pid" 2>/dev/null
   pass "5,000 noise lines before the marker still completes well within the bound"
+fi
+jq_forks="$(grep -c x "$jq_count_log" || true)"
+if [ "$jq_forks" -ge 1 ] && [ "$jq_forks" -le 50 ]; then
+  pass "5,000 noise lines cost a handful of jq forks, not one per line ($jq_forks)"
+else
+  fail "5,000 noise lines cost a handful of jq forks, not one per line" \
+    "$jq_forks jq launches (0 = the shim was not on the path; thousands = the fork-per-raw-line regression is back)"
 fi
 check_nofile "and the marker among 5,000 noise lines still excludes correctly" "$RT_STORE"/*/wrap-fuse-events.log
 
@@ -660,10 +676,10 @@ mkdir -p "$RT_STORE"
 chmod 500 "$RT_STORE"
 # Restore the mode before the sandbox's own cleanup runs — a mode-500 dir blocks `rm -rf` for a
 # non-root cleanup, which would otherwise strand this case's sandbox tree. The trap CHAINS tests/lib.sh's
-# own sandbox removal (`trap 'rm -rf "$SANDBOX"' EXIT`) rather than replacing it: a bare replacement, and
+# own sandbox removal (`sandbox_teardown`, dir #744) rather than replacing it: a bare replacement, and
 # the `trap - EXIT` that used to follow, left the whole sandbox behind in the real temp dir on every run
 # (delta-audit 0.13.0 R2-1).
-trap 'chmod 700 "$RT_STORE" 2>/dev/null; rm -rf "$SANDBOX"' EXIT
+trap 'chmod 700 "$RT_STORE" 2>/dev/null; sandbox_teardown' EXIT
 
 # A Read (not just an Edit) is required to exercise the persistent-store write at all: mutate rows
 # (_rt_record_mutate) only ever touch the EPHEMERAL, TMPDIR-resident session log, never the
@@ -689,7 +705,7 @@ else
 fi
 
 chmod 700 "$RT_STORE" 2>/dev/null
-trap 'rm -rf "$SANDBOX"' EXIT   # re-arm exactly the trap tests/lib.sh installed; the chmod step is done
+trap sandbox_teardown EXIT   # re-arm exactly the trap tests/lib.sh installed; the chmod step is done
 
 # --- S13 (dir #630 PR-C): read-trace loss detection, the read-trace half of the impact store's S4/S6
 # provenance mechanism (tools/lib/impact-store.sh's keel_store_record/keel_store_state, reused

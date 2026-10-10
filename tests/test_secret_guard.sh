@@ -2536,7 +2536,7 @@ check_eq "dir #715 A13: the scanner holds no heredoc (the register reads it line
   "$(awk '{ g = $0; gsub(/<<</, "", g); if (index(g, "<<")) print NR }' "$scan")"
 # mutation proof: the register turns red on a dropped LC_ALL=C and on an untagged `|| true`
 cp "$scan" "$SANDBOX/reg715-locale.sh"
-replace_in_line_containing "$SANDBOX/reg715-locale.sh" 'read -r rec' 'LC_ALL=C ' ''
+replace_in_line_containing "$SANDBOX/reg715-locale.sh" 'read -r hit ||' 'LC_ALL=C ' ''   # collect_matches' read (dir #746 B10 retired the filter's)
 check_ne "dir #715 A13 mutation: a read without LC_ALL=C is reported" "" "$(register715 "$SANDBOX/reg715-locale.sh")"
 cp "$scan" "$SANDBOX/reg715-true.sh"
 append_line "$SANDBOX/reg715-true.sh" 'x715="$(false)" || true'
@@ -2908,5 +2908,415 @@ pin_exact "dir #746 A11 T3: one dir #725 predicate in public-audit.sh" "$pa746" 
 check_block_equal "dir #746 A11 T3: the dir #725 predicate (both lines) equals public-audit.sh's" \
   "$(grep -F -A1 -e "$pred746" "$scan" | sed 's/^[[:space:]]*//')" \
   "$(grep -F -A1 -e "$pred746" "$pa746" | sed 's/^[[:space:]]*//')"
+
+# Slice 2 (dir #741, dir #742, dir #746 D1-4): a record keeps its label apart from its content, so each allow
+# channel reads its own field (B10); --range exempts a blob only when every path it is introduced at is exempt
+# (B11); --tracked scans the index copy of a file it cannot read from the working tree (B12).
+commit746() { git -C "$1" add -A && git -C "$1" commit -q -m "$2"; }
+# A20 / A21 (B10): the inline marker and a `path:` glob read their own field, never the label's text.
+r746="$(new_repo)"
+printf 'tok = %s\n' "$k746" > "$r746/notes-secret-scan:allow.txt"
+git -C "$r746" add -A
+run_in "$r746" "$scan" --staged
+check_status "dir #746 A20: a file named notes-secret-scan:allow.txt is not exempted by its name → BLOCKED" 1 "$STATUS"
+for n746 in 'README.md:x.txt' README.md; do
+  r746="$(new_repo)"
+  printf 'path:README.md\n' > "$r746/.secret-scan-allow"
+  commit746 "$r746" allow
+  printf 'tok = %s\n' "$k746" > "$r746/$n746"
+  git -C "$r746" add -A
+  run_in "$r746" "$scan" --staged
+  if [ "$n746" = README.md ]; then
+    check_status "dir #746 A21 control: path:README.md still exempts README.md → exit 0" 0 "$STATUS"
+  else
+    check_status "dir #746 A21: path:README.md does not exempt README.md:x.txt → BLOCKED" 1 "$STATUS"
+  fi
+done
+# A22 (B10, by field): (i) an ERE matching only the label no longer exempts; (ii) an anchored ERE reads the content
+# — the `-n` output splits at its FIRST colon, so FILE mode pins it; (iii) a `path:` glob never exempts a message.
+r746="$(new_repo)"
+printf '^x\\.txt\n' > "$r746/.secret-scan-allow"
+commit746 "$r746" allow
+printf 'tok = %s\n' "$k746" > "$r746/x.txt"
+git -C "$r746" add -A
+run_in "$r746" "$scan" --staged
+check_status "dir #746 A22(i): an allow ERE matching only the label '^x\\.txt' → BLOCKED" 1 "$STATUS"
+r746="$(new_repo)"
+printf '^aws: \n' > "$r746/.secret-scan-allow"
+commit746 "$r746" allow
+printf 'aws: %s\n' "$k746" > "$r746/a.txt"
+git -C "$r746" add -A
+run_in "$r746" "$scan" --staged
+check_status "dir #746 A22(ii): an allow ERE anchored on the content '^aws: ' still exempts (--staged) → exit 0" 0 "$STATUS"
+run_in "$r746" "$scan" -- a.txt
+check_status "dir #746 A22(ii): ...and in FILE mode, where the -n output splits at its first colon → exit 0" 0 "$STATUS"
+r746="$(new_repo)"
+git -C "$r746" commit -q --allow-empty -m base
+printf 'path:commit*\npath:fixtures/*\n' > "$r746/.secret-scan-allow"
+commit746 "$r746" allow
+allow746="$(git -C "$r746" rev-parse HEAD)"
+mkdir -p "$r746/fixtures"
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/k.txt"
+commit746 "$r746" fixture
+run_in "$r746" "$scan" --range "$allow746..HEAD"
+check_status "dir #746 A22(iii) control: a file record under path:fixtures/* is still exempt → exit 0" 0 "$STATUS"
+git -C "$r746" commit -q --allow-empty -m probe -m "$(printf 'Claude-%s: https://claude.ai/code/%s_t746' Session session)"
+run_in "$r746" "$scan" --range "$allow746..HEAD"
+check_status "dir #746 A22(iii): path:commit* never exempts a commit message → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A22(iii): ...naming the message" "$OUT" "  commit $(git -C "$r746" rev-parse --short=7 HEAD) message:"
+
+# A29 (B10's output): each record kind prints exactly as before the restructure.
+r746="$(new_repo)"
+printf 'tok = %s\n' "$k746" > "$r746/f.txt"
+printf 'head\000 tok = %s\n' "$k746" > "$r746/b.bin"
+run_in "$r746" "$scan" -- f.txt b.bin
+check_contains "dir #746 A29: a text hit prints '  <path>:<n>:<text>'" "$OUT" "  f.txt:1:tok = $k746"
+check_contains "dir #746 A29: a binary hit prints '  <path>:(binary) <text>'" "$OUT" "  b.bin:(binary) "
+printf 'tok = %s\n' "$k746" > "$r746/d.txt"
+git -C "$r746" add d.txt
+run_in "$r746" "$scan" --staged
+check_contains "dir #746 A29: a staged-diff hit prints '  <path>:<text>'" "$OUT" "  d.txt:tok = $k746"
+git -C "$r746" commit -q -m base
+git -C "$r746" commit -q --allow-empty -m "msg $k746"
+run_in "$r746" "$scan" --range HEAD~1..HEAD
+check_contains "dir #746 A29: a message hit prints '  commit <sha7> message:<text>'" "$OUT" \
+  "  commit $(git -C "$r746" rev-parse --short=7 HEAD) message:msg $k746"
+
+# A24 (B11): a `path:` glob exempts a --range blob only when every path the range introduces it at is exempt.
+range746() {  # prints a repo whose HEAD is the allow commit `path:fixtures/*`
+  local r; r="$(new_repo)"
+  git -C "$r" commit -q --allow-empty -m base
+  printf 'path:fixtures/*\n' > "$r/.secret-scan-allow"
+  commit746 "$r" allow
+  mkdir -p "$r/fixtures" "$r/src"
+  printf '%s' "$r"
+}
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/key.txt"
+printf 'tok = %s\n' "$k746" > "$r746/src/real.txt"
+commit746 "$r746" both
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24: one commit, the key at fixtures/key.txt and src/real.txt → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A24: ...naming src/real.txt" "$OUT" "  src/real.txt:"
+a24_repo746="$r746"; a24_base746="$a746"
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+main746="$(git -C "$r746" branch --show-current)"
+git -C "$r746" checkout -q -b side746
+printf 'tok = %s\n' "$k746" > "$r746/src/real.txt"
+commit746 "$r746" side
+git -C "$r746" checkout -q "$main746"
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/key.txt"
+commit746 "$r746" main
+git -C "$r746" merge -q --no-edit side746
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24: two branches, the same blob at each path, merged → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A24: ...naming src/real.txt" "$OUT" "  src/real.txt:"
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+main746="$(git -C "$r746" branch --show-current)"
+git -C "$r746" checkout -q -b side746
+printf 'side\n' > "$r746/side.txt"
+commit746 "$r746" side
+git -C "$r746" checkout -q "$main746"
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/key.txt"
+commit746 "$r746" main
+git -C "$r746" merge -q --no-commit side746
+printf 'tok = %s\n' "$k746" > "$r746/src/real.txt"
+git -C "$r746" add -A
+git -C "$r746" commit -q -m evil
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24: an evil merge adds the blob at src/real.txt → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A24: ...naming src/real.txt" "$OUT" "  src/real.txt:"
+git -C "$r746" config log.diffMerges combined
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24: the evil merge under log.diffMerges=combined → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A24: ...naming src/real.txt" "$OUT" "  src/real.txt:"
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'tok = %s\n' "$k746" > "$r746/:real.txt"
+commit746 "$r746" colon
+git -C "$r746" --literal-pathspecs rm -q -- ':real.txt'
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/key.txt"
+commit746 "$r746" moved
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24: a path starting with ':' keeps its pair → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A24: ...naming :real.txt" "$OUT" "  :real.txt:"
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'tok = %s\n' "$k746" > "$r746/fixtures/key.txt"
+commit746 "$r746" fixture-only
+run_in "$r746" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A24 control: the key only under fixtures/ → exit 0" 0 "$STATUS"
+
+# A25 (B11's failure, and its laziness): a git that fails `log --raw` exits 2 on an exempted hit, and is never
+# called on a clean range.
+git_shim_any746() {  # dir word — a git that exits 128 when any argument is WORD
+  mkdir -p "$1"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = %s ] && exit 128; done\nexec "%s" "$@"\n' "$2" "$real_git715" > "$1/git"
+  chmod +x "$1/git"
+}
+git_shim_any746 "$d746/shim-raw" --raw
+run_in "$a24_repo746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a24_base746..HEAD"
+check_status "dir #746 A25: the pair enumeration fails → exit 2" 2 "$STATUS"
+check_contains "dir #746 A25: ...naming it" "$OUT" "secret-scan: could not list the range's paths"
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'clean\n' > "$r746/src/ok.txt"
+commit746 "$r746" clean
+run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A25(b): a clean range never enumerates the pairs → exit 0" 0 "$STATUS"
+check_contains "dir #746 A25(b): ...clean" "$OUT" "secret-scan: clean"
+# (c) a hit the inline marker or an ERE entry already drops never needs the pairs either
+r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
+printf 'tok = %s # secret-scan:allow\n' "$k746" > "$r746/fixtures/k.txt"
+commit746 "$r746" allowed
+run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A25(c): an inline-allowed hit under a path: glob never enumerates the pairs → exit 0" 0 "$STATUS"
+r746="$(new_repo)"
+git -C "$r746" commit -q --allow-empty -m base
+printf 'path:fixtures/*\nfixture-marker-746\n' > "$r746/.secret-scan-allow"
+commit746 "$r746" allow
+a746="$(git -C "$r746" rev-parse HEAD)"
+mkdir -p "$r746/fixtures"
+printf 'tok = %s fixture-marker-746\n' "$k746" > "$r746/fixtures/k.txt"
+commit746 "$r746" ere-allowed
+run_in "$r746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a746..HEAD"
+check_status "dir #746 A25(c): ...nor an ERE-dropped one → exit 0" 0 "$STATUS"
+
+# A26 / A27 (B12): --tracked scans the index copy of a tracked file it cannot read from the working tree.
+r746="$(new_repo)"
+printf 'tok = %s\n' "$k746" > "$r746/unread.txt"
+printf 'tok = %s\n' "$k746" > "$r746/gone.txt"
+commit746 "$r746" tracked
+chmod 000 "$r746/unread.txt"
+rm "$r746/gone.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(a): an unreadable and a deleted tracked file → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(a): ...gone.txt is reported" "$OUT" "  gone.txt:1:"
+check_contains "dir #746 A26(a): ...unread.txt is reported" "$OUT" "  unread.txt:1:"
+check_eq "dir #746 A26(a): gone.txt gets one index-copy line" 1 \
+  "$(match "$OUT" -c '^secret-scan: WARN missing from the working tree, scanned its index copy instead: gone.txt$')"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_eq "dir #746 A26(a): unread.txt gets one index-copy line" 1 \
+    "$(match "$OUT" -c '^secret-scan: WARN unreadable, scanned its index copy instead: unread.txt$')"
+fi
+check_absent "dir #746 A26(a): no skip-worktree summary when there is none" "$OUT" "skip-worktree"
+check_eq "dir #746 A27: two hit lines start with two spaces (kb-doctor's count)" 2 "$(match "$OUT" -c '^  ')"
+git_shim_any746 "$d746/shim-catfile" cat-file
+run_in "$r746" env PATH="$d746/shim-catfile:$PATH" "$scan" --tracked
+check_status "dir #746 A26(c): the index copy cannot be read → exit 2" 2 "$STATUS"
+check_contains "dir #746 A26(c): ...naming it" "$OUT" "could not read the index copy of 'gone.txt'"
+chmod 644 "$r746/unread.txt"
+r746="$(new_repo)"
+printf 'tok = %s\n' "$k746" > "$r746/dirfile.txt"
+ln -s /nowhere/x "$r746/lnk"
+commit746 "$r746" tracked
+rm "$r746/dirfile.txt"; mkdir "$r746/dirfile.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(a): a tracked path replaced by a directory → BLOCKED from its index copy" 1 "$STATUS"
+check_contains "dir #746 A26(a): ...named as not a regular file" "$OUT" \
+  "secret-scan: WARN not a regular file in the working tree, scanned its index copy instead: dirfile.txt"
+check_absent "dir #746 A26(a): a tracked (broken) symlink takes the readlink branch, not the index copy" "$OUT" ": lnk"
+r746="$(new_repo)"
+printf 'clean\n' > "$r746/a.txt"
+commit746 "$r746" base
+git -C "$r746" update-index --add --cacheinfo "160000,$(git -C "$r746" rev-parse HEAD),sub"
+git -C "$r746" commit -q -m gitlink
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(b): a gitlink is skipped → exit 0" 0 "$STATUS"
+check_absent "dir #746 A26(b): ...with no index-copy line" "$OUT" "index copy"
+r746="$(new_repo)"
+mkdir "$r746/d"
+printf 'tok = %s\n' "$k746" > "$r746/d/b.txt"
+commit746 "$r746" sparse
+git -C "$r746" update-index --skip-worktree d/b.txt
+rm "$r746/d/b.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(d): a skip-worktree file is scanned from the index → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(d): ...naming it" "$OUT" "  d/b.txt:1:"
+check_eq "dir #746 A26(d): ...and one summary line" 1 \
+  "$(match "$OUT" -c '^secret-scan: WARN 1 skip-worktree file(s) scanned from the index$')"
+# (e) a skip-worktree file still PRESENT in the working tree is read from there, as before B12 — its working copy
+# may hold what the index does not (review finding)
+r746="$(new_repo)"
+printf 'clean\n' > "$r746/c.txt"
+commit746 "$r746" base
+git -C "$r746" update-index --skip-worktree c.txt
+printf 'tok = %s\n' "$k746" > "$r746/c.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(e): a present skip-worktree file is read from the working tree → BLOCKED" 1 "$STATUS"
+check_absent "dir #746 A26(e): ...and is not counted as a skip-worktree index read" "$OUT" "skip-worktree"
+# (f) an unmerged path (a stage other than 0) is read whole: its working file, if any, and every distinct
+# non-gitlink stage's index copy — the working file of a binary or type conflict holds one side only, and a key may
+# sit in "ours" or "theirs" alone. A gitlink stage never claims the path; a hit the copies share prints once, even
+# when conflict markers move its line; one WARN names the path (review findings)
+r746="$(new_repo)"
+printf 'base\n' > "$r746/f.txt"
+commit746 "$r746" base
+c746="$(git -C "$r746" rev-parse HEAD)"
+b746="$(git -C "$r746" hash-object -w f.txt)"
+printf 'other\n' > "$r746/f.txt"
+o746="$(git -C "$r746" hash-object -w f.txt)"
+printf 'tok = %s\nmore\n' "$k746" > "$r746/f.txt"
+kb2_746="$(git -C "$r746" hash-object -w f.txt)"
+printf 'tok = %s\n' "$k746" > "$r746/f.txt"
+kb746="$(git -C "$r746" hash-object -w f.txt)"
+stages746() {  # "<mode> <sha> <stage>"… — f.txt unmerged with exactly these index entries
+  local e
+  git -C "$r746" update-index --force-remove f.txt
+  for e in "$@"; do printf '%s\tf.txt\n' "$e"; done | git -C "$r746" update-index --index-info
+}
+unmerged746="each stage's index copy scanned: f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): the key in the working file of an unmerged path → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...one hit line" 1 "$(match "$OUT" -c '^  f.txt:')"
+check_eq "dir #746 A26(f): ...and one WARN naming the unmerged path and its working file" 1 \
+  "$(match "$OUT" -cF "secret-scan: WARN unmerged (its working file), $unmerged746")"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_eq "dir #746 A26(f): the working file and stage 3 share the hit: printed once" 1 "$(match "$OUT" -c '^  f.txt:')"
+printf 'tok = %s\nx\ntok = %s\n' "$k746" "$k746" > "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $b746 3"
+run_in "$r746" "$scan" --tracked
+check_eq "dir #746 A26(f): one copy's repeated line is two hits (only earlier copies dedupe)" 2 \
+  "$(match "$OUT" -c '^  f.txt:')"
+# an unreadable working file holds what no stage does: exit 2 naming it, never clean (chmod is a no-op for root,
+# CLAUDE.md trap 2 — as root the file is read and its key blocks)
+chmod 000 "$r746/f.txt"
+run_in "$r746" "$scan" --tracked
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "dir #746 A26(f): an unmerged path's unreadable working file → exit 2" 2 "$STATUS"
+  check_contains "dir #746 A26(f): ...naming it" "$OUT" "could not read the working file of the unmerged 'f.txt'"
+  check_eq "dir #746 A26(f): ...the unmerged WARN is the first line" \
+    "secret-scan: WARN unmerged (its working file), $unmerged746" "$(match "$OUT" -m1 .)"
+  check_eq "dir #746 A26(f): ...and every line carries the secret-scan: prefix (no raw shell error)" 0 \
+    "$(match "$OUT" -c -v '^secret-scan:')"
+else
+  check_status "dir #746 A26(f): as root the working file is read → BLOCKED" 1 "$STATUS"
+fi
+check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
+chmod 644 "$r746/f.txt"
+# ...and one hidden by a directory that cannot be searched — at any depth — is not taken for an absent file;
+# at stage 0 the same state is named for what it is, not "missing" (the verdict there is the index copy's, F5)
+r2_746="$(new_repo)"
+mkdir -p "$r2_746/a/b"
+printf 'base\n' > "$r2_746/a/b/f.txt"
+cb746="$(git -C "$r2_746" hash-object -w a/b/f.txt)"
+printf '100644 %s 1\ta/b/f.txt\n100644 %s 3\ta/b/f.txt\n' "$cb746" "$cb746" | git -C "$r2_746" update-index --index-info
+printf 'tok = %s\n' "$k746" > "$r2_746/a/b/f.txt"
+chmod 600 "$r2_746/a"
+run_in "$r2_746" "$scan" --tracked
+chmod 755 "$r2_746/a"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "dir #746 A26(f): an unmerged file under an unsearchable grandparent directory → exit 2" 2 "$STATUS"
+  check_contains "dir #746 A26(f): ...from its working file" "$OUT" \
+    "could not read the working file of the unmerged 'a/b/f.txt'"
+  check_contains "dir #746 A26(f): ...after a WARN that says it is hidden" "$OUT" \
+    "secret-scan: WARN unmerged (its working file, hidden by a directory that cannot be searched), each stage's index copy scanned: a/b/f.txt"
+else
+  check_status "dir #746 A26(f): as root the unsearchable directory is read → BLOCKED" 1 "$STATUS"
+fi
+check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
+r2_746="$(new_repo)"
+mkdir "$r2_746/d"; printf 'base\n' > "$r2_746/d/f.txt"
+cb746="$(git -C "$r2_746" hash-object -w d/f.txt)"
+printf '100644 %s 1\td/f.txt\n100644 %s 3\td/f.txt\n' "$cb746" "$cb746" | git -C "$r2_746" update-index --index-info
+printf 'tok = %s\n' "$k746" > "$r2_746/d/f.txt"
+chmod 600 "$r2_746/d"
+run_in "$r2_746" "$scan" --tracked
+chmod 755 "$r2_746/d"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "dir #746 A26(f): ...and under an unsearchable parent directory → exit 2" 2 "$STATUS"
+else
+  check_status "dir #746 A26(f): ...as root the parent is read → BLOCKED" 1 "$STATUS"
+fi
+r2_746="$(new_repo)"
+mkdir -p "$r2_746/a"; printf 'clean\n' > "$r2_746/a/g.txt"; printf 'clean\n' > "$r2_746/a/s.txt"
+commit746 "$r2_746" g
+git -C "$r2_746" update-index --skip-worktree a/s.txt
+chmod 600 "$r2_746/a"
+run_in "$r2_746" "$scan" --tracked
+chmod 755 "$r2_746/a"
+check_status "dir #746 A26(f): a stage-0 file behind an unsearchable directory → its index copy, exit 0 (F5)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "dir #746 A26(f): ...named hidden, not missing" "$OUT" \
+    "secret-scan: WARN hidden by a directory that cannot be searched, scanned its index copy instead: a/g.txt"
+  check_contains "dir #746 A26(f): ...a hidden skip-worktree file too, not counted as an absent sparse entry" "$OUT" \
+    "secret-scan: WARN hidden by a directory that cannot be searched, scanned its index copy instead: a/s.txt"
+  check_absent "dir #746 A26(f): ...and no sparse summary" "$OUT" "skip-worktree"
+fi
+# a type conflict resolved to a symlink: its target is read whatever the first stage's mode (review finding)
+printf 'somewhere' > "$d746/lnk-target"
+l746="$(git -C "$r746" hash-object -w "$d746/lnk-target")"
+rm "$r746/f.txt"; ln -s "tok = $k746" "$r746/f.txt"
+stages746 "100644 $b746 1" "120000 $l746 2" "100644 $o746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a working symlink of an unmerged path is read → BLOCKED on its target" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...and its WARN says the symlink was read" "$OUT" \
+  "secret-scan: WARN unmerged (its working symlink), $unmerged746"
+rm "$r746/f.txt"; mkdir "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a directory in place of an unmerged file → BLOCKED from stage 3" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...and its WARN says not a regular file" "$OUT" \
+  "secret-scan: WARN unmerged (its working file not a regular file), $unmerged746"
+rmdir "$r746/f.txt"; printf 'tok = %s\nx\ntok = %s\n' "$k746" "$k746" > "$r746/f.txt"
+stages746 "160000 $c746 1" "100644 $b746 2" "100644 $b746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a gitlink stage 1 does not hide the working file (stages clean) → BLOCKED" 1 "$STATUS"
+printf 'clean\n' > "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $b746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a clean working file, the key in stage 3 alone → BLOCKED" 1 "$STATUS"
+stages746 "160000 $c746 1" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a gitlink stage 1 and the key in stage 3, the only file stage → BLOCKED" 1 "$STATUS"
+stages746 "100644 $kb746 2" "100644 $o746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): add/add, a clean working file, the key in stage 2 alone → BLOCKED" 1 "$STATUS"
+rm "$r746/f.txt"
+stages746 "100644 $b746 1" "100644 $kb746 2" "100644 $o746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): no working copy, the key in stage 2 alone (stage 3 distinct and clean) → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(f): ...its WARN says there is no working file" "$OUT" \
+  "secret-scan: WARN unmerged (no working file), $unmerged746"
+check_absent "dir #746 A26(f): ...and no stage-0 'index copy instead' line" "$OUT" "index copy instead"
+stages746 "100644 $b746 1" "160000 $c746 2" "100644 $kb746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): no working copy, a gitlink stage 2 before the key in stage 3 → BLOCKED" 1 "$STATUS"
+stages746 "160000 $c746 1" "100644 $kb746 2" "100644 $kb2_746 3"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): no working copy, the key in stages 2 and 3 (different blobs) → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...the hit the stages share prints once" 1 "$(match "$OUT" -c '^  f.txt:')"
+# a real text conflict: the markers move the key's line in the working file, and it still prints once
+r746="$(new_repo)"
+printf 'a\n' > "$r746/f.txt"
+commit746 "$r746" base
+main746="$(git -C "$r746" branch --show-current)"
+git -C "$r746" checkout -q -b theirs746
+printf 'x\n' > "$r746/f.txt"
+commit746 "$r746" theirs
+git -C "$r746" checkout -q "$main746"
+printf 'y\ntok = %s\n' "$k746" > "$r746/f.txt"
+commit746 "$r746" ours
+git -C "$r746" merge -q theirs746 >/dev/null 2>&1 || true
+check_ne "dir #746 A26(f) fixture: the merge left f.txt unmerged" "" "$(git -C "$r746" ls-files -u -- f.txt)"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(f): a real text conflict holding the key → BLOCKED" 1 "$STATUS"
+check_eq "dir #746 A26(f): ...printed once, though the markers moved its line" 1 "$(match "$OUT" -c '^  f.txt:')"
+# (g) a tracked regular file replaced by a symlink: its target string is scanned (what the next `git add` commits,
+# as v0.15.0 did) and its index copy too — the readlink-only branch is for a tracked symlink, mode 120000 (review
+# findings: the index copy read clean, then the target went unread)
+r746="$(new_repo)"
+printf 'tok = %s\n' "$k746" > "$r746/c.txt"
+printf 'clean\n' > "$r746/d.txt"
+commit746 "$r746" key
+rm "$r746/c.txt"; ln -s /nowhere/x "$r746/c.txt"
+rm "$r746/d.txt"; ln -s "/tmp/$aws746" "$r746/d.txt"
+run_in "$r746" "$scan" --tracked
+check_status "dir #746 A26(g): tracked files replaced by symlinks → BLOCKED" 1 "$STATUS"
+check_contains "dir #746 A26(g): ...the index copy's key is reported" "$OUT" "  c.txt:1:tok = $k746"
+check_contains "dir #746 A26(g): ...the target string's key is reported" "$OUT" "  d.txt:1:/tmp/$aws746"
+for n746 in c.txt d.txt; do
+  check_contains "dir #746 A26(g): ...and $n746 says both were scanned" "$OUT" \
+    "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $n746"
+done
 
 summary
