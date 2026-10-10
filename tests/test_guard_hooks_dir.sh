@@ -466,6 +466,12 @@ chmod +x "$H/.config/git/keel-hooks/secret-scan.sh"
 inst_run genv --no-hooks
 check_contains "dir #695: a leading WARN is skipped: the refusal line is the reason" "$OUT" "Reason:   secret-scan: stub refusal reason"
 check_absent "dir #695: ...the WARN is not shown as the reason" "$OUT" "Reason:   selftest: WARN"
+# No recognised prefix at all: WARN lines are still never the reason; the first other stderr line stands in.
+printf '#!/bin/sh\necho "selftest: WARN — iconv absent; passes degraded" >&2\necho "secret-scan: WARN replaced by a symlink" >&2\necho "line 12: unexpected failure" >&2\nexit 2\n' > "$H/.config/git/keel-hooks/secret-scan.sh"
+inst_run genv --no-hooks
+check_contains "dir #695: no recognised prefix → the first non-WARN stderr line is the reason" "$OUT" "Reason:   line 12: unexpected failure"
+check_absent "dir #695: ...never a WARN" "$OUT" "Reason:   selftest: WARN"
+check_absent "dir #695: ...of either family" "$OUT" "Reason:   secret-scan: WARN"
 mk_home i-sok
 run genv "$isg" --global
 inst_run genv --no-hooks

@@ -2091,10 +2091,11 @@ if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit"
     guard_ok=1
   else
     echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
-    # The reason: the scanner's first refusal (`secret-scan:`) or probe failure (`selftest: FAIL`) line on stderr,
-    # skipping the non-fatal `selftest: WARN` lines that can precede it; else its first stderr line at all. A
-    # missing or non-executable scanner prints nothing, so no line.
-    st_why="$(grep -m1 -E '^(secret-scan:|selftest: FAIL)' <<<"$st_err")" || st_why="${st_err%%$'\n'*}"
+    # The reason: the scanner's first refusal (`secret-scan:`) or probe failure (`selftest: FAIL`) line on stderr;
+    # non-fatal WARN lines are dropped first (they can precede the real one), and if no line carries either prefix the
+    # first remaining stderr line stands in. A missing or non-executable scanner prints nothing, so no line.
+    st_nw="$(grep -v -E '^(selftest|secret-scan): WARN' <<<"$st_err")" || st_nw=""
+    st_why="$(grep -m1 -E '^(secret-scan:|selftest: FAIL)' <<<"$st_nw")" || st_why="${st_nw%%$'\n'*}"
     [ -z "$st_why" ] || echo "       Reason:   $st_why"
     echo "       Inspect:  $keel_hooks/secret-scan.sh --selftest"
   fi
