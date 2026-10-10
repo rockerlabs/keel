@@ -473,7 +473,10 @@ mechanically, by ticket token — `dir #N`, and the bare `#N` a list continues w
 the diff of that set against the slate's live ticket list (G3), and the residue stated on the row by
 number with a one-line reason per item. A row with an empty residue says so; a row with a
 non-empty one has just stated where it will be wrong in public, which is the field's whole purpose.
-This is a rule of the procedure, not a compensation for a defect — no ticket removes it.
+This is a rule of the procedure, not a compensation for a defect — no ticket removes it. Before G6, run
+`tools/self/value-claim-lint.sh RELEASES.md <version>` (dir #672): advisory, it flags each value-claim cell with
+no `Subject set:` clause and no `no subject set — <why>` line, so the reviewer's budget goes to what a lint
+cannot see.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that
