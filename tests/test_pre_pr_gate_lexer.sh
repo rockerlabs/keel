@@ -841,4 +841,7 @@ lex_is "a heredoc pending when a BQ closes ends its region at the backtick" 'x=`
 lex_is "after an expanding body ends, the enclosing BQ's end still bounds the reads" "$(printf 'echo `cat <<E\nx\nE\n` ; echo z')" \
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@4${T}d0${T}s0${T}p23${T}u:echo${T}u:z"
 
+lex_is "a heredoc delimiter line cut by its BQ's backtick: no region" "$(printf 'git commit -m "`cat <<'"'"'E'"'"'\nmsg\nE`"')" \
+  "BQ@1${T}d1${T}s0.1${T}p17${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:git${T}u:commit${T}u:-m${T}x:\$()"
+
 summary
