@@ -202,8 +202,9 @@ _keel_sw_check() {
   _keel_sw_target="$target"
 }
 
-# _keel_sw_claim TMP WHAT — claim Keel's scratch name TMP for writing WHAT (header): `rm -f` whatever is
-# there, then a noclobber create under the caller's umask, which must leave a regular, non-link file.
+# _keel_sw_claim TMP WHAT [UMASK] — claim Keel's scratch name TMP for writing WHAT (header): `rm -f`
+# whatever is there, then a noclobber create — under UMASK when given, else the caller's umask — which
+# must leave a regular, non-link file.
 # Returns 1 with the lib's one line when the claim fails (a directory at TMP, something re-planted in the
 # instant between, an unwritable directory); nothing found at TMP is removed after that. A FIFO planted
 # in that same instant can block the claim's open — the residual keel_backup names, not handled.
@@ -212,21 +213,28 @@ _keel_sw_claim() {
   if [ -e "$1" ] || [ -L "$1" ]; then
     rm -f "$1" 2>/dev/null || :
   fi
-  if ! err="$( (set -C; : > "$1") 2>&1 )" || [ ! -f "$1" ] || [ -L "$1" ]; then
+  if ! err="$(set -C; [ -z "${3:-}" ] || umask "$3"; { : > "$1"; } 2>&1)" || [ ! -f "$1" ] || [ -L "$1" ]; then
     _keel_sw_refuse "could not write $2: its temp name $1 could not be claimed$(_keel_sw_cause "$err")"
     return 1
   fi
 }
 
 # _keel_sw_write TARGET [CMD ARGS...] — the rename every EDIT and STATE write ends in, once _keel_sw_check
-# has passed: TARGET is the resolved path. The temp starts as a `cp -p` of the target, and `>` onto an
-# existing file keeps its mode, so the rename carries the target's permission bits. The temp is opened for
-# writing on its own first, so a read-only target (its mode now on the temp too) is reported as that,
-# never blamed on CMD.
+# has passed: TARGET is the resolved path. The temp starts as a `cp -p` of the target, and `>|` onto an
+# existing file keeps its mode, so the rename carries the target's permission bits. Over an existing
+# target the temp is claimed under umask 077, so the target's bytes never sit in a temp more open than the
+# target while `cp -p` copies them (it sets the mode only after the data); a new file keeps the caller's
+# umask. The temp is opened for writing on its own first, so a read-only target (its mode now on the temp
+# too) is reported as that, never blamed on CMD. Every `>|` overrides a caller's own `set -C`, which would
+# otherwise refuse the temp this function has just claimed.
 _keel_sw_write() {
   local target="$1" tmp="$1.keeltmp.$$" err="" rc=0
   shift
-  _keel_sw_claim "$tmp" "$target" || return 1
+  if [ -f "$target" ]; then
+    _keel_sw_claim "$tmp" "$target" 077 || return 1
+  else
+    _keel_sw_claim "$tmp" "$target" || return 1
+  fi
   if [ -f "$target" ]; then
     if ! err="$(cp -p "$target" "$tmp" 2>&1)"; then
       _keel_sw_fail "$tmp" "could not write $target (it cannot be read, or its directory is not writable)$(_keel_sw_cause "$err")"
@@ -234,8 +242,8 @@ _keel_sw_write() {
     fi
     # The cause is captured only when the open fails (a second open of the same read-only temp fails the
     # same way), so the common path stays fork-free.
-    if ! { : > "$tmp"; } 2>/dev/null; then
-      err="$( { : > "$tmp"; } 2>&1 )" || :
+    if ! { : >| "$tmp"; } 2>/dev/null; then
+      err="$( { : >| "$tmp"; } 2>&1 )" || :
       _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)$(_keel_sw_cause "$err")"
       return 1
     fi
@@ -243,12 +251,12 @@ _keel_sw_write() {
   if [ "$#" -gt 0 ]; then
     # In a subshell: an `exit` or a `set -u` abort inside a shell-function CMD stays a failed CMD
     # instead of ending the caller with a temp left beside the file. CMD's own stderr stays visible.
-    ( "$@" ) > "$tmp" || rc=$?
+    ( "$@" ) >| "$tmp" || rc=$?
     if [ "$rc" != 0 ]; then
       _keel_sw_fail "$tmp" "the new content for $target could not be produced (CMD exited $rc)"
       return 1
     fi
-  elif ! err="$(cat 2>&1 > "$tmp")"; then
+  elif ! err="$(cat 2>&1 >| "$tmp")"; then
     _keel_sw_fail "$tmp" "could not write $target (read-only, or its directory is not writable)$(_keel_sw_cause "$err")"
     return 1
   fi
@@ -303,7 +311,7 @@ keel_write_replace() {
     return 1
   fi
   _keel_sw_claim "$tmp" "$p" || return 1
-  if ! err="$(cat 2>&1 > "$tmp")" || ! err="$(mv -f "$tmp" "$p" 2>&1)"; then
+  if ! err="$(cat 2>&1 >| "$tmp")" || ! err="$(mv -f "$tmp" "$p" 2>&1)"; then
     _keel_sw_fail "$tmp" "could not write $p (its directory is missing or not writable)$(_keel_sw_cause "$err")"
     return 1
   fi
@@ -366,7 +374,7 @@ keel_backup() {
     # ordinary file or link that appears in between; a link to an unread FIFO planted in that instant
     # can still block the claim — a residual race, named here, not handled (no lock: the spec's K19).
     if [ ! -e "$b" ] && [ ! -L "$b" ]; then
-      if err="$( (set -C; umask 077; : > "$b") 2>&1 )" && [ -f "$b" ] && [ ! -L "$b" ]; then
+      if err="$(set -C; umask 077; { : > "$b"; } 2>&1)" && [ -f "$b" ] && [ ! -L "$b" ]; then
         break
       fi
       if [ ! -e "$b" ] && [ ! -L "$b" ]; then
@@ -381,7 +389,7 @@ keel_backup() {
     fi
     b="$base.$n.bak"
   done
-  if ! err="$(cat "$1" 2>&1 > "$b")"; then
+  if ! err="$(cat "$1" 2>&1 >| "$b")"; then
     rm -f "$b" 2>/dev/null || :
     _keel_sw_refuse "could not copy $1 to its backup$(_keel_sw_cause "$err")"
     return 1

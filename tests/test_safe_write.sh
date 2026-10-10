@@ -349,7 +349,8 @@ if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; th
     qrel=$!
     # A48: the release itself is bounded too — a pure-bash watchdog (no perl on the alpine image, no
     # timeout on stock macOS) kills the row's pid if the reader did not free it; cancelled on completion.
-    ( sleep 20; kill "$qpid" ) > /dev/null 2>&1 &
+    # The trap takes the watchdog's own sleep down with it, so cancelling it leaves no stray process.
+    ( sleep 20 & s=$!; trap 'kill "$s"; exit 0' TERM; wait "$s"; kill "$qpid" ) > /dev/null 2>&1 &
     qdog=$!
     wait "$qpid" 2>/dev/null || true
     kill "$qdog" 2>/dev/null || true; wait "$qdog" 2>/dev/null || true
@@ -488,6 +489,21 @@ for when in before after; do
   run test "$w/L-$when" -ef "$w/ldir-$when"
   check_status "A38 race link, $when: …the path does not point at the planted directory" 1 "$STATUS"
 done
+
+# --- review round 1: the temp is never more open than the target, and a caller's set -C is no refusal --
+w="$SANDBOX/r1"; mkdir -p "$w"
+printf 'secret\n' > "$w/p"; chmod 600 "$w/p"
+run bash -c "umask 022; . '$lib'
+  cp() { ls -l \"\$3\" | cut -c1-10 > '$w/seen'; command cp \"\$@\"; }
+  printf 'new\n' | keel_write_through '$w/p'"
+check_status "r1 write_through over a 0600 file under umask 022 → rc 0" 0 "$STATUS"
+check_eq "r1 …the temp is 0600 while cp -p fills it" "-rw-------" "$(cat "$w/seen" 2>/dev/null)"
+check_eq "r1 …and the file stays 0600" 600 "$(stat_portable_mode "$w/p")"
+printf 'old\n' > "$w/c"
+run bash -c "set -C; . '$lib'; printf 'n\n' | keel_write_replace '$w/g' && printf 'n\n' | keel_write_through '$w/fresh' \
+  && keel_backup_write_through '$w/c' printf 'new\n' && keel_write_state '$w/c' printf 'state\n'"
+check_status "r1 a caller under set -C: replace, a new-file EDIT, a backup-write and a STATE write → rc 0" 0 "$STATUS"
+check_eq "r1 …the backup holds the old content" 1 "$(grep -lx old "$w"/c.*.bak 2>/dev/null | grep -c . || true)"
 
 # --- A44: the lib's refusal carries the cause and CMD's status (round 2 B17) -------------------------
 w="$SANDBOX/a44"; mkdir -p "$w"
