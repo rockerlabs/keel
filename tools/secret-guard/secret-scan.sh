@@ -280,14 +280,11 @@ is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
 # or a failed `sort` — out as this function's own. Callers spool the output and check that status.
 # dir #740 (spec 746 B5): under a UTF-8 locale BSD and busybox grep stop matching a line at its first invalid
 # byte, so a key after a stray Latin-1 byte read clean. Class 1 and the personal pass P-C therefore run under
-# LC_ALL=C, which reads every byte; P-C's `-i` then folds ASCII only. A non-ASCII literal gets one more pass,
-# P-U, in the caller's locale (the only one that folds a Cyrillic literal across case), over a copy of the file with its
-# invalid UTF-8 removed by `iconv -c` — padded with newlines first, so a file ending in an incomplete sequence
-# still converts whole (unpadded, iconv exits 1 on macOS/glibc and truncates on musl). A sanitizer that fails
-# falls back to the file itself (the pre-746 behaviour), never to no pass. LC_ALL is never exported: each
-# `LC_ALL=C` is a per-command prefix. A line holding an invalid byte may be reported twice (raw and sanitized).
+# LC_ALL=C, which reads every byte; P-C's `-i` then folds ASCII only, so a non-ASCII literal gets one more
+# pass, P-U (pu_grep below). LC_ALL is never exported: each `LC_ALL=C` is a per-command prefix. A line holding
+# an invalid byte may be reported twice (raw and sanitized).
 match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = extra ERE ('' for none)
-  local flags="$1" f="$2" extra="${3:-}" u8 u8s
+  local flags="$1" f="$2" extra="${3:-}"
   {
     rc1=0; rc2=0; rc3=0
     # shellcheck disable=SC2086  # $flags intentionally word-split ('' → no extra flag)
@@ -295,22 +292,28 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
     if [ -n "$has_personal" ]; then
       # shellcheck disable=SC2086
       LC_ALL=C grep -aiE $flags -f "$personal_pat" "$f" 2>/dev/null || rc2=$?
-      if [ -n "$personal_nonascii" ]; then
-        u8="$f"; u8s=""
-        if command -v iconv >/dev/null 2>&1; then
-          u8s="$(spool)" || exit $?
-          u8="$u8s"
-          { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8s" 2>/dev/null || u8="$f"
-        fi
-        # shellcheck disable=SC2086
-        grep -aiE $flags -f "$personal_pat" "$u8" 2>/dev/null || rc3=$?
-        [ -z "$u8s" ] || rm -f "$u8s"
-      fi
+      [ -z "$personal_nonascii" ] || pu_grep "$flags" "$f" || rc3=$?
     fi
     [ "$rc1" -le 1 ] || exit "$rc1"
     [ "$rc2" -le 1 ] || exit "$rc2"
     [ "$rc3" -le 1 ] || exit "$rc3"
   } | LC_ALL=C sort -u
+}
+
+# pu_grep FLAGS FILE — P-U (dir #740, B5 (c)): the personal grep in the caller's locale, the only one that folds
+# a Cyrillic literal across case, over a copy of FILE with its invalid UTF-8 removed by `iconv -c` — padded with
+# newlines first, so a file ending in an incomplete sequence still converts whole (unpadded, iconv exits 1 on
+# macOS/glibc and truncates on musl); the padding adds lines after the last, so `-n` numbers hold. No iconv, or
+# a sanitizer that fails → FILE itself (the pre-746 behaviour), never no pass. Returns grep's status. One copy
+# at a time, overwritten in $SCRATCH: callers run one after another.
+pu_grep() {
+  local u8="$2"
+  if command -v iconv >/dev/null 2>&1; then
+    u8="$SCRATCH/u8"
+    { cat "$2"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null || u8="$2"
+  fi
+  # shellcheck disable=SC2086  # $1 intentionally word-split
+  grep -aiE $1 -f "$personal_pat" "$u8" 2>/dev/null
 }
 
 # fast-path hit count for one spooled scan FILE — the shared shape of every --range pre-check (blob
@@ -324,7 +327,7 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
 # dir #740 (B5): the same passes as match_text — class 1 and P-C under LC_ALL=C, then P-U (a non-ASCII
 # literal, the caller's locale, the sanitized copy) only while the count is still zero.
 count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 ('' for none)
-  local f="$1" extra="${2:-}" n rc=0 u8 u8s=""
+  local f="$1" extra="${2:-}" n rc=0
   n="$(LC_ALL=C grep -acE -e "${extra:+$extra|}$joined" "$f")" || rc=$?
   [ "$rc" -le 1 ] || return "$rc"
   if [ "${n:-0}" -eq 0 ] && [ -n "$has_personal" ]; then
@@ -332,14 +335,7 @@ count_matches() {  # $1 = file, $2 = extra case-sensitive ERE OR'd into class 1 
     [ "$rc" -le 1 ] || return "$rc"
   fi
   if [ "${n:-0}" -eq 0 ] && [ -n "$personal_nonascii" ]; then
-    u8="$f"
-    if command -v iconv >/dev/null 2>&1; then
-      u8s="$(spool)" || return $?
-      u8="$u8s"
-      { cat "$f"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8s" 2>/dev/null || u8="$f"
-    fi
-    n="$(grep -aciE -f "$personal_pat" "$u8")" || rc=$?
-    [ -z "$u8s" ] || rm -f "$u8s"
+    n="$(pu_grep -c "$f")" || rc=$?
     [ "$rc" -le 1 ] || return "$rc"
   fi
   printf '%s' "${n:-0}"
@@ -391,8 +387,8 @@ collect_matches() {
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
   # its caller's `||` turns errexit off in here (emit_file), so each read returns its own status
-  tmp="$(mktemp "$SCRATCH/blob.XXXXXX")" || return $?
-  dec="$(mktemp "$SCRATCH/blob.XXXXXX")" || return $?
+  tmp="$(spool)" || return $?
+  dec="$(spool)" || return $?
   cat > "$tmp" || return $?
   {
     LC_ALL=C tr -d '\000' < "$tmp" || exit $?; echo              # ASCII-range UTF-16, no deps

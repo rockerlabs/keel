@@ -152,12 +152,7 @@ EOF_PERSONAL
 # dir #746 (B7): decode_binary's built-in decoder runs only for a non-ASCII needle — a personal literal this
 # audit scans with, or a token (an ASCII one already survives the NUL-strip pass).
 decode_nonascii=""
-case "$personal_re" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
-if [ "${#tokens[@]}" -gt 0 ]; then
-  for t in "${tokens[@]}"; do
-    case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
-  done
-fi
+case "$personal_re${tokens[*]:-}" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
 
 # combined safe-email regex (built-ins + configured allow-email). Seed from the lib's own pre-joined
 # safe_email_re instead of re-deriving the SAFE_EMAILS join here too — dir #106 shared the pattern

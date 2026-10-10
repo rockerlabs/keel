@@ -2497,10 +2497,13 @@ check_contains "dir #715 A11: ...and the first key is reported" "$OUT" "$k1_715"
 # #148 parser twin (byte-identical to tools/lib/personal-literals.sh) and emit_blob's dir #681 decode
 # recipe. Exact coverage: the four needles below plus `read -r`; `local x="$(…)"` and `if ! cmd; then
 # rc=$?` are left to review. Prints each offending line as "N: text".
+# emit_blob's decode recipe, first and last line — also dir #746's T2 anchors
+blob_start715="LC_ALL=C tr -d '\\000' < \"\$tmp\" || exit \$?; echo"
+blob_end715="} | LC_ALL=C tr -d '\\000' > \"\$dec\" || return \$?"
 register715() {  # file
   P1='_personal_literals_parse_inline() {' \
-  D1="LC_ALL=C tr -d '\\000' < \"\$tmp\" || exit \$?; echo" \
-  D2="} | LC_ALL=C tr -d '\\000' > \"\$dec\" || return \$?" \
+  D1="$blob_start715" \
+  D2="$blob_end715" \
   awk '
     BEGIN { p1 = ENVIRON["P1"]; d1 = ENVIRON["D1"]; d2 = ENVIRON["D2"] }
     skip == 1 { if ($0 == "}") skip = 0; next }
@@ -2645,7 +2648,7 @@ check_contains "dir #746 A2: --selftest proves the malformed-regex guard on this
   "selftest: OK   — malformed personal regex fails CLOSED"
 
 # A3 (B3): two VALID back-reference lines are two patterns — joined, BSD grep found only the first.
-br746="$(printf 'aa\n' | grep -cE -e '(a)\1' 2>/dev/null)" || br746=0
+br746="$(match aa -cE -e '(a)\1' 2>/dev/null)" || br746=0
 if [ "$br746" = 1 ]; then
   mkdir "$d746/a3"
   printf '(a)\\1\n(b)\\1\n' > "$d746/p-a3"
@@ -2770,11 +2773,8 @@ for m746 in ok fail; do
   check_eq "dir #746 A7 ($m746): personal greps read one pattern file" 1 "$(match "$pats746" -c .)"
   check_eq "dir #746 A7 ($m746): ...inside an owner-only directory" "$(match "$(cat "$log746")" -c '^F ')" \
     "$(match "$(cat "$log746")" -c '^drwx------')"
-  if [ -n "$pats746" ] && [ ! -e "$pats746" ]; then
-    pass "dir #746 A7 ($m746): ...removed when the scan exits"
-  else
-    fail "dir #746 A7 ($m746): ...removed when the scan exits" "pattern file: ${pats746:-<none logged>}"
-  fi
+  check_ne "dir #746 A7 ($m746): ...its path is logged" "" "$pats746"
+  check_nofile "dir #746 A7 ($m746): ...removed when the scan exits" "$pats746"
 done
 printf '\n   \n\t\nseekritpersonname\n' > "$d746/p-a18"
 run_in "$d746/a7" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a18" "$scan" -- f.txt
@@ -2847,12 +2847,10 @@ check_contains "dir #746 A10: --selftest proves the decode resumes after an inva
 # A11 (B9, dir #681): each twin in tools/public-audit.sh is pinned to its twin here, never to a ref.
 pa746="$REPO_ROOT/tools/public-audit.sh"
 # T1: SESSION_META ↔ session_re
-check_eq "dir #746 A11 T1: one SESSION_META line in secret-scan.sh" 1 "$(grep -c "^SESSION_META='" "$scan")"
-check_eq "dir #746 A11 T1: one session_re line in public-audit.sh" 1 "$(grep -c "^session_re='" "$pa746")"
-sm746="$(sed -n "s/^SESSION_META='\(.*\)'\$/\1/p" "$scan")"
-check_ne "dir #746 A11 T1: SESSION_META's value is extracted" "" "$sm746"
-check_eq "dir #746 A11 T1: SESSION_META equals public-audit.sh's session_re" "$sm746" \
-  "$(sed -n "s/^session_re='\(.*\)'\$/\1/p" "$pa746")"
+check_count "dir #746 A11 T1: one SESSION_META line in secret-scan.sh" "$scan" "^SESSION_META='" 1
+check_count "dir #746 A11 T1: one session_re line in public-audit.sh" "$pa746" "^session_re='" 1
+check_block_equal "dir #746 A11 T1: SESSION_META equals public-audit.sh's session_re" \
+  "$(sed -n "s/^SESSION_META='\(.*\)'\$/\1/p" "$scan")" "$(sed -n "s/^session_re='\(.*\)'\$/\1/p" "$pa746")"
 # T2: the decode recipe, emit_blob ↔ decode_binary — from the anchor START through END (fixed strings, so
 # index(), not a BRE range), comment-only lines dropped, a trailing ` # …` comment and the outer whitespace
 # stripped, the two tools' variable names unified.
@@ -2872,12 +2870,10 @@ recipe746() {  # file start end
     }
   ' "$1"
 }
-ss746="$(recipe746 "$scan" "LC_ALL=C tr -d '\\000' < \"\$tmp\" || exit \$?; echo" \
-  "} | LC_ALL=C tr -d '\\000' > \"\$dec\" || return \$?")"
+ss746="$(recipe746 "$scan" "$blob_start715" "$blob_end715")"
 pp746="$(recipe746 "$pa746" "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" \
   "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
-check_ne "dir #746 A11 T2: emit_blob's recipe is found by its anchors" "" "$ss746"
-check_eq "dir #746 A11 T2: emit_blob's decode recipe equals public-audit.sh's decode_binary" "$ss746" "$pp746"
+check_block_equal "dir #746 A11 T2: emit_blob's decode recipe equals public-audit.sh's decode_binary" "$ss746" "$pp746"
 for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
   check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds four resuming iconv passes" 4 \
     "$(match "${t746#*:}" -c '^iconv -c -f ')"
@@ -2886,9 +2882,9 @@ for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
 done
 # T3: dir #725's predicate, its line and its one continuation line
 pred746='if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$PERSONAL_FILE" != /dev/null ]'
-check_eq "dir #746 A11 T3: one dir #725 predicate in secret-scan.sh" 1 "$(grep -cF -e "$pred746" "$scan")"
-check_eq "dir #746 A11 T3: one dir #725 predicate in public-audit.sh" 1 "$(grep -cF -e "$pred746" "$pa746")"
-check_eq "dir #746 A11 T3: the dir #725 predicate (both lines) equals public-audit.sh's" \
+pin_exact "dir #746 A11 T3: one dir #725 predicate in secret-scan.sh" "$scan" "$pred746" "the dir #725 predicate twin"
+pin_exact "dir #746 A11 T3: one dir #725 predicate in public-audit.sh" "$pa746" "$pred746" "the dir #725 predicate twin"
+check_block_equal "dir #746 A11 T3: the dir #725 predicate (both lines) equals public-audit.sh's" \
   "$(grep -F -A1 -e "$pred746" "$scan" | sed 's/^[[:space:]]*//')" \
   "$(grep -F -A1 -e "$pred746" "$pa746" | sed 's/^[[:space:]]*//')"
 
