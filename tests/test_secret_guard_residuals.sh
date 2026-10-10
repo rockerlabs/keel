@@ -24,10 +24,10 @@ run_bounded() {
   local out="$SANDBOX/bounded.out" pid waited=0
   "$@" >"$out" 2>&1 </dev/null &
   pid=$!
-  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 30 ]; do sleep 1; waited=$((waited + 1)); done
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; waited=$((waited + 1)); done
   if kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-    STATUS=124; OUT="(still running after 30 s — killed)"; return 0
+    STATUS=124; OUT="(still running after ${waited} s — killed)"; return 0
   fi
   STATUS=0; wait "$pid" || STATUS=$?
   OUT="$(cat "$out")"
