@@ -15,6 +15,15 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`tools/install-secret-guard.sh` writes by rename and claims its backups exclusively.** dir #684: every file it
+  places, and each safety copy, is staged and renamed into place, so a hard-linked hook's other name keeps its
+  bytes (it used to be written through); `--force`'s backup is claimed by an exclusive create — `<hook>.pre-keel.bak`,
+  then `.pre-keel.2.bak` and on — so a file that appears there mid-run is never overwritten, and a rollback restores
+  each hook from the name its own run claimed, executable as it was. A directory where a file is placed is refused
+  up front. dir #748 S4-1: a `core.hooksPath` set at any scope, the empty value included, is now treated as yours —
+  `--global` refuses it without `--force`, `--force` records and `--uninstall` restores the empty value, and a
+  `hooksPath` with no value at all is refused; `--where` gains `set=1|0` and `install.sh` reads it. Also dir #748
+  S4-2 (a stale comment) and S4-3 (a pin for `/` in `git-global-paths.sh`).
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
