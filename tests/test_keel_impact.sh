@@ -120,6 +120,57 @@ check_contains "a pipe inside --ticket is escaped in the table cell" "$(tail -1 
 run bash "$TOOL" add --fire "x" --gap none --ticket
 check_status "a bare --ticket with no value aborts (matches --gap/--asof/--since today)" 1 "$STATUS"
 
+# --- dir #732: the session column (attribution) and the `shape` verb --------------------------------
+# `add --session LABEL` attributes a row to the session it came from — a release manager scores each worker's
+# event block at its one wrap, and without this every row read as the manager's own. Additive: appended at the
+# END (dir #406's precedent), em dash when absent, table-safe like the ticket cell.
+run bash "$TOOL" add --fire "scored with no session" --gap none --ticket "dir #732"
+check_status "add with no --session succeeds" 0 "$STATUS"
+check_contains "no --session falls back to the em-dash sentinel, after the ticket cell" "$(tail -1 "$LEDGER")" "| dir #732 | — |"
+
+run bash "$TOOL" add --fire "scored for a worker" --gap none --ticket "dir #732" --session "W27"
+check_status "add --session succeeds" 0 "$STATUS"
+check_contains "the session label lands in the row's last cell, after the ticket" "$(tail -1 "$LEDGER")" "| dir #732 | W27 |"
+check_contains "the evidence block heading names the session" "$(cat "$EVIDENCE")" "(conf low) — session W27"
+
+run bash "$TOOL" add --fire "pipe in session" --gap none --session "w | 8"
+check_contains "a pipe inside --session is escaped in the table cell" "$(tail -1 "$LEDGER")" 'w \| 8'
+
+run bash "$TOOL" add --fire "x" --gap none --session
+check_status "a bare --session with no value aborts (matches --ticket)" 1 "$STATUS"
+
+# An on-disk ledger written BEFORE this column (13-cell header, 13-field rows) keeps working: the old row reads
+# an empty session, the new row lands as a 14th cell, and rollup still counts both (dir #406's additive precedent).
+legacy732="$SANDBOX/legacy732-ledger.md"
+{ printf '%s\n' '# Keel impact ledger' ''
+  printf '%s\n' '| date | score | conf | guard | hold | fire | hit | miss | fric | silent | evidence | gap (demote/promote) | ticket |'
+  printf '%s\n' '|------|-------|------|-------|------|------|-----|------|------|--------|----------|----------------------|--------|'
+  printf '%s\n' '| 2026-07-20 | 100 | low | 1 | 0 | 0 | 0 | 0 | 0 | 0 | an old cite | none | dir #1 |'
+} > "$legacy732"
+run env KEEL_IMPACT_LEDGER="$legacy732" bash "$TOOL" add --fire "scored after the column landed" --gap none --session W27
+check_status "add --session onto a 13-column ledger succeeds" 0 "$STATUS"
+check_eq "the legacy ledger now holds two data rows" 2 "$(grep -c '^| 20' "$legacy732")"
+check_contains "the new row's session lands as the 14th cell" "$(tail -1 "$legacy732")" "| — | W27 |"
+run env KEEL_IMPACT_LEDGER="$legacy732" bash "$TOOL" rollup
+check_status "rollup reads the mixed-width ledger" 0 "$STATUS"
+check_contains "rollup counts both rows" "$OUT" "impact ledger: 2 session(s)"
+
+# `shape` prints the vocabulary and ONE event line a checkpoint copies — no state, no repo, no flags needed.
+run bash "$TOOL" shape
+check_status "shape succeeds with no repo or store" 0 "$STATUS"
+for kind in hold guard fire hit miss friction silent; do
+  check_contains "shape names the kind: $kind" "$OUT" "$kind"
+done
+check_contains "shape shows the one-event form: kind, then a cite line" "$OUT" "hit — "
+check_contains "shape says a bare tally cannot be scored" "$OUT" "bare tally"
+check_contains "shape says the cite is the text after the dash, without the kind" "$OUT" "without the kind"
+check_contains "shape names the session flag" "$OUT" "--session"
+run bash "$TOOL" shape --bogus
+check_status "shape takes no arguments" 2 "$STATUS"
+run bash "$TOOL" --help
+check_contains "--help lists the shape verb" "$OUT" "keel-impact.sh shape"
+check_contains "--help documents --session" "$OUT" "--session"
+
 # --- validation --------------------------------------------------------------------------------
 # only --silent is a bare count now; a citation flag takes any string, so "-1" is a valid citation there
 run bash "$TOOL" add --silent -1 --gap x
@@ -599,6 +650,39 @@ ngdir_store="$KEEL_IMPACT_STORE/$(store_id_for "$ngdir")"
 run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$ngdir"
 check_status "enable on a not-yet-git dir still succeeds" 0 "$STATUS"
 check_dir "not-yet-git enable creates the store entry keyed by the dir as-is" "$ngdir_store"
+
+# --- dir #677: `enable` on a directory NESTED inside another repo refuses before any store write ------
+# `_impact_resolve_top` resolves upward by design (add/event/hooks need that from subdirectories and linked
+# worktrees), so a bare `enable ~/zone/site` used to enable the PARENT's root silently — dir #611's class,
+# outside init-project.sh. The guard lives in cmd_enable only; a non-empty `--show-prefix` means "not my own
+# toplevel" (a linked worktree's root has an empty one, so it still maps to its main checkout, above).
+nrepo="$(new_repo)"
+nrepo_real="$(cd "$nrepo" && pwd -P)"
+nrepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$nrepo")"
+mkdir -p "$nrepo/sub/deeper"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$nrepo/sub"
+check_status "dir #677: enable on a dir nested inside a repo → exit 2" 2 "$STATUS"
+check_contains "dir #677: the refusal names the parent repo" "$OUT" "inside the git repo at $nrepo_real"
+check_contains "dir #677: the refusal names the fix (enable the parent, or git init the nested dir)" "$OUT" "git init"
+check_nodir "dir #677: the parent gained no store entry" "$nrepo_store"
+check_nodir "dir #677: the nested dir gained no store entry" "$KEEL_IMPACT_STORE/$(store_id_for "$nrepo/sub")"
+run_in "$nrepo/sub/deeper" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable
+check_status "dir #677: argument-less enable from a subdirectory → exit 2 too" 2 "$STATUS"
+check_nodir "dir #677: ...and writes no store entry for the parent" "$nrepo_store"
+# the fix the refusal names works: a nested dir that IS its own repo enables as itself, not as the parent
+git init -q "$nrepo/sub" 2>/dev/null
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$nrepo/sub"
+check_status "dir #677: a nested dir that is its own repo enables" 0 "$STATUS"
+check_dir "dir #677: ...keyed by its own root" "$KEEL_IMPACT_STORE/$(store_id_for "$nrepo/sub")"
+check_nodir "dir #677: ...and the parent still has no entry" "$nrepo_store"
+# a subdirectory of a LINKED WORKTREE is refused too, but the worktree ROOT (above) still enables the main
+check_dir "dir #677: (fixture) the linked worktree from the enable-from-a-worktree case exists" "$wwt"
+mkdir -p "$wwt/subdir"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable "$wwt/subdir"
+check_status "dir #677: a subdirectory of a linked worktree → exit 2" 2 "$STATUS"
+check_contains "dir #677: ...naming the worktree root as the parent" "$OUT" "inside the git repo at $(cd "$wwt" && pwd -P)"
+check_nodir "dir #677: ...writing no store entry keyed by the subdirectory" "$KEEL_IMPACT_STORE/$(store_id_for "$wwt/subdir")"
+check_contains "dir #677: the refusal's copy-paste command quotes the parent path" "$OUT" 'keel-impact.sh enable "'
 
 # --- add/rollup refuse on a never-enabled repo (dir #251 §3 — the OLD silent docs/keel-impact.md
 # fallback is gone; a hard, named refusal replaces it) -----------------------------------------------
@@ -1768,7 +1852,7 @@ else
   fail "_ledger_stats delegates to _ledger_parse" "_ledger_stats no longer calls _ledger_parse — re-duplicated?"
 fi
 
-# --- dir #151: the ledger's 13 columns must come from ONE ordered array (_LEDGER_COLS), not be
+# --- dir #151: the ledger's columns must come from ONE ordered array (_LEDGER_COLS), not be
 # hand-listed independently by the writer (cmd_add), the reader (_ledger_parse), and the header
 # (_ledger_table_header). dir #107 unified the two READERS behind _ledger_parse; dir #131 then caught, but
 # didn't prevent, the WRITER (cmd_add's row-printf) drifting from it — both still hand-indexed the
@@ -1783,7 +1867,7 @@ fi
 # `n_cols -eq 13` count and `expect_pos`'s literal name:position pairs below PIN dir #151's actual
 # column list and positions as of this ticket, on purpose — a real column addition/reorder SHOULD fail
 # them until this file is updated to match, the same way it should fail any other spec-pinning test.
-# dir #406 bumped 12 -> 13, appending `ticket` at the END (never inserted) — see _LEDGER_COLS' own
+# dir #732 bumped 13 -> 14, appending `session` at the END the same way. dir #406 bumped 12 -> 13, appending `ticket` at the END (never inserted) — see _LEDGER_COLS' own
 # comment in the tool for why appending, not inserting, is what keeps every OTHER column's position
 # (and every existing on-disk row) unaffected.
 ledger_cols_line="$(grep -n '^_LEDGER_COLS=(' "$TOOL" | head -1 | cut -d: -f1)"
@@ -1793,10 +1877,10 @@ else
   eval "$(sed -n "${ledger_cols_line}p" "$TOOL")"
   n_cols="${#_LEDGER_COLS[@]}"
 
-  if [ "$n_cols" -eq 13 ]; then
-    pass "_LEDGER_COLS has the ledger's 13 columns (dir #406 added ticket)"
+  if [ "$n_cols" -eq 14 ]; then
+    pass "_LEDGER_COLS has the ledger's 14 columns (dir #732 added session)"
   else
-    fail "_LEDGER_COLS has the ledger's 13 columns (dir #406 added ticket)" "found $n_cols: ${_LEDGER_COLS[*]:-<none>}"
+    fail "_LEDGER_COLS has the ledger's 14 columns (dir #732 added session)" "found $n_cols: ${_LEDGER_COLS[*]:-<none>}"
   fi
 
   # _ledger_col_pos (the reader-side lookup) must actually answer from the array, not a parallel
@@ -1805,7 +1889,7 @@ else
   pos_fn="$(sed -n '/^_ledger_col_pos() {/,/^}/p' "$TOOL")"
   eval "$pos_fn"
   pos_ok=1
-  expect_pos=(date:2 score:3 conf:4 guard:5 hold:6 fire:7 hit:8 miss:9 fric:10 silent:11 evidence:12 gap:13 ticket:14)
+  expect_pos=(date:2 score:3 conf:4 guard:5 hold:6 fire:7 hit:8 miss:9 fric:10 silent:11 evidence:12 gap:13 ticket:14 session:15)
   for pair in "${expect_pos[@]}"; do
     col="${pair%%:*}"; want="${pair#*:}"
     got="$(_ledger_col_pos "$col" 2>/dev/null || true)"

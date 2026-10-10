@@ -35,11 +35,12 @@
 #      tour.sh's step() helper prints a blank line before EVERY heading, including the first; a Markdown
 #      code fence pasted from a terminal naturally starts at the first real line of output, not a
 #      blank one, so this drops only that one leading artifact and nothing else.
-#   5. Host-grep-capability variance in install-secret-guard.sh's own selftest (confirmed live on
-#      Alpine/BusyBox, the CI matrix's third leg): secret-scan.sh's selftest() probes whether this
-#      host's `grep -E` flags a malformed ERE (see its own comment there) — GNU/BSD grep does, so the
-#      probe prints an indented "OK — malformed personal regex fails CLOSED" line; BusyBox grep
-#      doesn't, so it prints an unindented "WARN — this grep does not flag a malformed ERE..." line
+#   5. Host-grep-capability variance in install-secret-guard.sh's own selftest: secret-scan.sh's
+#      selftest() probes whether this host's `grep -E` flags a malformed ERE (see its own comment
+#      there) — GNU, BSD and BusyBox grep all do once the probe feeds them an input line (dir #746:
+#      BusyBox compiles a pattern only when it reads input), so the probe prints an indented
+#      "OK — malformed personal regex fails CLOSED" line; a grep that truly accepts one prints an
+#      unindented "WARN — this grep does not flag a malformed ERE..." line
 #      to stderr INSTEAD, which — because it's unbuffered stderr racing a buffered stdout pipe
 #      (`| sed 's/^/  /'` in install-secret-guard.sh) — lands at a different position in the captured
 #      transcript entirely. This is the tool honestly reporting a host capability, not the tool's

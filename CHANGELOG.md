@@ -15,12 +15,133 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
-- **Three review-and-autonomy rails, adapted from a public gated motion-design harness prompt.** `/polish`
-  step 10's summary names every fixed finding as `file:line` and what changed, never a bare "addressed".
-  `docs/verification-economics.md` §7 treats the operator's own review as the last net: an error it finds
-  that nothing caught earns a check one layer up; a taste note goes into the project's conventions only
-  if it recurs, never into a check. `/go` stops for an operator-only obstacle only if it blocks every
-  remaining step; otherwise it marks that step unverified and finishes the rest.
+- **`/polish` step 5: the K2 review subagent quotes the skill's first line after `Result:`, and a bare `(none)` is clean only at `low`.**
+  dir #736: a forked `/code-review` that returned a bare `(none)` read as a clean pass, though no review body
+  existed to tell a clean run from an empty one. `(none)` is the `low` recipe's own clean output (all 8 bare
+  results in the transcripts came from `low` forks that had read the diff), so no new void case is added:
+  the subagent now writes `0 findings` and quotes that line, an empty or error quote is void, and so is
+  `(none)` unless it is a `low` review stating `0 findings`. A reply carrying dir #675's floor deny and no findings list is void too.
+  The load-the-guide instruction is now stated once, in **The guide.**, and steps 1, 2, 4 and 5 point to
+  "the guide, § Step N" (`commands/polish.md` 2,996 → 2,993 words). dir #711: no new pointer is added for
+  steps 3, 6, 7 or 10 (each is already reached); the guide's preamble and `docs/loading-and-cost.md` no
+  longer call its text "unchanged" or "the whole text of its step", and `docs/release-audit.md` names the
+  guide as the open-FLOOR file that grows. dir #745: the core's intro names the push-bypass deny
+  (`git push --no-verify`) and its header comment says only the gate's blocks are inert when unwired.
+
+- **The installers' write library no longer acts and then fails, and never follows a planted temp name.**
+  Keel's own state files (the install manifest, the foreign-core marker, the gate's manifest and the checkout
+  ledger) are now written as a STATE write: a hard-linked one is split, so the other name keeps the old bytes,
+  and a re-install over a hard-linked manifest records what it placed and exits 0 instead of exiting 1 with
+  the files unrecorded and the run lock left behind. A backup and the write it guards are one call
+  (`keel_backup_write_through`): a block refresh or a hook installer's `--uninstall`/`--force` over a
+  hard-linked file is refused before any backup, so no orphan `.bak` is left. The library derives the Keel
+  checkout from its own path, so a consumer can no longer skip the "never edit through a link into the
+  checkout" rule by forgetting to name it. The temp name `<file>.keeltmp.<pid>` is cleared and claimed by an
+  exclusive create, so a link planted there can no longer turn the target into a link or receive its
+  content. Each refusal is one line that carries the failing command's own error or a CMD's exit status
+  (dir #756, dir #755).
+- **A no-op hook re-run leaves `settings.json` alone, and linked mode's import line is an edit.** A re-run of
+  `install-pre-pr-gate.sh`, `install-read-trace.sh` or `install-machine-watch.sh` whose every hook is already
+  wired no longer rewrites `settings.json`, so it exits 0 over a hard-linked one. Linked mode's import line
+  goes through the same edit rule: a `CLAUDE.md` linked into the Keel checkout is refused instead of having
+  the line appended to a tracked file, and repeated link-mode install/uninstall cycles no longer add a blank
+  line each time (dir #748).
+- **`tools/public-audit.sh` never prints "no publication blockers found" over a read it could not complete.**
+  dir #738: a corrupt index or a failing `git log`/`cat-file`/`fetch` read as a clean audit (the git reads and
+  greps discarded their status). Every git read and grep now spools its output under a checked status; a
+  failure is a GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit
+  goes on, and the exit is 1. The content-reading `git log`s pass `--text --no-textconv --no-ext-diff` (a `-diff`
+  attribute or a textconv driver hid a literal from history), the history spools are NUL-stripped, a repository
+  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed. dir #746:
+  `public-audit.sh` on a directory that is not a git repository (or when `mktemp` fails) now exits 2 instead of
+  scanning nothing — so `keel audit` run from a non-git directory exits 2. dir #694, dir #740: the personal
+  literals are read from a pattern file, one pattern per line (two literals never fuse into one ERE), the byte
+  greps run under `LC_ALL=C`, and a non-ASCII literal or token gets a second pass in the caller's locale over a
+  UTF-8-sanitized copy, so a literal after an invalid byte is still found (a non-ASCII token with a bracket
+  expression can now also match raw bytes under the `LC_ALL=C` pass — it over-blocks, never under-blocks).
+- **`secret-scan.sh` reads every byte it reports on and matches each personal literal as written.** Personal
+  literals now reach grep as a pattern file, one pattern per line, so two lines can no longer fuse into one
+  pattern that matches neither (`zorb[` + `plugh]`), and the validity probe reads one input line, which busybox
+  grep needs before it rejects a malformed pattern (dir #694). A literal or an allowlist pattern starting with
+  `-` is a pattern, never a grep option: an allow entry `-e.` exempted every key (dir #746). Under a UTF-8 locale,
+  BSD and busybox grep stopped matching a line at its first invalid byte, so a key after a stray Latin-1 byte
+  read clean: key shapes and the allowlist now match bytes under `LC_ALL=C`, and personal literals run once
+  there and once in your locale over a copy cleaned of invalid UTF-8 (dir #740). A NUL past the first 8000
+  bytes of a staged text file no longer hides the rest of its line, and the binary decode resumes after an
+  invalid UTF-16/UTF-32 unit (iconv `-c`, or a built-in decoder where the host's iconv cannot, as on musl);
+  `--selftest` proves it with a new probe line. `public-audit.sh`'s decode is the same recipe, and each of the
+  three twins the two tools share is now pinned to its twin by a test (dir #681). Upgrading: re-vendor the
+  scanner into each repo (`tools/install-secret-guard.sh <repo>`); an allowlist pattern holding a non-ASCII
+  character with `.` or a bracket now matches bytes, so it may stop exempting a line — it can only block more.
+- **`tools/keel-impact.sh enable` refuses a directory nested inside another repo (dir #677).** `enable DIR` resolved
+  the store key upward, so a path like `~/zone/repos/site` inside a parent repo silently enabled the PARENT's root, the
+  class dir #611 closed for `init-project.sh`. It now exits 2 before any store write, naming the parent and the two
+  fixes (`git init` the nested directory, or enable the parent); a linked worktree's root still enables its main
+  checkout, and a bare `enable` from a subdirectory is refused too. The guard lives in `enable` only: `add`, `event`
+  and the hooks keep resolving upward from subdirectories.
+- **`doctor` H-FOOTPRINT sums the `MEMORY.md` index and honours a live `## Footprint exceptions` row.**
+  The figure now counts the project `CLAUDE.md`, the resolved global `CLAUDE.md` and the harness's `MEMORY.md`
+  index (all loaded every session) and names the three separately. The default budget rises from 10000 to
+  16000 tokens (`KEEL_STARTUP_WARN_TOKENS`) so an index like keel's own, measured at 5.8k tokens, does not
+  newly flag a project that was inside the old budget (dir #686). A dated
+  `| Expires (YYYY-MM-DD) | Ticket/note |` row under `## Footprint exceptions` in the
+  project's `CLAUDE.md` silences the hint through its expiry day; an expired row is flagged EXPIRED on the
+  hint (dir #687). `/wrap` step 4's sentence that the doctor ignores the row is corrected.
+- **`tools/install-secret-guard.sh` writes by rename and claims its backups exclusively.** dir #684: every file it
+  places, and each safety copy, is staged and renamed into place, so a hard-linked hook's other name keeps its
+  bytes (it used to be written through); `--force`'s backup is claimed by an exclusive create — `<hook>.pre-keel.bak`,
+  then `.pre-keel.2.bak` and on — so a file that appears there mid-run is never overwritten, and a rollback restores
+  each hook from the name its own run claimed, executable as it was. A directory where a file is placed is refused
+  up front. dir #748 S4-1: a `core.hooksPath` set at any scope, the empty value included, is now treated as yours —
+  `--global` refuses it without `--force`, `--force` records and `--uninstall` restores the empty value, and a
+  `hooksPath` with no value at all is refused; `--where` gains `set=1|0` and `install.sh` reads it. Also dir #748
+  S4-2 (a stale comment) and S4-3 (a pin for `/` in `git-global-paths.sh`).
+- **`/go` step 4 now says what to do about a ticket another worktree has checked out.** dir #696: git refuses a
+  second checkout of a branch, so "offer to continue it" had no mechanism and step 5 then adopted an empty fresh
+  branch as the ticket's. Step 4 finds the checkout with `worktree list --porcelain`, reports its path and
+  uncommitted-file count, and offers resume there (writing and claiming nothing), a fresh branch, or another
+  ticket; a deleted or moved directory is offered `git worktree remove <path>`. The implementer guide's handoff-note
+  step points at that offer once per session instead of restating a variant of it.
+- **`tests/test_env_census.sh` now covers the environment names a tool reads under a non-`KEEL_` spelling.**
+  dir #704: the census derived and neutralized only `KEEL_*`, so an operator's exported `AGY_BIN` / `AGY_MODEL`
+  (the vendor-review client), `SECRET_SCAN_LOCAL_PUSH`, `GITHUB_EVENT_NAME`, `DRYDOCK_*`, `EDITOR` and the like
+  reached the suite. It now also derives every default-expansion / `ENVIRON` / `printenv` read of an
+  UPPER_CASE name, and any credential-shaped name (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`), from the
+  shipped scripts and proves, in a child that sources `tests/lib.sh` with each one poisoned, that none
+  survives (only `PATH` and `TMPDIR` are exempt, with reasons); `tests/lib.sh` unsets the 27 it found. A
+  self-default assignment (`AGY_BIN="${AGY_BIN:-d}"`) now counts as a read in the `KEEL_*` half too.
+- **`examples/tour.sh` and `docs/demo/record-demo.sh` no longer read the operator's git config through `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_PARAMETERS` or `GIT_CONFIG_SYSTEM`, and guard their sandbox right after `mktemp` (dir #753).** Both demos
+  redirected HOME and `GIT_CONFIG_GLOBAL` but not the rest of git's config surface: an ambient
+  `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` triple, a parent `git -c` (`GIT_CONFIG_PARAMETERS`) or `GIT_CONFIG_SYSTEM`
+  carrying `core.hooksPath=/dev/null` turned the tour's guard step into "commit succeeded". Both now unset the three
+  (the stock `/etc/gitconfig` stays readable: CI's `safe.directory` entry lives there). The tour had no `$sandbox`
+  emptiness guard at all and `record-demo.sh`'s ran after its first writes, so a failed `mktemp` left
+  `"$sandbox/home"` as `/home`; both now guard on the line right after `mktemp`, and `record-demo.sh`'s outer mode
+  guards its `$castdir` too. `tests/test_sandbox_escapes.sh` pins the three env routes (behaviourally for the tour,
+  by a `git` shim for both demos) and the guard order.
+- **`tools/self/value-claim-lint.sh` flags a groom plan's value claim that names no subject set.**
+  dir #672: five grooms running, G6's top finding was a value-claim cell not bound to its slate, and the prose
+  rule in `docs/grooming.md` G5 did not prevent the repeat. Run before G6, it reads a `RELEASES.md` plan
+  section and flags each value-claim table row or `**Value claims**` bullet carrying none of G5's forms: a
+  `Subject set:` clause, a `Residue:` clause (G5's third part), `no claim`, or `no subject set — <why>`. Advisory:
+  it always exits 0, and a clean run means a form is present, not that the set is right.
+- **`tests/test_git_env_guard.sh` closes dir #661's residuals.** The guard detector no longer reads a shift after a
+  parenthesised operand (`$(( (1+2) << n ))`) or a `<<WORD` inside a comment or quoted string as a heredoc opener
+  (each has a passing fixture, and a real opener after a quoted `<<` still hides its body); the GIT_NAMESPACE clone
+  assertion gains a control that clones the same repo without the variable; the `env -u` pin names the missing or
+  extra variable; `tests/lib.sh` states the clone effect of the GIT_NAMESPACE unset (dir #712).
+- **`tools/self/session-cost.sh tail` prints a coverage line.** Each session in the human form now ends with `coverage: <session> pr-create=<n> closed-windows=<m> outside-any-window=<k>` and the URL of each successful `gh pr create` that closed no window, so a PR the window walk loses shows itself in the tool's own output instead of needing a separate script; `--json` stays one object per window, with a new `closed_by` field (dir #737).
+- **`docs/release-management.md` R3 names both launch paths, and R13 and `commands/manage-release.md` agree; `tools/keel-impact.sh` prints the one-event shape and attributes a score to a session.**
+  dir #732: R3 said the manager "cannot preset" a worker's model, but a direct launch (`start_session`)
+  presets model and effort (the 0.14.0 release's FIX and CUT workers ran Sonnet from turn 1) while a task
+  chip leaves them to the operator (the chips ran Opus on 3 of 6) — R3 and its `docs/delegation.md`
+  cross-reference now name both paths and require verifying the running tier on either. `manage-release.md`'s
+  closing paragraph said workers carry the DELEGATION RUN line; R13 says the `WRAP CENTRALIZED` marker, and
+  the paragraph now agrees (M9 also asks for cited events, not an "event-count block"). Tool half:
+  `keel-impact.sh shape` prints the event kinds and the one line a checkpoint copies, and `add --session
+  <worker id>` records the session a score came from in a new last ledger column (older rows read `—`), so a
+  manager's one wrap can score every worker, not only itself.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode
@@ -36,6 +157,13 @@ sections real content going forward — see that page for exactly when each one 
   the verbatim Worker rails block, a leg writes only under its own scratch subdirectory and never stops, kills or
   removes a container, process or file it did not create; the cut-and-land step says a history entry states only
   events already on record. `tests/test_delta_audit_doc.sh` pins the leg rails byte-identical across the five copies.
+- **`tools/read-trace.sh aggregate` says when its empty table is permanent.** A repository holding nothing the trace's scope (`docs/*`, `commands/*.md`, `BACKLOG.md`) can see now gets one "nothing in this repository is in the trace's scope" line before the table, in the slot of the lost/moved lines, instead of an empty table identical to a project nobody has opened yet (dir #706).
+- **`tools/self/alpine-clone.sh` no longer resets and cleans through a symlink.** dir #750: with the clone path a
+  symlink, `checkout -f -B` and `clean -ffdx` ran on whatever it pointed at (reproduced on an operator clone and
+  on the source checkout itself). Before any git write the tool now refuses a symlinked clone path, a clone
+  path that is the source directory (same device and inode, also through a symlinked ancestor) and a clone whose
+  `.git` is a symlink. The "`.git` not at its root" refusal, which only an incidental `find` abort had been
+  backing, is pinned by a test.
 - **`docs/grooming.md` G5: price the audit from its own session, and state the estimate in window points.**
   An audit priced as its own line takes the previous audit session's measured total, orchestrator and legs
   together, and that total comes off the release total before the per-unit division. Where the operator's
@@ -45,6 +173,20 @@ sections real content going forward — see that page for exactly when each one 
 - **`docs/release-management.md` R13: the brief shows one cited event.** Naming the scoring tool's event
   kinds was not enough: most workers still reported bare tallies, which the tool cannot score. The brief's
   fixed line now carries the shape of one cited event beside the list of kinds.
+- **`tools/go-handoff.sh write` no longer hangs on a closed stdin, and its two guards are now bound by tests.**
+  dir #691: started with fd 0 closed (`<&-`), the helper waited on its own pipe forever (bash 3.2 and 5.2);
+  it now treats a closed stdin as an empty one and refuses with exit 2. `tests/test_go_handoff.sh` binds the
+  200-byte ticket bound (200 accepted, 201 refused) and the `head:` hex guard (a valid non-hex ref reads
+  `unrelated`), which the suite previously survived without. Copy mode having no handoff note is now stated as
+  a decided limit (the helper header, `FRAMEWORK.md`, `IDEAS.md`), not a candidate gap.
+- **A re-runnable mutation sweep, and the pre-PR gate's push-rule tests hardened to kill every mutant.**
+  dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
+  file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
+  CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
+  `tests/mutants/pre-pr-gate.tsv` lists 46 mutants of the bypassed-push deny; the dir #731 A18 block moved to
+  `tests/test_pre_pr_gate_lexer.sh` kills 29 of them before this change and all 46 after (17 new deny forms, and
+  every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
+  `commands/polish-guide.md` § Step 9 cite itself.
 
 ## [0.15.0] — 2026-10-09
 

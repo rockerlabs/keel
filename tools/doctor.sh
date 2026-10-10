@@ -81,10 +81,11 @@
 #   HINT  H-DENY-ENV           (--install, Claude Code only) the Read deny globs for env files are
 #                              missing from the machine-global settings.json — see the install note below
 #   HINT  H-FOOTPRINT         session startup footprint (project CLAUDE.md + resolved global
-#                              CLAUDE.md/keel/CORE.md) over budget (KEEL_STARTUP_WARN_TOKENS, 10000).
-#                              A KNOWN UNDERCOUNT: the harness's MEMORY.md index loads every session
-#                              too and is NOT summed (a budget decision of its own, dir #686 — dir #521
-#                              left the figure and its message unchanged on purpose)
+#                              CLAUDE.md/keel/CORE.md + the harness's MEMORY.md index, all loaded every
+#                              session) over budget (KEEL_STARTUP_WARN_TOKENS, 16000 — the old 10000
+#                              plus ~6000 for the index, dir #686). A live `## Footprint exceptions` row
+#                              in the project's CLAUDE.md silences it until its expiry; an EXPIRED row
+#                              is flagged on the hint instead (dir #687)
 #   WARN  W-MEMORY-ORPHAN      a top-level *.md in the harness memory dir that no MEMORY.md line
 #                              links — unreachable by recall, invisible to every session (dir #521)
 #   WARN  W-MEMORY-DANGLING    a MEMORY.md link whose target file does not exist
@@ -204,8 +205,11 @@ if [ "$INSTALL_MODE" = 0 ]; then
 fi
 
 # Sanitized (dir #196 — see tools/lib/nonneg-int.sh): a non-numeric OR overflowing override falls back
-# to 10000 rather than crashing the later `-gt` token-count comparison (no `[: integer expected`).
-WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-10000}" 10000)"
+# to 16000 rather than crashing the later `-gt` token-count comparison (no `[: integer expected`).
+# dir #686: 16000 = the former 10000 + ~6000 for the MEMORY.md index now summed in. keel's own index measured
+# 5.8k tokens (2026-10-05), so ~6000 keeps a project with an index of that size, and inside the old budget,
+# from being newly flagged merely because the index is now counted; a larger index is real startup cost.
+WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-16000}" 16000)"
 exit_code=0
 
 # The @import line's own detection regex — mirror of install.sh's has_core_import() — used twice
@@ -1307,6 +1311,32 @@ _mem_note_date() {
   if [[ "$nd" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then printf '%s mtime' "$nd"; fi
   return 0
 }
+# dir #687: the project's own `## Footprint exceptions` row — `| Expires (YYYY-MM-DD) | Ticket/note |` —
+# mirroring claude-kb's parse_project_footprint_exception. $1 = the CLAUDE.md → "<date>	<note>" for its
+# LAST row (a renewal supersedes an old row without deleting it); nothing when the file or section is
+# absent. The section closes on any heading; the header row (any case) and an aligned separator are
+# skipped; a date that is not YYYY-MM-DD prints empty so it can never compare as live.
+_footprint_exception() {
+  [ -f "$1" ] || return 0
+  awk '
+    { sub(/\r$/, "") }
+    /^## Footprint exceptions([^A-Za-z0-9_-]|$)/ { insec=1; next }
+    insec && /^#/ { insec=0 }
+    insec && /^\|/ && tolower($0) !~ /^\| *expires/ && $0 !~ /^\|[-:| ]+\|$/ { last=$0 }
+    END { if (last != "") print last }
+  ' "$1" 2>/dev/null | awk -F'|' '
+    {
+      xdate=$2; gsub(/^[ \t]+|[ \t]+$/, "", xdate)
+      note=$3;  gsub(/^[ \t]+|[ \t]+$/, "", note)
+      if (xdate !~ /^[0-9][0-9][0-9][0-9]-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/) xdate=""
+      print xdate "\t" note
+    }
+  ' || true
+}
+# dir #686: the MEMORY.md index loads every session, so H-FOOTPRINT sums it. memory_checks resolves the
+# memory dir already; it records the index size here (reset to 0 per unit by the caller, left 0 when no
+# memory dir resolves) so the footprint figure reuses that resolution instead of repeating it.
+mem_index_chars=0
 memory_checks() {
   local d="$1" mem="" mem_real="" enc="" dabs="" dphys="" cand
   local index_text="" f base line t before after tgt
@@ -1337,7 +1367,10 @@ memory_checks() {
   mem_real="$(cd -P "$mem" 2>/dev/null && pwd -P)" || return 0
   say "  memory dir: $mem"
 
-  if [ -f "$mem_real/MEMORY.md" ]; then index_text="$(cat "$mem_real/MEMORY.md" 2>/dev/null || true)"; fi
+  if [ -f "$mem_real/MEMORY.md" ]; then
+    index_text="$(cat "$mem_real/MEMORY.md" 2>/dev/null || true)"
+    mem_index_chars="$(_char_count "$mem_real/MEMORY.md")"
+  fi
 
   # A.2 — orphan: the (<file>.md) span anywhere on any index line is the whole link grammar.
   for f in "$mem_real"/*.md; do
@@ -1413,6 +1446,12 @@ for d in "${DIRS[@]}"; do
     gap G-GIT-MISSING "not a git repo (git init + a feature-branch flow — see FRAMEWORK.md)"
   fi
 
+  # dir #521: the memory dir MEMORY.md loads from every session — report orphans, dangling/superseded
+  # index lines, stale notes. Silent when the dir is absent; never edits a memory file. Runs BEFORE the
+  # footprint block below (dir #686): it records the index size H-FOOTPRINT sums in.
+  mem_index_chars=0
+  memory_checks "$d"
+
   if [ ! -f "$d/CLAUDE.md" ]; then
     if _ignored "$d" CLAUDE.md; then
       # CLAUDE.md is gitignored (a private-fork or a "mechanism" repo like Keel itself), so a fresh
@@ -1426,15 +1465,28 @@ for d in "${DIRS[@]}"; do
     # findings are buffered until this unit's flush_notes, so a read failure here must not take down
     # anything already recorded for this unit — including a GAP — before it ever prints.
     proj_est=$(( $(_char_count "$d/CLAUDE.md") / 4 ))
-    est=$(( proj_est + global_est ))
+    mem_est=$(( mem_index_chars / 4 ))
+    est=$(( proj_est + global_est + mem_est ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
-      hint H-FOOTPRINT "session startup footprint ~${est} tokens (project ~${proj_est} + global ~${global_est}) > budget ${WARN_TOKENS} — move project detail to the on-demand tier (P2/P3)"
+      fp_msg="session startup footprint ~${est} tokens (project ~${proj_est} + global ~${global_est} + memory ~${mem_est}) > budget ${WARN_TOKENS}"
+      # dir #687: the project's own dated exception row. Live (inclusive of its expiry day) → said, not
+      # hinted; EXPIRED → the hint, flagged so it reads apart from a project nobody ever decided about.
+      fp_exc="$(_footprint_exception "$d/CLAUDE.md")"
+      fp_date="$(printf '%s' "$fp_exc" | cut -f1)"
+      fp_note="$(printf '%s' "$fp_exc" | cut -f2)"
+      [ "${#fp_note}" -gt 80 ] && fp_note="${fp_note:0:80}…"
+      [ -n "$fp_note" ] || fp_note="no ticket named"
+      if [ -n "$fp_date" ] && ! [[ "$fp_date" < "$(date +%Y-%m-%d)" ]]; then
+        say "  footprint over budget, acknowledged until ${fp_date} (${fp_note}): ${fp_msg}"
+      elif [ -n "$fp_date" ]; then
+        hint H-FOOTPRINT "${fp_msg} — the Footprint exceptions row EXPIRED ${fp_date} (${fp_note}): trim, or renew the row with a new date and a ticket"
+      elif [ -n "$fp_exc" ]; then
+        hint H-FOOTPRINT "${fp_msg} — the Footprint exceptions row has no valid YYYY-MM-DD date, so it covers nothing: fix the date, or trim"
+      else
+        hint H-FOOTPRINT "${fp_msg} — move project detail to the on-demand tier (P2/P3)"
+      fi
     fi
   fi
-
-  # dir #521: the memory dir MEMORY.md loads from every session — report orphans, dangling/superseded
-  # index lines, stale notes. Silent when the dir is absent; never edits a memory file.
-  memory_checks "$d"
 
   # Private AI context (CLAUDE.md, .claude/) — three outcomes, told apart because each needs a different
   # response. TRACKED: already committed, which is the harm the ignore rule exists to prevent; an ignore

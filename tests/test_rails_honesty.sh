@@ -18,7 +18,7 @@ going="$REPO_ROOT/docs/going-public.md"
 go="$REPO_ROOT/commands/go.md"
 wrap="$REPO_ROOT/commands/wrap.md"
 # dir #670 (K1, slice 3): commands/polish.md is now a condensed core, and every pre-split paragraph lives,
-# unchanged, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
+# amended in place, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
 # GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
 guide="$REPO_ROOT/commands/polish-guide.md"
 readme="$REPO_ROOT/README.md"
@@ -273,7 +273,8 @@ pin "A14: getting-started.md tells existing adopters to re-run both installers" 
   'after a pull re-run `install.sh` and `tools/install-pre-pr-gate.sh`' "expected the re-run-both-installers instruction (dir #413)"
 check_absent "A14: docs/reference.md no longer says the agent ships inert (the flip landed)" \
   "$(cat "$REPO_ROOT/docs/reference.md")" 'ships inert'
+# CHANGELOG.md plus the changelog.d/ fragments (dir #744): a bullet may still be a fragment.
 check_absent "A14: the slice-1 CHANGELOG bullet no longer says inert until a later release" \
-  "$(cat "$REPO_ROOT/CHANGELOG.md")" 'It is inert until a later release'
+  "$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'It is inert until a later release'
 
 summary

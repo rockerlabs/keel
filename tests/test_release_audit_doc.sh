@@ -173,6 +173,11 @@ pin "release-audit.md phase 7 names the CHANGELOG section as a source with two d
 pin "release-audit.md phase 7 cites §4 and polish-guide.md § Step 9 rather than restating either rule" \
   "$audit" 'this phase doesn'"'"'t restate either' \
   "expected phase 7's derivatives sentence to cite publishing-checklist.md §4 and commands/polish-guide.md § Step 9, not restate them"
+# dir #745 A6 (S7-3): the pin above binds the "doesn't restate" clause, not the cite itself — re-pointing the
+# cite to `commands/polish.md` step 9 left it green. This one binds the cite (one line there; a byte match on §).
+pin "release-audit.md phase 7 cites commands/polish-guide.md § Step 9 itself, not only the 'doesn't restate' clause" \
+  "$audit" '`commands/polish-guide.md` § Step 9' \
+  "expected phase 7 to keep the cite \`commands/polish-guide.md\` § Step 9 (the PR-body rule's home, dir #745 S7-3)"
 
 # --- dir #249: phase 8 enforces that a delta-audit run is recorded, or the enforcement decays the
 # same way the ticket's own felt incident did — pin the phase so a later edit can't silently drop or
@@ -198,5 +203,12 @@ pin "release-audit.md phase 8 states the public-rollup question is resolved, wit
 pin "release-audit.md phase 8 points at release-history.md's block, doesn't restate its fields" \
   "$audit" '[`docs/release-history.md`](release-history.md), written by' \
   "expected phase 8 to point at the verification block's home, not restate its field list (dir #268 §4.2: 'Point, do not restate')"
+
+# --- dir #744 A6 / B7: Phase 7's cut paragraph names the fragment cut and the combined cite read ----------
+cut_para="$(awk '/^\*\*The order is: cut, land, then tag/{p=1} p&&/^$/{exit} p' "$audit")"
+check_contains "Phase 7's cut paragraph names changelog.d" "$cut_para" "changelog.d"
+check_contains "Phase 7's cut paragraph names the one cut command" "$cut_para" "tools/self/changelog-cut.sh"
+check_contains "Phase 7's cut paragraph tells a cite check to read the fragment reader's output too" "$cut_para" "tools/self/changelog-fragments.sh"
+check_contains "Phase 7's cut paragraph keeps the no-test-may-pin-it rule" "$cut_para" "no test may pin"
 
 summary

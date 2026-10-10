@@ -169,6 +169,11 @@ needle_rules=(
   "dir #668 C-c: marker placement"
   "dir #668 C-d: bullet 2"
   "dir #668 C-e: bullet 3"
+  "dir #696 B6: sibling lookup by porcelain"
+  "dir #696 B6: prunable entry is removed, not pruned"
+  "dir #696 B6: resume there is an offer, not a write"
+  "dir #696 B6: the successor writes and claims nothing"
+  "dir #696 B6: the count is read from the sibling's path"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -212,6 +217,11 @@ needle_texts=(
   "after the marker's closing parenthesis, never inside it"
   "already holds this ticket's commits, or that its claim marker names"
   "a fresh worktree's own branch"
+  "worktree list --porcelain"
+  "git worktree remove"
+  "resume there"
+  "in that path; you write and claim nothing"
+  "git -C <path> status --porcelain"
 )
 # T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
 # for every row here, old and new alike (verified live: every needle below already satisfies this,
@@ -225,6 +235,15 @@ while [ "$i" -lt "${#needle_rules[@]}" ]; do
     "missing needle for $rule in $go_md"
   i=$((i + 1))
 done
+
+# dir #696 A7: the old step-4 sentence ("offer to continue it or pick another") promised a mechanism git
+# refuses across worktrees; it is replaced by the resume-there / fresh-branch / another-ticket offer.
+if grep -qF -- 'offer to continue it or pick another' "$go_md"; then
+  fail "(g) dir #696: step 4 no longer promises 'continue it' across worktrees" \
+    "found the retired phrase 'offer to continue it or pick another' in $go_md"
+else
+  pass "(g) dir #696: step 4 no longer promises 'continue it' across worktrees"
+fi
 
 # =====================================================================================================
 # Mutation proof: each case above is shown red first — never on a tracked file (spec A1). scratch_copy,
@@ -560,5 +579,52 @@ replace_in_line_containing "$c668e_copy" "a fresh worktree's own branch" \
 assert_case_turns_red "(g) needle mutation: dir #668 C-e bullet-3 clause removed" \
   "(g) needle [dir #668 C-e: bullet 3]: 'a fresh worktree's own branch' matches exactly one line" \
   "KEEL_GO_MD=$c668e_copy"
+
+# (g) needle — dir #696's three step-4 clauses (spec 690 B6, A7), each shown red by its own mutation.
+
+# B6-a: the sibling worktree is found with `worktree list --porcelain` (git refuses a second checkout).
+c696a_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696a_copy" "worktree list --porcelain" \
+  "worktree list --porcelain" "worktree-list"
+assert_case_turns_red "(g) needle mutation: dir #696 B6-a porcelain lookup removed" \
+  "(g) needle [dir #696 B6: sibling lookup by porcelain]: 'worktree list --porcelain' matches exactly one line" \
+  "KEEL_GO_MD=$c696a_copy"
+
+# B6-b: a prunable entry is offered `git worktree remove <path>` (this entry only), never `prune`.
+c696b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696b_copy" "git worktree remove" \
+  "git worktree remove" "git worktree prune"
+assert_case_turns_red "(g) needle mutation: dir #696 B6-b worktree-remove offer removed" \
+  "(g) needle [dir #696 B6: prunable entry is removed, not pruned]: 'git worktree remove' matches exactly one line" \
+  "KEEL_GO_MD=$c696b_copy"
+
+# B6-c: "resume there" is an offer to the operator, and the successor writes and claims nothing.
+c696c_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696c_copy" "resume there" "resume there" "continue"
+assert_case_turns_red "(g) needle mutation: dir #696 B6-c resume-there offer removed" \
+  "(g) needle [dir #696 B6: resume there is an offer, not a write]: 'resume there' matches exactly one line" \
+  "KEEL_GO_MD=$c696c_copy"
+
+# B6-d: resuming there writes and claims nothing (an offer is not consent to write in the predecessor's tree).
+c696e_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696e_copy" "in that path; you write and claim nothing" "; you write and claim nothing" ""
+assert_case_turns_red "(g) needle mutation: dir #696 B6-d write-and-claim-nothing guarantee removed" \
+  "(g) needle [dir #696 B6: the successor writes and claims nothing]: 'in that path; you write and claim nothing' matches exactly one line" \
+  "KEEL_GO_MD=$c696e_copy"
+
+# B6-e: the uncommitted-file count is read from the SIBLING's path; run in the cwd it would report the
+# successor's own clean tree as 0 and the operator would abandon real work on a false signal.
+c696f_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696f_copy" "git -C <path> status --porcelain" "git -C <path> status --porcelain" "git status --porcelain"
+assert_case_turns_red "(g) needle mutation: dir #696 B6-e sibling-path status read removed" \
+  "(g) needle [dir #696 B6: the count is read from the sibling's path]: 'git -C <path> status --porcelain' matches exactly one line" \
+  "KEEL_GO_MD=$c696f_copy"
+
+# A7: re-adding the retired sentence turns the absence check red.
+c696d_copy="$(scratch_copy "$go_md" go.md)"
+append_line "$c696d_copy" "offer to continue it or pick another"
+assert_case_turns_red "(g) mutation: dir #696 retired 'continue it' sentence re-added" \
+  "(g) dir #696: step 4 no longer promises 'continue it' across worktrees" \
+  "KEEL_GO_MD=$c696d_copy"
 
 summary

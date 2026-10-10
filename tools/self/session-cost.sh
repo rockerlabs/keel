@@ -305,11 +305,14 @@ _sc_tail_agent_row() {
   jq -c -s --argjson meta "$1" '$meta + {turns: length, cost: (map(.cache_read_input_tokens) | add // 0)}'
 }
 
-# _sc_tail_pr_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per NON-error result whose
-# text names a github.com/<owner>/<repo>/pull/<n> URL. The window walk needs nothing else from a result,
-# and result bodies are the bulk of a transcript, so they are dropped here rather than carried along.
+# _sc_tail_pr_results — stdin: tu_tool_results lines; stdout: one {tool_use_id, url} per NON-error result whose
+# text names a github.com/<owner>/<repo>/pull/<n> URL; url is the LAST one (`gh pr create` prints the new PR's
+# URL as its final line, after any warning). The window walk needs only the id; the url feeds
+# _sc_tail_coverage. Result bodies are the bulk of a transcript, so nothing else is carried along.
 _sc_tail_pr_results() {
-  jq -c 'select((.is_error | not) and (.text | test("github\\.com/[^ \"\\\\]+/pull/[0-9]+"))) | {tool_use_id}'
+  jq -c 'select(.is_error | not)
+         | ([.text | scan("https://github\\.com/[^\\s\"\\\\]+/pull/[0-9]+")] | last) as $u
+         | select($u != null) | {tool_use_id, url: $u}'
 }
 
 # _sc_tail_init_results — stdin: tu_tool_results lines; stdout: one {tool_use_id} per result (error or not: an
@@ -357,7 +360,7 @@ _sc_tail_windows() {
              .cur.cost += $t.cache_read_input_tokens | .cur.turns += 1
              | (if ($t.requestId != null and ($closers[$t.requestId] // false)) and (.cur.rerun | not)
                     and (foreign($t; .cur) | not) then
-                  .wins += [.cur + {end: $t.timestamp, status: "closed"}]
+                  .wins += [.cur + {end: $t.timestamp, status: "closed", closed_by: $t.requestId}]
                   | .closed_on += [.cur.branch] | .cur = null
                 else . end)
            else . end)
@@ -369,6 +372,7 @@ _sc_tail_windows() {
     | closure($in; [$in[] | select(.firstLine == $fixed) | .agentId]) as $rev
     | ([$in[] | .cost] | add // 0) as $sub_cost
     | {session: $session, start: $win.start, end: $win.end, status: $win.status, opened_by: $win.opened_by,
+       closed_by: ($win.closed_by // null),
        primary_turns: $win.turns, subagent_turns: ([$in[] | .turns] | add // 0),
        cost: ($win.cost + $sub_cost),
        review_cost: ([$in[] | select(.agentId | IN($rev[])) | .cost] | add // 0),
@@ -378,9 +382,32 @@ _sc_tail_windows() {
   '
 }
 
+# _sc_tail_coverage SESSION_ID CALLS PRS WINDOWS — stdout: nothing when the session holds no successful
+# `gh pr create`, else ONE line (dir #737): how many it holds, how many closed windows, and the URL of each PR
+# no closed window accounts for — the silent-loss class dir #707's prototype found by hand (4 of 30 PRs). A PR
+# is covered when a closed window's closing turn is the PR call's own turn (`closed_by`).
+_sc_tail_coverage() {
+  jq -n -r --arg session "$1" --slurpfile calls "$2" --slurpfile prs "$3" --slurpfile wins "$4" '
+    (reduce $prs[] as $r ({}; .[$r.tool_use_id] = $r.url)) as $url
+    | ([$wins[] | select(.status == "closed")]) as $closed
+    | ($closed | map(.closed_by) | map(select(. != null))) as $closers
+    | [$calls[] | select(.name == "Bash" and ((.command // "") | contains("gh pr create")) and ($url[.id] != null))] as $made
+    | select(($made | length) > 0)
+    # One closing turn closes one window: of several PRs created on the same turn, only the first is covered.
+    | (reduce $made[] as $c ({seen: {}, lost: []};
+        ($c.requestId // "") as $q
+        | if (($closers | index($q)) != null) and (.seen[$q] | not) then .seen[$q] = true
+          else .lost += [$c] end) | .lost) as $lost
+    | "coverage: \($session) pr-create=\($made | length) closed-windows=\($closed | length) outside-any-window=\($lost | length)"
+      + ([$lost[] | " " + $url[.id]] | join(""))
+  '
+}
+
 # cmd_tail [--json] FILE... — one block of rows per window per file, in file order (see the block comment
 # above): human form is a window row with an indented row per subagent under it; --json is one object per
-# window per line. A file with no /polish prints nothing.
+# window per line (--json carries no coverage line: its stream stays one object per window). The human form
+# ends each file with one coverage line (see _sc_tail_coverage) when the file holds a successful `gh pr create`;
+# a file with no /polish and no PR prints nothing.
 cmd_tail() {
   local json=0
   while [ $# -gt 0 ]; do
@@ -418,10 +445,12 @@ cmd_tail() {
       tu_turns subagent "$s" | _sc_tail_agent_row "$meta" >> "$d/agents" || ok=1
     done < <(tu_subagent_files "$f")
     [ "$ok" -eq 0 ] || break
+    _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" > "$d/wins" || ok=1
     if [ "$json" -eq 1 ]; then
-      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" || ok=1
+      cat "$d/wins"
     else
-      _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" | jq -r "$human" || ok=1
+      jq -r "$human" "$d/wins" || ok=1
+      _sc_tail_coverage "$sid" "$d/calls" "$d/prs" "$d/wins" || ok=1
     fi
     [ "$ok" -eq 0 ] || break
   done

@@ -28,7 +28,7 @@ done
 n="$(grep -c 'merge_prog=\|remove_prog=' "$lib" || true)"
 check_status "the lib holds both programs (one merge_prog=, one remove_prog=)" 2 "$n"
 
-# The backup and atomic-write helpers are thin wrappers over tools/lib/safe-write.sh (dir #679), which
+# The backup-write and atomic-write helpers are thin wrappers over tools/lib/safe-write.sh (dir #679), which
 # every installer sources itself; the hook lib does not, so this test loads it the way they do.
 # shellcheck source=tools/lib/safe-write.sh
 . "$REPO_ROOT/tools/lib/safe-write.sh"
@@ -153,9 +153,10 @@ check_status "check_shape: empty settings → return 0" 0 "$STATUS"
 
 # --- backup + atomic write ------------------------------------------------------------------------------
 printf 'one\n' > "$SANDBOX/s.json"
-hook_install_backup "$SANDBOX/s.json"
-check_file "backup: a timestamped .bak sibling is written" "$HOOK_INSTALL_BACKUP"
-check_status "backup: …with the original content" one "$(cat "$HOOK_INSTALL_BACKUP")"
+hook_install_backup_write "$SANDBOX/s.json" mid
+check_file "backup_write: a timestamped .bak sibling is written" "$HOOK_INSTALL_BACKUP"
+check_status "backup_write: …with the original content" one "$(cat "$HOOK_INSTALL_BACKUP")"
+check_status "backup_write: …and the new content is written" mid "$(cat "$SANDBOX/s.json")"
 hook_install_atomic_write "$SANDBOX/s.json" two
 check_status "atomic_write: replaces the content" two "$(cat "$SANDBOX/s.json")"
 check_status "atomic_write: leaves no temp sibling behind" 0 \
@@ -225,26 +226,36 @@ check_status "atomic_write: …the hard link is not split" 0 "$STATUS"
 # $(date …), so both backups read one clock second — without the fix the second cp overwrote the first.
 date() { echo 20260101T000000Z; }
 printf 'first\n' > "$SANDBOX/c.json"; chmod 600 "$SANDBOX/c.json"
-hook_install_backup "$SANDBOX/c.json"; b1="$HOOK_INSTALL_BACKUP"
-printf 'second\n' > "$SANDBOX/c.json"
-hook_install_backup "$SANDBOX/c.json"; b2="$HOOK_INSTALL_BACKUP"
+hook_install_backup_write "$SANDBOX/c.json" second; b1="$HOOK_INSTALL_BACKUP"
+hook_install_backup_write "$SANDBOX/c.json" third; b2="$HOOK_INSTALL_BACKUP"
 unset -f date
 check_ne "backup: a second backup in the same second gets its own name" "$b1" "$b2"
 check_status "backup: …the first backup still holds the first content" first "$(cat "$b1")"
 check_status "backup: …the second holds the second" second "$(cat "$b2")"
 check_status "backup: …named <file>.<ts>.2.bak" "$SANDBOX/c.json.20260101T000000Z.2.bak" "$b2"
 check_status "backup: a 0600 file's backup is 0600 too" 600 "$(stat_portable_mode "$b1")"
-run hook_install_backup "$SANDBOX/no-such.json"
+run hook_install_backup_write "$SANDBOX/no-such.json" x
 check_status "backup: a failed copy → return 1" 1 "$STATUS"
 check_status "backup: …and leaves no claimed empty .bak behind" 0 \
   "$(find "$SANDBOX" -maxdepth 1 -name 'no-such.json.*' | grep -c . || true)"
+check_nofile "backup: …and writes nothing" "$SANDBOX/no-such.json"
 mkdir -p "$SANDBOX/rodir"; printf 'x\n' > "$SANDBOX/rodir/s.json"; chmod 555 "$SANDBOX/rodir"
-run hook_install_backup "$SANDBOX/rodir/s.json"
+run hook_install_backup_write "$SANDBOX/rodir/s.json" y
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "backup: an unwritable directory → return 1" 1 "$STATUS"
   check_contains "backup: …says why, instead of exiting silently" "$OUT" "cannot create a backup"
 fi
 chmod 755 "$SANDBOX/rodir"
+
+# --- dir #748 audit S5-1: the all-SAME predicate the three installers share -----------------------------
+run hook_install_all_same "$(printf 'SAME\tPostToolUse\tBash\nSAME\tSessionEnd\t\n')"
+check_status "all_same: every line SAME → 0" 0 "$STATUS"
+run hook_install_all_same "$(printf 'SAME\tPostToolUse\tBash\nMISSING\tSessionEnd\t\n')"
+check_status "all_same: one MISSING → 1" 1 "$STATUS"
+run hook_install_all_same "$(printf 'STALE\tPostToolUse\tBash\n')"
+check_status "all_same: a STALE → 1" 1 "$STATUS"
+run hook_install_all_same ""
+check_status "all_same: an empty report → 1 (nothing proven wired)" 1 "$STATUS"
 
 # --- dir #660 (R2-5): a malformed NESTED shape gets the clean refusal, not a raw jq error ---------------
 for bad in '["x"]' '{"hooks":{"PostToolUse":["str"]}}' \

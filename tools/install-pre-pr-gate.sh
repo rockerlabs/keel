@@ -134,7 +134,6 @@ else
   echo "install-pre-pr-gate: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run" >&2
   exit 1
 fi
-KEEL_SAFE_WRITE_CHECKOUT="$repo_root"
 
 usage() {
   cat <<'EOF'
@@ -387,9 +386,8 @@ if [ "$uninstall" = 1 ]; then
     exit 0
   fi
 
-  hook_install_backup "$settings"
   new_settings="$(jq '.new' <<<"$removal")"
-  hook_install_atomic_write "$settings" "$new_settings"
+  hook_install_backup_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
   if [ "$n_retired" -gt 0 ]; then
     echo "  -    SubagentStop/general-purpose removed (the legacy matcher, replaced by keel-polish-reviewer)"
@@ -457,9 +455,13 @@ if [ "$n_stale" -gt 0 ] && [ "$force" != 1 ]; then
   exit 3
 fi
 
-# ONE backup, before the first write, for a run that takes the --force STALE swap, retires, or both.
-if { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; then
-  hook_install_backup "$settings"
+# ONE backup, taken with the write in one call (a refused write leaves no backup, dir #756 (d)), for a
+# run that takes the --force STALE swap, retires, or both. An all-SAME run that retires nothing has
+# nothing to write: settings.json is left as it is, untouched even when it is hard-linked (dir #748 audit
+# S5-1); the status lines, the gate manifest and the ledger below still run.
+if [ "$n_retired" = 0 ] && hook_install_all_same "$statuses"; then
+  :
+elif { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; then
   backup_why=""
   if [ "$n_stale" -gt 0 ]; then
     backup_why="--force"
@@ -467,11 +469,13 @@ if { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; th
   if [ "$n_retired" -gt 0 ]; then
     backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
   fi
+  new_settings="$(jq '.new' <<<"$merged")"
+  hook_install_backup_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up your existing settings.json → $(basename "$HOOK_INSTALL_BACKUP") ($backup_why)"
+else
+  new_settings="$(jq '.new' <<<"$merged")"
+  hook_install_atomic_write "$settings" "$new_settings"
 fi
-
-new_settings="$(jq '.new' <<<"$merged")"
-hook_install_atomic_write "$settings" "$new_settings"
 
 if [ "$n_retired" -gt 0 ]; then
   echo "  -    SubagentStop/general-purpose retired (the legacy matcher — keel-polish-reviewer replaces it; your other hooks untouched)"
@@ -502,7 +506,8 @@ kind=gate
 settings=$settings
 gate=$gate
 wired_at=$wired_at"
-  hook_install_atomic_write "$gate_manifest_file" "$gate_manifest_content"
+  # A STATE write (Keel's own file): a hard-linked gate manifest is split, not refused (dir #756 (a)).
+  keel_write_state "$gate_manifest_file" printf '%s\n' "$gate_manifest_content"
   echo "install-pre-pr-gate: gate manifest ($gate_manifest_file)"
 
   # Checkout-side ledger — the same discovery index install.sh writes to (tools/lib/ledger.sh),

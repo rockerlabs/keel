@@ -297,18 +297,12 @@ ln -s "$pfile" "$SANDBOX/personal.lnk"
 run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/personal.lnk" "$scan" "$d/f.txt"
 check_status "symlink to a regular personal file → read, exit 1" 1 "$STATUS"
 
-# a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection.
-# Only observable where the host grep actually REJECTS the ERE — busybox grep accepts an
-# unbalanced '(' and then scans with it consistently, so there is nothing to fail closed on.
+# a malformed personal ERE must fail CLOSED (exit 2), never silently disable detection — on every host:
+# busybox grep compiles a pattern only when it reads input, so the scanner's probe feeds it one line (dir #746).
 bad="$SANDBOX/bad.rx"
 printf 'unbalanced(\n' > "$bad"
-rc=0; printf '' | grep -iE 'unbalanced(' >/dev/null 2>&1 || rc=$?
-if [ "$rc" -ge 2 ]; then
-  run env SECRET_SCAN_PERSONAL_FILE="$bad" "$scan" "$d/f.txt"
-  check_status "malformed personal regex → exit 2 (fail closed)" 2 "$STATUS"
-else
-  pass "malformed personal regex → host grep accepts the ERE; fail-closed not applicable"
-fi
+run env SECRET_SCAN_PERSONAL_FILE="$bad" "$scan" "$d/f.txt"
+check_status "malformed personal regex → exit 2 (fail closed)" 2 "$STATUS"
 
 # staged text: the pre-commit path sees a personal literal in an added line
 repo="$(new_repo)"
@@ -859,15 +853,12 @@ run "$scan" --selftest
 check_status "--selftest → exit 0" 0 "$STATUS"
 check_contains "--selftest checks the key-shape catch" "$OUT" "caught a key-shaped string"
 check_absent "--selftest reports no FAIL" "$OUT" "FAIL"
-# host-dependent probes degrade to a WARN (no iconv → no UTF-16 probe; lenient busybox grep → no
-# fail-closed probe) — assert their OK lines only where the host actually runs them
+# the iconv probes degrade to a WARN on a host without iconv — assert their OK line only where it runs. The
+# fail-closed probe runs on every host (dir #746: its grep probe reads one input line, which busybox needs).
 if command -v iconv >/dev/null 2>&1; then
   check_contains "--selftest checks the UTF-16 blob catch" "$OUT" "UTF-16LE blob"
 fi
-greprc=0; printf '' | grep -iE 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
-if [ "$greprc" -ge 2 ]; then
-  check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
-fi
+check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
 
 # --- install verifies the vendored SOURCE via selftest before touching the destination (a
 # wired-but-broken gate must fail the install, but never leave it half-wired — see below) ----------
@@ -958,6 +949,8 @@ check_status "post-copy-only failure with --force → exit 4" 4 "$STATUS"
 check_contains "foreign pre-commit restored verbatim after rollback" \
   "$(cat "$rbforeign/.git/hooks/pre-commit")" "my own pre-commit, pre-dating this install"
 check_nofile "rollback removes the backup after restoring it" "$rbforeign/.git/hooks/pre-commit.pre-keel.bak"
+if [ -x "$rbforeign/.git/hooks/pre-commit" ]; then pass "dir #684: the restored foreign pre-commit is still executable"
+else fail "dir #684: the restored foreign pre-commit is still executable" "not executable"; fi
 for f in secret-scan.sh pre-push; do
   check_nofile "post-copy rollback (--force case) → no $f left" "$rbforeign/.git/hooks/$f"
 done
@@ -1007,6 +1000,10 @@ check_status "the original pre-commit is restored, byte-for-byte" \
   "$orig_pre_commit" "$(cat "$uprepo/.git/hooks/pre-commit")"
 check_status "the original pre-push is restored, byte-for-byte" \
   "$orig_pre_push" "$(cat "$uprepo/.git/hooks/pre-push")"
+for xf in pre-commit pre-push secret-scan.sh; do
+  if [ -x "$uprepo/.git/hooks/$xf" ]; then pass "dir #684: the restored Keel $xf is still executable"
+  else fail "dir #684: the restored Keel $xf is still executable" "not executable"; fi
+done
 check_contains "the restored pre-commit still carries the Keel marker" \
   "$(cat "$uprepo/.git/hooks/pre-commit")" "Keel secret-guard"
 check_nofile "no stray backup left behind after the restore" "$uprepo/.git/hooks/pre-commit.keel-upgrade.bak"
@@ -1401,7 +1398,7 @@ check_status "dir #659: --uninstall and --force don't combine → exit 2 (as the
 run "$isg" --uninstall "$frepo"
 check_status "dir #659 S3-3: --uninstall is --global only → exit 2 for a repo path" 2 "$STATUS"
 check_contains "dir #659 S3-3: the repo-path --uninstall refusal says why" "$OUT" "--uninstall works with --global only"
-check_contains "dir #659: the repo-path refusal names the --force backup to move back" "$OUT" ".pre-keel.bak"
+check_contains "dir #659: the repo-path refusal names the --force backup to move back (dir #684: the newest numbered one)" "$OUT" ".pre-keel*.bak"
 
 # --- vendoring honors an ABSOLUTE local core.hooksPath (2026-07-21 audit): joining it under $repo
 # put the hooks in a junk dir while the real hooks dir stayed empty — guard reported success, inactive.
@@ -2314,8 +2311,8 @@ done
 
 # A4 (S7-3): a PATH of exactly the scanner's tools, minus one of sort/grep/awk/sed/tr at a time. Never
 # exit 0 / `clean`; where the missing tool runs on the path, exit 2 with a `could not` line. The rows
-# that differ (the spec's A4): tr is not on a staged text path with no personal file, sed is not on a
-# --range path with none (both → 1, the key is still found); with a personal file set, a missing grep
+# that differ (the spec's A4): sed is not on a --range path with no personal file (→ 1, the key is still
+# found; tr is on the staged text path since dir #746 B6 strips NULs there); with a personal file set, a missing grep
 # trips the personal-ERE preflight and a missing sed the personal-file parse first — each its own exit 2.
 # An allow-list on purpose, not lib.sh's path_farm (a deny-list over the whole $PATH): the scanner gets
 # exactly the tools it declares, so a new undeclared dependency shows up here as a red run.
@@ -2343,7 +2340,7 @@ for t715 in sort grep awk sed tr; do
       args715=(--staged); [ "$m715" = range ] && args715=(--range HEAD~1..HEAD)
       run_in "$r715" env PATH="$SANDBOX/farm715-no-$t715" SECRET_SCAN_PERSONAL_FILE="$pf715" "$scan" "${args715[@]}"
       case "$t715:$m715:$p715" in
-        tr:staged:np|sed:range:np) want715=1; named715="" ;;
+        sed:range:np) want715=1; named715="" ;;
         grep:*:p|sed:*:p) want715=2; named715="" ;;
         *) want715=2; named715=1 ;;
       esac
@@ -2506,10 +2503,13 @@ check_contains "dir #715 A11: ...and the first key is reported" "$OUT" "$k1_715"
 # #148 parser twin (byte-identical to tools/lib/personal-literals.sh) and emit_blob's dir #681 decode
 # recipe. Exact coverage: the four needles below plus `read -r`; `local x="$(…)"` and `if ! cmd; then
 # rc=$?` are left to review. Prints each offending line as "N: text".
+# emit_blob's decode recipe, first and last line — also dir #746's T2 anchors
+blob_start715="LC_ALL=C tr -d '\\000' < \"\$tmp\" || exit \$?; echo"
+blob_end715="} | LC_ALL=C tr -d '\\000' > \"\$dec\" || return \$?"
 register715() {  # file
   P1='_personal_literals_parse_inline() {' \
-  D1="LC_ALL=C tr -d '\\000' < \"\$tmp\"; echo" \
-  D2="} | LC_ALL=C tr -d '\\000' > \"\$dec\"" \
+  D1="$blob_start715" \
+  D2="$blob_end715" \
   awk '
     BEGIN { p1 = ENVIRON["P1"]; d1 = ENVIRON["D1"]; d2 = ENVIRON["D2"] }
     skip == 1 { if ($0 == "}") skip = 0; next }
@@ -2622,5 +2622,291 @@ check_status "dir #715 A28(b): a failing readlink on a tracked symlink → exit 
 check_contains "dir #715 A28(b): ...naming the symlink read" "$OUT" "could not read the tracked symlink 'lnk'"
 run_in "$r715" env SECRET_SCAN_PERSONAL_FILE="$pfile715" "$scan" --tracked
 check_status "dir #715 A28(b) control: a real readlink finds the literal in the target → BLOCKED" 1 "$STATUS"
+
+# --- dir #746 (slice 1 of docs/specs/746-scanner-fail-closed-part2.md, with dir #694, dir #740 and dir #681):
+# the scanner still reported clean over content it did not read, or matched something other than what the
+# personal file says. Two invalid personal lines fused into one valid ERE matching neither (dir #694); a literal
+# starting with `-` was read as a grep option, and so was an allowlist ERE (S2-1); under a UTF-8 locale BSD and
+# busybox grep stop matching after an invalid byte (dir #740); awk truncated a staged text line at a NUL (D1-1);
+# iconv stopped at the first invalid UTF-16/32 unit (S2-2); and the twins in tools/public-audit.sh were compared
+# with nothing (dir #681). The A-ids are the spec's.
+k746="$(key 'ghp_' "$(rep A 36)")"
+aws746="$(key 'AKIA' "$(rep A 16)")"
+loc746="$(pick_utf8_locale)" || loc746=C.UTF-8
+cyr746="$(printf '\320\230\320\262\320\260\320\275')"       # "Ivan" (Cyrillic), UTF-8
+cyrup746="$(printf '\320\230\320\222\320\220\320\235')"     # the same, upper case
+d746="$(mktemp -d "$SANDBOX/d746.XXXXXX")"
+printf 'seekritpersonname\n' > "$d746/p-ascii"
+printf '%s\n' "$cyr746" > "$d746/p-cyr"
+
+# A1 (B3 + B4): two lines, each an invalid ERE, that join into a valid one matching neither — the pattern file
+# compiles each line on its own, and the probe reads one input line, so busybox compiles it too.
+mkdir "$d746/a1"
+printf 'zorb[\nplugh]\n' > "$d746/p-a1"
+printf 'has zorb[ and plugh] here\n' > "$d746/a1/f.txt"
+run_in "$d746/a1" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a1" "$scan" -- f.txt
+check_status "dir #746 A1: personal lines 'zorb[' and 'plugh]' → exit 2, never a fused ERE" 2 "$STATUS"
+check_contains "dir #746 A1: ...naming the invalid regex" "$OUT" "invalid regex"
+
+# A2 (B4): --selftest's malformed-regex probe runs on every host (busybox compiles on the first input line).
+run "$scan" --selftest
+check_contains "dir #746 A2: --selftest proves the malformed-regex guard on this host" "$OUT" \
+  "selftest: OK   — malformed personal regex fails CLOSED"
+
+# A3 (B3): two VALID back-reference lines are two patterns — joined, BSD grep found only the first.
+br746="$(match aa -cE -e '(a)\1' 2>/dev/null)" || br746=0
+if [ "$br746" = 1 ]; then
+  mkdir "$d746/a3"
+  printf '(a)\\1\n(b)\\1\n' > "$d746/p-a3"
+  printf 'aa\nbb\n' > "$d746/a3/fbr.txt"
+  run_in "$d746/a3" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a3" "$scan" -- fbr.txt
+  check_status "dir #746 A3: personal '(a)\\1' and '(b)\\1' → exit 1" 1 "$STATUS"
+  check_contains "dir #746 A3: ...the first line is found" "$OUT" "fbr.txt:1:aa"
+  check_contains "dir #746 A3: ...and the second" "$OUT" "fbr.txt:2:bb"
+else
+  pass "dir #746 A3: this host's ERE has no back-references — nothing to fuse"
+fi
+
+# A4 (B2): a pattern is never an operand — a personal literal or an allowlist ERE starting with `-` is a pattern.
+mkdir "$d746/a4"
+printf 'contains johndoe and -v here\n' > "$d746/a4/f.txt"
+printf -- '-ejohndoe\n' > "$d746/p-a4e"
+printf -- '-v\n' > "$d746/p-a4v"
+printf -- '-V\n' > "$d746/p-a4V"
+run_in "$d746/a4" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a4e" "$scan" -- f.txt
+check_status "dir #746 A4: the literal '-ejohndoe' is not read as -e johndoe → exit 0" 0 "$STATUS"
+run_in "$d746/a4" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a4v" "$scan" -- f.txt
+check_status "dir #746 A4: the literal '-v' is not read as an option → exit 1" 1 "$STATUS"
+check_contains "dir #746 A4: ...and its line is reported" "$OUT" "f.txt:1:contains johndoe and -v here"
+run_in "$d746/a4" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a4V" "$scan" -- f.txt
+check_status "dir #746 A4: the literal '-V' folds onto the file's '-v' → exit 1" 1 "$STATUS"
+check_absent "dir #746 A4: ...and no grep version banner is reported as a hit" "$OUT" "grep ("
+check_absent "dir #746 A4: ...nor a BusyBox banner" "$OUT" "BusyBox"
+# (iv) the ERE allowlist: `-e.` read positionally is the option -e with the pattern `.`, which exempted every record
+r746="$(new_repo)"
+printf -- '-e.\n' > "$r746/.secret-scan-allow"
+git -C "$r746" add .secret-scan-allow
+git -C "$r746" commit -q -m allow
+printf 'aws = %s\n' "$k746" > "$r746/k.txt"
+git -C "$r746" add k.txt
+run_in "$r746" "$scan" --staged
+check_status "dir #746 A4 (iv): a committed allow ERE '-e.' is a pattern, not an option → BLOCKED" 1 "$STATUS"
+
+# A5 (B5 (a)): a key after an invalid byte, under a UTF-8 caller locale, in each of the four modes.
+mkdir "$d746/a5"
+printf 'caf\351 aws = %s\n' "$aws746" > "$d746/a5/x.txt"
+run_in "$d746/a5" env LC_ALL="$loc746" "$scan" -- x.txt
+check_status "dir #746 A5: FILE mode, a key after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+check_contains "dir #746 A5: FILE mode names x.txt" "$OUT" "x.txt:"
+r746="$(new_repo)"
+cp "$d746/a5/x.txt" "$r746/x.txt"
+git -C "$r746" add x.txt
+run_in "$r746" env LC_ALL="$loc746" "$scan" --staged
+check_status "dir #746 A5: --staged, a key after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+check_contains "dir #746 A5: --staged names x.txt" "$OUT" "x.txt:"
+r746="$(new_repo)"
+cp "$d746/a5/x.txt" "$r746/x.txt"
+git -C "$r746" add x.txt
+git -C "$r746" commit -q -m x
+run_in "$r746" env LC_ALL="$loc746" "$scan" --tracked
+check_status "dir #746 A5: --tracked, a key after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+check_contains "dir #746 A5: --tracked names x.txt" "$OUT" "x.txt:"
+r746="$(new_repo)"
+cp "$d746/a5/x.txt" "$r746/x.txt"
+git -C "$r746" add x.txt
+git -C "$r746" commit -q -m x
+run_in "$r746" env LC_ALL="$loc746" "$scan" --range HEAD
+check_status "dir #746 A5: --range, a key after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+check_contains "dir #746 A5: --range names x.txt" "$OUT" "x.txt:"
+
+# A6 (B5 (b)(c)): the personal pass reads every byte under LC_ALL=C (P-C), and for every literal runs again in
+# the caller's locale over a copy with the invalid bytes removed (P-U) — case folding for a non-ASCII literal,
+# multibyte characters for an ERE `.` (f).
+mkdir "$d746/a6"
+printf 'caf\351 author SEEKRITPERSONNAME\n' > "$d746/a6/a.txt"
+printf 'caf\351 name %s\n' "$cyrup746" > "$d746/a6/b.txt"
+printf 'caf\351 name %s\n' "$cyr746" > "$d746/a6/c.txt"
+printf 'caf\351 name %s caf\351' "$cyrup746" > "$d746/a6/d.txt"
+printf 'caf\351 name %s\ncaf\351 name %s\n' "$cyr746" "$cyrup746" > "$d746/a6/e.txt"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- a.txt
+check_status "dir #746 A6(a): an ASCII literal in another case after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- b.txt
+check_status "dir #746 A6(b): a Cyrillic literal in another case after 0xE9 under $loc746 → exit 1" 1 "$STATUS"
+run_in "$d746/a6" env LC_ALL=C SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- c.txt
+check_status "dir #746 A6(c): the same-case Cyrillic literal after 0xE9 under LC_ALL=C → exit 1" 1 "$STATUS"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- d.txt
+check_status "dir #746 A6(d): ...with an incomplete UTF-8 sequence as the file's last byte → exit 1" 1 "$STATUS"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- e.txt
+check_status "dir #746 A6(e): one line per pass (same case, then upper case) → exit 1" 1 "$STATUS"
+check_contains "dir #746 A6(e): ...the same-case line is reported" "$OUT" "e.txt:1:"
+check_contains "dir #746 A6(e): ...and the upper-case line too" "$OUT" "e.txt:2:"
+# (f) an ASCII-only literal whose `.` stands for a non-ASCII letter: under LC_ALL=C `.` is one byte and misses a
+# two-byte character, so the caller-locale pass runs for every literal, not only a non-ASCII one (review finding;
+# origin/main matched it in the caller's locale)
+printf 'fran.ois\n' > "$d746/p-dot"
+printf 'author Fran\303\247ois\n' > "$d746/a6/f.txt"
+run_in "$d746/a6" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-dot" "$scan" -- f.txt
+check_status "dir #746 A6(f): an ASCII literal 'fran.ois' still matches a two-byte letter under $loc746 → exit 1" 1 "$STATUS"
+r746="$(new_repo)"
+git -C "$r746" commit -q --allow-empty -m base
+cp "$d746/a6/f.txt" "$r746/f.txt"
+git -C "$r746" add f.txt
+git -C "$r746" commit -q -m f
+run_in "$r746" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d746/p-dot" "$scan" --range HEAD~1..HEAD
+check_status "dir #746 A6(f): ...and --range's fast-path count finds it too → exit 1" 1 "$STATUS"
+
+# A7 / A18 / A19 (B3's conditions): the pattern file lives in the scan's 0700 scratch dir and is removed on every
+# exit; a blank pattern never reaches it; no literal → no pattern file and no personal grep. A grep shim first on
+# PATH logs each `-f` argument and its directory's mode, then execs the real grep (GREP746_FAIL: it exits 2 on the
+# first call holding both -f and -a, i.e. the P-C pass — the preflight has no -a).
+mkdir "$d746/shim-grep"
+cat > "$d746/shim-grep/grep" <<'EOF'
+#!/bin/sh
+prev=; hasf=; hasa=
+for a in "$@"; do
+  if [ "$prev" = -f ]; then
+    hasf=1
+    printf 'F %s\n' "$a" >> "$GREP746_LOG"
+    ls -ld "$(dirname "$a")" >> "$GREP746_LOG"
+  fi
+  case "$a" in -f|--*) ;; -*a*) hasa=1 ;; esac
+  prev="$a"
+done
+if [ -n "${GREP746_FAIL:-}" ] && [ -n "$hasf" ] && [ -n "$hasa" ]; then exit 2; fi
+exec "$GREP746_REAL" "$@"
+EOF
+chmod +x "$d746/shim-grep/grep"
+grep_env746=(PATH="$d746/shim-grep:$PATH" GREP746_REAL="$(type -P grep)")
+mkdir "$d746/a7"
+printf 'nothing personal here\n' > "$d746/a7/f.txt"
+for m746 in ok fail; do
+  log746="$d746/grep-$m746.log"; : > "$log746"
+  fail746=""; [ "$m746" = fail ] && fail746=1
+  run_in "$d746/a7" env "${grep_env746[@]}" GREP746_LOG="$log746" GREP746_FAIL="$fail746" \
+    SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
+  if [ "$m746" = ok ]; then
+    check_status "dir #746 A7: a clean FILE scan through the grep shim → exit 0" 0 "$STATUS"
+  else
+    check_status "dir #746 A7: a failing personal grep → exit 2" 2 "$STATUS"
+    check_contains "dir #746 A7: ...naming the match step" "$OUT" "could not match"
+  fi
+  pats746="$(awk '/^F /{ print substr($0, 3) }' "$log746" | LC_ALL=C sort -u)"
+  check_eq "dir #746 A7 ($m746): personal greps read one pattern file" 1 "$(match "$pats746" -c .)"
+  check_eq "dir #746 A7 ($m746): ...inside an owner-only directory" "$(match "$(cat "$log746")" -c '^F ')" \
+    "$(match "$(cat "$log746")" -c '^drwx------')"
+  check_ne "dir #746 A7 ($m746): ...its path is logged" "" "$pats746"
+  check_nofile "dir #746 A7 ($m746): ...removed when the scan exits" "$pats746"
+done
+printf '\n   \n\t\nseekritpersonname\n' > "$d746/p-a18"
+run_in "$d746/a7" env SECRET_SCAN_PERSONAL_FILE="$d746/p-a18" "$scan" -- f.txt
+check_status "dir #746 A18: blank and whitespace-only personal lines never become a match-all pattern → exit 0" 0 "$STATUS"
+printf '# a comment\n\n' > "$d746/p-a19"
+log746="$d746/grep-a19.log"; : > "$log746"
+run_in "$d746/a7" env "${grep_env746[@]}" GREP746_LOG="$log746" SECRET_SCAN_PERSONAL_FILE="$d746/p-a19" "$scan" -- f.txt
+check_status "dir #746 A19: a personal file with no literal → exit 0" 0 "$STATUS"
+check_eq "dir #746 A19: ...and no grep reads a pattern file" "" "$(cat "$log746")"
+
+# A8 (B6): git classes a file as text when its first 8000 bytes hold no NUL; a later NUL reached awk, which
+# truncated the line before the key.
+r746="$(new_repo)"
+{ rep x 9000; printf '\nbefore\000%s\n' "$k746"; } > "$r746/late.txt"
+git -C "$r746" add late.txt
+check_absent "dir #746 A8 fixture: git diffs late.txt as text" "$(git -C "$r746" diff --cached --numstat)" $'-\t-\t'
+run_in "$r746" "$scan" --staged
+check_status "dir #746 A8: a staged key after a NUL past byte 8000 → exit 1" 1 "$STATUS"
+check_contains "dir #746 A8: ...naming late.txt" "$OUT" "late.txt:"
+
+# A9 (B7): an invalid UTF-16/32 unit before a non-ASCII literal no longer stops the decode. Fixtures are written
+# with printf escapes, never through iconv: (e) has none. lead <Ivan> trail, after an invalid lead unit.
+mkdir "$d746/a9"
+printf 'AB\000\330l\000e\000a\000d\000 \000\030\004\062\004\060\004\075\004 \000t\000r\000a\000i\000l\000' \
+  > "$d746/a9/bad16le.bin"
+printf '\330\000AB\000l\000e\000a\000d\000 \004\030\004\062\004\060\004\075\000 \000t\000r\000a\000i\000l' \
+  > "$d746/a9/bad16be.bin"
+printf '\377\377\377\377l\000\000\000e\000\000\000a\000\000\000d\000\000\000 \000\000\000' > "$d746/a9/bad32le.bin"
+printf '\030\004\000\000\062\004\000\000\060\004\000\000\075\004\000\000' >> "$d746/a9/bad32le.bin"
+printf ' \000\000\000t\000\000\000r\000\000\000a\000\000\000i\000\000\000l\000\000\000' >> "$d746/a9/bad32le.bin"
+for f746 in bad16le.bin bad16be.bin bad32le.bin; do
+  run_in "$d746/a9" env SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- "$f746"
+  check_status "dir #746 A9: a Cyrillic literal after an invalid unit in $f746 → exit 1" 1 "$STATUS"
+  check_contains "dir #746 A9: ...reported as a binary record ($f746)" "$OUT" "$f746:(binary)"
+done
+# (e) no iconv on the host: the built-in decoder runs instead. 715 A4's tool list, minus iconv, plus od.
+farm715 "$SANDBOX/farm746-noiconv" iconv
+ln -sf "$(type -P od)" "$SANDBOX/farm746-noiconv/od"
+run_in "$d746/a9" env PATH="$SANDBOX/farm746-noiconv" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- bad16le.bin
+check_status "dir #746 A9(e): no iconv on PATH — the built-in decoder finds the literal → exit 1" 1 "$STATUS"
+run env PATH="$SANDBOX/farm746-noiconv" "$scan" --selftest
+check_status "dir #746 A9(e): --selftest with no iconv on PATH → exit 0" 0 "$STATUS"
+check_contains "dir #746 A9(e): ...and it still proves the resume" "$OUT" \
+  "selftest: OK   — caught a non-ASCII personal literal after an invalid UTF-16 unit"
+# (f) no od either: a decode pass that cannot run exits 2 naming the file, never 0 or 1
+farm715 "$SANDBOX/farm746-noiconv-nood" iconv
+run_in "$d746/a9" env PATH="$SANDBOX/farm746-noiconv-nood" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- bad16le.bin
+check_status "dir #746 A9(f): no iconv and no od → exit 2" 2 "$STATUS"
+check_contains "dir #746 A9(f): ...naming the decode" "$OUT" "could not decode 'bad16le.bin'"
+# (g) the gate: where iconv resumes, the built-in decoder (12 s per MiB on macOS) never runs
+if command -v iconv >/dev/null 2>&1 \
+   && [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" = AB ]; then
+  mkdir "$d746/shim-od"
+  printf '#!/bin/sh\necho called >> "%s"\nexec "%s" "$@"\n' "$d746/od.log" "$(type -P od)" > "$d746/shim-od/od"
+  chmod +x "$d746/shim-od/od"
+  : > "$d746/od.log"
+  run_in "$d746/a9" env PATH="$d746/shim-od:$PATH" SECRET_SCAN_PERSONAL_FILE="$d746/p-cyr" "$scan" -- bad16le.bin
+  check_status "dir #746 A9(g): iconv resumes on this host → exit 1 through iconv -c" 1 "$STATUS"
+  check_eq "dir #746 A9(g): ...and the built-in decoder never ran" "" "$(cat "$d746/od.log")"
+else
+  pass "dir #746 A9(g): this host's iconv does not resume — the built-in decoder is the decode here"
+fi
+
+# A10 (B8): --selftest proves the resume on every host.
+run "$scan" --selftest
+check_status "dir #746 A10: --selftest → exit 0" 0 "$STATUS"
+check_contains "dir #746 A10: --selftest proves the decode resumes after an invalid unit" "$OUT" \
+  "selftest: OK   — caught a non-ASCII personal literal after an invalid UTF-16 unit"
+
+# A11 (B9, dir #681): each twin in tools/public-audit.sh is pinned to its twin here, never to a ref.
+pa746="$REPO_ROOT/tools/public-audit.sh"
+# T1: SESSION_META ↔ session_re
+check_count "dir #746 A11 T1: one SESSION_META line in secret-scan.sh" "$scan" "^SESSION_META='" 1
+check_count "dir #746 A11 T1: one session_re line in public-audit.sh" "$pa746" "^session_re='" 1
+check_block_equal "dir #746 A11 T1: SESSION_META equals public-audit.sh's session_re" \
+  "$(sed -n "s/^SESSION_META='\(.*\)'\$/\1/p" "$scan")" "$(sed -n "s/^session_re='\(.*\)'\$/\1/p" "$pa746")"
+# T2: the decode recipe, emit_blob ↔ decode_binary — from the anchor START through END (fixed strings, so
+# index(), not a BRE range), comment-only lines dropped, a trailing ` # …` comment and the outer whitespace
+# stripped, the two tools' variable names unified.
+recipe746() {  # file start end
+  S="$2" E="$3" awk '
+    function rep(s, f, r,   i) { while ((i = index(s, f)) > 0) s = substr(s, 1, i - 1) r substr(s, i + length(f)); return s }
+    BEGIN { s = ENVIRON["S"]; e = ENVIRON["E"] }
+    !p && index($0, s) { p = 1 }
+    !p { next }
+    {
+      l = $0
+      if (l !~ /^[[:space:]]*#/) {
+        sub(/[[:space:]]+#.*$/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
+        print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
+      }
+      if (index($0, e)) exit
+    }
+  ' "$1"
+}
+ss746="$(recipe746 "$scan" "$blob_start715" "$blob_end715")"
+pp746="$(recipe746 "$pa746" "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" \
+  "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
+check_block_equal "dir #746 A11 T2: emit_blob's decode recipe equals public-audit.sh's decode_binary" "$ss746" "$pp746"
+for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
+  check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds four resuming iconv passes" 4 \
+    "$(match "${t746#*:}" -c '^iconv -c -f ')"
+  check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds one built-in decoder pass" 1 \
+    "$(match "${t746#*:}" -cF 'od -An -v -tu1')"
+done
+# T3: dir #725's predicate, its line and its one continuation line
+pred746='if [ -n "${SECRET_SCAN_PERSONAL_FILE:-}" ] && [ "$PERSONAL_FILE" != /dev/null ]'
+pin_exact "dir #746 A11 T3: one dir #725 predicate in secret-scan.sh" "$scan" "$pred746" "the dir #725 predicate twin"
+pin_exact "dir #746 A11 T3: one dir #725 predicate in public-audit.sh" "$pa746" "$pred746" "the dir #725 predicate twin"
+check_block_equal "dir #746 A11 T3: the dir #725 predicate (both lines) equals public-audit.sh's" \
+  "$(grep -F -A1 -e "$pred746" "$scan" | sed 's/^[[:space:]]*//')" \
+  "$(grep -F -A1 -e "$pred746" "$pa746" | sed 's/^[[:space:]]*//')"
 
 summary

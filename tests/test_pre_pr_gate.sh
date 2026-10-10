@@ -2309,6 +2309,32 @@ gate "gh pr create --fill" "$d"
 check_contains "dir #123: editing a .md file a real test references → recovered step 3 does NOT rebind → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #123: denied for the unbound test run" "$OUT" "test suite"
 
+# 80e2. dir #744 B33: a `changelog.d/` fragment stays in the tests-receipt hash even though NO file under
+# `tests/` names its basename. Doctor's prose checks and the fragment lint read the directory by glob,
+# never by name, so the basename rule alone would drop it and a fragment-only convergence commit would
+# re-bind the tests receipt unrun. The control: an untested `docs/*.md` still drops out (80d above).
+d="$(mkrepo)"
+mkdir -p "$d/tests" "$d/changelog.d"
+printf 'echo a real test file\n' > "$d/tests/test_something.sh"
+printf -- '- first draft\n' > "$d/changelog.d/9-x.md"
+printf 'stub\n' > "$d/untested.md"
+git -C "$d" add -A
+git -C "$d" commit -q -m "add tests/ dir, a fragment and an untested doc"
+write_full_receipt "$d"
+gate "gh pr create --fill" "$d"
+check_status "dir #744 setup: initial run with a fragment → exit 0" 0 "$STATUS"
+printf -- '- second draft\n' > "$d/changelog.d/9-x.md"
+git -C "$d" add changelog.d/9-x.md
+git -C "$d" commit -q -m "changelog: reword the fragment"
+run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt --recover
+run_in "$d" bash "$gate" receipt polish.5-review "medium-operator-run"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$(git -C "$d" rev-parse HEAD)"
+gate "gh pr create --fill" "$d"
+check_contains "dir #744 A30: a commit touching only changelog.d/9-x.md invalidates the tests receipt → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #744 A30: denied for the unbound test run" "$OUT" "test suite"
+
 # 80f. dir #123 `--full-tree` regression (operator-run /code-review high finding): `git ls-tree -r`
 # WITHOUT `--full-tree` is silently scoped to the invocation cwd's OWN subtree when `-C` points below
 # the repo root — reproduced live: a file outside that subtree changing left the hash untouched. So a
@@ -3860,52 +3886,5 @@ check_contains "dir #583: the header range ends at its own boundary line, not at
 check_contains "dir #583: the header names the sentinel's repo+branch key" "$gate_head" '`<root>/sentinel/<receipt-key>`, keyed by repo AND branch'
 check_contains "dir #583: the header names the trace's repo-only key" "$gate_head" "keyed by repo only (dir #80)"
 check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "a sandboxed shell can keep its own private view of"
-
-# --- dir #731 A18 (docs/specs/717-machine-guard-truth.md B15): a `git push` segment that carries a bypass of
-# the pre-push secret scan is denied in ANY repo, with or without a `gh pr create` in the command. The hook is
-# fed JSON events only — nothing here runs a push. ---------------------------------------------------------
-d="$(mkrepo)"
-rm -f "$(sentinel_for "$d")"
-push_deny() {
-  gate "$1" "$d"
-  check_status "dir #731 A18: [$1] exits 0 (the hook always does)" 0 "$STATUS"
-  check_contains "dir #731 A18: [$1] → deny" "$OUT" '"permissionDecision":"deny"'
-}
-push_allow() {
-  gate "$1" "$d"
-  check_status "dir #731 A18: [$1] exits 0" 0 "$STATUS"
-  check_eq "dir #731 A18: [$1] → allowed, no output" "" "$OUT"
-}
-push_deny 'git -c core.hooksPath= push origin main'
-push_deny 'git push --no-verify origin main'
-push_deny 'git -c CORE.HOOKSPATH=/dev/null push'
-push_deny 'git --config-env=core.hooksPath=X push'
-push_deny 'env A=1 git -c core.hooksPath= push'
-push_deny 'git -C /x -c core.hooksPath push'
-push_deny 'true && git push --no-verify'
-push_deny 'git push --no-verif origin main'
-push_deny 'git push --no-veri origin main'
-push_deny 'git --config-env core.hooksPath=X push'
-push_deny 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0= git push'
-push_deny '/usr/bin/git push --no-verify'
-push_deny 'GIT_CONFIG_GLOBAL=/dev/null git push origin main'
-push_deny 'HOME=/tmp/x git push origin main'
-push_deny 'if git push --no-verify; then :; fi'
-push_deny '{ git push --no-verify; }'
-push_deny 'time git push --no-verify'
-push_deny 'env -u FOO git push --no-verify'
-push_deny '! git push --no-verify'
-push_deny 'git push --no-verify && gh pr create --fill'
-gate "git push --no-verify" "$d"
-check_contains "dir #731 A18: the deny reason names the pre-push secret scan" "$OUT" "pre-push secret scan"
-push_allow 'git push origin main'
-push_allow 'git -c core.hooksPath= commit -m x'
-push_allow "$(printf 'cat <<EOF\ngit push --no-verify\nEOF')"
-push_allow 'echo "git push --no-verify"'
-push_allow "git commit -m 'git push --no-verify'"
-push_allow 'git pull --no-verify'
-push_allow 'git commit --no-verify -m x && git push origin main'
-push_allow 'git push --no-ver'
-push_allow 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git push'
 
 summary
