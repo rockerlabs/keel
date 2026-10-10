@@ -447,6 +447,22 @@ inst_run genv --no-hooks
 check_contains "install.sh Verify: a symlinked Keel pre-commit is disclosed" "$OUT" "symlink"
 check_contains "install.sh Verify: ...the guard itself still reads as wired (it runs)" "$OUT" "OK   secret-guard"
 
+# dir #695: a wired guard whose selftest FAILS says WHY — the scanner's first stderr line rides on the WARN, so
+# a malformed personal-literals file (which hard-fails the scanner since dir #680) is named, not a bare "FAILS".
+mk_home i-sfail
+run genv "$isg" --global
+sfenv() { genv "SECRET_SCAN_PERSONAL_FILE=$H/bad-personal" "$@"; }
+printf 'Jane[[:space:]]+Doe\nExample\\\n' > "$H/bad-personal"
+inst_run sfenv --no-hooks
+check_contains "dir #695: a failing selftest still warns" "$OUT" "selftest FAILS"
+check_contains "dir #695: ...and carries the scanner's first stderr line (the reason)" "$OUT" "ends in a backslash"
+check_contains "dir #695: ...naming the file it rejected" "$OUT" "$H/bad-personal"
+printf 'a(\n' > "$H/bad-personal"
+inst_run sfenv --no-hooks
+check_contains "dir #695: an invalid-regex personal file gets its own reason" "$OUT" "invalid regex in $H/bad-personal"
+inst_run genv --no-hooks
+check_absent "dir #695: a clean run prints no reason line" "$OUT" "selftest FAILS"
+
 # =================================================================================================
 # 7. dir #688 / dir #717 S5-2 — doctor's machine-wide reads go through the producer (`--where --global`),
 #    and the producer says what doctor used to compare by hand: `machine-dir=1` (the dir #122 dedup) and
