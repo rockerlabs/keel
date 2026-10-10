@@ -92,7 +92,8 @@ manifest_same_path() {
 # itself points, never the end of its chain. A recorded target that is ITSELF a symlink is not Keel's
 # either: Keel's tracked tree holds no symlinks (tests/test_install_never_clobber.sh pins that), so such a
 # record — written by an older install whose "in sync" test followed a chain — names an adopter's alias
-# inside the checkout (`<checkout>/ALIAS.md -> CORE.md`). install.sh's stale-link class, tools/doctor.sh's
+# inside the checkout (`<checkout>/ALIAS.md -> CORE.md`). (Only while that alias exists: a deleted alias, or
+# a hard-link one, is a residual — see install.sh keel_own_stale_link.) install.sh's stale-link class, tools/doctor.sh's
 # dangling-link advice and uninstall.sh's symlink arm all ask it; each keeps its own handling of a `-`
 # record at the call site.
 manifest_link_is_keels() {

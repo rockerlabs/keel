@@ -143,6 +143,8 @@ for step in reinstall uninstall; do
     run "$ck/install.sh" --link --home "$h" --no-hooks
     check_status "A40 upgrade: a re-install over that record → exit 0" 0 "$STATUS"
     check_absent "A40 upgrade: …the alias is not called Keel's own stale link" "$OUT" "CORE.md re-pointed"
+    check_eq "A40 upgrade: …and its old record is dropped" 0 \
+      "$(grep -c "^artifact=symlink	keel/CORE.md	" "$m" || true)"
   else
     run "$ck/uninstall.sh" --home "$h" --yes
     check_status "A40 upgrade: an uninstall over that record → exit 0" 0 "$STATUS"
@@ -152,7 +154,7 @@ for step in reinstall uninstall; do
 done
 rm -f "$ck/ALIAS.md"
 # The rule above leans on one fact about the product: Keel's tracked tree holds no symlinks.
-check_eq "A40 Keel's tracked tree holds no symlinks (manifest_link_is_keels relies on it)" 0 \
+check_eq "A40 this checkout's tracked tree holds no symlinks (manifest_link_is_keels assumes no release ever shipped one)" 0 \
   "$(git -C "$REPO_ROOT" ls-files -s | grep -c '^120000' || true)"
 # …while Keel's own links into an old checkout NESTED inside the new one (a worktree at
 # `<main>/.claude/worktrees/x`, then an install from `<main>`) are still its own links gone stale (T3):
@@ -169,7 +171,8 @@ check_contains "A40 nested checkout: …Keel's links are re-pointed" "$OUT" "COR
 check_eq "A40 nested checkout: …into the outer checkout" "$ck/CORE.md" "$(readlink "$h/keel/CORE.md")"
 check_eq "A40 nested checkout: …and stay on record" 1 \
   "$(grep -c "^artifact=symlink	keel/CORE.md	$ck/CORE.md\$" "$h/.keel/install-manifest.claude" || true)"
-git -C "$ck" worktree remove --force "$nested"
+git -C "$ck" worktree remove --force "$nested" || exit 1
+check_nodir "A40 nested checkout: the worktree is gone again" "$nested"
 check_eq "A40 nested checkout: the scratch checkout is clean again" "" "$(git -C "$ck" status --porcelain)"
 # …and a dotfiles chain at keel/CORE.md is the adopter's at install too: --link --no-git declines it rather
 # than replacing it with the trimmed copy.
