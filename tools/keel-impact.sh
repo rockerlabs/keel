@@ -1756,7 +1756,7 @@ cmd_restore() {
 # shape — print the event vocabulary and the ONE-event line a checkpoint copies (dir #732). A pure printer: no
 # repo, store or flag needed, so a manager can paste it into a worker brief and a worker can read it cold. The
 # first line takes the kinds from $EVENT_TYPES (plus the count-only silent); the example lines and the flags in
-# the last paragraph are prose, pinned by tests/test_keel_impact.sh.
+# the last paragraph are prose, only partly pinned by tests/test_keel_impact.sh.
 cmd_shape() {
   [ "$#" -eq 0 ] || { printf 'keel-impact: shape takes no arguments\n' >&2; usage >&2; exit 2; }
   cat <<EOF
