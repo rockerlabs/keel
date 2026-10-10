@@ -2276,13 +2276,13 @@ sel_root="$SANDBOX/s16-copy"; mkdir -p "$sel_root/tools" "$sel_root/stub"
 cp -R "$REPO_ROOT/tools/self" "$sel_root/tools/self"; cp -R "$REPO_ROOT/tools/lib" "$sel_root/tools/lib"
 printf '#!/bin/sh\nexit 0\n' > "$sel_root/stub/shellcheck"; chmod +x "$sel_root/stub/shellcheck"
 d="$(mk_clean_repo)"
-printf '#!/usr/bin/env bash\necho x >&2; exit 3\n' > "$sel_root/tools/self/shellcheck-targets.sh"
+printf '#!/usr/bin/env bash\necho selector-says-no >&2; exit 3\n' > "$sel_root/tools/self/shellcheck-targets.sh"
 run env -u KEEL_SELF_DOCTOR_SKIP_SHELLCHECK PATH="$sel_root/stub:$PATH" bash "$sel_root/tools/self/doctor.sh" "$d"
 check_status "A40: a failing shellcheck-target selector -> exit 1" 1 "$STATUS"
 check_contains "A40: the GAP names the selector failure" "$OUT" "could not list the shell scripts to check (exit 3)"
 check_contains "A40: the GAP states the check is incomplete" "$OUT" "the shellcheck check is INCOMPLETE"
 check_absent "A40: no OK line over a selector that could not list" "$OUT" "OK   shellcheck: no tracked shell scripts"
-check_contains "A40: the selector's own stderr line rides under the GAP" "$OUT" "       x"
+check_contains "A40: the selector's own stderr line rides under the GAP" "$OUT" "       selector-says-no"
 # the empty-success branch: a selector that lists nothing and succeeds is still the honest OK line, and the empty
 # list adds no phantom `$repo_root/` script.
 printf '#!/usr/bin/env bash\nexit 0\n' > "$sel_root/tools/self/shellcheck-targets.sh"
@@ -2312,7 +2312,7 @@ check_contains "A41: the GAP is followed by git's own stderr line" "$OUT" "     
 # index empties the tool list too.
 d="$(mk_clean_repo)"
 mkdir -p "$sel_root/gitshim"
-printf '#!/bin/sh\ncase "$*" in *.github/workflows*) echo "fatal: shim refuses the reference listing" >&2; exit 128 ;; esac\nexec %s "$@"\n' \
+printf '#!/bin/sh\ncase "$*" in *.github/workflows*) echo "fatal: shim refuses the reference listing" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' \
   "$(type -P git)" > "$sel_root/gitshim/git"
 chmod +x "$sel_root/gitshim/git"
 run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$sel_root/gitshim:$PATH" "$sd" "$d"
