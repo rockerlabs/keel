@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- **`docs/release-management.md` R3 names both launch paths, and R13 and `commands/manage-release.md` agree; `tools/keel-impact.sh` prints the one-event shape and attributes a score to a session.**
+  dir #732: R3 said the manager "cannot preset" a worker's model, but a direct launch (`start_session`)
+  presets model and effort (the 0.14.0 release's FIX and CUT workers ran Sonnet from turn 1) while a task
+  chip leaves them to the operator (the chips ran Opus on 3 of 6) — R3 and its `docs/delegation.md`
+  cross-reference now name both paths and require verifying the running tier on either. `manage-release.md`'s
+  closing paragraph said workers carry the DELEGATION RUN line; R13 says the `WRAP CENTRALIZED` marker, and
+  the paragraph now agrees (M9 also asks for cited events, not an "event-count block"). Tool half:
+  `keel-impact.sh shape` prints the event kinds and the one line a checkpoint copies, and `add --session
+  <worker id>` records the session a score came from in a new last ledger column (older rows read `—`), so a
+  manager's one wrap can score every worker, not only itself.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

@@ -224,7 +224,7 @@ pin "R3 names the direct launch that presets model and effort" "$doc" \
   'A direct launch (`start_session`) takes a `model` and an `effort`' \
   "expected R3 to say a direct launch presets the worker's tier (dir #732)"
 pin "R3 names the hand-off path where the operator sets the tier" "$doc" \
-  'a task chip or any hand-off the operator starts' \
+  'task chip or any hand-off the operator starts' \
   "expected R3 to name the manual-gesture path beside the direct one (dir #732)"
 pin "R3 says each path is verified against what is RUNNING" "$doc" \
   'verifies what is actually running' \
@@ -232,7 +232,7 @@ pin "R3 says each path is verified against what is RUNNING" "$doc" \
 check_absent "R3 no longer says the manager cannot preset the tier" "$doc_body" 'it cannot preset it'
 check_absent "delegation.md no longer says a launcher cannot preset the tier" "$(cat "$delegation")" 'not something a launcher can preset'
 pin "delegation.md's launch-time rule names both paths" "$delegation" \
-  'A direct launch (`start_session`) can preset both' \
+  'A direct launch (`start_session`) can preset' \
   "expected the delegation.md cross-reference to agree with R3 (dir #732)"
 
 pin "manage-release.md says workers carry the R13 marker" "$cmd" \
@@ -248,7 +248,7 @@ pin "R13 names the shipped one-event shape verb" "$doc" \
   '`tools/keel-impact.sh shape`' \
   "expected R13's one-cited-event paragraph to name the shipped verb (dir #732)"
 pin "R13 names the session attribution flag" "$doc" \
-  '`add --session`' \
+  'add --session <worker id>' \
   "expected R13 to say each worker's score is attributed to its session (dir #732)"
 check_absent "R13 no longer names dir #732 as a pending remover" "$doc_body" 'its remover is `dir #732`'
 
