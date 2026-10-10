@@ -1939,9 +1939,9 @@ function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r, why) {
 # started word (got; the double-quoted reader passes 0), bash and zsh read on into the word what this reader takes
 # for a separator: a `(` (zsh glob qualifiers and extglob, `E(x)`, `E@(x)`), a process substitution (`E<(x)`,
 # `E>(x)`) and zsh’s numeric glob `<N-M>` of any length (a plain `<` or `>` is a redirection in every shell).
-# Anywhere: a substitution
-# (`$(`, `${`, `$[`, a backtick), outside double quotes also a $-single or $-double quote, a backslash-newline, or
-# any backslash inside backticks (the shells unescape the backticks first; in a single-quoted span too, heredoc_op).
+# Anywhere: a substitution (`$(`, `${`, `$[`, a backtick), outside double quotes also a $-single or $-double quote,
+# a backslash-newline, or any backslash inside backticks (the shells unescape the backticks first; in a
+# single-quoted span too, heredoc_op).
 function delim_odd(dq, got,   c, c1, k) {
   c = ch[pos]; c1 = at(1)
   if (got) {
