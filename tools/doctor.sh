@@ -1780,7 +1780,7 @@ for d in "${DIRS[@]}"; do
   done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
   if [ -z "$w_eff" ]; then
-    warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo (a corrupt git config does that — 'git -C $d config --list' shows git's own message)$guard_home_note"
+    warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo (for example a corrupt git config: 'git -C $d config --list' shows git's own message, 'install-secret-guard.sh --where $d' shows the resolver's)$guard_home_note"
   elif [ "$w_set" = 1 ] && [ -z "$w_value" ]; then
     # dir #747 (S3-5): core.hooksPath is SET, to nothing (or to no value at all). Git runs no hooks in this repo while
     # it stands, a vendored copy would be ignored, and the old "install --global / vendor" advice was refused or inert.
