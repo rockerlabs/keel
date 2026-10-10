@@ -172,6 +172,8 @@ needle_rules=(
   "dir #696 B6: sibling lookup by porcelain"
   "dir #696 B6: prunable entry is removed, not pruned"
   "dir #696 B6: resume there is an offer, not a write"
+  "dir #696 B6: the successor writes and claims nothing"
+  "dir #696 B6: the count is read from the sibling's path"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -218,6 +220,8 @@ needle_texts=(
   "worktree list --porcelain"
   "git worktree remove"
   "resume there"
+  "you write and claim nothing"
+  "git -C <path> status --porcelain"
 )
 # T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
 # for every row here, old and new alike (verified live: every needle below already satisfies this,
@@ -600,6 +604,21 @@ replace_in_line_containing "$c696c_copy" "resume there" "resume there" "continue
 assert_case_turns_red "(g) needle mutation: dir #696 B6-c resume-there offer removed" \
   "(g) needle [dir #696 B6: resume there is an offer, not a write]: 'resume there' matches exactly one line" \
   "KEEL_GO_MD=$c696c_copy"
+
+# B6-d: resuming there writes and claims nothing (an offer is not consent to write in the predecessor's tree).
+c696e_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696e_copy" "you write and claim nothing" "; you write and claim nothing" ""
+assert_case_turns_red "(g) needle mutation: dir #696 B6-d write-and-claim-nothing guarantee removed" \
+  "(g) needle [dir #696 B6: the successor writes and claims nothing]: 'you write and claim nothing' matches exactly one line" \
+  "KEEL_GO_MD=$c696e_copy"
+
+# B6-e: the uncommitted-file count is read from the SIBLING's path; run in the cwd it would report the
+# successor's own clean tree as 0 and the operator would abandon real work on a false signal.
+c696f_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c696f_copy" "git -C <path> status --porcelain" "git -C <path> status" "status"
+assert_case_turns_red "(g) needle mutation: dir #696 B6-e sibling-path status read removed" \
+  "(g) needle [dir #696 B6: the count is read from the sibling's path]: 'git -C <path> status --porcelain' matches exactly one line" \
+  "KEEL_GO_MD=$c696f_copy"
 
 # A7: re-adding the retired sentence turns the absence check red.
 c696d_copy="$(scratch_copy "$go_md" go.md)"

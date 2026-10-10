@@ -45,10 +45,10 @@ relaunch — a session cannot raise its own) and continue.
 
 **4. inflight-check.** `git fetch --prune`. A `⏳` heading naming a live branch that is not yours →
 STOP: report "in flight on `<branch>`" and where it is checked out (`worktree list --porcelain`; git refuses a
-second checkout): path, uncommitted-file count (`unknown` if `status --porcelain` fails). Offer resume there
-(the operator runs `/go <id>` in a session in that path; you write and claim nothing), a fresh branch (step 6
-replaces the marker; its note is superseded), or another ticket. `prunable` (directory deleted or moved; a deleted
-one's uncommitted work is lost) → offer `git worktree remove <path>`, then switching to it, or another ticket.
+second checkout): path, uncommitted-file count (`unknown` if `git -C <path> status --porcelain` fails). Offer
+resume there (the operator runs `/go <id>` in a session in that path; you write and claim nothing), a fresh
+branch (step 6 replaces the marker; its handoff note is superseded), or another ticket. `prunable` (directory deleted or moved; if
+deleted, uncommitted work is lost) → offer `git worktree remove <path>`, then switching to it, or another ticket.
 Checked out nowhere → offer to switch to it, or another ticket. Fallback for an unclaimed
 ticket: scan `git branch -a` for a live branch, not your own — `go` + the id first, decoration loose,
 id exact — then a keyword grep of branch names against the title; a match → same stop. A `⏳` heading
