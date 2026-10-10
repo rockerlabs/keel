@@ -365,7 +365,7 @@ between a closed run and a lost record.
 
 Copy-paste-ready skeletons, one per role. Every prompt below adopts the Protocol (§4) **by
 reference** — restating all 8 rules in every prompt is exactly the bloat a reference avoids — but
-**carries the rails block below verbatim, not by reference.** This is
+**carries the rails block below verbatim, not by reference** — together with the two leg rails that follow its last line (dir #759). This is
 [`docs/delegation.md`](delegation.md)'s own promise (its "Worker rails — verbatim, do not
 paraphrase" section) applied honestly:
 [`docs/drydock.md`](drydock.md)'s worker and verifier role templates (auditor, code-auditor, verifier)
@@ -405,6 +405,12 @@ split — a second template set repeating that gap is the one outcome this secti
   runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
   in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- Write only under your own scratch subdirectory, named for your leg (`<scratch>/<your leg id>/`) — every probe
+  script, log and fixture, never a generic filename (`p1.sh`) in a directory other legs share. (Parallel legs
+  writing generically named probe scripts into one shared scratchpad overwrote each other's; dir #759.)
+- Never stop, kill or remove a container, process or file you did not create yourself — no `docker kill`,
+  `pkill` or `killall` over a list you did not build from your own launches. (A re-check leg's
+  `docker ps -q | xargs -r docker kill` killed every container on the shared daemon; dir #759.)
 ```
 
 **S1 — mechanical baseline:**
@@ -454,6 +460,12 @@ Rails:
   runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
   in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- Write only under your own scratch subdirectory, named for your leg (`<scratch>/<your leg id>/`) — every probe
+  script, log and fixture, never a generic filename (`p1.sh`) in a directory other legs share. (Parallel legs
+  writing generically named probe scripts into one shared scratchpad overwrote each other's; dir #759.)
+- Never stop, kill or remove a container, process or file you did not create yourself — no `docker kill`,
+  `pkill` or `killall` over a list you did not build from your own launches. (A re-check leg's
+  `docker ps -q | xargs -r docker kill` killed every container on the shared daemon; dir #759.)
 
 Write your output to <ABSOLUTE path to this run's S1 report>, following the report contract in
 Protocol rule 6. End your final message with the output of `ls -la <that path>` (§6).
@@ -505,6 +517,12 @@ Rails:
   runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
   in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- Write only under your own scratch subdirectory, named for your leg (`<scratch>/<your leg id>/`) — every probe
+  script, log and fixture, never a generic filename (`p1.sh`) in a directory other legs share. (Parallel legs
+  writing generically named probe scripts into one shared scratchpad overwrote each other's; dir #759.)
+- Never stop, kill or remove a container, process or file you did not create yourself — no `docker kill`,
+  `pkill` or `killall` over a list you did not build from your own launches. (A re-check leg's
+  `docker ps -q | xargs -r docker kill` killed every container on the shared daemon; dir #759.)
 
 Write your output to <ABSOLUTE path to this session's report>, following the report contract in
 Protocol rule 6. End your final message with the output of `ls -la <that path>` (§6).
@@ -558,6 +576,12 @@ Rails:
   runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
   in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- Write only under your own scratch subdirectory, named for your leg (`<scratch>/<your leg id>/`) — every probe
+  script, log and fixture, never a generic filename (`p1.sh`) in a directory other legs share. (Parallel legs
+  writing generically named probe scripts into one shared scratchpad overwrote each other's; dir #759.)
+- Never stop, kill or remove a container, process or file you did not create yourself — no `docker kill`,
+  `pkill` or `killall` over a list you did not build from your own launches. (A re-check leg's
+  `docker ps -q | xargs -r docker kill` killed every container on the shared daemon; dir #759.)
 
 Write your output to <ABSOLUTE path to this session's report>, following the report contract in
 Protocol rule 6, plus your reconciliation section if applicable. End your final message with the
@@ -619,6 +643,12 @@ Rails:
   runs in the real worktree. (A verifier's `cd <deleted sandbox> && …; git checkout …` ran the checkout
   in the orchestrator's real worktree; dir #669.)
 - DELEGATION RUN: wrap duties are centralized — this session does NOT run /wrap or write any log/backlog/memory; the orchestrator owns all bookkeeping.
+- Write only under your own scratch subdirectory, named for your leg (`<scratch>/<your leg id>/`) — every probe
+  script, log and fixture, never a generic filename (`p1.sh`) in a directory other legs share. (Parallel legs
+  writing generically named probe scripts into one shared scratchpad overwrote each other's; dir #759.)
+- Never stop, kill or remove a container, process or file you did not create yourself — no `docker kill`,
+  `pkill` or `killall` over a list you did not build from your own launches. (A re-check leg's
+  `docker ps -q | xargs -r docker kill` killed every container on the shared daemon; dir #759.)
 
 Issue GO or NO-GO, naming the exact verified SHA, in <ABSOLUTE path to this run's verdict record>
 (end your final message with the output of `ls -la <that path>`, §6). The

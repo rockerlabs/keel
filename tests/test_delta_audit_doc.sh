@@ -190,4 +190,30 @@ pin "mutation size rule: the report states what the leg left and hands over the 
   'hands the operator the `rm -rf`' \
   "expected item 5 to make the leg report what it left and give the operator the cleanup command"
 
+# --- dir #759: the two leg rails ride every rails-block copy, byte-identical ------------------------
+# They follow each copy's DELEGATION RUN line (outside extract_rails_block's range, so docs/delegation.md's
+# canonical block and its other verbatim copies stay untouched). Block-extract and diff, as above.
+leg_rails_all="$(awk '/^- Write only under your own scratch/,/shared daemon; dir #759/' "$doc")"
+leg_copies="$(printf '%s\n' "$leg_rails_all" | grep -c '^- Write only under your own scratch')"
+if [ "$leg_copies" -eq "${copies_in_doc:-0}" ] && [ "$leg_copies" -eq 5 ]; then
+  pass "every one of delta-audit.md's 5 rails-block copies carries the leg rails (dir #759)"
+else
+  fail "every one of delta-audit.md's 5 rails-block copies carries the leg rails (dir #759)" \
+    "found $leg_copies leg-rails copies vs ${copies_in_doc:-0} rails-block copies"
+fi
+leg_first="$(printf '%s\n' "$leg_rails_all" | awk 'NR>1 && /^- Write only under your own scratch/{exit} {print}')"
+leg_expected="$(for _ in $(seq 1 "${leg_copies:-0}"); do printf '%s\n' "$leg_first"; done)"
+if [ -n "$leg_first" ] && [ "$leg_rails_all" = "$leg_expected" ]; then
+  pass "every leg-rails copy in delta-audit.md is byte-identical to the first (dir #759)"
+else
+  fail "every leg-rails copy in delta-audit.md is byte-identical to the first (dir #759)" \
+    "leg-rails text differs between copies — diff them by hand"
+fi
+check_contains "leg rails: a per-leg scratch subdirectory" "$leg_first" "named for your leg"
+check_contains "leg rails: never stop/kill/remove what you did not create" "$leg_first" "you did not create yourself"
+
+pin "release-audit.md's cut step: the history entry states only events already on record (dir #759)" \
+  "$release_audit" '**The entry states only events already on record.**' \
+  "expected the cut step to forbid a history entry that states a waiver, GO or tag not yet recorded"
+
 summary
