@@ -341,7 +341,7 @@ if command -v mkfifo >/dev/null 2>&1 && mkfifo "$w/nobody-reads" 2>/dev/null; th
   printf 'q\n' > "$w/q"; ln -s "$w/nobody-reads" "$w/q.20260101T000000Z.bak"
   ( KEEL_TEST_NOW=20260101T000000Z keel_backup "$w/q" && printf '%s' "$KEEL_BACKUP" > "$w/q.result" ) &
   qpid=$!; qwait=0
-  while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt 10 ]; do sleep 1; qwait=$((qwait + 1)); done
+  while kill -0 "$qpid" 2>/dev/null && [ "$qwait" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; qwait=$((qwait + 1)); done
   if kill -0 "$qpid" 2>/dev/null; then
     # A READER releases the claim blocked in open() (a second writer would block too); the claim then
     # runs to its end, so no process is left orphaned in open() for the rest of the suite.

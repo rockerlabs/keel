@@ -1079,8 +1079,8 @@ env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE \
   bash "$TOOL" migrate "$sigrepo" >"$SANDBOX/dir409.out" 2>&1 </dev/null &
 sig_pid=$!
 sig_waited=0
-while [ ! -f "$awk_marker" ] && kill -0 "$sig_pid" 2>/dev/null && [ "$sig_waited" -lt 50 ]; do
-  sleep 0.2; sig_waited=$((sig_waited + 1))
+while [ ! -f "$awk_marker" ] && kill -0 "$sig_pid" 2>/dev/null && [ "$sig_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
+  sleep 1; sig_waited=$((sig_waited + 1))
 done
 if [ ! -f "$awk_marker" ]; then
   pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
@@ -1097,12 +1097,12 @@ else
     # by the time this loop exits because the process is gone, the cleanup (if the code does it at
     # all) is GUARANTEED complete — no race window remains, regardless of how loaded or how much
     # slower the scheduler is (the loop just takes longer to observe the same guaranteed-ordered
-    # fact). Bounded generously (100 x 0.1s = 10s) so a genuinely slow CI runner still gets there;
-    # this bound is a ceiling on how long we wait to OBSERVE the death, not a guess about how fast
-    # the trap itself runs.
+    # fact). Bounded by KEEL_TEST_HANG_BOUND (dir #744 B31, default 120 s) so a genuinely slow CI runner
+    # still gets there; this bound is a ceiling on how long we wait to OBSERVE the death, not a guess
+    # about how fast the trap itself runs.
     dir409_death_wait=0
-    while kill -0 "$dir409_target" 2>/dev/null && [ "$dir409_death_wait" -lt 100 ]; do
-      sleep 0.1; dir409_death_wait=$((dir409_death_wait + 1))
+    while kill -0 "$dir409_target" 2>/dev/null && [ "$dir409_death_wait" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
+      sleep 1; dir409_death_wait=$((dir409_death_wait + 1))
     done
   fi
   dir409_leftover=""
@@ -1121,7 +1121,7 @@ else
   check_nofile "dir #409: an interrupted merge never writes the completion marker" "$sigrepo_store/origin"
   # Reap anything TERM didn't catch — unconditional cleanup, not part of the assertion above. The
   # first kill is a no-op in the common case (the rendezvous loop above already confirmed
-  # $dir409_target is dead); it only does real work if that loop hit its 10s timeout instead of
+  # $dir409_target is dead); it only does real work if that loop hit its KEEL_TEST_HANG_BOUND instead of
   # observing death. The pattern-based pkill below is deliberately still the fuzzy, non-exact kill
   # this fix's whole point was to stop relying on for the ASSERTION — kept here only as a mop-up for
   # any OTHER bash-fork layer of the same invocation that isn't $dir409_target, not as a second
@@ -1332,7 +1332,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" migrate "$lfrepo" >"$SANDBOX/lfrepo.out" 2>&1 </dev/null &
   lf_pid=$!
   lf_waited=0
-  while kill -0 "$lf_pid" 2>/dev/null && [ "$lf_waited" -lt 10 ]; do
+  while kill -0 "$lf_pid" 2>/dev/null && [ "$lf_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; lf_waited=$((lf_waited + 1))
   done
   if kill -0 "$lf_pid" 2>/dev/null; then
@@ -1429,7 +1429,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   ( cd "$evfrepo" && env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --guard e --gap none >"$SANDBOX/evfrepo.out" 2>&1 </dev/null ) &
   evf_pid=$!
   evf_waited=0
-  while kill -0 "$evf_pid" 2>/dev/null && [ "$evf_waited" -lt 10 ]; do
+  while kill -0 "$evf_pid" 2>/dev/null && [ "$evf_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; evf_waited=$((evf_waited + 1))
   done
   if kill -0 "$evf_pid" 2>/dev/null; then

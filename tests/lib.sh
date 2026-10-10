@@ -247,7 +247,38 @@ unset \
 # reproduced hundreds of stale entries left behind by exactly this).
 export KEEL_LEDGER_FILE="$SANDBOX/harness-installed-homes"
 
-trap 'rm -rf "$SANDBOX"' EXIT
+# dir #744 (B14): the sandbox teardown, a named handler so a test that needs its own EXIT step can call it
+# (`trap 'my_step; sandbox_teardown' EXIT`). A failed removal used to leave only rm's own "cannot remove"
+# line in the log (R2-6: `lk-ck-file/.git: Directory not empty`, cause unknown). Now it says what was still
+# there and who held it, waits 1 s, and tries once more; a path still there after that stays for the dir #663
+# residue gate, as before. `rm` is called through PATH on purpose: a test shims it to drive the failure path
+# (chmod cannot make a path unremovable for root, alpine's CI user). The process list is `ps -A -o pid,args`
+# (BSD, busybox and procps all accept it) filtered in the shell, no grep pipe.
+sandbox_teardown() {
+  local left procs line
+  rm -rf "$SANDBOX" && return 0
+  [ -e "$SANDBOX" ] || return 0
+  left="$(find "$SANDBOX" 2>/dev/null)"
+  procs=""
+  command -v ps >/dev/null 2>&1 && procs="$(ps -A -o pid,args 2>/dev/null)"
+  {
+    printf 'NOTE: sandbox teardown failed once: %s\n' "$SANDBOX"
+    printf '  still there (first 20):\n'
+    awk 'NF && ++n <= 20 { print "    " $0 }' <<< "$left"
+    printf '  live processes naming the sandbox or git:\n'
+    while IFS= read -r line; do
+      case "$line" in
+        *"$SANDBOX"*|*" git "*|*"/git "*) printf '    %s\n' "$line" ;;
+      esac
+    done <<< "$procs"
+  } >&2
+  sleep 1
+  if rm -rf "$SANDBOX"; then
+    printf 'NOTE: sandbox teardown needed a retry\n' >&2
+  fi
+  return 0
+}
+trap sandbox_teardown EXIT
 
 # --- ref guard (dir #318) ------------------------------------------------------------------------
 # ref_guard_arm REPO — arm a git-level guard, keyed on REPO's own git common dir, so no git process a
@@ -386,6 +417,39 @@ exit 0
 }
 
 ref_guard_arm "$REPO_ROOT"
+
+# --- no detached git writer (dir #744, B13) ---------------------------------------------------------------
+# Every `git commit` spawns a detached `git maintenance run --auto` (git >= 2.29), which can still be writing
+# into a fixture repo's .git while the EXIT trap removes the sandbox: the R2-6 teardown flake's likeliest
+# writer. Two command-scope entries turn it off for every git process this test spawns. APPENDED to the
+# GIT_CONFIG_COUNT/KEY/VALUE triple, never overwritten (CLAUDE.md Linux trap 4's note): an entry a parent
+# exported — a parent test's guard, a CI step's triple — survives this file. fresh_home_env replaces only
+# HOME and GIT_CONFIG_GLOBAL, so these survive it too.
+_maint_n="${GIT_CONFIG_COUNT:-0}"
+case "$_maint_n" in
+  (*[!0-9]*|??????????*)
+    printf 'NOTE: dir #744: GIT_CONFIG_COUNT is not a small non-negative integer (got %s) — git auto-maintenance stays ON in this test file.\n' "$_maint_n" >&2
+    ;;
+  (*)
+    _maint_n=$((10#$_maint_n))
+    export "GIT_CONFIG_KEY_$_maint_n=maintenance.auto"
+    export "GIT_CONFIG_VALUE_$_maint_n=false"
+    export "GIT_CONFIG_KEY_$((_maint_n + 1))=gc.auto"
+    export "GIT_CONFIG_VALUE_$((_maint_n + 1))=0"
+    export GIT_CONFIG_COUNT=$((_maint_n + 2))
+    ;;
+esac
+unset _maint_n
+
+# dir #744 (B31): KEEL_TEST_HANG_BOUND, the seconds a test waits for a background process before calling it hung
+# (each site reads ${KEEL_TEST_HANG_BOUND:-120}). Normalized once here: anything but up to 9 digits is the
+# default, so a non-numeric value cannot make every wait's `[ … -lt … ]` error out and report a running process
+# as hung. 0 is kept on purpose: every wait then gives up at once — dir #744's A28 proof that the variable is
+# read (`KEEL_TEST_HANG_BOUND=0 bash tests/test_keel_impact.sh` fails its start-marker and FIFO waits at once;
+# run by hand, too slow for every suite run; the other sites are held by tests/test_suite_hygiene.sh's lint).
+case "${KEEL_TEST_HANG_BOUND:-}" in
+  ''|*[!0-9]*|??????????*) export KEEL_TEST_HANG_BOUND=120 ;;
+esac
 
 # dir #627, second fail-open: a test file calling an assertion this library does not define (e.g.
 # `check_eq` when only `check_ne` exists) loses that assertion SILENTLY — bash prints its own
@@ -622,6 +686,16 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
 alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
 
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
+# check_status_out LABEL EXPECTED — check_status against $STATUS, and on a mismatch ALSO print the first 40
+# lines of $OUT, indented (dir #744, B15): a failure whose cause is only in the command's output (the doctor
+# smoke's "exit 1, no GAP text") must leave that output in the log. A match prints nothing extra.
+check_status_out() {
+  check_status "$1" "$2" "$STATUS"
+  if [ "$2" != "$STATUS" ]; then
+    printf '        output (first 40 lines):\n'
+    awk 'NR <= 40 { print "          " $0 }' <<< "$OUT"
+  fi
+}
 check_contains() { case "$2" in *"$3"*) pass "$1" ;; *) fail "$1" "output missing: $3" ;; esac; }
 check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3" ;; *) pass "$1" ;; esac; }
 # dir #481 (found by this ticket's own /code-review high pass, two independent delta-round agents):

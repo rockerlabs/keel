@@ -126,7 +126,7 @@ check_status "--since from session A's own start date keeps both sessions" "0" "
 check_contains "--since 2026-09-01 keeps both A and B" "$OUT" "2 session(s)"
 
 run_in "$repo" bash "$tool" --since 2099-01-01
-check_status "--since far in the future exits 0, not an error" "0" "$STATUS"
+check_status_out "--since far in the future exits 0, not an error" "0"
 check_contains "--since with no matching session reports zero, not a crash" "$OUT" "0 session(s)"
 check_contains "zero-session report explains why, and names the harness boundary (R3)" "$OUT" "Claude Code transcripts"
 

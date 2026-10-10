@@ -30,7 +30,7 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 # dir #678: the shellcheck leg over every tracked script is ~40% of this file's CPU and CI runs it anyway
 # (the doctor job + the shellcheck job), so the smoke skips it via the documented knob.
 run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" --quiet
-check_status "the real keel checkout is clean (no GAP)" 0 "$STATUS"
+check_status_out "the real keel checkout is clean (no GAP)" 0
 
 # --- synthetic sandbox: a minimal, fully-passing mini-repo; each test mutates a fresh copy --------
 # Fixture scripts hold only what the checks under test actually need: doctor.sh's ship-skip check
