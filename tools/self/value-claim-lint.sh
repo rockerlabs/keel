@@ -21,8 +21,9 @@
 #     against the slate's live ticket list ... and the residue stated on the row by number"): a
 #     `Residue:` clause is the part every compliant plan states (a row with an empty residue says
 #     so), so `residue` followed by `:`, `=` or `—` passes — a plan written "source = ... diff ...
-#     Residue: ..." is compliant and must not be flagged on wording alone;
-#   - `no claim` ("carried-over theme, no claim beyond the release-level drain") — a row that
+#     Residue: ..." is compliant and must not be flagged on wording alone. The source and the diff
+#     are NOT checked on their own: a cell naming them but no residue is flagged;
+#   - the words `no claim` ("carried-over theme, no claim beyond the release-level drain") — a row that
 #     makes no claim has no set to bind; or
 #   - `no subject set —` followed by a reason.
 # A bare mention of "subject set" with none of these does not count. This vocabulary tracks G5; if
@@ -92,8 +93,9 @@ fi
 blank_fenced_blocks "$releases_file" | awk -v want="$version" '
   function ok(t,   l) {
     sub(/[ \t]*\|[ \t]*$/, "", t)   # a table row ends in its closing pipe, which is not a reason
+    sub(/^\|[^|]*\|/, "", t)         # a table row: judge the claim cell, not its label cell
     l = tolower(t)
-    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /residue *[:=—]/ || l ~ /no claim/)
+    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /residue *(:|=|—)/ || l ~ /(^|[^a-z])no claim([^a-z]|$)/)
   }
   function judge(t, at) {
     cells++
@@ -116,7 +118,8 @@ blank_fenced_blocks "$releases_file" | awk -v want="$version" '
   in_list {
     if ($0 ~ /^- /) { flush(); bullet = $0; bullet_at = NR; next }
     if ($0 ~ /^  / && bullet != "") { bullet = bullet " " $0; next }
-    flush(); in_list = 0
+    if ($0 ~ /^[ \t]*$/) { flush(); next }   # blank lines separate bullets; they do not end the list
+    flush(); in_list = 0               # an unindented paragraph does
   }
   /^\*\*[Vv]alue claims/ { in_list = 1; next }
   tolower($0) ~ /^\| *\**value claim/ { judge($0, NR) }

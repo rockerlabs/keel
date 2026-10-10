@@ -475,7 +475,7 @@ number with a one-line reason per item. A row with an empty residue says so; a r
 non-empty one has just stated where it will be wrong in public, which is the field's whole purpose.
 This is a rule of the procedure, not a compensation for a defect — no ticket removes it. Before G6, run
 `tools/self/value-claim-lint.sh RELEASES.md <version>` (dir #672): advisory, it flags each value-claim cell with
-none of this rule's forms (a `Subject set:` clause, a source/diff/`Residue:` statement, `no claim`, or
+none of this rule's forms (a `Subject set:` clause, a `Residue:` clause, `no claim`, or
 `no subject set — <why>`), so the reviewer's budget goes to what a lint cannot see.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
