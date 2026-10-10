@@ -2536,7 +2536,7 @@ check_eq "dir #715 A13: the scanner holds no heredoc (the register reads it line
   "$(awk '{ g = $0; gsub(/<<</, "", g); if (index(g, "<<")) print NR }' "$scan")"
 # mutation proof: the register turns red on a dropped LC_ALL=C and on an untagged `|| true`
 cp "$scan" "$SANDBOX/reg715-locale.sh"
-replace_in_line_containing "$SANDBOX/reg715-locale.sh" 'read -r rec' 'LC_ALL=C ' ''
+replace_in_line_containing "$SANDBOX/reg715-locale.sh" 'read -r hit ||' 'LC_ALL=C ' ''   # collect_matches' read (dir #746 B10 retired the filter's)
 check_ne "dir #715 A13 mutation: a read without LC_ALL=C is reported" "" "$(register715 "$SANDBOX/reg715-locale.sh")"
 cp "$scan" "$SANDBOX/reg715-true.sh"
 append_line "$SANDBOX/reg715-true.sh" 'x715="$(false)" || true'
