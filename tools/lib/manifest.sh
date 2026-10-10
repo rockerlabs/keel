@@ -65,17 +65,21 @@ keel_path_inside() {
 
 # manifest_same_path A B — A and B name the same directory entry: the same text; or, for an absolute A, the
 # same directory (`-ef` on the two parent directories, so a symlinked parent, /tmp vs /private/tmp and a
-# case-only difference on a case-insensitive file system all match) holding the same entry (the same name,
-# or `-ef` on the two entries inside that one directory). Never resolves A or B through a link AT them to
-# somewhere else, so the end of a chain of links (`x -> ~/dots/x -> <checkout>/x`) is not "the same" as the
-# file the chain ends at. The text half is what still answers once the directories are gone (a moved
+# case-only difference on a case-insensitive file system all match) holding the same entry: the same name,
+# or — names that differ only in case — one entry there (`-ef`, which on a case-folding file system is the
+# one dentry). Never resolves A or B through a link AT them to somewhere else: neither the end of a chain
+# of links (`x -> ~/dots/x -> <checkout>/x`) nor a differently-named sibling (`<checkout>/ALIAS.md ->
+# CORE.md`, or a hard link) is "the same" as the file it leads to. The text half is what still answers once the directories are gone (a moved
 # checkout). The one definition of "a link points where the record says" (manifest_link_is_keels below,
 # uninstall.sh's symlink arm and its compatibility-link count).
 manifest_same_path() {
+  local na="${1##*/}" nb="${2##*/}"
   [ "$1" = "$2" ] && return 0
   case "$1" in /*) ;; *) return 1 ;; esac
-  [ -d "${1%/*}/" ] && [ "${1%/*}/" -ef "${2%/*}/" ] || return 1
-  [ "${1##*/}" = "${2##*/}" ] || [ "$1" -ef "$2" ]
+  [ "${1%/*}/" -ef "${2%/*}/" ] || return 1
+  [ "$na" = "$nb" ] && return 0
+  [ "$(printf '%s' "$na" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$nb" | tr '[:upper:]' '[:lower:]')" ] \
+    && [ "$1" -ef "$2" ]
 }
 
 # manifest_link_is_keels MANIFEST REL LINK — the ONE test that a link a manifest recorded is provably Keel's
