@@ -42,6 +42,9 @@ mk_stub() {
     printf '%s\n' "$2"
     printf '%s\n' 'if [ "${1:-}" = --selftest ]; then' \
       '  for t in ${ISG_RACE_FILES:-}; do [ -e "$t" ] || [ -L "$t" ] || printf "RACE\n" > "$t"; done' \
+      '  if [ -n "${ISG_PLANT_DIR:-}" ]; then' \
+      '    for f in secret-scan.sh pre-commit pre-push range-lib.sh; do ln -s "$ISG_PLANT_TARGET" "$ISG_PLANT_DIR/$f.isgtmp.$PPID"; done' \
+      '  fi' \
       '  echo "selftest: OK (stub)"' 'fi' 'exit 0'
   } > "$d/secret-guard/secret-scan.sh"
   chmod +x "$d/secret-guard/secret-scan.sh"
@@ -189,6 +192,33 @@ check_eq "A28: the earlier backup is untouched" "an earlier saved hook" "$(cat "
 run "$isg" --uninstall "$r28h"
 check_status "A28: --uninstall <repo> → exit 2" 2 "$STATUS"
 check_contains "A28: the advice names the newest backup" "$OUT" "pre-keel*.bak"
+
+# (10) A38 / leg 3 S16 — _isg_place claims its staging name `DEST.isgtmp.$$`; it never follows a planted link.
+# The stub's selftest runs as a child of the installer, so its $PPID is the installer's $$ — it plants a link at
+# every staging name before the copy loop (proves only the pre-removal), and an `rm` PATH shim re-plants one right
+# after each `rm -f` of a staging name (the race the removal cannot close; only the exclusive create does).
+r38="$(new_repo)"; h38="$r38/.git/hooks"; mkdir -p "$h38"
+victim="$SANDBOX/a38-victim"; printf 'VICTIM\n' > "$victim"
+run env "ISG_PLANT_DIR=$h38" "ISG_PLANT_TARGET=$victim" bash "$ok_stub/install-secret-guard.sh" "$r38"
+check_status "A38: links planted at the staging names beforehand → exit 0 (removed, claimed fresh)" 0 "$STATUS"
+check_eq "A38: the planted link's target is unchanged" "VICTIM" "$(cat "$victim")"
+for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
+  check_nolink "A38: $f is a regular file, not the planted link" "$h38/$f"
+  [ "$f" = secret-scan.sh ] && continue   # the stub installer ships a stub scanner
+  if cmp -s "$shipped/$f" "$h38/$f"; then pass "A38: $f holds the shipped bytes"; else fail "A38: $f holds the shipped bytes" "differs"; fi
+done
+mkdir -p "$SANDBOX/shim-rm"
+printf '%s\n' '#!/bin/sh' '/bin/rm "$@"; rc=$?' \
+  'for a in "$@"; do case "$a" in *.isgtmp.*) ln -s "$ISG_REPLANT_TARGET" "$a" ;; esac; done' 'exit $rc' > "$SANDBOX/shim-rm/rm"
+chmod +x "$SANDBOX/shim-rm/rm"
+r38b="$(new_repo)"; h38b="$r38b/.git/hooks"; mkdir -p "$h38b"
+printf 'VICTIM\n' > "$victim"
+run env "PATH=$SANDBOX/shim-rm:$PATH" "ISG_REPLANT_TARGET=$victim" bash "$ok_stub/install-secret-guard.sh" "$r38b"
+check_ne "A38: a link re-planted after the removal → the install refuses (never follows)" 0 "$STATUS"
+check_eq "A38: ...the re-planted link's target is unchanged" "VICTIM" "$(cat "$victim")"
+for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
+  check_nolink "A38: ...no $f left as a link" "$h38b/$f"
+done
 
 # =============================================================================================================
 # A51 / A52 — B27: a hooksPath set at any scope, the empty value included, is the user's wiring.
