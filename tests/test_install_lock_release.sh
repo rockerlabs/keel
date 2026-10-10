@@ -66,8 +66,19 @@ check_nodir "A32 …and no run lock is left" "$h/.install.lock"
 # a non-interactive shell starts a plain background job with SIGINT ignored, and a signal ignored on
 # entry cannot be trapped, so only a job in its own process group sees the INT the way a terminal's
 # Ctrl-C reaches a foreground install.
+# A signal ignored when this file started (tests/run.sh starts each file as a background job of a
+# non-interactive shell, so SIGINT arrives here ignored) cannot be trapped or reset by this file or by any
+# install.sh under it — the INT row then has nothing to observe, and is skipped with that reason. Run
+# standalone (`bash tests/test_install_lock_release.sh`), or from a terminal, it runs.
+int_probe=0
+( set -m; bash -c 'trap "exit 7" INT; kill -INT $$; exit 0' ) || int_probe=$?
+int_trappable=0; [ "$int_probe" = 7 ] && int_trappable=1
 for sig in TERM INT; do
   case "$sig" in TERM) want=143 ;; INT) want=130 ;; esac
+  if [ "$sig" = INT ] && [ "$int_trappable" != 1 ]; then
+    pass "A33/K29a SIGINT row skipped — SIGINT is ignored in this test's environment (ignored on entry, so untrappable)"
+    continue
+  fi
   h="$SANDBOX/a33-$sig/h"; mk="$SANDBOX/a33-$sig.marker"; mkdir -p "$h"; : > "$mk"
   set -m
   KEEL_TEST_PAUSE_AFTER=merge-write KEEL_TEST_PAUSE_MARKER="$mk" \
