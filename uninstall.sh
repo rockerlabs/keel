@@ -900,7 +900,7 @@ if [ "$this_usable" = 1 ]; then
           # in_sync() names ("/tmp vs /private/tmp on macOS, a symlinked parent") — manifest_same_path,
           # which never follows the link, so the end of a chain of links (someone's dotfiles wiring, spec
           # 685 round 2 B20) is not taken for Keel's. Anything else points somewhere Keel did not wire.
-          if ! { [ "$live_target" = "$extra" ] || manifest_same_path "$live_target" "$extra"; }; then
+          if ! manifest_same_path "$live_target" "$extra"; then
             echo "  !    $rel: symlink no longer points where Keel would have wired it — left in place (kept, may be yours now)"
           elif manifest_link_is_keels "$this_manifest" "$rel" "$apath"; then
             # The one link-record predicate (tools/lib/manifest.sh, B20): it also asks that the recorded
@@ -924,7 +924,7 @@ if [ "$this_usable" = 1 ]; then
           # path_under_root (not a `case "$live_target" in "$root"/*)` string-prefix test — an
           # earlier draft of this fix used exactly that and this ticket's own /code-review max pass
           # reproduced it live, 5 independent ways, as the SAME path-spelling bug the exact-match
-          # branch's own -ef fix above closes, including through the real `keel` CLI wrapper's own
+          # branch above tolerates (manifest_same_path), including through the real `keel` CLI wrapper's own
           # `pwd -P` resolution differing from a bare `./uninstall.sh` invocation — an entirely
           # ordinary way to trigger it, not an exotic edge case): walks up from the live target's own
           # directory, testing `-ef` against $root at each level that currently exists.
@@ -1120,8 +1120,7 @@ if [ "$DRY_RUN" = 0 ]; then
           [ -L "$cl" ] || continue
           cl_store="${cl%/*}"; cl_store="${cl_store##*/}"
           cl_target="$(readlink "$cl" 2>/dev/null || true)"
-          if [ "$cl_target" = "$HOME/.keel/$cl_store/${cl##*/}" ] \
-             || manifest_same_path "$cl_target" "$HOME/.keel/$cl_store/${cl##*/}"; then
+          if manifest_same_path "$cl_target" "$HOME/.keel/$cl_store/${cl##*/}"; then
             compat_links=$((compat_links + 1))
           fi
         done

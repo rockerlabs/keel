@@ -76,7 +76,7 @@ check_link "A40 round trip: …the link is still the adopter's" "$h/commands/go.
 run test "$h/commands/go.md" -ef "$dots/go.md"
 check_status "A40 round trip: …pointing at the dotfiles copy" 0 "$STATUS"
 # …and a Keel link whose text spells its recorded target another way (a symlinked parent; /tmp vs
-# /private/tmp) is still Keel's: the predicate accepts the same file (`-ef`) as well as the same text.
+# /private/tmp) is still Keel's: the same entry, reached through another spelling of its directory.
 h="$SANDBOX/a40s/h"; ln -s "$REPO_ROOT" "$SANDBOX/a40s-alias"
 run "$install" --link --home "$h" --no-hooks
 check_status "A40 respelled fixture: linked install → exit 0" 0 "$STATUS"
@@ -85,6 +85,20 @@ run "$uninstall" --home "$h" --yes
 check_status "A40 respelled: uninstall → exit 0" 0 "$STATUS"
 check_nolink "A40 respelled: …Keel's respelled link is removed" "$h/keel/CORE.md"
 check_absent "A40 respelled: …never reported as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably"
+# …and on a case-insensitive file system (macOS's default), a spelling that differs only in case is the
+# same entry too: the checkout's own directory, its name upper-cased.
+ck_case="${REPO_ROOT%/*}/$(printf '%s' "${REPO_ROOT##*/}" | tr '[:lower:]' '[:upper:]')"
+if [ "$ck_case" != "$REPO_ROOT" ] && [ -d "$ck_case" ]; then
+  h="$SANDBOX/a40i/h"
+  run "$install" --link --home "$h" --no-hooks
+  check_status "A40 case-only fixture: linked install → exit 0" 0 "$STATUS"
+  rm -f "$h/keel/CORE.md"; ln -s "$ck_case/CORE.md" "$h/keel/CORE.md"
+  run "$uninstall" --home "$h" --yes
+  check_status "A40 case-only: uninstall → exit 0" 0 "$STATUS"
+  check_nolink "A40 case-only: …Keel's link, spelled in another case, is removed" "$h/keel/CORE.md"
+else
+  pass "A40 case-only row skipped — this file system tells names apart by case"
+fi
 # …but a link that only ENDS at the recorded target through another link (a dotfiles manager's
 # `<home>/keel/CORE.md -> dots/CORE.md -> <checkout>/CORE.md`) is the adopter's: kept, not moved.
 h="$SANDBOX/a40c/h"; dots="$SANDBOX/a40c/dots"; mkdir -p "$dots"
@@ -188,6 +202,15 @@ check_link "A50(4) fixture: .keel/impact/-p-a50 is now a compatibility link" "$h
 run "$uninstall" --home "$h" --yes
 check_status "A50(4) uninstall → exit 0" 0 "$STATUS"
 check_contains "A50(4) …the kept-.keel line names Keel's compatibility links" "$OUT" "compatibility links Keel left"
+# …a compatibility link spelled through the physical form of $HOME (macOS's /var → /private/var) still
+# counts — the same entry, another spelling of its directory.
+h="$SANDBOX/a50-4p/h"; mkdir -p "$h/.keel/impact" "$HOME/.keel/impact/-p-phys"
+home_phys="$(cd -P "$HOME" && pwd -P)"
+ln -s "$home_phys/.keel/impact/-p-phys" "$h/.keel/impact/-p-phys"
+run "$install" --home "$h" --no-hooks
+run "$uninstall" --home "$h" --yes
+check_status "A50(4) a respelled compatibility link: uninstall → exit 0" 0 "$STATUS"
+check_contains "A50(4) …still named as a compatibility link Keel left" "$OUT" "compatibility links Keel left"
 # …and a link there of some other shape is not counted as one of Keel's.
 h="$SANDBOX/a50-4n/h"
 run "$install" --home "$h" --no-hooks

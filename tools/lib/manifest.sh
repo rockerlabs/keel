@@ -63,25 +63,25 @@ keel_path_inside() {
   return 1
 }
 
-# manifest_same_path A B — absolute paths A and B name the same directory entry: the same basename, and
-# directories that resolve (`cd -P`) to one physical path. Never follows A or B themselves, so a link at A
-# is not "the same" as the file it points to. False when either directory cannot be resolved. The one
-# definition of "a link points where the record says" (manifest_link_is_keels below, uninstall.sh's
-# symlink arm and its compatibility-link count).
+# manifest_same_path A B — A and B name the same directory entry: the same text; or, for an absolute A, the
+# same directory (`-ef` on the two parent directories, so a symlinked parent, /tmp vs /private/tmp and a
+# case-only difference on a case-insensitive file system all match) holding the same entry (the same name,
+# or `-ef` on the two entries inside that one directory). Never resolves A or B through a link AT them to
+# somewhere else, so the end of a chain of links (`x -> ~/dots/x -> <checkout>/x`) is not "the same" as the
+# file the chain ends at. The text half is what still answers once the directories are gone (a moved
+# checkout). The one definition of "a link points where the record says" (manifest_link_is_keels below,
+# uninstall.sh's symlink arm and its compatibility-link count).
 manifest_same_path() {
-  local da db
+  [ "$1" = "$2" ] && return 0
   case "$1" in /*) ;; *) return 1 ;; esac
-  [ "${1##*/}" = "${2##*/}" ] || return 1
-  da="$(cd -P "${1%/*}/" 2>/dev/null && pwd -P)" || return 1
-  db="$(cd -P "${2%/*}/" 2>/dev/null && pwd -P)" || return 1
-  [ "$da" = "$db" ]
+  [ -d "${1%/*}/" ] && [ "${1%/*}/" -ef "${2%/*}/" ] || return 1
+  [ "${1##*/}" = "${2##*/}" ] || [ "$1" -ef "$2" ]
 }
 
 # manifest_link_is_keels MANIFEST REL LINK — the ONE test that a link a manifest recorded is provably Keel's
 # (spec 685 round 2 B20): MANIFEST is usable and holds a `symlink` record for REL whose target is not the
-# pre-dir-#369 `-`, LINK's own target IS that recorded target — the same text, or the same path spelled
-# through a different directory (a symlinked parent, /tmp vs /private/tmp: the same basename in the same
-# physical directory, as uninstall's `-ef` match always tolerated) — and the target lies inside the
+# pre-dir-#369 `-`, LINK's own target IS that recorded target (manifest_same_path: the same text, or the
+# same entry spelled through another directory) — and the target lies inside the
 # checkout MANIFEST's `checkout=` header names (keel_path_inside — the checkout that WROTE the record, the
 # old one after a move). An adopter's link that an older manifest recorded as Keel's fails the last test,
 # so nothing that asks this moves or re-places it. A link that only ENDS at the recorded target through
@@ -95,7 +95,7 @@ manifest_link_is_keels() {
   rec="$(manifest_symlink_extra "$man" "$rel")"
   [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
   cur="$(readlink "$link" 2>/dev/null)" || return 1
-  [ "$cur" = "$rec" ] || manifest_same_path "$cur" "$rec" || return 1
+  manifest_same_path "$cur" "$rec" || return 1
   ck="$(manifest_field "$man" checkout)"
   keel_path_inside "$rec" "$ck"
 }
