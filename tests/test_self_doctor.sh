@@ -457,6 +457,38 @@ run "$sd" "$d" --quiet
 check_status "changelog staleness is advisory only -> exit 0" 0 "$STATUS"
 check_contains "flags the stale CHANGELOG" "$OUT" "CHANGELOG.md predates"
 
+# dir #744 A4: check 4 takes the changelog's timestamp as the newest commit touching CHANGELOG.md OR
+# changelog.d/ (a PR's entry is a fragment now, so CHANGELOG.md alone stops moving mid-release). Distinct,
+# explicit commit dates keep the ordering deterministic: tools/ change on 2020-06-01, then (good sample)
+# a commit touching ONLY changelog.d/ on 2020-06-02; the control has no fragment commit.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho tool changed\n' >> "$d/$fake_widget"
+( cd "$d" && git add -A \
+    && GIT_AUTHOR_DATE="2020-06-01T00:00:00" GIT_COMMITTER_DATE="2020-06-01T00:00:00" \
+       git commit -q -m "tools change, no changelog entry" )
+mkdir -p "$d/changelog.d"
+printf -- '- a fragment entry\n' > "$d/changelog.d/x.md"
+( cd "$d" && git add -A \
+    && GIT_AUTHOR_DATE="2020-06-02T00:00:00" GIT_COMMITTER_DATE="2020-06-02T00:00:00" \
+       git commit -q -m "fragment only" )
+run "$sd" "$d"
+check_contains "A4: a newer commit touching only changelog.d/ keeps the changelog 'at least as recent'" "$OUT" "at least as recent"
+check_absent "A4: ... and does not warn it predates the change" "$OUT" "CHANGELOG.md predates"
+
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho tool changed\n' >> "$d/$fake_widget"
+mkdir -p "$d/changelog.d"
+printf -- '- a fragment entry\n' > "$d/changelog.d/x.md"
+( cd "$d" && git add -A \
+    && GIT_AUTHOR_DATE="2020-06-02T00:00:00" GIT_COMMITTER_DATE="2020-06-02T00:00:00" \
+       git commit -q -m "fragment first" )
+printf '#!/usr/bin/env bash\necho tool changed again\n' >> "$d/$fake_widget"
+( cd "$d" && git add -A \
+    && GIT_AUTHOR_DATE="2020-06-03T00:00:00" GIT_COMMITTER_DATE="2020-06-03T00:00:00" \
+       git commit -q -m "tools newest" )
+run "$sd" "$d" --quiet
+check_contains "A4 control: tools/ newer than the newest changelog.d/ commit -> predates" "$OUT" "CHANGELOG.md predates"
+
 # a repo where CHANGELOG.md/commands/tools/install.sh were NEVER committed: `git log -1 -- <path>`
 # exits 0 with EMPTY stdout (not an error) for an untouched pathspec, so the `|| echo 0` fallback
 # never fires and the two _ts vars end up empty rather than "0" — `[ "" -gt "" ]` must not blow up
@@ -1016,6 +1048,35 @@ check_absent "no reconciliation GAP while the tag is still pending" "$OUT" "GAP"
 check_contains "the pending section is announced, not silently tolerated" "$OUT" "cut but not tagged yet"
 check_contains "and named specifically" "$OUT" "1.1.0"
 
+# dir #744 A31 (B34): the newest section is cut but untagged AND a fragment is still listed -> it merged
+# after the cut ran: GAP naming it. No fragment -> no such GAP; a TAGGED newest section plus a fragment (the
+# normal mid-release state) -> no such GAP.
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n\n## [1.1.0] — 2026-01-02\n- cut, PR open, not tagged yet\n\n## [1.0.0] — 2026-01-01\n- first release\n' \
+  > "$d/CHANGELOG.md"
+mkdir -p "$d/changelog.d"
+printf -- '- dir #901: arrived after the cut\n' > "$d/changelog.d/901-late.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.1.0 ahead of its tag, with a late fragment" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_status "A31: a fragment beside an untagged newest section -> exit 1" 1 "$STATUS"
+check_contains "A31: the GAP says the fragment merged after the cut" "$OUT" "fragments merged after the cut"
+check_contains "A31: the GAP names the fragment" "$OUT" "changelog.d/901-late.md"
+check_contains "A31: the GAP names the pending version in the remedy command" "$OUT" "changelog-cut.sh 1.1.0 <DATE>"
+check_contains "A31: ...and warns off any other version" "$OUT" "no other version"
+rm -f "$d/changelog.d/901-late.md"
+( cd "$d" && git add -A && git commit -qm "the fragment is gone" )
+run "$sd" "$d" --quiet
+check_absent "A31 control: the same fixture without the fragment has no such GAP" "$OUT" "fragments merged after the cut"
+check_status "A31 control: ...and exits 0" 0 "$STATUS"
+
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
+mkdir -p "$d/changelog.d"
+printf -- '- dir #902: a normal mid-release fragment\n' > "$d/changelog.d/902-ok.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0, then a fragment" && git tag v1.0.0 )
+run "$sd" "$d" --quiet
+check_absent "A31 control: a TAGGED newest section plus a fragment (mid-release) has no such GAP" "$OUT" "fragments merged after the cut"
+
 # ...and the allowance is exactly one section wide: a SECOND untagged section is still drift. Both
 # 1.1.0 and 1.2.0 lack tags; only the newest (1.2.0, first in file order) is exempt.
 d="$(mk_clean_repo)"
@@ -1443,7 +1504,7 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/C
 run "$sd" "$d" --quiet
 check_status "an unreferenced ticket in a commit message is advisory only -> exit 0" 0 "$STATUS"
 check_contains "flags the missing ticket" "$OUT" "dir #900"
-check_contains "names the convention's remedy" "$OUT" "absent from CHANGELOG.md's [Unreleased] section"
+check_contains "names the convention's remedy" "$OUT" "absent from CHANGELOG.md's [Unreleased] section or changelog.d/"
 
 # the same ticket IS referenced in [Unreleased] -> silent.
 d="$(mk_clean_repo)"
@@ -1454,6 +1515,23 @@ printf '# Changelog\n\n## [Unreleased]\n- dir #900: tweak the widget tool\n\n%s\
 run "$sd" "$d" --quiet
 check_absent "a ticket referenced in [Unreleased] is not flagged" "$OUT" "dir #900"
 check_status "still exit 0" 0 "$STATUS"
+
+# dir #744 A3: the ticket is cited in a changelog.d/ fragment (not in [Unreleased]) -> not flagged; the
+# same fixture without the fragment is the control (flagged).
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+mkdir -p "$d/changelog.d"
+printf -- '- dir #900: tweak the widget tool\n' > "$d/changelog.d/900-x.md"
+( cd "$d" && git add -A && git commit -qm "dir #900 tweak the widget tool" )
+run "$sd" "$d" --quiet
+check_absent "A3: a ticket cited in a changelog.d/ fragment is not flagged" "$OUT" "dir #900"
+check_status "A3: still exit 0" 0 "$STATUS"
+rm -f "$d/changelog.d/900-x.md"
+( cd "$d" && git add -A && git commit -qm "drop the fragment" )
+run "$sd" "$d" --quiet
+check_contains "A3 control: the same fixture minus the fragment flags dir #900" "$OUT" "dir #900"
 
 # PR #244's miss shape: the check must ENUMERATE, not sample the tail — a later, UNRELATED
 # CHANGELOG.md commit landing after the miss must not clear it (check 4's timestamp signal would
@@ -1569,7 +1647,11 @@ printf '# Changelog\n\n## [Unreleased]\n- dir #910, dir #911, dir #912: shorthan
 { printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
 ( cd "$d" && git add -A && git commit -qm "dir #910, #911, #912 shorthand ticket list" )
 run "$sd" "$d" --quiet
-check_absent "shorthand list, all three entered: none flagged" "$OUT" "absent from CHANGELOG.md's [Unreleased] section"
+# The needles are the ticket ids, not the warning's wording: a wording needle goes vacuous the day the
+# wording changes (dir #744 B5 changed it), while an id the check must not name cannot.
+check_absent "shorthand list, all three entered: dir #910 not flagged" "$OUT" "dir #910"
+check_absent "shorthand list, all three entered: dir #911 not flagged" "$OUT" "dir #911"
+check_absent "shorthand list, all three entered: dir #912 not flagged" "$OUT" "dir #912"
 check_status "still exit 0" 0 "$STATUS"
 
 # dir #274: the same class of gap dir #273 closed for comma/whitespace lists, but for the four

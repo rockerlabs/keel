@@ -409,4 +409,33 @@ gate_fail_case "a non-executable scanner" "missing or not executable"
 rm -f "$fx_scan"
 gate_fail_case "a missing scanner" "missing or not executable"
 
+# --- dir #744 B32: a changelog.d/ fragment goes with CHANGELOG.md, never packed with ordinary files ------
+r="$(mk_repo)"
+mkdir -p "$r/changelog.d"
+printf -- '- a fragment entry\n' > "$r/changelog.d/9-x.md"
+printf -- '- another fragment entry\n' > "$r/changelog.d/10-y.md"
+printf '# changelog.d readme\n' > "$r/changelog.d/README.md"
+git -C "$r" add -A
+git -C "$r" commit -q -m "add fragments"
+fl="$SANDBOX/files-frag.txt"
+printf 'PRINCIPLES.md\ndocs/sub.md\ntool.sh\nCHANGELOG.md\nchangelog.d/10-y.md\nchangelog.d/9-x.md\nchangelog.d/README.md\n' > "$fl"
+run_in "$r" "$TOOL" --vendor astra --baseline HEAD --out out --disclosure-ack "test: fragments" --files "$fl"
+check_status "A29: export with fragments exits 0" 0 "$STATUS"
+pkt="$(find "$r/out" -maxdepth 1 -name 'packet-astra-*' -type d | head -1)"
+chunk_with() { grep -l -- "FILE: $1 @" "$pkt"/chunks/*.txt 2>/dev/null | head -1; }
+c_frag="$(chunk_with changelog.d/9-x.md)"
+c_clog="$(chunk_with CHANGELOG.md)"
+c_readme="$(chunk_with changelog.d/README.md)"
+c_prin="$(chunk_with PRINCIPLES.md)"
+c_tool="$(chunk_with tool.sh)"
+check_ne "A29: the fragment is in a chunk (found)" "" "$c_frag"
+check_eq "A29: ONE trailing chunk holds both fragments (a per-file chunk would near the 99 cap)" "$c_frag" "$(chunk_with changelog.d/10-y.md)"
+check_eq "A29: ...and that chunk is the LAST one" "$c_frag" "$(ls "$pkt"/chunks/*.txt | tail -1)"
+check_ne "A29: the fragment is NOT in the ordinary-markdown chunk" "$c_prin" "$c_frag"
+check_ne "A29: the fragment is NOT packed with the code chunk" "$c_tool" "$c_frag"
+check_eq "A29: README.md stays ordinary markdown, packed with PRINCIPLES.md" "$c_prin" "$c_readme"
+check_ne "A29: the fragment does not share a chunk with CHANGELOG.md itself (each historical file solo)" "$c_clog" "$c_frag"
+check_eq "A29: the fragment's chunk sorts after CHANGELOG.md's (the trailing historical section)" \
+  "$(printf '%s\n%s\n' "$c_clog" "$c_frag" | sort | tail -1)" "$c_frag"
+
 summary

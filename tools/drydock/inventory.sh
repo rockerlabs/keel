@@ -198,7 +198,17 @@ array_contains() {
   return 1
 }
 
-is_historical() { [ "${#historical[@]}" -gt 0 ] && array_contains "$1" "${historical[@]}"; }
+is_historical() {
+  [ "${#historical[@]}" -gt 0 ] || return 1
+  array_contains "$1" "${historical[@]}" && return 0
+  # dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file (README.md
+  # there is a living doc), so it follows CHANGELOG.md's class — and the DRYDOCK_HISTORICAL knob.
+  case "$1" in
+    changelog.d/README.md) return 1 ;;
+    changelog.d/*.md) array_contains CHANGELOG.md "${historical[@]}" ;;
+    *) return 1 ;;
+  esac
+}
 
 # EXACT-path membership, deliberately not the substring match tools/delta-audit/derive.sh's own
 # DELTA_INVARIANT_PATHS uses — that env's default entries are substrings by design, and would match
@@ -541,14 +551,20 @@ batch_stream() {
 }
 
 historical_batches() {
-  local path lines comments
+  local path lines comments frag=0
   [ -n "$1" ] || return 0
   while IFS="$TAB" read -r path lines comments; do
     [ -n "$path" ] || continue
     [ -z "$prev" ] || is_changed "$path" || continue
     is_historical "$path" || continue
+    # dir #744 B32: the changelog.d/ fragments are ONE batch, not one per file (a release carries ~30).
+    case "$path" in
+      changelog.d/README.md) ;;
+      changelog.d/*.md) frag=1; continue ;;
+    esac
     printf 'batch: %s SPECIAL (historical-prose rule)\n' "$path"
   done <<< "$1"
+  [ "$frag" = 0 ] || printf 'batch: changelog.d/ SPECIAL (historical-prose rule)\n'
 }
 
 # $1 = prefix, $2 = solo threshold (0 = never solo), $3 = cap, $4 = unit label. Reads

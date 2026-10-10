@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+# tools/self/changelog-fragments.sh — keel-self-maintenance (dir #68): the ONE reader of
+# `changelog.d/` for keel's own repo. There is no consumer-facing counterpart and install.sh never ships
+# this file. dir #744 slice 1 (B4a): a PR's changelog entry is a new file `changelog.d/<ticket>-<slug>.md`
+# instead of a bullet under `CHANGELOG.md`'s `## [Unreleased]`, so two PRs stop colliding at that one
+# anchor. Every reader of fragments goes through this script — doctor.sh (check 7), changelog-cut.sh (the
+# cut), the tests that pin a changelog cite, and `changelog.d/README.md`'s examples — so no second
+# listing of the directory exists to drift from this one.
+#
+# Usage:
+#   tools/self/changelog-fragments.sh [--repo DIR] [--check | --list]
+#   tools/self/changelog-fragments.sh -h | --help
+#
+# Which entries count: `git -C DIR ls-files -- changelog.d` — the TRACKED files, which is what CI sees, so
+# an untracked work-in-progress file or a Finder `.DS_Store` never counts. DIR not the top of a git work
+# tree: the directory listing instead, dotfiles ignored.
+#
+# Default: print every fragment's text — each `changelog.d/*.md` except README.md, in `LC_ALL=C` filename
+# order (never mtime order), one blank line between fragments. No `changelog.d/`, or no fragments:
+# empty output, exit 0 — a project without fragments is unaffected.
+#
+# --list: print one `changelog.d/<file>` per fragment, in the same order (doctor's B34 check names them).
+#
+# --check: print nothing and exit 0 when every entry of `changelog.d/` passes; otherwise one line per
+# failure, `changelog.d/<file>:<line>: <reason>`, exit 1. The rules (docs: changelog.d/README.md):
+#   - anything besides README.md must be a regular, non-empty `*.md` file named
+#     `<ticket>-<slug>.md` (ticket = digits) or `<slug>.md`, the slug lowercase kebab-case — a
+#     subdirectory's file, a dotfile or another extension is named;
+#   - the first non-blank line starts `- `; every later non-blank line starts `- ` or whitespace (a
+#     column-0 continuation is a defect, INSIDE a fenced block too: CommonMark ends the list item at a
+#     column-0 line, so indent fence markers and their content); no line starts with `#` (a heading would
+#     split the cut's section); an odd number of fence markers is a defect (it would hide every later line
+#     from the fence-blanked scans; the count is parity only, it does not check that a ``` is closed by a ```);
+#   - no `dir #N` inside backticks (doctor's ticket extraction drops code spans, so the citation vanishes);
+#   - after blanking fenced blocks and inline code spans exactly as tools/self/prose-drift.sh does, every
+#     markdown link target starts `/`, `http://`, `https://` or `mailto:` — prose-drift resolves a bare
+#     relative target beside the linking file (dead from inside changelog.d/, while the cut moves the text
+#     into CHANGELOG.md verbatim), a bare `#anchor` resolves to the fragment itself, other schemes GAP.
+#
+# Exit codes: 0 ok · 1 --check found a failure · 2 bad arguments or an unreadable repo.
+set -euo pipefail
+# dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
+unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+
+# Filename order is the contract (B4): a locale-dependent collation would make the assembled changelog
+# depend on the operator's machine.
+export LC_ALL=C
+
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/fence-blank.sh
+. "$self_dir/../lib/fence-blank.sh"
+
+die_args() { echo "changelog-fragments.sh: $1" >&2; echo "usage: changelog-fragments.sh [--repo DIR] [--check | --list]" >&2; exit 2; }
+
+repo_dir="$(cd "$self_dir/../.." && pwd)"
+check=0
+list=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --repo)
+      [ $# -ge 2 ] || die_args "--repo needs a directory"
+      repo_dir="$2"; shift 2 ;;
+    --check) check=1; shift ;;
+    --list) list=1; shift ;;
+    *) die_args "unknown argument '$1'" ;;
+  esac
+done
+[ -d "$repo_dir" ] || die_args "no such directory: $repo_dir"
+[ "$check" = 0 ] || [ "$list" = 0 ] || die_args "--check and --list are exclusive"
+
+frag_dir="$repo_dir/changelog.d"
+# No changelog.d/ at all is the adopter / pre-slice-1 case: nothing to read, nothing to lint.
+[ -d "$frag_dir" ] || exit 0
+
+# entries: every entry of changelog.d/, as a path relative to it, sorted. Tracked files when DIR is the top
+# of a git work tree (a `git -C DIR` inside a larger repo would list THAT repo's idea of the path, so the
+# toplevel must be DIR itself), else the directory's own entries minus dotfiles.
+entries=""
+top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+real_dir="$(cd "$repo_dir" && pwd -P)"
+if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$real_dir" ]; then
+  # -z: no C-quoting of unusual names. A newline inside a name is not supported (not kebab-case either).
+  while IFS= read -r -d '' path; do
+    entries="$entries${path#changelog.d/}"$'\n'
+  done < <(git -C "$repo_dir" ls-files -z -- changelog.d)
+else
+  entries="$(ls "$frag_dir")"
+fi
+entries="$(sort <<< "$entries")"
+
+# is_fragment NAME — a name the reader prints: a top-level `*.md` that is not README.md, and a regular file
+# (a tracked file deleted from the working tree is skipped, not an error).
+is_fragment() {
+  case "$1" in
+    README.md|*/*) return 1 ;;
+    *.md) [ -f "$frag_dir/$1" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ "$list" = 1 ]; then
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    is_fragment "$name" && printf 'changelog.d/%s\n' "$name"
+  done <<< "$entries"
+  exit 0
+fi
+
+if [ "$check" = 0 ]; then
+  first=1
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    is_fragment "$name" || continue
+    [ "$first" = 1 ] || printf '\n'
+    first=0
+    # Text with trailing blank lines dropped, so exactly one blank line separates two fragments
+    # whatever the file ends with. awk, not sed `$d` tricks: portable to BSD/busybox.
+    awk '{ lines[NR] = $0 } END { n = NR; while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print lines[i] }' \
+      "$frag_dir/$name"
+  done <<< "$entries"
+  exit 0
+fi
+
+bad=0
+backtick_dir_re='`[^`]*dir #[0-9]+[^`]*`'
+fail() { printf 'changelog.d/%s:%s: %s\n' "$1" "$2" "$3"; bad=1; }
+
+while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  [ "$name" = README.md ] && continue
+  path="$frag_dir/$name"
+  # Only README.md and top-level *.md fragments belong here (B1/B2). A tracked file deleted from the working
+  # tree (the cut PR before it stages) is skipped, not an error.
+  case "$name" in
+    */*) fail "$name" 1 "file in a subdirectory — changelog.d/ holds only README.md and top-level *.md fragments"; continue ;;
+    .*) fail "$name" 1 "dotfile — changelog.d/ holds only README.md and *.md fragments"; continue ;;
+  esac
+  [ -e "$path" ] || continue
+  if [ ! -f "$path" ]; then
+    fail "$name" 1 "not a regular file — changelog.d/ holds only README.md and fragment files"
+    continue
+  fi
+  case "$name" in
+    *.md) ;;
+    *) fail "$name" 1 "not a .md file — changelog.d/ holds only README.md and *.md fragments"; continue ;;
+  esac
+  stem="${name%.md}"
+  if ! [[ $stem =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+    fail "$name" 1 "name is not kebab-case — use <ticket>-<slug>.md (lowercase, digits and hyphens only)"
+  fi
+  content="$(<"$path")"
+  case "$content" in
+    *[![:space:]]*) ;;
+    *) fail "$name" 1 "empty file — a fragment holds at least one bullet"; continue ;;
+  esac
+  # Fence-blanked (and, for links, also inline-code-blanked) copies, line-aligned with the file: links and
+  # backticked tickets are judged on them, as prose-drift does. The SHAPE rules (bullet first, indented
+  # continuation, no heading) are judged on the raw lines: CommonMark ends a list item at a column-0 line even
+  # inside a fenced block, so an unindented line in a fence would split the bullet after the cut.
+  # An odd number of fence markers leaves blank_fenced_blocks stuck "in fence" to the end of the file —
+  # every later line would read as blank — so it is a defect of its own.
+  fence_marks="$(grep -cE '^[[:space:]]*(```|~~~)' "$path" || true)"
+  if [ $((fence_marks % 2)) -ne 0 ]; then
+    fail "$name" 1 "unbalanced fenced block ($fence_marks fence markers) — close every fence"
+  fi
+  fenced="$(blank_fenced_blocks "$path")"
+  blanked="$(blank_inline_code_spans <<< "$fenced")"
+  seen_first=0
+  ln=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
+    case "$line" in
+      *[![:space:]]*) ;;
+      *) continue ;;
+    esac
+    if [ "$seen_first" = 0 ]; then
+      seen_first=1
+      case "$line" in
+        '- '*) ;;
+        *) fail "$name" "$ln" "first non-blank line must start with '- ' (a bullet), exactly as it would sit under ## [Unreleased]"; continue ;;
+      esac
+    fi
+    case "$line" in
+      '#'*) fail "$name" "$ln" "line starts with '#' — a fragment holds bullets only, no headings" ;;
+      '- '*|[[:space:]]*) ;;
+      *) fail "$name" "$ln" "continuation line must be indented" ;;
+    esac
+  done < "$path"
+  # `dir #N` inside backticks: doctor's ticket extraction drops inline code spans, so the citation would
+  # never count. Judged on the fence-blanked copy (a fenced example is not a citation either way).
+  ln=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
+    if [[ $line =~ $backtick_dir_re ]]; then
+      fail "$name" "$ln" "dir #N inside backticks — cite it in full, unwrapped, or doctor never sees the ticket"
+    fi
+  done <<< "$fenced"
+  # Link targets, on the blanked copy. `](` followed by anything up to the closing paren; a target that is
+  # neither root-anchored nor an absolute http(s)/mailto URL would resolve beside the fragment.
+  ln=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    ln=$((ln + 1))
+    rest="$line"
+    while :; do
+      case "$rest" in
+        *']('*) ;;
+        *) break ;;
+      esac
+      rest="${rest#*](}"
+      target="${rest%%)*}"
+      case "$target" in
+        /*|http://*|https://*|mailto:*) ;;
+        *) fail "$name" "$ln" "link target '$target' is file-relative — write it root-anchored (/docs/x.md): prose-drift resolves a bare target beside changelog.d/" ;;
+      esac
+    done
+  done <<< "$blanked"
+done <<< "$entries"
+
+exit "$bad"
