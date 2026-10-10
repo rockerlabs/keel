@@ -1567,7 +1567,7 @@ function push_ctx(t, p) {
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
 }
-function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }
+function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }
 # A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
 # before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
 # clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
@@ -1848,12 +1848,16 @@ function cmd_char(   c, s, k, op) {
   word_begin(pos); addsrc(pos, 1, "g"); pos++
 }
 
-# close_cmd — the SUB or BQ on top closes: its segment ends, a heredoc it still owns is a region (the shells
-# disagree on the lines after it; they are read as commands), and the enclosing word gains `$()`.
+# close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still
+# owns: in a $(…), a region (the shells disagree on the lines after it; they are read as commands); in a BQ, an
+# empty body — the BQ’s text ends at its backtick, so every shell gives it no lines.
 function close_cmd(   s, k) {
   s = sp
   seg_end(s, pos)
-  for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], (cty[s] == "BQ" && clim[s] <= n) ? clim[s] : n, "heredoc pending when $(…) closed", hqsb[s, k])
+  for (k = 1; k <= hqn[s]; k++) {
+    if (cty[s] == "BQ") region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    else region(hqop[s, k], n, "heredoc pending when $(…) closed", hqsb[s, k])
+  }
   hqn[s] = 0
   if (bqreg[s]) rend[bqreg[s]] = (pos > n) ? n : pos
   pop_ctx(); addlit("$()", "xxx")
@@ -1922,13 +1926,15 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
   while (1) {
     k = ++hb_k
     if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; return }
-    if (pos > n) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]); continue }
+    # no body left: past the text, or past the BQ the heredoc sits in (a body that started mid-line, after a
+    # delimiter line its BQ’s backtick cut) — an empty body, as every shell gives it
+    if (pos > n || pos >= lim) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]); continue }
     found = 0; hline = 0
     for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
-      txt = substr(src, lstart[L], ((lend[L] < lim) ? lend[L] : lim - 1) - lstart[L] + 1)
+      txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
       cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
       if (cmp == hqd[s, k]) { found = 1; break }
-      if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], lend[L], ") line in a heredoc body inside $(…)", hqsb[s, k])
+      if (cty[s] == "SUB" && txt ~ /^[ \t]*\)/) region(lstart[L], line_end(L), ") line in a heredoc body inside $(…)", hqsb[s, k])
       if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]
     }
     bstop = found ? lstart[L] : n + 1
@@ -1946,16 +1952,18 @@ function next_body(   s, k, L, txt, found, bstop, after, j, jt, hline, cmp) {
 # bs_joins(L, s, k) — line L ends in an unescaped backslash and its join with the next line(s) equals the
 # delimiter: bash and zsh end the body there, busybox and dash read on.
 function bs_joins(L, s, k,   txt, j, t2) {
-  txt = substr(src, lstart[L], lend[L] - lstart[L] + 1)
+  txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
-  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines) {
+  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
-    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
+    txt = txt substr(src, lstart[j], line_end(j) - lstart[j] + 1)
     t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
     if (t2 == hqd[s, k]) return 1
   }
   return 0
 }
+# line_end(L) — where line L ends for a body read: its last character, or the character before its BQ’s backtick.
+function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }
 function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
 # end_hdata — the expanding body’s end: anything still open inside it is a region, closed there.
 function end_hdata(   i) {

@@ -96,7 +96,6 @@ L083	tools/pre-pr-gate.sh	if (sp > 1) region(cpos[2], n, "unclosed "	if (0) regi
 L085	tools/pre-pr-gate.sh	if (!got) { region(op, n, "heredoc operator without a delimiter"	if (0) { region(op, n, "heredoc operator without a delimiter"	B10(c)
 L086	tools/pre-pr-gate.sh	if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution"	if (0) { region(op, n, "heredoc inside a heredoc substitution"	B10(d)
 L087	tools/pre-pr-gate.sh	if (sp > hd_sp) region(cpos[hd_sp + 1]	if (0) region(cpos[hd_sp + 1]	B10(e)
-L090	tools/pre-pr-gate.sh	for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], (cty[s]	for (k = 1; k <= 0; k++) region(hqop[s, k], (cty[s]	B10(g)
 L091	tools/pre-pr-gate.sh	if (hqx[s, k] && !hline && bs_joins(L, s, k)) hline = lstart[L]	if (0) hline = lstart[L]	B10(h)
 L093	tools/pre-pr-gate.sh	if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "((	if (0) { flagged[sp] = 1; region(cpos[sp], n, "((	B10(j)
 L094	tools/pre-pr-gate.sh	if (cty[s] == "SUB" && txt ~ /^[ \\t]*\\)/)	if (0 && txt ~ /^[ \\t]*\\)/)	B10(k)
@@ -106,7 +105,6 @@ L098	tools/pre-pr-gate.sh	index(substr(src, rsb[i], rend[i] - rsb[i] + 1), "gh")
 L099	tools/pre-pr-gate.sh	rsb[nreg] = sb;	rsb[nreg] = a;	B10 scope: from the segment start, not the region
 L100	tools/pre-pr-gate.sh	rsb[nreg] = sb;	rsb[nreg] = 1;	B10 scope: from the region's own segment, not the text start
 L101	tools/pre-pr-gate.sh	    if (rend[i] < rstart[i]) { rscope[i] = "empty"; continue }	    if (0) { rscope[i] = "empty"; continue }	B10: an empty region
-L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], -1,	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n,	B8/B10: a never-started body is empty, never refused
 L103	tools/pre-pr-gate.sh	for (i = 2; i <= nreg; i++) { k = ord[i];	for (i = 2; i <= 0; i++) { k = ord[i];	B10/I3: the first refusing region in source order
 L104	tools/pre-pr-gate.sh	if (rscope[ord[i]] == "yes") { refused = 1;	if (rscope[ord[i]] != "") { refused = 1;	B10: only a git/gh scope refuses
 L105	tools/pre-pr-gate.sh	  if (sntok[s] > 0) on_segment(s)	  on_segment(s)	B11: a segment with no word is dropped
@@ -196,11 +194,14 @@ L228	tools/pre-pr-gate.sh	clim[sp] = bstop; if (bstop < lim) lim = bstop	clim[sp
 L229	tools/pre-pr-gate.sh	L <= nlines && lstart[L] < lim; L++	L <= nlines; L++	B8: the body scan stops at its BQ’s end
 L084	tools/pre-pr-gate.sh	if (!found) region(pos, lim - 1, "heredoc "	if (0) region(pos, lim - 1, "heredoc "	B10(b)
 L230	tools/pre-pr-gate.sh	region(pos, lim - 1, "heredoc "	region(pos, n, "heredoc "	B10(b): a body clamped at its BQ’s end ends its region there
-L232	tools/pre-pr-gate.sh	if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }	}	B2: a closed context’s end no longer bounds the reads after it
 L233	tools/pre-pr-gate.sh	  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]	  for (i = 1; i <= 1; i++) if (clim[i] < lim) lim = clim[i]	B2: the nearest end on the whole stack bounds every read
-L234	tools/pre-pr-gate.sh	((lend[L] < lim) ? lend[L] : lim - 1) - lstart[L] + 1)	lend[L] - lstart[L] + 1)	B8: a delimiter line is cut at its BQ’s backtick
 L235	tools/pre-pr-gate.sh	after = found ? ((lend[L] < lim) ? lend[L] + 2 : lim) : n + 1	after = found ? lend[L] + 2 : n + 1	B8: after a delimiter cut by a backtick, reading resumes at the backtick
-L236	tools/pre-pr-gate.sh	(cty[s] == "BQ" && clim[s] <= n) ? clim[s] : n, "heredoc pending	n, "heredoc pending	B10(g): a BQ’s pending heredoc region ends at its backtick
+L090	tools/pre-pr-gate.sh	    else region(hqop[s, k], n, "heredoc pending	    else if (0) region(hqop[s, k], n, "heredoc pending	B10(g)
+L232	tools/pre-pr-gate.sh	function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= lim) set_lim() }	function pop_ctx() { flushrun(); sp--; restack() }	B2: a closed context’s end no longer bounds the reads after it
+L234	tools/pre-pr-gate.sh	function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }	function line_end(L) { return lend[L] }	B8: a body line is cut at its BQ’s backtick
+L236	tools/pre-pr-gate.sh	    if (cty[s] == "BQ") region(hqop[s, k], -1, "heredoc "	    if (0) region(hqop[s, k], -1, "heredoc "	B8: a heredoc pending when its BQ closes has an empty body
+L237	tools/pre-pr-gate.sh	if (pos > n || pos >= lim) { region(hqop[s, k], -1,	if (pos > n) { region(hqop[s, k], -1,	B8: no body left past the BQ’s end
+L102	tools/pre-pr-gate.sh	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], -1,	    for (k = 1; k <= hqn[s]; k++) region(hqop[s, k], n,	B8/B10: a never-started body is empty, never refused
 L150	tools/pre-pr-gate.sh	(t == "git" && w_plain(i))	(t == "XXgit" && w_plain(i))	B13: the git command word
 L151	tools/pre-pr-gate.sh	length(t) > 4 && substr(t, length(t) - 3) == "/git"	0	B13: a path to git
 L152	tools/pre-pr-gate.sh	for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1	for (k = 1; k <= 0; k++) if (assign_bypass(assign_at[k])) bypass = 1	B13: an assignment bypass

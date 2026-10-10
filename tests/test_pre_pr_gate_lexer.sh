@@ -828,7 +828,7 @@ net "an escaped backtick inside a quote inside backticks ends nothing" allow "ec
 lex_has "a heredoc body that runs past its backticks is a region" "$(printf "echo \`cat <<'E'\nx\`\nE\n\`")" "refuse${T}backtick inside a nested context in backticks"
 
 lex_is "the character after a BQ that ends inside an unclosed delimiter quote is read" "x=\`cat <<'E\`;echo hi" \
-  "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:echo${T}u:hi"$'\n'"refuse${T}heredoc pending when \$(…) closed${T}line 1${T}scope:no"
+  "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:echo${T}u:hi"$'\n'"refuse${T}heredoc E not closed${T}line 1${T}scope:empty"
 net "a heredoc body clamped at its BQ's end: lines after the backtick are commands" allow "$(printf '(x=`echo $(cat <<E\na`\n) ; git status\nE')"
 lex_is "an unclosed BQ holding a closed heredoc is one region" "$(printf 'echo `cat <<E\nx\nE')" \
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"refuse${T}unclosed BQ${T}line 1${T}scope:no"
@@ -836,12 +836,18 @@ lex_is "a BQ that ends inside a nested context closes it there" 'echo `a "b` c' 
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:a${T}q:b"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()${T}u:c"$'\n'"refuse${T}backtick inside a nested context in backticks${T}line 1${T}scope:no"
 
 net "a heredoc delimiter line cut by its BQ's backtick closes the body" allow "$(printf 'git commit -m "`cat <<'"'"'E'"'"'\nmsg\nE`"')"
-lex_is "a heredoc pending when a BQ closes ends its region at the backtick" 'x=`cat <<E`; git status' \
-  "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:git${T}u:status"$'\n'"refuse${T}heredoc pending when \$(…) closed${T}line 1${T}scope:no"
+lex_is "a heredoc pending when a BQ closes has an empty body" 'x=`cat <<E`; git status' \
+  "BQ@1${T}d1${T}s0.1${T}p4${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}ux:x=\$()"$'\n'"TOP@1${T}d0${T}s0${T}p14${T}u:git${T}u:status"$'\n'"refuse${T}heredoc E not closed${T}line 1${T}scope:empty"
 lex_is "after an expanding body ends, the enclosing BQ's end still bounds the reads" "$(printf 'echo `cat <<E\nx\nE\n` ; echo z')" \
   "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@4${T}d0${T}s0${T}p23${T}u:echo${T}u:z"
 
 lex_is "a heredoc delimiter line cut by its BQ's backtick: no region" "$(printf 'git commit -m "`cat <<'"'"'E'"'"'\nmsg\nE`"')" \
   "BQ@1${T}d1${T}s0.1${T}p17${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:git${T}u:commit${T}u:-m${T}x:\$()"
+
+lex_is "after a BQ closes, its end no longer bounds the reads" 'echo `a` $(b)' \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:a"$'\n'"SUB@1${T}d1${T}s0.2${T}p12${T}u:b"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()${T}x:\$()"
+lex_is "a second heredoc after a delimiter cut by the backtick has an empty body" "$(printf 'echo `cat <<E <<F\nx\nE` ; echo z')" \
+  "BQ@1${T}d1${T}s0.1${T}p7${T}u:cat"$'\n'"TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}x:\$()"$'\n'"TOP@3${T}d0${T}s0${T}p26${T}u:echo${T}u:z"$'\n'"refuse${T}heredoc F not closed${T}line 1${T}scope:empty"
+net "a heredoc pending when its BQ closes is never refused" allow 'x=`git log <<E`'
 
 summary
