@@ -1770,19 +1770,17 @@ for d in "${DIRS[@]}"; do
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
   # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
-  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue="" w_readerr=""
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
       effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
       origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; pre-push) w_pp="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
-      machine-dir) w_machinedir="$w_v" ;; set) w_set="$w_v" ;; novalue) w_novalue="$w_v" ;; read-error) w_readerr="$w_v" ;;
+      machine-dir) w_machinedir="$w_v" ;; set) w_set="$w_v" ;; novalue) w_novalue="$w_v" ;;
     esac
   done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
   if [ -z "$w_eff" ]; then
     warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo$guard_home_note"
-  elif [ "$w_readerr" = 1 ]; then
-    warn W-GUARD-UNWIRED "secret-guard state unknown: git could not read this repo's config (a corrupt file — 'git -C $d config --list' shows git's own message)$guard_home_note"
   elif [ "$w_set" = 1 ] && [ -z "$w_value" ]; then
     # dir #747 (S3-5): core.hooksPath is SET, to nothing (or to no value at all). Git runs no hooks in this repo while
     # it stands, a vendored copy would be ignored, and the old "install --global / vendor" advice was refused or inert.

@@ -7,7 +7,10 @@
 #   S3-2  --install checks every lib install.sh / uninstall.sh REQUIRE, safe-write.sh and artifact-cksum.sh included
 #   S3-5  an EMPTY core.hooksPath: the warning names it, and its advice clears it (the old advice was refused)
 #   S3-6/S3-7  the header names what the code says; the "state unknown" arm is pinned by its own text
-#   env   the floor's name set: <name>.env.<ext> backups and upper-case variants on a case-sensitive file system
+#   env   the floor's name set: <name>.env.<ext> backups and upper-case variants (and upper-case TEMPLATE words are
+#         still templates) on a case-sensitive file system
+#   hw    a half-wired guard's advice follows whose dir it is: Keel's own dir → --global, a vendored copy → re-vendor,
+#         a user's global/system hooks dir → copy by hand
 #   wt    a WORKTREE-scope hooksPath outranks --local, so the advice for it says --worktree
 # Fixture file names that look like env files are written by this script, never typed in a command line.
 # shellcheck source=tests/lib.sh
@@ -34,6 +37,7 @@ mv "$kdir/pre-push" "$kdir/pre-push.away"
 run genv "$doctor" --install "$H/claude"
 check_contains "D1-3: Keel's pre-push ABSENT beside a working pre-commit → W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "D1-3: ...naming the pre-push" "$(id_line W-GUARD-UNWIRED)" "pre-push"
+check_contains "D1-3: ...Keel's own dir is fixed by re-running --global" "$(id_line W-GUARD-UNWIRED)" "re-run install-secret-guard.sh --global"
 check_absent "D1-3: ...and never the OK line" "$OUT" "OK   secret-guard: machine-global"
 mv "$kdir/pre-push.away" "$kdir/pre-push"; chmod -x "$kdir/pre-push"
 run genv "$doctor" --install "$H/claude"
@@ -62,6 +66,7 @@ mv "$r13/.git/hooks/pre-push" "$r13/.git/hooks/pre-push.away"
 run genv "$doctor" "$r13"
 check_contains "D1-3: a vendored guard with Keel's pre-push ABSENT → W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
 check_contains "D1-3: ...naming the pre-push" "$(id_line W-GUARD-UNWIRED)" "pre-push"
+check_contains "D1-3: ...a vendored copy is fixed by re-vendoring" "$(id_line W-GUARD-UNWIRED)" "re-vendor: install-secret-guard.sh"
 mv "$r13/.git/hooks/pre-push.away" "$r13/.git/hooks/pre-push"; chmod -x "$r13/.git/hooks/pre-push"
 run genv "$doctor" "$r13"
 check_contains "D1-3: ...and with it NOT EXECUTABLE" "$(id_line W-GUARD-UNWIRED)" "not executable"
@@ -100,6 +105,9 @@ d="$SANDBOX/proj-tmpl"; mkdir -p "$d"; git init -q "$d"; printf '# ctx\n' > "$d/
 put "$d/CONFIG.ENV.TEMPLATE"; put "$d/.Env.Sample"
 run "$doctor" "$d"
 check_absent "env names: an upper-case template (CONFIG.ENV.TEMPLATE, .Env.Sample) is not exposed" "$OUT" "[W-SECRETS-EXPOSED]"
+put "$d/PROD.ENV"
+run "$doctor" "$d"
+check_contains "env names: ...while an upper-case non-template (PROD.ENV) beside them is" "$(id_line W-SECRETS-EXPOSED)" "PROD.ENV"
 
 # --- half-wired advice follows whose dir it is ---------------------------------------------------------------------------
 mk_home hw
