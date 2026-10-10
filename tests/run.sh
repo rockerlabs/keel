@@ -363,6 +363,25 @@ main() {
   case "$jobs_cap" in (*[!0-9]*|'') jobs_cap=4 ;; esac
   [ "$jobs_cap" -ge 1 ] || jobs_cap=1
 
+  # dir #744 (B10): the per-file watchdog. A test file that hangs used to hold its CI job until GitHub's
+  # 360-minute default killed the whole job, with no log at all (run.sh buffers a file's output until reap).
+  # KEEL_TEST_FILE_TIMEOUT is whole seconds, decimal digits only: `0` = off; unset or anything else (a sign,
+  # a leading zero, a word) = the default, 600 under $CI (~4.5x the slowest file today) and off locally, where
+  # a slow machine must not fail a slow-but-finishing file. The `watchdog:` line below prints the SAME variable
+  # the reap enforces, so the two cannot disagree. Per file, from its own launch (bash SECONDS); checked in the
+  # reap poll, no timer process. Past the deadline the file's own process gets TERM, then KILL 5 s later if it
+  # is still alive — the same process on_interrupt signals (a grandchild is not reached; its output still goes
+  # to the file's log, never to a pipe the reap waits on).
+  file_timeout="${KEEL_TEST_FILE_TIMEOUT:-}"
+  case "$file_timeout" in
+    0) ;;
+    [1-9]|[1-9]*[0-9]) case "$file_timeout" in (*[!0-9]*) file_timeout="" ;; esac ;;
+    *) file_timeout="" ;;
+  esac
+  if [ -z "$file_timeout" ]; then
+    if [ -n "${CI:-}" ]; then file_timeout=600; else file_timeout=0; fi
+  fi
+
   # delta-audit 0.13.0 R2-1 / R2-4: the per-file logs live in a directory minted from a TEMPLATE rooted at
   # $TMPDIR — a bare `mktemp -d` ignores $TMPDIR on macOS, so the preserved-on-failure directory below
   # (dir #480) could not be redirected, and tests/test_run_sh.sh's failing fixtures left one in the real
@@ -438,6 +457,9 @@ SHIM
   active_pids=()
   active_files=()
   active_logs=()
+  active_starts=()   # SECONDS at launch (B10 deadline, B11 duration)
+  active_termed=()   # SECONDS when the watchdog sent TERM, empty while it has not
+  durations=""       # "<seconds> <file>" per reaped file, for B11's slowest-files block
 
   # Concurrency amplifies the blast radius of an interrupt: an orphaned `bash "$t"` leaves its own
   # sandbox HOME (tests/lib.sh) behind uncleaned, AND — unlike the old sequential runner, which
@@ -465,18 +487,33 @@ SHIM
   # arrays down to only the ones still running. Prints how many it reaped (as $?) so a caller can
   # skip the poll sleep on a pass that just freed a slot instead of idling out the rest of it.
   reap_finished() {
-    local new_pids=() new_files=() new_logs=()
-    local i pid rc reaped=0 log_content
+    local new_pids=() new_files=() new_logs=() new_starts=() new_termed=()
+    local i pid rc reaped=0 log_content termed elapsed
     for i in "${!active_pids[@]}"; do
       pid="${active_pids[$i]}"
+      termed="${active_termed[$i]}"
       if kill -0 "$pid" 2>/dev/null; then
+        # B10: past its deadline → TERM once; still alive 5 s after that → KILL. The reap below then sees
+        # it exit and reports it as timed out.
+        if [ "$file_timeout" -gt 0 ]; then
+          if [ -z "$termed" ] && [ $((SECONDS - active_starts[i])) -ge "$file_timeout" ]; then
+            kill -TERM "$pid" 2>/dev/null
+            termed="$SECONDS"
+          elif [ -n "$termed" ] && [ $((SECONDS - termed)) -ge 5 ]; then
+            kill -KILL "$pid" 2>/dev/null
+          fi
+        fi
         new_pids+=("$pid")
         new_files+=("${active_files[$i]}")
         new_logs+=("${active_logs[$i]}")
+        new_starts+=("${active_starts[$i]}")
+        new_termed+=("$termed")
         continue
       fi
       wait "$pid"
       rc=$?
+      elapsed=$((SECONDS - active_starts[i]))
+      durations="$durations$elapsed ${active_files[$i]}"$'\n'
       # Read the log ONCE into a variable — it's about to be both printed and pattern-matched below,
       # and this loop runs once per completed test file (~83 times a full suite run), so a second read
       # + an external `grep` fork per file is avoidable work. The trailing `printf x` + `%x` strip is
@@ -493,6 +530,14 @@ SHIM
       # name, never to its own stdout that this loop captures.
       log_content="$(cat "${active_logs[$i]}"; printf x)"
       log_content="${log_content%x}"
+      if [ -n "$termed" ]; then
+        # B10: one failure, counted here and nowhere else (the rc check below is skipped for it).
+        printf '\n=== %s (timed out after %ss) ===\n' "${active_files[$i]}" "$file_timeout"
+        printf '%s' "$log_content"
+        failed=$((failed + 1))
+        reaped=$((reaped + 1))
+        continue
+      fi
       printf '\n=== %s ===\n' "${active_files[$i]}"
       printf '%s' "$log_content"
       # dir #627, second fail-open: a test file calling an assertion lib.sh does not define loses that
@@ -520,6 +565,8 @@ SHIM
     active_pids=("${new_pids[@]+"${new_pids[@]}"}")
     active_files=("${new_files[@]+"${new_files[@]}"}")
     active_logs=("${new_logs[@]+"${new_logs[@]}"}")
+    active_starts=("${new_starts[@]+"${new_starts[@]}"}")
+    active_termed=("${new_termed[@]+"${new_termed[@]}"}")
     return "$reaped"
   }
 
@@ -537,6 +584,11 @@ SHIM
   # meant two jobs overlapping instead of the true one-at-a-time the env var promises (found by an
   # operator-run /code-review high pass, dir #130).
   launch_cap=$((jobs_cap - 1))
+  if [ "$file_timeout" -gt 0 ]; then
+    printf 'watchdog: %ss\n' "$file_timeout"
+  else
+    printf 'watchdog: off\n'
+  fi
   for t in "$here"/test_*.sh; do
     wait_until_at_most "$launch_cap"
     base="$(basename "$t")"
@@ -545,6 +597,8 @@ SHIM
     active_pids+=("$!")
     active_files+=("$base")
     active_logs+=("$log")
+    active_starts+=("$SECONDS")
+    active_termed+=("")
   done
   wait_until_at_most 0
 
@@ -715,6 +769,12 @@ SHIM
 
   printf '\n========================================\n'
   printf 'residue gate (dir #663): %d mktemp-minted path(s) traced, %d left behind\n' "$resid_paths" "$resid_left_n"
+  # dir #744 (B11): the five longest files, launch to reap — the measurement a slow leg or a hang is first read
+  # from. Numeric sort, largest first, ties by name; a timed-out file is listed like any other.
+  printf 'slowest test files:\n'
+  if [ -n "$durations" ]; then
+    printf '%s' "$durations" | LC_ALL=C sort -k1,1nr -k2,2 | awk 'NR <= 5 { printf "  %ss %s\n", $1, $2 }'
+  fi
   # dir #333, review-caught: the NOTE above ran once, near the top, on stderr — easy to miss in a long
   # scrollback or a CI harness that only tails stdout. Repeat it once more, right next to the pass/fail
   # verdict a reader actually looks at, so a checkout missing tools/lib/ref-guard.sh doesn't read as

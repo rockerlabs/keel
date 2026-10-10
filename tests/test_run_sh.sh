@@ -86,45 +86,94 @@ for n in 1 2 3 4 5 6; do
   check_contains "fixture $n ran despite the concurrency cap" "$OUT" "=== test_$n.sh ==="
 done
 
-# --- fixtures actually overlap in wall clock under concurrency, not just "all eventually ran" ------
-# (found by the /polish high-depth review agent: the assertions above would still pass a regression
-# to a sequential-only implementation, since none of them measure wall clock.) Four 1s-sleep fixtures
-# serially cost >=4s; under KEEL_TEST_JOBS=4 they should overlap and finish well under that.
-d="$(mkfakedir)"
-for n in 1 2 3 4; do
-  printf '#!/usr/bin/env bash\nsleep 1\nexit 0\n' > "$d/test_$n.sh"
+# --- dir #744 B12(a): concurrency is proven by a PEAK COUNT, never by elapsed time --------------------
+# The old checks timed the whole run (4x 1 s ≤ 3 s, 6x 1 s ≤ 3 s, 2–5 s, ≥ 5 s), so runner start-up under
+# load — not the cap — decided them (E9: seven of them red at a 3 s start delay). Each fixture below now
+# registers itself in live/, waits until live/ holds BARRIER entries (or every fixture still to come is
+# already live or done, or 20 s pass), keeps its entry 2 s more while re-counting, and records the highest
+# count it saw. run.sh launches on a 0.1 s poll, far inside the 2 s hold, so a launch past the cap is
+# always seen; a cap below BARRIER shows as a peak below it. The asserted cap is the MAXIMUM recorded peak.
+# mk_peak_fixtures DIR N BARRIER — N such fixtures in DIR (a mkfakedir), peaks appended to DIR/peaks.
+mk_peak_fixtures() {
+  local d="$1" n="$2" barrier="$3" i
+  mkdir -p "$d/live" "$d/done"
+  for i in $(seq 1 "$n"); do
+    cat > "$d/test_peak$i.sh" <<FIX
+#!/usr/bin/env bash
+d="\$(cd "\$(dirname "\$0")" && pwd)"
+count() { set -- "\$d/\$1"/*; [ -e "\$1" ] || { echo 0; return; }; echo \$#; }
+: > "\$d/live/\$\$"
+peak=0
+w=0
+while :; do
+  l="\$(count live)"; dn="\$(count done)"
+  [ "\$l" -gt "\$peak" ] && peak="\$l"
+  { [ "\$l" -ge $barrier ] || [ \$((l + dn)) -ge $n ] || [ "\$w" -ge 200 ]; } && break
+  sleep 0.1; w=\$((w + 1))
 done
-t0=$(date +%s)
+h=0
+while [ "\$h" -lt 20 ]; do
+  l="\$(count live)"; [ "\$l" -gt "\$peak" ] && peak="\$l"
+  sleep 0.1; h=\$((h + 1))
+done
+echo "\$peak" >> "\$d/peaks"
+: > "\$d/done/\$\$"
+rm -f "\$d/live/\$\$"
+FIX
+  done
+}
+# max_peak DIR — the highest peak any fixture in DIR recorded (0 when none ran).
+max_peak() { local m=0 p; while IFS= read -r p; do [ "$p" -gt "$m" ] && m="$p"; done < "$1/peaks"; echo "$m"; }
+
+d="$(mkfakedir)"
+mk_peak_fixtures "$d" 6 4
 run env KEEL_TEST_JOBS=4 bash "$d/run.sh"
-t1=$(date +%s)
-elapsed=$((t1 - t0))
-check_status "timing: 4x 1s fixtures, jobs=4 -> exit 0" 0 "$STATUS"
-if [ "$elapsed" -le 3 ]; then
-  pass "timing: 4x 1s fixtures overlap under jobs=4 (${elapsed}s, serial would be >=4s)"
-else
-  fail "timing: 4x 1s fixtures overlap under jobs=4" "took ${elapsed}s, expected <=3s if truly concurrent"
-fi
+check_status "jobs=4, 6 fixtures -> exit 0" 0 "$STATUS"
+check_eq "jobs=4: 6 fixtures run 4 at a time, never more (peak count)" "4" "$(max_peak "$d")"
+
+# $CI caps the default at 2, overriding a host reporting more cores (dir #154). A fake `nproc` on PATH
+# decouples this from the real host's core count.
+fakebin="$(mktemp -d "$SANDBOX/fakebin.XXXXXX")"
+printf '#!/usr/bin/env bash\necho 9\n' > "$fakebin/nproc"
+chmod +x "$fakebin/nproc"
+
+# CI unset -> the (mocked, high) nproc default: all 6 at once.
+d="$(mkfakedir)"
+mk_peak_fixtures "$d" 6 6
+run env -u KEEL_TEST_JOBS -u CI PATH="$fakebin:$PATH" bash "$d/run.sh"
+check_status "CI unset: nproc-default fixtures -> exit 0" 0 "$STATUS"
+check_eq "CI unset: 6 fixtures run at the mocked nproc=9 default, not capped (peak count)" "6" "$(max_peak "$d")"
+
+# CI=true -> capped at 2 regardless of the mocked nproc.
+d="$(mkfakedir)"
+mk_peak_fixtures "$d" 6 2
+run env -u KEEL_TEST_JOBS PATH="$fakebin:$PATH" CI=true bash "$d/run.sh"
+check_status "CI=true: capped fixtures -> exit 0" 0 "$STATUS"
+check_eq "CI=true: 6 fixtures cap at 2 despite a high mocked nproc (peak count)" "2" "$(max_peak "$d")"
+
+# KEEL_TEST_JOBS still overrides $CI's default (dir #154): fully sequential, a peak of 1.
+d="$(mkfakedir)"
+mk_peak_fixtures "$d" 3 1
+run env PATH="$fakebin:$PATH" KEEL_TEST_JOBS=1 CI=true bash "$d/run.sh"
+check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
+check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
+check_eq "KEEL_TEST_JOBS=1 under CI=true runs one at a time, not capped at 2 (peak count)" "1" "$(max_peak "$d")"
 
 # --- SIGTERM mid-run: exits 130, kills the still-running children, and — unlike a naive kill-and-
-# exit — still surfaces each interrupted fixture's own buffered output rather than silently
-# dropping it (found by an operator-run /code-review high pass, dir #130: the old sequential
-# runner streamed output live, so an interrupt never lost anything; the new concurrent one buffers
-# per-file until reap time, which needed its own interrupt-time flush). ------------------------
+# exit — still surfaces each interrupted fixture's own buffered output (dir #130). dir #744 B12(b): the
+# fixtures write a marker once they are up (run.sh buffers their stdout until reap, so polling the output
+# could never succeed before the kill — E9), and only kill→exit is timed: never anything from runner start.
 d="$(mkfakedir)"
-printf '#!/usr/bin/env bash\necho hello-from-int-a\nsleep 5\nexit 0\n' > "$d/test_a.sh"
-printf '#!/usr/bin/env bash\necho hello-from-int-b\nsleep 5\nexit 0\n' > "$d/test_b.sh"
+printf '#!/usr/bin/env bash\necho hello-from-int-a\n: > "$(dirname "$0")/up-a"\nexec sleep 30\n' > "$d/test_a.sh"
+printf '#!/usr/bin/env bash\necho hello-from-int-b\n: > "$(dirname "$0")/up-b"\nexec sleep 30\n' > "$d/test_b.sh"
 int_out="$(mktemp "$SANDBOX/int-out.XXXXXX")"
-t0=$(date +%s)
 env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
 rpid=$!
-# Poll for both fixtures' own echo instead of a fixed sleep, so the SIGTERM lands reliably once
-# both children are actually up rather than racing a guessed delay.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if grep -q "hello-from-int-a" "$int_out" 2>/dev/null && grep -q "hello-from-int-b" "$int_out" 2>/dev/null; then
-    break
-  fi
-  sleep 0.2
-done
+w=0
+while { [ ! -e "$d/up-a" ] || [ ! -e "$d/up-b" ]; } && [ "$w" -lt 200 ]; do sleep 0.1; w=$((w + 1)); done
+check_file "SIGTERM mid-run -> fixture a was up before the kill" "$d/up-a"
+check_file "SIGTERM mid-run -> fixture b was up before the kill" "$d/up-b"
+t0=$(date +%s)
 kill -TERM "$rpid"
 wait "$rpid"
 int_status=$?
@@ -133,73 +182,98 @@ int_out_text="$(cat "$int_out")"
 check_status "SIGTERM mid-run -> exit 130" 130 "$int_status"
 check_contains "SIGTERM mid-run -> test_a's output survives the kill" "$int_out_text" "hello-from-int-a"
 check_contains "SIGTERM mid-run -> test_b's output survives the kill" "$int_out_text" "hello-from-int-b"
-check_contains "SIGTERM mid-run -> names the interrupted files" "$int_out_text" "(interrupted)"
-if [ "$((t1 - t0))" -le 3 ]; then
-  pass "SIGTERM mid-run -> the 5s sleeps were actually killed, not waited out ($((t1 - t0))s)"
+check_contains "SIGTERM mid-run -> names test_a as interrupted" "$int_out_text" "=== test_a.sh (interrupted) ==="
+check_contains "SIGTERM mid-run -> names test_b as interrupted" "$int_out_text" "=== test_b.sh (interrupted) ==="
+if [ "$((t1 - t0))" -le 10 ]; then
+  pass "SIGTERM mid-run -> kill to exit within 10s, the 30s sleeps were killed, not waited out ($((t1 - t0))s)"
 else
-  fail "SIGTERM mid-run -> the 5s sleeps were actually killed, not waited out" "took $((t1 - t0))s, expected <=3s"
+  fail "SIGTERM mid-run -> kill to exit within 10s" "took $((t1 - t0))s from the kill"
 fi
 rm -f "$int_out"
 
-# --- $CI caps the default at 2, overriding a host reporting more cores (dir #154) -----------------
-# tests/run.sh's own default now checks $CI before falling back to nproc/sysctl — the new branch had
-# no coverage at all (found by an operator-run /code-review medium pass): every case above pins
-# KEEL_TEST_JOBS explicitly, so a regression in the $CI branch itself would pass silently. A fake
-# `nproc` on PATH decouples this from the real host's core count on purpose — this suite exists to
-# fight resource-contention flakiness, so a timing assertion tied to the ACTUAL host's CPU count
-# would risk reintroducing exactly that class of flake.
+# --- dir #744 B10 (A10): the per-file watchdog -----------------------------------------------------
+# A hanging file is TERMed past KEEL_TEST_FILE_TIMEOUT, reported with its pre-hang output, counted once.
+# No wall-clock bound: the proof the file was cut short is its `finished` marker, absent when run.sh returns.
 d="$(mkfakedir)"
-for n in 1 2 3 4 5 6; do
-  printf '#!/usr/bin/env bash\nsleep 1\nexit 0\n' > "$d/test_$n.sh"
-done
-fakebin="$(mktemp -d "$SANDBOX/fakebin.XXXXXX")"
-printf '#!/usr/bin/env bash\necho 9\n' > "$fakebin/nproc"
-chmod +x "$fakebin/nproc"
+printf '#!/usr/bin/env bash\necho pre-hang-output\nsleep 30\n: > "$(dirname "$0")/finished"\n' > "$d/test_hang.sh"
+run env -u CI KEEL_TEST_FILE_TIMEOUT=2 bash "$d/run.sh"
+check_status "watchdog: a hanging file under KEEL_TEST_FILE_TIMEOUT=2 -> exit 1" 1 "$STATUS"
+check_contains "watchdog: prints the timed-out header" "$OUT" "=== test_hang.sh (timed out after 2s) ==="
+check_contains "watchdog: prints the file's pre-hang output" "$OUT" "pre-hang-output"
+check_contains "watchdog: counts it as ONE failure" "$OUT" "1 TEST FILE(S) FAILED"
+check_nofile "watchdog: the file was cut short (its finished marker is absent when run.sh returns)" "$d/finished"
+check_contains "watchdog: announces its value" "$OUT" "watchdog: 2s"
 
-# CI unset -> falls through to the (mocked, high) nproc default, all 6 overlap -> well under serial 6s
-t0=$(date +%s)
-run env -u KEEL_TEST_JOBS -u CI PATH="$fakebin:$PATH" bash "$d/run.sh"
-t1=$(date +%s)
-elapsed=$((t1 - t0))
-check_status "CI unset: nproc-default fixtures -> exit 0" 0 "$STATUS"
-# <=3s, matching the file's own established margin for this shape of assertion (the "timing: 4x 1s
-# fixtures overlap under jobs=4" case above uses the same +2s slack over ~1s of unconstrained work) —
-# a tighter bound here would risk reintroducing the exact contention-flake class this suite exists to
-# fight (found on a delta review pass).
-if [ "$elapsed" -le 3 ]; then
-  pass "CI unset: 6x 1s fixtures run at the mocked nproc=9 default, not capped (${elapsed}s)"
-else
-  fail "CI unset: 6x 1s fixtures run at the nproc default" "took ${elapsed}s, expected <=3s under the mocked nproc=9"
-fi
+# Guards (they hold without a watchdog too): unset + CI unset = off, a 1 s file is never killed; a 5 s
+# limit lets a 1 s file pass.
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nsleep 1\necho one-second-done\n' > "$d/test_one.sh"
+run env -u CI -u KEEL_TEST_FILE_TIMEOUT bash "$d/run.sh"
+check_status "watchdog off locally: a 1 s file passes -> exit 0" 0 "$STATUS"
+check_contains "watchdog off locally: announces off" "$OUT" "watchdog: off"
+run env -u CI KEEL_TEST_FILE_TIMEOUT=5 bash "$d/run.sh"
+check_status "watchdog 5 s: a 1 s file passes -> exit 0" 0 "$STATUS"
+check_absent "watchdog 5 s: nothing timed out" "$OUT" "timed out after"
 
-# CI=true -> caps at 2 regardless of the (mocked, high) nproc value -> 3 batches of 2, ~3s
-t0=$(date +%s)
-run env -u KEEL_TEST_JOBS PATH="$fakebin:$PATH" CI=true bash "$d/run.sh"
-t1=$(date +%s)
-elapsed=$((t1 - t0))
-check_status "CI=true: capped fixtures -> exit 0" 0 "$STATUS"
-if [ "$elapsed" -ge 2 ] && [ "$elapsed" -le 5 ]; then
-  pass "CI=true: 6x 1s fixtures cap at 2 despite a high mocked nproc (${elapsed}s, ~3 batches)"
-else
-  fail "CI=true: 6x 1s fixtures cap at 2" "took ${elapsed}s, expected roughly 3 batches (2-5s)"
-fi
+# The default is read from the same variable the reap enforces (the fixture is instant, so these runs only
+# show the announcement).
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/test_fast.sh"
+run env -u KEEL_TEST_FILE_TIMEOUT CI=true bash "$d/run.sh"
+check_contains "watchdog default under CI: 600s" "$OUT" "watchdog: 600s"
+run env KEEL_TEST_FILE_TIMEOUT=bogus CI=true bash "$d/run.sh"
+check_contains "watchdog: a non-numeric value falls back to the CI default" "$OUT" "watchdog: 600s"
+run env KEEL_TEST_FILE_TIMEOUT=010 CI=true bash "$d/run.sh"
+check_contains "watchdog: a leading zero is non-numeric -> the CI default" "$OUT" "watchdog: 600s"
+run env -u KEEL_TEST_FILE_TIMEOUT -u CI bash "$d/run.sh"
+check_contains "watchdog: both unset -> off" "$OUT" "watchdog: off"
+run env -u CI KEEL_TEST_FILE_TIMEOUT=0 bash "$d/run.sh"
+check_contains "watchdog: 0 -> off" "$OUT" "watchdog: off"
 
-# --- KEEL_TEST_JOBS still overrides $CI's default (dir #154) ---------------------------------------
-# A bare exit-0 + "ALL TEST FILES PASSED" check can't tell jobs_cap=1 (override honored) apart from
-# jobs_cap=2 or 9 (override silently lost to the CI default or the mocked nproc) — all three produce
-# identical output for these trivial fixtures. Only a timing check that proves fully SEQUENTIAL
-# execution (6 batches of 1, ~6s) actually distinguishes them (found on a delta review pass).
-t0=$(date +%s)
-run env PATH="$fakebin:$PATH" KEEL_TEST_JOBS=1 CI=true bash "$d/run.sh"
-t1=$(date +%s)
-elapsed=$((t1 - t0))
-check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
-check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
-if [ "$elapsed" -ge 5 ]; then
-  pass "KEEL_TEST_JOBS=1 under CI=true actually ran sequentially, not capped at 2 (${elapsed}s, ~6 batches)"
+# The deadline is per file, from that file's own launch: three sequential 2 s files under a 3 s limit.
+d="$(mkfakedir)"
+for n in 1 2 3; do printf '#!/usr/bin/env bash\nsleep 2\n' > "$d/test_seq$n.sh"; done
+run env -u CI KEEL_TEST_JOBS=1 KEEL_TEST_FILE_TIMEOUT=3 bash "$d/run.sh"
+check_status "watchdog is per file: three sequential 2 s files under a 3 s limit -> exit 0" 0 "$STATUS"
+check_absent "watchdog is per file: none was killed" "$OUT" "timed out after"
+
+# The default ENFORCES (not only announces): a scratch run.sh whose default literal is 3, run under CI with
+# the variable unset, kills the 30 s file.
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\necho pre-hang-output\nsleep 30\n: > "$(dirname "$0")/finished"\n' > "$d/test_hang.sh"
+sed 's/file_timeout=600/file_timeout=3/' "$d/run.sh" > "$d/run.sh.new" && mv "$d/run.sh.new" "$d/run.sh"
+check_contains "mutation copy: the default literal was replaced" "$(cat "$d/run.sh")" "file_timeout=3;"
+run env -u KEEL_TEST_FILE_TIMEOUT CI=true bash "$d/run.sh"
+check_status "the CI default enforces: a 30 s file under a default of 3 -> exit 1" 1 "$STATUS"
+check_contains "the CI default enforces: timed out after 3s" "$OUT" "(timed out after 3s)"
+
+# --- dir #744 B11 (A11): the slowest-files block -----------------------------------------------------
+# The watchdog limit sits ABOVE the 10 s file (a limit below it would kill that file too): the hung file is
+# killed at ~12 s and listed first, the 10 s file second — numeric order (a text sort puts 2s above 10s).
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\nsleep 10\n' > "$d/test_s10.sh"
+printf '#!/usr/bin/env bash\nsleep 2\n'  > "$d/test_s2.sh"
+printf '#!/usr/bin/env bash\nsleep 1\n'  > "$d/test_s1a.sh"
+printf '#!/usr/bin/env bash\nsleep 1\n'  > "$d/test_s1b.sh"
+printf '#!/usr/bin/env bash\nexit 0\n'   > "$d/test_fast.sh"
+printf '#!/usr/bin/env bash\nsleep 30\n' > "$d/test_hung.sh"
+run env -u CI KEEL_TEST_JOBS=6 KEEL_TEST_FILE_TIMEOUT=12 bash "$d/run.sh"
+check_status "slowest block: a run with one timed-out file -> exit 1" 1 "$STATUS"
+slow_block="$(awk '/^slowest test files:$/ { on = 1; next } on && /^  [0-9]+s / { print; next } on { exit }' <<< "$OUT")"
+check_eq "slowest block: exactly 5 lines" "5" "$(grep -c . <<< "$slow_block")"
+check_eq "slowest block: the timed-out file is listed, first (killed at ~12 s)" "test_hung.sh" "$(sed -n '1s/^  [0-9]*s //p' <<< "$slow_block")"
+check_eq "slowest block: the 10 s file second" "test_s10.sh" "$(sed -n '2s/^  [0-9]*s //p' <<< "$slow_block")"
+check_eq "slowest block: the 2 s file below both (numeric, not text, order)" "test_s2.sh" "$(sed -n '3s/^  [0-9]*s //p' <<< "$slow_block")"
+s1_order="$(sed -n 's/^  [0-9]*s //p' <<< "$slow_block" | grep '^test_s1[ab]' | tr '\n' ' ')"
+check_eq "slowest block: equal times listed in name order" "test_s1a.sh test_s1b.sh " "$s1_order"
+order="$(grep -nE '^residue gate|^slowest test files:|TEST FILE\(S\) FAILED$' <<< "$OUT" | cut -d: -f1 | tr '\n' ' ')"
+r_line="$(cut -d' ' -f1 <<< "$order")"; s_line="$(cut -d' ' -f2 <<< "$order")"; v_line="$(cut -d' ' -f3 <<< "$order")"
+if [ "$r_line" -lt "$s_line" ] && [ "$s_line" -lt "$v_line" ]; then
+  pass "slowest block: after the residue-gate line, before the verdict"
 else
-  fail "KEEL_TEST_JOBS=1 under CI=true ran sequentially" "took ${elapsed}s, expected >=5s for 6 fully-serial 1s fixtures — the override may have lost to the CI default"
+  fail "slowest block: after the residue-gate line, before the verdict" "line order residue/slowest/verdict = $order"
 fi
+check_contains "slowest block: the verdict keeps its exact text" "$OUT" "1 TEST FILE(S) FAILED"
 
 # --- dir #480's cheap discrimination: a failing run's per-file logs must survive the process, not
 # vanish with the EXIT-trap cleanup, so a one-off local failure (the shape dir #480 itself was filed

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+# dir #744 (B9): every job sets timeout-minutes = max(2 x the leg's p90, p90 + 10 min), rounded up to 5 min,
+# so a hung job is killed at a bound sized to its leg instead of GitHub's 360-minute default. Pinned per job
+# by tests/test_ci_workflow.sh. tests/run.sh's per-file watchdog (600 s under CI) fires first for a hung
+# test file and prints its log; this bound catches a hang outside any test file.
 jobs:
   tests:
     name: tests (${{ matrix.os }})
@@ -17,6 +21,7 @@ jobs:
         # Pinned to explicit images (not the drifting -latest aliases) for reproducible runs.
         os: [ubuntu-24.04, macos-14]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: bash version
@@ -27,6 +32,7 @@ jobs:
   alpine:
     name: tests (alpine-busybox)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # Run the suite under Alpine's busybox coreutils — the durable guard against GNU-only constructs.
@@ -61,6 +67,7 @@ jobs:
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       # Pinned like actions/checkout above (S7, backlog dir #4) — the runner image's preinstalled
       # shellcheck floats with whatever that image ships, so results could drift silently between
@@ -90,6 +97,7 @@ jobs:
   secret-scan:
     name: secret-scan (server-side floor, SEC4)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -117,6 +125,7 @@ jobs:
   self-check:
     name: keel self-check
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:

@@ -945,7 +945,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$ckdir/install.sh" --home "$fifohome" --no-hooks >"$SANDBOX/fifo-install.out" 2>&1 </dev/null &
   fifo_pid=$!
   fifo_waited=0
-  while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt 30 ]; do
+  while kill -0 "$fifo_pid" 2>/dev/null && [ "$fifo_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; fifo_waited=$((fifo_waited + 1))
   done
   if kill -0 "$fifo_pid" 2>/dev/null; then
@@ -1022,7 +1022,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$install" --home "$t15home" --no-hooks > "$t15_outfile" 2>&1 </dev/null &
   t15_pid=$!
   t15_waited=0
-  while kill -0 "$t15_pid" 2>/dev/null && [ "$t15_waited" -lt 30 ]; do
+  while kill -0 "$t15_pid" 2>/dev/null && [ "$t15_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t15_waited=$((t15_waited + 1))
   done
   if kill -0 "$t15_pid" 2>/dev/null; then
@@ -1081,7 +1081,7 @@ if command -v mkfifo >/dev/null 2>&1; then
   env "${FRESH_HOME_ENV[@]}" "$d351ck/install.sh" --home "$t15bhome" --no-hooks > "$t15b_outfile" 2>&1 </dev/null &
   t15b_pid=$!
   t15b_waited=0
-  while kill -0 "$t15b_pid" 2>/dev/null && [ "$t15b_waited" -lt 30 ]; do
+  while kill -0 "$t15b_pid" 2>/dev/null && [ "$t15b_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t15b_waited=$((t15b_waited + 1))
   done
   if kill -0 "$t15b_pid" 2>/dev/null; then
@@ -1320,7 +1320,7 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   env "${FRESH_HOME_ENV[@]}" "$install" --home "$t20home" --no-hooks > "$t20out" 2>&1 </dev/null &
   t20_pid=$!
   t20_waited=0
-  while kill -0 "$t20_pid" 2>/dev/null && [ "$t20_waited" -lt 15 ]; do
+  while kill -0 "$t20_pid" 2>/dev/null && [ "$t20_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
     sleep 1; t20_waited=$((t20_waited + 1))
   done
   if kill -0 "$t20_pid" 2>/dev/null; then
