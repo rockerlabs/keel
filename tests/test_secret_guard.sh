@@ -3184,28 +3184,45 @@ run_in "$r746" "$scan" --tracked
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
   check_status "dir #746 A26(f): an unmerged path's unreadable working file → exit 2" 2 "$STATUS"
   check_contains "dir #746 A26(f): ...naming it" "$OUT" "could not read the working file of the unmerged 'f.txt'"
-  check_eq "dir #746 A26(f): ...after the unmerged WARN, and no unprefixed shell error line" \
-    "secret-scan: WARN unmerged (its working file), $unmerged746" "$(match "$OUT" -m1 -v '^secret-scan:   ')"
+  check_eq "dir #746 A26(f): ...the unmerged WARN is the first line" \
+    "secret-scan: WARN unmerged (its working file), $unmerged746" "$(match "$OUT" -m1 .)"
+  check_eq "dir #746 A26(f): ...and every line carries the secret-scan: prefix (no raw shell error)" 0 \
+    "$(match "$OUT" -c -v '^secret-scan:')"
 else
   check_status "dir #746 A26(f): as root the working file is read → BLOCKED" 1 "$STATUS"
 fi
 check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
 chmod 644 "$r746/f.txt"
-# ...and one hidden by a directory that cannot be searched is not taken for an absent file
+# ...and one hidden by a directory that cannot be searched — at any depth — is not taken for an absent file;
+# at stage 0 the same state is named for what it is, not "missing" (the verdict there is the index copy's, F5)
 r2_746="$(new_repo)"
-mkdir "$r2_746/d"; printf 'tok = %s\n' "$k746" > "$r2_746/d/f.txt"
-printf '100644 %s 1\td/f.txt\n100644 %s 3\td/f.txt\n' "$b746" "$b746" \
-  | git -C "$r2_746" update-index --index-info
-git -C "$r2_746" cat-file -e "$b746" 2>/dev/null || git -C "$r746" cat-file blob "$b746" | git -C "$r2_746" hash-object -w --stdin >/dev/null
-chmod 600 "$r2_746/d"
+mkdir -p "$r2_746/a/b"
+printf 'base\n' > "$r2_746/a/b/f.txt"
+cb746="$(git -C "$r2_746" hash-object -w a/b/f.txt)"
+printf '100644 %s 1\ta/b/f.txt\n100644 %s 3\ta/b/f.txt\n' "$cb746" "$cb746" | git -C "$r2_746" update-index --index-info
+printf 'tok = %s\n' "$k746" > "$r2_746/a/b/f.txt"
+chmod 600 "$r2_746/a"
 run_in "$r2_746" "$scan" --tracked
-chmod 755 "$r2_746/d"
+chmod 755 "$r2_746/a"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
-  check_status "dir #746 A26(f): an unmerged file in an unsearchable directory → exit 2" 2 "$STATUS"
+  check_status "dir #746 A26(f): an unmerged file under an unsearchable grandparent directory → exit 2" 2 "$STATUS"
+  check_contains "dir #746 A26(f): ...from its working file" "$OUT" \
+    "could not read the working file of the unmerged 'a/b/f.txt'"
 else
   check_status "dir #746 A26(f): as root the unsearchable directory is read → BLOCKED" 1 "$STATUS"
 fi
 check_absent "dir #746 A26(f): ...never clean" "$OUT" "secret-scan: clean"
+r2_746="$(new_repo)"
+mkdir -p "$r2_746/a"; printf 'clean\n' > "$r2_746/a/g.txt"
+commit746 "$r2_746" g
+chmod 600 "$r2_746/a"
+run_in "$r2_746" "$scan" --tracked
+chmod 755 "$r2_746/a"
+check_status "dir #746 A26(f): a stage-0 file behind an unsearchable directory → its index copy, exit 0 (F5)" 0 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_contains "dir #746 A26(f): ...named hidden, not missing" "$OUT" \
+    "secret-scan: WARN hidden by a directory that cannot be searched, scanned its index copy instead: a/g.txt"
+fi
 # a type conflict resolved to a symlink: its target is read whatever the first stage's mode (review finding)
 printf 'somewhere' > "$d746/lnk-target"
 l746="$(git -C "$r746" hash-object -w "$d746/lnk-target")"

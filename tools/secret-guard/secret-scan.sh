@@ -1005,6 +1005,17 @@ case "$mode" in
     # and what its working file gave.
     # tracked_index_copy PATH SHA — scan the index copy SHA of PATH (its records from path_from on are the earlier
     # copies'); exit 2 when git cannot read it.
+    # hidden_by_dir PATH — 0 when a directory above PATH exists but cannot be searched: PATH may exist all the
+    # same, so a failed `-e` there does not mean "absent". Deepest first; the shallowest such directory is
+    # always visible (the top level is searchable), so one is found at any depth.
+    hidden_by_dir() {
+      local d="$1"
+      while [ "${d%/*}" != "$d" ]; do
+        d="${d%/*}"
+        [ -d "$top/$d" ] && [ ! -x "$top/$d" ] && return 0
+      done
+      return 1
+    }
     tracked_index_copy() {
       staged_shas+="$2 "
       git -C "$top" cat-file blob "$2" > "$tblob" 2>"$terr" || _fail_closed "read the index copy of '$1'" $? "$terr"
@@ -1038,8 +1049,8 @@ case "$mode" in
         if [ -L "$top/$f" ]; then wkind="link"; wnote="its working symlink"
         elif [ -f "$top/$f" ]; then wkind="file"; wnote="its working file"
         elif [ -e "$top/$f" ]; then wnote="its working file not a regular file"
-        elif [ "${f%/*}" != "$f" ] && [ -d "$top/${f%/*}" ] && [ ! -x "$top/${f%/*}" ]; then
-          wkind="file"; wnote="its working file"    # a directory that cannot be searched hides it: read it, fail
+        elif hidden_by_dir "$f"; then             # read it anyway: the read fails closed
+          wkind="file"; wnote="its working file, hidden by a directory that cannot be searched"
         fi
         echo "secret-scan: WARN unmerged ($wnote), each stage's index copy scanned: $fesc" >&2
         case "$wkind" in
@@ -1068,6 +1079,8 @@ case "$mode" in
         continue
       elif [ ! -L "$top/$f" ] && [ -f "$top/$f" ]; then
         why="unreadable"
+      elif hidden_by_dir "$f"; then
+        why="hidden by a directory that cannot be searched"
       elif [ ! -L "$top/$f" ] && [ ! -e "$top/$f" ]; then
         why="missing from the working tree"
       else
