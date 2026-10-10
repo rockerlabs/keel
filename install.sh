@@ -176,7 +176,7 @@ CONTEXT_FILE="CLAUDE.md"
 # shares), hoisted here — before the linked-mode sticky-detect just below, this file's first call site.
 # REQUIRED, like uninstall.sh and tools/doctor.sh: one definition in the lib, no inline copy to keep in
 # step with it. Same `[ -s ] && bash -n` pre-check as the libs below (`-s`, not `-f` — see
-# tools/lib/manifest.sh's own guard further down for why; a bare `.` can't be guarded against a
+# tools/lib/manifest.sh's own guard just below for why; a bare `.` can't be guarded against a
 # parse-time syntax-error abort under `set -e`). A checkout without tools/ stops here, with nothing
 # written.
 if [ -s "$root/tools/lib/core-ownership.sh" ] && bash -n "$root/tools/lib/core-ownership.sh" 2>/dev/null; then
@@ -198,6 +198,20 @@ if [ -s "$root/tools/lib/safe-write.sh" ] && bash -n "$root/tools/lib/safe-write
   . "$root/tools/lib/safe-write.sh"
 else
   echo "install: tools/lib/safe-write.sh (the safe-write lib) is missing or corrupted — re-clone or re-download Keel and re-run '$advise_install'" >&2
+  exit 1
+fi
+# manifest (dir #125) — REQUIRED (spec 685 round 2 B20), as uninstall.sh and tools/doctor.sh already treat
+# it: every run reads the prior manifest through it, and the link-record predicate
+# (manifest_link_is_keels) that decides whether a stale link is Keel's lives there. It was OPTIONAL
+# before ("provenance unavailable" for a tools-less checkout). Loaded beside safe-write, before the home is
+# created and before the run lock is taken, so its refusal too leaves nothing behind. `bash -n` first: a `.`
+# of a file with a syntax error aborts the whole script under `set -e`, past any `if` around it. `-s`, not
+# `-f`: a zero-byte file passes `bash -n` and would define nothing.
+if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
+  # shellcheck source=tools/lib/manifest.sh
+  . "$root/tools/lib/manifest.sh"
+else
+  echo "install: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot read what an earlier install recorded; re-clone or re-download Keel and re-run '$advise_install'" >&2
   exit 1
 fi
 # B19 (spec 685 round 2, dir #748 D1-7): a home that is the Keel checkout, or lies inside it, is refused in
@@ -274,8 +288,7 @@ fi
 echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
-# Self-link guard (linked mode only), hoisted here — before anything below sources tools/lib/manifest.sh
-# (dir #323), so it still fires with the optional libs absent (core-ownership.sh, REQUIRED, loads above it). This is
+# Self-link guard (linked mode only), hoisted here (dir #323) — right after the REQUIRED libs load above. This is
 # the earliest sane point either way: if the consumption dir IS this checkout — e.g. --home "$HOME"
 # while the checkout sits at $HOME/keel, bootstrap's default — sync_product would see src -ef dest and
 # "upgrade" the checkout's own CORE/FRAMEWORK/PRINCIPLES into symlinks pointing at themselves,
@@ -522,21 +535,6 @@ trap _keel_install_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# manifest (dir #125) — REQUIRED (spec 685 round 2 B20), as uninstall.sh and tools/doctor.sh already treat
-# it: every run reads the prior manifest through it, and the link-record predicate
-# (manifest_link_is_keels) that decides whether a stale link is Keel's lives there. It was OPTIONAL
-# before ("provenance unavailable" for a tools-less checkout); a checkout missing it already cannot
-# install, since safe-write.sh is REQUIRED too. `bash -n` first: a `.` of a file with a syntax error
-# aborts the whole script under `set -e`, past any `if` around it. `-s`, not `-f`: a zero-byte file
-# passes `bash -n` and would define nothing. The run lock is held here; the EXIT trap releases it.
-if [ -s "$root/tools/lib/manifest.sh" ] && bash -n "$root/tools/lib/manifest.sh" 2>/dev/null; then
-  # shellcheck source=tools/lib/manifest.sh
-  . "$root/tools/lib/manifest.sh"
-else
-  echo "install: tools/lib/manifest.sh is missing or corrupted — this checkout is incomplete and cannot read what an earlier install recorded; re-clone or re-download Keel and re-run '$advise_install'" >&2
-  exit 1
-fi
-
 # stat-portable: keel_own_untouched needs a hard-link count, the one thing POSIX gives no portable spelling
 # for (GNU/busybox `stat -c '%h'` vs BSD `stat -f '%l'`). It is already loaded: tools/lib/safe-write.sh
 # (REQUIRED, sourced near the top) loads it OPTIONALLY and primes its flavor cache once — the predicate
@@ -554,9 +552,9 @@ fi
 # guard at its call site (its `CKSUM_UNREADABLE` comparison in the file arm) — but that guards uninstall.sh's
 # REMOVAL decision, not the
 # manifest record itself, which a stubbed fallback here would still corrupt. Same `[ -s ] && bash -n`
-# pre-check as the two libs above (`-s`, not `-f` — see tools/lib/manifest.sh's own guard for why; a
-# bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`), but the else
-# branch refuses outright instead of degrading.
+# pre-check as the REQUIRED libs near the top (`-s`, not `-f` — see tools/lib/manifest.sh's own guard for
+# why; a bare `.` can't be guarded against a parse-time syntax-error abort under `set -e`), and the same
+# outright refusal in the else branch.
 if [ -s "$root/tools/lib/artifact-cksum.sh" ] && bash -n "$root/tools/lib/artifact-cksum.sh" 2>/dev/null; then
   # shellcheck source=tools/lib/artifact-cksum.sh
   . "$root/tools/lib/artifact-cksum.sh"
@@ -1001,12 +999,6 @@ keel_own_untouched() {
 prior_symlink_extra() {
   [ "$prior_manifest_usable" = 1 ] || return 0
   manifest_symlink_extra "$prior_manifest" "$1"
-}
-# prior_checkout — the `checkout=` header of the PRIOR manifest: the checkout that wrote its records,
-# which is the OLD one when the checkout has moved. Empty when there is no usable prior manifest.
-prior_checkout() {
-  [ "$prior_manifest_usable" = 1 ] || return 0
-  manifest_field "$prior_manifest" checkout
 }
 # keel_own_stale_link DEST (B3, T3) — DEST is a link Keel made in an earlier run and that has gone stale
 # (the checkout moved): its target is the one the prior manifest recorded for it, AND that recorded target
@@ -2009,17 +2001,16 @@ else
   vfiles=("$CONTEXT_FILE" INSTANCE.md LEARNINGS.md IDEAS.md FRAMEWORK.md PRINCIPLES.md)
 fi
 # Test-only fault injection (KEEL_TEST_REMOVE_BEFORE_VERIFY=<a listed core path>): Verify treats that path as
-# ABSENT, so a test can prove an absent core file still fails Verify (nothing else in a normal run reaches that
-# arm). It never deletes anything (dir #748: the variable is reachable from an adopter's environment, and once
-# removed the named file — an adopter's own INSTANCE.md included). A no-op in every real run.
+# ABSENT — it falls through to the real MISS arm below — so a test can prove an absent core file still fails
+# Verify (nothing else in a normal run reaches that arm). It never deletes anything (dir #748: the variable is
+# reachable from an adopter's environment, and once removed the named file — an adopter's own INSTANCE.md
+# included). A no-op in every real run.
 for f in "${vfiles[@]}"; do
-  if [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" = "$f" ]; then
-    echo "  MISS $f" >&2; missing=1
-    continue
-  fi
-  if [ -f "$HOME_DIR/$f" ]; then
+  vpresent=1
+  [ "${KEEL_TEST_REMOVE_BEFORE_VERIFY:-}" != "$f" ] || vpresent=0
+  if [ "$vpresent" = 1 ] && [ -f "$HOME_DIR/$f" ]; then
     echo "  OK   $f"
-  elif [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; then
+  elif [ "$vpresent" = 1 ] && { [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; }; then
     # Not a regular file, yet something sits here: this run declined it on purpose (a B3 T4/T6 decline or a B5
     # seed left alone; Keel's own stale link was re-pointed above). Spec 685 B3 T4: a decline is not an error,
     # so the run exits 0 and writes its manifest. Only an ABSENT file is MISS.

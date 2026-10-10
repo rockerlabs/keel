@@ -1115,8 +1115,8 @@ if [ "$DRY_RUN" = 0 ]; then
       # (tools/lib/state-root.sh's keel_state_root, the same entry name). Any other link there is not Keel's.
       compat_links=0
       if [ -n "${HOME:-}" ]; then
-        for cl in "$HOME_DIR"/.keel/impact/* "$HOME_DIR"/.keel/impact/.[!.]* \
-                  "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]*; do
+        for cl in "$HOME_DIR"/.keel/impact/* "$HOME_DIR"/.keel/impact/.[!.]* "$HOME_DIR"/.keel/impact/..?* \
+                  "$HOME_DIR"/.keel/read-trace/* "$HOME_DIR"/.keel/read-trace/.[!.]* "$HOME_DIR"/.keel/read-trace/..?*; do
           [ -L "$cl" ] || continue
           cl_store="${cl%/*}"; cl_store="${cl_store##*/}"
           cl_target="$(readlink "$cl" 2>/dev/null || true)"
