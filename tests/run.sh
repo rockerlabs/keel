@@ -369,8 +369,8 @@ main() {
   # a leading zero, a word) = the default, 600 under $CI (~4.5x the slowest file today) and off locally, where
   # a slow machine must not fail a slow-but-finishing file. The `watchdog:` line below prints the SAME variable
   # the reap enforces, so the two cannot disagree. Per file, from its own launch (bash SECONDS); checked in the
-  # reap poll, no timer process. Past the deadline the file's own process gets TERM, then KILL 5 s later if it
-  # is still alive — the same process on_interrupt signals (a grandchild is not reached; its output still goes
+  # reap poll, no timer process. Past the deadline the file's own process gets TERM, then KILL at least 5 s later
+  # if it is still alive — the same process on_interrupt signals (a grandchild is not reached; its output still goes
   # to the file's log, never to a pipe the reap waits on).
   file_timeout="${KEEL_TEST_FILE_TIMEOUT:-}"
   # Ten or more digits is refused too (it would overflow a later integer test, the dir #196 class).
@@ -493,8 +493,9 @@ SHIM
       pid="${active_pids[$i]}"
       termed="${active_termed[$i]}"
       if kill -0 "$pid" 2>/dev/null; then
-        # B10: past its deadline → TERM once; still alive 5 s after that → KILL. The reap below then sees
-        # it exit and reports it as timed out.
+        # B10: past its deadline → TERM once; still alive past 5 more whole seconds (at least 5 s of real
+        # time, the same rounding as the deadline) → KILL. The reap below then sees it exit and reports it as
+        # timed out.
         if [ "$file_timeout" -gt 0 ]; then
           # `-gt`, not `-ge`: SECONDS counts whole seconds, so a difference of N can be as little as N-1 s of
           # real time; past N guarantees at least N s, so a file is never cut short of its limit.

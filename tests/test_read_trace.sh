@@ -487,7 +487,7 @@ if kill -0 "$manynoise_pid" 2>/dev/null; then
   kill -9 "$manynoise_pid" 2>/dev/null || true
   wait "$manynoise_pid" 2>/dev/null || true
   fail "5,000 noise lines before the marker still completes well within the bound" \
-    "still running after ${manynoise_waited}s (the fork-per-raw-line regression is back)"
+    "still running after ${manynoise_waited}s — a hang (the fork-per-line regression is caught by the jq count below)"
 else
   wait "$manynoise_pid" 2>/dev/null
   pass "5,000 noise lines before the marker still completes well within the bound"

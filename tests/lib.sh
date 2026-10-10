@@ -444,9 +444,9 @@ unset _maint_n
 # dir #744 (B31): KEEL_TEST_HANG_BOUND, the seconds a test waits for a background process before calling it hung
 # (each site reads ${KEEL_TEST_HANG_BOUND:-120}). Normalized once here: anything but up to 9 digits is the
 # default, so a non-numeric value cannot make every wait's `[ … -lt … ]` error out and report a running process
-# as hung. 0 is kept on purpose: every wait then gives up at once, which is how the sites were proven to read
-# the variable (`KEEL_TEST_HANG_BOUND=0 bash tests/test_keel_impact.sh` fails its marker and FIFO waits at once;
-# a one-time proof recorded in the slice-2 PR, too slow to run on every suite).
+# as hung. 0 is kept on purpose: every wait then gives up at once — dir #744's A28 proof that the variable is
+# read (`KEEL_TEST_HANG_BOUND=0 bash tests/test_keel_impact.sh` fails its start-marker and FIFO waits at once;
+# run by hand, too slow for every suite run; the other sites are held by tests/test_suite_hygiene.sh's lint).
 case "${KEEL_TEST_HANG_BOUND:-}" in
   ''|*[!0-9]*|??????????*) export KEEL_TEST_HANG_BOUND=120 ;;
 esac
