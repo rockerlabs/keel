@@ -2267,4 +2267,59 @@ if command -v shellcheck >/dev/null 2>&1; then
   check_status "only the value 1 skips -> 0 still runs the leg -> exit 1" 1 "$STATUS"
 fi
 
+# --- dir #738 slice 4 (spec 746 B16): a read the audit could not complete is a GAP, never an OK ------
+# A40 — the shellcheck-target selector. The selector is read from doctor's own $self_dir, so the test runs a COPY
+# of tools/self + tools/lib in a sibling layout and swaps the copy's selector; the real file is never edited. The
+# selector branch only runs under `command -v shellcheck`, so a stub (exit 0) goes first on PATH — the alpine leg
+# installs none.
+sel_root="$SANDBOX/s16-copy"; mkdir -p "$sel_root/tools" "$sel_root/stub"
+cp -R "$REPO_ROOT/tools/self" "$sel_root/tools/self"; cp -R "$REPO_ROOT/tools/lib" "$sel_root/tools/lib"
+printf '#!/bin/sh\nexit 0\n' > "$sel_root/stub/shellcheck"; chmod +x "$sel_root/stub/shellcheck"
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho selector-says-no >&2; exit 3\n' > "$sel_root/tools/self/shellcheck-targets.sh"
+run env -u KEEL_SELF_DOCTOR_SKIP_SHELLCHECK PATH="$sel_root/stub:$PATH" bash "$sel_root/tools/self/doctor.sh" "$d"
+check_status "A40: a failing shellcheck-target selector -> exit 1" 1 "$STATUS"
+check_contains "A40: the GAP names the selector failure" "$OUT" "could not list the shell scripts to check (exit 3)"
+check_contains "A40: the GAP states the check is incomplete" "$OUT" "the shellcheck check is INCOMPLETE"
+check_absent "A40: no OK line over a selector that could not list" "$OUT" "OK   shellcheck: no tracked shell scripts"
+check_contains "A40: the selector's own stderr line rides under the GAP" "$OUT" "       selector-says-no"
+# the empty-success branch: a selector that lists nothing and succeeds is still the honest OK line, and the empty
+# list adds no phantom `$repo_root/` script.
+printf '#!/usr/bin/env bash\nexit 0\n' > "$sel_root/tools/self/shellcheck-targets.sh"
+run env -u KEEL_SELF_DOCTOR_SKIP_SHELLCHECK PATH="$sel_root/stub:$PATH" bash "$sel_root/tools/self/doctor.sh" "$d"
+check_status "A40: an empty successful selector -> exit 0" 0 "$STATUS"
+check_contains "A40: the empty list is the honest OK line" "$OUT" "OK   shellcheck: no tracked shell scripts to check"
+check_absent "A40: the empty list is not a script to check" "$OUT" "shellcheck clean (1 tracked"
+
+# A41 — the git ls-files enumerations. A corrupt index makes every one fail: one GAP per ENUMERATION (five), each
+# naming what it could not list, and none of the OK lines for the checks that read them.
+d="$(mk_clean_repo)"
+printf 'garbage' > "$d/.git/index"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d"
+check_status "A41: a corrupt index -> exit 1" 1 "$STATUS"
+cl_lines="$(grep 'could not list' <<< "$OUT" || true)"
+check_eq "A41: exactly five 'could not list' GAPs, one per ls-files enumeration" 5 "$(grep -c . <<< "$cl_lines" || true)"
+check_eq "A41: the five GAPs name distinct things" 5 "$(sort -u <<< "$cl_lines" | wc -l | tr -d ' ')"
+check_absent "A41: no OK for the dead-reference check" "$OUT" "OK   no dead tools/commands/templates references"
+check_absent "A41: no OK for the slash-command check" "$OUT" "OK   no unshipped slash-command references"
+check_absent "A41: no OK for the PIPESTATUS check" "$OUT" "OK   no tracked .sh file both sets pipefail and reads PIPESTATUS"
+
+# git's own first stderr line rides under the GAP (the operator sees WHY, not only an exit code); the selector's too.
+check_contains "A41: the GAP is followed by git's own stderr line" "$OUT" "       fatal:"
+
+# B16's tool-wiring guard — the reference files alone fail to list (a git shim refuses only the workflow pathspec):
+# the loop must not run, or every tool reads as an orphan with no test coverage. A41 cannot pin this: its corrupt
+# index empties the tool list too.
+d="$(mk_clean_repo)"
+mkdir -p "$sel_root/gitshim"
+printf '#!/bin/sh\ncase "$*" in *.github/workflows*) echo "fatal: shim refuses the reference listing" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' \
+  "$(type -P git)" > "$sel_root/gitshim/git"
+chmod +x "$sel_root/gitshim/git"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$sel_root/gitshim:$PATH" "$sd" "$d"
+check_status "A41: only the reference listing failing -> exit 1" 1 "$STATUS"
+check_contains "A41: that listing is named" "$OUT" "could not list the reference files (exit 128)"
+check_eq "A41: it is the only 'could not list' GAP" 1 "$(grep -c 'could not list' <<< "$OUT" || true)"
+check_absent "A41: no tool is named an orphan over an unlisted reference set" "$OUT" "orphan tool"
+check_absent "A41: no tool is named a NEW untested script over it" "$OUT" "NEW shipped script"
+
 summary
