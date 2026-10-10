@@ -4,9 +4,7 @@ argument-hint: <task-id, spec path, or one sentence>
 effort: high
 ---
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
-resolve. Mid-run, if an obstacle only the operator can clear (an access, an approval, a downed service)
-blocks every remaining step, stop; otherwise mark that step unverified, name it in the report, and
-finish the rest. Load only the task's own context. A defect outside the ticket: record it
+resolve. Load only the task's own context. A defect outside the ticket: record it
 in the PR body or a new ticket (step 6's override, in a managed release); do not fix it. A project without git: `<root>` is the project
 directory; `inflight-check`, `worktree` and the PR in `close` do not run — except a `⏳` marker not yours
 still stops you first; the claim is still written; closing runs step 9's `conform` walk, reported by
