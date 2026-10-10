@@ -18,8 +18,9 @@ sections real content going forward — see that page for exactly when each one 
 - **`tools/self/value-claim-lint.sh` flags a groom plan's value claim that names no subject set.**
   dir #672: five grooms running, G6's top finding was a value-claim cell not bound to its slate, and the prose
   rule in `docs/grooming.md` G5 did not prevent the repeat. Run before G6, it reads a `RELEASES.md` plan
-  section and flags each value-claim table row or `**Value claims**` bullet with no `Subject set:` clause and
-  no `no subject set — <why>` line. Advisory: it always exits 0.
+  section and flags each value-claim table row or `**Value claims**` bullet carrying none of G5's forms: a
+  `Subject set:` clause, a source/diff/`Residue:` statement, `no claim`, or `no subject set — <why>`. Advisory:
+  it always exits 0.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
   at `022`, though replies quote gitignored bundle material); a store that already exists keeps its mode

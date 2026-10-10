@@ -64,6 +64,27 @@ check_contains "'no subject set —' with an empty reason is flagged" "$OUT" "FL
 check_absent "the (release) suffix cell passes" "$OUT" "The drain"
 check_absent "the bold-label no-subject-set cell passes" "$OUT" "plainly enough"
 
+# --- G5's own vocabulary is accepted, one fixture per form; a claim with none of them is still flagged ---------
+f="$(mk_releases "## v1.5.0 — cut readiness
+
+| value claim | source = the known-issues paragraph's three tokens; diff against the slate = two in; Residue: #9 (not public). |
+| value claim | Closed, by ticket kind. Residue: empty. |
+| value claim | Carried-over theme, no claim beyond the release-level drain. |
+| value claim | the median session costs under 2.55M tokens. |
+
+**Value claims (G5):**
+- **Row A:** source = row A's 17; Residue: none.
+- **Row B:** carried-over theme, no claim beyond the release-level drain.
+- **Row C:** closes the six known issues. Source: the paragraph.
+")"
+run "$vc" "$f"
+check_contains "source+diff+Residue, Residue alone and 'no claim' pass; two bare claims are flagged" "$OUT" "7 value-claim cell(s), 2 lacking a subject set"
+check_contains "a claim with no G5 form is flagged (0.14.0 row A's shape)" "$OUT" "FLAG  v1.5.0 line 6: | value claim | the median session"
+check_contains "a source named but no residue or diff is still flagged" "$OUT" "FLAG  v1.5.0 line 11: - **Row C:**"
+check_absent "the source/diff/Residue row passes" "$OUT" "line 3"
+check_absent "the Residue-alone row passes" "$OUT" "line 4"
+check_absent "the 'no claim' table row passes" "$OUT" "line 5"
+
 # --- prose bullets under a **Value claims** lead-in: continuation lines belong to their bullet -------
 f="$(mk_releases "## v2.0.0 — cut readiness
 
@@ -78,9 +99,9 @@ f="$(mk_releases "## v2.0.0 — cut readiness
 A later paragraph that says value claims in passing is not a cell.
 ")"
 run "$vc" "$f"
-check_contains "four bullets read, two lack a clause" "$OUT" "4 value-claim cell(s), 2 lacking a subject set"
+check_contains "four bullets read, one lacks every form (Row D says no claim)" "$OUT" "4 value-claim cell(s), 1 lacking a subject set"
 check_contains "bullet without a clause is flagged" "$OUT" "FLAG  v2.0.0 line 8"
-check_contains "the label-less last bullet is flagged" "$OUT" "FLAG  v2.0.0 line 9"
+check_absent "a bullet saying no claim passes" "$OUT" "line 9"
 check_absent "a clause on a continuation line counts for its bullet" "$OUT" "line 6"
 
 # --- sections: VERSION filters, no VERSION reads all, a duplicate heading is read twice --------------

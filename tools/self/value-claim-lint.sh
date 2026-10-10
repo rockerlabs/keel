@@ -15,8 +15,18 @@
 # plan's "Value claim — stated to be checkable" block). A section with no covered cell prints a
 # notice instead of a silent pass, so the gap is visible.
 #
-# A cell passes if it contains `Subject set:` followed by text, or `no subject set —` followed by
-# a reason (both case-insensitive). A bare mention of the phrase does not count.
+# A cell passes if it carries ANY of docs/grooming.md G5's own forms (case-insensitive):
+#   - `Subject set:` followed by text — the label;
+#   - the three-part vocabulary G5 prescribes ("the source that defines Y ... the diff of that set
+#     against the slate's live ticket list ... and the residue stated on the row by number"): a
+#     `Residue:` clause is the part every compliant plan states (a row with an empty residue says
+#     so), so `residue` followed by `:`, `=` or `—` passes — a plan written "source = ... diff ...
+#     Residue: ..." is compliant and must not be flagged on wording alone;
+#   - `no claim` ("carried-over theme, no claim beyond the release-level drain") — a row that
+#     makes no claim has no set to bind; or
+#   - `no subject set —` followed by a reason.
+# A bare mention of "subject set" with none of these does not count. This vocabulary tracks G5; if
+# G5's wording changes, change the `ok()` patterns below and the fixture per form in the test.
 #
 # Usage:
 #   tools/self/value-claim-lint.sh [RELEASES_PATH] [VERSION]
@@ -47,8 +57,9 @@ while [ $# -gt 0 ]; do
       cat <<'EOF'
 Usage: value-claim-lint.sh [RELEASES_PATH] [VERSION]
 
-Flags every value-claim cell in a RELEASES.md plan section that has no `Subject set:` clause
-and no `no subject set — <why>` line (dir #672). Covers `| value claim ... |` table rows and
+Flags every value-claim cell in a RELEASES.md plan section that carries none of G5's forms: a
+`Subject set:` clause, a `Residue:` clause (the source/diff/residue vocabulary), `no claim ...`,
+or `no subject set — <why>` (dir #672). Covers `| value claim ... |` table rows and
 the bullets under a `**Value claims ...**` lead-in. VERSION (e.g. 0.14.0) limits the check to
 that release's section. Advisory: always exits 0.
 EOF
@@ -82,7 +93,7 @@ blank_fenced_blocks "$releases_file" | awk -v want="$version" '
   function ok(t,   l) {
     sub(/[ \t]*\|[ \t]*$/, "", t)   # a table row ends in its closing pipe, which is not a reason
     l = tolower(t)
-    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/)
+    return (l ~ /subject set: *[^ ]/ || l ~ /no subject set — *[^ ]/ || l ~ /residue *[:=—]/ || l ~ /no claim/)
   }
   function judge(t, at) {
     cells++
