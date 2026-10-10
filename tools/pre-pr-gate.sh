@@ -82,7 +82,7 @@
 #                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
 #                                           ditto — commands/polish-guide.md § Step 5's (c) recipe uses this)
-#   pre-pr-gate.sh lex                     print how the hook reads a command (its raw text on stdin): the
+#   pre-pr-gate.sh lex                     print how the hook reads a command (its text on stdin): the
 #                                           words of each segment and the parts it could not read — a
 #                                           debugging and test aid (dir #745)
 #
@@ -1718,6 +1718,8 @@ function w_assign_name(i) { match(tok[i], /^[A-Za-z_][A-Za-z0-9_]*/); return sub
 
 # --- the main loop ----------------------------------------------------------------------------------------
 function lex_main(   i, L, t) {
+  # trailing newlines are no part of the command: the hook’s $(…) drops them, and so does lex here
+  sub(/\n+$/, "", src)
   n = split(src, ch, "")
   L = 1; lstart[1] = 1
   for (i = 1; i <= n; i++) { lno[i] = L; if (ch[i] == "\n") { lend[L] = i - 1; L++; lstart[L] = i + 1 } }
@@ -2000,7 +2002,8 @@ function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
 function bs_joins(L, s, k,   txt, j, t2) {
   txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
   j = L
-  # the join stops at lim: its BQ’s backtick, or the end of the text
+  # the join stops at lim: its BQ’s backtick (past it the join would keep the backtick, which no expanding heredoc’s
+  # delimiter holds unquoted) or the end of the text (lex_main drops trailing newlines, so no empty last line)
   while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
     txt = substr(txt, 1, length(txt) - 1); j++
     # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
@@ -2334,11 +2337,9 @@ case "${1:-}" in
     # dir #745: how the hook reads a command. Raw command text on stdin (not a hook event); one line per segment —
     # `<context>@<line>`, `d<depth>`, `s<scope>`, `p<offset>`, then `<classes>:<text>` per word — then one line per
     # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
-    # from the $HOME guard above, like -h. The text is taken as the hook takes it: trailing newlines dropped, one
-    # added by the here-string.
+    # from the $HOME guard above, like -h.
     [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
-    lex_cmd="$(cat)"
-    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"
+    awk -v MODE=lex "$PPG_AWK_PROG"
     exit $?
     ;;
   repo-key)

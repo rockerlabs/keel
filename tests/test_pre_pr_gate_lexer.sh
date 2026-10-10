@@ -939,7 +939,7 @@ lex_out "$(printf 'echo `x $(cat <<")"\n)`')"
 check_contains "lex:a delimiter line cut at its BQ's backtick (the run reads it)" "$OUT" "refuse${T}backtick inside a nested context in backticks${T}line 1${T}"
 check_absent "lex:a delimiter line cut at its BQ's backtick is the delimiter, not a )-led body line" "$OUT" ") line in a heredoc body"
 OUT="$(printf 'echo "x\n\n' | bash "$gate" lex 2>&1)"
-check_eq "lex:reads the text as the hook does (trailing newlines dropped)" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:x"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
+check_eq "lex:trailing newlines are dropped (the hook's \$(…) drops them too)" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:x"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \
