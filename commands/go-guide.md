@@ -68,9 +68,9 @@ Result: every change-list item done, its checks green.
 2. Seams. Others' PRs merged while you built can falsify your diff.
    Commit your work, `git fetch`, rebase on `origin/<default>` (merge if pushed), then:
    a. Their claims: `awk 'FNR==1{p=(FILENAME!="CHANGELOG.md")} /^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"FNR": "$0}' CHANGELOG.md $(find changelog.d -name '[a-z0-9]*.md' 2>/dev/null)`
-      (no changelog → skip). For each line stating a number: name the set it counts, then count that set on
-      your tree with the command that derives it. A different number is falsified, even when every member you
-      added conforms. For each "every"/"both" set, is your new member in it?
+      (no changelog → skip). For each line stating a number: name the set it counts, then count it on
+      your tree with the command that derives it. A different number is falsified, even when your
+      members conform. For each "every"/"both" set, is your new member in?
    b. Their lists: `git diff origin/<default>...HEAD | grep -E '^\+[[:space:]]*(\.|source)[[:space:]].*lib/'` lists the
       libs you newly source; add every lib you edit. For each, `grep -rl <its file name> tests tools`; in each hit,
       find the loop, list or comment that names its other consumers: is yours in it, even if yours conforms?
