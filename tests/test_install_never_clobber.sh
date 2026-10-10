@@ -85,23 +85,20 @@ run "$uninstall" --home "$h" --yes
 check_status "A40 respelled: uninstall → exit 0" 0 "$STATUS"
 check_nolink "A40 respelled: …Keel's respelled link is removed" "$h/keel/CORE.md"
 check_absent "A40 respelled: …never reported as not provably Keel's" "$OUT" "keel/CORE.md: a link not provably"
-# …and on a case-insensitive file system (macOS's default), a spelling that differs only in case is the same
-# entry too — in a directory name, and in the file name itself. (Detected with a probe file, not assumed.)
-: > "$SANDBOX/CaseProbe"
-if [ -e "$SANDBOX/caseprobe" ]; then
-  ck_case="${REPO_ROOT%/*}/$(printf '%s' "${REPO_ROOT##*/}" | tr '[:lower:]' '[:upper:]')"
-  for row in "directory|$ck_case/CORE.md" "file name|$REPO_ROOT/core.md"; do
-    label="${row%%|*}"; spelled="${row#*|}"
-    h="$SANDBOX/a40i-${label% *}/h"
-    run "$install" --link --home "$h" --no-hooks
-    check_status "A40 case-only ($label) fixture: linked install → exit 0" 0 "$STATUS"
-    rm -f "$h/keel/CORE.md"; ln -s "$spelled" "$h/keel/CORE.md"
-    run "$uninstall" --home "$h" --yes
-    check_status "A40 case-only ($label): uninstall → exit 0" 0 "$STATUS"
-    check_nolink "A40 case-only ($label): …Keel's link, spelled in another case, is removed" "$h/keel/CORE.md"
-  done
+# …and on a case-insensitive file system (macOS's default), a directory name that differs only in case is
+# the same directory: the checkout's own directory name upper-cased. Run only where that spelling really is
+# the checkout (probed beside it, not assumed); a file name must match exactly (see the alias row below).
+ck_case="${REPO_ROOT%/*}/$(printf '%s' "${REPO_ROOT##*/}" | tr '[:lower:]' '[:upper:]')"
+if [ "$ck_case" != "$REPO_ROOT" ] && [ -d "$ck_case" ] && [ "$ck_case" -ef "$REPO_ROOT" ]; then
+  h="$SANDBOX/a40i/h"
+  run "$install" --link --home "$h" --no-hooks
+  check_status "A40 case-only directory fixture: linked install → exit 0" 0 "$STATUS"
+  rm -f "$h/keel/CORE.md"; ln -s "$ck_case/CORE.md" "$h/keel/CORE.md"
+  run "$uninstall" --home "$h" --yes
+  check_status "A40 case-only directory: uninstall → exit 0" 0 "$STATUS"
+  check_nolink "A40 case-only directory: …Keel's link, its directory spelled in another case, is removed" "$h/keel/CORE.md"
 else
-  pass "A40 case-only rows not applicable — this file system tells names apart by case"
+  pass "A40 case-only directory row not applicable — the checkout's file system tells names apart by case"
 fi
 # …but a differently-named sibling in the recorded target's own directory (`<checkout>/ALIAS.md -> CORE.md`)
 # is not the recorded entry: an adopter's link to it is kept. (In the scratch checkout, removed afterwards.)
@@ -113,6 +110,8 @@ rm -f "$h/keel/CORE.md"; ln -s "$ck/ALIAS.md" "$h/keel/CORE.md"
 run "$ck/uninstall.sh" --home "$h" --yes
 check_status "A40 sibling-alias: uninstall → exit 0" 0 "$STATUS"
 check_link "A40 sibling-alias: …the adopter's link to the alias stays" "$h/keel/CORE.md"
+check_contains "A40 sibling-alias: …named as pointing where Keel did not wire it" "$OUT" \
+  "keel/CORE.md: symlink no longer points where Keel would have wired it"
 rm -f "$ck/ALIAS.md"
 # …but a link that only ENDS at the recorded target through another link (a dotfiles manager's
 # `<home>/keel/CORE.md -> dots/CORE.md -> <checkout>/CORE.md`) is the adopter's: kept, not moved.
