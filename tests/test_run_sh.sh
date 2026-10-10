@@ -247,10 +247,11 @@ check_contains "the CI default enforces: timed out after 3s" "$OUT" "(timed out 
 
 # --- dir #744 B11 (A11): the slowest-files block -----------------------------------------------------
 # The watchdog limit sits ABOVE the 10 s file (a limit below it would kill that file too): the hung file is
-# killed at ~12 s and listed first, the 10 s file second — numeric order (a text sort puts 2s above 10s).
+# killed at ~12–13 s and listed first, the 10 s file second — numeric order (a text sort puts 3s above 10s). The
+# 3 s file sits two whole seconds above the 1 s files, so SECONDS' whole-second rounding cannot tie them.
 d="$(mkfakedir)"
 printf '#!/usr/bin/env bash\nsleep 10\n' > "$d/test_s10.sh"
-printf '#!/usr/bin/env bash\nsleep 2\n'  > "$d/test_s2.sh"
+printf '#!/usr/bin/env bash\nsleep 3\n'  > "$d/test_s3.sh"
 printf '#!/usr/bin/env bash\nsleep 1\n'  > "$d/test_s1a.sh"
 printf '#!/usr/bin/env bash\nsleep 1\n'  > "$d/test_s1b.sh"
 printf '#!/usr/bin/env bash\nexit 0\n'   > "$d/test_fast.sh"
@@ -259,11 +260,19 @@ run env -u CI KEEL_TEST_JOBS=6 KEEL_TEST_FILE_TIMEOUT=12 bash "$d/run.sh"
 check_status "slowest block: a run with one timed-out file -> exit 1" 1 "$STATUS"
 slow_block="$(awk '/^slowest test files:$/ { on = 1; next } on && /^  [0-9]+s / { print; next } on { exit }' <<< "$OUT")"
 check_eq "slowest block: exactly 5 lines" "5" "$(grep -c . <<< "$slow_block")"
-check_eq "slowest block: the timed-out file is listed, first (killed at ~12 s)" "test_hung.sh" "$(sed -n '1s/^  [0-9]*s //p' <<< "$slow_block")"
+check_eq "slowest block: the timed-out file is listed, first (killed past 12 s)" "test_hung.sh" "$(sed -n '1s/^  [0-9]*s //p' <<< "$slow_block")"
 check_eq "slowest block: the 10 s file second" "test_s10.sh" "$(sed -n '2s/^  [0-9]*s //p' <<< "$slow_block")"
-check_eq "slowest block: the 2 s file below both (numeric, not text, order)" "test_s2.sh" "$(sed -n '3s/^  [0-9]*s //p' <<< "$slow_block")"
-s1_order="$(sed -n 's/^  [0-9]*s //p' <<< "$slow_block" | grep '^test_s1[ab]' | tr '\n' ' ')"
-check_eq "slowest block: equal times listed in name order" "test_s1a.sh test_s1b.sh " "$s1_order"
+check_eq "slowest block: the 3 s file below both (numeric, not text, order)" "test_s3.sh" "$(sed -n '3s/^  [0-9]*s //p' <<< "$slow_block")"
+# The two 1 s files: SECONDS is whole seconds, so they may record 1 s and 2 s. Equal → name order; unequal →
+# the larger first. Either way the block's own order must agree with its own numbers.
+s1_rows="$(grep -E ' test_s1[ab][.]sh$' <<< "$slow_block")"
+s1_first_n="$(sed -n '1s/^  \([0-9]*\)s .*/\1/p' <<< "$s1_rows")"; s1_first="$(sed -n '1s/^  [0-9]*s //p' <<< "$s1_rows")"
+s1_second_n="$(sed -n '2s/^  \([0-9]*\)s .*/\1/p' <<< "$s1_rows")"
+if { [ "$s1_first_n" = "$s1_second_n" ] && [ "$s1_first" = test_s1a.sh ]; } || [ "${s1_first_n:-0}" -gt "${s1_second_n:-0}" ]; then
+  pass "slowest block: equal times in name order, unequal ones largest first ($s1_first_n/$s1_second_n)"
+else
+  fail "slowest block: equal times in name order, unequal ones largest first" "rows: $(tr '\n' ';' <<< "$s1_rows")"
+fi
 order="$(grep -nE '^residue gate|^slowest test files:|TEST FILE\(S\) FAILED$' <<< "$OUT" | cut -d: -f1 | tr '\n' ' ')"
 r_line="$(cut -d' ' -f1 <<< "$order")"; s_line="$(cut -d' ' -f2 <<< "$order")"; v_line="$(cut -d' ' -f3 <<< "$order")"
 if [ "$r_line" -lt "$s_line" ] && [ "$s_line" -lt "$v_line" ]; then

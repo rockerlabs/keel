@@ -259,7 +259,8 @@ sandbox_teardown() {
   rm -rf "$SANDBOX" && return 0
   [ -e "$SANDBOX" ] || return 0
   left="$(find "$SANDBOX" 2>/dev/null)"
-  procs="$(ps -A -o pid,args 2>/dev/null)"
+  procs=""
+  command -v ps >/dev/null 2>&1 && procs="$(ps -A -o pid,args 2>/dev/null)"
   {
     printf 'NOTE: sandbox teardown failed once: %s\n' "$SANDBOX"
     printf '  still there (first 20):\n'
@@ -441,8 +442,9 @@ esac
 unset _maint_n
 
 # dir #744 (B31): KEEL_TEST_HANG_BOUND, the seconds a test waits for a background process before calling it hung
-# (each site reads ${KEEL_TEST_HANG_BOUND:-120}). Normalized once here: anything but 1–9 digits is the default,
-# so a bad value cannot make every wait's `[ … -lt … ]` error out and report a running process as hung.
+# (each site reads ${KEEL_TEST_HANG_BOUND:-120}). Normalized once here: anything but up to 9 digits is the
+# default, so a non-numeric value cannot make every wait's `[ … -lt … ]` error out and report a running process
+# as hung. 0 is kept on purpose: it makes every wait give up at once (A28's proof that the sites read it).
 case "${KEEL_TEST_HANG_BOUND:-}" in
   ''|*[!0-9]*|??????????*) export KEEL_TEST_HANG_BOUND=120 ;;
 esac

@@ -496,7 +496,9 @@ SHIM
         # B10: past its deadline → TERM once; still alive 5 s after that → KILL. The reap below then sees
         # it exit and reports it as timed out.
         if [ "$file_timeout" -gt 0 ]; then
-          if [ -z "$termed" ] && [ $((SECONDS - active_starts[i])) -ge "$file_timeout" ]; then
+          # `-gt`, not `-ge`: SECONDS counts whole seconds, so a difference of N can be as little as N-1 s of
+          # real time; past N guarantees at least N s, so a file is never cut short of its limit.
+          if [ -z "$termed" ] && [ $((SECONDS - active_starts[i])) -gt "$file_timeout" ]; then
             kill -TERM "$pid" 2>/dev/null
             termed="$SECONDS"
           elif [ -n "$termed" ] && [ $((SECONDS - termed)) -ge 5 ]; then

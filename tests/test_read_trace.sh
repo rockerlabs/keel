@@ -466,7 +466,18 @@ tp="$SANDBOX/transcript.manynoise.jsonl"; : > "$tp"
 for _i in $(seq 1 5000); do write_noise_turn "$tp"; done
 write_user_turn "$tp" "YOUR TICKET: dir #999. WRAP CENTRALIZED"
 manynoise_json="$(jq -n --arg cwd "$d" --arg tp "$tp" '{hook_event_name:"SessionEnd", cwd:$cwd, transcript_path:$tp}')"
-printf '%s' "$manynoise_json" | TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
+# dir #744: the regression is a jq fork PER LINE, so it is counted, not timed — a wall-clock bound tight enough
+# to catch it (the old 10 s) failed slow-but-healthy runs under load, and the hang bound below (120 s) is far too
+# loose to. A `jq` shim first on PATH logs each launch; the healthy path forks jq only for the few candidate
+# lines the grep pre-filter keeps, the regression once per raw line (5,000+).
+jq_count_bin="$SANDBOX/jq-count-bin"; mkdir -p "$jq_count_bin"
+jq_count_log="$SANDBOX/jq-count.log"; : > "$jq_count_log"
+printf '#!/bin/sh
+echo x >> %q
+exec %q "$@"
+' "$jq_count_log" "$(type -P jq)" > "$jq_count_bin/jq"
+chmod +x "$jq_count_bin/jq"
+printf '%s' "$manynoise_json" | PATH="$jq_count_bin:$PATH" TMPDIR="$RT_TMPDIR" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" session-end >/dev/null 2>&1 &
 manynoise_pid=$!
 manynoise_waited=0
 while kill -0 "$manynoise_pid" 2>/dev/null && [ "$manynoise_waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do
@@ -480,6 +491,13 @@ if kill -0 "$manynoise_pid" 2>/dev/null; then
 else
   wait "$manynoise_pid" 2>/dev/null
   pass "5,000 noise lines before the marker still completes well within the bound"
+fi
+jq_forks="$(grep -c x "$jq_count_log" || true)"
+if [ "$jq_forks" -ge 1 ] && [ "$jq_forks" -le 50 ]; then
+  pass "5,000 noise lines cost a handful of jq forks, not one per line ($jq_forks)"
+else
+  fail "5,000 noise lines cost a handful of jq forks, not one per line" \
+    "$jq_forks jq launches (0 = the shim was not on the path; thousands = the fork-per-raw-line regression is back)"
 fi
 check_nofile "and the marker among 5,000 noise lines still excludes correctly" "$RT_STORE"/*/wrap-fuse-events.log
 

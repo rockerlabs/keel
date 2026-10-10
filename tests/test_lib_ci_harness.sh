@@ -72,14 +72,15 @@ chmod +x "$shimdir/rm"
 
 # mk_teardown_child FILE STATE — a child test file: sources lib.sh, records its sandbox, leaves a nested file
 # in it, and starts a holder process whose command line names the sandbox (`; :` keeps sh from exec'ing
-# sleep directly, which would drop the holder path from the process line).
+# sleep directly, which would drop the holder path from the process line). The holder's output goes to
+# /dev/null: left on the child's stdout, it would hold `run`'s capture pipe open for its whole 30 s.
 mk_teardown_child() {
   {
     printf '#!/usr/bin/env bash\n'
     printf '. %q || exit 1\n' "$lib_path"
     printf 'printf "%%s" "$SANDBOX" > %q\n' "$2/target"
     printf 'mkdir -p "$SANDBOX/keep/deep" && : > "$SANDBOX/keep/deep/file"\n'
-    printf 'sh -c %q "$SANDBOX/holder" &\n' 'sleep 30; :'
+    printf 'sh -c %q "$SANDBOX/holder" >/dev/null 2>&1 &\n' 'sleep 30; :'
     printf 'printf "%%s" "$!" > %q\n' "$2/holderpid"
     printf 'exit 0\n'
   } > "$1"

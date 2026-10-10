@@ -1121,7 +1121,7 @@ else
   check_nofile "dir #409: an interrupted merge never writes the completion marker" "$sigrepo_store/origin"
   # Reap anything TERM didn't catch — unconditional cleanup, not part of the assertion above. The
   # first kill is a no-op in the common case (the rendezvous loop above already confirmed
-  # $dir409_target is dead); it only does real work if that loop hit its 10s timeout instead of
+  # $dir409_target is dead); it only does real work if that loop hit its KEEL_TEST_HANG_BOUND instead of
   # observing death. The pattern-based pkill below is deliberately still the fuzzy, non-exact kill
   # this fix's whole point was to stop relying on for the ASSERTION — kept here only as a mop-up for
   # any OTHER bash-fork layer of the same invocation that isn't $dir409_target, not as a second
