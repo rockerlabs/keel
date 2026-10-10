@@ -64,6 +64,12 @@ repo="$(new_repo)"; git -C "$repo" config core.hooksPath "$repo/local-hooks"
 check_eq "hooks_dir: a repo's LOCAL core.hooksPath does not leak into the machine-wide read" "" \
   "$(cd "$repo" && HOME="$h" GIT_CONFIG_GLOBAL="$h/empty.cfg" git_global_hooks_dir)"
 
+# dir #748 S4-3 (spec 685 A53): the root directory is the one path whose trailing slash is not a slash to drop —
+# `[ "$val" = / ] || val="${val%/}"` keeps it, and without the guard `/` collapses to "" and reads as unset.
+printf '[core]\n\thooksPath = /\n' > "$h/root.cfg"
+check_eq "hooks_dir: a global core.hooksPath of / stays /" "/" \
+  "$(HOME="$h" GIT_CONFIG_GLOBAL="$h/root.cfg" git_global_hooks_dir)"
+
 # --- A7: parity with the producer — dir #688 -------------------------------------------------------------
 # tools/lib/git-global-paths.sh's git_global_hooks_dir is a NAMED TWIN of `install-secret-guard.sh --where
 # --global`'s dir= (that script ships standalone and cannot source this file). The watcher keeps the twin

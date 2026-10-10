@@ -20,6 +20,7 @@ if [ "${1:-}" != "--scenes" ]; then
   command -v asciinema >/dev/null 2>&1 || { echo "missing asciinema (brew install asciinema)"; exit 1; }
   command -v agg       >/dev/null 2>&1 || { echo "missing agg (brew install agg)"; exit 1; }
   castdir="$(mktemp -d)"
+  [ -n "$castdir" ] || { echo "record-demo: mktemp failed — refusing to record into the filesystem root" >&2; exit 1; }   # dir #753: no -e
   trap 'rm -rf "$castdir"' EXIT
   asciinema rec --quiet --cols 100 --rows 24 \
     --command "bash '$root/docs/demo/record-demo.sh' --scenes" "$castdir/demo.cast"
@@ -31,7 +32,11 @@ fi
 # ---- inner mode: the scenes ---------------------------------------------------------
 
 # six X: busybox mktemp (Alpine) refuses fewer and exits before any scene runs
+# dir #478 / dir #753: no `-e` here, so an mktemp hiccup can leave $sandbox empty without aborting, and
+# "$sandbox/home" would then be "/home". The guard sits on the very next line, before the first write (tests
+# pin the order); `cd "" || exit 1` further down would otherwise silently no-op instead of exiting.
 sandbox="$(mktemp -d /tmp/keel-demo.XXXXXX)"
+[ -n "$sandbox" ] || exit 1
 trap 'rm -rf "$sandbox"' EXIT
 export HOME="$sandbox/home"; mkdir -p "$HOME/.claude"
 # dir #720 S10-3: HOME alone is not enough — tools/lib/impact-store.sh resolves these overrides BEFORE
@@ -45,6 +50,13 @@ unset $IMPACT_ISOLATION_VARS
 # guard NOT installed below and the key-shaped commit goes through. Unset, it falls back to
 # $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
 unset SECRET_SCAN_PERSONAL_FILE
+# dir #753: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface — the GIT_CONFIG_COUNT/KEY_n/VALUE_n
+# triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone), GIT_CONFIG_PARAMETERS
+# (what a parent `git -c k=v` exports to its children) and GIT_CONFIG_SYSTEM (an alternate system file) would
+# carry an operator's ambient config in, e.g. a core.hooksPath that turns the guard step into "commit succeeded".
+# tests/test_sandbox_escapes.sh pins all three. The stock /etc/gitconfig stays readable on purpose: CI's
+# safe.directory entry lives there.
+unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM
 export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
 git config --global user.email you@example.com
 git config --global user.name "You"
@@ -72,11 +84,8 @@ type_cmd() {
   sleep "${2:-1.6}"
 }
 
-# dir #478: `cd "" || exit 1` would silently no-op instead of exiting — $sandbox comes from
-# `set -uo pipefail` (no `-e`), so an mktemp hiccup can leave it empty without aborting the script.
 # $proj needs no guard of its own: it's "$sandbox/my-project", a concatenation with a non-empty
-# literal suffix, so it can never be empty even when $sandbox is.
-[ -n "$sandbox" ] || exit 1
+# literal suffix, so it can never be empty even when $sandbox is (and $sandbox is guarded right after mktemp).
 cd "$sandbox" || exit 1
 say "# keel secret-guard — a real run (sandboxed: HOME + git config redirected)"
 type_cmd "keel-tools/install-secret-guard.sh --global" 2.2

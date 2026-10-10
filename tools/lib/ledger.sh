@@ -21,9 +21,10 @@ ledger_append() {
 }
 
 # ledger_remove LEDGER_FILE HOME_RESOLVED — the prune counterpart (dir #125): drop HOME_RESOLVED's
-# line from LEDGER_FILE as an EDIT through tools/lib/safe-write.sh's keel_write_through (dir #679), so
-# a mid-write crash never leaves a half-written ledger, a symlinked ledger stays a link and the file it
-# names gets the change, and the file keeps its mode. A no-op, not an error, when the file or the line
+# line from LEDGER_FILE as a STATE write through tools/lib/safe-write.sh's keel_write_state (dir #679,
+# dir #756 (a)), so a mid-write crash never leaves a half-written ledger, a symlinked ledger stays a link
+# and the file it names gets the change, the file keeps its mode, and a hard-linked ledger is split (the
+# other name keeps the old lines) rather than refused. A no-op, not an error, when the file or the line
 # is already absent (an empty result is written as an empty ledger). Callers decide WHEN to prune
 # (uninstall.sh and install-pre-pr-gate.sh --uninstall both do it only once no install-manifest.*
 # remains at the home) — this function only knows how to remove one line safely, the same division
@@ -33,15 +34,15 @@ ledger_append() {
 ledger_remove() {
   local ledger="$1" home="$2"
   [ -f "$ledger" ] || return 0
-  if ! command -v keel_write_through >/dev/null 2>&1; then
+  if ! command -v keel_write_state >/dev/null 2>&1; then
     echo "ledger: tools/lib/safe-write.sh is not loaded — the caller must source it first; nothing was written." >&2
     return 1
   fi
-  keel_write_through "$ledger" _ledger_kept_lines "$home" "$ledger"
+  keel_write_state "$ledger" _ledger_kept_lines "$home" "$ledger"
 }
 
 # _ledger_kept_lines HOME LEDGER — LEDGER's lines other than HOME. grep's "no line selected" (exit 1,
-# the last home pruned) is success here; only a real read error (exit 2) fails, so keel_write_through
+# the last home pruned) is success here; only a real read error (exit 2) fails, so keel_write_state
 # never renames a half-read ledger over the whole one.
 _ledger_kept_lines() {
   grep -vxF "$1" "$2" 2>/dev/null

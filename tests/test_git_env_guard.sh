@@ -105,6 +105,32 @@ first_reach() {
 # column-0 rule (disclosed in the header).
 guard_line() {
   awk -v g="$GUARD" -v q="'" '
+    # not_opener(pre) — is a `<<` that follows PRE (the line text before it) no heredoc opener: inside an open
+    # `((` arithmetic group (parens balanced left to right, so `$(( (1+2) << n ))` still counts as open), inside
+    # a quoted string, or in a comment (dir #712). A backslash escapes the next character. An approximation of shell
+    # lexing, disclosed: ANSI-C `$'"'"'..'"'"'` strings, a `#` inside an expansion and a `((` that opens a subshell are not
+    # modelled; the old `((` regex had the same blind spots.
+    function not_opener(pre,    i, n, c, c2, depth, sq, indq, stk) {
+      n = length(pre); depth = 0; sq = 0; indq = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(pre, i, 1); c2 = substr(pre, i, 2)
+        if (c == "\\" && !sq) { i++; continue }
+        if (sq) { if (c == q) sq = 0; continue }
+        if (indq) { if (c == "\"") indq = 0; continue }
+        if (c == q) { sq = 1; continue }
+        if (c == "\"") { indq = 1; continue }
+        if (c == "#" && (i == 1 || substr(pre, i - 1, 1) ~ /[[:space:];&|(]/)) return 1
+        if (c2 == "((") { stk[++depth] = "A"; i++; continue }
+        if (c == "(") { stk[++depth] = "P"; continue }
+        if (c == ")") {
+          if (depth > 0 && stk[depth] == "A" && substr(pre, i + 1, 1) == ")") i++
+          if (depth > 0) depth--
+        }
+      }
+      if (sq || indq) return 1
+      for (i = 1; i <= depth; i++) if (stk[i] == "A") return 1
+      return 0
+    }
     nq > 0 {  # inside heredoc bodies: the queue holds the delimiters still owed, in order
       t = $0; if (hdash[1]) sub(/^\t+/, "", t)
       if (t == dq[1]) { for (i = 1; i < nq; i++) { dq[i] = dq[i + 1]; hdash[i] = hdash[i + 1] } nq-- }
@@ -114,11 +140,12 @@ guard_line() {
     $0 == g && !dead { print NR; exit }
     {
       # every `<<` on the line, left to right, each real opener queued (`cat <<A; cat <<B` owes A then B).
-      # Not an opener: `<<<` (a here-string) and a shift inside `((` ... `))` (arithmetic).
+      # Not an opener: `<<<` (a here-string), a shift inside `((` ... `))` (arithmetic), and a `<<` inside a
+      # quoted string or a comment (not_opener above).
       rest = $0; off = 0
       while (match(rest, "<<-?[[:space:]]*[A-Za-z_\"" q "]")) {
         pos = off + RSTART; pre = substr($0, 1, pos - 1)
-        if ((pos > 1 && substr($0, pos - 1, 1) == "<") || pre ~ /[(][(][^)]*$/) { off += RSTART; rest = substr(rest, RSTART + 1); continue }
+        if ((pos > 1 && substr($0, pos - 1, 1) == "<") || not_opener(pre)) { off += RSTART; rest = substr(rest, RSTART + 1); continue }
         h = substr(rest, RSTART); d = (h ~ /^<<-/)
         sub(/^<<-?[[:space:]]*/, "", h); gsub("[\"" q "]", "", h); sub(/[^A-Za-z0-9_].*$/, "", h)
         if (h != "") { nq++; dq[nq] = h; hdash[nq] = d }
@@ -465,10 +492,47 @@ printf '%s\n' '#!/usr/bin/env bash' 'n=3; x=$((1<<n))' "$GUARD" 'git -C "$1" sta
 git -C "$sb" add -A
 census "$sb" "$real_libs"
 if grep -q -- '^scratch-shift.sh|' <<< "$C_OFF"; then fail "dir #661 S5-1: an arithmetic shift (<<) is not a heredoc opener — a real guard after it still counts" "the census named scratch-shift.sh: $C_OFF"; else pass "dir #661 S5-1: an arithmetic shift (<<) is not a heredoc opener — a real guard after it still counts"; fi
+# dir #712 (1): a shift whose arithmetic holds a closing paren before the `<<` is still arithmetic
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'n=3; x=$(( (1+2) << n ))' "$GUARD" 'git -C "$1" status' > "$sb/scratch-shift-paren.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+if grep -q -- '^scratch-shift-paren.sh|' <<< "$C_OFF"; then fail "dir #712: a shift after a parenthesised operand is not a heredoc opener — a real guard after it still counts" "the census named scratch-shift-paren.sh: $C_OFF"; else pass "dir #712: a shift after a parenthesised operand is not a heredoc opener — a real guard after it still counts"; fi
+# dir #712 (2): a `<<WORD` inside a comment or a quoted string opens no heredoc — one fixture per shape
+for shape in comment dquote squote; do
+  case "$shape" in
+    comment) line='# usage: cat <<EOF in a comment only' ;;
+    dquote)  line='echo "write cat <<EOF to start one"' ;;
+    squote)  line="echo 'or cat <<EOF'" ;;
+  esac
+  sb="$(build_sandbox)"
+  printf '%s\n' '#!/usr/bin/env bash' "$line" "$GUARD" 'git -C "$1" status' > "$sb/scratch-opener-$shape.sh"
+  git -C "$sb" add -A
+  census "$sb" "$real_libs"
+  if grep -q -- "^scratch-opener-$shape.sh|" <<< "$C_OFF"; then fail "dir #712: a <<WORD in a $shape is not a heredoc opener — a real guard after it still counts" "the census named scratch-opener-$shape.sh: $C_OFF"; else pass "dir #712: a <<WORD in a $shape is not a heredoc opener — a real guard after it still counts"; fi
+done
+# ...and a REAL opener after a quoted `<<` on the same line still hides its body's guard (the skip is not blanket)
+sb="$(build_sandbox)"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "a <<X"; cat <<EOF' "$GUARD" 'EOF' 'git -C "$1" status' > "$sb/scratch-quoted-then-real.sh"
+git -C "$sb" add -A
+census "$sb" "$real_libs"
+case_red "dir #712: a real heredoc opener after a quoted << still hides its body's guard -> red, naming it" scratch-quoted-then-real.sh "$sb" "$base_off"
 # the same list is spelled by tools/lib/impact-store.sh's scoped `env -u` form, which the census cannot see
 impact_names="$(sed -n '/^_keel_store_git() {/,/^}/p' "$REPO_ROOT/tools/lib/impact-store.sh" | grep -v '^[[:space:]]*#' | tr -s ' \\\n' '\n\n' | awk '$0 == "-u" { getline; print }' | sort | tr '\n' ' ')"
 guard_names="$(printf '%s\n' ${GUARD#unset } | sort | tr '\n' ' ')"
-check_eq "dir #661: tools/lib/impact-store.sh's scoped env -u names exactly the variables of the guard line" "$guard_names" "$impact_names"
+# dir #712 (4): name the variable, not two joined lists. env_u_gap GUARD_NAMES SCOPED_NAMES prints "missing: ..." and
+# "extra: ..." (empty when the two sets agree).
+env_u_gap() {
+  local v miss="" extra=""
+  for v in $1; do has_word "$2" "$v" || miss="${miss:+$miss }$v"; done
+  for v in $2; do has_word "$1" "$v" || extra="${extra:+$extra }$v"; done
+  printf '%s%s' "${miss:+missing: $miss}" "${extra:+${miss:+; }extra: $extra}"
+}
+has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1; }
+check_eq "dir #712: the scoped env -u form was found (a rename would otherwise read as every variable missing)" 1 "$([ -n "$impact_names" ] && echo 1 || echo 0)"
+check_eq "dir #661: tools/lib/impact-store.sh's scoped env -u names exactly the variables of the guard line" "" "$(env_u_gap "$guard_names" "$impact_names")"
+check_eq "dir #712: the pin names a variable the scoped form lacks" "missing: GIT_NAMESPACE" "$(env_u_gap "$guard_names" "${impact_names/GIT_NAMESPACE /}")"
+check_eq "dir #712: the pin names a variable the scoped form adds" "extra: GIT_FOO" "$(env_u_gap "$guard_names" "${impact_names}GIT_FOO ")"
 
 # S5-3, transport side: an inherited GIT_NAMESPACE makes a clone of a local repo come up EMPTY (measured, git 2.52.0)
 t_src="$(new_repo)"
@@ -477,6 +541,14 @@ for t_url in "$t_src" "file://$t_src"; do
   t_dst="$(mktemp -d "$SANDBOX/clone.XXXXXX")"
   env GIT_NAMESPACE=foo bash -c "$GUARD"'; git clone -q "$1" "$2/c" >/dev/null 2>&1' _ "$t_url" "$t_dst"
   check_eq "dir #661 S5-3: with GIT_NAMESPACE inherited, a clone of ${t_url%%$t_src*}<local repo> carries the source's commit once the guard ran" 1 "$(git -C "$t_dst/c" rev-list --count HEAD 2>/dev/null || echo 0)"
+done
+
+# dir #712 (3): the control — the same non-empty source cloned WITHOUT the variable carries its commit, so the
+# `1` above is the clone working, not a count that was always 1
+for t_url in "$t_src" "file://$t_src"; do
+  t_dst="$(mktemp -d "$SANDBOX/clone.XXXXXX")"
+  git clone -q "$t_url" "$t_dst/c" >/dev/null 2>&1
+  check_eq "dir #712 S5-3 control: without GIT_NAMESPACE a clone of ${t_url%%$t_src*}<local repo> also carries the source's commit" 1 "$(git -C "$t_dst/c" rev-list --count HEAD 2>/dev/null || echo 0)"
 done
 
 # S5-2: B4 also rejects an INDENTED guard outside selftest() (a hook arm), not only a column-0 one

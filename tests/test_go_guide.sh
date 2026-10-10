@@ -89,6 +89,8 @@ needle_rules=(
   "GUIDE8 report field"
   "GUIDE4 old item 3 kept"
   "GUIDE4 old item 4 kept"
+  "dir #696 B9: I1 item 0 points at step 4's offer"
+  "dir #696 B9: the offer is made once per session"
 )
 needle_texts=(
   "\`go.md\` wins"
@@ -114,6 +116,8 @@ needle_texts=(
   "Seams: <none | skipped — why | fixed <n>, escape <n>, unchecked <n>>"
   "you wrote down in I1. Red"
   "Run the project's full test command"
+  "step 4's offer"
+  "unless step 4 already did"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
@@ -123,6 +127,15 @@ while [ "$i" -lt "${#needle_rules[@]}" ]; do
     "missing needle for $rule in $guide_md"
   i=$((i + 1))
 done
+
+# dir #696 A8: the guide no longer restates step 4's offer, and no longer offers work-by-absolute-path from a
+# second session (two writers on one tree); the retired variant must not come back.
+if grep -qF -- 'continue there (absolute paths' "$guide_md"; then
+  fail "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'" \
+    "found the retired offer in $guide_md"
+else
+  pass "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'"
+fi
 
 # --- (g) I4's items are numbered 1-4 in order, Seams is item 2 (dir #668 B1) -------------------------
 # A numbering slip (Seams as item 4, an old item lost, a duplicate number) passes every needle above.
@@ -134,6 +147,44 @@ else
 fi
 pin_exact "(g) I4 item 2 is 'Seams.' (before the full test run)" "$guide_md" "2. Seams." \
   "expected item 2 of I4 to open with '2. Seams.'"
+
+# --- (i) I4 item 2a also reads changelog.d/ fragments (dir #744 B6) ---------------------------------
+# The pinned command is lifted from the guide itself and RUN against fixtures, so a reworded command that
+# drops the fragments (or breaks a project without them) goes red. The old command is the control: on a
+# dir with no changelog.d/ the new one must print exactly the old one's lines.
+claims_cmd="$(sed -n 's/^   a\. Their claims: `\(.*\)`$/\1/p' "$guide_md")"
+pin "(i) I4 item 2a's command names changelog.d" "$guide_md" 'changelog.d -name '"'"'[a-z0-9]*.md'"'"'' \
+  "expected the Their-claims command to scan the changelog.d/ fragments"
+old_claims_cmd='awk '"'"'/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}'"'"' CHANGELOG.md'
+i_dir="$(mktemp -d "$SANDBOX/claims.XXXXXX")"
+printf '# Changelog\n\n## [Unreleased]\n\n- fixes all 3 of them\n- plain line\n\n## [1.0.0] — 2026-01-01\n\n- every old thing\n' \
+  > "$i_dir/CHANGELOG.md"
+old_out="$(cd "$i_dir" && bash -c "$old_claims_cmd" 2>&1)"
+new_out="$(cd "$i_dir" && bash -c "$claims_cmd" 2>&1)"
+check_ne "(i) fixture: the old command finds the [Unreleased] claim (control has content)" "" "$old_out"
+check_eq "(i) a project without changelog.d/: the pinned command prints the old command's lines" "$old_out" "$new_out"
+# The Bash tool's shell is zsh, where an unmatched glob ABORTS the whole command ("no matches found"): the
+# pinned command must print the old lines there too, with no changelog.d/ at all.
+if command -v zsh >/dev/null 2>&1; then
+  zsh_out="$(cd "$i_dir" && zsh -c "$claims_cmd" 2>&1)"
+  check_eq "(i) under zsh with no changelog.d/: the same lines (no 'no matches found' abort)" "$old_out" "$zsh_out"
+fi
+mkdir -p "$i_dir/changelog.d"
+printf -- '- a fragment covering both of the tools\n  and every file in it\n' > "$i_dir/changelog.d/9-x.md"
+printf -- '- nothing numeric here\n' > "$i_dir/changelog.d/10-y.md"
+printf '# readme\n\nevery note about fragments\n' > "$i_dir/changelog.d/README.md"
+frag_out="$(cd "$i_dir" && bash -c "$claims_cmd" 2>&1)"
+check_contains "(i) with changelog.d/: a fragment line is scanned, whole file, with its own line number" \
+  "$frag_out" "changelog.d/9-x.md:1: - a fragment covering both of the tools"
+check_contains "(i) with changelog.d/: a continuation line is scanned too" "$frag_out" "changelog.d/9-x.md:2:   and every file in it"
+check_contains "(i) with changelog.d/: the CHANGELOG.md [Unreleased] claim is still found" "$frag_out" "- fixes all 3 of them"
+check_absent "(i) a released section's claim is still skipped" "$frag_out" "every old thing"
+if command -v zsh >/dev/null 2>&1; then
+  zsh_frag_out="$(cd "$i_dir" && zsh -c "$claims_cmd" 2>&1)"
+  check_contains "(i) under zsh with changelog.d/: the fragment line is scanned" "$zsh_frag_out" "changelog.d/9-x.md:1: - a fragment covering both"
+fi
+check_absent "(i) a fragment line without a claim is not printed" "$frag_out" "nothing numeric"
+check_absent "(i) changelog.d/README.md is not a fragment and is not scanned" "$frag_out" "every note about fragments"
 
 # --- (h) the handoff note's wiring (dir #401 A12): each action names its helper call ------------------
 # Scoped to the action's own paragraph — "go-handoff.sh read" anywhere in the file would still pass
@@ -424,5 +475,22 @@ h9_copy="$(scratch_copy "$guide_md" go-guide.md)"
 append_line "$h9_copy" "**I9 — extra.** A ninth action."
 assert_case_turns_red "(h) wiring mutation: a ninth label" \
   "(h) exactly eight **I<n> — ** action labels (no I0, no I9)" "KEEL_GO_GUIDE_MD=$h9_copy"
+
+# (f) needle — dir #696's two I1-item-0 clauses (spec 690 B9, A8), each shown red by its own mutation.
+b9a_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$b9a_copy" "step 4's offer" "make step 4's offer" "ask the operator"
+assert_case_turns_red "(f) needle mutation: dir #696 B9-a pointer to step 4's offer removed" \
+  "(f) needle [dir #696 B9: I1 item 0 points at step 4's offer]: 'step 4's offer' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$b9a_copy"
+b9b_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$b9b_copy" "unless step 4 already did" ", unless step 4 already did" ""
+assert_case_turns_red "(f) needle mutation: dir #696 B9-b once-per-session clause removed" \
+  "(f) needle [dir #696 B9: the offer is made once per session]: 'unless step 4 already did' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$b9b_copy"
+b9c_copy="$(scratch_copy "$guide_md" go-guide.md)"
+append_line "$b9c_copy" "continue there (absolute paths, git -C)"
+assert_case_turns_red "(f) mutation: dir #696 retired absolute-path offer re-added" \
+  "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'" \
+  "KEEL_GO_GUIDE_MD=$b9c_copy"
 
 summary

@@ -20,13 +20,21 @@
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
 # isn't Keel's own is treated as higher-precedence user data — the install refuses and says how to
 # proceed unless you pass --force (which backs up to <hook>.pre-keel.bak first, and refuses — naming the
-# saved file — if that backup already exists, so an earlier saved hook is never overwritten; for the
-# global hooksPath it records the old value in `git config --global keel.displacedHooksPath`, under the
-# same never-overwrite rule). A hook is Keel's only when its line 2 is exactly the shipped hook's
+# saved file — if that backup already exists, so an earlier saved hook is never overwritten; a file that
+# appears at that name DURING the run is not overwritten either: the backup is claimed by an exclusive
+# create, moving on to <hook>.pre-keel.2.bak, .3.bak … (dir #684). For the global hooksPath it records the
+# old value — the empty value included — in `git config --global keel.displacedHooksPath`, under the
+# same never-overwrite rule; a hooksPath with no value at all cannot be recorded faithfully and is
+# refused even with --force). A hook is Keel's only when its line 2 is exactly the shipped hook's
 # marker line. A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
-# is written into, by design). Bypass a single commit/push deliberately with `git ... --no-verify`;
+# is written into, by design); a HARD-linked file is replaced by rename, never written into, so its other
+# name keeps its bytes. Bypass a single commit/push deliberately with `git ... --no-verify`;
 # a commit made that way is still scanned by pre-push, which scans every commit it sends.
+#
+# Copy-standalone: this file ships with only its sibling secret-guard/ dir and sources nothing from
+# tools/lib/ (its tests run scratch copies that carry none), so its two write helpers below — _isg_place
+# and _isg_backup — are inline copies of the lib's write-safety rules (spec 685 B4 and B6), not a source.
 set -euo pipefail
 # dir #644: unconditional, at the top — before this script's first git call, whichever branch it
 # turns out to be, not gated behind reaching the <repo> branch below. An inherited GIT_DIR /
@@ -98,10 +106,54 @@ if [ "$uninstall" = 1 ]; then
   case "${1:-}" in
     --global|-h|--help) ;;
     *) echo "install-secret-guard.sh: --uninstall works with --global only — to remove a vendored repo copy, delete" >&2
-       echo "  its hook files, and move back any <hook>.pre-keel.bak a --force saved" >&2
+       echo "  its hook files, and move back the newest <hook>.pre-keel*.bak a --force saved" >&2
        exit 2 ;;
   esac
 fi
+
+# _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
+# link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a
+# leftover-free `DEST.isgtmp.$$` (claimed by an exclusive create, so a planted file or link there is never
+# written through), fill it with `cat`, give it SRC's execute bit, `mv -f` it onto DEST. A directory at DEST is
+# the caller's pre-flight to refuse (`mv` would move INTO it). Returns 1 on any failure and leaves DEST untouched;
+# a staging file it created is removed, one it could not claim (a link planted there is another party's) is
+# never touched, so it stays until its owner removes it (the rollback's "left as it was" counts only the files
+# this run placed or backed up).
+_isg_place() {
+  local from="$1" dest="$2" tmp
+  tmp="$dest.isgtmp.$$"
+  rm -f "$tmp"
+  if ! { ( set -o noclobber; : > "$tmp" ) 2>/dev/null && [ -f "$tmp" ] && [ ! -L "$tmp" ]; }; then
+    return 1
+  fi
+  cat "$from" > "$tmp" || { rm -f "$tmp"; return 1; }
+  if [ -x "$from" ]; then chmod +x "$tmp" || { rm -f "$tmp"; return 1; }; fi
+  mv -f "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
+}
+
+# _isg_backup HOOK — --force's PERMANENT backup of a foreign hook (dir #684, B6): claim `HOOK.pre-keel.bak`,
+# else `.pre-keel.2.bak` … `.99.bak`, each by an exclusive create under umask 077 (checked to be a regular,
+# non-link file), so a file that appears there between the pre-flight and now is never overwritten. Copy with
+# `cat`, then add u+x when HOOK is executable — the backup stays runnable once moved back, and a hook with
+# no execute bit stays without one. Sets isg_claimed to the SUFFIX it took (pre-keel.bak, pre-keel.2.bak …);
+# returns 1 when none was free.
+isg_claimed=""
+_isg_backup() {
+  local hook="$1" n=1 sfx cand
+  isg_claimed=""
+  while [ "$n" -le 99 ]; do
+    if [ "$n" = 1 ]; then sfx="$isg_bak_force"; else sfx="${isg_bak_force%.bak}.$n.bak"; fi
+    cand="$hook.$sfx"
+    if { ( umask 077; set -o noclobber; : > "$cand" ) 2>/dev/null && [ -f "$cand" ] && [ ! -L "$cand" ]; }; then
+      cat "$hook" > "$cand" || { rm -f "$cand"; return 1; }
+      if [ -x "$hook" ]; then chmod u+x "$cand" || { rm -f "$cand"; return 1; }; fi
+      isg_claimed="$sfx"
+      return 0
+    fi
+    n=$((n + 1))
+  done
+  return 1
+}
 
 # dir #570: undo exactly what one install_into() run placed — never a hook a different run or the
 # user left behind — and exit non-zero, so "either fully wired or untouched" holds no matter WHICH
@@ -120,26 +172,29 @@ fi
 # cleanup from at least being attempted.
 _isg_rollback() {
   local hooks_dir="$1" copied="$2" backed_up="$3" upgraded="$4" reason="$5" detail="${6:-}" \
-    f ok=1 pair list suffix
+    f ok=1 entry entries suffix
   echo "secret-guard: $reason — rolling back" >&2
   [ -n "$detail" ] && echo "$detail" | sed 's/^/  /' >&2
   for f in $copied; do
     rm -f "$hooks_dir/$f" || { ok=0; echo "secret-guard: could not remove $hooks_dir/$f — remove it by hand" >&2; }
   done
   # Restore ONLY files this run itself backed up — never something a different run or the user
-  # placed. $backed_up (a FOREIGN hook, --force'd) restores from its PERMANENT .pre-keel.bak;
-  # $upgraded (an existing KEEL hook/scanner this run re-vendored over) restores from its own
-  # run-scoped .keel-upgrade.bak. Two suffixes, not one, so this can never mv a permanent --force
+  # placed. $backed_up (a FOREIGN hook, --force'd) holds `hook:suffix` entries: the name THIS run's
+  # _isg_backup claimed for that hook (.pre-keel.bak, or .pre-keel.N.bak when a file had appeared there),
+  # never a fixed one; $upgraded (an existing KEEL hook/scanner this run re-vendored over) restores from its
+  # own run-scoped .keel-upgrade.bak. Two suffix families, not one, so this can never mv a permanent --force
   # backup back over itself and then have the success path below delete it out from under a later
   # plain re-install (regression the RC audit caught: both writers used to share .pre-keel.bak, so
-  # an ordinary re-vendor's cleanup deleted the user's --force backup). One list:suffix loop, not
+  # an ordinary re-vendor's cleanup deleted the user's --force backup). Both backups already carry the
+  # original's execute bit (_isg_place / _isg_backup), so the restore is a bare `mv`: a hook is exactly as
+  # executable as it was — and a hook its owner disabled by removing the bit stays disabled. One loop, not
   # two copy-pasted ones, so the restore/error-message logic has a single place to change.
-  for pair in "$backed_up:$isg_bak_force" "$upgraded:$isg_bak_upgrade"; do
-    list="${pair%%:*}" suffix="${pair#*:}"
-    for f in $list; do
-      mv -f "$hooks_dir/$f.$suffix" "$hooks_dir/$f" \
-        || { ok=0; echo "secret-guard: could not restore $hooks_dir/$f from $hooks_dir/$f.$suffix — restore it by hand" >&2; }
-    done
+  entries="$backed_up"
+  for f in $upgraded; do entries="$entries $f:$isg_bak_upgrade"; done
+  for entry in $entries; do
+    f="${entry%%:*}" suffix="${entry#*:}"
+    mv -f "$hooks_dir/$f.$suffix" "$hooks_dir/$f" \
+      || { ok=0; echo "secret-guard: could not restore $hooks_dir/$f from $hooks_dir/$f.$suffix — restore it by hand" >&2; }
   done
   if [ "$ok" = 1 ]; then
     echo "secret-guard: rolled back — $hooks_dir left as it was before this run" >&2
@@ -181,6 +236,12 @@ install_into() {
       echo "  re-run. Nothing was changed." >&2
       exit 3
     fi
+    # dir #684 (B26): a directory where this run places a file — `mv` would move the new file INTO it. One
+    # line, before any write, with or without --force.
+    if [ -d "$t" ] && [ ! -L "$t" ]; then
+      echo "secret-guard: $t is a directory, where this run places a file — move it aside, then re-run. Nothing was changed." >&2
+      exit 3
+    fi
     # The run-scoped backup path below is cleared with `rm -f`, which cannot remove a directory: refuse
     # up front rather than abort under `set -e` after an earlier hook's backup was already written.
     if [ -e "$t" ] && [ -d "$t.$isg_bak_upgrade" ] && [ ! -L "$t.$isg_bak_upgrade" ]; then
@@ -195,9 +256,11 @@ install_into() {
   # pre-commit clobber.)
   # (c) dir #625: --force's backup at .pre-keel.bak is PERMANENT, so it must never be overwritten. A
   # second --force over a DIFFERENT foreign hook (something external replaced the installed hook after
-  # the first --force) would `cp` the new hook over the first one's backup — the earlier hook silently
-  # gone. Name the saved file so the user can move it aside and re-run. `-L` too: a dangling symlink at
-  # the backup path makes `-e` false, yet `cp` would write through it.
+  # the first --force) would otherwise displace the first one's backup — the earlier hook silently
+  # gone. Name the saved file so the user can restore or move it and re-run. Since dir #684 _isg_backup
+  # would claim the next free name rather than overwrite, but an earlier saved hook waiting at the
+  # first name is still worth a stop: the user is likely to want it back first. `-L` too: a dangling
+  # symlink at the backup path makes `-e` false, yet it is still occupied.
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
     { [ -e "$t" ] && ! _isg_is_keel_hook "$t"; } || continue
@@ -208,9 +271,8 @@ install_into() {
       exit 3
     fi
     if [ -e "$t.$isg_bak_force" ] || [ -L "$t.$isg_bak_force" ]; then
-      echo "secret-guard: $t is not a Keel hook, and a backup of an earlier one is already saved at" >&2
-      echo "  $t.$isg_bak_force — --force would overwrite it. Move or delete that file, then re-run" >&2
-      echo "  with --force. Nothing was changed." >&2
+      echo "secret-guard: $t is not a Keel hook, and an earlier backup of a hook is waiting at" >&2
+      echo "  $t.$isg_bak_force — restore or move it first, then re-run with --force. Nothing was changed." >&2
       exit 3
     fi
   done
@@ -263,17 +325,18 @@ install_into() {
         # `.keel-upgrade.bak`, NOT `.pre-keel.bak` — this branch runs on every ordinary re-install,
         # including one right after a --force install, and must never touch the permanent backup
         # a --force run may have left at `.pre-keel.bak` (see the note above `local copied=`).
-        rm -f "$t.$isg_bak_upgrade"
-        cp "$t" "$t.$isg_bak_upgrade"
+        _isg_place "$t" "$t.$isg_bak_upgrade" \
+          || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to save a safety copy of $t"
         upgraded="$upgraded $h"
       elif [ "$force" != 1 ]; then
         # Only reachable if the hook was swapped for a foreign one during the selftest, after the
         # pre-flight read it as ours: never replace it without --force — undo this run and stop.
         _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "$t stopped being a Keel hook during this run"
       else
-        cp "$t" "$t.$isg_bak_force"
-        backed_up="$backed_up $h"
-        echo "secret-guard: backed up your existing $h → $h.$isg_bak_force (--force)" >&2
+        _isg_backup "$t" \
+          || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "could not back up $t (no free .$isg_bak_force name)"
+        backed_up="$backed_up $h:$isg_claimed"
+        echo "secret-guard: backed up your existing $h → $h.$isg_claimed (--force)" >&2
       fi
     fi
   done
@@ -290,8 +353,8 @@ install_into() {
     case "$f" in pre-commit|pre-push) continue ;; esac
     t="$hooks_dir/$f"
     if [ -e "$t" ]; then
-      rm -f "$t.$isg_bak_upgrade"
-      cp "$t" "$t.$isg_bak_upgrade"
+      _isg_place "$t" "$t.$isg_bak_upgrade" \
+        || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to save a safety copy of $t"
       upgraded="$upgraded $f"
     fi
   done
@@ -307,7 +370,7 @@ install_into() {
   # finding) — `rm -f` is a harmless no-op on a file that never got created at all.
   for f in $isg_files; do
     copied="$copied $f"
-    cp "$src/$f" "$hooks_dir/$f" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to copy $f into $hooks_dir"
+    _isg_place "$src/$f" "$hooks_dir/$f" || _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to copy $f into $hooks_dir"
   done
   chmod +x "$hooks_dir/secret-scan.sh" "$hooks_dir/pre-commit" "$hooks_dir/pre-push" || \
     _isg_rollback "$hooks_dir" "$copied" "$backed_up" "$upgraded" "failed to make the installed copy executable"
@@ -337,8 +400,8 @@ install_into() {
 
 # Is hooksPath value $1 the same directory as $2? Compared as paths, never as the raw strings git stored
 # (dir #659): a literal leading ~/ is expanded (git returns it verbatim and expands it itself at use
-# time; a portable dotfiles gitconfig writes it that way — the same expansion tools/doctor.sh's
-# _expand_hookspath_tilde and tools/lib/git-global-paths.sh apply, inlined because this script ships
+# time; a portable dotfiles gitconfig writes it that way — the same expansion
+# git_global_expand_tilde (tools/lib/git-global-paths.sh) applies, inlined because this script ships
 # standalone), one trailing slash is dropped, and two paths that both exist are compared with `-ef`
 # (a symlinked HOME, `//`). Compared as strings, Keel's own dir spelled any other way read as foreign:
 # --force then recorded Keel's own dir as the "displaced" value and --uninstall "restored" it, leaving
@@ -376,6 +439,9 @@ _isg_same_dir() {
 #   own=        absolute dir a `<repo>` install writes (the LOCAL hooksPath, else the common dir's hooks)
 #   effective=  absolute dir git actually reads this repo's hooks from (any scope: `--git-path hooks`)
 #   scope=      none | local | worktree | global | system | command | unknown  — where core.hooksPath is set
+#   set=        1 when core.hooksPath is set at any scope, the empty value included (decided by the read's EXIT
+#               STATUS, never by a non-empty value — an empty hooksPath turns every hook off and is the user's
+#               wiring); 0 when no scope sets it. Always printed (dir #684 / dir #748 S4-1)
 #   value=      the raw setting          origin=  the config file it was read from
 #   keel-dir=1  effective is Keel's machine-wide hooks dir
 #   machine-dir=1  effective is the machine-wide hooksPath dir (what `--where --global` prints as `dir=`);
@@ -383,26 +449,43 @@ _isg_same_dir() {
 #               itself (dir #688)
 #   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | foreign, `-link` suffixed
 #               when it is a symlink — "keel" means the exact marker line, the same test an install uses
-# `--where --global` prints the machine-wide view (value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
+# `--where --global` prints the machine-wide view (set/value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
 #   fallback=1  the machine-wide read took its narrow `git config --global` branch (no usable scratch dir)
 #   conditional=<n>|unknown  n ≥ 1 conditional [includeIf] includes set a core.hooksPath that is empty,
 #               valueless or not the same dir as value= (it may win in the trees they match); unknown = the
 #               walk could not read them all (dir #717); omitted when n = 0
 # When own and effective differ, a copy written to own is inert: git never reads it.
 
-# One read of core.hooksPath as git sees it from directory $1: sets m_scope m_origin m_value (all empty
-# when unset). `--show-scope` needs git 2.26; an older git still yields the value, scope "unknown".
+# _isg_valueless KEY GIT-ARGS… — 0 when KEY, read by `git GIT-ARGS --get …`, is a bare line (no `=`). `--get`
+# answers it like the empty value (rc 0, no output); `--get --type=path` fails for it (git's "missing value"
+# fatal, rc 128). ANY failure counts, deliberately: the mistake to avoid is reading a bare line as the empty
+# value (a later restore would turn every hook off), while a git too old to know `--type` (rc 129) merely refuses
+# one empty value it could have recorded — fail closed. Call only after a read that returned an empty value.
+_isg_valueless() {
+  local key="$1"; shift
+  ! git "$@" --get --type=path "$key" >/dev/null 2>&1
+}
+
+# One read of core.hooksPath as git sees it from directory $1: sets m_set (1 when ANY scope sets it — decided by
+# the read's EXIT STATUS, so the empty value counts; dir #748 S4-1) and m_scope m_origin m_value (all empty when
+# unset), plus m_novalue=1 for a VALUELESS `hooksPath` (_isg_valueless). `--show-scope` needs git 2.26; an
+# older git still yields the value, scope "unknown".
 _isg_cfg_read() {
-  local out rest
-  m_scope="" m_origin="" m_value=""
-  if out="$(git -C "$1" config --show-scope --show-origin --get core.hooksPath 2>/dev/null)" && [ -n "$out" ]; then
+  local out rest rc=0
+  m_set=0 m_novalue=0 m_scope="" m_origin="" m_value=""
+  out="$(git -C "$1" config --show-scope --show-origin --get core.hooksPath 2>/dev/null)" || rc=$?
+  if [ "$rc" = 0 ]; then
+    m_set=1
     m_scope="${out%%$'\t'*}"; rest="${out#*$'\t'}"
     m_origin="${rest%%$'\t'*}"; m_value="${rest#*$'\t'}"
     m_origin="${m_origin#file:}"
-  elif out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" && [ -n "$out" ]; then
-    m_scope="unknown"; m_value="$out"
+  else
+    rc=0
+    out="$(git -C "$1" config --get core.hooksPath 2>/dev/null)" || rc=$?
+    if [ "$rc" = 0 ]; then m_set=1; m_scope="unknown"; m_value="$out"; fi
   fi
-  [ -n "$m_value" ] || { m_scope=""; m_origin=""; }
+  if [ "$m_set" = 1 ] && [ -z "$m_value" ] && _isg_valueless core.hooksPath -C "$1" config; then m_novalue=1; fi
+  [ "$m_set" = 1 ] || { m_scope=""; m_origin=""; }
   return 0
 }
 
@@ -422,8 +505,11 @@ _isg_machine_read() {
     [ "${1:-}" != walk ] || _isg_conditional_reads "$probe"
   else
     m_fallback=1
-    m_scope="" m_origin="" m_value="$(git config --global core.hooksPath 2>/dev/null || true)"
-    [ -z "$m_value" ] || m_scope="global"
+    m_set=0 m_novalue=0 m_scope="" m_origin=""
+    if m_value="$(git config --global core.hooksPath 2>/dev/null)"; then
+      m_set=1 m_scope="global"
+      if [ -z "$m_value" ] && _isg_valueless core.hooksPath config --global; then m_novalue=1; fi
+    fi
     if [ "${1:-}" = walk ]; then
       c_list=""
       if [ -n "$probe" ]; then
@@ -678,6 +764,7 @@ _isg_where_repo() {
   echo "own=$own"
   echo "effective=$eff"
   echo "scope=${m_scope:-none}"
+  echo "set=$m_set"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   # machine-dir: the one place that decides "this repo's hooks are the machine-wide ones" (dir #688); a
@@ -690,9 +777,10 @@ _isg_where_repo() {
 
 _isg_where_machine() {
   local d
-  [ -n "${HOME:-}" ] || { echo "scope=none"; return 0; }
+  [ -n "${HOME:-}" ] || { echo "scope=none"; echo "set=0"; return 0; }
   _isg_machine_read walk
   echo "scope=${m_scope:-none}"
+  echo "set=$m_set"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   [ "$m_fallback" != 1 ] || echo "fallback=1"
@@ -729,11 +817,24 @@ case "${1:-}" in
     # governs every commit while `--global` reports "unset" (so this used to overwrite it, or say
     # "nothing to unwire"). m_scope/m_origin name where $existing came from.
     existing_global="$(git config --global core.hooksPath 2>/dev/null || true)"
+    # dir #748 S4-1 / dir #684 (B27): "set" is the read's EXIT STATUS, never a non-empty value — an empty
+    # `hooksPath =` is set (it turns every hook off), and so is a record holding the empty string. $m_set /
+    # $m_novalue come from the machine-wide read below, $rec_set from the record's own read.
     # The install also walks the conditional [includeIf] includes (dir #717); --uninstall never reads or
     # writes one — its --unset gives a conditional setting its trees back on its own.
     if [ "$uninstall" = 1 ]; then _isg_machine_read; else _isg_machine_read walk; fi
     existing="$m_value"
-    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null || true)"
+    # How the existing value reads in a message (the empty value is a value, so it is named, not shown as nothing).
+    existing_desc="'$existing'"
+    [ -n "$existing" ] || existing_desc="the empty value (it turns git's hooks off)"
+    [ "$m_novalue" != 1 ] || existing_desc="no value at all (a bare \`hooksPath\` line)"
+    rec_set=0
+    recorded="$(git config --global "$isg_displaced_key" 2>/dev/null)" && rec_set=1 || recorded=""
+    # A bare `displacedHooksPath` line (hand-edited or merged) reads like an empty record, and restoring "" would
+    # turn every hook off though nothing was displaced: it records nothing. Left in place, never written to here —
+    # a refusal below must stay "Nothing was changed", and a record may sit beside it (the several-values guard
+    # below still counts every value).
+    if [ "$rec_set" = 1 ] && [ -z "$recorded" ] && _isg_valueless "$isg_displaced_key" config --global; then rec_set=0; fi
     # One record, one value: several (a dotfiles merge, a hand --add) would let the never-overwrite rule
     # below compare against just the last one and then --replace-all/--unset-all drop the others unseen.
     if [ "$( { git config --global --get-all "$isg_displaced_key" 2>/dev/null || true; } | wc -l | tr -d ' ')" -gt 1 ]; then
@@ -759,12 +860,12 @@ case "${1:-}" in
         echo "  there yourself. Nothing was changed." >&2
         exit 3
       fi
-      if [ "$own_global" != 1 ] && [ -z "$existing" ]; then
+      if [ "$own_global" != 1 ] && [ "$m_set" != 1 ]; then
         echo "secret-guard: no global core.hooksPath is set — nothing to unwire."
         # A record with nothing wired describes a wiring that is already gone (hooksPath unset by
         # hand after a --force): name it, so the user can set it back, and drop it, so no later run
         # restores a path the user had already removed.
-        if [ -n "$recorded" ]; then
+        if [ "$rec_set" = 1 ]; then
           echo "  Dropping the stale record $isg_displaced_key='$recorded' (a hooksPath an earlier --force"
           echo "  displaced). Keel is not wired, so it is not restored — set it back by hand if you want it."
           git config --global --unset-all "$isg_displaced_key"
@@ -772,19 +873,19 @@ case "${1:-}" in
         exit 0
       fi
       if [ "$own_global" != 1 ]; then
-        echo "secret-guard: the global core.hooksPath is '$existing'$src_note, not Keel's ($dir) — not touching it." >&2
-        [ -n "$recorded" ] && echo "  ($isg_displaced_key still records '$recorded'.)" >&2
+        echo "secret-guard: the global core.hooksPath is $existing_desc$src_note, not Keel's ($dir) — not touching it." >&2
+        [ "$rec_set" != 1 ] || echo "  ($isg_displaced_key still records '$recorded'.)" >&2
         echo "  Nothing was changed." >&2
         exit 3
       fi
       # A record that names Keel's own dir (however spelled) displaced nothing: restoring it would leave
       # the guard wired while reporting it unwired. Treat it as no record.
-      if [ -n "$recorded" ] && _isg_same_dir "$recorded" "$dir"; then
+      if [ "$rec_set" = 1 ] && _isg_same_dir "$recorded" "$dir"; then
         echo "secret-guard: $isg_displaced_key named Keel's own dir ('$recorded') — dropping it; nothing to restore."
         git config --global --unset-all "$isg_displaced_key"
-        recorded=""
+        recorded="" rec_set=0
       fi
-      if [ -n "$recorded" ]; then
+      if [ "$rec_set" = 1 ]; then
         # A global hooksPath naming a missing dir makes git skip every repo's own hooks, silently —
         # never restore one. (A relative value names a dir per repo and can't be checked here.)
         r="$(_isg_norm_path "$recorded")"
@@ -811,11 +912,17 @@ case "${1:-}" in
     fi
     # Same rule for the machine-global slot: don't replace a hooksPath the user already set to something
     # of their own. (install.sh already guards this before delegating; this protects direct callers too.)
-    displaced=""
-    if [ -n "$existing" ] && [ "$is_ours" != 1 ]; then
-      displaced="$existing"
+    displaced="" displaced_set=0
+    if [ "$m_set" = 1 ] && [ "$is_ours" != 1 ]; then
+      displaced="$existing" displaced_set=1
+      # A hooksPath with no value at all (`hooksPath` without `=`) cannot be recorded faithfully: reading it
+      # back would answer like the empty value. Refused even with --force.
+      if [ "$m_novalue" = 1 ]; then
+        echo "secret-guard: the global core.hooksPath$src_note has no value (a bare \`hooksPath\` line, no \`=\`) — fix or remove that line, then re-run. Nothing was changed." >&2
+        exit 3
+      fi
       if [ "$force" != 1 ]; then
-        echo "secret-guard: a global core.hooksPath is already set to '$existing'$src_note — not clobbering it." >&2
+        echo "secret-guard: a global core.hooksPath is already set to $existing_desc$src_note — not clobbering it." >&2
         echo "  A copy vendored into a repo would be ignored while it stands. Re-run with --force to replace it" >&2
         echo "  (the old value is recorded; --uninstall restores it), or give one repo its own hooks dir:" >&2
         echo "    git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then install-secret-guard.sh <repo>" >&2
@@ -824,7 +931,7 @@ case "${1:-}" in
       fi
       # --force records what it displaces — and, like the hook backups (dir #625), never overwrites
       # an earlier record of a DIFFERENT path: that one is the only trace of what was there first.
-      if [ -n "$recorded" ] && ! _isg_same_dir "$recorded" "$existing"; then
+      if [ "$rec_set" = 1 ] && ! _isg_same_dir "$recorded" "$existing"; then
         echo "secret-guard: $isg_displaced_key already records an earlier displaced hooksPath, '$recorded';" >&2
         echo "  --force would replace that record with '$existing'. Restore or clear it" >&2
         echo "  (git config --global --unset-all $isg_displaced_key), then re-run with --force. Nothing was changed." >&2
@@ -861,9 +968,9 @@ case "${1:-}" in
     # The record goes in BEFORE core.hooksPath is repointed: if the repoint then fails, the record still
     # equals the live value, which a re-run accepts. A stale record (nothing displaced, Keel not wired
     # — see the --uninstall arm) is named before it is dropped, so a failed write never loses it unseen.
-    if [ -n "$displaced" ]; then
+    if [ "$displaced_set" = 1 ]; then
       git config --global --replace-all "$isg_displaced_key" "$displaced"
-    elif [ -z "$existing" ] && [ -n "$recorded" ]; then
+    elif [ "$m_set" != 1 ] && [ "$rec_set" = 1 ]; then
       echo "secret-guard: dropping the stale record $isg_displaced_key='$recorded' — Keel was not wired, so"
       echo "  this install displaces nothing and a later --uninstall must not restore it."
       git config --global --unset-all "$isg_displaced_key"
@@ -881,8 +988,8 @@ case "${1:-}" in
         exit 3
       fi
     fi
-    if [ -n "$displaced" ]; then
-      echo "secret-guard: replaced the global core.hooksPath '$displaced' (--force); the old value is"
+    if [ "$displaced_set" = 1 ]; then
+      echo "secret-guard: replaced the global core.hooksPath $existing_desc (--force); the old value is"
       echo "  recorded in git config --global $isg_displaced_key — install-secret-guard.sh --global --uninstall restores it"
     fi
     echo "secret-guard: wired machine-global at $dir (git config --global core.hooksPath)"

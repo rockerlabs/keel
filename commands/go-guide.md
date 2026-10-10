@@ -26,12 +26,13 @@ screenshot path, a named person's sign-off. "Done", "looks right" and "should wo
 ## Actions
 
 **I1 — reconcile.** Before you change anything:
-0. Handoff note: run `<keel-checkout>/tools/go-handoff.sh read "<ticket>"` from the project (as `/polish` runs its
-   tools; `<ticket>` is the id as the resolved heading spells it, without a trailing `.`, always in quotes; spec mode:
-   the file name without `.md`; ad-hoc work: skip). Found → a hint, live files win: each `done` item you re-prove live
+0. Handoff note: run `<keel-checkout>/tools/go-handoff.sh read "<ticket>"` from the project (as `/polish` does;
+   `<ticket>` is the id as the resolved heading spells it, without a trailing `.`, always in quotes; spec mode:
+   the file name without `.md`; ad-hoc work: skip). Found → a hint, live files win: each `done` item you re-prove
    stays done, unbuilt; `next` leads the change list. A `branch:` or `worktree:` not yours that still exists holds the
-   predecessor's uncommitted work → ask the operator, writing nothing first: continue there (absolute paths, `git -C`)
-   or go fresh. No note → say so, go on. The tool fails → say so once, make no more helper calls.
+   predecessor's uncommitted work → make step 4's offer (resume there, fresh branch, another ticket), writing
+   nothing first, unless step 4 already did. No note → say so, go on. The tool fails → say so once, make no more
+   helper calls.
 1. Read every live file the spec names. The spec is a snapshot; where it and the live file disagree,
    the file is the truth and the gap is an escape (I5).
 2. Walk the spec's Impact map, row by row (no Impact map → skip this item; say so). "changed in the same PR" (or in a PR this ticket names) → put it on your change list.
@@ -67,10 +68,10 @@ Result: every change-list item done, its checks green.
 1. Re-read the spec's rules one by one. A rule nothing in your change implements → back to I3.
 2. Seams. Others' PRs merged while you built can falsify your diff.
    Commit your work, `git fetch`, rebase on `origin/<default>` (merge if pushed), then:
-   a. Their claims: `awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}' CHANGELOG.md`
-      (no changelog → skip). For each line that states a number: name the set it counts, then count that set on
-      your tree with the command that derives it. A different number is falsified, even when every member you
-      added conforms. For each "every"/"both" set, is your new member in it?
+   a. Their claims: `awk 'FNR==1{p=(FILENAME!="CHANGELOG.md")} /^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"FNR": "$0}' CHANGELOG.md $(find changelog.d -name '[a-z0-9]*.md' 2>/dev/null)`
+      (no changelog → skip). For each line stating a number: name the set it counts, then count it on
+      your tree with the command that derives it. A different number is falsified, even when your
+      members conform. For each "every"/"both" set, is your new member in?
    b. Their lists: `git diff origin/<default>...HEAD | grep -E '^\+[[:space:]]*(\.|source)[[:space:]].*lib/'` lists the
       libs you newly source; add every lib you edit. For each, `grep -rl <its file name> tests tools`; in each hit,
       find the loop, list or comment that names its other consumers: is yours in it, even if yours conforms?

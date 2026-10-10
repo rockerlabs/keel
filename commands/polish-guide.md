@@ -3,11 +3,12 @@ description: The /polish rare-branch guide — convergence rounds, the depth dia
 user-invocable: false
 ---
 `/polish` sent you here from one of its steps. Where this guide and `polish.md` (the core) disagree, the
-core wins. Every paragraph below is carried over from the pre-split `polish.md` unchanged: each section
-holds the whole text of its step, so a rule the core only condenses is here in full. The one exception is
-step 5's K2 block (the review run by a fresh-context subagent), which lives in the core verbatim and is not
-repeated here; where a paragraph below says K2 "below", it means that block in the core. Find the section the
-core named, follow it, then go back to the core's next step.
+core wins. Each section below holds its step's rare-branch text, carried over from the pre-split `polish.md`
+and amended in place since, so a rule the core only condenses is here in full. The core can also hold text this
+guide lacks: step 5's K2 block (the review run by a fresh-context subagent) lives only there — where a paragraph
+below says K2 "below", it means that block in the core — and so do some rules added to the core after the split
+(step 3's timeout, step 6's `skipped:--no-test` receipt). Find the section the core named, follow it, then go back
+to the core's next step.
 
 ## Preamble — the contract, the two ordering rules
 
@@ -98,7 +99,8 @@ Steps, in order:
    are added). Concretely for this repo: a moved bullet in `BACKLOG.md` (gitignored, untracked, never in
    the tree at all) or a change to one of the handful of genuinely test-free docs is exempt; a CHANGELOG
    paragraph is, in THIS repo, actually NOT exempt (`tests/test_doc_figures.sh` checks its size), so
-   don't expect that specific case to skip a test run here even though it motivated the ticket.
+   don't expect that specific case to skip a test run here even though it motivated the ticket. A path
+   under `changelog.d/` is never exempt either: the gate keeps it in the hash by directory (dir #744).
 
    **Not-exempt does not mean full-suite (dir #427).** A file can fail the exemption test above
    (something under `tests/` mentions its basename) while still being read by only ONE test file. Run
@@ -115,7 +117,8 @@ Steps, in order:
    its real content (`test_doc_figures.sh`, `test_changelog_section.sh`, `test_release_history.sh`) —
    so a CHANGELOG-only fix commit still needs the full suite under this rule as written. Scoping a
    multi-file mapping down safely is a separate, harder problem this ticket leaves open, not something
-   this rule attempts. The sha bound at step 3 is still the commit's sha either way
+   this rule attempts. A `changelog.d/` path takes the full-run branch too (`tools/self/doctor.sh` reads it
+   by glob, so no one test file maps to it). The sha bound at step 3 is still the commit's sha either way
    (`_stamp_tests_outcome` doesn't care what produced the run), so step 8's comparison is unaffected;
    this changes WHAT runs, never WHETHER a run happens.
 

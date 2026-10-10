@@ -31,7 +31,8 @@
 # untrustworthy as a tree nobody chose.
 #
 # Class assignment (ledger.md) is MECHANICAL, first-match-wins, never judgment:
-#   1. CHANGELOG.md, or a path in DELTA_HISTORICAL           -> prose-historical
+#   1. CHANGELOG.md, a changelog.d/*.md fragment (dir #744; not its README.md), or a path in
+#      DELTA_HISTORICAL                                      -> prose-historical
 #   2. a path containing a DELTA_INVARIANT_PATHS substring   -> code-invariant
 #   3. a path starting with tests/                           -> test
 #   4. a *.sh/*.yml/*.yaml path, or one executable at <head-rev> -> code
@@ -250,6 +251,14 @@ session_cap="$(sanitize_nonneg_int "${DELTA_SESSION_FILES:-12}" 12)"
 is_historical() {
   local h
   for h in "${historical[@]}"; do [ "$h" = "$1" ] && return 0; done
+  # dir #744 B32: a changelog.d/ fragment is the changelog's history text in another file, so it takes
+  # CHANGELOG.md's class (README.md there is a living doc, not history). It follows the knob: a
+  # DELTA_HISTORICAL that drops CHANGELOG.md drops its fragments with it.
+  case "$1" in
+    changelog.d/README.md) ;;
+    changelog.d/*.md)
+      for h in "${historical[@]}"; do [ "$h" = "CHANGELOG.md" ] && return 0; done ;;
+  esac
   return 1
 }
 is_invariant() {
@@ -323,9 +332,24 @@ awk -F'\t' -v prmap="$out_dir/file-pr-map.tsv" \
 # arrays, not temp files: bash 3.2 (this repo's own /bin/bash on stock macOS) has them, and each
 # array preserves delta-files.txt's own (already sorted) insertion order, same as a file would.
 bucket1=(); bucket2=(); bucket3=()
+# dir #744 B32: every changelog.d/ fragment is ONE unit, never a row each — a release carries ~30, and 30
+# prose rows would bury the real prose in the ledger. They fold into a single prose-historical row
+# `changelog.d/ (N files)` carrying the union of their PRs, appended after the other prose rows.
+frag_files=0; frag_prs=""; frag_n=0
 while IFS="$TAB" read -r f n exe prs; do
   [ -n "$f" ] || continue
   class="$(classify "$f" "$exe")"
+  if [ "$class" = prose-historical ]; then
+    case "$f" in
+      changelog.d/README.md) ;;
+      changelog.d/*.md)
+        frag_files=$((frag_files + 1))
+        for pr in $prs; do
+          case " $frag_prs " in *" $pr "*) ;; *) frag_prs="$frag_prs${frag_prs:+ }$pr"; frag_n=$((frag_n + 1)) ;; esac
+        done
+        continue ;;
+    esac
+  fi
   row="$f$TAB$class$TAB$n$TAB$prs"
   # prose-historical is checked FIRST, even ahead of the seam test: CHANGELOG.md is a seam on
   # nearly every real run (every PR that ships user-visible change touches it), and the read-order
@@ -339,6 +363,9 @@ while IFS="$TAB" read -r f n exe prs; do
     bucket2+=("$row")
   fi
 done < "$joined"
+if [ "$frag_files" -gt 0 ]; then
+  bucket3+=("changelog.d/ ($frag_files files)${TAB}prose-historical${TAB}${frag_n}${TAB}${frag_prs}")
+fi
 
 # `[ "${#bucketN[@]}" -gt 0 ] &&`, not a bare `"${bucketN[@]}"` expansion: under `set -u`, expanding
 # an EMPTY array is a hard error on bash < 4.4 (this repo's own stock-macOS bash is 3.2) — the length

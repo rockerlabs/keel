@@ -48,9 +48,10 @@ literally who typed the launch command. See [`docs/release-management.md`](relea
 for the full requirement.
 
 **A launch-time requirement that follows from the same soft form:** whoever launches a real worker
-session this way can surface a model/effort recommendation, but the operator remains the one who sets
-it — that is a manual gesture on the freshly spawned session, not something a launcher can preset. So
-the launcher verifies, immediately after launch, the session's actual model and effort against the
+session this way can surface a model/effort recommendation. A direct launch (`start_session`) can preset
+both; a task chip or any hand-off the operator starts leaves them to the operator's manual gesture on the
+freshly spawned session (`docs/release-management.md` R3 has the measured difference). Either way the
+launcher verifies, immediately after launch, the session's actual model and effort against the
 recommendation — via harness session metadata where the harness exposes it, else by asking the
 operator to confirm — and on a mismatch, flags the operator at once, before the worker spends
 anything. This is required, not advisory: a real run launched two workers straight onto a harness
