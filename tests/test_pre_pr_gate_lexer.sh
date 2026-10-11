@@ -502,6 +502,10 @@ echo $(coproc cat file) && git status
 echo $(time -p ls) && gh pr view
 @ C74aq allow
 echo "$(echo case)" && git status
+@ C74ar allow
+echo $(echo "case" x in y) && git status
+@ C74as allow
+echo $(echo case x "in" y) && git status
 @ C74ag allow
 echo $(case x in (a) echo 1;; esac) && git status
 @ C74j push

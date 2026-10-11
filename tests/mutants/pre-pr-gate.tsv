@@ -314,8 +314,8 @@ L303	tools/pre-pr-gate.sh	casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0	
 L304	tools/pre-pr-gate.sh	if (cty[s] == "SUB") { casen[s] += seg_kw(s)	if (cty[s] == "TOP") { casen[s] += seg_kw(s)	B10(m): the case count is kept per $(…)
 L305	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "(") return -1	B10(m): an esac after | is a pattern, not the end of the case
 L306	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "|") return -1	B10(m): an esac after ( is a pattern, not the end of the case
-L308	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	if (stok[s, i] == "case" && i < sntok[s]) return 1	B10(m): a bare case word (no subject) opens one too
 L307	tools/pre-pr-gate.sh	  for (j = i + 1; j < sntok[s]; j++) {	  for (j = i + 1; j < 0; j++) {	B10(m): a case after other words, with its in after it, opens one
+L308	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	if (stok[s, i] == "case" && i < sntok[s]) return 1	B10(m): a bare case word (no subject) opens one too
 L309	tools/pre-pr-gate.sh	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1	for (k = j + 1; k <= sntok[s]; k++) return 1	B10(m): a case word with no in after it opens none
 L310	tools/pre-pr-gate.sh	if (stok[s, j] != "case" || stokm[s, j] !~ /^u+$/) continue	if (stok[s, j] != "case") continue	B10(m): a quoted case word opens none
 L311	tools/pre-pr-gate.sh	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in") return 1	B10(m): a quoted in does not complete a case header
