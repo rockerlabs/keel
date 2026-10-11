@@ -52,6 +52,8 @@ self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die_args() { echo "changelog-fragments.sh: $1" >&2; echo "usage: changelog-fragments.sh [--repo DIR] [--check | --list]" >&2; exit 2; }
 
+die_unreadable() { echo "changelog-fragments.sh: could not list changelog.d/ — $1" >&2; exit 2; }
+
 repo_dir="$(cd "$self_dir/../.." && pwd)"
 check=0
 list=0
@@ -81,9 +83,15 @@ top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null || true)"
 real_dir="$(cd "$repo_dir" && pwd -P)"
 if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$real_dir" ]; then
   # -z: no C-quoting of unusual names. A newline inside a name is not supported (not kebab-case either).
-  while IFS= read -r -d '' path; do
+  # Captured with its status checked, not read through `< <(…)`, which hides a failing ls-files: an empty list
+  # would then read as "no fragments" and the cut would write the release section without them. The NUL
+  # separators become newlines inside the pipeline (pipefail carries ls-files' status out of the capture).
+  listing="$(git -C "$repo_dir" ls-files -z -- changelog.d | tr '\0' '\n')" \
+    || die_unreadable "git ls-files failed in $repo_dir"
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
     entries="$entries${path#changelog.d/}"$'\n'
-  done < <(git -C "$repo_dir" ls-files -z -- changelog.d)
+  done <<< "$listing"
 else
   entries="$(ls "$frag_dir")"
 fi
