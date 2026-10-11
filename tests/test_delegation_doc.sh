@@ -216,4 +216,10 @@ done
 check_absent "delegation.md's deny recipe never denies the broad Bash(git checkout *) (polish.md tells agents to prefer git checkout -b)" \
   "$(cat "$doc")" 'Bash(git checkout *)'
 
+# --- dir #674 (A4, slice 1): item 3 says the rails hook is built and keeps the unbuilt half honest ----------------
+pin "delegation.md item 3 names dir #674 (dir #559's B1, built)" "$doc" 'dir #674' "expected item 3 to say dir #559's B1 is built as dir #674"
+pin "delegation.md item 3 keeps 'has not built' for dir #675 alone" "$doc" 'has not built' "expected item 3 to keep the unbuilt half of the pair honest (dir #675)"
+pin "delegation.md names the kill switch for the injection" "$doc" 'KEEL_SUBAGENT_RAILS=off' "expected the kill switch next to the injection (dir #674 F3)"
+check_absent "delegation.md no longer points at a closed ticket as K2's possible future floor (dir #676)" "$(cat "$doc")" 'dir #676 is its possible future floor'
+
 summary

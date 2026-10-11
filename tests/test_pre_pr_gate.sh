@@ -3887,4 +3887,78 @@ check_contains "dir #583: the header names the sentinel's repo+branch key" "$gat
 check_contains "dir #583: the header names the trace's repo-only key" "$gate_head" "keyed by repo only (dir #80)"
 check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "a sandboxed shell can keep its own private view of"
 
+# ── dir #674 (spec 674-subagent-floor, A1): `subagent-rails` — the SubagentStart hook that hands the worker
+# rails to a subagent. Reads its event on stdin, prints at most ONE JSON object, always exits 0, and never
+# reads gate state (so it is exempt from the CLI-mode $HOME guard). The expected text is built here from the
+# same pieces the spec's B3/B4 name: the preface, a blank line, and the block exactly as
+# `$(extract_rails_block docs/delegation.md)` yields it (the substitution drops the final newline).
+sr_preface='Keel worker rails — injected into this subagent by keel'"'"'s SubagentStart hook (dir #674), verbatim from docs/delegation.md "Worker rails".'
+sr_block="$(extract_rails_block "$REPO_ROOT/docs/delegation.md")"
+sr_expect="${sr_preface}"$'\n\n'"${sr_block}"
+check_ne "dir #674: the rails block this section compares against is non-empty" "" "$sr_block"
+# sr_run STDIN-TEXT [env-assignment…] → OUT (stdout+stderr), STATUS. The hook's own stdin is the text.
+sr_run() {
+  local in="$1"; shift
+  OUT="$(printf '%s' "$in" | env "$@" bash "$gate" subagent-rails 2>&1)"
+  STATUS=$?
+}
+sr_ev() { jq -nc --arg t "$1" '{hook_event_name:"SubagentStart",agent_id:"a1",agent_type:$t}'; }
+for t in general-purpose Explore Plan claude claude-code-guide; do
+  sr_run "$(sr_ev "$t")"
+  check_status "dir #674: subagent-rails exits 0 for $t" 0 "$STATUS"
+  check_eq "dir #674: $t gets exactly one JSON object" "1" "$(printf '%s' "$OUT" | jq -s 'length' 2>/dev/null)"
+  check_eq "dir #674: $t's event name is SubagentStart" "SubagentStart" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)"
+  got="$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+  check_eq "dir #674: $t's additionalContext is the preface, a blank line, then the block byte-for-byte" "$sr_expect" "$got"
+done
+sr_run '{"hook_event_name":"SubagentStart","agent_id":"a1"}'
+check_eq "dir #674: a payload without agent_type gets the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+sr_run '{"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":""}'
+check_eq "dir #674: an EMPTY agent_type gets the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+sr_run 'not json'
+check_status "dir #674: unparseable stdin still exits 0" 0 "$STATUS"
+check_eq "dir #674: unparseable stdin gets the block (a prose nudge errs toward delivery)" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+for t in design-reviewer keel-polish-reviewer workflow-subagent statusline-setup my-agent general-purpose-x Explorer \
+         'Explore Plan' 'Plan claude' 'general-purpose Explore'; do
+  sr_run "$(sr_ev "$t")"
+  check_status "dir #674: subagent-rails exits 0 for $t" 0 "$STATUS"
+  check_eq "dir #674: $t gets nothing (not one of the five types)" "" "$OUT"
+done
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS=off
+check_status "dir #674: the kill switch exits 0" 0 "$STATUS"
+check_eq "dir #674: KEEL_SUBAGENT_RAILS=off prints nothing" "" "$OUT"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS=on
+check_eq "dir #674: any other KEEL_SUBAGENT_RAILS value is not the switch" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+# The range markers: a missing file, a copy without the end marker, a copy without the start marker.
+sr_copy="$SANDBOX/sr-delegation-copy.md"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$SANDBOX/sr-no-such-file.md"
+check_status "dir #674: a missing rails file exits 0" 0 "$STATUS"
+check_eq "dir #674: a missing rails file prints nothing" "" "$OUT"
+grep -v '^[[:space:]]*- DELEGATION RUN:' "$REPO_ROOT/docs/delegation.md" > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: a copy without the DELEGATION RUN marker prints nothing (an awk range with one marker would run to EOF)" "" "$OUT"
+grep -v '^[[:space:]]*- You are read-only:' "$REPO_ROOT/docs/delegation.md" > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: a copy without the read-only marker prints nothing" "" "$OUT"
+printf 'DELEGATION RUN: first\n- You are read-only: second\n' > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: markers in the wrong order print nothing" "" "$OUT"
+# The override file is honoured when well-formed (the suite-only knob, proven live so the cases above bind).
+printf 'lead\n- You are read-only: X\n  - y\n- DELEGATION RUN: Z\ntail\n' > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: KEEL_SUBAGENT_RAILS_FILE selects the block from the named file" \
+  "${sr_preface}"$'\n\n'"- You are read-only: X"$'\n'"  - y"$'\n'"- DELEGATION RUN: Z" \
+  "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+# No jq: nothing printed, exit 0. A PATH farm without jq; bash is named by absolute path.
+sr_farm="$(mktemp -d "$SANDBOX/srfarm.XXXXXX")"; path_farm "$sr_farm" jq
+OUT="$(printf '%s' "$(sr_ev general-purpose)" | env PATH="$sr_farm" "$(type -P bash)" "$gate" subagent-rails 2>&1)"; STATUS=$?
+check_status "dir #674: without jq the hook exits 0" 0 "$STATUS"
+check_eq "dir #674: without jq the hook prints nothing" "" "$OUT"
+# The CLI-mode $HOME guard exempts this subcommand: it reads no gate state, so an unusable HOME still injects.
+sr_run "$(sr_ev general-purpose)" HOME="$SANDBOX/no-such-home-674"
+check_status "dir #674: an unusable HOME still exits 0" 0 "$STATUS"
+check_eq "dir #674: an unusable HOME still injects the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+OUT="$(printf '%s' "$(sr_ev general-purpose)" | env -u HOME bash "$gate" subagent-rails 2>&1)"; STATUS=$?
+check_eq "dir #674: an unset HOME still injects the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+
 summary

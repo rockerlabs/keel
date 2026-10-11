@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# install-pre-pr-gate.sh — wires the /polish gate's 6 hooks into a project's (or the machine-global)
+# install-pre-pr-gate.sh — wires the /polish gate's 7 hooks into a project's (or the machine-global)
 # Claude Code settings.json. dir #68: this is the opt-in step that makes the gate real for an adopter,
 # separate from install.sh (which now ships polish.md unconditionally but never wires a hook itself).
 # The 5th hook (SubagentStop/keel-polish-reviewer, dir #70, matcher moved by dir #413 slice 2) traces the
 # independent-agent-review leg. The 6th
 # hook (PostToolUse/AskUserQuestion, dir #88) traces step 5(a)'s MANDATORY review-reminder dialog —
-# shares the PostToolUse event with the Skill matcher, so FIVE_EVENTS below still names 5 distinct event
-# NAMES even though there are now 6 matcher entries across them.
+# shares the PostToolUse event with the Skill matcher, so GATE_EVENTS below names 6 distinct event
+# NAMES even though there are now 7 matcher entries across them. The 7th hook (SubagentStart, dir #674) hands
+# the worker rails to a subagent when it starts.
 #
 # The installer edits settings.json with jq, so most of these tests need jq. The busybox/Alpine CI job
 # installs it (dir #220), so this file runs for real there too, not skip-only. Without jq the installer
@@ -19,7 +20,7 @@
 
 installer="$REPO_ROOT/tools/install-pre-pr-gate.sh"
 gate="$REPO_ROOT/tools/pre-pr-gate.sh"
-FIVE_EVENTS='PreToolUse SessionStart PostToolUse UserPromptExpansion SubagentStop'
+GATE_EVENTS='PreToolUse SessionStart PostToolUse UserPromptExpansion SubagentStop SubagentStart'
 
 if ! command -v jq >/dev/null 2>&1; then
   pass "jq not available — install-pre-pr-gate tests skipped (the installer requires jq to edit settings.json)"
@@ -38,12 +39,12 @@ run "$installer" --global /some/repo
 check_status "--global + a repo path -> exit 2 (rejected)" 2 "$STATUS"
 check_contains "rejection names the conflict" "$OUT" "doesn't take a repo path"
 
-# --- (a) fresh install: all 5 hooks land, pointing at THIS checkout's gate by absolute path ---------
+# --- (a) fresh install: all 7 hooks land, pointing at THIS checkout's gate by absolute path ---------
 repo="$(new_repo)"
 run "$installer" "$repo"
 check_status "fresh install -> exit 0" 0 "$STATUS"
 check_file "settings.json created" "$repo/.claude/settings.json"
-for ev in $FIVE_EVENTS; do
+for ev in $GATE_EVENTS; do
   check_contains "wires $ev" "$OUT" "+    $ev"
 done
 sj="$(cat "$repo/.claude/settings.json")"
@@ -65,7 +66,7 @@ check_status "PostToolUse carries both matchers (Skill + AskUserQuestion), not a
 # --- (a2) idempotent re-run: same content, reported as already-wired, no duplicate entries ----------
 run "$installer" "$repo"
 check_status "re-run -> exit 0" 0 "$STATUS"
-for ev in $FIVE_EVENTS; do
+for ev in $GATE_EVENTS; do
   check_contains "re-run reports $ev already wired" "$OUT" "=    $ev"
 done
 n="$(grep -c '"matcher": "Bash"' "$repo/.claude/settings.json")"
@@ -177,13 +178,13 @@ foreign_cmd="echo foreign-subagent-hook"
 nhooks() { jq '[.hooks[][] | .hooks[]] | length' "$1"; }
 no_empty_hooks() { jq -e '[.hooks[][] | (.hooks // [] | length)] | all(. > 0)' "$1" >/dev/null 2>&1 && echo yes || echo no; }
 
-# (a) fresh: the SubagentStop matchers are exactly ["keel-polish-reviewer"], 6 hook entries, no `retired` line.
+# (a) fresh: the SubagentStop matchers are exactly ["keel-polish-reviewer"], 7 hook entries, no `retired` line.
 a_repo="$(new_repo)"
 run "$installer" "$a_repo"
 check_status "A6(a): fresh install -> exit 0" 0 "$STATUS"
 check_status "A6(a): SubagentStop matchers are exactly [keel-polish-reviewer]" '["keel-polish-reviewer"]' \
   "$(jq -c '[.hooks.SubagentStop[].matcher]' "$a_repo/.claude/settings.json")"
-check_status "A6(a): 6 hook entries" 6 "$(nhooks "$a_repo/.claude/settings.json")"
+check_status "A6(a): 7 hook entries" 7 "$(nhooks "$a_repo/.claude/settings.json")"
 check_absent "A6(a): a fresh install prints no retired line" "$OUT" "retired"
 
 # (b1) legacy + a foreign hook INSIDE the same entry; (b2) the foreign hook in a SIBLING entry.
@@ -263,7 +264,7 @@ run "$installer" --uninstall "$u_repo"
 check_status "A6(d): --uninstall over a legacy-only settings -> exit 0" 0 "$STATUS"
 check_absent "A6(d): it does not say nothing-to-remove" "$OUT" "nothing to remove"
 check_status "A6(d): the legacy entry is gone" "null" "$(jq -c '.hooks.SubagentStop' "$u_repo/.claude/settings.json")"
-check_contains "A6(d): the counter counts current specs only (0 of 6)" "$OUT" "0 of 6 hook(s) removed"
+check_contains "A6(d): the counter counts current specs only (0 of 7)" "$OUT" "0 of 7 hook(s) removed"
 # ...and with a foreign hook on the legacy slot the foreign hook survives --uninstall.
 uf_repo="$(new_repo)"; mkdir -p "$uf_repo/.claude"
 jq -n --arg l "$legacy_cmd" --arg f "$foreign_cmd" \
@@ -274,9 +275,9 @@ check_status "A6(d): the foreign hook survives" 1 \
   "$(jq --arg f "$foreign_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$f)] | length' "$uf_repo/.claude/settings.json")"
 check_status "A6(d): our legacy command is gone" 0 \
   "$(jq --arg l "$legacy_cmd" '[.hooks.SubagentStop[].hooks[] | select(.command==$l)] | length' "$uf_repo/.claude/settings.json")"
-# a full install then --uninstall still reports the numerator as 6 of 6, never more.
+# a full install then --uninstall still reports the numerator as 7 of 7, never more.
 run "$installer" --uninstall "$a_repo"
-check_contains "A6(d): a full uninstall reports 6 of 6" "$OUT" "6 of 6 hook(s) removed"
+check_contains "A6(d): a full uninstall reports 7 of 7" "$OUT" "7 of 7 hook(s) removed"
 
 # --- (d) no jq on PATH -> snippet printed instead of a write, file untouched ------------------------
 farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$farm" jq
@@ -548,6 +549,41 @@ check_contains "A13: ...naming the project installer re-run" "$OUT" "install-pre
 run "$doctor" "$fullgate"
 check_absent "A13: project scope, migrated settings -> no W-GATE-REVIEW-MATCHER" "$OUT" "W-GATE-REVIEW-MATCHER"
 
+# --- dir #674, A3: W-GATE-SUBAGENT-RAILS — the gate is wired but no SubagentStart entry runs subagent-rails (a
+# gate installed before the 7th hook existed, then a pull): both halves, same shape as A13 above. ------------
+# machine-global, a retargeted home so the advice must carry --home.
+dh_norails="$SANDBOX/dh-no-subagent-rails"
+run "$REPO_ROOT/install.sh" --home "$dh_norails" --no-hooks
+run env KEEL_HOME="$dh_norails" "$installer" --global
+jq 'del(.hooks.SubagentStart)' "$dh_norails/settings.json" > "$dh_norails/settings.json.tmp" \
+  && mv "$dh_norails/settings.json.tmp" "$dh_norails/settings.json"
+run "$doctor" --install "$dh_norails"
+check_status "A3: W-GATE-SUBAGENT-RAILS is advisory only -> exit 0" 0 "$STATUS"
+check_contains "A3: gate wired with no SubagentStart entry -> W-GATE-SUBAGENT-RAILS" "$OUT" "W-GATE-SUBAGENT-RAILS"
+check_contains "A3: the advice names the installer with the --home flag when the home is retargeted" "$OUT" "install-pre-pr-gate.sh --home \"$dh_norails\""
+check_contains "A3: ...and says to restart the session" "$OUT" "then restart the session"
+run "$doctor" --install "$dh_wired"
+check_absent "A3: a fully wired settings -> no W-GATE-SUBAGENT-RAILS" "$OUT" "W-GATE-SUBAGENT-RAILS"
+# an unrelated SubagentStart hook (not ours) does not count as wired
+jq '.hooks.SubagentStart = [{matcher:"",hooks:[{type:"command",command:"echo someone-elses"}]}]' "$dh_norails/settings.json" > "$dh_norails/settings.json.tmp" \
+  && mv "$dh_norails/settings.json.tmp" "$dh_norails/settings.json"
+run "$doctor" --install "$dh_norails"
+check_contains "A3: a foreign SubagentStart hook is not ours -> still W-GATE-SUBAGENT-RAILS" "$OUT" "W-GATE-SUBAGENT-RAILS"
+# without jq doctor cannot structurally back a finding, so it stays silent (fail-open)
+run env PATH="$farm" "$doctor" --install "$dh_norails"
+check_absent "A3: no jq -> no W-GATE-SUBAGENT-RAILS guess" "$OUT" "W-GATE-SUBAGENT-RAILS"
+# the per-project half
+norails_proj="$(new_repo)"; clean_baseline "$norails_proj"
+run "$installer" "$norails_proj"
+jq 'del(.hooks.SubagentStart)' "$norails_proj/.claude/settings.json" > "$norails_proj/.claude/settings.json.tmp" \
+  && mv "$norails_proj/.claude/settings.json.tmp" "$norails_proj/.claude/settings.json"
+run "$doctor" "$norails_proj"
+check_status "A3: project scope: advisory only -> exit 0" 0 "$STATUS"
+check_contains "A3: project scope, no SubagentStart entry -> W-GATE-SUBAGENT-RAILS" "$OUT" "W-GATE-SUBAGENT-RAILS"
+check_contains "A3: ...naming the project installer re-run" "$OUT" "install-pre-pr-gate.sh $norails_proj"
+run "$doctor" "$fullgate"
+check_absent "A3: project scope, fully wired -> no W-GATE-SUBAGENT-RAILS" "$OUT" "W-GATE-SUBAGENT-RAILS"
+
 # --- regression: a checkout path containing a space still produces a working (single-token) command --
 sp_root="$(mktemp -d "$SANDBOX/space.XXXXXX")/space checkout"
 mkdir -p "$sp_root/tools"
@@ -625,12 +661,12 @@ check_status "--uninstall with nothing wired -> exit 0" 0 "$STATUS"
 check_contains "says there's nothing to remove" "$OUT" "nothing to remove"
 check_nofile "no settings.json was created by an uninstall run" "$urepo/.claude/settings.json"
 
-# --- (b) a full install, then --uninstall removes exactly the 6 hooks it wired ----------------------
+# --- (b) a full install, then --uninstall removes exactly the 7 hooks it wired ----------------------
 run "$installer" "$urepo"
 check_status "wiring the fixture -> exit 0" 0 "$STATUS"
 run "$installer" --uninstall "$urepo"
 check_status "--uninstall over a full install -> exit 0" 0 "$STATUS"
-for ev in $FIVE_EVENTS; do
+for ev in $GATE_EVENTS; do
   check_contains "removes $ev" "$OUT" "-    $ev"
 done
 usj="$(cat "$urepo/.claude/settings.json")"
@@ -654,7 +690,7 @@ run "$installer" --uninstall "$frepo2"
 check_status "--uninstall over a partly-foreign settings.json -> exit 0" 0 "$STATUS"
 check_contains "the foreign PreToolUse/Bash hook is reported as kept, not removed" "$OUT" "PreToolUse/Bash"
 check_contains "the still-wired command survives" "$(cat "$frepo2/.claude/settings.json")" "not-the-gate-anymore"
-# The other 5, untouched by the foreign edit, ARE exact matches and do come out.
+# The other 6, untouched by the foreign edit, ARE exact matches and do come out.
 check_absent "the untouched SessionStart hook is still removed" "$(cat "$frepo2/.claude/settings.json")" "rollout-check"
 
 # --- (e) foreign top-level content (e.g. permissions) survives untouched ----------------------------
@@ -737,5 +773,64 @@ check_status "the generated command parses (bash -n)" 0 "$STATUS"
 # rollout-check reads a JSON blob on stdin and exits 0 (jq present, see the file-top jq guard above).
 run bash -c "printf '{}' | $apcmd"
 check_status "the generated command actually runs (the hook fires)" 0 "$STATUS"
+
+# --- dir #674, A2: the 7th hook (SubagentStart -> subagent-rails). -----------------------------------------
+# (a) a fresh install wires it with the empty matcher, naming THIS checkout's gate.
+s7_repo="$(new_repo)"
+run "$installer" "$s7_repo"
+s7_sj="$s7_repo/.claude/settings.json"
+check_status "A2(a): fresh install -> exit 0" 0 "$STATUS"
+check_status "A2(a): 7 hook entries" 7 "$(jq '[.hooks[][] | .hooks[]] | length' "$s7_sj")"
+check_status "A2(a): SubagentStart has exactly one entry" 1 "$(jq '.hooks.SubagentStart | length' "$s7_sj")"
+check_status "A2(a): its matcher is the empty string" '""' "$(jq -c '.hooks.SubagentStart[0].matcher' "$s7_sj")"
+check_status "A2(a): its command is the gate's subagent-rails subcommand, by absolute path" \
+  "bash '$gate' subagent-rails" "$(jq -r '.hooks.SubagentStart[0].hooks[0].command' "$s7_sj")"
+check_contains "A2(a): the run reports it wired" "$OUT" "+    SubagentStart/ wired"
+
+# (b) a re-run over all seven writes NOTHING: the mtime is pinned to a fixed past, a marker one minute later
+# stands in for "now", and `find -newer` + the inode say whether the file was rewritten (portable: BSD, GNU,
+# busybox; `cmp` alone cannot tell a rewrite with the same bytes).
+s7_marker="$SANDBOX/s7-marker"
+touch -t 200001010000 "$s7_sj"; touch -t 200001010001 "$s7_marker"
+s7_inode="$(inode_of "$s7_sj")"
+run "$installer" "$s7_repo"
+check_status "A2(b): re-run -> exit 0" 0 "$STATUS"
+check_eq "A2(b): the re-run did not rewrite settings.json (nothing newer than the marker)" "" "$(find "$s7_sj" -newer "$s7_marker")"
+check_eq "A2(b): ...and it is the same inode" "$s7_inode" "$(inode_of "$s7_sj")"
+check_eq "A2(b): no backup was made" "0" "$(find "$s7_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+check_status "A2(b): every one of the seven reads SAME" 7 "$(grep -c 'already wired (up to date)' <<<"$OUT" || true)"
+check_status "A2(b): still exactly one SubagentStart entry (no second one appended)" 1 "$(jq '.hooks.SubagentStart | length' "$s7_sj")"
+
+# (c) an existing six-hook install (today's shape, built here over THIS checkout's gate so every command reads
+# SAME rather than STALE): SubagentStart is added, the six read SAME, no backup.
+s6_repo="$(new_repo)"; mkdir -p "$s6_repo/.claude"
+jq -n --arg gate "$gate" '
+  def c($sub): {type:"command", command: ("bash " + ($gate|@sh) + $sub)};
+  {hooks:{
+    PreToolUse:[{matcher:"Bash",hooks:[c("")]}],
+    SessionStart:[{matcher:"startup",hooks:[c(" rollout-check")]}],
+    PostToolUse:[{matcher:"Skill",hooks:[c(" skill-trace")]},{matcher:"AskUserQuestion",hooks:[c(" skill-trace")]}],
+    UserPromptExpansion:[{matcher:"code-review",hooks:[c(" skill-trace")]}],
+    SubagentStop:[{matcher:"keel-polish-reviewer",hooks:[c(" skill-trace")]}]}}' > "$s6_repo/.claude/settings.json"
+run "$installer" "$s6_repo"
+check_status "A2(c): a six-hook install, re-run -> exit 0" 0 "$STATUS"
+check_status "A2(c): the six read SAME" 6 "$(grep -c 'already wired (up to date)' <<<"$OUT" || true)"
+check_contains "A2(c): SubagentStart is the one that is added" "$OUT" "+    SubagentStart/ wired"
+check_status "A2(c): 7 hook entries after" 7 "$(jq '[.hooks[][] | .hooks[]] | length' "$s6_repo/.claude/settings.json")"
+check_eq "A2(c): no backup was made" "0" "$(find "$s6_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+
+# (d) --uninstall after (a) removes all seven and leaves no SubagentStart key behind.
+run "$installer" --uninstall "$s7_repo"
+check_status "A2(d): --uninstall -> exit 0" 0 "$STATUS"
+check_contains "A2(d): it reports 7 of 7 removed" "$OUT" "7 of 7 hook(s) removed"
+check_status "A2(d): no SubagentStart key is left" "false" "$(jq '.hooks | has("SubagentStart")' "$s7_sj")"
+
+# (e) with jq hidden, the printed snippet carries the new entry.
+s7_farm="$(mktemp -d "$SANDBOX/farm.XXXXXX")"; path_farm "$s7_farm" jq
+run env PATH="$s7_farm" "$installer" "$(new_repo)"
+check_contains "A2(e): the no-jq snippet has the SubagentStart event" "$OUT" '"SubagentStart"'
+check_contains "A2(e): ...wired to subagent-rails" "$OUT" "subagent-rails"
+run env PATH="$s7_farm" "$installer" --uninstall "$s6_repo"
+check_contains "A2(e): the no-jq uninstall hint names SubagentStart" "$OUT" "SubagentStart"
 
 summary

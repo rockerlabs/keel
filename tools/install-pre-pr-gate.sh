@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-pre-pr-gate — wire the /polish pre-PR gate into a project's Claude Code hooks (opt-in, per repo).
 #
-#   install-pre-pr-gate.sh <repo-path>       wire 6 hooks into <repo-path>/.claude/settings.json (project
+#   install-pre-pr-gate.sh <repo-path>       wire 7 hooks into <repo-path>/.claude/settings.json (project
 #                                            scope — the default; only sessions IN this repo are gated)
 #   install-pre-pr-gate.sh --global          wire into ~/.claude/settings.json instead — EVERY repo you
 #                                            open on this machine gets the gate, not just this one
@@ -11,7 +11,7 @@
 #                                            path — a moved checkout); backs up settings.json first
 #                                            (default: refuse that one case; a different hook on the same
 #                                            event+matcher needs no --force — it is appended beside)
-#   install-pre-pr-gate.sh --uninstall …     the reverse: remove exactly the 6 hooks this installer
+#   install-pre-pr-gate.sh --uninstall …     the reverse: remove exactly the 7 hooks this installer
 #                                            wired (byte-identical match only — a hook you or something
 #                                            else has since changed is left in place, named as kept)
 #
@@ -47,6 +47,13 @@
 # tools/pre-pr-gate.sh's own dir #88 header section for the full mechanism, including the arming rule
 # (the gate-side check stays inert until this hook is actually wired, avoiding a false-deny window
 # between a `git pull` picking up the check and this installer re-wiring the trace leg).
+#
+# The 7th hook (`SubagentStart`, no matcher, dir #674) hands the worker rails (docs/delegation.md) to every
+# subagent of the five general types at the moment it starts — prose delivery, so not a floor; see
+# tools/pre-pr-gate.sh's own dir #674 header section. Wiring the gate is the opt-in; `KEEL_SUBAGENT_RAILS=off`
+# in the session environment switches the injection off without a settings edit. An adopter who wired the gate
+# before this hook existed re-runs this installer (the six old entries read SAME, only this one is added) and
+# restarts their sessions; `tools/doctor.sh` says `W-GATE-SUBAGENT-RAILS` until they do.
 #
 # Requires a KEPT checkout: the hooks point at THIS checkout's tools/pre-pr-gate.sh by absolute path — no
 # copy (a stale copy silently going out of sync was a felt incident; see that file's own header). A
@@ -137,7 +144,7 @@ fi
 
 usage() {
   cat <<'EOF'
-install-pre-pr-gate — wire the /polish pre-PR gate's 6 hooks into Claude Code settings.json.
+install-pre-pr-gate — wire the /polish pre-PR gate's 7 hooks into Claude Code settings.json.
 
 Usage:
   install-pre-pr-gate.sh <repo-path>     wire into <repo-path>/.claude/settings.json (project scope)
@@ -269,6 +276,9 @@ print_snippet() {
     ],
     "SubagentStop": [
       { "matcher": "keel-polish-reviewer", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
+    ],
+    "SubagentStart": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "bash $gate_sh subagent-rails" }] }
     ]
   }
 }
@@ -280,7 +290,7 @@ if ! command -v jq >/dev/null 2>&1; then
   if [ "$uninstall" = 1 ]; then
     echo "Nothing was changed. Remove the gate's hook entries from $settings by hand — look for the" >&2
     echo "  \"command\" values containing '$gate' under hooks.PreToolUse/SessionStart/PostToolUse/" >&2
-    echo "  UserPromptExpansion/SubagentStop and delete just those matcher entries." >&2
+    echo "  UserPromptExpansion/SubagentStop/SubagentStart and delete just those matcher entries." >&2
   else
     echo "Nothing was changed. Merge this into the \"hooks\" key of $settings by hand:" >&2
     print_snippet
@@ -297,7 +307,7 @@ if [ -f "$settings" ]; then
   fi
 fi
 
-# The 6 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
+# The 7 hooks — shapes documented in tools/pre-pr-gate.sh's own header (reconcile there on drift).
 # $gate is single-quoted WITHIN the command string itself (not just JSON-escaped, which jq already does
 # for the string as a whole) — a checkout path containing a space would otherwise split into two argv
 # tokens when Claude Code's hook runner passes this string to a shell, silently no-op'ing every hook.
@@ -312,7 +322,8 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "PostToolUse",        matcher: "Skill",          command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "SubagentStop",       matcher: "keel-polish-reviewer", command: ("bash " + ($gate|@sh) + " skill-trace")},
-  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")}
+  {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "SubagentStart",      matcher: "",               command: ("bash " + ($gate|@sh) + " subagent-rails")}
 ]')"
 
 # dir #413 B6: the legacy slot. Specs this installer USED to wire and no longer does: install RETIRES them
@@ -350,7 +361,7 @@ hook_install_check_shape "install-pre-pr-gate" "$settings" "$hook_specs" "$curre
 # command); an entry it leaves empty goes with it, and everything else on that slot stays.
 if [ "$uninstall" = 1 ]; then
   # The retired (legacy) specs come out first, so a settings.json holding ONLY the legacy entry is still
-  # cleaned; the current specs' removal then runs on that result. The "of 6" counter below counts the
+  # cleaned; the current specs' removal then runs on that result. The "of 7" counter below counts the
   # current specs only — the legacy removal is reported on its own line.
   retire_legacy "$current"
   removal="$(hook_install_remove "$hook_specs" "$retired_json")"
@@ -398,7 +409,7 @@ if [ "$uninstall" = 1 ]; then
     print_removal_status "$status" "$event" "$matcher"
   done <<<"$statuses"
 
-  echo "install-pre-pr-gate: $n_removed of 6 hook(s) removed from $settings"
+  echo "install-pre-pr-gate: $n_removed of 7 hook(s) removed from $settings"
 
   # Gate manifest (dir #125) — global/home scope only (project scope writes none). Removed when
   # hooks were actually removed; the checkout-side ledger entry is pruned when no install-manifest.*
