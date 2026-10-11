@@ -940,8 +940,22 @@ check_contains "lex:a delimiter line cut at its BQ's backtick (the run reads it)
 check_absent "lex:a delimiter line cut at its BQ's backtick is the delimiter, not a )-led body line" "$OUT" ") line in a heredoc body"
 OUT="$(printf 'echo "x\n\n' | bash "$gate" lex 2>&1)"
 check_eq "lex:takes the text through \$(…) as the hook does (trailing newlines dropped)" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:x"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
-OUT="$(perl -e 'alarm shift; exec @ARGV' 20 bash "$gate" lex <&- 2>&1)"; STATUS=$?
-check_ne "lex:a closed stdin returns (no hang)" 142 "$STATUS"
+# A closed stdin would hang lex's $(…) (dir #691: its pipe takes fd 0). The shell must START with fd 0 closed, and a
+# backgrounded kill is the bound (alpine has no perl, macOS no timeout(1)): a hang dies as 137. `set -m` gives the job
+# its own process group, so the kill reaches the hung grandchild too.
+lexerr="$SANDBOX/lex-closed-stdin.err"
+set -m
+( exec "${BASH:-bash}" -c 'exec <&-; exec "${BASH:-bash}" "$0" lex' "$gate" ) >/dev/null 2>"$lexerr" &
+lexpid=$!
+( sleep 20; kill -9 -- "-$lexpid" 2>/dev/null ) >/dev/null 2>&1 &
+lexwd=$!
+set +m
+wait "$lexpid"; STATUS=$?
+kill -- "-$lexwd" 2>/dev/null; wait "$lexwd" 2>/dev/null
+check_status "lex:a closed stdin reads as empty, never hangs (a watchdog kill is 137)" 0 "$STATUS"
+check_eq "lex:…with nothing on stderr" "" "$(cat "$lexerr")"
+OUT="$(printf 'echo "a\000b' | bash "$gate" lex 2>&1)"
+check_eq "lex:a NUL byte goes, as through the hook's \$(…), with no shell warning" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:ab"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \

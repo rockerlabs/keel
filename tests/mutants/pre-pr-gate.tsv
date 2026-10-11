@@ -300,4 +300,5 @@ L288	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++; at(k) ~ /^[0-9]$/; k++) 
 L289	tools/pre-pr-gate.sh	if (at(k) == "-") { for (k++;	if (1) { for (k++;	B8: <N-M>: the -; a < with digits, another character, digits and a > (<1x2>) is a redirection
 L290	tools/pre-pr-gate.sh	; if (at(k) == ">") return RDGLOB }	; return RDGLOB }	B8: <N-M>: the closing >
 L291	tools/pre-pr-gate.sh	    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)	    txt = txt substr(src, lstart[j], line_end(j) - lstart[j] + 1)	B10(h): a joined line cut at the BQ’s backtick keeps it, so the join is no disagreement
-L293	tools/pre-pr-gate.sh	    lex_cmd=$(cat 2>/dev/null)\n    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"	    awk -v MODE=lex "$PPG_AWK_PROG"	B17: lex takes the text through $(…) as the hook does (trailing newlines dropped)
+L293	tools/pre-pr-gate.sh	    lex_cmd=$(tr -d '\\000') || exit 2\n    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"	    awk -v MODE=lex "$PPG_AWK_PROG"	B17: lex takes the text through $(…) as the hook does (trailing newlines dropped)
+L294	tools/pre-pr-gate.sh	    if ! { : 3<&0; } 2>/dev/null; then exec </dev/null; fi		B17: a closed stdin reads as empty (the $(…) would hang on it)
