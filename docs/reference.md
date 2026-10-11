@@ -88,7 +88,8 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 (`W-REVIEW-AGENT-FLOOR`). `/polish` spawns it for step 5's fallback review and its second opinion, and the
 gate's `SubagentStop` trace trusts only that agent type: `tools/install-pre-pr-gate.sh` wires the matching
 hook and retires the legacy `general-purpose` one, and `doctor.sh --install` flags wiring that was not
-migrated (`W-GATE-REVIEW-MATCHER`).
+migrated (`W-GATE-REVIEW-MATCHER`), as it flags a gate wired without the `SubagentStart` rails hook
+(`W-GATE-SUBAGENT-RAILS`).
 
 ## Extras
 

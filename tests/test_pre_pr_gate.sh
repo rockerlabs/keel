@@ -3918,7 +3918,8 @@ check_eq "dir #674: an EMPTY agent_type gets the block" "$sr_expect" "$(printf '
 sr_run 'not json'
 check_status "dir #674: unparseable stdin still exits 0" 0 "$STATUS"
 check_eq "dir #674: unparseable stdin gets the block (a prose nudge errs toward delivery)" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
-for t in design-reviewer keel-polish-reviewer workflow-subagent statusline-setup my-agent general-purpose-x Explorer; do
+for t in design-reviewer keel-polish-reviewer workflow-subagent statusline-setup my-agent general-purpose-x Explorer \
+         'Explore Plan' 'Plan claude' 'general-purpose Explore'; do
   sr_run "$(sr_ev "$t")"
   check_status "dir #674: subagent-rails exits 0 for $t" 0 "$STATUS"
   check_eq "dir #674: $t gets nothing (not one of the five types)" "" "$OUT"

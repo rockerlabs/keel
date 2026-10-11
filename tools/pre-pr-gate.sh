@@ -463,7 +463,7 @@
 # `Explore` and `Plan` start with no CLAUDE.md at all. The 7th hook (`SubagentStart`, matcher "",
 # `pre-pr-gate.sh subagent-rails`, wired by tools/install-pre-pr-gate.sh) prints the block as the
 # subagent's `additionalContext`, verbatim and read live from `<checkout>/docs/delegation.md` under a
-# two-sentence preface (no second copy to drift). It injects for `general-purpose`, `Explore`, `Plan`,
+# one-sentence preface (no second copy to drift). It injects for `general-purpose`, `Explore`, `Plan`,
 # `claude` and `claude-code-guide` (SUBAGENT_RAILS_TYPES, below) and for an event with no type; every other
 # type is its author's contract or already carries the block, and gets nothing. The list lives in the
 # script, not in the hook matcher, so it is unit-testable offline. It always exits 0 and prints at most one
@@ -2924,6 +2924,8 @@ case "${1:-}" in
     sr_type=$(printf '%s' "$sr_input" | jq -r '.agent_type // ""' 2>/dev/null) || sr_type=""
     SUBAGENT_RAILS_TYPES="general-purpose Explore Plan claude claude-code-guide"
     if [ -n "$sr_type" ]; then
+      # Exact match: a multi-word value ("Explore Plan") must not pass as a substring of the list.
+      case "$sr_type" in *[[:space:]]*) exit 0 ;; esac
       case " $SUBAGENT_RAILS_TYPES " in *" $sr_type "*) ;; *) exit 0 ;; esac
     fi
     # The block: from the first `- You are read-only:` line through the next `- DELEGATION RUN:` line — the
