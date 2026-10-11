@@ -59,7 +59,7 @@ check_absent "B21 import + block: …never \"rails load twice\", in Verify or th
 check_contains "B21 import + block: …the sync step leaves the block, saying why" "$OUT" "its embedded KEEL-CORE block is what loads the rails"
 run "$doctor" --install "$h"
 check_contains "B21 import + block: …doctor agrees: keep the block meanwhile" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "keep it until keel/CORE.md resolves"
-check_contains "B21 import + block: …and says to remove the foreign keel/CORE.md link first (a re-run alone declines it)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove whatever blocks keel/CORE.md first"
+check_contains "B21 import + block: …and says to remove the foreign keel/CORE.md link first (a re-run alone declines it)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove what sits at keel/CORE.md first"
 # …and an IDENTICAL block is not removed as a duplicate either (it is the only copy of the rails that loads).
 h="$SANDBOX/b21-same"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
@@ -90,8 +90,9 @@ check_contains "A43 linked: …the Verify remedy carries --link" "$(remedy_of "$
 # …and doctor, over the same home (manifest layout=link): every install.sh remedy keeps --link, and the import GAP
 # says the directory has to go first (a re-run declines it).
 run "$doctor" --install "$h"
-check_contains "A43 doctor, a directory at keel/CORE.md: G-RAILS-IMPORT-BROKEN says to remove it first" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove whatever blocks keel/CORE.md first"
+check_contains "A43 doctor, a directory at keel/CORE.md: G-RAILS-IMPORT-BROKEN says to remove it first" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove what sits at keel/CORE.md first"
 check_contains "A43 doctor: …W-MANIFEST-DRIFT's re-run keeps the manifest's --link" "$(grep -F W-MANIFEST-DRIFT <<<"$OUT")" "re-run install.sh --link --home"
+check_contains "A43 doctor: …after removing the directory install would decline" "$(grep -F W-MANIFEST-DRIFT <<<"$OUT")" "remove what sits at keel/CORE.md first"
 check_absent "A43 doctor: …no bare re-run anywhere in the report (it would land in copy mode)" "$OUT" "install.sh --home"
 h="$SANDBOX/a43-nogit"; mkdir -p "$h/keel/FRAMEWORK.md"
 run "$install" --home "$h" --no-hooks --link --no-git
@@ -221,18 +222,27 @@ run "$doctor" --install "$h"
 dl="$(grep -F W-MANIFEST-DRIFT <<<"$OUT")"
 check_contains "A43 doctor: a restored trim's W-MANIFEST-DRIFT advises the linked re-run" "$dl" "re-run install.sh --link --home"
 check_absent "A43 doctor: …never --no-git from the stale manifest" "$dl" "--no-git --home"
+rm -f "$h/commands/polish.md"
+run "$doctor" --install "$h"
+check_contains "A43 doctor: …and a slot remedy in the same report agrees (plain --link)" "$(grep -F W-CMDS-MISSING <<<"$OUT")" "re-run install.sh --link --home"
+check_absent "A43 doctor: …never re-trimming the restored rails" "$(grep -F W-CMDS-MISSING <<<"$OUT")" "--no-git"
 # A keel that is not a directory blocks keel/CORE.md as surely as an object at it: the import GAP says so.
 h="$SANDBOX/a43-keelfile"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
 mv "$h/keel" "$h/keel.away"; printf 'not a dir\n' > "$h/keel"
 run "$doctor" --install "$h"
-check_contains "A43 doctor, a file at keel: G-RAILS-IMPORT-BROKEN says to remove it first" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove whatever blocks keel/CORE.md first"
+check_contains "A43 doctor, a file at keel: G-RAILS-IMPORT-BROKEN names keel itself as what to remove first" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove what sits at keel (it is not a directory) first"
 # A context file that is there but not a regular file: G-RAILS-MISSING says it has to go first (install declines it).
 h="$SANDBOX/a43-ctxlink"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks
 rm -f "$h/CLAUDE.md"; ln -s "$SANDBOX/a43-nowhere-ctx" "$h/CLAUDE.md"
 run "$doctor" --install "$h"
 check_contains "A43 doctor, a dangling CLAUDE.md: G-RAILS-MISSING says to remove it first" "$(grep -F G-RAILS-MISSING <<<"$OUT")" "remove what sits there first"
+# W-RAILS-UNWIRED on a copy home offers the migrate alternative — built so bash 3.2 (macOS /bin/bash) parses it.
+rm -f "$h/CLAUDE.md"; printf '# mine\n' > "$h/CLAUDE.md"
+if [ -x /bin/bash ]; then run /bin/bash "$doctor" --install "$h"; else run "$doctor" --install "$h"; fi
+check_contains "A43 doctor, a copy home with no rails: W-RAILS-UNWIRED offers the migrate alternative, with the home" "$(grep -F W-RAILS-UNWIRED <<<"$OUT")" ", or migrate: install.sh --link --home"
+check_absent "A43 doctor: …and the message is not garbled (no stray case syntax)" "$OUT" ";; esac"
 
 # --- dir #752: a FIFO at the context file is declined and the run ends ------------------------------------------
 # run_fifo_bounded FIFO CMD… — `run`, backgrounded with a bounded wait (macOS has no `timeout`); a hang releases
