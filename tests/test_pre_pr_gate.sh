@@ -4011,10 +4011,25 @@ mnote="$(printf '%s\n' "$OUT" | grep -F "No git checkout resolved here" || true)
 check_absent "dir #713 item 6: ...and the check CAN fail (the unquoted note splits across lines)" "$mnote" "prints inside the checkout.)"
 # 7. a first argument that is no dispatch arm → usage + exit 2 at once, never a stdin read (a FIFO nobody writes).
 mkfifo "$SANDBOX/fifo-713"
-run_in "$d" perl -e 'alarm 5; exec @ARGV' bash "$gate" --halp 0<>"$SANDBOX/fifo-713"
-check_status "dir #713 item 7: an unknown first argument exits 2 at once (142 would mean it waited on stdin)" 2 "$STATUS"
+# bounded_fifo DIR CMD… — CMD in DIR with stdin on that FIFO (opened read-write, so it never blocks and never gets
+# EOF), in the background with a bounded wait; STATUS 124 when it is still running at the bound, killed. No perl or
+# `timeout` (the Alpine CI image has neither); the bound is the suite's own KEEL_TEST_HANG_BOUND (dir #744 A28).
+bounded_fifo() {
+  local dir="$1" out="$SANDBOX/bounded-713.out" pid waited=0; shift
+  ( cd "$dir" && exec "$@" ) 0<>"$SANDBOX/fifo-713" >"$out" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    STATUS=124; OUT="(still running after ${waited} s — killed)"; return 0
+  fi
+  STATUS=0; wait "$pid" || STATUS=$?
+  OUT="$(cat "$out")"
+}
+bounded_fifo "$d" bash "$gate" --halp
+check_status "dir #713 item 7: an unknown first argument exits 2 at once (124 would mean it waited on stdin)" 2 "$STATUS"
 check_contains "dir #713 item 7: ...with a usage line naming the argument" "$OUT" "unknown subcommand --halp"
-run_in "$d" perl -e 'alarm 5; exec @ARGV' bash "$gate" foo 0<>"$SANDBOX/fifo-713"
+bounded_fifo "$d" bash "$gate" foo
 check_status "dir #713 item 7: a bare word is refused the same way" 2 "$STATUS"
 # …and the ZERO-argument hook mode (every wiring shape the installer ever wrote, spec E12) is untouched.
 d7="$(mkrepo)"
