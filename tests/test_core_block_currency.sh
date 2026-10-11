@@ -24,6 +24,14 @@ hand_trim() {
 outside_block() { awk '/KEEL-CORE-BEGIN/ { skip = 1 } !skip { print } /KEEL-CORE-END/ { skip = 0 }' "$1"; }
 block_of() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 core_block="$(block_of "$REPO_ROOT/CORE.md")"
+# check_copy_crumb LABEL FILE — FILE's KEEL-NOGIT crumb gives copy-mode advice (dir #689): re-add the two sections,
+# never --with-git (exit 2 in a copy home) nor --link (it would migrate the home).
+check_copy_crumb() {
+  local crumb; crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$2")"
+  check_contains "$1: the crumb names the copy restore (re-add the two sections)" "$crumb" "re-add the two sections"
+  check_absent "$1: …never --with-git" "$crumb" "--with-git"
+  check_absent "$1: …never --link" "$crumb" "--link"
+}
 
 # fresh_home NAME [--codex] — a fresh install into $SANDBOX/NAME; prints the home.
 fresh_home() {
@@ -126,13 +134,7 @@ else
   check_eq "A13e: trimmed: text outside the markers is byte-identical" "$outside_before" "$(outside_block "$h/CLAUDE.md")"
   run "$install" --home "$h" --no-hooks
   check_contains "A13e: a later run recognizes the refreshed trim as current" "$OUT" "CLAUDE.md (up to date — your git-rails trim kept)"
-  # dir #689: the refreshed trim's always-on crumb gives copy-mode advice. The linked crumb told a copy home to run
-  # `install.sh --link --with-git`: --with-git exits 2 there, and --link would migrate it.
-  crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$h/CLAUDE.md")"
-  check_contains "689 copy: the trimmed refresh writes a KEEL-NOGIT crumb (a later run still sees the trim)" "$crumb" "KEEL-NOGIT-END"
-  check_contains "689 copy: …whose advice a copy home can follow: re-add the two sections from CORE.md" "$crumb" "re-add the two sections"
-  check_absent "689 copy: …never --with-git (exit 2 in a copy home)" "$crumb" "--with-git"
-  check_absent "689 copy: …never --link (it would migrate the home)" "$crumb" "--link"
+  check_copy_crumb "689 copy" "$h/CLAUDE.md"   # dir #689: copy-mode crumb, never --link/--with-git
 
   # --codex answers y too
   h="$(fresh_home e-codex --codex)"
@@ -145,11 +147,8 @@ else
   hand_trim "$h/AGENTS.md"
   alter_block "$h/AGENTS.md"
   tty_run y "$install" --codex --home "$h" --no-hooks
-  crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$h/AGENTS.md")"
   check_absent "689 --codex: the trim survives the refresh" "$(cat "$h/AGENTS.md")" "## Git — mandatory rails"
-  check_contains "689 --codex: …its crumb names the copy restore" "$crumb" "re-add the two sections"
-  check_absent "689 --codex: …never --with-git" "$crumb" "--with-git"
-  check_absent "689 --codex: …never --link" "$crumb" "--link"
+  check_copy_crumb "689 --codex" "$h/AGENTS.md"
 
   # dir #679 A3 (S4-2): a dotfiles-managed 0600 CLAUDE.md, symlinked into the home, answered y — the
   # refresh writes THROUGH the link and the file keeps its 0600 (it used to take the umask's 0644).
