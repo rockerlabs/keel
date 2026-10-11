@@ -66,6 +66,14 @@ run "$install" --home "$h" --no-hooks --link
 check_absent "B21 import + identical block, keel/CORE.md dangling: the block is not removed as a duplicate" "$OUT" "removed the embedded rails block"
 check_contains "B21 import + identical block: …it is still in CLAUDE.md" "$(cat "$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
+# …nor is an embedded block (no import) swapped for an import of a keel/CORE.md this run declined.
+h="$SANDBOX/b21-swap"; mkdir -p "$h/keel/CORE.md"
+sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/templates/CLAUDE.md" > "$h/CLAUDE.md"
+run "$install" --home "$h" --no-hooks --link
+check_status "B21 block only, a directory at keel/CORE.md → exit 0" 0 "$STATUS"
+check_absent "B21 block only: …the block is not swapped for an import that would load nothing" "$OUT" "embedded rails swapped for the import line"
+check_contains "B21 block only: …it is still in CLAUDE.md" "$(cat "$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
+
 # --- A43 (K40) install side: every Verify remedy carries the home's layout ---------------------------------------
 # remedy_of TEXT REL — the Verify decline line for REL.
 remedy_of() { grep -F -- "--   $2 $np" <<<"$1" || true; }
@@ -125,12 +133,20 @@ mkdir -p "$h/keel"; ln -s "$SANDBOX/a43-nowhere-core" "$h/keel/CORE.md"
 run "$doctor" --install "$h"
 check_absent "A43 doctor copy, a link at keel/CORE.md: the manifest's layout=copy wins (no --link)" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
 rm -f "$h/keel/CORE.md"
+# An import of some OTHER CORE.md (not this home's keel/CORE.md) is not linked wiring: the copy layout stands.
+printf '@%s/elsewhere/keel/CORE.md\n' "$SANDBOX" >> "$h/CLAUDE.md"
+run "$doctor" --install "$h"
+check_absent "A43 doctor copy, CLAUDE.md importing another CORE.md: still no --link" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
 # A codex home: bin/keel, the audited mode's slot, is advised the --codex re-run.
 h="$SANDBOX/a43-dcodex"; mkdir -p "$h"
 run "$install" --codex --home "$h" --no-hooks
 rm -f "$h/bin/keel"; ln -s "$SANDBOX/a43-nowhere-cli" "$h/bin/keel"
 run "$doctor" --install --codex "$h"
 check_contains "A43 doctor --codex: a codex home's dangling bin/keel is advised the --codex re-run" "$(gap_of "$OUT" bin/keel)" "re-run install.sh --codex --home"
+# …and so is a top-level file both modes place (a codex install seeds LEARNINGS.md too).
+rm -f "$h/LEARNINGS.md"; ln -s "$SANDBOX/a43-nowhere-learn" "$h/LEARNINGS.md"
+run "$doctor" --install --codex "$h"
+check_contains "A43 doctor --codex: a codex home's dangling top-level LEARNINGS.md keeps --codex" "$(gap_of "$OUT" LEARNINGS.md)" "re-run install.sh --codex --home"
 # A linked home keeps --link (the manifest's layout=link), with and without a usable manifest (detection).
 h="$SANDBOX/a43-dlink"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link

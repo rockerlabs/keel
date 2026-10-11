@@ -254,11 +254,7 @@ fi
 manifest_layout="copy"
 [ "$LINK" = 1 ] && manifest_layout="link"
 [ "$LINK" = 1 ] && [ "$NOGIT" = 1 ] && manifest_layout="link-nogit"
-case "$manifest_layout" in
-  link) layout_flag=" --link" ;;
-  link-nogit) layout_flag=" --link --no-git" ;;
-  *) layout_flag="" ;;
-esac
+layout_flag="$(manifest_layout_flags "$manifest_layout")"
 advise_install="install.sh$mode_flag$layout_flag$home_flag"
 
 # advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
@@ -1726,7 +1722,10 @@ EOF
       echo "  =    CLAUDE.md already imports the linked core"
     fi
   elif keel_core_has_block "$gclaude"; then
-    if ! keel_core_block_check "$gclaude"; then
+    if [ ! -f "$core_dest" ]; then
+      # keel/CORE.md was declined or is gone: swapping the block for an import of it would load nothing.
+      echo "  =    CLAUDE.md left untouched — keel/CORE.md does not resolve, so its embedded KEEL-CORE block stays (an import of it would load nothing)"
+    elif ! keel_core_block_check "$gclaude"; then
       echo "  !    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
     elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
       if replace_core_block "$gclaude"; then
@@ -2068,12 +2067,15 @@ if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && { [ -e "$HOME_DIR/$CONTEXT_FILE" ] || [
   echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
 elif [ "$LINK" = 1 ]; then
   if has_core_import "$HOME_DIR/CLAUDE.md"; then
-    if [ ! -f "$HOME_DIR/keel/CORE.md" ] && keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
-      echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — only its embedded"
-      echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back."
-    elif [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
-      echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
-    elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
+    v_block=0; keel_core_has_block "$HOME_DIR/CLAUDE.md" && v_block=1
+    if [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
+      if [ "$v_block" = 1 ]; then
+        echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — only its embedded"
+        echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back."
+      else
+        echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
+      fi
+    elif [ "$v_block" = 1 ]; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
       echo "       Remove the block (or the import line) by hand."
     else

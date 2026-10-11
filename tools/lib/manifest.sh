@@ -34,6 +34,17 @@ manifest_field() {
   sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n1 || true
 }
 
+# manifest_layout_flags LAYOUT — the install.sh flags that re-create a manifest `layout=` value (spec 685 round 2
+# B22): ` --link` for link, ` --link --no-git` for link-nogit, nothing for copy (or anything else). The one
+# mapping install.sh's advice (layout_flag) and tools/doctor.sh's remedies both use.
+manifest_layout_flags() {
+  case "$1" in
+    link) printf ' --link' ;;
+    link-nogit) printf ' --link --no-git' ;;
+  esac
+  return 0
+}
+
 # manifest_symlink_extra FILE REL — the target the manifest recorded for the `symlink` artifact at REL (dir #369;
 # `-` in a manifest older than that ticket); "" when there is no such record or the read fails. Shared by
 # install.sh's keel_own_stale_link and doctor's dangling-link advice, so both read Keel's record the same way.
