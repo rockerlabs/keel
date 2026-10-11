@@ -1703,7 +1703,11 @@ EOF
       | keel_write_replace "$gclaude" || exit 1
     echo "  +    CLAUDE.md (thin wrapper — rails arrive via the import line, fresh on every git pull)"
   elif has_core_import "$gclaude"; then
-    if keel_core_has_block "$gclaude"; then
+    if keel_core_has_block "$gclaude" && [ ! -f "$core_dest" ]; then
+      # The import resolves to nothing (keel/CORE.md declined or gone): the embedded block is what loads the
+      # rails now, so it is not a duplicate — removing it would leave none (round 2 B21; Verify says the same).
+      echo "  =    CLAUDE.md left untouched — keel/CORE.md does not resolve, so its embedded KEEL-CORE block is what loads the rails"
+    elif keel_core_has_block "$gclaude"; then
       # half-done manual migration: the import line AND a leftover embedded block — the rails load
       # TWICE every session. Identical block = pure duplication, remove it; edited block = human call.
       if ! keel_core_block_check "$gclaude"; then
@@ -2058,8 +2062,8 @@ done
 # (Rails trichotomy: parallel to tools/doctor.sh --install's core-rails check — keep the two in
 # sync. Severities differ on purpose: in a --link run an embedded block means "un-migrated" (WARN);
 # to doctor it's legitimate copy mode (OK).) Round 2 B21: the "will NOT load" WARN fires whenever the rails
-# cannot load — in either mode, a context file that is not a regular file carries none (the loop above already
-# printed its own line).
+# cannot load: in either mode, a context file that is there but is not a regular file carries none (the loop above
+# already printed its own line; an absent one is MISS there, and fails the run).
 if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && { [ -e "$HOME_DIR/$CONTEXT_FILE" ] || [ -L "$HOME_DIR/$CONTEXT_FILE" ]; }; then
   echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
 elif [ "$LINK" = 1 ]; then

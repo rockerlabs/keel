@@ -53,7 +53,18 @@ rm -f "$h/keel/CORE.md"; ln -s "$SANDBOX/b21-nowhere" "$h/keel/CORE.md"
 run "$install" --home "$h" --no-hooks --link
 check_status "B21 import + block, keel/CORE.md dangling → exit 0" 0 "$STATUS"
 check_contains "B21 import + block: …Verify says only the block loads the rails" "$OUT" "only its embedded"
-check_absent "B21 import + block: …never \"the rails load twice\"" "$OUT" "the rails load twice"
+check_absent "B21 import + block: …never \"rails load twice\", in Verify or the sync step" "$OUT" "rails load twice"
+check_contains "B21 import + block: …the sync step leaves the block, saying why" "$OUT" "its embedded KEEL-CORE block is what loads the rails"
+run "$doctor" --install "$h"
+check_contains "B21 import + block: …doctor agrees: keep the block meanwhile" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "keep it until keel/CORE.md resolves"
+# …and an IDENTICAL block is not removed as a duplicate either (it is the only copy of the rails that loads).
+h="$SANDBOX/b21-same"; mkdir -p "$h"
+run "$install" --home "$h" --no-hooks --link
+sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/templates/CLAUDE.md" >> "$h/CLAUDE.md"   # the shipped block
+rm -f "$h/keel/CORE.md"; ln -s "$SANDBOX/b21-nowhere" "$h/keel/CORE.md"
+run "$install" --home "$h" --no-hooks --link
+check_absent "B21 import + identical block, keel/CORE.md dangling: the block is not removed as a duplicate" "$OUT" "removed the embedded rails block"
+check_contains "B21 import + identical block: …it is still in CLAUDE.md" "$(cat "$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
 # --- A43 (K40) install side: every Verify remedy carries the home's layout ---------------------------------------
 # remedy_of TEXT REL — the Verify decline line for REL.
@@ -132,6 +143,11 @@ check_contains "A43 doctor linked, no manifest: --link from detection (keel/CORE
 cp "$h/CLAUDE.md" "$h/CLAUDE.md.keep"; printf '# mine\n' > "$h/CLAUDE.md"
 run "$doctor" --install "$h"
 check_contains "A43 doctor linked, no manifest, no import: --link from keel/CORE.md's link alone" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+cat "$h/CLAUDE.md.keep" > "$h/CLAUDE.md"
+rm -f "$h/keel/CORE.md"
+run "$doctor" --install "$h"
+check_contains "A43 doctor linked, no manifest, keel/CORE.md gone: the slot is advised --link, from CLAUDE.md's import" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+check_contains "A43 doctor: …the same mode the import GAP advises (one report, one mode)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link"
 # The rails checks fire only on a context file that IMPORTS keel/CORE.md — the linked layout's own wiring — so
 # they keep --link even when a plain re-run has since recorded layout=copy (keel/CORE.md gone → copy mode).
 h="$SANDBOX/a43-import"; mkdir -p "$h"
@@ -141,6 +157,12 @@ run "$install" --home "$h" --no-hooks
 check_eq "A43 import setup: the plain re-run recorded layout=copy" "copy" "$(sed -n 's/^layout=//p' "$h/.keel/install-manifest.claude")"
 run "$doctor" --install "$h"
 check_contains "A43 doctor: G-RAILS-IMPORT-BROKEN still advises --link over a layout=copy manifest" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link --home"
+# A --no-git home whose trim is gone keeps --no-git in that advice (its manifest says link-nogit).
+h="$SANDBOX/a43-import-nogit"; mkdir -p "$h"
+run "$install" --home "$h" --no-hooks --link --no-git
+rm -f "$h/keel/CORE.md"
+run "$doctor" --install "$h"
+check_contains "A43 doctor: …and a layout=link-nogit home keeps --no-git in it" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link --no-git --home"
 h="$SANDBOX/a43-dnogit"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link --no-git
 ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
