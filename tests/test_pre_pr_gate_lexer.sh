@@ -473,6 +473,16 @@ echo $(echo $(case x in a) git push --no-verify;; esac))
 echo "$(echo $(case x in a) git push --no-verify;; esac))"
 @ C74ab allow
 x=$(case $1 in a) echo 1;; esac); echo done
+@ C74ac refuse
+echo $(case x in a|esac) git push --no-verify;; esac)
+@ C74ad refuse
+echo $(case x in (a|esac) true;; b) git push --no-verify;; esac)
+@ C74ae refuse
+echo $(coproc case x in a) git push --no-verify;; esac)
+@ C74af refuse
+echo $(case) && git status
+@ C74ag allow
+echo $(case x in (a) echo 1;; esac) && git status
 @ C74j push
 X=$(case a in a) git push --no-verify;; esac)
 @ C75 push
