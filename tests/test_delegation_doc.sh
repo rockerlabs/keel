@@ -210,10 +210,18 @@ fi
 
 # --- dir #413 slice 2 (A9 / B11): the three answers for spawn points keel does not own -----------------------
 for needle in 'commit before you launch' 'binds the parent session too' 'git checkout -- *' 'dir #559' \
-              'one keel-owned spawn that is NOT floored'; do
+              'the one keel-owned spawn with no tool floor'; do
   pin "delegation.md B11 carries: $needle" "$doc" "$needle" "expected B11's adopter answer to carry this string (dir #413 A9)"
 done
 check_absent "delegation.md's deny recipe never denies the broad Bash(git checkout *) (polish.md tells agents to prefer git checkout -b)" \
   "$(cat "$doc")" 'Bash(git checkout *)'
+
+# --- dir #674 (A4, slice 1): item 3 says the rails hook is built and keeps the unbuilt half honest ----------------
+pin "delegation.md item 3 names dir #674 (dir #559's B1, built)" "$doc" 'dir #674' "expected item 3 to say dir #559's B1 is built as dir #674"
+check_absent "delegation.md item 3 no longer says dir #675's deny is unbuilt (dir #675)" "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'has not built'
+pin "delegation.md says the subagent git floor is not a sandbox (dir #675 B13)" "$doc" 'not a sandbox' "expected the floor's limits to be named (dir #675 B13)"
+pin "delegation.md names the floor's kill switch (dir #675)" "$doc" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the opt-out next to the floor (dir #675 F3)"
+pin "delegation.md names the kill switch for the injection" "$doc" 'KEEL_SUBAGENT_RAILS=off' "expected the kill switch next to the injection (dir #674 F3)"
+check_absent "delegation.md no longer points at a closed ticket as K2's possible future floor (dir #676)" "$(cat "$doc")" 'dir #676 is its possible future floor'
 
 summary

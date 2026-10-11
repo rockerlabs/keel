@@ -308,29 +308,39 @@ above, is **disclosure** — a worker that violated it self-reported rather than
 is the only reason those incidents are on record at all. It has not bought **prevention**: the incidents
 happened regardless of the block's presence. Whether keel can additionally ship an enforcement mechanism
 for the sandbox requirement (a hook, a deny rule, a fingerprint check) is a separate, harness-dependent
-matter — it does not have to be settled for the norm/control distinction above to be stated plainly.
+matter — it does not have to be settled for the norm/control distinction above to be stated plainly. For one class
+a control now exists: since dir #675 the gate's own Bash hook denies a subagent's repository-mutating git command
+aimed at the session's repository (`KEEL_SUBAGENT_GIT_FLOOR=off` switches it off). It is a seatbelt for the felt
+shape, not a sandbox — item 3 below names what it does not see.
 
 **Keel's reach stops at the prompts keel writes.** This block, and the rest of this pattern's rails, are
 injected only where keel controls the prompt text: the worker/verifier prompts this pattern generates,
 `/polish`'s own review subagents (step 5's first-attempt review subagent, which runs the real `/code-review`
 skill through the `Skill` tool, and its fallback review subagent), and the managed-release brief templates. A
 review fan-out a vendor tool composes on its own — a built-in skill spawning its own finder agents, for
-instance — never receives this text, because keel never writes that prompt: when step 5's review subagent
-invokes `/code-review`, the skill runs as a forked agent one level deeper whose whole prompt is the skill's own
-recipe plus the args, so the rails stop at the subagent and its args are the only channel to the review (dir
-#670; dir #617: a vendor-composed finder agent reproducing a defect live mutated a machine-global installer
-target this block would have named, had it reached that prompt). Protecting a surface keel cannot inject into is necessarily a property of the
+instance — never receives this text in its prompt, because keel never writes that prompt: when step 5's review
+subagent invokes `/code-review`, the skill runs as a forked agent one level deeper whose whole prompt is the
+skill's own recipe plus the args, so the prompt rails stop at the subagent and its args are the only channel to
+the review (dir #670; dir #617: a vendor-composed finder agent reproducing a defect live mutated a
+machine-global installer target this block would have named, had it reached that prompt). One channel past the
+prompt exists on Claude Code (dir #674): the `SubagentStart` hook that `tools/install-pre-pr-gate.sh` wires as
+the gate's seventh hook hands this block to every subagent of the five general types (`general-purpose`,
+`Explore`, `Plan`, `claude`, `claude-code-guide`) as it starts, a vendor-composed fork included, in a session
+whose gate is wired and whose installer was re-run. That is prose delivery too, read live from this file, and it
+does not port to another harness. Protecting a surface keel cannot inject into is necessarily a property of the
 *tool* being reviewed, not something a prompt rail can reach.
 
 **What keel floors, and what an adopter does about the rest (dir #413).** A capability floor exists only
 where keel writes the spawn and the job needs no shell: `/polish`'s fallback and second-opinion review
 subagent run as `keel-polish-reviewer`, a keel-shipped agent whose `tools:` allowlist is `Read, Grep, Glob`
 (`agents/keel-polish-reviewer.md`, placed by `install.sh`), so it cannot run a git-mutating command however
-it misreads a dirty tree. Step 5's first-attempt review subagent (dir #670's K2) is the
-one keel-owned spawn that is NOT floored: it must run the `/code-review` skill, which wants `git diff`, so
+it misreads a dirty tree. Step 5's first-attempt review subagent (dir #670's K2) is
+the one keel-owned spawn with no tool floor: it must run the `/code-review` skill, which wants `git diff`, so
 a read-only tool set would degrade the review by default — it is contained by a clean-tree precondition
-and a stop on any HEAD or status change instead (dir #676 is its possible future floor). For a fan-out a vendor tool composes, which keel cannot floor (`/code-review`'s finder
-agents are the felt case — dir #375's fourth recurrence), an adopter has three answers:
+and a stop on any HEAD or status change, and its git against the session's repository by dir #675's deny
+(`diff` and `show` still run). For a fan-out a vendor tool composes, which keel cannot floor by tool set
+(`/code-review`'s finder agents are the felt case — dir #375's fourth recurrence; dir #675 denies their git
+against the session's repository, and item 3 names what that leaves), an adopter has three answers:
 
 1. Before launching one, **commit before you launch it** — a clean tree has nothing for a stray `git checkout --` to destroy. Use a
    temporary WIP commit, never a stash (a stash is shared across every worktree of the repo).
@@ -356,10 +366,21 @@ agents are the felt case — dir #375's fourth recurrence), an adopter has three
    binds the parent session too — so you then run those commands by hand. And it does not see
    `git -C <dir> checkout`, a script that runs git, or a plain `rm` — the blind spots the recipe below states
    for itself.
-3. **Two options keel names and has not built:** dir #559's B1 (a `SubagentStart` hook that injects these
-   rails into every subagent type — prose delivery, so not a floor) and dir #675's `agent_id`-scoped deny of
-   git-mutating verbs inside the gate's own Bash hook (a floor for every subagent, vendor-composed ones
-   included, with its own false-positive surface).
+3. **Two options keel names, both built:** dir #559's B1 is built as dir #674 — a `SubagentStart` hook, wired by
+   `tools/install-pre-pr-gate.sh`, that injects these rails into every subagent of the five general types
+   (prose delivery, so not a floor; `KEEL_SUBAGENT_RAILS=off` in the session environment switches it off) —
+   and dir #675's `agent_id`-scoped deny of git-mutating verbs inside the gate's own Bash hook: a floor for every
+   subagent, vendor-composed ones included, against the session's repository and every worktree of it, while a
+   scratch clone (`git -C <clone>`) and every read stay open. It rides the gate's already-wired hook, so a pull is
+   enough (no installer re-run); `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment switches it off, and the
+   PR and push rules still apply. **It is not a sandbox.** It reads the command text, so it does not see a
+   non-literal path (`git -C "$S"`), `sh -c` or `eval` text, a script file that runs git, an alias, a wrapper such
+   as `timeout` or `sudo`, a `GIT_DIR` exported in an earlier command, `cd -`, a `cd` that may not run
+   (`false && cd X; git …`), a write aimed at the session repository as a plain argument (`git -C <clone> push
+   <session repo> main`), a plain `rm` of tracked files or a machine-global config write
+   (`tools/machine-watch.sh` detects those). A subagent started with
+   `isolation: "worktree"` is denied its own commits too (its worktree shares the repository) — the escape is the
+   switch above.
 
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
 

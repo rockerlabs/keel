@@ -3887,4 +3887,184 @@ check_contains "dir #583: the header names the sentinel's repo+branch key" "$gat
 check_contains "dir #583: the header names the trace's repo-only key" "$gate_head" "keyed by repo only (dir #80)"
 check_contains "dir #583: the header names the sandboxed-shell failure" "$gate_head" "a sandboxed shell can keep its own private view of"
 
+# ── dir #674 (spec 674-subagent-floor, A1): `subagent-rails` — the SubagentStart hook that hands the worker
+# rails to a subagent. Reads its event on stdin, prints at most ONE JSON object, always exits 0, and never
+# reads gate state (so it is exempt from the CLI-mode $HOME guard). The expected text is built here from the
+# same pieces the spec's B3/B4 name: the preface, a blank line, and the block exactly as
+# `$(extract_rails_block docs/delegation.md)` yields it (the substitution drops the final newline).
+sr_preface='Keel worker rails — injected into this subagent by keel'"'"'s SubagentStart hook (dir #674), verbatim from docs/delegation.md "Worker rails".'
+sr_block="$(extract_rails_block "$REPO_ROOT/docs/delegation.md")"
+sr_expect="${sr_preface}"$'\n\n'"${sr_block}"
+check_ne "dir #674: the rails block this section compares against is non-empty" "" "$sr_block"
+# sr_run STDIN-TEXT [env-assignment…] → OUT (stdout+stderr), STATUS. The hook's own stdin is the text.
+sr_run() {
+  local in="$1"; shift
+  OUT="$(printf '%s' "$in" | env "$@" bash "$gate" subagent-rails 2>&1)"
+  STATUS=$?
+}
+sr_ev() { jq -nc --arg t "$1" '{hook_event_name:"SubagentStart",agent_id:"a1",agent_type:$t}'; }
+for t in general-purpose Explore Plan claude claude-code-guide; do
+  sr_run "$(sr_ev "$t")"
+  check_status "dir #674: subagent-rails exits 0 for $t" 0 "$STATUS"
+  check_eq "dir #674: $t gets exactly one JSON object" "1" "$(printf '%s' "$OUT" | jq -s 'length' 2>/dev/null)"
+  check_eq "dir #674: $t's event name is SubagentStart" "SubagentStart" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)"
+  got="$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+  check_eq "dir #674: $t's additionalContext is the preface, a blank line, then the block byte-for-byte" "$sr_expect" "$got"
+done
+sr_run '{"hook_event_name":"SubagentStart","agent_id":"a1"}'
+check_eq "dir #674: a payload without agent_type gets the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+sr_run '{"hook_event_name":"SubagentStart","agent_id":"a1","agent_type":""}'
+check_eq "dir #674: an EMPTY agent_type gets the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+sr_run 'not json'
+check_status "dir #674: unparseable stdin still exits 0" 0 "$STATUS"
+check_eq "dir #674: unparseable stdin gets the block (a prose nudge errs toward delivery)" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+for t in design-reviewer keel-polish-reviewer workflow-subagent statusline-setup my-agent general-purpose-x Explorer \
+         'Explore Plan' 'Plan claude' 'general-purpose Explore'; do
+  sr_run "$(sr_ev "$t")"
+  check_status "dir #674: subagent-rails exits 0 for $t" 0 "$STATUS"
+  check_eq "dir #674: $t gets nothing (not one of the five types)" "" "$OUT"
+done
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS=off
+check_status "dir #674: the kill switch exits 0" 0 "$STATUS"
+check_eq "dir #674: KEEL_SUBAGENT_RAILS=off prints nothing" "" "$OUT"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS=on
+check_eq "dir #674: any other KEEL_SUBAGENT_RAILS value is not the switch" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+# The range markers: a missing file, a copy without the end marker, a copy without the start marker.
+sr_copy="$SANDBOX/sr-delegation-copy.md"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$SANDBOX/sr-no-such-file.md"
+check_status "dir #674: a missing rails file exits 0" 0 "$STATUS"
+check_eq "dir #674: a missing rails file prints nothing" "" "$OUT"
+grep -v '^[[:space:]]*- DELEGATION RUN:' "$REPO_ROOT/docs/delegation.md" > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: a copy without the DELEGATION RUN marker prints nothing (an awk range with one marker would run to EOF)" "" "$OUT"
+grep -v '^[[:space:]]*- You are read-only:' "$REPO_ROOT/docs/delegation.md" > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: a copy without the read-only marker prints nothing" "" "$OUT"
+printf 'DELEGATION RUN: first\n- You are read-only: second\n' > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: markers in the wrong order print nothing" "" "$OUT"
+# The override file is honoured when well-formed (the suite-only knob, proven live so the cases above bind).
+printf 'lead\n- You are read-only: X\n  - y\n- DELEGATION RUN: Z\ntail\n' > "$sr_copy"
+sr_run "$(sr_ev general-purpose)" KEEL_SUBAGENT_RAILS_FILE="$sr_copy"
+check_eq "dir #674: KEEL_SUBAGENT_RAILS_FILE selects the block from the named file" \
+  "${sr_preface}"$'\n\n'"- You are read-only: X"$'\n'"  - y"$'\n'"- DELEGATION RUN: Z" \
+  "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+# No jq: nothing printed, exit 0. A PATH farm without jq; bash is named by absolute path.
+sr_farm="$(mktemp -d "$SANDBOX/srfarm.XXXXXX")"; path_farm "$sr_farm" jq
+OUT="$(printf '%s' "$(sr_ev general-purpose)" | env PATH="$sr_farm" "$(type -P bash)" "$gate" subagent-rails 2>&1)"; STATUS=$?
+check_status "dir #674: without jq the hook exits 0" 0 "$STATUS"
+check_eq "dir #674: without jq the hook prints nothing" "" "$OUT"
+# The CLI-mode $HOME guard exempts this subcommand: it reads no gate state, so an unusable HOME still injects.
+sr_run "$(sr_ev general-purpose)" HOME="$SANDBOX/no-such-home-674"
+check_status "dir #674: an unusable HOME still exits 0" 0 "$STATUS"
+check_eq "dir #674: an unusable HOME still injects the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+OUT="$(printf '%s' "$(sr_ev general-purpose)" | env -u HOME bash "$gate" subagent-rails 2>&1)"; STATUS=$?
+check_eq "dir #674: an unset HOME still injects the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
+
+# --- dir #713 / spec 745 A21: the riders left by dir #583's last review round -------------------------------------
+# Guards (1, 2, 6) already hold, so each passes today and is proved by a MUTATED copy of the gate; fixes (3, 4, 7, 8,
+# 9) are red before the change. Item 5 (the released CHANGELOG bullet) is accepted: released history is not rewritten.
+mutgate() {  # mutgate NAME SED-EXPR — a copy of the gate (with its lib/) under $SANDBOX/mut-NAME, edited by SED-EXPR; prints its path
+  local md="$SANDBOX/mut-$1/tools"
+  mkdir -p "$md" && cp -R "$REPO_ROOT/tools/lib" "$md/lib" && sed -e "$2" "$gate" > "$md/pre-pr-gate.sh"
+  cmp -s "$gate" "$md/pre-pr-gate.sh" && fail "dir #713: mutant '$1' differs from the gate" "its sed matched nothing — the mutation is vacuous"
+  printf '%s' "$md/pre-pr-gate.sh"
+}
+d="$(mkrepo)"
+# 1. the header-boundary extraction stops at its boundary: it holds nothing that exists only after it.
+check_absent "dir #713 item 1: the extracted header does NOT run on into the code (no PPG_AWK_PROG assignment)" "$gate_head" "PPG_AWK_PROG='"
+mut="$(mutgate boundary 's/^# CLI subcommands/# CLI-subcommands/')"
+mut_head="$(sed -n '1,/^# CLI subcommands/p' "$mut")"
+check_contains "dir #713 item 1: ...and the negative half CAN fail (boundary renamed → the whole file is extracted)" "$mut_head" "PPG_AWK_PROG='"
+# 2. -h inside a real checkout on a branch does not print the placeholder note.
+run_in "$d" bash "$gate" -h </dev/null
+check_absent "dir #713 item 2: -h in a checkout on a branch does NOT print 'No git checkout resolved here'" "$OUT" "No git checkout resolved here"
+mut="$(mutgate note 's/ph_note=""; *$/:/; s/ph_note=""$/:/')"
+run_in "$d" bash "$mut" -h </dev/null
+check_contains "dir #713 item 2: ...and the check CAN fail (the success branch no longer clears the note)" "$OUT" "No git checkout resolved here"
+# 3. (and 6, below, reads the same output) the note names the gate by the path it was invoked as; `keys` stays subject to the $HOME guard (accepted: the
+#    guard's exemption list is -h/--help/lex only, kept short on purpose).
+mkdir -p "$SANDBOX/nonrepo-713"
+run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
+check_contains "dir #713 item 3: the note names the gate by the path it was invoked as" "$OUT" "bash $gate keys"
+nonrepo_help="$OUT"
+# …and a relative invocation is spelled in full, so the command still resolves after the reader cds into the checkout.
+mkdir -p "$SANDBOX/rel713/tools" && cp -R "$REPO_ROOT/tools/lib" "$SANDBOX/rel713/tools/lib" && cp "$gate" "$SANDBOX/rel713/tools/pre-pr-gate.sh"
+run_in "$SANDBOX/rel713" bash tools/pre-pr-gate.sh -h </dev/null
+check_contains "dir #713 item 3: a relative invocation is anchored at the invoking directory" "$OUT" "bash $SANDBOX/rel713/tools/pre-pr-gate.sh keys"
+run_in "$d" env -u HOME bash "$gate" keys </dev/null
+check_status "dir #713 item 3: keys with HOME unset still exits 1 (the guard is not widened)" 1 "$STATUS"
+check_contains "dir #713 item 3: ...with the HOME diagnosis" "$OUT" "cannot resolve the gate state root"
+# 4. a failure inside a work tree keeps the reason: -h prints the first line of the error instead of the generic note.
+dd="$(mkrepo)"; git -C "$dd" checkout -q --detach
+run_in "$dd" bash "$gate" -h </dev/null
+check_status "dir #713 item 4: -h on a detached HEAD exits 0" 0 "$STATUS"
+check_contains "dir #713 item 4: ...and prints why the keys could not be resolved" "$OUT" "cannot key the receipt — detached HEAD"
+check_absent "dir #713 item 4: ...instead of the generic 'No git checkout resolved here'" "$OUT" "No git checkout resolved here"
+# 6. the note is exactly ONE output line (the line holding its start also holds its end).
+note_line="$(printf '%s\n' "$nonrepo_help" | grep -F "No git checkout resolved here" || true)"
+check_eq "dir #713 item 6: exactly one line holds the note's start" "1" "$(printf '%s\n' "$note_line" | grep -c .)"
+check_contains "dir #713 item 6: ...and that same line holds its end" "$note_line" "prints inside the checkout.)"
+mut="$(mutgate split 's/\${ph_note:+"\$ph_note"}/${ph_note:+$ph_note}/')"
+run_in "$SANDBOX/nonrepo-713" bash "$mut" -h </dev/null
+mnote="$(printf '%s\n' "$OUT" | grep -F "No git checkout resolved here" || true)"
+check_absent "dir #713 item 6: ...and the check CAN fail (the unquoted note splits across lines)" "$mnote" "prints inside the checkout.)"
+# 7. a first argument that is no dispatch arm → usage + exit 2 at once, never a stdin read (a FIFO nobody writes).
+mkfifo "$SANDBOX/fifo-713"
+# bounded_fifo DIR CMD… — CMD in DIR with stdin on that FIFO (opened read-write, so it never blocks and never gets
+# EOF), in the background with a bounded wait; STATUS 124 when it is still running at the bound, killed. No perl or
+# `timeout` (the Alpine CI image has neither); the bound is the suite's own KEEL_TEST_HANG_BOUND (dir #744 A28).
+bounded_fifo() {
+  local dir="$1" out="$SANDBOX/bounded-713.out" pid waited=0; shift
+  ( cd "$dir" && exec "$@" ) 0<>"$SANDBOX/fifo-713" >"$out" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    STATUS=124; OUT="(still running after ${waited} s — killed)"; return 0
+  fi
+  STATUS=0; wait "$pid" || STATUS=$?
+  OUT="$(cat "$out")"
+}
+bounded_fifo "$d" bash "$gate" --halp
+check_status "dir #713 item 7: an unknown first argument exits 2 at once (124 would mean it waited on stdin)" 2 "$STATUS"
+check_contains "dir #713 item 7: ...with a usage line naming the argument" "$OUT" "unknown subcommand --halp"
+bounded_fifo "$d" bash "$gate" foo
+check_status "dir #713 item 7: a bare word is refused the same way" 2 "$STATUS"
+# …and the ZERO-argument hook mode (every wiring shape the installer ever wrote, spec E12) is untouched.
+d7="$(mkrepo)"
+gate "git status" "$d7"
+check_status "dir #713 item 7: hook mode with no argument still allows an unrelated command" 0 "$STATUS"
+check_eq "dir #713 item 7: ...with an empty decision" "" "$OUT"
+# 8. S2-1: an agent:* outcome's missing-trace deny names the remedy an agent CAN perform where the reviewer's hook is
+#    wired, the installer remedy where it is not (never both: the first would be unperformable); a bare level gets neither.
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"keel-polish-reviewer", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$d/.claude/settings.json"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 8: agent:* missing trace, hook wired → still names the missing trace (wording untouched)" "$OUT" "no trace matching"
+check_contains "dir #713 item 8: ...and names the subagent that can write it" "$OUT" "re-run the keel-polish-reviewer subagent at the current HEAD"
+check_contains "dir #713 item 8: ...and the hook that writes the trace" "$OUT" "its SubagentStop hook writes the trace"
+check_absent "dir #713 item 8: ...without the installer sentence (the hook IS wired)" "$OUT" "No settings.json this gate can see wires"
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 8: agent:* missing trace, hook NOT wired → the installer remedy" "$OUT" "No settings.json this gate can see wires"
+check_absent "dir #713 item 8: ...and not the unperformable re-run remedy beside it" "$OUT" "re-run the keel-polish-reviewer subagent at the current HEAD"
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_absent "dir #713 item 8: a bare-level outcome's deny does not carry the agent remedy" "$OUT" "re-run the keel-polish-reviewer subagent"
+# 9. S2-5: the polish.5-review hint no longer says an agent review satisfies nothing; the reviewer's own is accepted.
+d="$(mkrepo)"
+write_full_receipt "$d" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 9: the hint keeps the pinned Skill(code-review) itself remedy" "$OUT" "Skill(code-review) itself"
+check_absent "dir #713 item 9: ...and no longer says an agent review satisfies nothing" "$OUT" "satisfies nothing here"
+check_contains "dir #713 item 9: ...it names the reviewer whose agent receipt IS accepted" "$OUT" "keel-polish-reviewer"
+
 summary

@@ -277,4 +277,17 @@ check_absent "A14: docs/reference.md no longer says the agent ships inert (the f
 check_absent "A14: the slice-1 CHANGELOG bullet no longer says inert until a later release" \
   "$(cat "$REPO_ROOT/CHANGELOG.md"; bash "$REPO_ROOT/tools/self/changelog-fragments.sh" --repo "$REPO_ROOT")" 'It is inert until a later release'
 
+# --- dir #674 (A4, slice 1): the seventh gate hook is said where an adopter reads about the gate ---------------------
+for nd in '7 hooks' 'KEEL_SUBAGENT_RAILS' 'W-GATE-SUBAGENT-RAILS'; do
+  pin "dir #674: docs/reference.md carries: $nd" "$REPO_ROOT/docs/reference.md" "$nd" "expected the installer row to name the seventh hook's facts (dir #674 B8)"
+done
+pin "dir #674: ADAPTING.md names the SubagentStart hook as Claude-Code-only" "$REPO_ROOT/ADAPTING.md" 'SubagentStart' "expected ADAPTING.md's gate bullet to say the injection does not port (dir #674 B8)"
+pin "dir #674: README.md names the SubagentStart hook and its kill switch" "$readme" 'SubagentStart' "expected the gate section to say what wiring it opts into (dir #674 F3)"
+pin "dir #674: README.md names the kill switch" "$readme" 'KEEL_SUBAGENT_RAILS=off' "expected the gate section to name the rollback (dir #674 F3)"
+
+# --- dir #675 (A4, slice 2): the subagent git floor and its opt-out are said where an adopter reads about the gate ------
+pin "dir #675: README.md names the git floor's kill switch" "$readme" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the gate section to name the floor's opt-out (dir #675 F3)"
+pin "dir #675: docs/reference.md names the git floor's kill switch" "$REPO_ROOT/docs/reference.md" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the installer row to name the floor's opt-out (dir #675 F3)"
+pin "dir #675: README.md says the floor is a seatbelt, not a sandbox" "$readme" 'not a sandbox' "expected the limit stated next to the floor (dir #675 B13)"
+
 summary

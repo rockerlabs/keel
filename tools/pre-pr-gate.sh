@@ -74,6 +74,8 @@
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
 #   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
 #   pre-pr-gate.sh rollout-check           SessionStart hook subcommand (dir #64 tier 1) — not run by hand
+#   pre-pr-gate.sh subagent-rails          SubagentStart hook subcommand (dir #674): hands the worker rails to a
+#                                           subagent — not run by hand
 #   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
 #                                           polish runs closed without a verified (non-self-reported) review (default K=3)
 #   pre-pr-gate.sh sentinel-path <key>      print the sentinel path for a receipt key (dir #398, for
@@ -93,7 +95,7 @@
 # Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
 # free-form string the model writes about itself, so a real in-session `/code-review <level>` pass and
 # a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same settings.json as
-# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all six together) write a mechanical
+# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all seven together) write a mechanical
 # trace line to a HOOK-OWNED side channel the model isn't expected to touch — a materially higher bar
 # than getting one self-report right, though not literally unfakeable (the model still has Bash; see the
 # residual limit below):
@@ -454,6 +456,51 @@
 # (altitude review) but deliberately NOT retrofitted here — those checks and their own test coverage
 # predate this ticket and are out of its scope; named so it isn't silently assumed away, a candidate for
 # its own follow-up ticket if ever felt in practice.
+#
+# --- dir #674: the worker rails at SubagentStart --------------------------------------------------
+# A subagent runs Bash with no floor unless keel wrote its spawn, and the rails that forbid it
+# (docs/delegation.md "Worker rails") reached a subagent only when a keel-written prompt pasted them —
+# `Explore` and `Plan` start with no CLAUDE.md at all. The 7th hook (`SubagentStart`, matcher "",
+# `pre-pr-gate.sh subagent-rails`, wired by tools/install-pre-pr-gate.sh) prints the block as the
+# subagent's `additionalContext`, verbatim and read live from `<checkout>/docs/delegation.md` under a
+# one-sentence preface (no second copy to drift). It injects for `general-purpose`, `Explore`, `Plan`,
+# `claude` and `claude-code-guide` (SUBAGENT_RAILS_TYPES, below) and for an event with no type; every other
+# type is its author's contract or already carries the block, and gets nothing. The list lives in the
+# script, not in the hook matcher, so it is unit-testable offline. It always exits 0 and prints at most one
+# JSON object, so it can never block a spawn; no jq, a missing file or a missing marker print nothing.
+# `KEEL_SUBAGENT_RAILS=off` in the session environment is the rollback that needs no settings edit.
+# **This is prose delivery, not a floor** — a rail delivered as prose is read and then sometimes not
+# applied; the mechanical half is dir #675. A keel prompt that already pastes the block (K2, drydock,
+# delta-audit) now delivers it twice, on purpose. A session open before the install gets nothing until it
+# restarts (hooks load at session start).
+#
+# --- dir #675: the subagent git floor, in this hook's Bash mode --------------------------------------------------
+# The mechanical half of the rails: inside a SUBAGENT (the event carries a non-empty `agent_id`; the parent's does
+# not) a repository-mutating git command aimed at the SESSION's repository is denied before any other verdict.
+# "Mutating" is a list of verbs (checkout, reset, stash, commit, push, clean, …) and the write forms of the verbs
+# that also read (branch, tag, config, remote, worktree, …); "the session's repository" is the git common dir of the
+# payload cwd, so every worktree of it counts. The reader (the awk program, which resolves no path) reports `cd`
+# and git segments; this file's bash side finds the directories: the cd's before the git word (a group's cd does
+# not leak, a `{ …; }` group's does; a cd into a directory that does not exist leaves the shell where it was, so
+# both are tried), `-C`, `--git-dir`/`GIT_DIR` and `--work-tree`/`GIT_WORK_TREE`. Subagents keep every mutating
+# command in a scratch clone (`git -C <clone>`, `cd <clone>`) and every read. `KEEL_SUBAGENT_GIT_FLOOR=off` in the
+# hook environment switches it off; the PR and push rules still apply to a subagent. No installer re-run: it rides
+# the already-wired PreToolUse/Bash hook, so a pulled gate enforces it at once.
+# **A seatbelt for the felt shape, not a sandbox.** Allowed by design: a non-literal path (`git -C "$S"`,
+# `cd "$S"`), `sh -c`/`bash -c`/`eval` text, a script FILE that runs git (the command text is all this reads — a
+# probe file holding `git push` is invisible; treating every `bash <file>` as a deny would stop every legitimate
+# test run), an alias or `git-<x>` external command, a wrapper outside the reader's skip set (`timeout`, `nice`,
+# `sudo`, `env -C`), a non-literal verb (`git $v`), a `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
+# `cd X || git …` whose cd fails although X exists (every cd is replayed as if it ran, so `false && cd X; git …`
+# and a backgrounded `cd X &` count too), `cd -`, a cd in one pipeline stage taken as applying to the next, a write
+# aimed at the session repository as a plain argument (`git -C <scratch> push <session repo> main`: only where git
+# RUNS is judged), a plain `rm`/`cp`/`mv` of tracked files, machine-global config writes (`machine-watch` is their detector),
+# and a subagent whose event carries no `agent_id`. Accepted costs: `mkdir X && cd X && git init` run from inside the
+# session repository is denied (X does not exist when the hook runs); `git -C X init` passes. A literal git dir
+# with no work tree named counts the running directory as its work tree (git's own rule), for EVERY mutating verb, so
+# `git --git-dir=<clone>/.git commit` from inside the session repository is denied too — use `git -C <clone>`.
+# `builtin -- cd X` is not read as a cd (a false deny, never a miss). A subagent started
+# with `isolation: "worktree"` is denied its own commits for the same reason (its worktree shares the repository).
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -485,7 +532,8 @@ unset _ppg_dir
 # `gate_state_root` check just before the first `sentinel=` resolution, further down) — by then
 # `deny()` is defined and `$cwd` is parsed, so that check uses the file's own real, established
 # decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
-if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != lex ]; then
+if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != lex ] \
+   && [ "${1:-}" != subagent-rails ]; then
   gate_state_root >/dev/null || {
     printf 'pre-pr-gate: $HOME %s — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' \
       "$(gate_home_diagnosis)" >&2
@@ -951,7 +999,7 @@ main_top_for() {
 # (dir #98 added `--home` to BOTH installers after this paragraph was first written — a prior version of
 # it claimed the gate installer "has no --home of its own", which stopped being true and became this
 # section's own stale comment, the exact class of bug B2 is named after). `install-pre-pr-gate.sh --home
-# DIR` wires the 6 hooks at `DIR/settings.json`, a path none of the four static candidates above ever
+# DIR` wires the 7 hooks at `DIR/settings.json`, a path none of the four static candidates above ever
 # probe — a genuinely wired AskUserQuestion leg there reads as UNARMED and the dir #88 mandatory-dialog
 # deny silently no-ops, the same class PR #165 closed for `KEEL_HOME` and PR #173's `--home` flag
 # reopened (dir #125's own B2 finding).
@@ -1673,6 +1721,7 @@ function on_segment(s,   i, k) {
   if (MODE == "lex") lex_segment()
   check_push()
   check_segment()
+  check_subgit()
 }
 function lex_segment(   line, k, m, cls) {
   line = segctx "@" segline "\td" segdepth "\ts" segscope "\tp" segpos
@@ -2283,8 +2332,186 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
   }
 }
 
+# --- dir #675: the subagent git floor (candidate lines for the shell side) --------------------------------------
+# With agent=1 (the event carries a non-empty agent_id, passed with -v) a cd/pushd/popd segment is reported as a
+# `subcd` candidate and a repository-mutating git segment (B10) as a `subgit` one. This code reads no file, runs no
+# command and resolves no path (I6): the shell side finds the directories and decides. A path word is reported as
+# `lit:<text>` (no expansion, no glob), `tld:<text>` (only a leading tilde expands: the shell puts $HOME there; a
+# QUOTED tilde is a plain character and stays `lit:`) or `unknown`. A word holding a newline or a separator byte is
+# `unknown`, so a reported field cannot forge another.
+function sg_safe(t) { return index(t, "\n") == 0 && index(t, SEP) == 0 && index(t, SEP2) == 0 }
+function sg_path(t, m) {
+  if (!sg_safe(t) || index(m, "g")) return "unknown"
+  if (index(m, "x") == 0) return "lit:" t
+  if (substr(m, 1, 1) == "x" && index(substr(m, 2), "x") == 0 && (t == "~" || substr(t, 1, 2) == "~/")) return "tld:" t
+  return "unknown"
+}
+# sg_in(w, list) — w is one of the space-separated words of list (a word holding a space never matches).
+function sg_in(w, list) { return index(w, " ") == 0 && index(" " list " ", " " w " ") > 0 }
+function sg_has(a, list,   k) {
+  for (k = a; k <= ntok; k++) if (sg_in(tok[k], list)) return 1
+  return 0
+}
+function sg_cd(i,   j, c, p) {
+  c = tok[i]; j = i + 1
+  while (j <= ntok && substr(tok[j], 1, 1) == "-" && length(tok[j]) > 1) {
+    if (tok[j++] == "--") break
+  }
+  p = "unknown"
+  if (c != "popd" && j <= ntok && tok[j] != "-" && tok[j] !~ /^[-+][0-9]+$/) p = sg_path(tok[j], tokm[j])
+  ncd++; cd_pos[ncd] = segpos
+  cd_row[ncd] = "subcd" SEP segpos SEP segscope SEP p
+}
+# The classification of one git invocation (B10). a = the index of the first word after the verb.
+# sg_mut(v, a) returns 1 for a repository-mutating form; it may set sg_sub (the subcommand word, for the reason
+# text), sg_gd / sg_wt (a `config -f <file>` write names the file directory as the work tree and no git dir) and
+# sg_extra (a directory `init` names, appended to the -C chain).
+function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, del, nxt, d) {
+  sg_sub = ""
+  if (sg_in(v, "checkout switch restore reset clean commit add rm mv rebase merge cherry-pick revert am pull push update-ref update-index read-tree checkout-index gc prune repack filter-branch filter-repo replace sparse-checkout maintenance stage merge-file")) return 1
+  if (v == "init") {
+    d = ""
+    for (k = a; k <= ntok; k++) {
+      w = tok[k]
+      if (sg_in(w, "-b --initial-branch --separate-git-dir --template --object-format --ref-format")) k++
+      else if (substr(w, 1, 1) != "-") d = k
+    }
+    if (d) sg_extra = sg_path(tok[d], tokm[d])
+    return 1
+  }
+  if (v == "stash" || v == "worktree") {
+    nxt = (a <= ntok) ? tok[a] : ""
+    if (nxt ~ /^[a-z][a-z-]*$/) sg_sub = nxt
+    if (v == "stash") return !(nxt == "list" || nxt == "show")
+    return nxt != "list"
+  }
+  if (v == "branch" || v == "tag") {
+    wr = 0; rd = 0; npos = 0
+    for (k = a; k <= ntok; k++) {
+      w = tok[k]
+      if (w == "--") { npos += ntok - k; break }
+      if (substr(w, 1, 2) == "--") {
+        eq = index(w, "="); nm = eq ? substr(w, 1, eq - 1) : w
+        if (sg_in(nm, (v == "branch") ? "--delete --move --copy --force --set-upstream-to --unset-upstream --edit-description" : "--delete --force --annotate --sign --local-user --file --message")) wr = 1
+        else if (sg_in(nm, "--list --show-current --all --remotes --verify")) rd = 1
+        else if (sg_in(nm, "--merged --no-merged --contains --no-contains --points-at --sort --format")) { rd = 1; if (!eq) k++ }
+      } else if (substr(w, 1, 1) == "-" && length(w) > 1) {
+        w = substr(w, 2)
+        if (w ~ (v == "branch" ? "[dDmMcCfu]" : "[dfasmuF]")) wr = 1
+        if (w ~ (v == "branch" ? "[lar]" : "[lnv]")) rd = 1
+      } else npos++
+    }
+    return wr || (!rd && npos > 0)
+  }
+  if (v == "notes" || v == "bisect" || v == "submodule" || v == "reflog" || v == "remote") {
+    for (k = a; k <= ntok; k++) {
+      w = tok[k]
+      if (w == "--ref") { k++; continue }
+      if (substr(w, 1, 1) != "-") break
+    }
+    nxt = (k <= ntok) ? tok[k] : ""
+    if (nxt ~ /^[a-z][a-z-]*$/) sg_sub = nxt
+    if (v == "notes") return !(nxt == "" || nxt == "list" || nxt == "show")
+    if (v == "bisect") return !(nxt == "log" || nxt == "visualize" || nxt == "view")
+    if (v == "submodule") return !(nxt == "" || nxt == "status" || nxt == "summary")
+    if (v == "reflog") return nxt == "expire" || nxt == "delete" || nxt == "drop"
+    return !(nxt == "" || nxt == "show" || nxt == "get-url")
+  }
+  if (v == "apply") return !(sg_has(a, "--check --stat --numstat --summary") && !sg_has(a, "--apply --index --cached --3way -3"))
+  if (v == "symbolic-ref") {
+    npos = 0; del = sg_has(a, "-d --delete")
+    for (k = a; k <= ntok; k++) {
+      if (tok[k] == "-m") k++
+      else if (substr(tok[k], 1, 1) != "-") npos++
+    }
+    return del || npos != 1
+  }
+  if (v == "config") {
+    wr = 0; rd = 0; npos = 0; first = ""; glob = 0; ffile = ""; fmask = ""
+    for (k = a; k <= ntok; k++) {
+      w = tok[k]
+      if (substr(w, 1, 1) == "-" && length(w) > 1) {
+        if (w == "--global" || w == "--system") glob = 1
+        if (sg_in(w, "--unset --unset-all --add --replace-all --remove-section --rename-section -e --edit")) wr = 1
+        if (sg_in(w, "--get --get-all --get-regexp --get-urlmatch --list -l")) rd = 1
+        if (w == "--file" || w == "-f") { if (k < ntok) { ffile = tok[k + 1]; fmask = tokm[k + 1] }; k++ }
+        else if (index(w, "--file=") == 1) { ffile = substr(w, 8); fmask = substr(tokm[k], 8) }
+        else if (sg_in(w, "--type --default --blob --comment")) k++
+      } else { npos++; if (npos == 1) first = w }
+    }
+    if (glob) return 0
+    if (sg_in(first, "set unset rename-section remove-section edit")) wr = 1
+    if (first == "get" || first == "list") rd = 1
+    if (!(wr || (!rd && npos >= 2))) return 0
+    if (first ~ /^[a-z][a-z-]*$/ && wr) sg_sub = first
+    if (ffile != "") {
+      sg_gd = "none"
+      w = sg_path(ffile, fmask)
+      if (w == "unknown") sg_wt = "unknown"
+      else {
+        nm = substr(w, 5)
+        if (match(nm, /\/[^\/]*$/)) nm = (RSTART == 1) ? "/" : substr(nm, 1, RSTART - 1); else nm = "."
+        sg_wt = substr(w, 1, 4) nm
+      }
+    }
+    return 1
+  }
+  return 0
+}
+function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v) {
+  if (!agent) return
+  i = cmd_start()
+  if (i > ntok || !w_plain(i)) return
+  c = tok[i]
+  if (c == "builtin" && i < ntok && w_plain(i + 1) && (tok[i + 1] == "cd" || tok[i + 1] == "pushd" || tok[i + 1] == "popd")) { sg_cd(i + 1); return }
+  if (c == "cd" || c == "pushd" || c == "popd") { sg_cd(i); return }
+  if (!(c == "git" || (length(c) > 4 && substr(c, length(c) - 3) == "/git"))) return
+  sg_gd = "-"; sg_wt = "-"; sg_extra = ""; chain = ""
+  for (k = 1; k <= nassign; k++) {
+    a = assign_at[k]; nmv = w_assign_name(a); L = assign_len(tok[a])
+    if (L == length(tok[a])) continue
+    if (nmv == "GIT_DIR") sg_gd = sg_path(substr(tok[a], L + 1), substr(tokm[a], L + 1))
+    else if (nmv == "GIT_WORK_TREE") sg_wt = sg_path(substr(tok[a], L + 1), substr(tokm[a], L + 1))
+  }
+  j = i + 1
+  while (j <= ntok && substr(tok[j], 1, 1) == "-") {
+    o = tok[j]
+    if (o == "-C") {
+      if (j == ntok) return
+      chain = chain (chain == "" ? "" : SEP2) sg_path(tok[j + 1], tokm[j + 1]); j += 2
+    } else if (o == "-c" || o == "--namespace" || o == "--config-env" || o == "--attr-source" || o == "--super-prefix") j += 2
+    else if (o == "--git-dir" || o == "--work-tree") {
+      if (j == ntok) return
+      if (o == "--git-dir") sg_gd = sg_path(tok[j + 1], tokm[j + 1]); else sg_wt = sg_path(tok[j + 1], tokm[j + 1])
+      j += 2
+    } else if (index(o, "--git-dir=") == 1) { sg_gd = sg_path(substr(o, 11), substr(tokm[j], 11)); j++ }
+    else if (index(o, "--work-tree=") == 1) { sg_wt = sg_path(substr(o, 13), substr(tokm[j], 13)); j++ }
+    else j++
+  }
+  if (j > ntok || !w_plain(j)) return
+  v = tok[j]
+  if (!sg_mut(v, j + 1)) return
+  if (sg_extra != "") chain = chain (chain == "" ? "" : SEP2) sg_extra
+  if (sg_gd == "lit:" || sg_gd == "tld:") sg_gd = "-"
+  ngit++; git_pos[ngit] = segpos
+  git_row[ngit] = "subgit" SEP segpos SEP segscope SEP v (sg_sub != "" ? " " sg_sub : "") SEP chain SEP sg_gd SEP sg_wt
+}
+# sg_out() — the candidate lines, each kind in source order (segments arrive in end order): subcd rows first.
+function sg_isort(pos, row, n,   i, j, t) {
+  for (i = 2; i <= n; i++) for (j = i; j > 1 && pos[j] < pos[j - 1]; j--) {
+    t = pos[j]; pos[j] = pos[j - 1]; pos[j - 1] = t
+    t = row[j]; row[j] = row[j - 1]; row[j - 1] = t
+  }
+}
+function sg_out(   i) {
+  sg_isort(cd_pos, cd_row, ncd); sg_isort(git_pos, git_row, ngit)
+  for (i = 1; i <= ncd; i++) print cd_row[i]
+  for (i = 1; i <= ngit; i++) print git_row[i]
+  return ncd + ngit
+}
+
 # --- the output: at most one verdict line first (push, then refuse, then pr — the only place the order lives),
-# then candidate lines from the registered tags (none yet). Fields are joined by SEP, passed in with -v (macOS
+# then candidate lines from the registered tags (subcd and subgit, dir #675). Fields are joined by SEP, passed in with -v (macOS
 # awk reads a \x escape in a literal greedily). Exit 0 when a line was printed, 1 when none.
 function out(   i, r, v) {
   if (MODE == "lex") {
@@ -2295,8 +2522,8 @@ function out(   i, r, v) {
   if (pushbypass) v = "push"
   else if (refused) v = "refuse"
   else if (matched) v = "pr"
-  if (v == "") exit 1
-  print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
+  if (v != "") print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
+  if (sg_out() == 0 && v == "") exit 1
   exit 0
 }
 BEGIN {
@@ -2311,10 +2538,22 @@ case "${1:-}" in
     # receipts ever reached the hook. Exempt from the CLI-mode $HOME guard above (help must work in a broken
     # environment); key resolution is best-effort: a non-repo cwd or a detached HEAD (where
     # _require_receipt_key exits, inside this substitution only) leaves the placeholders.
+    # dir #713: the note names the gate by the path it was invoked as ($0), and a failure INSIDE a work tree keeps
+    # its reason (the first line of what key resolution printed — a detached HEAD, say) instead of the generic
+    # "no checkout" text. `keys` itself stays subject to the $HOME guard: the exemption list above is -h/lex only.
     ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
-    ph_note='(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> stand for the keys `pre-pr-gate.sh keys` prints inside the checkout.)'
-    if ph_keys="$(_require_receipt_key "$PWD" 2>/dev/null && printf '%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
+    # A relative $0 would not resolve once the reader `cd`s "into the checkout", so it is anchored at the current
+    # directory (still the path it was invoked as, spelled in full); %q keeps it paste-safe.
+    ph_self="$0"; case "$ph_self" in /*) ;; *) ph_self="$PWD/${ph_self#./}" ;; esac
+    ph_tail="stand for the keys \`bash $(printf '%q' "$ph_self") keys\` prints inside the checkout.)"
+    ph_note="(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> $ph_tail"
+    if ph_raw="$(_require_receipt_key "$PWD" 2>&1 && printf '\nKEYS\t%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
+      ph_keys="${ph_raw##*$'\nKEYS\t'}"
       ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"; ph_note=""
+    elif git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ -n "$ph_raw" ]; then
+      # the gate's own reason line if there is one (git may have printed a warning first), else the first line
+      ph_why="$(grep -m1 '^pre-pr-gate:' <<<"$ph_raw")" || ph_why="${ph_raw%%$'\n'*}"
+      ph_note="(${ph_why#pre-pr-gate: } — <receipt-key> and <repo-key> $ph_tail"
     fi
     ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
     ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
@@ -2891,6 +3130,40 @@ case "${1:-}" in
     fi
     exit 0
     ;;
+  subagent-rails)
+    # SubagentStart hook (dir #674) — see the dir #674 header section above. Prints the worker rails as the
+    # subagent's `additionalContext`; never blocks a spawn: it always exits 0 and prints at most one JSON
+    # object. Order: kill switch, jq, the type rule, the block, print. It reads no gate state, so it is exempt
+    # from the CLI-mode $HOME guard above (an unusable $HOME must not make a prose nudge exit 1).
+    [ "${KEEL_SUBAGENT_RAILS:-}" = off ] && exit 0
+    command -v jq >/dev/null 2>&1 || exit 0
+    sr_input=$(cat 2>/dev/null) || sr_input=""
+    # A missing or empty type, or an event that does not parse, injects: a nudge errs toward delivery. Any
+    # OTHER type is skipped (its author's contract, or already carries the block / a structural floor).
+    sr_type=$(printf '%s' "$sr_input" | jq -r '.agent_type // ""' 2>/dev/null) || sr_type=""
+    SUBAGENT_RAILS_TYPES="general-purpose Explore Plan claude claude-code-guide"
+    if [ -n "$sr_type" ]; then
+      # Exact match: a multi-word value ("Explore Plan") must not pass as a substring of the list.
+      case "$sr_type" in *[[:space:]]*) exit 0 ;; esac
+      case " $SUBAGENT_RAILS_TYPES " in *" $sr_type "*) ;; *) exit 0 ;; esac
+    fi
+    # The block: from the first `- You are read-only:` line through the next `- DELEGATION RUN:` line — the
+    # patterns tests/lib.sh's extract_rails_block uses, so the hook and the byte-equality pin agree on what
+    # "the block" is. BOTH markers must be there, in that order (a range with only its start would run to the
+    # end of the file). The checkout comes from _gate_checkout_root: $_ppg_dir was unset after the libs were sourced.
+    sr_checkout="$(_gate_checkout_root)" || exit 0
+    sr_file="${KEEL_SUBAGENT_RAILS_FILE:-$sr_checkout/docs/delegation.md}"
+    sr_block=$(awk '
+      !on && /^[[:space:]]*- You are read-only:/ { on = 1 }
+      on { print }
+      on && /^[[:space:]]*- DELEGATION RUN:/ { done = 1; exit }
+      END { if (!done) exit 1 }
+    ' "$sr_file" 2>/dev/null) || exit 0
+    [ -n "$sr_block" ] || exit 0
+    sr_preface="Keel worker rails — injected into this subagent by keel's SubagentStart hook (dir #674), verbatim from docs/delegation.md \"Worker rails\"."
+    jq -cn --arg p "$sr_preface" --arg b "$sr_block" '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:($p + "\n\n" + $b)}}' 2>/dev/null
+    exit 0
+    ;;
   rollout-check)
     # SessionStart hook (dir #64 tier 1) — see the dir #64 header section above. Never blocks; any
     # parse failure or missing jq is a silent no-op rather than a false warning.
@@ -2994,6 +3267,17 @@ case "${1:-}" in
     printf 'pre-pr-gate: sweep - recent runs look fine (a verified review within the last %s)\n' "$sw_k"
     exit 0
     ;;
+  "")
+    : # hook mode: no argument (every wiring shape the installer ever wrote, spec 745 E12)
+    ;;
+  *)
+    # dir #713 (spec 745 A21 item 7): a first argument that is none of the arms above used to fall through to hook
+    # mode and wait on stdin for a hook event nobody sends. Usage and exit 2 instead, before any read. Safe because
+    # hook mode is entered with NO argument: every PreToolUse(Bash) command shape tools/install-pre-pr-gate.sh ever
+    # wrote is `bash <gate>` (spec 745 E12, re-checked at implementation over all 43 commits touching it).
+    printf 'pre-pr-gate: unknown subcommand %q — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
+    exit 2
+    ;;
 esac
 
 # --- hook mode: PreToolUse(Bash) on `gh pr create` -------------------------------------------------
@@ -3004,7 +3288,14 @@ esac
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
+# One jq call for the three event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent),
+# the cwd and the command. The command comes last, so its newlines survive the split; a field that is not a string reads
+# as empty.
+sep=$'\x1f'; sep2=$'\x1e'
+hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; [(.agent_id // "" | s), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
+hk_agent=${hk_ev%%"$sep"*}; hk_rest=${hk_ev#*"$sep"}
+hk_cwd=${hk_rest%%"$sep"*}; cmd=${hk_rest#*"$sep"}
+hk_cwd=${hk_cwd:-$PWD}
 
 # The command reader (PPG_AWK_PROG, defined above the CLI dispatch so `lex` can run it) judges the command text
 # the way the shell will read it, and prints at most one verdict line: `push` (a git push that bypasses the
@@ -3015,21 +3306,36 @@ cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 # No rule can fire without a `g` in the text (git, gh), and a reader failure denies only git/gh: a command with no
 # `g` is allowed without running awk — most Bash calls (ls, cat, cd, make) save the whole read.
 case "$cmd" in *g*) ;; *) exit 0 ;; esac
-sep=$'\x1f'
-awk_out="$(awk -v SEP="$sep" "$PPG_AWK_PROG" <<< "$cmd")"
+# dir #675: inside a subagent (a non-empty agent_id) the reader also reports cd and repository-mutating git facts for the
+# shell side below; KEEL_SUBAGENT_GIT_FLOOR=off in the hook environment switches that off (the PR and push rules stay).
+sg_agent=0
+if [ -n "$hk_agent" ] && [ "${KEEL_SUBAGENT_GIT_FLOOR:-}" != off ]; then sg_agent=1; fi
+awk_out="$(awk -v SEP="$sep" -v SEP2="$sep2" -v agent="$sg_agent" "$PPG_AWK_PROG" <<< "$cmd")"
 awk_status=$?
 verdict=""; head_branch=""; refuse_why=""; reader_bad=0
 case "$awk_status" in 0|1) ;; *) reader_bad=1 ;; esac
 [ "$awk_status" = 1 ] && [ -n "$awk_out" ] && reader_bad=1
 [ "$awk_status" = 0 ] && [ -z "$awk_out" ] && reader_bad=1
+sg_ncd=0; sg_ngit=0
 if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
-  while IFS="$sep" read -r rd_first rd_head rd_reason; do
+  while IFS="$sep" read -r rd_first rd_a rd_b rd_c rd_d rd_e rd_f; do
     case "$rd_first" in
       push|refuse|pr)
         if [ -n "$verdict" ]; then reader_bad=1; break; fi
-        verdict="$rd_first"; head_branch="$rd_head"; refuse_why="$rd_reason"
+        verdict="$rd_first"; head_branch="$rd_a"; refuse_why="$rd_b"
         ;;
-      # A candidate line's tag gets its own arm here, ahead of the verdict (none registered yet).
+      # A candidate line's tag gets its own arm here, ahead of the verdict. Only a subagent's run reports them.
+      subcd)
+        if [ "$sg_agent" != 1 ]; then reader_bad=1; break; fi
+        sg_cd_pos[sg_ncd]="$rd_a"; sg_cd_scope[sg_ncd]="$rd_b"; sg_cd_val[sg_ncd]="$rd_c"
+        sg_ncd=$((sg_ncd + 1))
+        ;;
+      subgit)
+        if [ "$sg_agent" != 1 ]; then reader_bad=1; break; fi
+        sg_git_pos[sg_ngit]="$rd_a"; sg_git_scope[sg_ngit]="$rd_b"; sg_git_verb[sg_ngit]="$rd_c"
+        sg_git_chain[sg_ngit]="$rd_d"; sg_git_gd[sg_ngit]="$rd_e"; sg_git_wt[sg_ngit]="$rd_f"
+        sg_ngit=$((sg_ngit + 1))
+        ;;
       *) reader_bad=1; break ;;
     esac
   done <<< "$awk_out"
@@ -3039,9 +3345,7 @@ fi
 # same jq shape `deny()` uses) and exits 0 — calling `deny` while it is undefined would exit non-2, which
 # Claude Code treats as a non-blocking error, i.e. ALLOW.
 early_deny() {   # early_deny <guard detail> <reason>
-  local ed_cwd
-  ed_cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
-  log_event guard "$1" "${ed_cwd:-$PWD}"
+  log_event guard "$1" "$hk_cwd"
   jq -cn --arg r "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   exit 0
 }
@@ -3050,6 +3354,139 @@ if [ "$reader_bad" = 1 ]; then
     *git*|*gh*) early_deny reader-failed "Pre-PR gate: the command reader failed (awk exit $awk_status) — run this git/gh step in its own Bash call, or report it." ;;
   esac
   exit 0
+fi
+# --- dir #675: the subagent git floor, shell side (B11) --------------------------------------------------------
+# The reader (awk) only reports facts about cd and git segments; the directories are found here, in bash 3.2-safe
+# code. Paths reach git ONLY as quoted arguments (`git -C "$dir"`), and a leading tilde becomes $HOME by string
+# substitution — never eval, which would run the agent's text. A path that does not exist, or is no repository,
+# does not match; an UNKNOWN target never matches (B13).
+SESSION_GIT=""; sg_verb=""; sg_seen=""
+# sg_val ITEM — sets sg_vk (lit|dash|none|unknown) and sg_vp, the path with a leading tilde resolved.
+sg_val() {
+  sg_vk=unknown; sg_vp=""
+  case "$1" in
+    lit:*) sg_vk=lit; sg_vp="${1#lit:}" ;;
+    tld:*)
+      sg_vp="${1#tld:}"
+      if [ -z "${HOME:-}" ]; then sg_vp=""
+      else
+        # shellcheck disable=SC2088  # the tilde is matched as TEXT here, on purpose: it is replaced by string substitution
+        case "$sg_vp" in "~") sg_vp="$HOME"; sg_vk=lit ;; "~/"*) sg_vp="$HOME${sg_vp#\~}"; sg_vk=lit ;; esac
+      fi
+      ;;
+    -) sg_vk=dash ;;
+    none) sg_vk=none ;;
+  esac
+}
+# sg_join BASE PATH — sets sg_j: PATH if absolute, else BASE/PATH; empty when BASE is unknown (empty). A global, not
+# printed, so a caller pays no command-substitution fork.
+sg_join() {
+  case "$2" in
+    /*) sg_j="$2" ;;
+    *) if [ -n "$1" ]; then sg_j="${1%/}/$2"; else sg_j=""; fi ;;
+  esac
+}
+# sg_dir_hit DIR — is DIR (inside) the session repository? Each distinct dir is asked of git once.
+sg_dir_hit() {
+  [ -d "$1" ] || return 1
+  case "$sg_seen" in *"${sep}d:$1${sep}"*) return 1 ;; esac
+  sg_seen="$sg_seen${sep}d:$1${sep}"
+  [ "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
+}
+sg_gitdir_hit() {
+  [ -e "$1" ] || return 1
+  case "$sg_seen" in *"${sep}g:$1${sep}"*) return 1 ;; esac
+  sg_seen="$sg_seen${sep}g:$1${sep}"
+  [ "$(git --git-dir="$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
+}
+# sg_apply_cd VALUE — replay one applicable cd (VALUE as the reader reported it) on the directory set (sg_members, at
+# most 8 long; with sg_unk, shared with sg_check and sg_target_hit, which are bash 3.2 and have no namerefs). A
+# literal path that is an existing directory moves each member there; one that is not leaves the member where it was
+# AND adds the target, because a failed cd leaves bash in place and the next command still runs (the dir #669 shape).
+sg_apply_cd() {
+  local p m t n k have
+  [ "$sg_unk" = 1 ] && return 0
+  sg_val "$1"
+  [ "$sg_vk" = lit ] || { sg_unk=1; return 0; }
+  p="$sg_vp"
+  [ -n "$p" ] || return 0
+  local -a new=() pend=()
+  for m in "${sg_members[@]}"; do
+    sg_join "$m" "$p"; t="$sg_j"
+    if [ -d "$t" ]; then new[${#new[@]}]="$t"
+    else new[${#new[@]}]="$m"; pend[${#pend[@]}]="$t"
+    fi
+  done
+  n=0
+  while [ "$n" -lt "${#pend[@]}" ] && [ "${#new[@]}" -lt 8 ]; do
+    have=0; k=0
+    while [ "$k" -lt "${#new[@]}" ]; do
+      [ "${new[$k]}" = "${pend[$n]}" ] && have=1
+      k=$((k + 1))
+    done
+    [ "$have" = 1 ] || new[${#new[@]}]="${pend[$n]}"
+    n=$((n + 1))
+  done
+  sg_members=("${new[@]}")
+}
+# sg_target_hit INDEX — does the INDEXth git segment target the session repository?
+sg_target_hit() {
+  local gi="$1" m cur ci item gdk gdp wtk wtp
+  local -a chain=() mlist=()
+  # (E) the chain is split only when the segment has one: a here-string is a temp file in bash 3.2
+  if [ -n "${sg_git_chain[$gi]}" ]; then IFS="$sep2" read -r -a chain <<< "${sg_git_chain[$gi]}" || true; fi
+  sg_val "${sg_git_gd[$gi]}"; gdk="$sg_vk"; gdp="$sg_vp"
+  sg_val "${sg_git_wt[$gi]}"; wtk="$sg_vk"; wtp="$sg_vp"
+  if [ "$sg_unk" = 1 ]; then mlist=(""); else mlist=("${sg_members[@]}"); fi
+  for m in "${mlist[@]}"; do
+    cur="$m"
+    ci=0
+    while [ "$ci" -lt "${#chain[@]}" ]; do
+      item="${chain[$ci]}"
+      sg_val "$item"
+      if [ "$sg_vk" = lit ]; then
+        if [ -n "$sg_vp" ]; then sg_join "$cur" "$sg_vp"; cur="$sg_j"; fi
+      else cur=""
+      fi
+      ci=$((ci + 1))
+    done
+    case "$gdk" in
+      lit) sg_join "$cur" "$gdp"; sg_gitdir_hit "$sg_j" && return 0
+           # A git dir with no work tree named leaves the work tree at the running directory (git's own rule): a
+           # scratch git dir used from inside the session repository rewrites the session's files.
+           [ "$wtk" = dash ] && { sg_dir_hit "$cur" && return 0; } ;;
+      dash) sg_dir_hit "$cur" && return 0 ;;
+    esac
+    if [ "$wtk" = lit ]; then sg_join "$cur" "$wtp"; sg_dir_hit "$sg_j" && return 0; fi
+  done
+  return 1
+}
+# sg_check — true (sg_verb set) when some reported git segment is a mutating form aimed at the session repository.
+sg_check() {
+  local gi=0 ci sc gc
+  SESSION_GIT="$(git -C "$hk_cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  [ -n "$SESSION_GIT" ] || return 1
+  while [ "$gi" -lt "$sg_ngit" ]; do
+    sg_members=("$hk_cwd"); sg_unk=0
+    gc="${sg_git_scope[$gi]}"; ci=0
+    while [ "$ci" -lt "$sg_ncd" ]; do
+      sc="${sg_cd_scope[$ci]}"
+      # A cd applies to a later segment whose scope starts with its own, component by component (dir #745 I1).
+      if [ "${sg_cd_pos[$ci]}" -lt "${sg_git_pos[$gi]}" ] 2>/dev/null; then
+        case "$gc" in "$sc"|"$sc".*) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac
+      fi
+      ci=$((ci + 1))
+    done
+    if sg_target_hit "$gi"; then sg_verb="${sg_git_verb[$gi]}"; return 0; fi
+    gi=$((gi + 1))
+  done
+  return 1
+}
+# dir #675 (B9-B12): a subagent's repository-mutating git against the session repository is denied before any verdict is
+# acted on (a subagent's `git push --no-verify` in the session repo gets THIS deny; the same push from the parent gets the
+# push deny below). Everything it cannot read — a non-literal path, a script, an alias — is allowed (B13).
+if [ "$sg_ngit" -gt 0 ] && sg_check; then
+  early_deny blocked "Keel subagent floor (dir #675): a subagent may not run 'git $sg_verb' against the session's repository ($SESSION_GIT) — it changes the parent session's working tree, index or refs, which may hold uncommitted work. Read-only git (status, diff, log, show, blame) is fine. For a live check, clone first and work only through 'git -C <your clone>' — never after a 'cd'. If the parent asked for this change, stop and hand it back — the parent session runs it."
 fi
 case "$verdict" in
   push) early_deny blocked "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." ;;
@@ -3061,7 +3498,7 @@ esac
 # dir #61: resolve the sentinel by the REPO's main checkout, not the raw event cwd — a receipt written
 # from inside a worktree and a hook event reporting a different checkout of the same repo (the
 # harness's tracked session-root cwd, which does not track an in-command `cd`) must land on one file.
-cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+cwd=$hk_cwd
 [ -z "$cwd" ] && cwd="$PWD"
 # dir #88 simplify pass: resolve the main-checkout top ONCE and derive $wt from it — `_dialog_leg_armed`
 # (below, in the PASS branch) needs the full top path, not just its basename, and calling `_repo_key`
@@ -3231,7 +3668,7 @@ _missing_step_hint() {
   local detail="$1"
   case ",$detail," in
     *,polish.5-review,*)
-      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation stamps the review'\''s trace, so an agent review — however thorough, however clean it came back — satisfies nothing here; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, then write the receipt.' ;;
+      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation, or a review by the %s subagent (its SubagentStop hook, where wired, writes the trace, and its agent:<level> receipt is accepted), stamps the review'\''s trace — a bare Agent spawn of any other type leaves none, however thorough, however clean it came back; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, or through the %s subagent, then write the receipt.' "$REVIEW_AGENT_TYPE" "$REVIEW_AGENT_TYPE" ;;
   esac
 }
 
@@ -3772,8 +4209,16 @@ case "$status" in
           # release, so an `agent:*` outcome with no trace and no settings.json wiring the new matcher is most
           # likely a pull without the installer re-run. ONE added sentence, never reworded text (several tests pin
           # the surrounding wording); a settings file that already wires it (or matches every agent type) omits it.
-          if [[ "$review_outcome" == agent:* ]] && ! _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
-            trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+          # dir #713 (S2-1): an agent has no Skill tool to follow the Skill(code-review) remedy below. One added
+          # sentence names the one it can perform — re-run the reviewer subagent, whose SubagentStop writes the
+          # trace — but only where that hook is wired: where it is not, the installer sentence (the else arm) is the only
+          # remedy the agent can act on, and the two would contradict.
+          if [[ "$review_outcome" == agent:* ]]; then
+            if _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
+              trace_deny_detail="$trace_deny_detail For an agent review, re-run the $REVIEW_AGENT_TYPE subagent at the current HEAD — its SubagentStop hook writes the trace (no Skill tool needed)."
+            else
+              trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+            fi
           fi
           # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
           # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
