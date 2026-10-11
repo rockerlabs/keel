@@ -127,7 +127,7 @@ type_p_bypass() {
   local tf="$1" tvars tv cvars hop next
   local tp='(\$\(type -P git[^)]*\)|`type -P git[^`]*`)'
   tvars="$(grep -oE "(^|[[:space:];])(local |export |readonly |declare (-[a-zA-Z]+ )?)?[A-Za-z_][A-Za-z_0-9]*=\(?(\"?)$tp" "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly |declare (-[a-zA-Z]+ )?)?([A-Za-z_0-9]+)=.*/\3/' || true)"
-  # Copies, followed to a fixpoint (ten rounds at most, against a cycle `a=$b; b=$a`): `h="$g"` / `h=$g` /
+  # Copies, ten rounds deep (so a chain of up to ten copies; a longer one is a named limit): `h="$g"` / `h=$g` /
   # `h="${g}"` / `h=("$g")` makes h a type -P path too, and so does `k="$h"`.
   cvars=""; hop="$tvars"
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -145,7 +145,9 @@ type_p_bypass() {
   # `run env "${FRESH_HOME_ENV[@]}" "$(type -P git)" -C "$d" config --get …` — a READ through `env`, which cannot
   # see lib.sh's git() function, so the real binary is the only way to get the fresh environment. A `config
   # --get` writes nothing, so it cannot step around a guard that protects writes: a line whose ONLY `type -P git`
-  # call is `-C <repo> config --get` is allowed (any other call on the line, or another verb, is still flagged).
+  # call is `-C <repo> config --get` is allowed. The test is per LINE, not per call: a line holding one `type -P
+  # git` call plus a different `-C … config --get` through another path would pass — a named limit; a second
+  # `type -P git` on the line, or another verb after the `-C`, is still flagged.
   grep -nE "\"?$tp\"?([^|;\&]*[[:space:]])?-C([^[:alpha:]]|\$)" "$tf" \
     | awk '{ n = gsub(/type -P git/, "&"); if ($0 ~ /-C [^ ]+ config --get/ && n < 2) next; print }' \
     | sed "s|^|${tf##*/} (inline): |" || true
