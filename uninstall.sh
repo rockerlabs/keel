@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # uninstall — reverse install.sh. The mirror image of what install wires, and nothing more: it
 # removes ONLY Keel-owned content (the linked keel/ consumption dir, the one @import line / embedded
-# rails block in the global CLAUDE.md, the command symlinks + collision aliases, the keel PATH
-# symlink, and any copy-mode FRAMEWORK/PRINCIPLES it placed). It NEVER touches your own files
-# (INSTANCE.md, LEARNINGS.md, IDEAS.md, or a command you authored) and NEVER silently drops the
-# machine-global secret-guard (a shared safety net — removing it is a separate, announced opt-in).
+# rails block in the global CLAUDE.md, the command symlinks + collision aliases, the review agent under
+# agents/, the shipped docs/, the keel PATH symlink, and any copy-mode FRAMEWORK/PRINCIPLES it placed;
+# the product directories it leaves empty go too, unless you keep something in them). It NEVER touches
+# your own files (INSTANCE.md, LEARNINGS.md, IDEAS.md, or a command you authored) and NEVER silently drops
+# the machine-global secret-guard (a shared safety net — removing it is a separate, announced opt-in).
 #
 # Backs up before it removes: everything it takes out is MOVED into a timestamped backup dir under the
 # home (CLAUDE.md is copied there before its in-place edit), so an uninstall is reversible — nothing is

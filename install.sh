@@ -67,7 +67,8 @@ Linked mode (--link, Claude Code): wires by reference instead of copying — <ho
 symlinks into this checkout (incl. docs/) + ONE @import line in your global CLAUDE.md +
 command symlinks. `git pull` here refreshes everything; re-run `install.sh --link` after a pull
 to wire newly shipped files. Keep this clone — it IS the installation. Removal is the
-mirror image: delete <home>/keel/, the import line, and the command symlinks.
+mirror image: delete <home>/keel/, the import line, the command and agent symlinks, and
+<home>/bin/keel.
 
 Usage:
   install.sh                 bootstrap into ${KEEL_HOME:-$HOME/.claude}
@@ -1691,8 +1692,8 @@ After a pull, re-run \`install.sh --link$home_flag\` once — a pull refreshes c
 - \`docs/\` — Keel's procedure docs the rails and commands point at (\`docs/<name>.md\` means this folder, not
   your project's own \`docs/\`), read on demand
 
-To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUDE.md\`, and any
-\`commands/\` symlinks (one level up) into the checkout. Health check: \`tools/doctor.sh --install$doctor_arg\`
+To remove Keel: delete this dir, the one \`@\` import line in the global \`CLAUDE.md\`, and the
+symlinks into the checkout one level up (any in \`commands/\` and \`agents/\`, and \`bin/keel\`). Health check: \`tools/doctor.sh --install$doctor_arg\`
 (run from the checkout).
 EOF
     echo "  +    keel/README.md"
@@ -2526,8 +2527,8 @@ elif [ "$LINK" = 1 ]; then
     A pull changes your next session's rails without review — pull deliberately, or pin a tag.
   - health check:  tools/doctor.sh --install$doctor_arg     (everything shipped is wired, nothing dangles)
   - remove Keel:  $advise_uninstall  (reverses this, backing up what it removes) — or by hand: delete
-    $HOME_DIR/keel/ , the @import line in  $HOME_DIR/CLAUDE.md , the  $HOME_DIR/commands/  symlinks,
-    and  $HOME_DIR/bin/keel .
+    $HOME_DIR/keel/ , the @import line in  $HOME_DIR/CLAUDE.md , the  $HOME_DIR/commands/  and
+    $HOME_DIR/agents/  symlinks, and  $HOME_DIR/bin/keel .
   - edit  $HOME_DIR/CLAUDE.md  (replace the <placeholders>), keep  $HOME_DIR/INSTANCE.md  private.
 EOF
 elif [ "$EPHEMERAL" = 1 ]; then
@@ -2544,7 +2545,7 @@ elif [ "$EPHEMERAL" = 1 ]; then
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
   - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, docs/, the
-    commands/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  $advise_uninstall .
+    commands/ and agents/ entries) — CLAUDE.md and INSTANCE.md are yours; or get a checkout and run  $advise_uninstall .
 EOF
 else
   cat <<EOF

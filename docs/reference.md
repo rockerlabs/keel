@@ -51,6 +51,9 @@ Every file, tool, and command — grouped, one line each.
 | [`tools/delta-audit/derive.sh`](../tools/delta-audit/derive.sh) | Mechanically derives a release delta audit's universe from git history: the range's file list, a file→PR seam map, an empty-verdict ledger skeleton (in pinned read order — seams and behaviour-with-a-rail code first, prose last), and a run-record stub. Its closure check refuses when a squash- or rebase-merged PR leaves files unattributed, so a hand-drawn universe can't silently under-count. The full procedure that adopts it is [delta-audit](delta-audit.md). |
 | [`tools/vendor-review.sh`](../tools/vendor-review.sh) | A scriptable cross-vendor reading leg: leak-gates a bundle with `secret-scan.sh` (no bypass), then hands it to a swappable `--client` script per vendor CLI, one round dir per launch. [`tools/vendor-review/agy.sh`](../tools/vendor-review/agy.sh) (Google's Antigravity CLI, reaching Gemini) ships as the worked client. See [`docs/vendor-review.md`](vendor-review.md). |
 | [`tools/go-handoff.sh`](../tools/go-handoff.sh) | The `/go` handoff note (dir #401): `write`/`read`/`clear` one small three-field note (`done`, `next`, `carry`) per ticket, in `$HOME/.keel/tmp/go-handoff/`, so a `/go` session that stops before `/polish` — context limit, crash, a deleted worktree — does not take its plan with it. Keyed by the ticket's canonical id, shared by every worktree of the repo; `read` ends with a `verdict:` line (`fresh`, `behind n`, `ahead n`, `unrelated`, `unknown`) saying how far HEAD has moved since. A dated hint, never a gate; never committed; notes older than `KEEL_GO_HANDOFF_PRUNE_DAYS` (30) are pruned. Needs a kept checkout, so a copy-mode install has no note. |
+| [`tools/read-trace.sh`](../tools/read-trace.sh) | The read-trace fuses (dir #387): hook-driven, silent logging of which docs and files a session actually read or edited, so "did the agent open the spec?" is answerable afterwards. Prints only the short `docs read:` line `/wrap` and `/polish` embed (`docs-line`), a cross-release `aggregate` table the [grooming](grooming.md) retro reads, and — once, at the next session's start — a note when a session that changed files ended without `/wrap`. Nothing it records is read by the model. |
+| [`tools/install-read-trace.sh`](../tools/install-read-trace.sh) | Wires `read-trace.sh`'s 3 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` / `--home DIR`. Opt-in and separate from `install.sh`; appends beside a hook already on the same event, `--force` replaces only a stale copy of its own, `--uninstall` removes exactly what it wired. |
+| [`tools/delta-audit/harvest.sh`](../tools/delta-audit/harvest.sh) | Fills the mechanically derivable rows of a delta-audit run record (`run-record.md`, which `derive.sh` emits as a stub) from the run's own files: the records listing and per-leg cost, copied from the orchestrator's cost table — a leg it cannot find is `unmeasured`, never `0` — and the induced-defects rate from the marks in the reports. The judgement rows stay yours. |
 
 *secret-guard is a safety net for known key shapes plus your listed literals — not a catch-all. It won't
 catch an arbitrary AWS secret key, a JWT, or a password.*
@@ -70,6 +73,9 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 | `/polish` | Pre-PR pass — simplify, tests, a depth-matched review, then open the PR. Gated by `tools/pre-pr-gate.sh` once you've run `install-pre-pr-gate.sh` for the repo (optional; every step still runs without it). |
 | `/wrap` | Closes out a session: notes, changelog, backlog. |
 | `/triage` | Promote-or-drop pass over the staging tiers (`LEARNINGS.md`, `IDEAS.md`, the standing list) — one verdict per entry. |
+| `/groom` | Assembles the next release from the backlog: retro first, pains from the operator, a fresh-reviewer round before the plan is trusted ([grooming](grooming.md)). |
+| `/manage-release` | Runs the release-manager pattern for one release: one manager session, gated worker sessions, a single channel to the operator ([release-management](release-management.md)). |
+| `/delta-audit` | Orchestrates a release candidate's delta audit from your own session, per [delta-audit](delta-audit.md). |
 | `/global-review` | Reviews across all projects. |
 | `/backlog` | Shows the backlog. |
 | `/keel-score` | Scores how much Keel shaped a session — derived from cited events, not asserted. |
@@ -96,7 +102,12 @@ migrated (`W-GATE-REVIEW-MATCHER`), as it flags a gate wired without the `Subage
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard
 blocking a key. Most of the docs are indexed in the [README's Docs section](../README.md#docs) too — a
 few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`, and the
-five [`docs/drydock/`](drydock/) role-prompt templates) aren't.
+five [`docs/drydock/`](drydock/) role-prompt templates) aren't. [`docs/session-cost.md`](session-cost.md)
+is Keel's own self-maintenance doc and is indexed nowhere on purpose.
+
+[`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) is the one adopter-facing doc the
+README's Docs section does not list: how to keep a plaintext secrets file out of an agent's reach (SOPS +
+age), and the `doctor` check that flags one in your tree.
 
 [`docs/memory-layers.md`](memory-layers.md) answers "does Keel do memory?": the five memory layers mapped
 onto Keel's files, what Keel deliberately does not build, and the `doctor` checks that find stale or

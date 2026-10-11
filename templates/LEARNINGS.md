@@ -8,15 +8,16 @@ the chat transcript, but stays OUT of the always-loaded surfaces until it earns 
   comes only when an entry **graduates** into an auto-applied surface (a `CLAUDE.md` rail, a `FRAMEWORK.md`
   convention, a memory file, a command/hook step). This is the on-ramp, not the road.
 - **Each entry is a candidate, not a rule.** Format:
-  `- [n×] **insight** — context it came from — where it would auto-apply if promoted.`
-  `[n×]` is a recurrence counter — bump it whenever the insight shows up again.
+  `- [n×] YYYY-MM-DD **insight** — context it came from — where it would auto-apply if promoted.`
+  `[n×]` is a recurrence counter — bump it whenever the insight shows up again; the date is when it was
+  first written, and `/triage` measures staleness from it.
 - **Promotion:** when an insight recurs (reaches `[2×]`), promote it into the right committed surface and
   **delete the entry here**. Recurrence is the felt-friction signal. A clearly-standing insight may promote
   on first sight; the recurrence gate is for the uncertain middle.
-- **Prune:** drop any candidate neither promoted nor recurred in ~5 sessions. An unpruned list is noise
-  (P2/P3), worse than no list.
+- **Prune:** drop any candidate neither promoted nor recurred within `/triage`'s horizon (60 days at `[1×]`;
+  an undated entry gets a read before it is dropped). An unpruned list is noise (P2/P3), worse than no list.
 - **Reviewed by `/triage`** — the one pass that owns promote-or-drop for this file.
 
 ## Candidates
 
-<!-- - [1×] **<insight>** — <where it surfaced> — <where it would auto-apply on promotion>. -->
+<!-- - [1×] YYYY-MM-DD **<insight>** — <where it surfaced> — <where it would auto-apply on promotion>. -->

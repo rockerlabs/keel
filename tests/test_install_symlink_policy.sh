@@ -285,6 +285,70 @@ run "$ck_shared/tools/init-project.sh" --no-register --no-impact "$proj"
 check_dir "B5 init-project: a directory at CLAUDE.md is untouched" "$proj/CLAUDE.md"
 check_contains "B5 init-project: …named as not a regular file" "$OUT" "CLAUDE.md is not a regular file"
 
+# --- dir #749 S5-4: the T3 / T3a branches the blocks above never reached ---------------------------------------
+# (1) T3 in COPY mode. A15 is linked mode only; keel_own_stale_link has no mode test, and bin/keel is the one
+# link a copy-mode home holds, so a copy-mode run from a moved checkout must re-point it …
+ckA="$(mk_ck t3c-ckA)"; h="$SANDBOX/t3c-h"; mkdir -p "$h"
+run "$ckA/install.sh" --home "$h" --no-hooks
+check_status "T3 copy: fixture copy install exits 0" 0 "$STATUS"
+check_eq "T3 copy: the fixture manifest records bin/keel as Keel's own link" 1 "$(symlink_records "$h" bin/keel)"
+ckB="$SANDBOX/t3c-ckB"; mv "$ckA" "$ckB"
+run "$ckB/install.sh" --home "$h" --no-hooks
+check_status "T3 copy: re-run from the moved checkout exits 0" 0 "$STATUS"
+check_eq "T3 copy: bin/keel now points into the new checkout" "$ckB/keel" "$(readlink "$h/bin/keel")"
+check_contains "T3 copy: …and says Keel's own link was re-pointed" "$(line_of "$OUT" bin/keel)" "re-pointed"
+check_absent "T3 copy: no decline line for a link Keel made" "$OUT" "remove the link and re-run"
+# … and the doc links a LINKED install left behind are replaced by copies, with the T3 message (no backup).
+ckA="$(mk_ck t3d-ckA)"; h="$SANDBOX/t3d-h"; mkdir -p "$h"
+run "$ckA/install.sh" --home "$h" --no-hooks --link
+check_status "T3 copy: fixture linked install exits 0" 0 "$STATUS"
+ckB="$SANDBOX/t3d-ckB"; mv "$ckA" "$ckB"; rm -f "$h/keel/CORE.md"   # no linked core left: the next run is a copy-mode run
+run "$ckB/install.sh" --home "$h" --no-hooks
+check_status "T3 copy: a copy-mode run over a moved linked checkout exits 0" 0 "$STATUS"
+check_contains "T3 copy: …replaces Keel's own stale links, saying so" "$OUT" "replaced (Keel's own stale link)"
+check_absent "T3 copy: …without a decline line" "$OUT" "remove the link and re-run"
+check_nolink "T3 copy: commands/wrap.md is now a regular file, not a link" "$h/commands/wrap.md"
+check_file "T3 copy: …holding the moved checkout's content" "$h/commands/wrap.md"
+check_eq "T3 copy: …byte for byte" "$(sum_of "$ckB/commands/wrap.md")" "$(sum_of "$h/commands/wrap.md")"
+check_eq "T3 copy: no backup was taken (nothing of the adopter's)" 0 "$(bak_count "$h")"
+
+# (2) the legacy `-` record (written before dir #369 recorded targets). A DANGLING link carrying it is Keel's own and
+# is re-pointed; a LIVE link carrying it is the adopter's, because "Keel's" needs both the record and a dead target.
+ck="$(mk_ck legacy-ck)"; h="$SANDBOX/legacy-h"; mine="$SANDBOX/legacy-mine"; mkdir -p "$h" "$mine"
+run "$ck/install.sh" --home "$h" --no-hooks
+set_symlink_record "$h" bin/keel -
+ln -sfn "$SANDBOX/legacy-nowhere" "$h/bin/keel"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "legacy '-': re-run over a dangling link exits 0" 0 "$STATUS"
+check_eq "legacy '-': a dangling link with the placeholder record is Keel's own — re-pointed" "$ck/keel" "$(readlink "$h/bin/keel")"
+check_contains "legacy '-': …saying so" "$(line_of "$OUT" bin/keel)" "re-pointed"
+printf '#!/bin/sh\necho mine\n' > "$mine/keel"; chmod +x "$mine/keel"
+set_symlink_record "$h" bin/keel -
+ln -sfn "$mine/keel" "$h/bin/keel"
+before="$(sum_of "$mine/keel")"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "legacy '-': re-run over a LIVE link exits 0" 0 "$STATUS"
+check_eq "legacy '-': …a live link with the placeholder record is the adopter's — kept" "$mine/keel" "$(readlink "$h/bin/keel")"
+check_eq "legacy '-': …and their program is byte-identical" "$before" "$(sum_of "$mine/keel")"
+check_contains "legacy '-': …declined, with the remedy" "$OUT" "remove the link and re-run"
+
+# (3) bin/keel T3a: an adopter's link whose CONTENT already equals Keel's `keel`, over an older manifest that
+# recorded it as Keel's. Nothing to write — and the record must go, or uninstall would later remove their link.
+ck="$(mk_ck t3a-bin-ck)"; h="$SANDBOX/t3a-bin-h"; mine="$SANDBOX/t3a-bin-mine"; mkdir -p "$h/bin" "$mine"
+cp "$ck/keel" "$mine/keel"; chmod +x "$mine/keel"
+ln -s "$mine/keel" "$h/bin/keel"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "T3a bin: install over an in-sync adopter link exits 0" 0 "$STATUS"
+check_contains "T3a bin: …says it is theirs and left as is" "$(line_of "$OUT" bin/keel)" "your link, left as is"
+printf 'artifact=symlink\tbin/keel\t%s\n' "$mine/keel" >> "$(manifest_of "$h")"
+check_eq "T3a bin: fixture — the older manifest records the adopter's link" 1 "$(symlink_records "$h" bin/keel)"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "T3a bin: re-run exits 0" 0 "$STATUS"
+check_eq "T3a bin: the link is still theirs" "$mine/keel" "$(readlink "$h/bin/keel")"
+check_eq "T3a bin: the older manifest's record of it is dropped" 0 "$(symlink_records "$h" bin/keel)"
+run "$ck/uninstall.sh" --home "$h" --yes
+check_link "T3a bin: uninstall leaves the adopter's link where it is" "$h/bin/keel"
+
 # --- doctor: the three remedy lines tell the adopter to remove a link Keel did not make first ----------------
 doc="$(cat "$REPO_ROOT/tools/doctor.sh")"
 for code in W-LINK-FOREIGN W-REVIEW-AGENT-FLOOR W-CLI-FOREIGN; do

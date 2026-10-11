@@ -136,7 +136,8 @@ clone — the linked path needs a checkout that survives, so this variant keeps 
   pull deliberately — don't automate it; a conservative setup pins a release tag (`git checkout vX.Y.Z`).
 - **The clone becomes the installation.** Park it somewhere permanent *before* linking; moving it later
   dangles every link (re-run `--link` from the new spot to repair). Removal is fully enumerable:
-  delete `~/.claude/keel/`, the one import line, and the command symlinks.
+  delete `~/.claude/keel/`, the one import line, the command and agent symlinks (`~/.claude/commands/`,
+  `~/.claude/agents/`), and `~/.claude/bin/keel`.
 - `@import` and symlinks are **Claude Code / Unix mechanisms** — on other tools, and on Windows setups
   without symlink support, stay on the copy path above (see [ADAPTING.md](../ADAPTING.md)).
 

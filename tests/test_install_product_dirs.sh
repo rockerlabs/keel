@@ -86,6 +86,21 @@ a20() {  # a20 NAME DIR KIND — KIND is file | dangling
 a20 agents-file agents file
 a20 agents-dangling agents dangling
 a20 commands-file commands file
+# dir #749 S5-4: the bin/ site. It is the one product directory that is NOT created when it is unusable, so the
+# guard is what keeps a file, a dangling link or a link into the checkout from being written through.
+a20 bin-file bin file
+a20 bin-dangling bin dangling
+ck="$(mk_ck a19-ck-bin)"; h="$SANDBOX/a19-h-bin"; mkdir -p "$h"
+ln -s "$ck/docs" "$h/bin"
+n0="$(md_count "$ck/docs")"
+run "$ck/install.sh" --home "$h" --no-hooks
+check_status "A19 bin: install with <home>/bin linked into the checkout exits 0" 0 "$STATUS"
+check_contains "A19 bin: the install output says bin was skipped, naming the path" "$OUT" "$h/bin"
+check_contains "A19 bin: …because it lands inside the Keel checkout" "$OUT" "inside the Keel checkout"
+check_nofile "A19 bin: no keel link was written into the checkout's docs/" "$ck/docs/keel"
+check_eq "A19 bin: the checkout's docs/*.md count is unchanged" "$n0" "$(md_count "$ck/docs")"
+check_eq "A19 bin: git status of the checkout's docs is empty" "" "$(porcelain "$ck" docs)"
+check_file "A19 bin: a manifest was written" "$h/.keel/install-manifest.claude"
 
 # --- linked mode: an unusable keel/ refuses the run BEFORE anything is placed or edited (exit 2) ----------
 lk() {  # lk NAME KIND — KIND is file | into-checkout

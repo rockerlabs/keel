@@ -7,18 +7,65 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
-store="$SANDBOX/real-store"; log="$SANDBOX/real-log.tsv"; khome="$SANDBOX/real-keel-home"
-
-run env KEEL_IMPACT_STORE="$store" KEEL_IMPACT_LOG="$log" KEEL_HOME="$khome" bash "$REPO_ROOT/examples/tour.sh"
-check_status "tour.sh with ambient impact overrides → exit 0" 0 "$STATUS"
-check_nodir "tour.sh leaves the ambient KEEL_IMPACT_STORE untouched" "$store"
-check_nofile "tour.sh leaves the ambient KEEL_IMPACT_LOG untouched" "$log"
-check_nodir "tour.sh leaves the ambient KEEL_HOME untouched" "$khome"
-
-run env KEEL_IMPACT_STORE="$store" KEEL_IMPACT_LOG="$log" KEEL_HOME="$khome" bash "$REPO_ROOT/docs/demo/record-demo.sh" --scenes
-check_nodir "record-demo.sh --scenes leaves the ambient KEEL_IMPACT_STORE untouched" "$store"
-check_nofile "record-demo.sh --scenes leaves the ambient KEEL_IMPACT_LOG untouched" "$log"
-check_nodir "record-demo.sh --scenes leaves the ambient KEEL_HOME untouched" "$khome"
+# dir #749 S9-7: ONE override per run, each on its own fresh path. The first version exported all three at once
+# and shared the paths between the two scripts, so (1) KEEL_HOME could never fail — the resolvers consult
+# KEEL_IMPACT_STORE / KEEL_IMPACT_LOG before it, and the demos make no other impact write — (2) the record-demo
+# STORE assertion was masked by tour.sh's leftover directory, and (3) one script's leftovers fed the next one's
+# assertions. KEEL_HOME is only read when it already holds a store (`<KEEL_HOME>/.keel/impact`, the legacy
+# address), so its fixture plants one, and a control proves the resolver really does take it: without the plant
+# the assertion would pass against a demo that leaks.
+khome_fixture() {   # khome_fixture PATH — a harness home that already holds an impact store
+  mkdir -p "$1/.keel/impact"
+  printf 'sentinel\n' > "$1/.keel/impact/sentinel"
+}
+tree_sum() { (cd "$1" && find . | LC_ALL=C sort | cksum); }
+# tests/lib.sh exports a harness value for six of the seven isolation variables into every test's environment, and
+# the resolvers read those before KEEL_HOME — which is the real reason the old KEEL_HOME rows could not fail.
+# only_env VAR VALUE CMD… — run CMD with every isolation variable removed except VAR=VALUE.
+# The list is read in a subshell: sourcing the library here would define its functions for the rest of the file.
+isolation_vars="$(. "$REPO_ROOT/tools/lib/impact-store.sh"; printf '%s' "$IMPACT_ISOLATION_VARS")"
+[ -n "$isolation_vars" ] || { fail "S9-7: the isolation-variable list was read from tools/lib/impact-store.sh" "IMPACT_ISOLATION_VARS is empty or unreadable"; summary; exit 1; }
+only_env() {
+  local keep="$1" val="$2" v unsets=()
+  shift 2
+  for v in $isolation_vars; do [ "$v" = "$keep" ] || unsets+=(-u "$v"); done
+  run env "${unsets[@]}" "$keep=$val" "$@"
+}
+kh_ctl="$SANDBOX/esc-ctl-khome"; khome_fixture "$kh_ctl"
+only_env KEEL_HOME "$kh_ctl" bash -c '. "$1/tools/lib/impact-store.sh"; impact_store_root' _ "$REPO_ROOT"
+check_eq "S9-7 control: with only KEEL_HOME exported and a store under it, the resolver DOES pick KEEL_HOME's store (so the KEEL_HOME rows can fail)" \
+  "$kh_ctl/.keel/impact" "$OUT"
+for demo in "examples/tour.sh" "docs/demo/record-demo.sh --scenes"; do
+  dn="$(printf '%s' "${demo%% *}" | tr '/.' '--')"
+  # record-demo.sh's inner mode never writes to a store: its project is a bare `git init`, and a store is only
+  # written for a project that already has one (tour.sh runs init-project, which enables it), so the only
+  # override whose leak it can show is the inline scanner's KEEL_IMPACT_LOG. Measured with its unset removed: STORE
+  # and KEEL_HOME stay untouched there. Its STORE / KEEL_HOME rows would pass whatever the script did, so they are
+  # structural (below) and only the tour carries the behavioural ones.
+  if [ "$dn" = examples-tour-sh ]; then
+    # shellcheck disable=SC2086  # $demo is "script [--scenes]" on purpose
+    only_env KEEL_IMPACT_STORE "$SANDBOX/esc-store-$dn" bash "$REPO_ROOT"/$demo
+    check_status "S9-7: ${demo%% *} with only an ambient KEEL_IMPACT_STORE → exit 0" 0 "$STATUS"
+    check_nodir "${demo%% *} leaves the ambient KEEL_IMPACT_STORE untouched" "$SANDBOX/esc-store-$dn"
+  fi
+  # shellcheck disable=SC2086
+  only_env KEEL_IMPACT_LOG "$SANDBOX/esc-log-$dn.tsv" bash "$REPO_ROOT"/$demo
+  check_status "S9-7: ${demo%% *} with only an ambient KEEL_IMPACT_LOG → exit 0" 0 "$STATUS"
+  check_nofile "${demo%% *} leaves the ambient KEEL_IMPACT_LOG untouched" "$SANDBOX/esc-log-$dn.tsv"
+  if [ "$dn" = examples-tour-sh ]; then
+    kh="$SANDBOX/esc-khome-$dn"; khome_fixture "$kh"; kh_before="$(tree_sum "$kh")"
+    # shellcheck disable=SC2086
+    only_env KEEL_HOME "$kh" bash "$REPO_ROOT"/$demo
+    check_status "S9-7: ${demo%% *} with only an ambient KEEL_HOME holding a store → exit 0" 0 "$STATUS"
+    check_eq "${demo%% *} leaves the ambient KEEL_HOME's store byte-for-byte untouched" "$kh_before" "$(tree_sum "$kh")"
+  fi
+done
+# …and the structural half for record-demo.sh: it sources the one list of isolation variables and unsets ALL of it,
+# not a hand-picked pair (the mutant that kept KEEL_HOME exported passed every behavioural row above).
+pin "S9-7: record-demo.sh sources tools/lib/impact-store.sh for the isolation list" "$REPO_ROOT/docs/demo/record-demo.sh" \
+  '. "$root/tools/lib/impact-store.sh"' "expected record-demo.sh to source the library that names every isolation variable"
+pin "S9-7: record-demo.sh unsets that whole list" "$REPO_ROOT/docs/demo/record-demo.sh" \
+  'unset $IMPACT_ISOLATION_VARS' "expected record-demo.sh to unset every impact-store override, not a hand-picked subset"
 
 # dir #725 made a set-but-missing SECRET_SCAN_PERSONAL_FILE fail the scanner closed (exit 2), also inside
 # install-secret-guard.sh's selftest, so a stale ambient value in the operator's shell left the tour's guard

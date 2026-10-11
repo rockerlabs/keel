@@ -676,6 +676,9 @@ run_in() {
 # behind `[ -t 0 ]`. Sets OUT (merged, pty-echoed) and STATUS. Hold stdin open past the prompt — a bare
 # `printf 'y\n' |` loses the answer at EOF; the hold is a process substitution nothing waits on, so a call
 # returns as soon as CMD exits. macOS `script -q /dev/null CMD…`; util-linux `script -qc "CMD" /dev/null`.
+# STATUS is the command's own exit status on macOS only: util-linux's `script` answers with its own (0), and `-e`
+# did not change that on the ubuntu CI leg (dir #749 S6-1, tried and reverted) — so read OUT, never STATUS, in a test
+# that must also pass on Linux. No caller reads STATUS today.
 # Called directly, not through run() (it forces </dev/null). The caller skips, with a printed reason, when
 # `script` is absent (the alpine leg has neither script nor python). Promoted here (dir #716) once a
 # second test file (tests/test_core_marker_anchor.sh) needed the same driver.
@@ -688,7 +691,22 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
 }
 
 # alter_block FILE — change one line INSIDE FILE's KEEL-CORE block (an older release, or an edit).
-alter_block() { sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"; }
+# An empty or missing FILE is refused up front: the redirect below would otherwise create a stray `.new` in the
+# cwd before sed ever failed (dir #749 S6-6).
+alter_block() {
+  [ -f "$1" ] || { echo "alter_block: not a file: '$1'" >&2; return 1; }
+  sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+# set_symlink_record HOME REL TARGET — rewrite HOME's install manifest so its `symlink` record for REL carries TARGET
+# (REL must already hold one): the shape an older release, or a moved checkout, left behind (dir #749).
+set_symlink_record() {
+  local man="$1/.keel/install-manifest.claude" tmp="${SANDBOX:?}/set-symlink-record.new" hits
+  hits="$(awk -F'\t' -v r="$2" '$1 == "artifact=symlink" && $2 == r { n++ } END { print n + 0 }' "$man")"
+  [ "$hits" -ge 1 ] || { echo "set_symlink_record: no symlink record for '$2' in $man" >&2; return 1; }
+  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' "$man" > "$tmp" \
+    && cat "$tmp" > "$man"
+}
 
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
 # check_status_out LABEL EXPECTED — check_status against $STATUS, and on a mismatch ALSO print the first 40

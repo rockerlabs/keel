@@ -24,6 +24,7 @@ fresh_home() {
 # real_markers FILE — count of anchored marker lines (BEGIN or END) in FILE.
 real_markers() { grep -c -E '^<!-- KEEL-CORE-(BEGIN.*-->|END -->)[[:space:]]*$' "$1" || true; }
 
+cksum_of() { cksum < "$1"; }
 prose='Note to self: never hand-edit anything between the KEEL-CORE-BEGIN and KEEL-CORE-END markers.'
 
 # --- A21: uninstall keeps every user line after a prose mention, strips only the real block -------------
@@ -59,6 +60,25 @@ else
   check_eq "A21 refresh: exactly one BEGIN and one END marker line remain" 2 "$(real_markers "$h/CLAUDE.md")"
 fi
 
+# --- A21 uninstall presence (dir #749 S6-2): a CLAUDE.md whose only mention of the marker is prose ---------
+# uninstall's has_keel_rails asks the anchored definition (keel_core_has_block). The unanchored `grep -q
+# KEEL-CORE-BEGIN` mutant made this home "carry Keel's rails": uninstall then claimed it stripped them, took
+# a backup of the file and rewrote it, though nothing in it was Keel's. The fixtures above all hold a REAL
+# block next to the prose, so only a prose-only file tells the two definitions apart.
+h="$SANDBOX/a21-uninstall-prose-only"; mkdir -p "$h"
+printf '# My notes\n%s\nUSER-LINE-PROSE-ONLY\n' "$prose" > "$h/CLAUDE.md"
+before="$(cksum_of "$h/CLAUDE.md")"
+run "$install" --home "$h" --no-hooks
+check_status "A21 uninstall presence: fixture install exits 0" 0 "$STATUS"
+check_eq "A21 uninstall presence: fixture — install left the prose-only CLAUDE.md byte-identical" "$before" "$(cksum_of "$h/CLAUDE.md")"
+run "$uninstall" --home "$h" --yes
+check_status "A21 uninstall presence: exits 0" 0 "$STATUS"
+check_absent "A21 uninstall presence: no 'stripped the Keel rails' claim for a file that holds none" "$OUT" "stripped the Keel rails"
+check_absent "A21 uninstall presence: …and no 'left untouched' non-strip either" "$OUT" "left CLAUDE.md untouched"
+check_eq "A21 uninstall presence: the file is byte-identical" "$before" "$(cksum_of "$h/CLAUDE.md")"
+check_eq "A21 uninstall presence: no backup of CLAUDE.md was taken" 0 \
+  "$(find "$h" -name 'CLAUDE.md*' -not -path "$h/CLAUDE.md" 2>/dev/null | wc -l | tr -d ' ')"
+
 # --- A21 presence: linked mode, a CLAUDE.md whose only mention of the marker is prose -------------------
 h="$SANDBOX/a21-presence"; mkdir -p "$h"
 printf '# My notes\n%s\nUSER-LINE-PRESENCE\n' "$prose" > "$h/CLAUDE.md"
@@ -76,7 +96,6 @@ run "$doctor" --install "$h"
 check_absent "A21 presence: doctor gives no W-RAILS-DOUBLE for a prose mention" "$OUT" "W-RAILS-DOUBLE"
 
 # --- A22: two blocks, or a BEGIN without an END — every block write refuses, the file is untouched -------
-cksum_of() { cksum < "$1"; }
 # dup_block FILE — append a second copy of FILE's block (via a temp: sed must not read what it appends).
 dup_block() { sed -n '/^<!-- KEEL-CORE-BEGIN/,/^<!-- KEEL-CORE-END -->/p' "$1" > "$1.dup" && cat "$1.dup" >> "$1" && rm -f "$1.dup"; }
 

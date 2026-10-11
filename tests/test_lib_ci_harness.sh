@@ -150,4 +150,28 @@ pin "A14: the self-doctor smoke uses check_status_out" "$REPO_ROOT/tests/test_se
 pin "A14: the token-report --since case uses check_status_out" "$REPO_ROOT/tests/test_token_report.sh" \
   'check_status_out "--since far in the future exits 0, not an error" "0"' "expected the --since case to print the tool's output on a mismatch"
 
+# --- dir #749 S6-1 / S6-6: two tests/lib.sh helpers keep their promises --------------------------------------------
+# S6-1: tty_run's STATUS is the command's own exit status on macOS only — util-linux's `script` answers with its own
+# (0), and `-e` did not change that on the ubuntu CI leg (tried, failed there, reverted). The helper's comment says so
+# (pinned), and the macOS row keeps the one platform where the promise holds from regressing. A test that must also
+# pass on Linux reads OUT, never STATUS.
+pin "S6-1: tty_run's header says STATUS is the command's own exit status on macOS only" "$lib_path" \
+  '# STATUS is the command'"'"'s own exit status on macOS only' "expected tty_run's comment to say where STATUS can be trusted"
+if [ "$(uname -s)" = Darwin ]; then
+  tty_run n sh -c 'exit 3'
+  check_eq "S6-1: on macOS tty_run reports the command's own exit status (3)" "3" "$STATUS"
+else
+  echo "  skip  S6-1 behavioural row (macOS only)"
+fi
+# S6-6: alter_block on an empty or missing path leaves nothing behind (it used to drop a stray `.new` in the cwd).
+ab="$SANDBOX/s66"; mkdir -p "$ab/cwd"
+( cd "$ab/cwd" && alter_block "" 2>/dev/null; echo "rc=$?" > "$ab/rc-empty"; alter_block "$ab/missing.md" 2>/dev/null; echo "rc=$?" > "$ab/rc-missing" )
+check_eq "S6-6: alter_block \"\" fails" "rc=1" "$(cat "$ab/rc-empty")"
+check_eq "S6-6: alter_block on a missing file fails" "rc=1" "$(cat "$ab/rc-missing")"
+check_eq "S6-6: …and the cwd it ran in is still empty (no stray .new)" "" "$(ls -A "$ab/cwd")"
+check_eq "S6-6: …and nothing named *.new appeared anywhere under the scratch dir" "" "$(find "$ab" -name '*.new')"
+printf '## Precedence — when sources conflict\n' > "$ab/real.md"
+alter_block "$ab/real.md"
+check_eq "S6-6: a real file is still edited in place" "## Precedence — MY EDITED RAIL" "$(cat "$ab/real.md")"
+
 summary

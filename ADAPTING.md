@@ -19,7 +19,9 @@ or a config folder) and, usually, a way to save reusable prompts. Keel just plug
 
 **1. Put the always-on file where your tool reads it.** Copy the contents of
 [`templates/CLAUDE.md`](templates/CLAUDE.md) into your tool's auto-loaded instructions, and edit the map at
-the bottom to point at wherever you keep `FRAMEWORK.md`, `INSTANCE.md`, and `PRINCIPLES.md`. Common spots:
+the top ("Where things live") to point at wherever you keep `FRAMEWORK.md`, `INSTANCE.md`, and
+`PRINCIPLES.md`. The rails refer to Keel's own procedure docs as `docs/<name>.md`; copy this checkout's
+[`docs/`](docs/) folder next to your `FRAMEWORK.md` so those names resolve. Common spots:
 
 | Tool | Where the always-on instructions live | Tested? |
 |---|---|---|
@@ -61,8 +63,8 @@ tools/doctor.sh       <your-project>      # check a project's setup
 tools/init-project.sh <your-project>      # set up a new project
 ```
 
-(`./install.sh --home DIR` will also copy the always-on files into any folder you point it at, if your
-tool's config lives somewhere other than `~/.claude`. For Codex specifically, `./install.sh --codex`
+(`./install.sh --home DIR` will also copy the always-on files and the `docs/` folder into any folder you point
+it at, if your tool's config lives somewhere other than `~/.claude`. For Codex specifically, `./install.sh --codex`
 generates `~/.codex/AGENTS.md` directly — no manual copy-and-edit needed.)
 
 **3. Wire up the commands.** The files in `commands/` (`/wrap`, `/init-project`, …) are just prompts in

@@ -57,9 +57,9 @@ same edit as the promotion — same commit as the rule, or same edit that files 
 
 **T4 — record the pass, one line.** Counts per verdict plus the bound state, appended to the caller's
 record: a `/groom` run → its G7 row; a `/global-review` run or a standalone knowledge-base run → that
-base's dated review log (`REVIEW_HISTORY.md`); a standalone project run → the project's own releases
-record if it has one, else the commit message. The location is per project, with that default named
-(the G9 shape).
+base's dated review log (if it keeps one, else a dated note wherever it already tracks review state); a
+standalone project run → the project's own releases record if it has one, else the commit message. The
+location is per project, with that default named (the G9 shape).
 
 **T5 — write discipline.** Tier files are shared and have no worktree isolation: make surgical edits,
 keep `old_string` windows small, and on a "modified since read" rejection re-read the section and retry

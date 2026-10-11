@@ -30,9 +30,9 @@ the table above.
 | `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~13,300 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,950 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
-| `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~360 |
-| `IDEAS.md` (from `templates/IDEAS.md`) | on demand — staging a raw, not-yet-actionable idea | The earliest staging tier, one step before `LEARNINGS.md`/`BACKLOG.md`. | ~290 |
-| `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~4,160 |
+| `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~430 |
+| `IDEAS.md` (from `templates/IDEAS.md`) | on demand — staging a raw, not-yet-actionable idea | The earliest staging tier, one step before `LEARNINGS.md`/`BACKLOG.md`. | ~330 |
+| `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~4,510 |
 | `CHANGELOG.md` | on demand — release history | Reference. | ~170,000+ |
 | `commands/*.md` (excl. `polish.md`, `polish-guide.md`) | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–3,000+ each |
 | `commands/polish.md` | **only when you invoke** `/polish` | The core of the outlier: simplify + tests + a depth-matched review + the gate + the PR, kept to the text a normal run needs (a word budget pins it) — the rare branches live in `polish-guide.md`. | ~4,500+ |
@@ -56,7 +56,7 @@ Put in perspective:
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
 - Over a month at ~50 sessions, the always-loaded core is ~125K input tokens total — cents, less with caching.
-- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~18.3K for one decision.
+- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~19.3K for one decision.
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
 when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (its `@…/keel/CORE.md` import
