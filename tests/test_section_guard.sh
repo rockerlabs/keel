@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_section_guard.sh (dir #758) — tests/section-guard.sh is the line a draft test section (a scratch
-# file a session writes and sources to try a fixture before it becomes a test file) sources right after its
-# lib.sh line: it exits the shell before the draft's first git call unless tests/lib.sh's sandbox is loaded. The felt
+# file a session writes and sources to try a fixture before it becomes a test file) sources right
+# after its lib.sh line: it exits the shell before the draft's first git call unless tests/lib.sh's sandbox is loaded. The felt
 # incident (0.15.0): `. t715.sh` ran a draft without lib.sh, `new_repo` was undefined, `r715=""`, and
 # `git -C "" config diff.context abc` wrote a [diff] section into the MAIN checkout's shared .git/config —
 # git died in every worktree for ten minutes. dir #658's `git()` guard only exists inside lib.sh, so a
@@ -136,6 +136,14 @@ unset BASH_VERSION
 echo S6-DRAFT-CONTINUED"
 check_ne "S6: a non-bash shell is refused (BASH_VERSION unset)" "$rc" 0
 case "$(cat "$SANDBOX/out$n")" in *S6-DRAFT-CONTINUED*) fail "S6: ...the draft body never ran" "it ran" ;; *) pass "S6: ...the draft body never ran" ;; esac
+# S6a: the refusal text names the route for the case at hand (bash without lib.sh vs a non-bash shell)
+check_contains "S6a: bash without lib.sh is told to source lib.sh first" "$(cat "$SANDBOX/err1")" 'Source "<checkout>/tests/lib.sh" || exit 1 before this guard'
+check_contains "S6a: a non-bash shell is told to run the draft under bash" "$(cat "$err")" "run the draft as a file under bash"
+# S6c: the guard's own syntax is POSIX — a plain sh (dash/busybox on the Linux legs) must parse it and refuse
+(cd "$scratch" && env -u SANDBOX sh -c '. "$1"; echo SH-CONTINUED' _ "$guard" >"$SANDBOX/outsh" 2>"$SANDBOX/errsh")
+check_ne "S6c: sh -c '. guard' refuses with no lib.sh" "$?" 0
+case "$(cat "$SANDBOX/outsh")" in *SH-CONTINUED*) fail "S6c: ...and stops the shell" "continued" ;; *) pass "S6c: ...and stops the shell" ;; esac
+case "$(cat "$SANDBOX/errsh")" in *"syntax error"*|*"not found"*) fail "S6c: ...by its own message, not a parse error" "$(cat "$SANDBOX/errsh")" ;; *) pass "S6c: ...by its own message, not a parse error" ;; esac
 # S6b: the felt shape — a Bash tool that is zsh. lib.sh half-loads there and returns 0; the guard refuses.
 if command -v zsh >/dev/null 2>&1; then
   run_draft ". \"$lib\"
