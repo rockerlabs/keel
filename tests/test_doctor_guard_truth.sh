@@ -322,7 +322,7 @@ run genv "$doctor" --install "$H/claude"
 check_contains "S6-1: edited Keel-marked copies in the user's own global dir → W-GUARD-GLOBAL-STALE" "$OUT" "[W-GUARD-GLOBAL-STALE]"
 check_absent "S6-1: ...whose advice never offers --force (it would replace their hooksPath)" "$(id_line W-GUARD-GLOBAL-STALE)" "--force"
 
-# an earlier --force backup waiting at <hook>.pre-keel.bak stops the installer even with --force: the advice says to move it first
+# an earlier --force backup waiting at <hook>.pre-keel.bak stops the installer even with --force: the advice says to run --force after moving it aside
 mk_home s61w
 run genv "$isg" --global
 kd61="$H/$kh_rel"
