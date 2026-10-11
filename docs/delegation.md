@@ -404,7 +404,10 @@ and needs only the first):
 present (a sandbox directory that exists, `HOME` inside it, and `new_repo` and the `git` guard defined as
 functions). It makes no git call itself, uses POSIX shell only, and works from the zsh a Bash tool may run
 (where `lib.sh` itself, which is bash, never loads — so the guard stops the draft there too). It is a floor
-against the forgotten line, not a sandbox: `tests/test_section_guard.sh` pins it. A live experiment that
+against the forgotten line, not a sandbox: `tests/test_section_guard.sh` pins it. It stops only a section that
+carries the line. A section copied out of a test file arrives without it, because the file's own `lib.sh` line is
+above the copied range, so paste the two lines first; nothing in the copied text itself can refuse to run (the
+fixtures name `new_repo` and `$r`, which are exactly what is undefined). A live experiment that
 reproduces this failure belongs in a throwaway `git init` directory, never a keel checkout.
 
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
