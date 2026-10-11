@@ -34,8 +34,9 @@
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
 # earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
-# name is no identifier); an array assignment's `(…)` (read as commands: a false deny, fail-safe); zsh's short
-# forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# name is no identifier); a `case` header split over lines behind a prefix word (`coproc NAME case x`, newline, `in`)
+# or an `esac` as the first pattern on its own line, inside `$(…)`; an array assignment's `(…)` (read as commands: a
+# false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
 # `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
 # `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
 # for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
