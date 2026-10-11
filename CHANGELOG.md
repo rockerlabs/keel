@@ -183,7 +183,7 @@ sections real content going forward — see that page for exactly when each one 
   dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
   file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
   CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
-  `tests/mutants/pre-pr-gate.tsv` lists the gate reader's single-clause mutants (46 of the bypassed-push deny at this PR, rewritten against the lexer by dir #745 PR-2); the dir #731 A18 block moved to
+  `tests/mutants/pre-pr-gate.tsv` lists the gate reader's single-clause mutants (46 of the bypassed-push deny at PR-1, rewritten against the lexer in PR-2: 269 rows); the dir #731 A18 block moved to
   `tests/test_pre_pr_gate_lexer.sh` kills 29 of the 46 before this change and all 46 after (17 new deny forms, and
   every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
   `commands/polish-guide.md` § Step 9 cite itself.

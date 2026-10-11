@@ -382,8 +382,8 @@ here): a date column collides under same-day concurrent sessions, `gitBranch` is
 `dir #N` is stable and already resolvable by `tools/lib/dir-tickets.sh`.
 
 **session** (dir #732) names the session the score came from, via `--session LABEL` (a release manager scores
-the cited events of each worker at its one wrap and labels each row with the worker id) — optional, `—` on a row
-that predates this column or on a session scored for itself. Appended at the END, like ticket.
+the cited events of each worker at its one wrap and labels each row with the worker id) — optional, empty on a row
+that predates this column, `—` on a session scored for itself. Appended at the END, like ticket.
 '
 
 # --- the evidence file header, written once when it is first created ------------------------------

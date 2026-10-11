@@ -105,7 +105,7 @@ few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing
 five [`docs/drydock/`](drydock/) role-prompt templates) aren't. [`docs/session-cost.md`](session-cost.md)
 is Keel's own self-maintenance doc and is indexed nowhere on purpose.
 
-[`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) is the one adopter-facing doc the
+[`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) is another adopter-facing doc the
 README's Docs section does not list: how to keep a plaintext secrets file out of an agent's reach (SOPS +
 age), and the `doctor` check that flags one in your tree.
 

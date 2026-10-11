@@ -281,7 +281,7 @@ So context files don't bloat and stay useful.
 - **A useful workflow insight not yet worth a committed rule → `LEARNINGS.md`** (the staging tier between
   "promote" and "drop"). Each entry carries a recurrence counter; on the 2nd occurrence promote it into the
   right surface and delete the entry — recurrence is the felt-friction promotion signal. Prune candidates
-  that neither promoted nor recurred within `/triage`'s horizon; an unpruned list is noise (P2/P3). The promote/prune
+  that neither promoted nor recurred within `/triage`'s horizon (60 days at `[1×]`); an unpruned list is noise (P2/P3). The promote/prune
   pass is owned by `/triage` ([`docs/triage.md`](docs/triage.md)) — `/wrap` only bumps the counter and
   promotes in-session when the edit is a one-paragraph rule.
 
