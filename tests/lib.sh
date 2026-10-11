@@ -696,6 +696,14 @@ alter_block() {
   sed 's/## Precedence — when sources conflict/## Precedence — MY EDITED RAIL/' "$1" > "$1.new" && mv "$1.new" "$1"
 }
 
+# set_symlink_record HOME REL TARGET — rewrite HOME's install manifest so its `symlink` record for REL carries TARGET
+# (REL must already hold one): the shape an older release, or a moved checkout, left behind (dir #749).
+set_symlink_record() {
+  local man="$1/.keel/install-manifest.claude"
+  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' "$man" > "$man.rec.new" \
+    && cat "$man.rec.new" > "$man" && rm -f "$man.rec.new"
+}
+
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }
 # check_status_out LABEL EXPECTED — check_status against $STATUS, and on a mismatch ALSO print the first 40
 # lines of $OUT, indented (dir #744, B15): a failure whose cause is only in the command's output (the doctor

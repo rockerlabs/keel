@@ -2152,7 +2152,7 @@ while read -r sd_fn sd_home; do
   check_contains "S10-1: the clean run reports $sd_fn() checked, with its one definition in $sd_home" "$OUT" \
     "OK   ${sd_fn}() has exactly one real definition, in $sd_home"
 done <<<"$SD_ROWS"
-sd_lines="$(grep -cE '^single_def_check [a-z_]+ +tools/lib/' "$REPO_ROOT/tools/self/doctor.sh" || true)"
+sd_lines="$(grep -cE '^single_def_check [A-Za-z0-9_]+ +tools/lib/' "$REPO_ROOT/tools/self/doctor.sh" || true)"
 check_eq "S10-1: this table has a row for every single_def_check line in tools/self/doctor.sh" "$sd_lines" "$sd_rows"
 for sd_where in uninstall.sh install.sh; do
   while read -r sd_fn sd_home; do

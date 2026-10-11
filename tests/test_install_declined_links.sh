@@ -80,12 +80,6 @@ check_status "an absent core file still fails the install (exit 1)" 1 "$STATUS"
 check_contains "…naming it as MISS" "$OUT" "MISS FRAMEWORK.md"
 check_contains "…and saying verification failed" "$OUT" "verification FAILED"
 
-# rec_set H REL TARGET — rewrite the manifest's symlink record for REL to TARGET (REL must already hold one).
-rec_set() {
-  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' \
-    "$1/.keel/install-manifest.claude" > "$SANDBOX/dl-rec.new" && cat "$SANDBOX/dl-rec.new" > "$1/.keel/install-manifest.claude"
-}
-
 # --- acceptance 4: doctor's G-LINK-DANGLING remedy ------------------------------------------------------------
 # (1) a dangling link Keel cannot prove its own (an adopter's wiring): remove it first.
 h="$SANDBOX/dl-foreign"; mkdir -p "$h"
@@ -100,7 +94,7 @@ check_contains "doctor: …saying install never replaces a link Keel did not mak
 # the relink advice stays.
 gone="$REPO_ROOT/commands/moved-away-go.md"
 ln -sfn "$gone" "$h/commands/go.md"
-rec_set "$h" commands/go.md "$gone"
+set_symlink_record "$h" commands/go.md "$gone"
 run "$doctor" --install "$h"
 gl="$(grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F 'commands/go.md')"
 check_contains "doctor: a moved checkout's own link is still a GAP" "$gl" "dangling symlink"
@@ -123,18 +117,18 @@ h="$SANDBOX/dl-r19"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
 rm -f "$h/keel/PRINCIPLES.md"; ln -s "$SANDBOX/dl-r19-nowhere" "$h/keel/PRINCIPLES.md"
 # (a) the legacy `-` record over a dangling link is Keel's own: the relink advice, never "remove the link first".
-rec_set "$h" keel/PRINCIPLES.md -
+set_symlink_record "$h" keel/PRINCIPLES.md -
 gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
 check_contains "R1-9: a dangling link with the legacy '-' record is still a GAP" "$gl" "dangling symlink"
 check_contains "R1-9: …Keel's own, so it keeps the relink advice" "$gl" "re-run install.sh --link"
 check_absent "R1-9: …without telling you to remove it" "$gl" "remove the link first"
 # (b) a record that names the link's REAL target, but outside the checkout that wrote it, proves nothing.
-rec_set "$h" keel/PRINCIPLES.md "$SANDBOX/dl-r19-nowhere"
+set_symlink_record "$h" keel/PRINCIPLES.md "$SANDBOX/dl-r19-nowhere"
 gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
 check_contains "R1-9: a record whose target lies OUTSIDE the recording checkout: remove the link first" "$gl" "remove the link first"
 check_absent "R1-9: …and no relink advice" "$gl" "checkout moved/deleted"
 # (c) a record naming an inside-the-checkout target the link does not have proves nothing either.
-rec_set "$h" keel/PRINCIPLES.md "$REPO_ROOT/commands/not-the-links-target.md"
+set_symlink_record "$h" keel/PRINCIPLES.md "$REPO_ROOT/commands/not-the-links-target.md"
 gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
 check_contains "R1-9: a record naming a different target than the link's: remove the link first" "$gl" "remove the link first"
 check_absent "R1-9: …and no relink advice" "$gl" "checkout moved/deleted"

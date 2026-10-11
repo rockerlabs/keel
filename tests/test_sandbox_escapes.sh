@@ -22,12 +22,12 @@ tree_sum() { (cd "$1" && find . | LC_ALL=C sort | cksum); }
 # tests/lib.sh exports a harness value for six of the seven isolation variables into every test's environment, and
 # the resolvers read those before KEEL_HOME — which is the real reason the old KEEL_HOME rows could not fail.
 # only_env VAR VALUE CMD… — run CMD with every isolation variable removed except VAR=VALUE.
-# shellcheck source=tools/lib/impact-store.sh
-. "$REPO_ROOT/tools/lib/impact-store.sh"
+# The list is read in a subshell: sourcing the library here would define its functions for the rest of the file.
+isolation_vars="$(. "$REPO_ROOT/tools/lib/impact-store.sh"; printf '%s' "$IMPACT_ISOLATION_VARS")"
 only_env() {
   local keep="$1" val="$2" v unsets=()
   shift 2
-  for v in $IMPACT_ISOLATION_VARS; do [ "$v" = "$keep" ] || unsets+=(-u "$v"); done
+  for v in $isolation_vars; do [ "$v" = "$keep" ] || unsets+=(-u "$v"); done
   run env "${unsets[@]}" "$keep=$val" "$@"
 }
 kh_ctl="$SANDBOX/esc-ctl-khome"; khome_fixture "$kh_ctl"

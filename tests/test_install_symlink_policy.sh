@@ -314,20 +314,16 @@ check_eq "T3 copy: no backup was taken (nothing of the adopter's)" 0 "$(bak_coun
 
 # (2) the legacy `-` record (written before dir #369 recorded targets). A DANGLING link carrying it is Keel's own and
 # is re-pointed; a LIVE link carrying it is the adopter's, because "Keel's" needs both the record and a dead target.
-rec_set() {   # rec_set H REL TARGET — rewrite the manifest's symlink record for REL to TARGET
-  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' \
-    "$(manifest_of "$1")" > "$SANDBOX/rec.new" && cat "$SANDBOX/rec.new" > "$(manifest_of "$1")"
-}
 ck="$(mk_ck legacy-ck)"; h="$SANDBOX/legacy-h"; mine="$SANDBOX/legacy-mine"; mkdir -p "$h" "$mine"
 run "$ck/install.sh" --home "$h" --no-hooks
-rec_set "$h" bin/keel -
+set_symlink_record "$h" bin/keel -
 ln -sfn "$SANDBOX/legacy-nowhere" "$h/bin/keel"
 run "$ck/install.sh" --home "$h" --no-hooks
 check_status "legacy '-': re-run over a dangling link exits 0" 0 "$STATUS"
 check_eq "legacy '-': a dangling link with the placeholder record is Keel's own — re-pointed" "$ck/keel" "$(readlink "$h/bin/keel")"
 check_contains "legacy '-': …saying so" "$(line_of "$OUT" bin/keel)" "re-pointed"
 printf '#!/bin/sh\necho mine\n' > "$mine/keel"; chmod +x "$mine/keel"
-rec_set "$h" bin/keel -
+set_symlink_record "$h" bin/keel -
 ln -sfn "$mine/keel" "$h/bin/keel"
 before="$(sum_of "$mine/keel")"
 run "$ck/install.sh" --home "$h" --no-hooks
