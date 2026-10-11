@@ -107,4 +107,36 @@ gl="$(grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F 'commands/go.md')"
 check_contains "doctor --codex: a Claude-mode install's moved link keeps the relink advice" "$gl" "re-run install.sh --link"
 check_absent "doctor --codex: …without telling you to remove it" "$gl" "remove the link first"
 
+# --- R1-9 (dir #749): the doctor's provenance clauses each bind -------------------------------------------------
+# doctor_link_is_keels_own has three clauses past "a usable manifest holds a record": the pre-dir-#369 `-`
+# placeholder (a call-site branch, kept at doctor and install), and the one shared link-record predicate
+# (tools/lib/manifest.sh manifest_link_is_keels — target equals the recorded one, inside the recording
+# checkout). Deleting the `-` line, or replacing the predicate call with a bare `return 0`, left (2) above green.
+# rec_set H REL TARGET — rewrite the manifest's symlink record for REL to TARGET (REL must already hold one).
+rec_set() {
+  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' \
+    "$1/.keel/install-manifest.claude" > "$SANDBOX/dl-rec.new" && cat "$SANDBOX/dl-rec.new" > "$1/.keel/install-manifest.claude"
+}
+# dl_gap H REL — the one G-LINK-DANGLING line the doctor prints for REL.
+dl_gap() { run "$doctor" --install "$1"; grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F "$2" || true; }
+h="$SANDBOX/dl-r19"; mkdir -p "$h"
+run "$install" --home "$h" --no-hooks --link
+rm -f "$h/keel/PRINCIPLES.md"; ln -s "$SANDBOX/dl-r19-nowhere" "$h/keel/PRINCIPLES.md"
+# (a) the legacy `-` record over a dangling link is Keel's own: the relink advice, never "remove the link first".
+rec_set "$h" keel/PRINCIPLES.md -
+gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
+check_contains "R1-9: a dangling link with the legacy '-' record is still a GAP" "$gl" "dangling symlink"
+check_contains "R1-9: …Keel's own, so it keeps the relink advice" "$gl" "re-run install.sh --link"
+check_absent "R1-9: …without telling you to remove it" "$gl" "remove the link first"
+# (b) a record that names the link's REAL target, but outside the checkout that wrote it, proves nothing.
+rec_set "$h" keel/PRINCIPLES.md "$SANDBOX/dl-r19-nowhere"
+gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
+check_contains "R1-9: a record whose target lies OUTSIDE the recording checkout: remove the link first" "$gl" "remove the link first"
+check_absent "R1-9: …and no relink advice" "$gl" "checkout moved/deleted"
+# (c) a record naming an inside-the-checkout target the link does not have proves nothing either.
+rec_set "$h" keel/PRINCIPLES.md "$REPO_ROOT/commands/not-the-links-target.md"
+gl="$(dl_gap "$h" keel/PRINCIPLES.md)"
+check_contains "R1-9: a record naming a different target than the link's: remove the link first" "$gl" "remove the link first"
+check_absent "R1-9: …and no relink advice" "$gl" "checkout moved/deleted"
+
 summary

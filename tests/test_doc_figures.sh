@@ -72,7 +72,7 @@ note_if_over_open_bound() {
 
 # table_row_for FILE — print FILE's own File-by-file table row in loading-and-cost.md, or nothing if
 # no row mentions it. Factored out of assert_figure so assert_derived_quoted_sum below can reuse the
-# SAME row-lookup instead of re-deriving it from the actual file (dir #167: the ~16.4K one-off line
+# SAME row-lookup instead of re-deriving it from the actual file (dir #167: the one-off FRAMEWORK+PRINCIPLES line
 # must track the TABLE's own quoted addends, so a mismatch is caught even when neither individual
 # figure has drifted from its file).
 table_row_for() { grep -E "^\|.*\`${1//./\\.}\`" "$doc" | head -1; }
@@ -262,15 +262,18 @@ assert_derived_core_figures() {
 }
 assert_derived_core_figures
 
-# dir #167: "Even if you do open FRAMEWORK + PRINCIPLES together (rare), that's a one-off ~16.4K for
+# dir #167: "Even if you do open FRAMEWORK + PRINCIPLES together (rare), that's a one-off ~NN.NK for
 # one decision" is arithmetic, not a file-size figure — assert_figure above pins each addend against
 # its OWN file, but nothing ever re-derives the SUM from those addends. A prior version of this line
 # said "~12K" against the same table's own ~10,500 + ~5,950 (= ~16,450); PR #211 fixed the printed
 # figure by hand, but the arithmetic itself stayed unguarded, so the same drift can recur silently. Sum
 # the TABLE's own quoted figures for the two files (not their actual on-disk sizes — table_fig_for, not
 # tok_of) and assert the one-off line still tracks that sum within the usual ±10% band.
+# dir #749 (S12-1): the band alone let the line read ~18.3K against a table summing to 19,250 — a 5% drift is
+# inside ±10%. The line is pure arithmetic over two quoted cells, so it must ALSO equal that sum rounded to
+# the 0.1K the line is written in (|fig - sum| <= 50).
 assert_derived_quoted_sum() {
-  local label="loading-and-cost.md ~16.4K FRAMEWORK+PRINCIPLES sum tracks its own quoted addends"
+  local label="loading-and-cost.md FRAMEWORK+PRINCIPLES one-off sum tracks its own quoted addends"
   local fw_fig="" pr_fig="" line="" fig="" expected=""   # init all (set -u safe on bash 3.2)
   fw_fig="$(table_fig_for FRAMEWORK.md)"
   pr_fig="$(table_fig_for PRINCIPLES.md)"
@@ -290,6 +293,13 @@ assert_derived_quoted_sum() {
   fi
   expected=$(( fw_fig + pr_fig ))
   assert_band "$label" "$fig" "$expected" "doc: ~$fw_fig + ~$pr_fig"
+  local diff=$(( fig - expected ))
+  [ "$diff" -lt 0 ] && diff=$(( -diff ))
+  if [ "$diff" -le 50 ]; then
+    pass "$label, to the line's own 0.1K rounding"
+  else
+    fail "$label, to the line's own 0.1K rounding" "the line says ~$fig; the table's own cells sum to $expected (~$fw_fig + ~$pr_fig)"
+  fi
 }
 assert_derived_quoted_sum
 

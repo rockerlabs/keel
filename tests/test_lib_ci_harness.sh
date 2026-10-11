@@ -150,4 +150,25 @@ pin "A14: the self-doctor smoke uses check_status_out" "$REPO_ROOT/tests/test_se
 pin "A14: the token-report --since case uses check_status_out" "$REPO_ROOT/tests/test_token_report.sh" \
   'check_status_out "--since far in the future exits 0, not an error" "0"' "expected the --since case to print the tool's output on a mismatch"
 
+# --- dir #749 S6-1 / S6-6: two tests/lib.sh helpers keep their promises --------------------------------------------
+# S6-1: tty_run's STATUS is the COMMAND's exit status. util-linux `script -c` answers with its own (0) unless given -e,
+# and macOS `script` propagates the child's, so only the Linux leg could show a lie; no caller read STATUS yet.
+if command -v script >/dev/null 2>&1; then
+  tty_run n sh -c 'exit 3'
+  check_eq "S6-1: tty_run reports the command's own exit status (3), not script's" "3" "$STATUS"
+  tty_run n sh -c 'exit 0'
+  check_eq "S6-1: …and 0 for a command that succeeds" "0" "$STATUS"
+else
+  echo "  skip  S6-1 (script absent)"
+fi
+# S6-6: alter_block on an empty or missing path leaves nothing behind (it used to drop a stray `.new` in the cwd).
+ab="$SANDBOX/s66"; mkdir -p "$ab"
+( cd "$ab" && alter_block "" 2>/dev/null; echo "rc=$?" > rc-empty; alter_block "$ab/missing.md" 2>/dev/null; echo "rc=$?" > rc-missing )
+check_eq "S6-6: alter_block \"\" fails" "rc=1" "$(cat "$ab/rc-empty")"
+check_eq "S6-6: alter_block on a missing file fails" "rc=1" "$(cat "$ab/rc-missing")"
+check_eq "S6-6: …and neither left a stray .new file behind" "" "$(find "$ab" -name '*.new' | tr -d ' ')"
+printf '## Precedence — when sources conflict\n' > "$ab/real.md"
+alter_block "$ab/real.md"
+check_eq "S6-6: a real file is still edited in place" "## Precedence — MY EDITED RAIL" "$(cat "$ab/real.md")"
+
 summary

@@ -2077,6 +2077,23 @@ check_absent "and reports no GAP over it" "$OUT" "GAP"
 # (dir #380's proven shape), "blankline" for `fn ()` with a BLANK line then `{` (also valid bash — the
 # parser just keeps reading).
 BLOCK_FNS='keel_core_block_text keel_core_block_is_trimmed keel_core_block_norm keel_core_block_state keel_core_block_full keel_core_block_replace keel_core_has_block keel_core_block_check'   # dir #721 S10-1: the block comparator's functions, one distinct body each
+# dir #749 S8-1: EVERY single_def_check line of tools/self/doctor.sh's check 12, `function home` — the table the
+# two loops below walk. A line added there without a row here is caught by the count pin right after them.
+SD_ROWS='manifest_field tools/lib/manifest.sh
+manifest_usable tools/lib/manifest.sh
+manifest_link_is_keels tools/lib/manifest.sh
+keel_path_inside tools/lib/manifest.sh
+keel_core_is_link tools/lib/core-ownership.sh
+keel_core_is_nogit_trim tools/lib/core-ownership.sh
+keel_core_block_text tools/lib/core-ownership.sh
+keel_core_block_is_trimmed tools/lib/core-ownership.sh
+keel_core_block_norm tools/lib/core-ownership.sh
+keel_core_block_state tools/lib/core-ownership.sh
+keel_core_block_full tools/lib/core-ownership.sh
+keel_core_block_replace tools/lib/core-ownership.sh
+keel_core_has_block tools/lib/core-ownership.sh
+keel_core_block_check tools/lib/core-ownership.sh
+keel_dir_is_checkouts_own tools/lib/safe-write.sh'
 plant_manifest_and_ownership_libs() {
   local dir="$1" brace="${2:-same}" open_link open_trim
   # ANSI-C quoting ($'...') gives open_link/open_trim REAL newlines up front, so they can be passed to
@@ -2091,8 +2108,9 @@ plant_manifest_and_ownership_libs() {
     *)         open_link='keel_core_is_link() {';      open_trim='keel_core_is_nogit_trim() {' ;;
   esac
   mkdir -p "$dir/tools/lib"
-  printf '#!/usr/bin/env bash\nmanifest_field() {\n  :\n}\nmanifest_usable() {\n  :\n}\n' \
+  printf '#!/usr/bin/env bash\nmanifest_field() {\n  :\n}\nmanifest_usable() {\n  :\n}\nmanifest_link_is_keels() {\n  :\n}\nkeel_path_inside() {\n  :\n}\n' \
     > "$dir/tools/lib/manifest.sh"
+  printf '#!/usr/bin/env bash\nkeel_dir_is_checkouts_own() {\n  :\n}\n' > "$dir/tools/lib/safe-write.sh"   # dir #749 S8-1: its single_def_check line had no fixture
   local blk_fn blocks=""   # dir #721 S10-1: the dir #650 block-comparator quartet, one distinct body each
   for blk_fn in $BLOCK_FNS; do blocks="${blocks}${blk_fn}() {\n  echo ${blk_fn}-body\n}\n"; done
   printf '%s\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\n' \
@@ -2102,7 +2120,7 @@ plant_manifest_and_ownership_libs() {
   # (dir #716) are both REQUIRED there.
   printf '%s\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
     '#!/usr/bin/env bash' > "$dir/install.sh"
-  printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
+  printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, tools/lib/core-ownership.sh, and tools/lib/safe-write.sh"\n' \
     "$fake_widget" > "$dir/tests/test_tools.sh"
 }
 
@@ -2112,27 +2130,40 @@ run "$sd" "$d" --quiet
 check_status "manifest/core-ownership: one definition each -> exit 0" 0 "$STATUS"
 check_absent "no GAP for the correct shape" "$OUT" "GAP"
 
-# dir #721 S10-1 (dir #513's keel_core_block_* single_def_check lines): a deleted or mistyped line turned no
-# test red. Two bindings per function. (1) the clean tree, run WITHOUT --quiet, prints the OK line naming
-# it — a deleted `single_def_check` line prints nothing; (2) a hand-copy of exactly that function in another
-# file is a GAP naming it — a line with a wrong home argument, or an exemption added back, lets it through
-# with exit 0. (The drift-of-install.sh's-fallback half this ticket first pinned went with dir #716, which
-# removed the fallback copies and the body comparison: there is no fallback path left to pin.)
+# dir #721 S10-1 (dir #513's keel_core_block_* single_def_check lines), widened to every line of check 12 by
+# dir #749 S8-1: a deleted or mistyped line turned no test red. Three bindings per function, each against a
+# different wrong build of its `single_def_check` line (mutation proofs recorded in the PR):
+#   (1) the clean tree, run WITHOUT --quiet, prints the OK line naming the function and its home — a DELETED
+#       line prints nothing, and a WRONG home argument prints a GAP instead;
+#   (2) a hand-copy in uninstall.sh is a GAP naming it;
+#   (3) a hand-copy in install.sh is a GAP naming it — the only place a re-added `install.sh` EXEMPTION would
+#       excuse one (the stub that exemption once covered is gone, spec 685 round 2 B20), and (2)'s uninstall.sh
+#       copy is never excused by it, so only this loop can tell the exempt line from the strict one.
+# (The drift-of-install.sh's-fallback half this ticket first pinned went with dir #716, which removed the
+# fallback copies and the body comparison: there is no fallback path left to pin.)
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "block comparator functions, one definition each" )
+( cd "$d" && git add -A && git commit -qm "single definitions, one each" )
 run "$sd" "$d"
-check_status "S10-1: the block-comparator functions, one definition each -> exit 0" 0 "$STATUS"
-for blk_fn in $BLOCK_FNS; do
-  check_contains "S10-1: the clean run reports $blk_fn() checked, with its one definition in the lib" "$OUT" \
-    "OK   ${blk_fn}() has exactly one real definition, in tools/lib/core-ownership.sh"
-done
-for blk_fn in $BLOCK_FNS; do
-  d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-  printf '\n%s() {\n  :\n}\n' "$blk_fn" >> "$d/uninstall.sh"
-  ( cd "$d" && git add -A && git commit -qm "$blk_fn hand-copy in uninstall.sh" )
-  run "$sd" "$d" --quiet
-  check_status "S10-1: a hand-copy of $blk_fn in uninstall.sh -> exit 1" 1 "$STATUS"
-  check_contains "S10-1: ...names the lib as the one real home" "$OUT" "${blk_fn}() is defined in {"
+check_status "S10-1: every single-definition function, one definition each -> exit 0" 0 "$STATUS"
+sd_rows=0
+while read -r sd_fn sd_home; do
+  [ -n "$sd_fn" ] || continue
+  sd_rows=$((sd_rows + 1))
+  check_contains "S10-1: the clean run reports $sd_fn() checked, with its one definition in $sd_home" "$OUT" \
+    "OK   ${sd_fn}() has exactly one real definition, in $sd_home"
+done <<<"$SD_ROWS"
+sd_lines="$(grep -cE '^single_def_check [a-z_]+ +tools/lib/' "$REPO_ROOT/tools/self/doctor.sh" || true)"
+check_eq "S10-1: this table has a row for every single_def_check line in tools/self/doctor.sh" "$sd_lines" "$sd_rows"
+for sd_where in uninstall.sh install.sh; do
+  while read -r sd_fn sd_home; do
+    [ -n "$sd_fn" ] || continue
+    d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+    printf '\n%s() {\n  :\n}\n' "$sd_fn" >> "$d/$sd_where"
+    ( cd "$d" && git add -A && git commit -qm "$sd_fn hand-copy in $sd_where" )
+    run "$sd" "$d" --quiet
+    check_status "S10-1: a hand-copy of $sd_fn in $sd_where -> exit 1" 1 "$STATUS"
+    check_contains "S10-1: ...names $sd_home as the one real home" "$OUT" "${sd_fn}() is defined in {"
+  done <<<"$SD_ROWS"
 done
 
 # dir #587: same false-GAP class as check 11's own color.grep fixture above, for this check's
