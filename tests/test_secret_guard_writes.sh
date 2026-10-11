@@ -356,19 +356,27 @@ for h in pre-commit pre-push; do
   got="$(cksum < "$shipped/$h")"
   check_eq "A57: the shipped $h is listed in shipped-hook-sums" "1" "$(grep -cxF -- "$h $got" "$sums" || true)"
 done
-# Every body a RELEASE carried must be listed (an install from a release must stay refreshable). Tags, not every commit:
-# a merged PR keeps its review-round commits in history, and an unreleased intermediate body is never an install target
-# worth a line. A clone without tags (or a shallow one) has nothing to walk, so this passes vacuously there.
-missing57=""; tags57=0
-for tg in $(git -C "$REPO_ROOT" tag -l 'v*' 2>/dev/null); do
-  tags57=$((tags57 + 1))
+# Every body a RELEASE carried, and every body main's own history carried (first-parent: a merged PR's review-round
+# commits are not main states, but `bootstrap.sh` installs from main, so each state main passed through is an install
+# target), must be listed. A clone without tags or without origin/main has less to walk; it says so instead of passing.
+revs57=""; seen57=0; missing57=""
+for tg in $(git -C "$REPO_ROOT" tag -l 'v[0-9]*' 2>/dev/null); do revs57="$revs57 $tg"; done
+if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  revs57="$revs57 $(git -C "$REPO_ROOT" log --first-parent --format=%H origin/main -- tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null | tr '\n' ' ')"
+fi
+for rv in $revs57; do
   for h in pre-commit pre-push; do
-    got="$(git -C "$REPO_ROOT" show "${tg}:tools/secret-guard/$h" 2>/dev/null | cksum)" || continue
-    case "$got" in "4294967295 0") continue ;; esac   # the hook did not exist at this tag
-    grep -qxF -- "$h $got" "$sums" || missing57="$missing57 $h@$tg"
+    git -C "$REPO_ROOT" cat-file -e "${rv}:tools/secret-guard/$h" 2>/dev/null || continue   # the hook did not exist there
+    seen57=$((seen57 + 1))
+    got="$(git -C "$REPO_ROOT" show "${rv}:tools/secret-guard/$h" 2>/dev/null | cksum)"
+    grep -qxF -- "$h $got" "$sums" || missing57="$missing57 $h@${rv:0:8}"
   done
 done
-check_eq "A57: every hook body a release tag carried is listed ($tags57 tags seen)" "" "$missing57"
+if [ "$seen57" -gt 0 ]; then
+  check_eq "A57: every hook body a release or a main tip carried is listed ($seen57 bodies checked)" "" "$missing57"
+else
+  pass "A57: no tags and no origin/main in this clone — only the shipped hooks (above) are checked against the list"
+fi
 check_eq "A57: pre-commit's older body used below is listed" "1" "$(grep -cxF -- "pre-commit $(old_pre_commit | cksum)" "$sums" || true)"
 
 # an EDITED Keel hook (marker intact, body changed) — each hook, each way

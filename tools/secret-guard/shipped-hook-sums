@@ -1,4 +1,4 @@
-# shipped-hook-sums — the checksum of every version of the Keel hooks that has been on main or in a release (dir #683).
+# shipped-hook-sums — the checksum of every version of the Keel hooks that main has carried or a release has shipped (dir #683).
 #
 # install-secret-guard.sh treats a hook as Keel's only when its line 2 is the marker line AND its whole body is one of
 # the versions listed here. A hook that carries the marker but matches none of them was edited after install (or comes
@@ -11,7 +11,8 @@
 #
 # WHEN YOU CHANGE tools/secret-guard/pre-commit OR pre-push: ADD one line for the new body here and KEEP the old ones
 # (an older install must still be refreshed, not refused). tests/test_secret_guard_writes.sh fails until you do — it
-# checks that the shipped hooks are listed and, wherever the clone has tags, that every body a release tag carried is.
+# checks that the shipped hooks are listed and, wherever the clone has tags or origin/main, that every body a release tag
+# or a main tip (first-parent) carried is.
 # To print the line for the current body:   printf "%s " pre-push; cksum < tools/secret-guard/pre-push
 
 # pre-commit, oldest first
