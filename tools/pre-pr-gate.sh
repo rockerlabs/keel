@@ -34,7 +34,7 @@
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
 # earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
-# name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
+# name is no identifier); an array assignment's `(…)`
 # (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
 # `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
 # `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
@@ -1890,6 +1890,7 @@ function cmd_char(   c, s, k, op) {
     seg_end(s, pos + 1); grp[s, ++ngrp[s]] = ++gid; pos++; return
   }
   if (c == ")") {
+    if (ngrp[s] == 0 && cty[s] == "SUB") case_close(s)
     seg_end(s, pos + 1); pos++
     if (ngrp[s] > 0) ngrp[s]--
     else if (cty[s] == "SUB") close_cmd()
@@ -1905,6 +1906,20 @@ function cmd_char(   c, s, k, op) {
   if (c == "#") { word_begin(pos); addsrc(pos, 1, "u"); pos++; return }
   # `*`, `?`, `[`
   word_begin(pos); addsrc(pos, 1, "g"); pos++
+}
+
+# case_close(s) — a `)` is about to close the SUB at s with no group open. When the segment it ends starts with `case`
+# (after any reserved words) that `)` is a case pattern’s, which the shells read as part of the `case` and this reader
+# reads as the SUB’s end: the rest of the substitution (`;; esac; git push …)`) then lands in the enclosing context. In
+# a command context that is still read as commands; under a DQ, a PARAM or an HDATA it is data, so the text is a
+# region, from the enclosing segment to the end (the reader cannot know where the shell ends the substitution).
+function case_close(s,   i) {
+  if (!(cty[s - 1] == "DQ" || cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return
+  word_end(s)
+  i = 1
+  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
+  if (i + 2 > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return
+  region(cpos[s], n, "case pattern ) closes $(…) read in " ((cty[s - 1] == "DQ") ? "double quotes" : (cty[s - 1] == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
 }
 
 # close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still
