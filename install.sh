@@ -2087,12 +2087,26 @@ if [ "$hp_is_keel" = 1 ]; then pc_state="$(keel_hook_state pre-commit)"; pp_stat
 if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit" ] && [ "$pp_state" != 2 ]; then
   # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
   # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
-  if [ -x "$keel_hooks/secret-scan.sh" ] && "$keel_hooks/secret-scan.sh" --selftest >/dev/null 2>&1; then
+  # stderr is captured, not dropped (dir #695): since dir #680 a malformed personal-literals file hard-fails
+  # the scanner with a one-line reason on stderr, and a bare "selftest FAILS" left the operator to guess.
+  st_err=""; st_rc=0
+  if [ -x "$keel_hooks/secret-scan.sh" ]; then
+    st_err="$("$keel_hooks/secret-scan.sh" --selftest 2>&1 >/dev/null)" || st_rc=$?
+  else
+    st_rc=1
+  fi
+  if [ "$st_rc" -eq 0 ]; then
     echo "  OK   secret-guard ($hp; selftest passed)"
     keel_hook_link_note
     guard_ok=1
   else
     echo "  WARN secret-guard is wired but its selftest FAILS — the gate may not catch what it claims."
+    # The reason: the scanner's first refusal (`secret-scan:`) or probe failure (`selftest: FAIL`) line on stderr;
+    # non-fatal WARN lines are dropped first (they can precede the real one), and if no line carries either prefix the
+    # first remaining stderr line stands in. A missing or non-executable scanner prints nothing, so no line.
+    st_nw="$(grep -v -E '^(selftest|secret-scan): WARN' <<<"$st_err")" || st_nw=""
+    st_why="$(grep -m1 -E '^(secret-scan:|selftest: FAIL)' <<<"$st_nw")" || st_why="${st_nw%%$'\n'*}"
+    [ -z "$st_why" ] || echo "       Reason:   $st_why"
     echo "       Inspect:  $keel_hooks/secret-scan.sh --selftest"
   fi
 elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 2 ] || [ "$pp_state" = 2 ]; }; then
