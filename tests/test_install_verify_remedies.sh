@@ -32,6 +32,8 @@ check_eq "A41: …three keel/ links are not provably Keel's" 3 "$(n_lines "$OUT"
 check_eq "A41: …none is called yours" 0 "$(n_lines "$OUT" "is yours")"
 check_contains "A41: …and Verify says the rails will NOT load" "$OUT" "$noload"
 check_absent "A41: …instead of calling the dangling import OK" "$OUT" "OK   CLAUDE.md imports keel/CORE.md"
+check_absent "A41: …nor does the sync step call it wired" "$OUT" "already imports the linked core"
+check_contains "A41: …it says the import does not resolve" "$OUT" "CLAUDE.md imports keel/CORE.md, which does not resolve"
 check_contains "A41: …naming the import that does not resolve" "$OUT" "keel/CORE.md does not resolve to a regular file"
 
 # --- A42 (K39, R1-1): a dangling CLAUDE.md link, copy mode and (a guard) linked mode --------------------------
@@ -57,6 +59,7 @@ check_absent "B21 import + block: …never \"rails load twice\", in Verify or th
 check_contains "B21 import + block: …the sync step leaves the block, saying why" "$OUT" "its embedded KEEL-CORE block is what loads the rails"
 run "$doctor" --install "$h"
 check_contains "B21 import + block: …doctor agrees: keep the block meanwhile" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "keep it until keel/CORE.md resolves"
+check_contains "B21 import + block: …and says to remove the foreign keel/CORE.md link first (a re-run alone declines it)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove the keel/CORE.md link first"
 # …and an IDENTICAL block is not removed as a duplicate either (it is the only copy of the rails that loads).
 h="$SANDBOX/b21-same"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
@@ -136,13 +139,14 @@ mkdir -p "$h/keel"; ln -s "$SANDBOX/a43-nowhere-core" "$h/keel/CORE.md"
 run "$doctor" --install "$h"
 check_absent "A43 doctor copy, a link at keel/CORE.md: the manifest's layout=copy wins (no --link)" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
 rm -f "$h/keel/CORE.md"
-# A copy home whose CLAUDE.md carries a core import (by the one definition every Keel tool shares) is advised one
-# mode throughout: the import GAP's --link, and the same for the slot (a copy re-run could never clear that GAP).
+# A copy home whose CLAUDE.md carries a core import: the slot keeps the manifest's copy mode, and the import GAP
+# keeps --link, as on origin/main — the accepted two-modes-in-one-report cost until dir #789 decides what a core
+# import means.
 cp "$h/CLAUDE.md" "$h/CLAUDE.md.keep"
 printf '@%s/elsewhere/keel/CORE.md\n' "$SANDBOX" >> "$h/CLAUDE.md"
 run "$doctor" --install "$h"
 check_contains "A43 doctor copy + a core import: the import GAP advises --link" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link"
-check_contains "A43 doctor copy + a core import: …and so does the slot (one report, one mode)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+check_absent "A43 doctor copy + a core import: …the slot keeps the manifest's copy mode (no --link; dir #789)" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
 cat "$h/CLAUDE.md.keep" > "$h/CLAUDE.md"
 # A codex home: bin/keel, the audited mode's slot, is advised the --codex re-run.
 h="$SANDBOX/a43-dcodex"; mkdir -p "$h"
@@ -154,14 +158,15 @@ check_contains "A43 doctor --codex: a codex home's dangling bin/keel is advised 
 rm -f "$h/LEARNINGS.md"; ln -s "$SANDBOX/a43-nowhere-learn" "$h/LEARNINGS.md"
 run "$doctor" --install --codex "$h"
 check_contains "A43 doctor --codex: a codex home's dangling top-level LEARNINGS.md keeps --codex" "$(gap_of "$OUT" LEARNINGS.md)" "re-run install.sh --codex --home"
-# …but a dangling CLAUDE.md there belongs to a Claude-mode install (a --codex run never seeds it), and a dangling
-# AGENTS.md under a Claude audit to a codex one.
+# …but a dangling CLAUDE.md there belongs to a Claude-mode install (a --codex run never seeds it), while AGENTS.md
+# under a Claude audit is an adopter's own file: the audited mode's re-run, never --codex.
 ln -s "$SANDBOX/a43-nowhere-claude" "$h/CLAUDE.md"
 run "$doctor" --install --codex "$h"
 check_absent "A43 doctor --codex: a dangling CLAUDE.md is never advised --codex" "$(gap_of "$OUT" CLAUDE.md)" "--codex"
 rm -f "$h/CLAUDE.md" "$h/AGENTS.md"; ln -s "$SANDBOX/a43-nowhere-agents" "$h/AGENTS.md"
 run "$doctor" --install "$h"
-check_contains "A43 doctor: a dangling AGENTS.md is advised the --codex re-run" "$(gap_of "$OUT" AGENTS.md)" "re-run install.sh --codex --home"
+check_contains "A43 doctor: a dangling AGENTS.md under a Claude audit is a GAP" "$(gap_of "$OUT" AGENTS.md)" "dangling symlink"
+check_absent "A43 doctor: …advised the audited (Claude) mode's re-run, never --codex" "$(gap_of "$OUT" AGENTS.md)" "--codex"
 # A linked home keeps --link (the manifest's layout=link), with and without a usable manifest (detection).
 h="$SANDBOX/a43-dlink"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
@@ -177,8 +182,8 @@ check_contains "A43 doctor linked, no manifest, no import: --link from keel/CORE
 cat "$h/CLAUDE.md.keep" > "$h/CLAUDE.md"
 rm -f "$h/keel/CORE.md"
 run "$doctor" --install "$h"
-check_contains "A43 doctor linked, no manifest, keel/CORE.md gone: the slot is advised --link, from CLAUDE.md's import" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
-check_contains "A43 doctor: …the same mode the import GAP advises (one report, one mode)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link"
+check_absent "A43 doctor linked, no manifest, keel/CORE.md gone: detection finds no link, so the slot is copy (an import does not count; dir #789)" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
+check_contains "A43 doctor: …while the import GAP keeps --link (the accepted two-modes cost)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link"
 # The rails checks fire only on a context file that IMPORTS keel/CORE.md — the linked layout's own wiring — so
 # they keep --link even when a plain re-run has since recorded layout=copy (keel/CORE.md gone → copy mode).
 h="$SANDBOX/a43-import"; mkdir -p "$h"

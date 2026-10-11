@@ -1718,6 +1718,8 @@ EOF
         echo "  !    CLAUDE.md has BOTH the import line and an embedded KEEL-CORE block that differs from the shipped core."
         echo "       The rails load twice each session — remove the block (or the import line) by hand."
       fi
+    elif [ ! -f "$core_dest" ]; then
+      echo "  !    CLAUDE.md imports keel/CORE.md, which does not resolve (see Verify below)"
     else
       echo "  =    CLAUDE.md already imports the linked core"
     fi
@@ -2071,7 +2073,8 @@ elif [ "$LINK" = 1 ]; then
     if [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
       if [ "$v_block" = 1 ]; then
         echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — only its embedded"
-        echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back."
+        echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back:"
+        echo "       remove what sits at keel/CORE.md, then re-run '$advise_install'."
       else
         echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
       fi
@@ -2083,7 +2086,8 @@ elif [ "$LINK" = 1 ]; then
     fi
   elif keel_core_has_block "$HOME_DIR/CLAUDE.md" && [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy, and keel/CORE.md does not resolve to a regular file — keep"
-    echo "       the block: an import of keel/CORE.md would load nothing until it is back."
+    echo "       the block: an import of keel/CORE.md would load nothing until it is back (remove what sits there, then"
+    echo "       re-run '$advise_install')."
   elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
     echo "       Migrate when ready: replace the KEEL-CORE block with the line  $import_line"

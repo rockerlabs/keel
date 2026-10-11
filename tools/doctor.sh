@@ -816,32 +816,31 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # remedy (spec 685 round 2 B22): its manifest's `layout=` (link → ` --link`, link-nogit → ` --link --no-git`,
   # copy → nothing), read whether or not it recorded the slot advised on (a foreign link is unrecorded). No usable
   # manifest → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim or a link means linked,
-  # else copy. Either way, a CLAUDE.md carrying the core import (core_import_re, the one definition install.sh,
-  # uninstall.sh and the rails check below share) is linked: the import is the linked layout's own wiring, and a copy
-  # re-run under it never clears the import GAP below (a plain re-run over a home whose keel/CORE.md is gone lands
-  # in copy mode and records layout=copy) — so one report never advises two modes.
+  # else copy. A CLAUDE.md import does not count here (dir #789 decides whether a core import means "linked"
+  # everywhere; install.sh's stickiness does not count it either).
   doctor_claude_flags() {
     local dm_man="$ihome/.keel/install-manifest.claude" dm_lay=""
     if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
     elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
     fi
-    case "$dm_lay" in
-      link|link-nogit) ;;
-      *) if [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay="link"; fi ;;
-    esac
     manifest_layout_flags "$dm_lay"
   }
   # iclaude_relink — the flags for a Claude-only slot (commands/*, agents/*, keel/*): `install.sh --codex` never
   # creates one, so one under a --codex audit belongs to a Claude-mode install sharing this home (dir #124's shape).
-  # irelink_mode — for a slot both modes place (bin/keel, the top-level files) and the rails checks below (which fire
-  # only on an importing context file, so never copy): the AUDITED mode's — under --codex ` --codex` alone (a codex
-  # home is copy-only). So a copy-mode home is never advised --link, nor a Claude
-  # slot --codex, and a --no-git home keeps --no-git.
+  # irelink_mode — for a slot both modes place (bin/keel, the top-level files): the AUDITED mode's — under --codex
+  # ` --codex` alone (a codex home is copy-only). So a copy-mode home is never advised --link, nor a Claude slot
+  # --codex, and a --no-git home keeps --no-git.
+  # irails_relink — for the rails checks below, which fire only on a context file that IMPORTS keel/CORE.md: the
+  # linked layout's own wiring, so --link (as on origin/main), plus --no-git when the manifest says link-nogit; under
+  # --codex the bare --codex re-run. With a layout=copy manifest this can name a different mode than the slot
+  # remedies in the same report — the accepted cost until dir #789 decides what a core import means.
   # Their own variables, not folded into $ihome_flag, so tools/self/doctor.sh's check 1c — which greps advice lines
   # for the LITERAL substring `ihome_flag` — still recognizes these as home-aware (dir #98).
   iclaude_relink="$(doctor_claude_flags)"
   irelink_mode="${imode_flag:-$iclaude_relink}"
+  case "$iclaude_relink" in *--no-git*) irails_relink="$iclaude_relink" ;; *) irails_relink=" --link" ;; esac
+  irails_relink="${imode_flag:-$irails_relink}"
   # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the ONE
   # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
   # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for
@@ -879,11 +878,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/agents"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
     # this_relink — the flags of the mode that places THIS SPECIFIC slot: commands/, agents/, keel/ and CLAUDE.md
-    # are Claude-only (see iclaude_relink above), AGENTS.md is codex-only, and bin/keel and the shared top-level
-    # files (INSTANCE/LEARNINGS/IDEAS, FRAMEWORK/PRINCIPLES) are placed by both, so they take the audited mode's.
+    # are Claude-only (see iclaude_relink above); bin/keel and the other top-level files take the audited mode's
+    # (AGENTS.md is the codex install's under --codex, and an adopter's own file in a Claude home).
     case "$l" in
       "$ihome/commands/"*|"$ihome/agents/"*|"$ihome/keel/"*|"$ihome/CLAUDE.md") this_relink="$iclaude_relink" ;;
-      "$ihome/AGENTS.md") this_relink=" --codex" ;;
       *) this_relink="$irelink_mode" ;;
     esac
     if [ ! -e "$l" ]; then
@@ -953,7 +951,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
   elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
-      gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (re-run install.sh$irelink_mode$ihome_flag)$(keel_core_has_block "$gclaude" && echo "; its embedded KEEL-CORE block is what loads the rails meanwhile — keep it until keel/CORE.md resolves")"
+      ri_first=""
+      if [ -L "$ihome/keel/CORE.md" ] && ! doctor_link_is_keels_own "$ihome/keel/CORE.md"; then
+        ri_first="remove the keel/CORE.md link first (install never replaces a link Keel did not make), then "
+      fi
+      gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (${ri_first}re-run install.sh$irails_relink$ihome_flag)$(keel_core_has_block "$gclaude" && echo "; its embedded KEEL-CORE block is what loads the rails meanwhile — keep it until keel/CORE.md resolves")"
     elif keel_core_has_block "$gclaude"; then
       warn W-RAILS-DOUBLE "$icontext imports the core AND still embeds a KEEL-CORE block — the rails load twice each session; remove the block (or the import line)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then
@@ -970,7 +972,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$ref_trim" = "$inst_trim" ]; then
         say "  OK   core rails: linked, trimmed (--no-git — code/git rails not installed)"
       else
-        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh$irelink_mode$ihome_flag (a re-run keeps the trim and refreshes it)"
+        warn W-NOGIT-STALE "trimmed (--no-git) core is stale against this checkout's CORE.md — re-run install.sh$irails_relink$ihome_flag (a re-run keeps the trim and refreshes it)"
       fi
       git_projects=0
       if [ -f "$ihome/INSTANCE.md" ]; then
@@ -987,7 +989,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link$ihome_flag --with-git"   # never the derived flags: --no-git and --with-git are a usage error together
       fi
     elif ! keel_core_is_link "$ihome/keel/CORE.md"; then
-      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh$irelink_mode$ihome_flag"
+      warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh$irails_relink$ihome_flag"
     else
       say "  OK   core rails: linked (@import → keel/CORE.md)"
     fi
@@ -1121,10 +1123,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       if [ "$kl" -ef "$repo_root/keel" ]; then
         say "  OK   keel CLI: wired ($kl)"
       else
-        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — if this is the live one, remove the link first (install never replaces a link Keel did not make, --force included), then re-run install.sh$imode_flag$ihome_flag from here"
+        warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — if this is the live one, remove the link first (install never replaces a link Keel did not make, --force included), then re-run install.sh$irelink_mode$ihome_flag from here"
       fi
     else
-      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$imode_flag$ihome_flag (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand"
+      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$irelink_mode$ihome_flag (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand"
     fi
   fi
 
