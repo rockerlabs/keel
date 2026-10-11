@@ -359,7 +359,7 @@ never asserted from one run's feel. Where the estimate also names subscription-w
 taken before each wave already supplies them, so keep the last reading before each window reset the run
 crosses and sum the segments. **Summing at the estimate's weights:** keel's `keel tokens` does it for one session, with
 `KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
-sessions are summed by hand, found by branch as below. Write the weights and the session set beside the figure,
+sessions are summed by hand until dir #654 closes, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
@@ -560,7 +560,7 @@ nothing serious, so a long loop is a reason to keep reviewing the fixes, and a s
 worker reports in one line.
 
 **Suite concurrency is a budget too (0.16.0).** The bound on sessions per wave does not bound the machine:
-about seven full suites at once at the default cap put the load average in the hundreds and every suite past
+about seven full suites at once at the default cap (the host's CPU count) put the load average in the hundreds and every suite past
 an hour, with timing flakes rising alongside. State a per-worker concurrency cap for the suite in the wave
 plan (keel's: `KEEL_TEST_JOBS=2`), and keep a portability-leg container off the machine while the same worker's
 suite runs.
