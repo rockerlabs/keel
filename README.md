@@ -220,6 +220,12 @@ tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global cov
   `KEEL_SUBAGENT_RAILS=off` in the session environment turns it off. Wired the gate before this hook
   existed? Re-run the installer with your scope flag and restart your sessions; `tools/doctor.sh` names the
   gap (`W-GATE-SUBAGENT-RAILS`).
+- **Denies a subagent's git against your repository.** The gate's Bash hook also refuses a *subagent's*
+  repository-mutating git command (`checkout`, `stash`, `reset`, `commit`, `clean`, …) aimed at the session's
+  repository or any worktree of it; reads and work in a scratch clone (`git -C <clone>`) are fine, and your own
+  commands are never touched. It needs no installer re-run — a pull is enough. A seatbelt, not a sandbox: a
+  script, `sh -c`, an alias or a variable path are not seen. `KEEL_SUBAGENT_GIT_FLOOR=off` in the session
+  environment turns it off.
 - **Gates the agent, not you.** The hook fires on the assistant's own tool calls — your terminal, and a
   human typing `gh pr create` by hand, are never blocked.
 - **Claude-Code-specific.** Hooks are a Claude Code mechanism; see [`ADAPTING.md`](ADAPTING.md) for the

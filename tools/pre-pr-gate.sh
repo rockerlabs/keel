@@ -473,6 +473,29 @@
 # applied; the mechanical half is dir #675. A keel prompt that already pastes the block (K2, drydock,
 # delta-audit) now delivers it twice, on purpose. A session open before the install gets nothing until it
 # restarts (hooks load at session start).
+#
+# --- dir #675: the subagent git floor, in this hook's Bash mode --------------------------------------------------
+# The mechanical half of the rails: inside a SUBAGENT (the event carries a non-empty `agent_id`; the parent's does
+# not) a repository-mutating git command aimed at the SESSION's repository is denied before any other verdict.
+# "Mutating" is a list of verbs (checkout, reset, stash, commit, push, clean, …) and the write forms of the verbs
+# that also read (branch, tag, config, remote, worktree, …); "the session's repository" is the git common dir of the
+# payload cwd, so every worktree of it counts. The reader (the awk program, which resolves no path) reports `cd`
+# and git segments; this file's bash side finds the directories: the cd's before the git word (a group's cd does
+# not leak, a `{ …; }` group's does; a cd into a directory that does not exist leaves the shell where it was, so
+# both are tried), `-C`, `--git-dir`/`GIT_DIR` and `--work-tree`/`GIT_WORK_TREE`. Subagents keep every mutating
+# command in a scratch clone (`git -C <clone>`, `cd <clone>`) and every read. `KEEL_SUBAGENT_GIT_FLOOR=off` in the
+# hook environment switches it off; the PR and push rules still apply to a subagent. No installer re-run: it rides
+# the already-wired PreToolUse/Bash hook, so a pulled gate enforces it at once.
+# **A seatbelt for the felt shape, not a sandbox.** Allowed by design: a non-literal path (`git -C "$S"`,
+# `cd "$S"`), `sh -c`/`bash -c`/`eval` text, a script FILE that runs git (the command text is all this reads — a
+# probe file holding `git push` is invisible; treating every `bash <file>` as a deny would stop every legitimate
+# test run), an alias or `git-<x>` external command, a wrapper outside the reader's skip set (`timeout`, `nice`,
+# `sudo`, `env -C`), a non-literal verb (`git $v`), a `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
+# `cd X || git …` whose cd fails although X exists, `cd -`, a cd in one pipeline stage taken as applying to the
+# next, a plain `rm`/`cp`/`mv` of tracked files, machine-global config writes (`machine-watch` is their detector),
+# and a subagent whose event carries no `agent_id`. Accepted cost: `mkdir X && cd X && git init` run from inside the
+# session repository is denied (X does not exist when the hook runs); `git -C X init` passes. A subagent started
+# with `isolation: "worktree"` is denied its own commits for the same reason (its worktree shares the repository).
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -3321,6 +3344,7 @@ sg_val() {
       sg_vp="${1#tld:}"
       if [ -z "${HOME:-}" ]; then sg_vp=""
       else
+        # shellcheck disable=SC2088  # the tilde is matched as TEXT here, on purpose: it is replaced by string substitution
         case "$sg_vp" in "~") sg_vp="$HOME"; sg_vk=lit ;; "~/"*) sg_vp="$HOME${sg_vp#\~}"; sg_vk=lit ;; esac
       fi
       ;;
