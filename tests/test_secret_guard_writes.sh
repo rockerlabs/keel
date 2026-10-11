@@ -25,6 +25,19 @@ mk_foreign() {
   printf '#!/bin/sh\n# %s\nexit 0\n' "$3" > "$1/$2"
   if [ "${4:-}" = noexec ]; then chmod -x "$1/$2"; else chmod +x "$1/$2"; fi
 }
+# old_pre_commit — the FIRST pre-commit this repo shipped, byte for byte: the stand-in for "an older install still on
+# disk" (dir #683; A57 pins that it is listed in tools/secret-guard/shipped-hook-sums).
+old_pre_commit() {
+  printf '%s\n' '#!/usr/bin/env bash' \
+    '# Keel secret-guard — pre-commit hook. Catches a key-shaped secret before it enters local history.' \
+    '# Resolves the scanner next to itself so a vendored copy is self-contained.' \
+    'set -euo pipefail' \
+    'here="$(cd "$(dirname "$0")" && pwd)"' \
+    'scan="$here/secret-scan.sh"' \
+    '[ -x "$scan" ] || scan="$(command -v secret-scan.sh || true)"' \
+    '[ -n "${scan:-}" ] && [ -x "$scan" ] || { echo "secret-guard: scanner not found next to hook" >&2; exit 1; }' \
+    'exec "$scan"'
+}
 # lines <text> — how many lines the text holds.
 lines() { printf '%s\n' "$1" | wc -l | tr -d ' '; }
 # mk_stub <label> <shebang> — a scratch copy of the installer whose source secret-scan.sh --selftest passes and,
@@ -41,6 +54,7 @@ mk_stub() {
     cp "$shipped/$f" "$d/secret-guard/$f"
     chmod +x "$d/secret-guard/$f"
   done
+  cp "$shipped/shipped-hook-sums" "$d/secret-guard/shipped-hook-sums"
   {
     printf '%s\n' "$2"
     printf '%s\n' 'if [ "${1:-}" = --selftest ]; then' \
@@ -77,15 +91,17 @@ check_contains "A27: the backup holds the foreign hook" "$(cat "$h27/pre-commit.
 r27b="$(new_repo)"; h27b="$r27b/.git/hooks"
 run bash "$ok_stub/install-secret-guard.sh" "$r27b"
 check_status "A27: first vendoring → exit 0" 0 "$STATUS"
-for f in pre-commit secret-scan.sh; do
-  printf '# stale tail of an older version\n' >> "$h27b/$f"
-  ln "$h27b/$f" "$SANDBOX/a27b-outside-$f"
-done
+# (dir #683: pre-commit becomes an OLDER SHIPPED body — a Keel hook with an appended tail is now the user's, see A57)
+a27b_needle() { case "$1" in pre-commit) echo 'scanner not found next to hook' ;; *) echo 'stale tail of an older version' ;; esac; }
+old_pre_commit > "$h27b/pre-commit"
+printf '# stale tail of an older version\n' >> "$h27b/secret-scan.sh"
+for f in pre-commit secret-scan.sh; do ln "$h27b/$f" "$SANDBOX/a27b-outside-$f"; done
 run "$isg" "$r27b"
 check_status "A27: a plain re-vendor over hard-linked Keel files → exit 0" 0 "$STATUS"
+check_nofile "A27: ...an older SHIPPED pre-commit needs no permanent backup (dir #683)" "$h27b/pre-commit.pre-keel.bak"
 for f in pre-commit secret-scan.sh; do
   check_contains "A27: the other name of a hard-linked Keel $f keeps its bytes" \
-    "$(cat "$SANDBOX/a27b-outside-$f")" "stale tail of an older version"
+    "$(cat "$SANDBOX/a27b-outside-$f")" "$(a27b_needle "$f")"
   if cmp -s "$shipped/$f" "$h27b/$f"; then pass "A27: $f is the shipped file again"
   else fail "A27: $f is the shipped file again" "differs from the shipped file"; fi
   if [ -x "$h27b/$f" ]; then pass "A27: re-vendored $f keeps its execute bit"; else fail "A27: re-vendored $f keeps its execute bit" "not executable"; fi
@@ -330,5 +346,81 @@ check_eq "A53: git_global_expand_tilde has a definition" 1 \
   "$(grep -c '^git_global_expand_tilde()' "$REPO_ROOT/tools/lib/git-global-paths.sh" || true)"
 check_eq "A54: getting-started.md no longer lists the two secret-guard exceptions" 0 \
   "$(grep -c 'Two exceptions are known' "$REPO_ROOT/docs/getting-started.md" || true)"
+
+# =============================================================================================================
+# A57 (dir #683) — a hook with Keel's marker line but a body that is no shipped version was EDITED: the user's data
+# (refused; --force backs it up). The list and its upkeep: tools/secret-guard/shipped-hook-sums.
+# =============================================================================================================
+sums="$shipped/shipped-hook-sums"
+for h in pre-commit pre-push; do
+  got="$(cksum < "$shipped/$h")"
+  check_eq "A57: the shipped $h is listed in shipped-hook-sums" "1" "$(grep -cxF -- "$h $got" "$sums" || true)"
+done
+# Every body a RELEASE carried, and every body main passed through (first-parent: a merged PR's review-round commits are
+# not main states, but `bootstrap.sh` installs from main, so each state main passed through is an install target), must be
+# listed. Both walks are bounded by THIS branch — tags merged into HEAD, main's history up to the merge-base — so a hook
+# change merged to main later turns an unrelated branch red only once that branch is rebased onto it, not on a fetch.
+revs57=""; seen57=0; missing57=""
+for tg in $(git -C "$REPO_ROOT" tag -l --merged HEAD 'v[0-9]*' 2>/dev/null); do revs57="$revs57 $tg"; done
+base57="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || true)"
+if [ -n "$base57" ]; then
+  revs57="$revs57 $(git -C "$REPO_ROOT" log --first-parent --format=%H "$base57" -- tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null | tr '\n' ' ')"
+fi
+for rv in $revs57; do
+  for h in pre-commit pre-push; do
+    git -C "$REPO_ROOT" cat-file -e "${rv}:tools/secret-guard/$h" 2>/dev/null || continue   # the hook did not exist there
+    seen57=$((seen57 + 1))
+    got="$(git -C "$REPO_ROOT" show "${rv}:tools/secret-guard/$h" 2>/dev/null | cksum)"
+    grep -qxF -- "$h $got" "$sums" || missing57="$missing57 $h@${rv:0:8}"
+  done
+done
+if [ "$seen57" -gt 0 ]; then
+  check_eq "A57: every hook body a release or a main tip carried is listed" "" "$missing57"
+else
+  pass "A57: nothing to walk in this clone (no tags merged into HEAD and no origin/main, or their objects are missing) — only the shipped hooks (above) are checked against the list"
+fi
+check_eq "A57: pre-commit's older body used below is listed" "1" "$(grep -cxF -- "pre-commit $(old_pre_commit | cksum)" "$sums" || true)"
+
+# an EDITED Keel hook (marker intact, body changed) — each hook, each way
+for h in pre-commit pre-push; do
+  r="$(new_repo)"; hd="$r/.git/hooks"
+  run bash "$ok_stub/install-secret-guard.sh" "$r"
+  printf '# my own addition: also run lint\nlint-staged\n' >> "$hd/$h"
+  before="$(cat "$hd/$h")"
+  run bash "$ok_stub/install-secret-guard.sh" "$r"
+  check_status "A57: an edited Keel $h, plain re-install → refused (exit 3)" 3 "$STATUS"
+  check_contains "A57: ...saying it carries Keel's marker but matches no listed version" "$OUT" "carries Keel's marker but its body matches no version listed"
+  check_contains "A57: ...and that nothing was changed" "$OUT" "Nothing was changed"
+  check_eq "A57: ...the user's edit is untouched" "$before" "$(cat "$hd/$h")"
+  check_nofile "A57: ...and no backup was made" "$hd/$h.pre-keel.bak"
+  run bash "$ok_stub/install-secret-guard.sh" --force "$r"
+  check_status "A57: an edited Keel $h, --force → exit 0" 0 "$STATUS"
+  check_eq "A57: ...the permanent backup holds the user's edit, byte for byte" "$before" "$(cat "$hd/$h.pre-keel.bak")"
+  if cmp -s "$shipped/$h" "$hd/$h"; then pass "A57: ...and the hook is the shipped one again"; else fail "A57: ...and the hook is the shipped one again" "differs"; fi
+  run bash "$ok_stub/install-secret-guard.sh" "$r"
+  check_status "A57: after --force the hook is Keel's again: a plain re-install → exit 0" 0 "$STATUS"
+  check_eq "A57: ...and the earlier backup is still there" "$before" "$(cat "$hd/$h.pre-keel.bak")"
+done
+
+# a list line must match WHOLE: `pre-push <crc> 22860` does not vouch for a hook whose sum is `<crc> 2286` (a
+# substring match would — the hook's own sum is a prefix of that line).
+pf57="$(mk_stub prefix '#!/usr/bin/env bash')"
+{ for h in pre-commit pre-push; do printf '%s %s0\n' "$h" "$(cksum < "$shipped/$h")"; done; } > "$pf57/secret-guard/shipped-hook-sums"
+r57p="$(new_repo)"
+run bash "$pf57/install-secret-guard.sh" "$r57p"
+check_status "A57: a first install over a list of near-miss lines → exit 0" 0 "$STATUS"
+run bash "$pf57/install-secret-guard.sh" "$r57p"
+check_status "A57: a list line that only CONTAINS the hook's sum does not vouch for it → refused (exit 3)" 3 "$STATUS"
+
+# the list is the only thing that decides: with it missing, a Keel-marked hook cannot be told from an edited one
+# (fail closed — the refusal names the list), and a first install needs no list.
+rm57="$(mk_stub nolist '#!/usr/bin/env bash')"; rm -f "$rm57/secret-guard/shipped-hook-sums" 2>/dev/null || true
+r57n="$(new_repo)"
+run bash "$rm57/install-secret-guard.sh" "$r57n"
+check_status "A57: a first install needs no list → exit 0" 0 "$STATUS"
+run bash "$rm57/install-secret-guard.sh" "$r57n"
+check_status "A57: with the list missing, a re-install over a Keel hook is refused (exit 3)" 3 "$STATUS"
+check_contains "A57: ...naming the list" "$OUT" "shipped-hook-sums"
+
 
 summary

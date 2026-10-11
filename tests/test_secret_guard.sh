@@ -915,6 +915,7 @@ for f in pre-commit pre-push range-lib.sh; do
   cp "$REPO_ROOT/tools/secret-guard/$f" "$isg_rb/secret-guard/$f"
   chmod +x "$isg_rb/secret-guard/$f"
 done
+cp "$REPO_ROOT/tools/secret-guard/shipped-hook-sums" "$isg_rb/secret-guard/shipped-hook-sums"  # dir #683: a re-vendor reads the shipped-hook list
 rb_scan="$isg_rb/secret-guard/secret-scan.sh"
 printf '#!/nonexistent/not-a-real-interpreter\necho "selftest: OK (stub, bash-interpreted only)"\nexit 0\n' > "$rb_scan"
 chmod +x "$rb_scan"
