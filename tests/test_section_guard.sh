@@ -76,7 +76,7 @@ git -C \"\" config diff.context abc"
 check_ne "S3: a hand-set SANDBOX without lib.sh's functions is refused" "$rc" 0
 check_eq "S3: ...before its first git call" "" "$log"
 
-# --- S3b-d: each footprint check bites on its own (a draft that fakes all but one piece is still refused) ----
+# --- S3b-e: each footprint check bites on its own (a draft that fakes all but one piece is still refused) ----
 run_draft "SANDBOX=\"$scratch\"; HOME=\"$scratch/home\"
 git() { :; }
 . \"$guard\"
