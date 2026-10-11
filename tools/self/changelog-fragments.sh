@@ -83,14 +83,15 @@ top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null || true)"
 real_dir="$(cd "$repo_dir" && pwd -P)"
 if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$real_dir" ]; then
   # -z: no C-quoting of unusual names. A newline inside a name is not supported (not kebab-case either).
-  # Spooled to a file and its status checked, not read through `< <(…)`, which hides a failing ls-files: an
-  # empty list would then read as "no fragments" and the cut would write the release section without them.
-  spool="$(mktemp "${TMPDIR:-/tmp}/changelog-fragments.XXXXXX")" || die_unreadable "no scratch file for the listing"
-  trap 'rm -f "$spool"' EXIT
-  git -C "$repo_dir" ls-files -z -- changelog.d > "$spool" || die_unreadable "git ls-files failed in $repo_dir"
-  while IFS= read -r -d '' path; do
+  # Captured with its status checked, not read through `< <(…)`, which hides a failing ls-files: an empty list
+  # would then read as "no fragments" and the cut would write the release section without them. The NUL
+  # separators become newlines inside the pipeline (pipefail carries ls-files' status out of the capture).
+  listing="$(git -C "$repo_dir" ls-files -z -- changelog.d | tr '\0' '\n')" \
+    || die_unreadable "git ls-files failed in $repo_dir"
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
     entries="$entries${path#changelog.d/}"$'\n'
-  done < "$spool"
+  done <<< "$listing"
 else
   entries="$(ls "$frag_dir")"
 fi
