@@ -21,7 +21,9 @@
 # is shallow or has no `v*` tag — a shallow or tagless checkout (CI's default) makes the history- and
 # tag-reading tests red before any cut; check out with `fetch-depth: 0`. DIR is never written to. The clone
 # is removed on every exit path, including a signal: the suite is TERMed, waited for (bounded, then KILLed)
-# and only then is the clone removed, so no test is still writing into it. Both verdict lines go to stdout.
+# and only then is the clone removed, so no test is still writing into it. The verdict line (and the reason a
+# cut refused) go to stdout; notes and refusals go to stderr. Uncommitted or untracked changes in DIR are not
+# simulated (a NOTE says so): the cut reads tracked fragments of the committed HEAD.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -48,6 +50,7 @@ repo_dir="$(cd "$repo_dir" && pwd)"
 top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)" || refuse "$repo_dir is not inside a git work tree"
 repo_dir="$top"
 shallow="$(git -C "$repo_dir" rev-parse --is-shallow-repository 2>/dev/null)" || shallow=unknown
+[ "$shallow" != "unknown" ] || echo "cut-sim: NOTE: could not tell whether $repo_dir is shallow" >&2
 [ "$shallow" != "true" ] || refuse "$repo_dir is a shallow checkout — the history- and tag-reading tests would fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
 # Capture, then test: a producer piped into `grep -q` under pipefail is the dir #280 SIGPIPE race.
 tags="$(git -C "$repo_dir" tag -l 'v*')"
@@ -63,13 +66,16 @@ cleanup() {
   local rc=$? n=0
   trap - EXIT
   trap '' INT TERM HUP   # a second Ctrl-C / TERM during the wait below must not abandon the clone
-  if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then
-    # The suite runs as its own process-group leader (set -m at the launch), so the signal reaches every
-    # descendant a test file spawned, not only tests/run.sh (whose own handler stops its direct children).
-    kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
-    while kill -0 "$child" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
-    if kill -0 "$child" 2>/dev/null; then kill -KILL -- "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null || true; fi
-    wait "$child" 2>/dev/null || true
+  # `child` is the pid AND the process-group id of the suite (set -m at the launch). Every step tests the GROUP,
+  # not the leader: tests/run.sh may exit quickly on TERM while a descendant it never owned still runs.
+  if [ -n "$child" ] && kill -0 -- "-$child" 2>/dev/null; then
+    echo "cut-sim: stopping the suite before removing the clone..." >&2
+    kill -TERM -- "-$child" 2>/dev/null || true
+    while kill -0 -- "-$child" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
+    if kill -0 -- "-$child" 2>/dev/null; then
+      kill -KILL -- "-$child" 2>/dev/null || true
+      sleep 1
+    fi
   fi
   case "$work" in
     */keel-cut-sim.*)
@@ -89,8 +95,8 @@ trap 'exit 129' HUP
 work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
 clone="$work/clone"
 head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
-dirty="$(git -C "$repo_dir" status --porcelain --untracked-files=no)"
-[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted changes — only the committed HEAD is simulated" >&2
+dirty="$(git -C "$repo_dir" status --porcelain)"
+[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes — only the committed HEAD is simulated" >&2
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
@@ -110,13 +116,14 @@ cs_git commit -q -m "cut-sim: 9999.0.0"
 echo "cut-sim: running the clone's tests/run.sh on the cut shape"
 # Background + wait, never a foreground child: bash defers a trap until the foreground command exits, so a
 # TERM would otherwise leave the suite running (and the clone in place) until it finished by itself.
+# </dev/null: job control (set -m) switches off bash's automatic stdin redirect for an async job, and a test that
+# read the terminal would then stop on SIGTTIN and hang the wait below.
 set -m
-(cd "$clone" && exec bash tests/run.sh) &
+(cd "$clone" && exec bash tests/run.sh </dev/null) &
 child=$!
 set +m
 rc=0
 wait "$child" || rc=$?
-child=""
 if [ "$rc" -eq 0 ]; then
   echo "cut-sim (dir #722): the suite on the cut shape: PASS"
   exit 0

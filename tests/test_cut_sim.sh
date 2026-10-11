@@ -89,6 +89,9 @@ n=0
 while kill -0 "$sim_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
 wait "$sim_pid" 2>/dev/null || true
 desc_pid="$(cat "$pidfile" 2>/dev/null || true)"
+# Poll briefly: on a container whose PID 1 reaps slowly the killed sleep is a zombie for an instant.
+n=0
+while [ -n "$desc_pid" ] && kill -0 "$desc_pid" 2>/dev/null && [ "$n" -lt 5 ]; do sleep 1; n=$((n + 1)); done
 if [ -n "$desc_pid" ] && ! kill -0 "$desc_pid" 2>/dev/null; then
   pass "a TERM stops the suite's descendant before the tool exits"
 else
@@ -120,7 +123,7 @@ dirty_src="$(mk_src 'true')"
 printf 'x\n' >> "$dirty_src/CHANGELOG.md"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$dirty_src"
 check_status "a dirty source still simulates its committed HEAD -> exit 0" 0 "$STATUS"
-check_contains "...with a NOTE that only the committed HEAD is simulated" "$OUT" "uncommitted changes"
+check_contains "...with a NOTE that only the committed HEAD is simulated" "$OUT" "uncommitted or untracked changes"
 # --repo on a SUBDIRECTORY of a work tree simulates that work tree's root
 run env TMPDIR="$tmproot" bash "$sim" --repo "$pass_src/tests"
 check_status "--repo on a subdirectory simulates the work tree root -> exit 0" 0 "$STATUS"
