@@ -34,7 +34,7 @@ decl() {
   if [ "$kind" = dangling ]; then
     check_nofile "$tag: its target was not created" "$tgt"
     check_absent "$tag: Verify does not print MISS" "$OUT" "MISS "
-    check_contains "$tag: Verify prints a declined line naming it" "$OUT" "$rel is yours"
+    check_contains "$tag: Verify prints a declined line naming it" "$OUT" "$rel is not provably Keel's"
     check_contains "$tag: …with the remove-then-re-run remedy" "$OUT" "remove it, then re-run"
     if [ "$mode" = copy ]; then check_absent "$tag: …and never 'from its new home' for a copy-mode install" "$OUT" "from its new home"; fi
   else
@@ -70,7 +70,7 @@ h="$SANDBOX/d-dir"; mkdir -p "$h/FRAMEWORK.md"
 run "$install" --home "$h" --no-hooks
 check_status "a folder at FRAMEWORK.md: install exits 0" 0 "$STATUS"
 check_file "…and writes its manifest" "$h/.keel/install-manifest.claude"
-check_contains "…Verify reports it as yours, not MISS" "$OUT" "FRAMEWORK.md is yours"
+check_contains "…Verify reports it as not provably Keel's, not MISS" "$OUT" "FRAMEWORK.md is not provably Keel's"
 check_absent "…no MISS line" "$OUT" "MISS "
 
 # --- acceptance 3: a genuinely ABSENT core file still fails Verify -----------------------------------------------

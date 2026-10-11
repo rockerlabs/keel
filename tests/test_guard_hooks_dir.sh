@@ -788,14 +788,24 @@ ln -s "$H/work.cfg" "$H/alias.cfg"
 run genv "$isg" --where --global
 check_eq "A14: a symlinked self-include is counted once" "1" "$(wkey conditional)"
 # install.sh's Verify: after a refusal over a conditional include, its advice says why a plain re-run would be
-# refused again; under --no-hooks it blames the flag, as before.
+# refused again; under --no-hooks it names the flag, and that a run without it would likely be refused too
+# (dir #743 item 1).
 s2_home a13-verify; s2_inc
 printf '[core]\n\thooksPath = %s/work-hooks\n' "$H" > "$H/work.cfg"
 run genv "$install" --home "$H/claude-home"
 check_contains "A13 install.sh Verify: names the conditional include as the likely refusal" "$OUT" "If it refused over a conditional [includeIf] include that sets its own core.hooksPath"
 run genv "$install" --home "$H/claude-home" --no-hooks
-check_contains "A13 install.sh Verify --no-hooks: blames the flag" "$OUT" "secret-guard not wired (--no-hooks"
-check_absent "A13 install.sh Verify --no-hooks: ...not the conditional include" "$OUT" "If it refused over a conditional"
+check_contains "A13 install.sh Verify --no-hooks: names the flag" "$OUT" "secret-guard not wired (--no-hooks"
+check_contains "A13 install.sh Verify --no-hooks: ...and the conditional include a run without it would meet" "$OUT" "A run without --no-hooks would likely be refused: a conditional [includeIf] include sets its own core.hooksPath"
+check_absent "A13 install.sh Verify --no-hooks: ...not the wording of a run that tried" "$OUT" "If it refused over a conditional"
+# The `unknown)` arm (dir #743 item 8): a walk that cannot read every conditional include — here an unconditional
+# self-[include] in a target, git's own depth error — names the incomplete walk, with and without --no-hooks.
+s2_home a13-verify-u; s2_inc; printf '[include]\n\tpath = work.cfg\n' > "$H/work.cfg"
+run_bounded genv "$install" --home "$H/claude-home"
+check_contains "A13 install.sh Verify, an incomplete walk: names it as the likely refusal" "$OUT" "If it refused because it could not read every conditional [includeIf] include"
+check_absent "A13 install.sh Verify, an incomplete walk: ...not the conflict wording" "$OUT" "If it refused over a conditional"
+run_bounded genv "$install" --home "$H/claude-home" --no-hooks
+check_contains "A13 install.sh Verify --no-hooks, an incomplete walk: ...names it too" "$OUT" "A run without --no-hooks would likely be refused: not every conditional [includeIf] include could be"
 
 # --- A14: `conditional=` and doctor's disclosure ----------------------------------------------------------------
 s2_home a14; mkdir -p "$H/claude"; s2_inc

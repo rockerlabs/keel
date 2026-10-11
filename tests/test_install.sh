@@ -197,6 +197,7 @@ check_absent "verify does not WARN about the skipped CLI" "$OUT" "WARN keel CLI"
 check_absent "summary does not offer the CLI on the express path" "$OUT" "keel help"
 check_absent "summary does not tell the user to keep a reaped clone" "$OUT" "KEEP this keel clone"
 check_contains "summary points checkout-backed verbs at a kept checkout" "$OUT" "KEPT checkout"
+check_contains "690-A5: the kept-checkout list names /go's handoff note (spec 690 B5)" "$OUT" "/go's handoff note"
 check_file "bootstrap ships /polish even from a reaped clone (it's just a file)" "$bhome/commands/polish.md"
 check_absent "ephemeral summary does not offer the gate installer as usable now" "$OUT" "opt in per project"
 check_contains "ephemeral summary folds the gate installer into the kept-checkout list" "$OUT" "install-pre-pr-gate.sh"
@@ -812,7 +813,7 @@ check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI
 # refusal satisfies it. This is the likely single-site regression — the WARN is the line that mirrors
 # tools/doctor.sh's own W-CLI-UNWIRED string (dir #349 brought the two into agreement; pinned
 # separately in test_install_link.sh, next to the finding itself).
-check_contains "T14c …and advises install.sh, reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
+check_contains "T14c …and advises install.sh (the home's own --link, spec 685 r2 B22), reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --link --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
 # The needle carries the CONDITIONAL wording, not just the line's identity: mutation-proved that a
 # needle of "is not a Keel symlink" alone leaves a flat `--force` regression green, and a flat --force
 # is what aborts the run at force_backup's `cp` when a DIRECTORY sits there.
