@@ -956,6 +956,8 @@ check_status "lex:a closed stdin reads as empty, never hangs (a watchdog kill is
 check_eq "lex:…with nothing on stderr" "" "$(cat "$lexerr")"
 OUT="$(printf 'echo "a\000b' | bash "$gate" lex 2>&1)"
 check_eq "lex:a NUL byte goes, as through the hook's \$(…), with no shell warning" "TOP@1${T}d0${T}s0${T}p1${T}u:echo${T}q:ab"$'\n'"refuse${T}unclosed DQ${T}line 1${T}scope:no" "$OUT"
+OUT="$(bash "$gate" lex < / 2>&1)"; STATUS=$?
+check_status "lex:an unreadable stdin (a directory) → exit 2" 2 "$STATUS"
 lex_has "a bare { in a \${…} heredoc delimiter is a region (zsh counts it)" 'cat <<${x:-{} ; echo hi' "refuse${T}brace inside \${…}${T}line 1${T}scope:no"
 lex_has "a git ending at the region's last character is in scope" 'echo "x gh' "refuse${T}unclosed DQ${T}line 1${T}scope:yes"
 lex_has "a )-led line's region starts at the first such line" "$(printf 'MSG=$(cat <<'"'"'EOF'"'"'\nx\n)\n)\nEOF\n)')" \

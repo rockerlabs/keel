@@ -2337,11 +2337,12 @@ case "${1:-}" in
     # `<context>@<line>`, `d<depth>`, `s<scope>`, `p<offset>`, then `<classes>:<text>` per word — then one line per
     # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
     # from the $HOME guard above, like -h. It takes the text as the hook takes its command: through $(…), so
-    # trailing newlines and NUL bytes go (tr drops the NULs itself: no bash 5 warning), then into awk on a
-    # here-string. A closed stdin would hang that $(…) — its pipe takes fd 0 (dir #691) — so it reads as empty.
+    # trailing newlines and NUL bytes go, then into awk on a here-string. tr drops the NULs bytewise (no bash 5
+    # warning; a byte that is no UTF-8 reaches awk, which judges it as in the hook). A closed stdin would hang
+    # that $(…) — its pipe takes fd 0 (dir #691) — so it reads as empty; an unreadable one is an error.
     [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
     if ! { : 3<&0; } 2>/dev/null; then exec </dev/null; fi
-    lex_cmd=$(tr -d '\000') || exit 2
+    lex_cmd=$(LC_ALL=C tr -d '\000') || exit 2
     awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"
     exit $?
     ;;
