@@ -126,6 +126,13 @@ else
   check_eq "A13e: trimmed: text outside the markers is byte-identical" "$outside_before" "$(outside_block "$h/CLAUDE.md")"
   run "$install" --home "$h" --no-hooks
   check_contains "A13e: a later run recognizes the refreshed trim as current" "$OUT" "CLAUDE.md (up to date — your git-rails trim kept)"
+  # dir #689: the refreshed trim's always-on crumb gives copy-mode advice. The linked crumb told a copy home to run
+  # `install.sh --link --with-git`: --with-git exits 2 there, and --link would migrate it.
+  crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$h/CLAUDE.md")"
+  check_contains "689 copy: the trimmed refresh writes a KEEL-NOGIT crumb (a later run still sees the trim)" "$crumb" "KEEL-NOGIT-END"
+  check_contains "689 copy: …whose advice a copy home can follow: re-add the two sections from CORE.md" "$crumb" "re-add the two sections"
+  check_absent "689 copy: …never --with-git (exit 2 in a copy home)" "$crumb" "--with-git"
+  check_absent "689 copy: …never --link (it would migrate the home)" "$crumb" "--link"
 
   # --codex answers y too
   h="$(fresh_home e-codex --codex)"
@@ -133,6 +140,16 @@ else
   tty_run y "$install" --codex --home "$h" --no-hooks
   check_eq "A13e: --codex yes → the AGENTS.md block equals the shipped block" "$core_block" "$(block_of "$h/AGENTS.md")"
   check_eq "A13e: --codex yes → a backup of AGENTS.md exists" 1 "$(find "$h" -maxdepth 1 -name 'AGENTS.md.*.bak' | wc -l | tr -d ' ')"
+  # dir #689, --codex: a trimmed AGENTS.md refresh writes the same copy-mode crumb.
+  h="$(fresh_home e-codex-trim --codex)"
+  hand_trim "$h/AGENTS.md"
+  alter_block "$h/AGENTS.md"
+  tty_run y "$install" --codex --home "$h" --no-hooks
+  crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$h/AGENTS.md")"
+  check_absent "689 --codex: the trim survives the refresh" "$(cat "$h/AGENTS.md")" "## Git — mandatory rails"
+  check_contains "689 --codex: …its crumb names the copy restore" "$crumb" "re-add the two sections"
+  check_absent "689 --codex: …never --with-git" "$crumb" "--with-git"
+  check_absent "689 --codex: …never --link" "$crumb" "--link"
 
   # dir #679 A3 (S4-2): a dotfiles-managed 0600 CLAUDE.md, symlinked into the home, answered y — the
   # refresh writes THROUGH the link and the file keeps its 0600 (it used to take the umask's 0644).
