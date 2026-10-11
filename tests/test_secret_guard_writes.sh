@@ -109,6 +109,33 @@ done
 leftover27="$(find "$h27b" "$h27" -name '*.isgtmp.*' 2>/dev/null)"
 check_eq "A27: no staging file is left behind" "" "$leftover27"
 
+# A27 modes — the placed files' modes do not depend on the caller's umask (the 0.16.0 delta audit, S7-1): the hooks
+# and the scanner are the guard's own executable code, so a group- or world-writable copy lets another account
+# rewrite the control. v0.15.0's `cp` gave 755/644 under any umask; a staged `: >` under umask 002/000 gave 775/664, 777/666.
+mode_of() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
+for um in 002 000 077; do
+  r27m="$(new_repo)"; h27m="$r27m/.git/hooks"
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$ok_stub/install-secret-guard.sh" "$r27m"
+  check_status "A27 modes: a first vendoring under umask $um → exit 0" 0 "$STATUS"
+  for f in secret-scan.sh pre-commit pre-push; do
+    check_eq "A27 modes: $f is 755 under umask $um" "755" "$(mode_of "$h27m/$f")"
+  done
+  check_eq "A27 modes: range-lib.sh (executable in the stub) is 755 under umask $um" "755" "$(mode_of "$h27m/range-lib.sh")"
+  # a re-vendor (the rename path over existing Keel files) lands the same modes
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$ok_stub/install-secret-guard.sh" "$r27m"
+  check_status "A27 modes: a plain re-vendor under umask $um → exit 0" 0 "$STATUS"
+  check_eq "A27 modes: the re-vendored pre-commit is 755 under umask $um" "755" "$(mode_of "$h27m/pre-commit")"
+  check_eq "A27 modes: the re-vendored range-lib.sh is 755 under umask $um" "755" "$(mode_of "$h27m/range-lib.sh")"
+done
+# the real shipped tree: range-lib.sh is a non-executable library (644), the rest are executable (755)
+for um in 002 000; do
+  r27r="$(new_repo)"; h27r="$r27r/.git/hooks"
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$isg" "$r27r"
+  check_status "A27 modes: the shipped installer under umask $um → exit 0" 0 "$STATUS"
+  check_eq "A27 modes: shipped range-lib.sh is 644 under umask $um" "644" "$(mode_of "$h27r/range-lib.sh")"
+  check_eq "A27 modes: shipped pre-push is 755 under umask $um" "755" "$(mode_of "$h27r/pre-push")"
+done
+
 # =============================================================================================================
 # A28 — the mid-run race, staged; per-hook claimed names; rollback restores from them, executable as it was.
 # =============================================================================================================
