@@ -127,10 +127,11 @@ type_p_bypass() {
   local tf="$1" tvars tv cvars hop next
   local tp='(\$\(type -P git[^)]*\)|`type -P git[^`]*`)'
   tvars="$(grep -oE "(^|[[:space:];])(local |export |readonly |declare (-[a-zA-Z]+ )?)?[A-Za-z_][A-Za-z_0-9]*=\(?(\"?)$tp" "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly |declare (-[a-zA-Z]+ )?)?([A-Za-z_0-9]+)=.*/\3/' || true)"
-  # Copies, up to three hops (a named limit beyond): `h="$g"` / `h=$g` / `h="${g}"` / `h=("$g")` makes h a type -P
-  # path too, and so does `k="$h"`.
+  # Copies, followed to a fixpoint (ten rounds at most, against a cycle `a=$b; b=$a`): `h="$g"` / `h=$g` /
+  # `h="${g}"` / `h=("$g")` makes h a type -P path too, and so does `k="$h"`.
   cvars=""; hop="$tvars"
-  for _ in 1 2 3; do
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -n "${hop// /}" ] || break
     next=""
     for tv in $hop; do
       next="$next $(grep -oE "(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=\(?\"?\\\$\{?$tv\}?\"?(\)|[[:space:];]|\$)" "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly )?([A-Za-z_0-9]+)=.*/\2/' || true)"
@@ -144,9 +145,9 @@ type_p_bypass() {
   # `run env "${FRESH_HOME_ENV[@]}" "$(type -P git)" -C "$d" config --get …` — a READ through `env`, which cannot
   # see lib.sh's git() function, so the real binary is the only way to get the fresh environment. A `config
   # --get` writes nothing, so it cannot step around a guard that protects writes: a line whose ONLY `type -P git`
-  # call is that read is allowed (a second call on the same line is judged on its own, so it is still flagged).
+  # call is `-C <repo> config --get` is allowed (any other call on the line, or another verb, is still flagged).
   grep -nE "\"?$tp\"?([^|;\&]*[[:space:]])?-C([^[:alpha:]]|\$)" "$tf" \
-    | awk '{ n = gsub(/type -P git/, "&"); if ($0 ~ /config --get/ && n < 2) next; print }' \
+    | awk '{ n = gsub(/type -P git/, "&"); if ($0 ~ /-C [^ ]+ config --get/ && n < 2) next; print }' \
     | sed "s|^|${tf##*/} (inline): |" || true
 }
 # The checker must be able to fail: planted files in each bypass shape are flagged, a `config --global`
@@ -166,14 +167,15 @@ printf '%s\n' 'g=`type -P git`' '"$g" -C "$d" add f' > "$planted/backtick.sh"
 printf '%s\n' 'declare -r g="$(type -P git)"' '"$g" -C "$d" add f' > "$planted/declare.sh"
 printf '%s\n' 'gs=("$(type -P git)")' '"${gs[0]}" -C "$d" add f' > "$planted/array.sh"
 printf '%s\n' 'g="$(type -P git)"' 'h="$g"' '"$h" -C "$d" add f' > "$planted/copy.sh"
-printf '%s\n' 'g=$(type -P git); h=$g; k=$h' '"$k" -C "$d" add f' > "$planted/copy2.sh"
+printf '%s\n' 'g=$(type -P git); h=$g; k=$h; m=$k' '"$m" -C "$d" add f' > "$planted/copy2.sh"
+printf '%s\n' 'run env "${E[@]}" "$(type -P git)" -C "$d" add f; foo config --get x' > "$planted/inline-other-verb.sh"
 printf '%s\n' 'run env "${E[@]}" "$(type -P git)" -C "$d" config --get k; "$(type -P git)" -C "$d" add f' > "$planted/inline-mixed.sh"
 printf '%s\n' '"$(type -P git)" -C "$d" add f' > "$planted/inline.sh"
 printf '%s\n' 'env H=1 "$(type -P git 2>/dev/null)" -C "$d" add f' > "$planted/inline-flags.sh"
 printf '%s\n' 'run env "${E[@]}" "$(type -P git)" -C "$d" config --get gc.auto' > "$planted/inline-read.sh"
 printf '%s\n' 'g="$(type -P git)"' 'h="$g"' '"$h" config --global core.hooksPath "$d"' > "$planted/copy-no-C.sh"
 printf '%s\n' 'gs=("$(type -P git)")' '"${gs[0]}" config --global core.hooksPath "$d"' > "$planted/array-no-C.sh"
-for pf in plain local-flags export glued eol unquoted stderr or-true backtick declare array copy copy2 inline inline-flags inline-mixed; do
+for pf in plain local-flags export glued eol unquoted stderr or-true backtick declare array copy copy2 inline inline-flags inline-mixed inline-other-verb; do
   check_ne "C2 control: the checker flags the $pf bypass shape" "" "$(type_p_bypass "$planted/$pf.sh")"
 done
 check_eq "C2 control: a \$(type -P git) variable without -C is not flagged" "" "$(type_p_bypass "$planted/no-C.sh")"

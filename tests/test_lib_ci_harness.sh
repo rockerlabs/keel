@@ -154,7 +154,7 @@ pin "A14: the token-report --since case uses check_status_out" "$REPO_ROOT/tests
 # S6-1: tty_run's STATUS is the COMMAND's exit status. util-linux `script -c` answers with its own (0) unless given -e,
 # and macOS `script` propagates the child's, so the behavioural row below can only fail on the Linux leg (and is
 # skipped without `script`, as on alpine). The text pin binds the fix on every platform.
-pin "S6-1: tty_run's Linux arm passes script -e (without it STATUS is script's own)" "$lib_path" 'script -qec' \
+pin "S6-1: tty_run's Linux arm passes script -e (without it STATUS is script's own)" "$lib_path" 'OUT="$(script -qec' \
   "expected tty_run's util-linux arm to run script with -e"
 if command -v script >/dev/null 2>&1; then
   tty_run n sh -c 'exit 3'

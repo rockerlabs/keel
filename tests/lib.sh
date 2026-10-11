@@ -699,9 +699,11 @@ alter_block() {
 # set_symlink_record HOME REL TARGET — rewrite HOME's install manifest so its `symlink` record for REL carries TARGET
 # (REL must already hold one): the shape an older release, or a moved checkout, left behind (dir #749).
 set_symlink_record() {
-  local man="$1/.keel/install-manifest.claude"
-  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' "$man" > "$man.rec.new" \
-    && cat "$man.rec.new" > "$man" && rm -f "$man.rec.new"
+  local man="$1/.keel/install-manifest.claude" tmp="${SANDBOX:?}/set-symlink-record.new" hits
+  hits="$(awk -F'\t' -v r="$2" '$1 == "artifact=symlink" && $2 == r { n++ } END { print n + 0 }' "$man")"
+  [ "$hits" -ge 1 ] || { echo "set_symlink_record: no symlink record for '$2' in $man" >&2; return 1; }
+  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' "$man" > "$tmp" \
+    && cat "$tmp" > "$man"
 }
 
 check_status()   { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected exit $2, got $3"; fi; }

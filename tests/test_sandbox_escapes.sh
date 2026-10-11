@@ -24,6 +24,7 @@ tree_sum() { (cd "$1" && find . | LC_ALL=C sort | cksum); }
 # only_env VAR VALUE CMD… — run CMD with every isolation variable removed except VAR=VALUE.
 # The list is read in a subshell: sourcing the library here would define its functions for the rest of the file.
 isolation_vars="$(. "$REPO_ROOT/tools/lib/impact-store.sh"; printf '%s' "$IMPACT_ISOLATION_VARS")"
+[ -n "$isolation_vars" ] || { fail "S9-7: the isolation-variable list was read from tools/lib/impact-store.sh" "IMPACT_ISOLATION_VARS is empty or unreadable"; summary; exit 1; }
 only_env() {
   local keep="$1" val="$2" v unsets=()
   shift 2
