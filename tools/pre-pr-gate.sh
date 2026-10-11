@@ -1891,10 +1891,9 @@ function cmd_char(   c, s, k, op) {
     seg_end(s, pos + 1); grp[s, ++ngrp[s]] = ++gid; pos++; return
   }
   if (c == ")") {
-    if (ngrp[s] == 0 && cty[s] == "SUB") case_close(s)
     seg_end(s, pos + 1); pos++
     if (ngrp[s] > 0) ngrp[s]--
-    else if (cty[s] == "SUB") close_cmd()
+    else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }
     return
   }
   if (c == "~") {
@@ -1909,26 +1908,20 @@ function cmd_char(   c, s, k, op) {
   word_begin(pos); addsrc(pos, 1, "g"); pos++
 }
 
-# case_close(s) — a `)` is about to close the SUB at s with no group open. When a `case` is open in that SUB (casen[s],
-# counted by seg_end from each segment’s first word, plus the segment this `)` ends) the `)` is a case pattern’s, which
-# the shells read as part of the `case` and this reader reads as the SUB’s end: the rest of the substitution
-# (`;; esac; git push …)`) then lands in the enclosing context. In a command context that is still read as commands;
-# under a DQ, a PARAM or an HDATA it is data, so the text is a region, from the enclosing segment to the end (the reader
-# cannot know where the shell ends the substitution).
-function case_close(s,   up) {
-  up = cty[s - 1]
-  if (up != "DQ" && up != "PARAM" && up != "HDATA") return
-  word_end(s)
-  if (casen[s] + seg_kw(s) <= 0) return
-  region(cpos[s], n, "case pattern ) closes $(…) read in " ((up == "DQ") ? "double quotes" : (up == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
-}
-# seg_kw(s) — 1 when the pending segment of s starts (after any reserved words) with an unquoted `case` and its
-# subject, -1 when it starts with an unquoted `esac`, else 0.
+# case_region(s) — a `)` closes the SUB at s while a `case` is open in it (casen[s], counted by seg_end from each
+# segment’s first word): the `)` is a case pattern’s. The shells read it as part of the `case` (bash 3.2 reads none of
+# it: a syntax error), this reader as the SUB’s end, so the rest of the substitution (`;; esac; git push …)`) lands in the
+# enclosing context — as data under a DQ, a PARAM or an HDATA, as more words of the enclosing command in a command
+# context (`echo $(case x in a) git push …`). The text is a region, from the enclosing segment to the end (the reader
+# cannot know where the shell ends the substitution); a push it still finds as a command of its own outranks it.
+function case_region(s) { region(cpos[s], n, "case pattern ) inside $(…)", cseg[s]) }
+# seg_kw(s) — 1 when the segment just ended in s starts (after any reserved words) with an unquoted `case`, -1 when
+# it starts with an unquoted `esac`, else 0.
 function seg_kw(s,   i) {
   i = 1
   while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
   if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0
-  if (stok[s, i] == "case" && i < sntok[s]) return 1
+  if (stok[s, i] == "case") return 1
   if (stok[s, i] == "esac") return -1
   return 0
 }
