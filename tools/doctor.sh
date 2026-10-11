@@ -44,8 +44,12 @@
 #                             or `enable --restart`; checked at the main checkout only
 #   WARN  W-GUARD-UNWIRED      secret-guard not wired: no usable core.hooksPath (unset, or set to a dir
 #                              carrying no executable pre-commit) and no local hook; or Keel's own
-#                              machine hooks dir holding a pre-commit that is not Keel's (marker line,
-#                              the test install.sh Verify uses). The hooks dir is the one git reads, from
+#                              machine hooks dir holding a pre-commit OR pre-push that is not Keel's (marker
+#                              line, the test install.sh Verify uses); or a Keel guard that is only half
+#                              there — Keel's pre-push absent or not executable beside a working pre-commit
+#                              (dir #747); or core.hooksPath set to the EMPTY value (every hook off) or to no
+#                              value at all, with the way out named per scope; or "state unknown" — the
+#                              resolver gave no answer, or git could not read the config. The hooks dir is the one git reads, from
 #                              install-secret-guard.sh --where (dir #643) — the machine-wide one from
 #                              --where --global too, `--install` mode included (dir #688) — and the advice
 #                              is per scope.
@@ -57,7 +61,8 @@
 #                              which names a different dir in every repo (dir #97). An ABSOLUTE
 #                              machine-global copy is W-GUARD-GLOBAL-STALE instead, checked once. Both
 #                              compare secret-scan.sh and range-lib.sh, plus pre-commit / pre-push while
-#                              they carry Keel's marker line (dir #718); the message names the files
+#                              they carry Keel's marker line (dir #718); the message names the files,
+#                              and a secret-scan.sh ABSENT beside Keel's hooks is named too (dir #747)
 #   WARN  W-EMAIL-PUBLIC       publication-bound project committing with a non-noreply email
 #   WARN  W-WT-BRIDGE          a private-fork linked worktree missing the CLAUDE.md bridge (blind session)
 #   WARN  W-GATE-PARTIAL       project-scope /polish gate: some hook references it but the load-bearing
@@ -67,12 +72,15 @@
 #                              agent type since dir #413's flip, so /polish's independent-agent review leaves
 #                              no trace and step 8 denies until tools/install-pre-pr-gate.sh is re-run (a
 #                              pull refreshes the script, not the installed settings). Both scopes
-#   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env; templates excluded) that git
+#   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env and its backups *.env.bak/.old/.orig/
+#                              .save/.backup, *.env~ — any letter case; templates excluded) that git
 #                              tracks or would commit — a plaintext secrets file one `cat` from a
 #                              permanent transcript (dir #631; names and git state only, no content read).
-#                              The scan skips build/vendor trees (dist build out vendor target node_modules
-#                              .build .gradle .claude), so an UNTRACKED file there is never seen; a TRACKED
-#                              one is judged wherever it sits (dir #718)
+#                              The scan skips build/vendor trees BELOW the audited root (dist build out vendor
+#                              target node_modules .build .gradle .claude), so an UNTRACKED file there is
+#                              never seen; a TRACKED one is judged wherever it sits (dir #718), and a project
+#                              whose own root is named like one of them is scanned (dir #747). .envrc is not
+#                              env-shaped: direnv files are committed by design and hold no values
 #   WARN  W-SECRETS-PLAINTEXT  an env-shaped file resting gitignored and untracked — still plaintext in
 #                              the tree; "migration unfinished" when .sops.yaml says the project adopted
 #                              SOPS. Both: path-level accept in .keel/secrets-accept (exact paths)
@@ -109,7 +117,8 @@
 #   HINT  H-LINT-*             a detected stack missing its lint gate (JAVA/PY/SWIFT/BASH);
 #                              H-JAVA-WILDCARD — a Java file uses a wildcard import
 # (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below —
-# the one HINT exception is H-DENY-ENV, listed above.)
+# the one HINT exception is H-DENY-ENV, listed above. One GAP is --install's alone, G-REQUIRED-LIB: a lib
+# install.sh / uninstall.sh REQUIRE (artifact-cksum.sh, safe-write.sh) missing or corrupt — dir #747.)
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -368,7 +377,9 @@ finish() {
 # configs never trip a per-stack gate. find only (busybox/Alpine has no `grep --include`). Usage:
 # fp_find DIR  EXPR...   e.g. fp_find "$d" -name '*.java' -print
 fp_find() {
-  find "$1" \( -name .git -o -name .claude -o -name target -o -name build -o -name .build \
+  # -mindepth 1: the prune list applies BELOW the audited root, never to it (dir #747 S3-1) — a project whose own
+  # directory is named build/out/dist/vendor/target is a project, not a build tree, and was never scanned.
+  find "$1" -mindepth 1 \( -name .git -o -name .claude -o -name target -o -name build -o -name .build \
                -o -name .gradle -o -name node_modules -o -name vendor -o -name dist -o -name out \) -prune \
             -o "${@:2}" 2>/dev/null
 }
@@ -388,10 +399,21 @@ fp_any() {
 # them like any other (templates, nested repos, the accept list). The prune itself stays: UNTRACKED files in
 # those trees (a dependency's fixtures, build output) are still not scanned — disclosed in the header and
 # in docs/secrets-in-the-working-tree.md, pinned by tests/test_doctor_floor_gaps.sh.
+# dir #747: the env-shaped NAME SET is defined once, here — the backup suffixes after `<name>.env.` and the `~` form,
+# any letter case — and both the git pathspec list (sx_tracked_envs) and the find expression (sx_find_expr, used by the
+# untracked scan) are generated from it, so the tracked and untracked scans cannot disagree.
+sx_env_suffixes="bak old orig save backup"
+sx_find_expr=(-iname '.env' -o -iname '.env.*' -o -iname '*.env' -o -iname '*.env~')
+sx_specs=(':(glob,icase)**/.env' ':(glob,icase)**/.env.*' ':(glob,icase)**/*.env' ':(glob,icase)**/*.env~')
+for sx_sfx in $sx_env_suffixes; do
+  sx_find_expr+=(-o -iname "*.env.$sx_sfx")
+  sx_specs+=(":(glob,icase)**/*.env.$sx_sfx")
+done
+unset sx_sfx
 sx_tracked_envs() {
   local rel
   # -z: without it git quotes a non-ASCII / quote / tab path ("dist/caf\303\251/..."), which no -f test finds.
-  git -C "$1" ls-files -z -- ':(glob)**/.env' ':(glob)**/.env.*' ':(glob)**/*.env' 2>/dev/null \
+  git -C "$1" ls-files -z -- "${sx_specs[@]}" 2>/dev/null \
     | while IFS= read -r -d '' rel; do
         if [ -f "$1/$rel" ] && [ ! -L "$1/$rel" ]; then printf '%s\n' "$1/$rel"; fi
       done
@@ -534,29 +556,59 @@ tools_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # a Keel pre-push prints as "range-lib.sh (missing — …)". secret-scan.sh and range-lib.sh are always Keel's
 # own; pre-commit and pre-push are compared ONLY while they carry Keel's marker line (line 2 of the shipped
 # hook — the same test install-secret-guard.sh's _isg_is_keel_hook applies), so a user's own hook in a wired
-# dir is never called "stale". Both W-GUARD-GLOBAL-STALE and W-GUARD-STALE read it. NOT covered (recorded in
-# dir #718's PR as a residual, as before this ticket): a secret-scan.sh ABSENT beside Keel's hooks stays silent.
+# dir is never called "stale". Both W-GUARD-GLOBAL-STALE and W-GUARD-STALE read it. A secret-scan.sh ABSENT beside
+# a Keel hook prints as "secret-scan.sh (missing — …)" too (dir #747: the hooks then fall back to a scanner on
+# PATH or abort with "scanner not found").
 guard_is_keel_hook() {  # guard_is_keel_hook DIR HOOK — DIR/HOOK exists and carries the shipped marker line
   local marker
   marker="$(sed -n 2p "$tools_dir/secret-guard/$2" 2>/dev/null)"
   [ -f "$1/$2" ] && [ -n "$marker" ] && [ "$(sed -n 2p "$1/$2" 2>/dev/null)" = "$marker" ]
 }
 guard_drift_files() {
-  local dir="$1" f src out="" keel_push=0
+  local dir="$1" f src out="" keel_push=0 keel_any=0
   guard_is_keel_hook "$dir" pre-push && keel_push=1
+  if [ "$keel_push" = 1 ] || guard_is_keel_hook "$dir" pre-commit; then keel_any=1; fi
   for f in secret-scan.sh range-lib.sh pre-commit pre-push; do
     src="$tools_dir/secret-guard/$f"
     [ -f "$src" ] || continue
     if [ ! -f "$dir/$f" ]; then
-      # only Keel's own pre-push sources range-lib.sh (and aborts without it). A missing secret-scan.sh is NOT
-      # reported here (verified: doctor stays silent on it, as it did before this ticket) — a residual
+      # only Keel's own pre-push sources range-lib.sh (and aborts without it); either Keel hook calls secret-scan.sh
       if [ "$f" = range-lib.sh ] && [ "$keel_push" = 1 ]; then out="${out:+$out, }$f (missing — pre-push sources it)"; fi
+      if [ "$f" = secret-scan.sh ] && [ "$keel_any" = 1 ]; then out="${out:+$out, }$f (missing — Keel's hooks call it)"; fi
       continue
     fi
     case "$f" in pre-commit|pre-push) guard_is_keel_hook "$dir" "$f" || continue ;; esac
     cmp -s "$dir/$f" "$src" || out="${out:+$out, }$f"
   done
   printf '%s' "$out"
+}
+
+# dir #747 (D1-3): a guard whose pre-commit works but whose Keel pre-push is absent or not executable is half a guard —
+# a commit made with hooks bypassed then reaches the remote unscanned, and the old verdict was "OK". guard_push_gap
+# DIR KEELDIR PC PP sets guard_gap to why DIR is not a complete Keel guard (empty when it is, or when it is the user's
+# own wiring: a hooks dir whose pre-commit is not Keel's is held to no Keel hook, and a foreign pre-push is theirs).
+# PC/PP are the producer's states (absent | keel | foreign, -link suffixed). A variable, not stdout: no fork per project.
+guard_push_gap() {
+  local dir="$1" keeldir="$2" pc="$3" pp="$4"
+  guard_gap=""
+  [ "$keeldir" = 1 ] || [ "${pc#keel}" != "$pc" ] || return 0
+  # a link whose target is gone is no hook at all: git skips it (the producer's state says only "-link")
+  case "$pp" in *-link) [ -e "$dir/pre-push" ] || { guard_gap="pre-push at $dir/pre-push is a dangling link (git skips it, so a commit made with hooks bypassed would reach the remote unscanned; the installer will not write through a link — remove it first)"; return 0; } ;; esac
+  case "$pp" in
+    absent) guard_gap="Keel's pre-push is absent from $dir (a commit made with hooks bypassed would reach the remote unscanned)" ;;
+    keel*) [ -x "$dir/pre-push" ] || guard_gap="Keel's pre-push at $dir/pre-push is not executable (git skips it, so a commit made with hooks bypassed would reach the remote unscanned)" ;;
+  esac
+}
+# dir #747 (S3-5): how an empty core.hooksPath reads — $1 is the producer's novalue flag.
+guard_empty_what() {
+  if [ "$1" = 1 ]; then printf 'has no value at all (a bare '"'"'hooksPath'"'"' line), which makes git fail'
+  else printf 'is set to the EMPTY value, which turns every git hook off'; fi
+}
+# dir #747 (worktree scope): the command that gives repo $1 its own hooks dir $2, for the scope $3 that currently sets
+# core.hooksPath — a WORKTREE-scope setting outranks --local, so only --worktree replaces it.
+guard_own_cmd() {
+  if [ "$3" = worktree ]; then printf 'git -C %s config --worktree core.hooksPath %s' "$1" "$2"
+  else printf 'git -C %s config --local core.hooksPath %s' "$1" "$2"; fi
 }
 
 # dir #121 / dir #688: the machine-wide hooksPath as git EFFECTIVELY resolves it — `git config --global` is
@@ -574,13 +626,13 @@ guard_drift_files() {
 # NO ANSWER is its own state: no `scope=` line (the installer is missing, crashed, or printed nothing), or a
 # `dir=` with no `pre-commit=` after it (the resolver runs `set -euo pipefail` and died between the two —
 # reading that half-answer would print a false OK by another route). Every g_* is cleared then.
-g_reset() { g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback="" g_conditional=""; }
+g_reset() { g_scope="" g_value="" g_origin="" g_dir="" g_keeldir="" g_pc="" g_pp="" g_fallback="" g_conditional="" g_set="" g_novalue="" g_readerr=""; }
 g_reset
 while IFS='=' read -r g_k g_v; do   # one key per line, once each (the producer's grammar)
   case "$g_k" in
     scope) g_scope="$g_v" ;; value) g_value="$g_v" ;; origin) g_origin="$g_v" ;;
     dir) g_dir="$g_v" ;; keel-dir) g_keeldir="$g_v" ;; fallback) g_fallback="$g_v" ;;
-    conditional) g_conditional="$g_v" ;;
+    conditional) g_conditional="$g_v" ;; set) g_set="$g_v" ;; novalue) g_novalue="$g_v" ;; read-error) g_readerr="$g_v" ;;
     pre-commit) g_pc="$g_v" ;; pre-push) g_pp="$g_v" ;;
   esac
 done < <("$tools_dir/install-secret-guard.sh" --where --global 2>/dev/null || true)
@@ -736,6 +788,15 @@ if [ "$INSTALL_MODE" = 1 ]; then
     echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$idoctor_arg" >&2
     exit 1
   fi
+  # dir #747 (S3-2): install.sh and uninstall.sh REQUIRE two more libs that doctor itself never sources —
+  # artifact-cksum.sh and safe-write.sh (dir #679). Without either they refuse to run, so an install "complete" by
+  # every other check can neither be finished nor removed. Judged the way the two sourced libs above are (`-s` and
+  # `bash -n`), but reported as a GAP rather than aborting: this audit has nothing to source them for.
+  for ireq_lib in artifact-cksum.sh safe-write.sh; do
+    if ! { [ -s "$tools_dir/lib/$ireq_lib" ] && bash -n "$tools_dir/lib/$ireq_lib" 2>/dev/null; }; then
+      gap G-REQUIRED-LIB "tools/lib/$ireq_lib is missing or corrupted — install.sh and uninstall.sh refuse to run without it, so this install can be neither completed nor removed; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
+    fi
+  done
   # iother_doctor_arg — the SAME home-reaching suffix as $idoctor_arg, but computed against the OTHER
   # mode's default (via $iother_leaf, the mirror of $idefault_leaf), for the one advice site (the
   # mode-mismatch redirect below) that recommends switching modes. Using plain $idoctor_arg there was a
@@ -1185,10 +1246,30 @@ if [ "$INSTALL_MODE" = 1 ]; then
     warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where --global) gave no answer$guard_home_note"
   elif [ "$g_keel_foreign" = 1 ]; then
     warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($g_value) is Keel's machine-wide hooks dir, but a hook in it (pre-commit or pre-push) is not Keel's (its marker line differs), so Keel's scan may not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_eff_note"
+  elif [ "$g_readerr" = 1 ]; then
+    warn W-GUARD-UNWIRED "secret-guard state unknown: git could not read the machine-wide config (a corrupt file — 'git config --global --list' shows git's own message)$guard_eff_note"
+  elif [ "$g_set" = 1 ] && [ -z "$g_value" ]; then
+    # dir #747 (S3-5): core.hooksPath is SET, to nothing — git then runs no hooks in any repo that no local setting
+    # overrides, and install-secret-guard.sh --global refuses to replace it without --force, so the generic "run
+    # install-secret-guard.sh --global" advice below was a dead end. Name the shape and give the way out.
+    g_src=""; [ -z "$g_origin" ] || g_src=" (set in $g_origin)"
+    if [ "$g_novalue" = 1 ]; then g_way="refuses even with --force; fix or remove that line, then re-run it"
+    else g_way="refuses to replace it without --force; remove that line, or run install-secret-guard.sh --global --force (the empty value is recorded; --uninstall restores it)"; fi
+    warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath $(guard_empty_what "$g_novalue")$g_src — install-secret-guard.sh --global $g_way$guard_eff_note"
   elif [ -n "$g_dir" ] && [ -x "$g_dir/pre-commit" ]; then
-    say "  OK   secret-guard: machine-global ($g_dir)"
-    if [ "$g_pc" = keel-link ]; then
-      say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)"
+    # dir #747 (D1-3): a working pre-commit is not the whole guard — the pre-push is what catches a commit made with
+    # hooks bypassed, so Keel's guard missing it is not OK (the message says what; the way out is the installer).
+    guard_push_gap "$g_dir" "$g_keeldir" "$g_pc" "$g_pp"
+    if [ -n "$guard_gap" ]; then
+      # the installer writes only Keel's own dir: a hooks dir the user points core.hooksPath at is fixed by hand
+      if [ "$g_keeldir" = 1 ]; then g_way="re-run install-secret-guard.sh --global"
+      else g_way="copy the shipped hooks (tools/secret-guard/) into $g_dir by hand — install-secret-guard.sh --global writes Keel's own dir, not this one"; fi
+      warn W-GUARD-UNWIRED "secret-guard is only half wired machine-global: $guard_gap — $g_way$guard_eff_note"
+    else
+      say "  OK   secret-guard: machine-global ($g_dir)"
+      if [ "$g_pc" = keel-link ]; then
+        say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)"
+      fi
     fi
   elif [ -n "$g_value" ] && [ -z "$g_dir" ]; then
     warn W-GUARD-UNWIRED "secret-guard is not wired machine-global: core.hooksPath is set to the RELATIVE path '$g_value', which names a different directory in every repo — that is per-repo wiring, not a machine-global install (install-secret-guard.sh --global for a machine-wide one; tools/doctor.sh <repo> judges the relative one)$guard_eff_note"
@@ -1691,17 +1772,28 @@ for d in "${DIRS[@]}"; do
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
   # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
-  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir=""
+  w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
       effective) w_eff="$w_v" ;; own) w_own="$w_v" ;; scope) w_scope="$w_v" ;; value) w_value="$w_v" ;;
       origin) w_origin="$w_v" ;; pre-commit) w_pc="$w_v" ;; pre-push) w_pp="$w_v" ;; keel-dir) w_keeldir="$w_v" ;;
-      machine-dir) w_machinedir="$w_v" ;;
+      machine-dir) w_machinedir="$w_v" ;; set) w_set="$w_v" ;; novalue) w_novalue="$w_v" ;;
     esac
   done < <("$tools_dir/install-secret-guard.sh" --where "$d" 2>/dev/null || true)
   w_src=""; [ -z "$w_origin" ] || w_src=", from $w_origin"
   if [ -z "$w_eff" ]; then
-    warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo$guard_home_note"
+    warn W-GUARD-UNWIRED "secret-guard state unknown: the hooks-dir resolver (install-secret-guard.sh --where) gave no answer for this repo (for example a corrupt git config: 'git -C $d config --list' shows git's own message, 'install-secret-guard.sh --where $d' shows the resolver's)$guard_home_note"
+  elif [ "$w_set" = 1 ] && [ -z "$w_value" ]; then
+    # dir #747 (S3-5): core.hooksPath is SET, to nothing (or to no value at all). Git runs no hooks in this repo while
+    # it stands, a vendored copy would be ignored, and the old "install --global / vendor" advice was refused or inert.
+    # The way out depends on the scope that sets it: a repo-level setting is unset there (--worktree outranks --local).
+    case "$w_scope" in
+      local|worktree) w_fix="git -C $d config --$w_scope --unset core.hooksPath" ;;
+      command) w_fix="stop supplying it — it comes from this environment (git -c, GIT_CONFIG_COUNT/KEY/VALUE or GIT_CONFIG_PARAMETERS), not from a config file" ;;
+      *) if [ "$w_novalue" = 1 ]; then w_fix="fix or remove that line$w_src"
+         else w_fix="remove that line$w_src, or replace it machine-wide with install-secret-guard.sh --global --force (the empty value is recorded; --uninstall restores it)"; fi ;;
+    esac
+    warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($w_scope scope) $(guard_empty_what "$w_novalue") — commits here run no hooks, and a vendored copy would be ignored while it stands. To clear it: $w_fix$guard_home_note"
   elif [ -x "$w_eff/pre-commit" ]; then
     # An executable pre-commit is the bar for ANY dir (dir #97) — except Keel's own machine hooks dir,
     # where "wired" must mean what install.sh's Verify means: the pre-commit carries Keel's marker line
@@ -1714,6 +1806,21 @@ for d in "${DIRS[@]}"; do
         warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath ($w_value) is Keel's machine-wide hooks dir, but a hook in it (pre-commit or pre-push) is not Keel's (its marker line differs), so Keel's scan may not run — install-secret-guard.sh --global refuses to overwrite it; move it aside, or re-run that with --force (backs it up, then replaces it)$guard_home_note"
         ;;
       *)
+        guard_push_gap "$w_eff" "$w_keeldir" "$w_pc" "$w_pp"
+        if [ -n "$guard_gap" ]; then
+          # dir #747 (D1-3): a working pre-commit is not the whole guard; without Keel's pre-push a commit made with
+          # hooks bypassed reaches the remote unscanned. The fix is the installer for the dir that holds the hooks.
+          # The fix depends on whose dir it is: Keel's machine-wide dir is re-written by --global, a vendored copy (no
+          # outside hooksPath) by a re-vendor, and a dir a global/system/other hooksPath names is the user's to fix.
+          if [ "$w_keeldir" = 1 ]; then g_way="re-run install-secret-guard.sh --global"
+          else
+            case "$w_scope" in
+              none|local) g_way="re-vendor: install-secret-guard.sh $d" ;;
+              *) g_way="copy the shipped hooks (tools/secret-guard/) into $w_eff by hand — Keel's installers do not write into a hooksPath set at $w_scope scope" ;;
+            esac
+          fi
+          warn W-GUARD-UNWIRED "secret-guard is only half wired here: $guard_gap — $g_way$guard_home_note"
+        fi
         case "$w_pc" in
           keel-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
         esac
@@ -1735,7 +1842,7 @@ for d in "${DIRS[@]}"; do
               warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: install-secret-guard.sh <this repo>"
               ;;
             global|system)
-              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)"
+              warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir ($(guard_own_cmd "$d" "$w_own" "$w_scope"), then install-secret-guard.sh $d)"
               ;;
             *)
               warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into it: copy the shipped hooks (tools/secret-guard/) into it by hand"
@@ -1764,7 +1871,7 @@ for d in "${DIRS[@]}"; do
         # "Vendor into this repo" is the one remedy that cannot work here: a copy in the repo's own hooks
         # dir is never read while a hooksPath from outside stands. The two that can are the two the
         # installer prints (_isg_inert_note).
-        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $w_value$w_note ($w_scope scope$w_src) but that dir carries no executable pre-commit, so commits here are guarded by nothing. A vendored copy in $w_own would be ignored while that setting stands — replace it machine-wide (install-secret-guard.sh --global --force; the old value is recorded) or give this repo its own hooks dir (git -C $d config --local core.hooksPath $w_own, then install-secret-guard.sh $d)$guard_home_note"
+        warn W-GUARD-UNWIRED "secret-guard is not wired: core.hooksPath is set to $w_value$w_note ($w_scope scope$w_src) but that dir carries no executable pre-commit, so commits here are guarded by nothing. A vendored copy in $w_own would be ignored while that setting stands — replace it machine-wide (install-secret-guard.sh --global --force; the old value is recorded) or give this repo its own hooks dir ($(guard_own_cmd "$d" "$w_own" "$w_scope"), then install-secret-guard.sh $d)$guard_home_note"
         ;;
     esac
   fi
@@ -1916,7 +2023,9 @@ EOF
     while IFS= read -r sx_f; do
       [ -n "$sx_f" ] || continue
       sx_rel="${sx_f#"$sx_dd"/}"
-      if [[ "${sx_rel##*/}" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
+      # (the name set is matched in any letter case, so the template words are too: lower-cased first — bash 3.2 has no ${x,,})
+      sx_base="$(printf '%s' "${sx_rel##*/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+      if [[ "$sx_base" =~ (^|\.)(example|sample|template|dist|tpl)(\.|$) ]]; then continue; fi
       if in_token_set "$sx_accept" "$sx_rel"; then continue; fi
       sx_top="$(git -C "${sx_f%/*}" rev-parse --show-toplevel 2>/dev/null || true)"
       if [ "$sx_top" != "$d_top" ]; then continue; fi
@@ -1928,7 +2037,7 @@ EOF
     # The `sed` collapses repeated slashes: a BSD find given a trailing-slash dir prints "dir//file", which
     # would make the same tracked file two different strings for `sort -u` (and a wrong relative path below).
     done <<EOF
-$({ fp_find "$d" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) -print
+$({ fp_find "$d" -type f \( "${sx_find_expr[@]}" \) -print
     sx_tracked_envs "$sx_dd"; } | sed 's#//*#/#g' | LC_ALL=C sort -u)
 EOF
     # sx_names LIST — "p1, p2, p3 (+k more)" for the first 3 paths of a sorted list; sx_n = the count.
