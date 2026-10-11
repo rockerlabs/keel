@@ -613,7 +613,7 @@ guard_installer_cmd() {
   if [ -z "$edited" ]; then printf '%s' "$2"; return 0; fi
   # an earlier --force backup waiting at <hook>.pre-keel.bak is a stop of its own, with or without --force
   for h in pre-commit pre-push; do
-    if { [ -e "$dir/$h.pre-keel.bak" ] || [ -L "$dir/$h.pre-keel.bak" ]; } && [ "${edited#*"$h"}" != "$edited" ]; then waiting="${waiting:+$waiting, }$dir/$h.pre-keel.bak"; fi
+    if { [ -e "$dir/$h.pre-keel.bak" ] || [ -L "$dir/$h.pre-keel.bak" ]; } && [ "${edited#*"$h"}" != "$edited" ]; then waiting="${waiting:+$waiting }$(printf '%q' "$dir/$h.pre-keel.bak")"; fi
   done
   if [ -n "$waiting" ]; then
     printf 'move %s aside first (an earlier backup waiting there makes the installer refuse even with --force), then %s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak)' "$waiting" "$2" "$edited"
