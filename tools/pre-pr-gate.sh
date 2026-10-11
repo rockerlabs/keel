@@ -34,8 +34,9 @@
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
 # earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
-# name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
-# (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# name is no identifier); a `case` header split over lines behind a prefix word (`coproc NAME case x`, newline, `in`)
+# or an `esac` as the first pattern on its own line, inside `$(…)`; an array assignment's `(…)` (read as commands: a
+# false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
 # `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
 # `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
 # for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
@@ -1616,7 +1617,7 @@ function push_ctx(t, p) {
   clim[sp] = (t == "BQ") ? bq_end(p) : n + 1
   if (t == "SUB" || t == "BQ") {
     # its first segment starts right after the opener: a backtick, or `$(` / `<(` / `>(`
-    cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
+    cid[sp] = ++gid; ngrp[sp] = 0; casen[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
     bqreg[sp] = 0
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
@@ -1700,6 +1701,7 @@ function word_end(s,   k) {
 # --- segments and the segment interface (on_segment: what every matcher sees) --------------------------------
 function seg_end(s, nextp) {
   word_end(s)
+  if (cty[s] == "SUB") { casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0 }
   if (sntok[s] > 0) on_segment(s)
   sntok[s] = 0; tgtpend[s] = 0; segbeg[s] = nextp
 }
@@ -1892,7 +1894,7 @@ function cmd_char(   c, s, k, op) {
   if (c == ")") {
     seg_end(s, pos + 1); pos++
     if (ngrp[s] > 0) ngrp[s]--
-    else if (cty[s] == "SUB") close_cmd()
+    else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }
     return
   }
   if (c == "~") {
@@ -1905,6 +1907,32 @@ function cmd_char(   c, s, k, op) {
   if (c == "#") { word_begin(pos); addsrc(pos, 1, "u"); pos++; return }
   # `*`, `?`, `[`
   word_begin(pos); addsrc(pos, 1, "g"); pos++
+}
+
+# case_region(s) — a `)` closes the SUB at s while a `case` is open in it (casen[s], counted by seg_end from each
+# segment’s first word): the `)` is a case pattern’s. The shells read it as part of the `case` (bash 3.2 reads none of
+# it: a syntax error), this reader as the SUB’s end, so the rest of the substitution (`;; esac; git push …)`) lands in the
+# enclosing context — as data under a DQ, a PARAM or an HDATA, as more words of the enclosing command in a command
+# context (`echo $(case x in a) git push …`). The text is a region, from the enclosing segment to the end (the reader
+# cannot know where the shell ends the substitution); a push it still finds as a command of its own outranks it.
+function case_region(s) { region(cpos[s], n, "case pattern ) inside $(…)", cseg[s]) }
+# seg_kw(s) — 1 when the segment just ended in s opens a `case`: its first word (after any reserved words) is an
+# unquoted `case` (the subject and `in` may follow on later lines), or an unquoted `case` anywhere in it has an unquoted
+# `in` after it (`env case x in a`, `coproc foo case x in a`, `time -p case x in a`: no list of what may come before the
+# `case`, which would keep leaking). -1 when it starts with an unquoted `esac` in command position, else 0. An `esac`
+# after a `|` or a `(` is a pattern (`case x in a|esac)`), not the end of the case.
+function seg_kw(s,   i, j, k, b) {
+  i = 1
+  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
+  if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0
+  if (stok[s, i] == "case") return 1
+  b = segbeg[s]
+  if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1
+  for (j = i + 1; j < sntok[s]; j++) {
+    if (stok[s, j] != "case" || stokm[s, j] !~ /^u+$/) continue
+    for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1
+  }
+  return 0
 }
 
 # close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still

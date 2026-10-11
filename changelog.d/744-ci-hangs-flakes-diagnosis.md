@@ -3,8 +3,9 @@
   off locally; it prints `watchdog: <N>s` up front and `=== <file> (timed out after <N>s) ===` with the file's
   log so far) and ends every run with the five slowest files. Every CI job sets `timeout-minutes`, sized to
   its leg. `tests/test_run_sh.sh` proves its concurrency checks by a peak count and times only kill→exit,
-  never runner start-up; each test that waits for a background process takes its bound from
-  `KEEL_TEST_HANG_BOUND` (120 s) in whole seconds, linted by `tests/test_suite_hygiene.sh`.
+  never runner start-up; each `kill -0` wait on a background process takes its bound from
+  `KEEL_TEST_HANG_BOUND` (120 s) in whole seconds, linted by `tests/test_suite_hygiene.sh`; a few
+  start-marker waits keep a literal 5–20 s bound.
 - **The test sandbox explains its own failures (dir #744 slice 2).** `tests/lib.sh` turns off git's
   detached auto-maintenance for every test (appended to the `GIT_CONFIG_COUNT` triple, so an inherited entry
   survives); a sandbox teardown that fails names what survived and which processes held it, then retries

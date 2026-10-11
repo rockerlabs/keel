@@ -92,6 +92,20 @@ printf -- '- inner fragment\n' > "$outer/inner/changelog.d/1-i.md"
 run "$cf" --repo "$outer/inner"
 check_eq "a non-toplevel directory inside a repo is read as a plain directory" "- inner fragment" "$OUT"
 
+# A failing `git ls-files` is an unreadable repo (exit 2), never an empty fragment list: the cut would otherwise
+# write the release section WITHOUT the fragments and exit 0 (the 0.16.0 delta audit, S11-4). A corrupt index
+# makes ls-files fail while rev-parse --show-toplevel still works, so the toplevel branch is the one taken.
+d="$(mk_frags)"
+frag "$d" 1-a.md $'- dir #1: a\n'
+printf 'garbage' > "$d/.git/index"
+for mode in "--default" "--list" "--check"; do
+  flag="$mode"; [ "$mode" != --default ] || flag=""
+  # shellcheck disable=SC2086 # $flag is empty or one flag
+  run "$cf" --repo "$d" $flag
+  check_status "ls-files fails (reader $mode) -> exit 2, not an empty list" 2 "$STATUS"
+  check_contains "ls-files fails (reader $mode): the refusal says it could not list changelog.d/" "$OUT" "could not list changelog.d/"
+done
+
 # --- --check: a good sample and a bad sample per rule (A2) -------------------------------------
 # lint NAME TEXT — a fresh dir holding one fragment; sets OUT/STATUS from --check.
 lint() { local d; d="$(mk_frags)"; frag "$d" "$1" "$2"; run "$cf" --repo "$d" --check; }

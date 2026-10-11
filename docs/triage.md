@@ -46,8 +46,7 @@ touched (default 40; `$ARGUMENTS` may raise it with `--limit N`) and a budget ch
 | `KEEP` | `[1×]`, younger than the horizon, still plausible | untouched; counted |
 | `DROP` | mooted by a later change, OR `[1×]` older than the horizon and never bumped | learnings: delete when the file is git-tracked (history is the archive); where it is NOT tracked (an adopter's gitignored harness home) append the line to a `## Dropped` tail section instead, since a deletion there has no undo. Ideas: keep the entry with an inline `Dropped <date> — <reason>` (that file's own convention) |
 
-The horizon is **60 days at `[1×]`**. The template's "~5 sessions" is unmeasurable after the fact, so it
-is operationalized as a date. Calibrate it on the first real run against the live date distribution and
+The horizon is **60 days at `[1×]`**. Sessions are unmeasurable after the fact, so the horizon is a date. Calibrate it on the first real run against the live date distribution and
 write the corrected figure back here if 60 is wrong. An undated entry predates the dating convention
 and is treated as past the horizon — but it gets a read before a drop, never a mechanical delete.
 

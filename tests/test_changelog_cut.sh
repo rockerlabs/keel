@@ -144,6 +144,18 @@ printf '\nExample:\n\n```\n## [Unreleased]\n```\n' >> "$d/CHANGELOG.md"
 run "$cut" --repo "$d" 9.9.9 2026-01-01
 check_status "a fenced '## [Unreleased]' example is not counted -> cut succeeds" 0 "$STATUS"
 
+# A failing `git ls-files` in a git repo is a refusal, not a cut that carries no fragments (the 0.16.0 delta
+# audit, S11-4): a corrupt index leaves rev-parse working and makes ls-files fail.
+d="$(mk_repo)"
+git -C "$d" init -q
+printf 'garbage' > "$d/.git/index"
+before="$(cat "$d/CHANGELOG.md")"
+run "$cut" --repo "$d" 9.9.9 2026-01-01
+check_status "refuses: ls-files fails -> exit 2, not a fragment-less cut" 2 "$STATUS"
+check_contains "refuses: ...saying it could not read changelog.d/" "$OUT" "could not read changelog.d/"
+check_eq "refuses: ...CHANGELOG.md untouched" "$before" "$(cat "$d/CHANGELOG.md")"
+check_eq "refuses: ...the fragments are still there" "yes" "$([ -f "$d/changelog.d/1-a.md" ] && [ -f "$d/changelog.d/2-b.md" ] && echo yes)"
+
 # --- no fragments: rename + fresh [Unreleased] only ------------------------------------------------
 d="$(mk_repo)"
 rm -f "$d/changelog.d/1-a.md" "$d/changelog.d/2-b.md"

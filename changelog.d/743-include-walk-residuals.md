@@ -5,6 +5,6 @@
   instead of by the walk's own rules; a file reached again under a second, independent condition is reported under
   both, with the includes nested in it; the "git config failed on …" line for a path git never read now says
   "cannot tell whether … exists". A command-scope `core.hooksPath` (`git -c`) is no longer taken for the machine-wide one, so it is never recorded as the
-  displaced global nor written into `~/.gitconfig` by `--uninstall`; a git config git cannot read is refused instead of
+  displaced global nor written into `~/.gitconfig` by `--uninstall`; a git config git cannot parse is refused instead of
   read as "unset"; and a `core.hooksPath` one global config file sets twice is refused up front, in words, instead of git
-  exiting 5 after the hooks were placed (one value in each of two files is fine). `--where` prints `read-error=1` for an unreadable config.
+  exiting 5 after the hooks were placed (one value in each of two files is fine). `--where` prints `read-error=1` for an unparsable config.

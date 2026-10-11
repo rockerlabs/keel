@@ -52,7 +52,7 @@ sections real content going forward — see that page for exactly when each one 
   failure is a GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit
   goes on, and the exit is 1. The content-reading `git log`s pass `--text --no-textconv --no-ext-diff` (a `-diff`
   attribute or a textconv driver hid a literal from history), the history spools are NUL-stripped, a repository
-  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed. dir #746:
+  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed when a `--token` or a personal-literals file is in play. dir #746:
   `public-audit.sh` on a directory that is not a git repository (or when `mktemp` fails) now exits 2 instead of
   scanning nothing — so `keel audit` run from a non-git directory exits 2. dir #694, dir #740: the personal
   literals are read from a pattern file, one pattern per line (two literals never fuse into one ERE), the byte
@@ -140,7 +140,7 @@ sections real content going forward — see that page for exactly when each one 
   closing paragraph said workers carry the DELEGATION RUN line; R13 says the `WRAP CENTRALIZED` marker, and
   the paragraph now agrees (M9 also asks for cited events, not an "event-count block"). Tool half:
   `keel-impact.sh shape` prints the event kinds and the one line a checkpoint copies, and `add --session
-  <worker id>` records the session a score came from in a new last ledger column (older rows read `—`), so a
+  <worker id>` records the session a score came from in a new last ledger column (older rows have no session cell), so a
   manager's one wrap can score every worker, not only itself.
 - **`tools/vendor-review.sh` creates its round store owner-only.** The default `$HOME/.keel/vendor-review/`
   store, each round dir and the client's `reply.md`/`raw.json` no longer take the caller's umask (world-readable
@@ -183,8 +183,8 @@ sections real content going forward — see that page for exactly when each one 
   dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
   file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
   CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
-  `tests/mutants/pre-pr-gate.tsv` lists 46 mutants of the bypassed-push deny; the dir #731 A18 block moved to
-  `tests/test_pre_pr_gate_lexer.sh` kills 29 of them before this change and all 46 after (17 new deny forms, and
+  `tests/mutants/pre-pr-gate.tsv` lists the gate reader's single-clause mutants (46 of the bypassed-push deny at PR-1, rewritten against the lexer in PR-2: 269 rows); the dir #731 A18 block moved to
+  `tests/test_pre_pr_gate_lexer.sh` kills 29 of the 46 before this change and all 46 after (17 new deny forms, and
   every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
   `commands/polish-guide.md` § Step 9 cite itself.
 
