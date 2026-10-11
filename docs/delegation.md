@@ -375,8 +375,10 @@ against the session's repository, and item 3 names what that leaves), an adopter
    enough (no installer re-run); `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment switches it off, and the
    PR and push rules still apply. **It is not a sandbox.** It reads the command text, so it does not see a
    non-literal path (`git -C "$S"`), `sh -c` or `eval` text, a script file that runs git, an alias, a wrapper such
-   as `timeout` or `sudo`, a `GIT_DIR` exported in an earlier command, `cd -`, a plain `rm` of tracked files or a
-   machine-global config write (`tools/machine-watch.sh` detects those). A subagent started with
+   as `timeout` or `sudo`, a `GIT_DIR` exported in an earlier command, `cd -`, a `cd` that may not run
+   (`false && cd X; git …`), a write aimed at the session repository as a plain argument (`git -C <clone> push
+   <session repo> main`), a plain `rm` of tracked files or a machine-global config write
+   (`tools/machine-watch.sh` detects those). A subagent started with
    `isolation: "worktree"` is denied its own commits too (its worktree shares the repository) — the escape is the
    switch above.
 

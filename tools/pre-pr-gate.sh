@@ -491,8 +491,10 @@
 # probe file holding `git push` is invisible; treating every `bash <file>` as a deny would stop every legitimate
 # test run), an alias or `git-<x>` external command, a wrapper outside the reader's skip set (`timeout`, `nice`,
 # `sudo`, `env -C`), a non-literal verb (`git $v`), a `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
-# `cd X || git …` whose cd fails although X exists, `cd -`, a cd in one pipeline stage taken as applying to the
-# next, a plain `rm`/`cp`/`mv` of tracked files, machine-global config writes (`machine-watch` is their detector),
+# `cd X || git …` whose cd fails although X exists (every cd is replayed as if it ran, so `false && cd X; git …`
+# and a backgrounded `cd X &` count too), `cd -`, a cd in one pipeline stage taken as applying to the next, a write
+# aimed at the session repository as a plain argument (`git -C <scratch> push <session repo> main`: only where git
+# RUNS is judged), a plain `rm`/`cp`/`mv` of tracked files, machine-global config writes (`machine-watch` is their detector),
 # and a subagent whose event carries no `agent_id`. Accepted cost: `mkdir X && cd X && git init` run from inside the
 # session repository is denied (X does not exist when the hook runs); `git -C X init` passes. A subagent started
 # with `isolation: "worktree"` is denied its own commits for the same reason (its worktree shares the repository).
@@ -2388,12 +2390,12 @@ function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, d
       if (substr(w, 1, 2) == "--") {
         eq = index(w, "="); nm = eq ? substr(w, 1, eq - 1) : w
         if (sg_in(nm, (v == "branch") ? "--delete --move --copy --force --set-upstream-to --unset-upstream --edit-description" : "--delete --force --annotate --sign --local-user --file --message")) wr = 1
-        else if (sg_in(nm, "--list --show-current --all --remotes")) rd = 1
+        else if (sg_in(nm, "--list --show-current --all --remotes --verify")) rd = 1
         else if (sg_in(nm, "--merged --no-merged --contains --no-contains --points-at --sort --format")) { rd = 1; if (!eq) k++ }
       } else if (substr(w, 1, 1) == "-" && length(w) > 1) {
         w = substr(w, 2)
         if (w ~ (v == "branch" ? "[dDmMcCfu]" : "[dfasmuF]")) wr = 1
-        if (w ~ (v == "branch" ? "[lar]" : "[ln]")) rd = 1
+        if (w ~ (v == "branch" ? "[lar]" : "[lnv]")) rd = 1
       } else npos++
     }
     return wr || (!rd && npos > 0)
@@ -2431,7 +2433,7 @@ function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, d
         if (sg_in(w, "--get --get-all --get-regexp --get-urlmatch --list -l")) rd = 1
         if (w == "--file" || w == "-f") { if (k < ntok) { ffile = tok[k + 1]; fmask = tokm[k + 1] }; k++ }
         else if (index(w, "--file=") == 1) { ffile = substr(w, 8); fmask = substr(tokm[k], 8) }
-        else if (sg_in(w, "--type --default --blob")) k++
+        else if (sg_in(w, "--type --default --blob --comment")) k++
       } else { npos++; if (npos == 1) first = w }
     }
     if (glob) return 0
@@ -2458,6 +2460,7 @@ function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v) {
   i = cmd_start()
   if (i > ntok || !w_plain(i)) return
   c = tok[i]
+  if (c == "builtin" && i < ntok && w_plain(i + 1) && (tok[i + 1] == "cd" || tok[i + 1] == "pushd" || tok[i + 1] == "popd")) { sg_cd(i + 1); return }
   if (c == "cd" || c == "pushd" || c == "popd") { sg_cd(i); return }
   if (!(c == "git" || (length(c) > 4 && substr(c, length(c) - 3) == "/git"))) return
   sg_gd = "-"; sg_wt = "-"; sg_extra = ""; chain = ""
@@ -2473,7 +2476,7 @@ function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v) {
     if (o == "-C") {
       if (j == ntok) return
       chain = chain (chain == "" ? "" : SEP2) sg_path(tok[j + 1], tokm[j + 1]); j += 2
-    } else if (o == "-c" || o == "--namespace" || o == "--config-env") j += 2
+    } else if (o == "-c" || o == "--namespace" || o == "--config-env" || o == "--attr-source" || o == "--super-prefix") j += 2
     else if (o == "--git-dir" || o == "--work-tree") {
       if (j == ntok) return
       if (o == "--git-dir") sg_gd = sg_path(tok[j + 1], tokm[j + 1]); else sg_wt = sg_path(tok[j + 1], tokm[j + 1])
@@ -3365,7 +3368,7 @@ sg_dir_hit() {
   [ "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
 }
 sg_gitdir_hit() {
-  [ -d "$1" ] || return 1
+  [ -e "$1" ] || return 1
   case "$sg_seen" in *"${sep}g:$1${sep}"*) return 1 ;; esac
   sg_seen="$sg_seen${sep}g:$1${sep}"
   [ "$(git --git-dir="$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
@@ -3422,7 +3425,10 @@ sg_target_hit() {
       ci=$((ci + 1))
     done
     case "$gdk" in
-      lit) sg_join "$cur" "$gdp"; sg_gitdir_hit "$sg_j" && return 0 ;;
+      lit) sg_join "$cur" "$gdp"; sg_gitdir_hit "$sg_j" && return 0
+           # A git dir with no work tree named leaves the work tree at the running directory (git's own rule): a
+           # scratch git dir used from inside the session repository rewrites the session's files.
+           [ "$wtk" = dash ] && { sg_dir_hit "$cur" && return 0; } ;;
       dash) sg_dir_hit "$cur" && return 0 ;;
     esac
     if [ "$wtk" = lit ]; then sg_join "$cur" "$wtp"; sg_dir_hit "$sg_j" && return 0; fi

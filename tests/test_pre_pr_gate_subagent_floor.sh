@@ -131,6 +131,16 @@ sf_deny "W4: GIT_DIR after a cd elsewhere" "cd $X && GIT_DIR=$R/.git git reset -
 sf_deny "W5: GIT_DIR=X/.git GIT_WORK_TREE=R" "GIT_DIR=$X/.git GIT_WORK_TREE=$R git checkout -- f"
 sf_deny "W6: --git-dir as a separate word" "git --git-dir $R/.git checkout -- f"
 
+# --- N1–N8, found by review: a git dir with no work tree, a gitfile, a separate-word option value, builtin cd, read forms ---
+sf_deny "N1: --git-dir=<scratch> with no work tree named leaves the work tree at the cwd (the session repo)" "git --git-dir=$X/.git reset --hard"
+sf_deny "N2: ...the same through GIT_DIR=<scratch>" "GIT_DIR=$X/.git git clean -fd"
+sf_allow "N3: ...but a scratch git dir used where the cwd is no repository is nothing to protect" "git --git-dir=$X/.git reset --hard" "$NOGIT"
+sf_deny "N4: a linked worktree's .git is a FILE, and --git-dir accepts it (the work tree named elsewhere)" "git --git-dir=$R2/.git --work-tree=$X checkout -- f"
+sf_deny "N5: --attr-source takes its value as a separate word" 'git --attr-source HEAD checkout -- f'
+sf_allow "N6: builtin cd is a cd" "builtin cd $X && git commit --allow-empty -m x"
+sf_allow "N7: git tag -v is a read" 'git tag -v v1'
+sf_allow "N8: git config --comment takes a value (it is not a second positional)" 'git config --comment c user.name'
+
 # --- F1–F2, config -f -----------------------------------------------------------------------------------------------------
 sf_deny "F1: config -f into the session repo's own config" "git -C $X config -f $R/.git/config core.hooksPath /dev/null"
 sf_allow "F2: config -f to a file outside any repository" "git config -f $TMP/x.cfg a.b c"
@@ -188,6 +198,8 @@ sf_allow "Z5: a non-literal cd" 'cd "$R" && git stash'
 sf_allow "Z6: a glob path" 'git -C R* checkout -- f'
 sf_allow "Z7: timeout is not a wrapper the reader skips" 'timeout 5 git stash'
 sf_allow "Z8: cd -" "cd $X; cd -; git stash"
+sf_allow "Z10: a cd that may not run (&&, ||, &) is replayed as if it ran (B13)" "false && cd $X; git stash"
+sf_allow "Z11: a remote-targeted write: the push runs in X, its target R is a plain argument (B13)" "git -C $X push $R main"
 sf_allow "Z9: a script file that runs git (residual, B13)" "bash $TMP/probe.sh"
 
 # --- H1–H2, the matcher adds a deny and changes nothing else ---------------------------------------------------------------
