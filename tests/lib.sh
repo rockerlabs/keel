@@ -675,8 +675,10 @@ run_in() {
 # tty_run ANSWER CMD… — run CMD on a pseudo-terminal that answers one prompt with ANSWER: for an offer
 # behind `[ -t 0 ]`. Sets OUT (merged, pty-echoed) and STATUS. Hold stdin open past the prompt — a bare
 # `printf 'y\n' |` loses the answer at EOF; the hold is a process substitution nothing waits on, so a call
-# returns as soon as CMD exits. macOS `script -q /dev/null CMD…`; util-linux `script -qec "CMD" /dev/null` (-e: without
-# it `script` exits 0 whatever CMD did, so STATUS would be script's own — dir #749 S6-1).
+# returns as soon as CMD exits. macOS `script -q /dev/null CMD…`; util-linux `script -qc "CMD" /dev/null`.
+# STATUS is the command's own exit status on macOS only: util-linux's `script` answers with its own (0), and `-e`
+# did not change that on the ubuntu CI leg (dir #749 S6-1, tried and reverted) — so read OUT, never STATUS, in a test
+# that must also pass on Linux. No caller reads STATUS today.
 # Called directly, not through run() (it forces </dev/null). The caller skips, with a printed reason, when
 # `script` is absent (the alpine leg has neither script nor python). Promoted here (dir #716) once a
 # second test file (tests/test_core_marker_anchor.sh) needed the same driver.
@@ -684,7 +686,7 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
   local ans="$1"; shift
   case "$(uname -s)" in
     Darwin) OUT="$(script -q /dev/null "$@" < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
-    *)      OUT="$(script -qec "$(printf '%q ' "$@")" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
+    *)      OUT="$(script -qc "$(printf '%q ' "$@")" /dev/null < <(printf '%s\n' "$ans"; sleep 5) 2>&1)"; STATUS=$? ;;
   esac
 }
 

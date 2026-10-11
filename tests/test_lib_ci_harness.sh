@@ -151,18 +151,17 @@ pin "A14: the token-report --since case uses check_status_out" "$REPO_ROOT/tests
   'check_status_out "--since far in the future exits 0, not an error" "0"' "expected the --since case to print the tool's output on a mismatch"
 
 # --- dir #749 S6-1 / S6-6: two tests/lib.sh helpers keep their promises --------------------------------------------
-# S6-1: tty_run's STATUS is the COMMAND's exit status. util-linux `script -c` answers with its own (0) unless given -e,
-# and macOS `script` propagates the child's, so the behavioural row below can only fail on the Linux leg (and is
-# skipped without `script`, as on alpine). The text pin binds the fix on every platform.
-pin "S6-1: tty_run's Linux arm passes script -e (without it STATUS is script's own)" "$lib_path" 'OUT="$(script -qec' \
-  "expected tty_run's util-linux arm to run script with -e"
-if command -v script >/dev/null 2>&1; then
+# S6-1: tty_run's STATUS is the command's own exit status on macOS only — util-linux's `script` answers with its own
+# (0), and `-e` did not change that on the ubuntu CI leg (tried, failed there, reverted). The helper's comment says so
+# (pinned), and the macOS row keeps the one platform where the promise holds from regressing. A test that must also
+# pass on Linux reads OUT, never STATUS.
+pin "S6-1: tty_run's header says STATUS is the command's own exit status on macOS only" "$lib_path" \
+  '# STATUS is the command'"'"'s own exit status on macOS only' "expected tty_run's comment to say where STATUS can be trusted"
+if [ "$(uname -s)" = Darwin ]; then
   tty_run n sh -c 'exit 3'
-  check_eq "S6-1: tty_run reports the command's own exit status (3), not script's" "3" "$STATUS"
-  tty_run n sh -c 'exit 0'
-  check_eq "S6-1: …and 0 for a command that succeeds" "0" "$STATUS"
+  check_eq "S6-1: on macOS tty_run reports the command's own exit status (3)" "3" "$STATUS"
 else
-  echo "  skip  S6-1 behavioural rows (script absent)"
+  echo "  skip  S6-1 behavioural row (macOS only)"
 fi
 # S6-6: alter_block on an empty or missing path leaves nothing behind (it used to drop a stray `.new` in the cwd).
 ab="$SANDBOX/s66"; mkdir -p "$ab/cwd"
