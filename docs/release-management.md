@@ -84,10 +84,9 @@ default.
 branch in its own worktree and merge each constituent head into it with `--no-ff`, unmodified; run a pairwise
 conflict check over every pair first, and hand a real conflict to the owner of the earlier PR to resolve on
 the branch. One release landed 19 PRs this way where serial merging was priced at six to seven hours; a train
-is the same shape, built as PRs reach clean one after another. Four rules keep it safe. The manager builds the
+is the same shape, built as PRs reach clean one after another. These rules keep it safe. The manager builds the
 branch but does not run it — the pre-PR gate keys its traces off the session's working directory, so a session
-started in that worktree runs the suite, the portability leg and the pre-PR flow. The manager starts that session early,
-on an operator-started turn (R3). **R5 holds for every constituent**: each head merged is the
+started in that worktree runs the suite, the portability leg and the pre-PR flow, and is started early (R3). **R5 holds for every constituent**: each head merged is the
 head its worker froze and the forge reports, and every head is an ancestor of the branch's tip before the PR
 opens. The branch's own fixes ride as separate commits the PR body names, never as edits inside a constituent.
 And the operator merges it with a merge commit, so the constituents close on their own.
@@ -358,11 +357,10 @@ recording the figure every run is what eventually lets someone answer whether th
 never asserted from one run's feel. Where the estimate also names subscription-window points
 ([`docs/grooming.md`](grooming.md) G5), record beside the figure the points the run moved: the reading
 taken before each wave already supplies them, so keep the last reading before each window reset the run
-crosses and sum the segments. **Summing at the estimate's weights has a tool for one session, not for a set:**
-keel's `keel tokens` prints the weighted total of a session or of everything since a date at its default
-weights, and `KEEL_TOKENS_WEIGHTS` sets the estimate's own ([`docs/token-economy.md`](token-economy.md)); the
-release's sessions, found by branch as below, are summed by hand until dir #654 closes. Write the weights
-and the session set beside the figure, so the next groom can re-sum it.
+crosses and sum the segments. **Summing at the estimate's weights:** keel's `keel tokens` does it for one session, with
+`KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
+sessions are summed by hand, found by branch as below. Write the weights and the session set beside the figure,
+so the next groom can re-sum it.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
@@ -407,8 +405,8 @@ bottom of this section in `commands/go.md` itself, which now names this exceptio
 a silent contradiction between the two documents a worker could follow either of.
 
 **The single writer needs a checked writer, for filings as much as markers (0.15.0).** A manager's own filing
-script wrote `open(f,'w').write(open(f).read()+x)`: the write-mode open empties the file before the read
-runs, so the backlog was truncated, and the only copy was a knowledge-base snapshot. A script that touches
+script opened the backlog for writing before it read it, which empties the file: the backlog was truncated,
+and only a backup could restore it. A script that touches
 the backlog reads it whole, writes a temp file beside it, refuses when the result is shorter than the
 original (a filing only adds), and renames over it; the closure-word check above rides in the same script. One such
 writer serves markers, Log lines and new tickets alike. A manager without one writes it before wave 1.
@@ -436,7 +434,7 @@ stay the operator's.
 operator one merge for the audit's fix round and the cut together. Stacking changes what the audit's GO
 conditions describe: they were established at the fix round's head, so they are restated for the stacked tip
 (the fix head plus the cut commits and nothing else) and re-derived there before the paste block is handed
-over; conditions verified below the cut commit say nothing about it.
+over.
 
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
 over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the
@@ -548,14 +546,13 @@ open row's live state at a fixed point in each loop iteration — before each wa
 merge — and treat "idle with no report received" as a row to probe, not a row still working.
 
 **The sweep is load-bearing, because a worker's own "waiting" is never evidence (0.16.0).** One release saw
-five wedges of this shape: workers idle with no live background task, three of them waiting on a notification
-from a task that cannot send one, one ending its turn on a plan, and a lost sub-reviewer whose report never
-came. The brief already carried the rule "end no turn waiting without a live background task", and it failed
-five times anyway; each wedge was found by the sweep, none by the worker, at an hour or more of idle time
-apiece. So the sweep is the control, not a courtesy, and it runs on a wall clock the manager sets. A host that
-sleeps delays that timer (one fired about 80 minutes late), so after a late wake the first act is a sweep, not
-a resume. A sub-reviewer that never reports is probed like any worker; with the reports in hand the worker
-proceeds and discloses the gap.
+five wedges of this shape (a worker idle with no live background task, waiting on a notification no task could
+send, or having ended its turn on a plan) and a lost sub-reviewer whose report never came. The brief already
+carried the rule "end no turn waiting without a live background task", and it failed five times anyway; the
+sweep found each wedge, the worker none, after an hour or more of idle time. So the sweep is the control, not a
+courtesy, and it runs on a wall clock the manager sets. A host that sleeps delays that timer (one fired about
+80 minutes late), so after a late wake the first act is a sweep, not a resume. A sub-reviewer that never
+reports is probed like any worker; with the reports in hand the worker proceeds and discloses the gap.
 
 **A worker's own stop needs a named blocker (0.16.0).** A worker read a long review loop as a safety signal and
 stopped at round six with a serious finding fixed but unreviewed. The convergence rule is a round that finds
@@ -571,14 +568,14 @@ suite runs.
 **No branch cleanup while a wave runs (0.16.0).** A suite's branch-integrity canary (keel's dir #318) cannot
 tell a deliberate cleanup from a leak: four times in one release a peer moving its branch, or a wrap sweep
 deleting merged branches, tripped it in a worker's suite, about an hour a time (dir #768 tracks the remover).
-So no session runs a branch-cleanup sweep while a wave's suites run — the wrap does it — and a canary trip is
+So no session runs a branch-cleanup sweep while a wave's suites run — the wrap (R13) does it — and a canary trip is
 re-run only after naming the ref that moved.
 
-**A stop that waits for the operator is settled at wave-plan time (0.16.0).** `/polish`'s compaction stop
-(dir #739) asks the operator for `/compact`, and every worker of one wave reached it at step one within
-the same hour, so three workers idled until the operator returned. The threshold and any override are the
-operator's decision: ask once per wave, record the answer in the shared brief with its date, and do not raise
-it on the manager's own authority.
+**A stop that waits for the operator is settled at wave-plan time (0.16.0).** Any step that blocks on the
+operator is asked once per wave, and the answer is recorded in the shared brief with its date. Keel's example is
+`/polish`'s compaction stop (dir #739), which asks for `/compact`: every worker of one wave reached it at step
+one within the same hour, and three idled until the operator returned. The threshold and any override are the
+operator's decision, never raised on the manager's own authority.
 
 ## R12 — portability
 

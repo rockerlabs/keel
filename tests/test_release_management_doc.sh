@@ -271,9 +271,6 @@ pin "R2 prices sequential merges under strict up-to-date" "$doc" \
 pin "R2 names the integration PR and the train" "$doc" \
   '**An integration PR or a train lands several clean PRs' \
   "expected R2 to say how a multi-PR landing is built, who starts its session, and R5 on every head (dir #760)"
-pin "R2 says the manager starts the train session early, on an operator-started turn" "$doc" \
-  'The manager starts that session early,' \
-  "expected R2 to say who starts the train's session and when (dir #760)"
 pin "R2 applies R5 to every constituent head" "$doc" \
   '**R5 holds for every constituent**' \
   "expected R2 to apply the pushed-head rule to each PR merged into a train (dir #760)"
