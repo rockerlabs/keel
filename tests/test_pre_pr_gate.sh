@@ -3961,4 +3961,82 @@ check_eq "dir #674: an unusable HOME still injects the block" "$sr_expect" "$(pr
 OUT="$(printf '%s' "$(sr_ev general-purpose)" | env -u HOME bash "$gate" subagent-rails 2>&1)"; STATUS=$?
 check_eq "dir #674: an unset HOME still injects the block" "$sr_expect" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)"
 
+# --- dir #713 / spec 745 A21: the riders left by dir #583's last review round -------------------------------------
+# Guards (1, 2, 6) already hold, so each passes today and is proved by a MUTATED copy of the gate; fixes (3, 4, 7, 8,
+# 9) are red before the change. Item 5 (the released CHANGELOG bullet) is accepted: released history is not rewritten.
+mutgate() {  # mutgate NAME SED-EXPR — a copy of the gate (with its lib/) under $SANDBOX/mut-NAME, edited by SED-EXPR; prints its path
+  local md="$SANDBOX/mut-$1/tools"
+  mkdir -p "$md" && cp -R "$REPO_ROOT/tools/lib" "$md/lib" && sed -e "$2" "$gate" > "$md/pre-pr-gate.sh"
+  printf '%s' "$md/pre-pr-gate.sh"
+}
+d="$(mkrepo)"
+# 1. the header-boundary extraction stops at its boundary: it holds nothing that exists only after it.
+gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
+check_absent "dir #713 item 1: the extracted header does NOT run on into the code (no PPG_AWK_PROG assignment)" "$gate_head" "PPG_AWK_PROG='"
+mut="$(mutgate boundary 's/^# CLI subcommands/# CLI-subcommands/')"
+mut_head="$(sed -n '1,/^# CLI subcommands/p' "$mut")"
+check_contains "dir #713 item 1: ...and the negative half CAN fail (boundary renamed → the whole file is extracted)" "$mut_head" "PPG_AWK_PROG='"
+# 2. -h inside a real checkout on a branch does not print the placeholder note.
+run_in "$d" bash "$gate" -h </dev/null
+check_absent "dir #713 item 2: -h in a checkout on a branch does NOT print 'No git checkout resolved here'" "$OUT" "No git checkout resolved here"
+mut="$(mutgate note 's/ph_note=""; *$/:/; s/ph_note=""$/:/')"
+run_in "$d" bash "$mut" -h </dev/null
+check_contains "dir #713 item 2: ...and the check CAN fail (the success branch no longer clears the note)" "$OUT" "No git checkout resolved here"
+# 3. the note names the gate by the path it was invoked as; `keys` stays subject to the $HOME guard (accepted: the
+#    guard's exemption list is -h/--help/lex only, kept short on purpose).
+mkdir -p "$SANDBOX/nonrepo-713"
+run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
+check_contains "dir #713 item 3: the note names the gate by the path it was invoked as" "$OUT" "bash $gate keys"
+run_in "$d" env -u HOME bash "$gate" keys </dev/null
+check_status "dir #713 item 3: keys with HOME unset still exits 1 (the guard is not widened)" 1 "$STATUS"
+check_contains "dir #713 item 3: ...with the HOME diagnosis" "$OUT" "cannot resolve the gate state root"
+# 4. a failure inside a work tree keeps the reason: -h prints the first line of the error instead of the generic note.
+dd="$(mkrepo)"; git -C "$dd" checkout -q --detach
+run_in "$dd" bash "$gate" -h </dev/null
+check_status "dir #713 item 4: -h on a detached HEAD exits 0" 0 "$STATUS"
+check_contains "dir #713 item 4: ...and prints why the keys could not be resolved" "$OUT" "cannot key the receipt — detached HEAD"
+check_absent "dir #713 item 4: ...instead of the generic 'No git checkout resolved here'" "$OUT" "No git checkout resolved here"
+# 6. the note is exactly ONE output line (the line holding its start also holds its end).
+run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
+note_line="$(printf '%s\n' "$OUT" | grep -F "No git checkout resolved here" || true)"
+check_eq "dir #713 item 6: exactly one line holds the note's start" "1" "$(printf '%s\n' "$note_line" | grep -c .)"
+check_contains "dir #713 item 6: ...and that same line holds its end" "$note_line" "prints inside the checkout.)"
+mut="$(mutgate split 's/\${ph_note:+"\$ph_note"}/${ph_note:+$ph_note}/')"
+run_in "$SANDBOX/nonrepo-713" bash "$mut" -h </dev/null
+mnote="$(printf '%s\n' "$OUT" | grep -F "No git checkout resolved here" || true)"
+check_absent "dir #713 item 6: ...and the check CAN fail (the unquoted note splits across lines)" "$mnote" "prints inside the checkout.)"
+# 7. a first argument that is no dispatch arm → usage + exit 2 at once, never a stdin read (a FIFO nobody writes).
+mkfifo "$SANDBOX/fifo-713"
+run_in "$d" perl -e 'alarm 5; exec @ARGV' bash "$gate" --halp 0<>"$SANDBOX/fifo-713"
+check_status "dir #713 item 7: an unknown first argument exits 2 at once (142 would mean it waited on stdin)" 2 "$STATUS"
+check_contains "dir #713 item 7: ...with a usage line naming the argument" "$OUT" "unknown subcommand --halp"
+run_in "$d" perl -e 'alarm 5; exec @ARGV' bash "$gate" foo 0<>"$SANDBOX/fifo-713"
+check_status "dir #713 item 7: a bare word is refused the same way" 2 "$STATUS"
+# …and the ZERO-argument hook mode (every wiring shape the installer ever wrote, spec E12) is untouched.
+d7="$(mkrepo)"
+gate "git status" "$d7"
+check_status "dir #713 item 7: hook mode with no argument still allows an unrelated command" 0 "$STATUS"
+check_eq "dir #713 item 7: ...with an empty decision" "" "$OUT"
+# 8. S2-1: an agent:* outcome's missing-trace deny names the remedy the agent CAN perform; a bare level's does not.
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 8: agent:* missing trace → still names the missing trace (wording untouched)" "$OUT" "no trace matching"
+check_contains "dir #713 item 8: ...and names the subagent that can write it" "$OUT" "re-run the keel-polish-reviewer subagent at the current HEAD"
+check_contains "dir #713 item 8: ...and the hook that writes the trace" "$OUT" "SubagentStop"
+d="$(mkrepo)"
+rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "medium"
+gate "gh pr create --fill" "$d"
+check_absent "dir #713 item 8: a bare-level outcome's deny does not carry the agent remedy" "$OUT" "re-run the keel-polish-reviewer subagent"
+# 9. S2-5: the polish.5-review hint no longer says an agent review satisfies nothing; the reviewer's own is accepted.
+d="$(mkrepo)"
+write_full_receipt "$d" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 9: the hint keeps the pinned Skill(code-review) itself remedy" "$OUT" "Skill(code-review) itself"
+check_absent "dir #713 item 9: ...and no longer says an agent review satisfies nothing" "$OUT" "satisfies nothing here"
+check_contains "dir #713 item 9: ...it names the reviewer whose agent receipt IS accepted" "$OUT" "keel-polish-reviewer"
+
+
 summary
