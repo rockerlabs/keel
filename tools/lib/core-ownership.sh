@@ -138,8 +138,9 @@ keel_core_block_norm() {
 # The trim-aware half exists so a /keel-setup no-git trim, a deliberate edit, is never reported as
 # drift forever (and never silently undone by the refresh the ladder offers).
 keel_core_block_state() {
-  local inst ref
-  inst="$(keel_core_block_text "$1")"
+  local inst ref raw note
+  raw="$(keel_core_block_text "$1")"
+  inst="$raw"
   ref="$(keel_core_block_text "$2")"
   if ! keel_core_block_is_trimmed "$1"; then
     if [ "$inst" = "$ref" ]; then echo current; else echo drift; fi
@@ -148,9 +149,10 @@ keel_core_block_state() {
   inst="$(printf '%s\n' "$inst" | sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' | keel_core_block_norm)"
   ref="$(printf '%s\n' "$ref" | awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' | keel_core_block_norm)"
   if [ "$inst" != "$ref" ]; then echo drift; return 0; fi
-  if keel_core_block_text "$1" | sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' | grep -qF -- '--link --with-git'; then
-    echo note-linked
-  else
-    echo current-trimmed
-  fi
+  # Captured, then matched: a producer piped into `grep -q` can die of SIGPIPE under pipefail and read as no match.
+  note="$(printf '%s\n' "$raw" | sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p')"
+  case "$note" in
+    *'--link --with-git'*) echo note-linked ;;
+    *) echo current-trimmed ;;
+  esac
 }

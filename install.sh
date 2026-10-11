@@ -1259,7 +1259,7 @@ core_block_currency() {
   fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
   if [ -t 0 ]; then
-    echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
+    [ "$note_linked" = 1 ] || echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
     if [ -n "$kind" ]; then
       printf "       Refresh the block, keeping your git-rails trim? [y/N] "
     else
@@ -1275,7 +1275,8 @@ core_block_currency() {
         else
           echo "  =    $CONTEXT_FILE left untouched (nothing was refreshed)"
         fi ;;
-      *) echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)" ;;
+      *) if [ "$note_linked" = 1 ]; then echo "  =    $CONTEXT_FILE left untouched (its git-rails note still gives linked-mode advice)"
+         else echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)"; fi ;;
     esac
   else
     if [ "$EPHEMERAL" = 1 ]; then
@@ -1285,7 +1286,11 @@ core_block_currency() {
       # Not for an old note: its fix is the copy note, never a move to linked mode.
       [ "$CODEX" = 0 ] && [ "$note_linked" = 0 ] && route="$route   (or migrate to linked: $root/install.sh --link$home_flag)"
     fi
-    echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+    if [ "$note_linked" = 1 ]; then
+      echo "  !    $CONTEXT_FILE left untouched (non-interactive) — its git-rails note still gives linked-mode advice."
+    else
+      echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+    fi
     echo "       Refresh just the block — from a terminal, run (it offers; default no):  $route"
   fi
 }
@@ -1320,7 +1325,8 @@ import_line_appended() {
   printf '%s%s\n' "$body" "$import_line"
 }
 # --no-git (linked mode): CORE.md's KEEL-GIT markers fence the code/git rails. strip_git_blocks removes
-# every marked block, replacing the FIRST with the constant breadcrumb below — always-on text that
+# every marked block, replacing the FIRST with the breadcrumb its caller names — this linked one, or the copy one
+# further down (dir #689) — always-on text that
 # (a) tells the assistant the git rails are deliberately absent and to restore them BEFORE the first
 # git command (the assistant is present at the exact moment git enters the workflow — the strongest
 # detector of the no-git → git transition), and (b) carries the KEEL-NOGIT token install/doctor read
