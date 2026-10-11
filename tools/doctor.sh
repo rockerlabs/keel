@@ -825,9 +825,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
     local dm_man="$ihome/.keel/install-manifest.$1" dm_lay=""
     [ "$1" = codex ] && { printf ' --codex'; return 0; }
     if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
-    elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay=link-nogit
-    elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay=link
-    elif [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay=link
+    elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
+    elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
+    elif [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay="link"
     fi
     case "$dm_lay" in
       link) printf ' --link' ;;
