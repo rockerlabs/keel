@@ -98,6 +98,17 @@ gl="$(gap_of "$OUT" commands/$foreign_cmd)"
 check_contains "A43 doctor --codex on a Claude copy home: the Claude slot's dangling link is a GAP" "$gl" "dangling symlink"
 check_absent "A43 doctor --codex: …its remedy has no --codex" "$gl" "--codex"
 check_absent "A43 doctor --codex: …nor --link" "$gl" "--link"
+# The manifest outranks detection: a link planted at keel/CORE.md does not make a layout=copy home linked.
+mkdir -p "$h/keel"; ln -s "$SANDBOX/a43-nowhere-core" "$h/keel/CORE.md"
+run "$doctor" --install "$h"
+check_absent "A43 doctor copy, a link at keel/CORE.md: the manifest's layout=copy wins (no --link)" "$(gap_of "$OUT" commands/$foreign_cmd)" "--link"
+rm -f "$h/keel/CORE.md"
+# A codex home: bin/keel, the audited mode's slot, is advised the --codex re-run.
+h="$SANDBOX/a43-dcodex"; mkdir -p "$h"
+run "$install" --codex --home "$h" --no-hooks
+rm -f "$h/bin/keel"; ln -s "$SANDBOX/a43-nowhere-cli" "$h/bin/keel"
+run "$doctor" --install --codex "$h"
+check_contains "A43 doctor --codex: a codex home's dangling bin/keel is advised the --codex re-run" "$(gap_of "$OUT" bin/keel)" "re-run install.sh --codex --home"
 # A linked home keeps --link (the manifest's layout=link), with and without a usable manifest (detection).
 h="$SANDBOX/a43-dlink"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
@@ -107,11 +118,21 @@ check_contains "A43 doctor linked: the remedy carries --link" "$(gap_of "$OUT" c
 mv "$h/.keel/install-manifest.claude" "$h/.keel/install-manifest.claude.away"
 run "$doctor" --install "$h"
 check_contains "A43 doctor linked, no manifest: --link from detection (keel/CORE.md is a link)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+cp "$h/CLAUDE.md" "$h/CLAUDE.md.keep"; printf '# mine\n' > "$h/CLAUDE.md"
+run "$doctor" --install "$h"
+check_contains "A43 doctor linked, no manifest, no import: --link from keel/CORE.md's link alone" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+cat "$h/CLAUDE.md.keep" > "$h/CLAUDE.md"
+rm -f "$h/keel/CORE.md"
+run "$doctor" --install "$h"
+check_contains "A43 doctor linked, no manifest, keel/CORE.md gone: --link from CLAUDE.md's import" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
 h="$SANDBOX/a43-dnogit"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link --no-git
 ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
 run "$doctor" --install "$h"
 check_contains "A43 doctor --no-git: the remedy keeps the trim (layout=link-nogit)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link --no-git"
+mv "$h/.keel/install-manifest.claude" "$h/.keel/install-manifest.claude.away"
+run "$doctor" --install "$h"
+check_contains "A43 doctor --no-git, no manifest: the trim is detected (--link --no-git)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link --no-git"
 
 # --- dir #752: a FIFO at the context file is declined and the run ends ------------------------------------------
 # run_fifo_bounded FIFO CMD… — `run`, backgrounded with a bounded wait (macOS has no `timeout`); a hang releases
@@ -149,6 +170,12 @@ if command -v mkfifo >/dev/null 2>&1; then
     check_status "#752 $m: …and uninstall does not hang on it either (exit 0)" 0 "$STATUS"
     rm -f "$h/CLAUDE.md"
   done
+  # The lib's own block reader refuses a FIFO too (defence in depth: every caller tests -f first today).
+  h="$SANDBOX/fifo-lib"; mkdir -p "$h"; mkfifo "$h/CLAUDE.md" 2>/dev/null || true
+  # shellcheck disable=SC2016  # $1/$2 belong to the inner bash
+  run_fifo_bounded "$h/CLAUDE.md" bash -c '. "$1" && keel_core_has_block "$2"' _ "$REPO_ROOT/tools/lib/core-ownership.sh" "$h/CLAUDE.md"
+  check_status "#752 lib: keel_core_has_block on a FIFO returns 1 without reading it" 1 "$STATUS"
+  rm -f "$h/CLAUDE.md"
 else
   pass "#752 mkfifo unavailable — the FIFO context-file guard is not exercised here"
 fi

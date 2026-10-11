@@ -302,6 +302,7 @@ run "$doctor" --install "$nghome"
 check_status "git evidence stays advisory → exit 0" 0 "$STATUS"
 check_contains "doctor flags git projects under a trimmed core" "$OUT" "live in git"
 check_contains "doctor names the restore command" "$OUT" "--with-git"
+check_contains "doctor's restore command is runnable: --link --with-git, never with the --no-git the home's layout carries (spec 685 r2 B22)" "$(grep -F 'live in git' <<<"$OUT")" "install.sh --link --home \"$nghome\" --with-git"
 
 # --with-git restores the canonical symlink
 run "$install" --link --with-git --home "$nghome" --no-hooks
