@@ -382,6 +382,39 @@ against the session's repository, and item 3 names what that leaves), an adopter
    `isolation: "worktree"` is denied its own commits too (its worktree shares the repository) — the escape is the
    switch above.
 
+### Draft test sections — never source one outside the harness that sandboxes them
+
+A worker that builds a test often drafts a section in a scratch file and sources it to try a fixture before it
+becomes a test file. **Never source a test section, or any file that holds fixtures, in a shell that has not
+loaded the suite's sandbox harness** (the file that redirects `HOME` and makes the throwaway repositories).
+Without it the helper that makes a fixture repository is undefined, the repository variable comes out empty,
+and `git -C "" config …` reads the empty path as "stay here" and writes whatever repository the shell stands
+in. Felt once (dir #758): a draft sourced with no harness wrote a `[diff]` section into the main checkout's
+shared `.git/config`, and git died in every worktree until it was removed. A guard inside the harness cannot
+help a file that never loaded it. A section copied out of a test file arrives without the harness line, because
+the file's own source line sits above the copied range: paste the harness line (and the guard below) first;
+nothing in the copied text itself can refuse to run, since its fixtures name exactly what is undefined. A live
+experiment that reproduces this failure belongs in a throwaway `git init` directory, never your project's
+checkout.
+
+*In Keel's own repository* the harness is `tests/lib.sh` (dir #658's `git()` guard refuses an empty `-C`, inside
+it only), and a draft section starts with these two lines, in bash:
+
+```
+. "<checkout>/tests/lib.sh" || exit 1
+. "<checkout>/tests/section-guard.sh" || exit 1
+```
+
+`tests/section-guard.sh` exits the shell before the draft's first git call unless the harness's footprint is
+present (bash, a sandbox directory that exists, `HOME` inside it, and `new_repo` and the `git` guard defined as
+functions). It makes no git call itself, and it refuses outright under any shell that is not bash, because
+`lib.sh` is bash: under zsh, which a Bash tool may run, `lib.sh` half-loads and still returns 0. A draft is a
+file run under bash (`bash draft.sh`, with the two lines above in it), never sourced into a zsh session. It is a
+floor against the forgotten line, not a sandbox: it stops only a section that carries the line, and a draft that
+fakes the footprint by hand passes. `tests/test_section_guard.sh` pins it. A real `tests/test_*.sh` already
+sources `lib.sh` fail-closed and needs only the first line. Other projects keep the same shape in their own
+harness.
+
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
 
 The rail above is prose: nothing stops a real session's own command from touching the real machine, and the felt incident (dir #437) was a rail that was *followed*, then edited out of a command by a permission denial's shorter retry. [`tools/machine-watch.sh`](../tools/machine-watch.sh) is the backstop — an opt-in detector (wire it with [`tools/install-machine-watch.sh`](../tools/install-machine-watch.sh)) that fingerprints the machine-global files a live check must never touch and tells the session, on the tool call that caused it, what changed. The recipe below is the *prevention* half, documented and never installed: nothing in keel writes these rules into any settings file.
