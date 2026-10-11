@@ -151,10 +151,10 @@ check_absent "never advises --link, which --codex can't combine with" "$OUT" "in
 
 # --- (j) regression (2nd independent /code-review pass): a dangling symlink at a slot install.sh
 # --codex never wires at all (commands/*, keel/*, top-level FRAMEWORK/PRINCIPLES) — reachable only as a
-# leftover from an UNRELATED Claude-mode install sharing this same home (dir #124's shape) — must keep
-# advising `--link` (the slot's real fix), never the bare `--codex` re-run irelink_mode uses for
-# bin/keel specifically: a --codex re-run never touches commands/ at all, so that advice would be
-# actively useless for this slot.
+# leftover from an UNRELATED Claude-mode install sharing this same home (dir #124's shape) — takes the
+# Claude-mode install's flags, never the bare `--codex` re-run bin/keel gets under --codex: a --codex re-run
+# never touches commands/ at all. Spec 685 round 2 B22: those flags come from the Claude-mode manifest, else
+# from the layout; here there is neither (no keel/CORE.md link, no import), so it is a copy-mode re-run.
 dlcmd_home="$SANDBOX/codex-dangling-commands/.codex"
 run "$install" --codex --home "$dlcmd_home" --no-hooks
 check_status "codex install for the dangling-commands fixture -> exit 0" 0 "$STATUS"
@@ -163,7 +163,8 @@ ln -s "$SANDBOX/nonexistent-checkout/commands/go.md" "$dlcmd_home/commands/go.md
 run "$doctor" --install --codex "$dlcmd_home"
 check_status "doctor --install --codex over a dangling commands/* leftover -> exit 1 (GAP)" 1 "$STATUS"
 check_contains "names the dangling symlink" "$OUT" "G-LINK-DANGLING"
-check_contains "still advises --link for a Claude-only slot, not --codex" "$OUT" "install.sh --link --home \"$dlcmd_home\""
+check_contains "advises the Claude-mode re-run for a Claude-only slot, not --codex" "$OUT" "then re-run install.sh --home \"$dlcmd_home\" from its home"
+check_absent "…and no --link: nothing marks a linked Claude install here (B22)" "$OUT" "install.sh --link --home \"$dlcmd_home\""
 check_absent "never advises a bare --codex re-run, which can't fix commands/ at all" \
   "$OUT" "install.sh --codex --home \"$dlcmd_home\" from its home"
 
