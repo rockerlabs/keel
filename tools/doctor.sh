@@ -603,10 +603,23 @@ guard_edited_hooks() {
 # guard_installer_cmd DIR CMD — CMD (an install-secret-guard.sh invocation that refreshes DIR) with " --force" and its reason
 # when the installer would refuse DIR's edited hook; CMD unchanged otherwise.
 guard_installer_cmd() {
-  local edited; edited="$(guard_edited_hooks "$1")"
-  if [ -n "$edited" ]; then
+  local dir="$1" edited f h waiting=""
+  edited="$(guard_edited_hooks "$dir")"
+  # the installer refuses a LINKED hook or engine file with or without --force, so no backup is promised there; the
+  # link notes own that state
+  for f in pre-commit pre-push secret-scan.sh range-lib.sh; do
+    if [ -L "$dir/$f" ]; then edited=""; break; fi
+  done
+  if [ -z "$edited" ]; then printf '%s' "$2"; return 0; fi
+  # an earlier --force backup waiting at <hook>.pre-keel.bak is a stop of its own, with or without --force
+  for h in pre-commit pre-push; do
+    if { [ -e "$dir/$h.pre-keel.bak" ] || [ -L "$dir/$h.pre-keel.bak" ]; } && [ "${edited#*"$h"}" != "$edited" ]; then waiting="${waiting:+$waiting, }$dir/$h.pre-keel.bak"; fi
+  done
+  if [ -n "$waiting" ]; then
+    printf 'move %s aside first (an earlier backup waiting there makes the installer refuse even with --force), then %s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak)' "$waiting" "$2" "$edited"
+  else
     printf '%s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak first)' "$2" "$edited"
-  else printf '%s' "$2"; fi
+  fi
 }
 guard_drift_files() {
   local dir="$1" f src out="" keel_push=0 keel_any=0
@@ -711,7 +724,10 @@ fi
 g_stale_files=""
 if [ -n "$g_dir" ]; then g_stale_files="$(guard_drift_files "$g_dir")"; fi
 if [ -n "$g_stale_files" ]; then
-  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($g_dir) differs from the engine this Keel checkout ships ($g_stale_files) — an older install, or a stale checkout; update the repo, then re-run $(guard_installer_cmd "$g_dir" "install-secret-guard.sh --global") (or re-copy the hooks)"
+  g_cmd="install-secret-guard.sh --global"
+  # --force would displace a hooksPath that is not Keel's own dir (the installer replaces it only with --force), so only Keel's dir gets it
+  if [ "$g_keeldir" = 1 ]; then g_cmd="$(guard_installer_cmd "$g_dir" "$g_cmd")"; fi
+  warn W-GUARD-GLOBAL-STALE "machine-global secret-guard ($g_dir) differs from the engine this Keel checkout ships ($g_stale_files) — an older install, or a stale checkout; update the repo, then re-run $g_cmd (or re-copy the hooks)"
 elif [ "$g_answered" != 1 ]; then
   say "  (machine-wide secret-guard state unknown: install-secret-guard.sh --where --global gave no answer)"
 elif [ -z "$g_value" ]; then
@@ -1915,7 +1931,7 @@ for d in "${DIRS[@]}"; do
           if [ "$w_keeldir" = 1 ]; then g_way="re-run $(guard_installer_cmd "$w_eff" "install-secret-guard.sh --global")"
           else
             case "$w_scope" in
-              none|local) g_way="re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $d")" ;;
+              none|local) g_way="re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $(printf '%q' "$d")")" ;;
               *) g_way="copy the shipped hooks (tools/secret-guard/) into $w_eff by hand — Keel's installers do not write into a hooksPath set at $w_scope scope" ;;
             esac
           fi
@@ -1936,10 +1952,10 @@ for d in "${DIRS[@]}"; do
         if [ -n "$w_stale_files" ] && [ "$w_machinedir" != 1 ]; then
           case "$w_scope" in
             none)
-              warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $d")"
+              warn W-GUARD-STALE "vendored secret-guard ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $(printf '%q' "$d")")"
               ;;
             local)
-              warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $d")"
+              warn W-GUARD-STALE "vendored secret-guard (core.hooksPath '$w_value') differs from the engine this Keel checkout ships ($w_stale_files) — re-vendor: $(guard_installer_cmd "$w_eff" "install-secret-guard.sh $(printf '%q' "$d")")"
               ;;
             global|system)
               warn W-GUARD-STALE "secret-guard at the $w_scope core.hooksPath '$w_value' ($w_eff) differs from the engine this Keel checkout ships ($w_stale_files) — Keel's installers do not write into a hooksPath set at $w_scope scope: copy the shipped hooks (tools/secret-guard/) into it by hand, or give this repo its own hooks dir ($(guard_own_cmd "$d" "$w_own" "$w_scope"), then install-secret-guard.sh $d)"
