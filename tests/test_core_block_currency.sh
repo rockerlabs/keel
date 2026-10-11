@@ -24,14 +24,22 @@ hand_trim() {
 outside_block() { awk '/KEEL-CORE-BEGIN/ { skip = 1 } !skip { print } /KEEL-CORE-END/ { skip = 0 }' "$1"; }
 block_of() { sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$1" | sed '1d;$d'; }
 core_block="$(block_of "$REPO_ROOT/CORE.md")"
-# check_copy_crumb LABEL FILE — FILE's KEEL-NOGIT crumb gives copy-mode advice (dir #689): re-add the two sections,
-# never --with-git (exit 2 in a copy home) nor --link (it would migrate the home).
+# check_copy_crumb LABEL FILE — FILE carries exactly one KEEL-NOGIT crumb, with copy-mode advice (dir #689): replace
+# the block with CORE.md's, never --with-git (exit 2 in a copy home) nor --link (it would migrate the home).
 check_copy_crumb() {
   local crumb; crumb="$(sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p' "$2")"
-  check_contains "$1: the crumb names the copy restore (re-add the two sections)" "$crumb" "re-add the two sections"
+  check_eq "$1: exactly one KEEL-NOGIT crumb" 1 "$(grep -c 'KEEL-NOGIT-BEGIN' "$2")"
+  check_contains "$1: the crumb names the copy restore (the block from CORE.md)" "$crumb" "replace this whole embedded rails block"
   check_absent "$1: …never --with-git" "$crumb" "--with-git"
   check_absent "$1: …never --link" "$crumb" "--link"
 }
+
+# dir #689: the copy crumb names CORE.md's two droppable sections; both must still exist there.
+copy_crumb_src="$(sed -n "/^nogit_crumb_copy='/,/KEEL-NOGIT-END/p" "$REPO_ROOT/install.sh")"
+for hd in "Git — mandatory rails" "Before writing code — reconcile first"; do
+  check_contains "689: the copy crumb names \"$hd\"" "$copy_crumb_src" "\"$hd\""
+  check_contains "689: …a section CORE.md still has" "$(cat "$REPO_ROOT/CORE.md")" "## $hd"
+done
 
 # fresh_home NAME [--codex] — a fresh install into $SANDBOX/NAME; prints the home.
 fresh_home() {
@@ -135,6 +143,25 @@ else
   run "$install" --home "$h" --no-hooks
   check_contains "A13e: a later run recognizes the refreshed trim as current" "$OUT" "CLAUDE.md (up to date — your git-rails trim kept)"
   check_copy_crumb "689 copy" "$h/CLAUDE.md"   # dir #689: copy-mode crumb, never --link/--with-git
+  # Following the crumb — the block replaced by CORE.md's — restores a block a later run reads as current.
+  f="$h/CLAUDE.md"
+  { awk '/KEEL-CORE-BEGIN/ { exit } { print }' "$f"; sed -n '/KEEL-CORE-BEGIN/,/KEEL-CORE-END/p' "$REPO_ROOT/CORE.md"
+    awk 'done { print } /KEEL-CORE-END/ { done = 1 }' "$f"; } > "$f.new" && mv "$f.new" "$f"
+  run "$install" --home "$h" --no-hooks
+  check_contains "689 copy: following the crumb restores the full rails, read as current" "$OUT" "CLAUDE.md (up to date)"
+  check_absent "689 copy: …and the note is gone" "$(cat "$f")" "KEEL-NOGIT"
+  # An older install's refresh left the LINKED crumb in a copy home: it is offered the refresh (not "up to date").
+  h="$(fresh_home e-oldcrumb)"
+  hand_trim "$h/CLAUDE.md"
+  OLD_CRUMB="$(sed -n "/^nogit_crumb='/,/KEEL-NOGIT-END/p" "$REPO_ROOT/install.sh" | sed "1s/^nogit_crumb='//;\$s/'\$//")" \
+    awk '/^## Secrets/ && !done { print ENVIRON["OLD_CRUMB"]; done = 1 } { print }' "$h/CLAUDE.md" > "$h/CLAUDE.md.new" \
+    && mv "$h/CLAUDE.md.new" "$h/CLAUDE.md"
+  run "$install" --home "$h" --no-hooks
+  check_contains "689 old crumb: setup — the copy home carries the linked crumb" "$(cat "$h/CLAUDE.md")" "install.sh --link --with-git"
+  check_contains "689 old crumb: …it is named, not read as up to date" "$OUT" "its git-rails note gives linked-mode advice"
+  tty_run y "$install" --home "$h" --no-hooks
+  check_copy_crumb "689 old crumb, refreshed" "$h/CLAUDE.md"
+  check_absent "689 old crumb: …the trim is kept" "$(cat "$h/CLAUDE.md")" "## Git — mandatory rails"
 
   # --codex answers y too
   h="$(fresh_home e-codex --codex)"

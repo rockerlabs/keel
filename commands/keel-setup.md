@@ -52,8 +52,8 @@ placeholder-fill, so "nothing to detect" is never a reason to skip it.
 - **The reverse transition too:** if the core is *already trimmed* — the imported `keel/CORE.md` (or the
   user's copy) carries the `KEEL-NOGIT` marker / "Git rails not installed" — but the answer is now
   git/code, recommend restoring BEFORE any git work: `install.sh --link --with-git` in the Keel checkout
-  (linked), or re-add the two sections from `CORE.md` (copy). Don't let a git command run under a
-  trimmed core.
+  (linked), or replace the embedded KEEL-CORE block with the one in `CORE.md`, which carries both
+  sections and drops the note (copy). Don't let a git command run under a trimmed core.
 - If it's Keel's **template** (still has `<placeholders>` like chat language), fill them — ask the user
   the few choices, don't assume.
   **Copy install:** the trim above is an edit of *their copy* — remove the two sections in place.

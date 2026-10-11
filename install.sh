@@ -1241,6 +1241,13 @@ refresh_core_block() {
 core_block_currency() {
   local dest="$1" state kind="" reply="" route
   state="$(keel_core_block_state "$dest" "$root/CORE.md")"
+  # dir #689: a trim refreshed by an older install carries the LINKED breadcrumb (`--link --with-git`, unusable in a
+  # copy home). The comparator drops the breadcrumb, so it reads as current-trimmed — treat it as drift, so the
+  # ladder below offers the trim-keeping refresh that writes the copy one.
+  if [ "$state" = current-trimmed ] && keel_core_block_text "$dest" | grep -qF -- '--link --with-git'; then
+    echo "  ~    $CONTEXT_FILE: its git-rails note gives linked-mode advice (written by an older install)"
+    state=drift
+  fi
   case "$state" in
     current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
     current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
@@ -1327,12 +1334,16 @@ safety rails first: re-run `install.sh --link --with-git` in the Keel checkout.
 <!-- KEEL-NOGIT-END -->'
 # nogit_crumb_copy (dir #689) — the breadcrumb for a COPY-shaped home's trimmed block refresh: `--with-git` exits 2
 # there and `--link` would migrate it, so it gives /keel-setup's copy-path restore (keep in sync with
-# commands/keel-setup.md's reverse transition). Same markers and token as the linked one.
+# commands/keel-setup.md's reverse transition): the whole shipped block, which keel_core_block_state then reads as
+# current — sections re-added by hand, without their KEEL-GIT markers, would read as drift forever. Same markers
+# and token as the linked one.
 nogit_crumb_copy='<!-- KEEL-NOGIT-BEGIN — the code/git rails are trimmed from this copy (a /keel-setup choice the block refresh keeps) -->
-**Git rails not installed on this machine** (the code/git rails are trimmed from this always-on core). If
+**Git rails not installed in this file** (the code/git rails are trimmed from this always-on core). If
 git enters the workflow — STOP before the first git command and restore the safety rails first:
-re-add the two sections "Git — mandatory rails" and "Before writing code — reconcile first" from the
-CORE.md Keel ships into this block.
+replace this whole embedded rails block, its two marker lines included, with the one in the CORE.md
+Keel ships (in the Keel checkout, or https://github.com/rockerlabs/keel/blob/main/CORE.md). It carries
+the two trimmed sections, "Git — mandatory rails" and "Before writing code — reconcile first", and
+drops this note.
 <!-- KEEL-NOGIT-END -->'
 # strip_git_blocks FILE CRUMB — FILE without its KEEL-GIT blocks, the first replaced by CRUMB (required: each caller
 # names its mode's crumb, so a new copy-path caller cannot fall back to the linked one silently).
