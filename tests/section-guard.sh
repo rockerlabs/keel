@@ -36,7 +36,7 @@ done
 if [ "$_section_guard_ok" != 1 ]; then
   printf '%s\n' 'section-guard: tests/lib.sh is not loaded in this shell — refusing to run this test section (dir #758).' \
     '  A section without the sandbox runs `git -C ""` against the repository the shell stands in.' \
-    '  Under bash, source "<checkout>/tests/lib.sh" || exit 1 first, then this guard; or run the section as a file under tests/.' >&2
+    '  Run the whole draft under bash (bash draft.sh, or bash -c with lib.sh then this guard sourced first); a shell that is not bash is refused even when lib.sh half-loaded.' >&2
   exit 97
 fi
 unset _section_guard_ok _section_guard_fn

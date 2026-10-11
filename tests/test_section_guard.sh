@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test_section_guard.sh (dir #758) — tests/section-guard.sh is the line a draft test section (a scratch
-# file a session writes and sources to try a fixture before it becomes a test file) sources FIRST: it
-# exits the shell before the draft's first git call unless tests/lib.sh's sandbox is loaded. The felt
+# file a session writes and sources to try a fixture before it becomes a test file) sources right after its
+# lib.sh line: it exits the shell before the draft's first git call unless tests/lib.sh's sandbox is loaded. The felt
 # incident (0.15.0): `. t715.sh` ran a draft without lib.sh, `new_repo` was undefined, `r715=""`, and
 # `git -C "" config diff.context abc` wrote a [diff] section into the MAIN checkout's shared .git/config —
 # git died in every worktree for ten minutes. dir #658's `git()` guard only exists inside lib.sh, so a
@@ -133,9 +133,9 @@ run_draft "SANDBOX=\"$scratch\"; HOME=\"$scratch/home\"
 new_repo() { :; }; git() { :; }
 unset BASH_VERSION
 . \"$guard\"
-git -C \"\" config diff.context abc"
+echo S6-DRAFT-CONTINUED"
 check_ne "S6: a non-bash shell is refused (BASH_VERSION unset)" "$rc" 0
-check_eq "S6: ...before its first git call" "" "$log"
+case "$(cat "$SANDBOX/out$n")" in *S6-DRAFT-CONTINUED*) fail "S6: ...the draft body never ran" "it ran" ;; *) pass "S6: ...the draft body never ran" ;; esac
 # S6b: the felt shape — a Bash tool that is zsh. lib.sh half-loads there and returns 0; the guard refuses.
 if command -v zsh >/dev/null 2>&1; then
   run_draft ". \"$lib\"
@@ -150,6 +150,15 @@ fi
 # --- rail: written where workers read it ----------------------------------------------------------
 pin "delegation.md carries the draft-section rail naming the guard" "$REPO_ROOT/docs/delegation.md" \
   'tests/section-guard.sh' "expected the rail to name the guard file a draft test section sources first"
+pin "the rail names the copied-fragment residual" "$REPO_ROOT/docs/delegation.md" \
+  'A section copied out of a test file arrives without the harness line' \
+  "expected the rail to say a copied fragment loses the lib line"
+pin "the rail says the guard refuses a non-bash shell" "$REPO_ROOT/docs/delegation.md" \
+  'it refuses outright under any shell that is not bash' "expected the rail to state the bash-only refusal"
+pin "the rail is written for any project, Keel's form marked" "$REPO_ROOT/docs/delegation.md" \
+  "*In Keel's own repository* the harness is" "expected the Keel-specific form to be marked as such"
+pin "the rail points live experiments at a throwaway repo" "$REPO_ROOT/docs/delegation.md" \
+  'belongs in a throwaway `git init` directory' "expected the live-experiment rule"
 pin "lib.sh's header points at the guard" "$lib" 'tests/section-guard.sh' \
   "expected lib.sh's header to name the guard for sections that never load lib.sh"
 

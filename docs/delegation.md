@@ -408,10 +408,11 @@ it only), and a draft section starts with these two lines, in bash:
 `tests/section-guard.sh` exits the shell before the draft's first git call unless the harness's footprint is
 present (bash, a sandbox directory that exists, `HOME` inside it, and `new_repo` and the `git` guard defined as
 functions). It makes no git call itself, and it refuses outright under any shell that is not bash, because
-`lib.sh` is bash: under zsh, which a Bash tool may run, `lib.sh` half-loads and still returns 0. It is a floor
-against the forgotten line, not a sandbox: it stops only a section that carries the line, and a draft that fakes
-the footprint by hand passes. `tests/test_section_guard.sh` pins it. A real `tests/test_*.sh` already sources
-`lib.sh` fail-closed and needs only the first line. Other projects keep the same shape in their own harness.
+`lib.sh` is bash: under zsh, which a Bash tool may run, `lib.sh` half-loads and still returns 0. Run the whole
+draft under bash (`bash draft.sh`). It is a floor against the forgotten line, not a sandbox: it stops only a
+section that carries the line, and a draft that fakes the footprint by hand passes. `tests/test_section_guard.sh`
+pins it. A real `tests/test_*.sh` already sources `lib.sh` fail-closed and needs only the first line. Other
+projects keep the same shape in their own harness.
 
 ### Enforcing the sandbox rail — a detector, and a deny-rule recipe priced honestly
 
