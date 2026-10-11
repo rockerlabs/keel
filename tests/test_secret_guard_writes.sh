@@ -25,8 +25,8 @@ mk_foreign() {
   printf '#!/bin/sh\n# %s\nexit 0\n' "$3" > "$1/$2"
   if [ "${4:-}" = noexec ]; then chmod -x "$1/$2"; else chmod +x "$1/$2"; fi
 }
-# old_pre_commit — the FIRST pre-commit this repo shipped, byte for byte (its cksum is 4044985620 465, the first
-# pre-commit line of tools/secret-guard/shipped-hook-sums): the stand-in for "an older install still on disk" (dir #683).
+# old_pre_commit — the FIRST pre-commit this repo shipped, byte for byte: the stand-in for "an older install still on
+# disk" (dir #683; A57 pins that it is listed in tools/secret-guard/shipped-hook-sums).
 old_pre_commit() {
   printf '%s\n' '#!/usr/bin/env bash' \
     '# Keel secret-guard — pre-commit hook. Catches a key-shaped secret before it enters local history.' \
@@ -92,16 +92,16 @@ r27b="$(new_repo)"; h27b="$r27b/.git/hooks"
 run bash "$ok_stub/install-secret-guard.sh" "$r27b"
 check_status "A27: first vendoring → exit 0" 0 "$STATUS"
 # (dir #683: pre-commit becomes an OLDER SHIPPED body — a Keel hook with an appended tail is now the user's, see A57)
-for f in pre-commit secret-scan.sh; do
-  if [ "$f" = pre-commit ]; then old_pre_commit > "$h27b/$f"; printf '# stale tail of an older version\n' > "$SANDBOX/a27b-want-$f"
-  else printf '# stale tail of an older version\n' >> "$h27b/$f"; fi
-  ln "$h27b/$f" "$SANDBOX/a27b-outside-$f"
-done
+a27b_needle() { case "$1" in pre-commit) echo 'scanner not found next to hook' ;; *) echo 'stale tail of an older version' ;; esac; }
+old_pre_commit > "$h27b/pre-commit"
+printf '# stale tail of an older version\n' >> "$h27b/secret-scan.sh"
+for f in pre-commit secret-scan.sh; do ln "$h27b/$f" "$SANDBOX/a27b-outside-$f"; done
 run "$isg" "$r27b"
 check_status "A27: a plain re-vendor over hard-linked Keel files → exit 0" 0 "$STATUS"
+check_nofile "A27: ...an older SHIPPED pre-commit needs no permanent backup (dir #683)" "$h27b/pre-commit.pre-keel.bak"
 for f in pre-commit secret-scan.sh; do
   check_contains "A27: the other name of a hard-linked Keel $f keeps its bytes" \
-    "$(cat "$SANDBOX/a27b-outside-$f")" "$([ "$f" = pre-commit ] && echo 'scanner not found next to hook' || echo 'stale tail of an older version')"
+    "$(cat "$SANDBOX/a27b-outside-$f")" "$(a27b_needle "$f")"
   if cmp -s "$shipped/$f" "$h27b/$f"; then pass "A27: $f is the shipped file again"
   else fail "A27: $f is the shipped file again" "differs from the shipped file"; fi
   if [ -x "$h27b/$f" ]; then pass "A27: re-vendored $f keeps its execute bit"; else fail "A27: re-vendored $f keeps its execute bit" "not executable"; fi
@@ -348,10 +348,8 @@ check_eq "A54: getting-started.md no longer lists the two secret-guard exception
   "$(grep -c 'Two exceptions are known' "$REPO_ROOT/docs/getting-started.md" || true)"
 
 # =============================================================================================================
-# A57 (dir #683) — a hook that carries Keel's marker line but whose body is none of the shipped versions was EDITED
-# after install: the user's data. A plain re-install refuses; --force backs it up to .pre-keel.bak first. An OLDER
-# shipped body is still Keel's and is refreshed. tools/secret-guard/shipped-hook-sums is the list; the pins below
-# fail when it falls behind the hooks.
+# A57 (dir #683) — a hook with Keel's marker line but a body that is no shipped version was EDITED: the user's data
+# (refused; --force backs it up). The list and its upkeep: tools/secret-guard/shipped-hook-sums.
 # =============================================================================================================
 sums="$shipped/shipped-hook-sums"
 for h in pre-commit pre-push; do
@@ -371,16 +369,6 @@ else
   pass "A57: shallow clone — only the shipped hooks (above) are checked against the list, not their history"
 fi
 check_eq "A57: pre-commit's older body used below is listed" "1" "$(grep -cxF -- "pre-commit $(old_pre_commit | cksum)" "$sums" || true)"
-
-# the control: an UNMODIFIED older install is refreshed with no --force
-r57="$(new_repo)"; h57="$r57/.git/hooks"
-run bash "$ok_stub/install-secret-guard.sh" "$r57"
-check_status "A57: first vendoring → exit 0" 0 "$STATUS"
-old_pre_commit > "$h57/pre-commit"; chmod +x "$h57/pre-commit"
-run bash "$ok_stub/install-secret-guard.sh" "$r57"
-check_status "A57: an older SHIPPED pre-commit is refreshed without --force → exit 0" 0 "$STATUS"
-if cmp -s "$shipped/pre-commit" "$h57/pre-commit"; then pass "A57: ...to the current shipped body"; else fail "A57: ...to the current shipped body" "differs"; fi
-check_nofile "A57: ...and no permanent backup is made for it" "$h57/pre-commit.pre-keel.bak"
 
 # an EDITED Keel hook (marker intact, body changed) — each hook, each way
 for h in pre-commit pre-push; do

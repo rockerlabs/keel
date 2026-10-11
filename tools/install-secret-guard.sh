@@ -26,9 +26,8 @@
 # old value — the empty value included — in `git config --global keel.displacedHooksPath`, under the
 # same never-overwrite rule; a hooksPath with no value at all cannot be recorded faithfully and is
 # refused even with --force). A hook is Keel's to refresh only when its line 2 is exactly the shipped hook's
-# marker line AND its whole body is one of the versions listed in secret-guard/shipped-hook-sums (dir #683): a
-# hook that kept the marker but was edited since is yours — the install refuses it like any foreign hook, and
-# --force backs it up first. A symlink at a hook or scanner file the install writes is refused, its target named,
+# marker line AND its whole body is a version listed in secret-guard/shipped-hook-sums (dir #683): a hook that
+# kept the marker but was edited is yours — refused like any foreign hook; --force backs it up first. A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
 # is written into, by design); a HARD-linked file is replaced by rename, never written into, so its other
 # name keeps its bytes. Bypass a single commit/push deliberately with `git ... --no-verify`;
@@ -235,12 +234,9 @@ _isg_is_keel_hook() {
   [ -n "$marker" ] && [ "$(sed -n 2p "$1" 2>/dev/null)" = "$marker" ]
 }
 
-# dir #683: the marker only says a hook was Keel's at install time — a user who then EDITED it (kept the marker
-# line, added their own steps) was indistinguishable from an untouched one, and a re-install overwrote the edit
-# with no backup. So a hook is Keel's to refresh only when its marker is right AND its whole body is one of the
-# versions this repo has shipped: `<name> <cksum CRC> <byte count>` lines in $src/shipped-hook-sums. POSIX cksum,
-# so it needs neither git nor a repo. A list that cannot be read answers "no" (the callers treat a Keel-marked hook
-# they cannot verify as the user's, and say the list is why): refusing a re-install is cheap, losing an edit is not.
+# dir #683: Keel's marker alone no longer makes a hook Keel's to refresh — its whole body must also be a version
+# listed in $isg_sums (why, and how the list is kept: that file's header). A list that cannot be read answers "no":
+# refusing a re-install is cheap, losing a user's edit is not.
 _isg_is_shipped_hook() {
   local sum
   _isg_is_keel_hook "$1" || return 1
@@ -285,7 +281,7 @@ install_into() {
       exit 3
     fi
   done
-  # (b) Never silently clobber the user's own hook. Ours carry the exact marker line (_isg_is_keel_hook);
+  # (b) Never silently clobber the user's own hook. Ours carry the exact marker line and a shipped body (_isg_is_shipped_hook);
   # a pre-commit / pre-push without it is the user's data (higher precedence than our default), so
   # refuse and explain. --force backs it up to <hook>.pre-keel.bak, then replaces. (Closes SEC1's
   # pre-commit clobber.)
@@ -301,14 +297,9 @@ install_into() {
     { [ -e "$t" ] && ! _isg_is_shipped_hook "$t"; } || continue
     if [ "$force" != 1 ]; then
       if _isg_is_keel_hook "$t"; then
-        # dir #683: Keel's marker, a body that is none of the shipped ones — edited since install.
-        if [ -r "$isg_sums" ]; then
-          echo "secret-guard: $t carries Keel's marker but its body differs from every shipped version —" >&2
-          echo "  it has been edited, so it is your data: refusing to overwrite it." >&2
-        else
-          echo "secret-guard: $t carries Keel's marker, but $isg_sums is missing or unreadable, so an" >&2
-          echo "  untouched Keel hook cannot be told from an edited one: refusing to overwrite it." >&2
-        fi
+        # dir #683: Keel's marker, but a body that matches no shipped version (or no readable list to say).
+        echo "secret-guard: $t carries Keel's marker but its body differs from every shipped version listed in" >&2
+        echo "  $isg_sums (or that list is unreadable) — it has been edited, so it is your data: refusing to overwrite it." >&2
       else
         echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
       fi
@@ -363,9 +354,9 @@ install_into() {
     t="$hooks_dir/$h"
     if [ -e "$t" ]; then
       if _isg_is_shipped_hook "$t"; then
-        # Already ours (a shipped version of it; dir #683: Keel's marker alone no longer says so — an edited hook
-        # falls through to the --force branch below, whose backup is permanent) — re-vendoring over it needs no
-        # --force and no refuse-and-ask. But the cp
+        # (dir #683: "ours" means a SHIPPED version here, not just the marker — an edited hook takes the --force
+        # branch below, whose backup is permanent.)
+        # Already ours — re-vendoring over it needs no --force and no refuse-and-ask. But the cp
         # below is about to overwrite a WORKING hook, so it still needs a backup: without one, a
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back
         # by deleting the just-copied file and leaving NO hook at all — not "left as it was before
@@ -500,7 +491,7 @@ _isg_same_dir() {
 #               how a consumer decides "this repo's hooks ARE the machine-wide ones" without comparing paths
 #               itself (dir #688)
 #   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | foreign, `-link` suffixed
-#               when it is a symlink — "keel" means the exact marker line, the same test an install uses
+#               when it is a symlink — "keel" means the exact marker line (marker level: an install also requires a shipped body, dir #683)
 # `--where --global` prints the machine-wide view (set/value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
 #   fallback=1  the machine-wide read took its narrow `git config --global` branch (no usable scratch dir)
 #   conditional=<n>|unknown  n ≥ 1 conditional [includeIf] includes set a core.hooksPath that is empty,
@@ -844,8 +835,8 @@ _isg_repo_effective_dir() {
   case "$eff" in /*) printf '%s' "$eff" ;; *) printf '%s' "$1/$eff" ;; esac
 }
 
-# absent | keel | foreign, `-link` appended when $2 in dir $1 is a symlink. Same marker test as an
-# install (_isg_is_keel_hook), so no consumer carries its own, looser one.
+# absent | keel | foreign, `-link` appended when $2 in dir $1 is a symlink. Marker level, the test every
+# consumer shares (_isg_is_keel_hook); an install additionally needs a shipped body (_isg_is_shipped_hook, dir #683).
 _isg_hook_state() {
   local t="$1/$2" s
   if [ ! -e "$t" ] && [ ! -L "$t" ]; then echo absent; return 0; fi
