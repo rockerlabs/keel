@@ -3988,6 +3988,10 @@ mkdir -p "$SANDBOX/nonrepo-713"
 run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
 check_contains "dir #713 item 3: the note names the gate by the path it was invoked as" "$OUT" "bash $gate keys"
 nonrepo_help="$OUT"
+# …and a relative invocation is spelled in full, so the command still resolves after the reader cds into the checkout.
+mkdir -p "$SANDBOX/rel713/tools" && cp -R "$REPO_ROOT/tools/lib" "$SANDBOX/rel713/tools/lib" && cp "$gate" "$SANDBOX/rel713/tools/pre-pr-gate.sh"
+run_in "$SANDBOX/rel713" bash tools/pre-pr-gate.sh -h </dev/null
+check_contains "dir #713 item 3: a relative invocation is anchored at the invoking directory" "$OUT" "bash $SANDBOX/rel713/tools/pre-pr-gate.sh keys"
 run_in "$d" env -u HOME bash "$gate" keys </dev/null
 check_status "dir #713 item 3: keys with HOME unset still exits 1 (the guard is not widened)" 1 "$STATUS"
 check_contains "dir #713 item 3: ...with the HOME diagnosis" "$OUT" "cannot resolve the gate state root"
@@ -4047,6 +4051,5 @@ gate "gh pr create --fill" "$d"
 check_contains "dir #713 item 9: the hint keeps the pinned Skill(code-review) itself remedy" "$OUT" "Skill(code-review) itself"
 check_absent "dir #713 item 9: ...and no longer says an agent review satisfies nothing" "$OUT" "satisfies nothing here"
 check_contains "dir #713 item 9: ...it names the reviewer whose agent receipt IS accepted" "$OUT" "keel-polish-reviewer"
-
 
 summary

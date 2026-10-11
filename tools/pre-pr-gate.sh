@@ -2335,13 +2335,17 @@ case "${1:-}" in
     # its reason (the first line of what key resolution printed — a detached HEAD, say) instead of the generic
     # "no checkout" text. `keys` itself stays subject to the $HOME guard: the exemption list above is -h/lex only.
     ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
-    ph_tail="stand for the keys \`bash $(printf '%q' "$0") keys\` prints inside the checkout.)"
+    # A relative $0 would not resolve once the reader `cd`s "into the checkout", so it is anchored at the current
+    # directory (still the path it was invoked as, spelled in full); %q keeps it paste-safe.
+    ph_self="$0"; case "$ph_self" in /*) ;; *) ph_self="$PWD/${ph_self#./}" ;; esac
+    ph_tail="stand for the keys \`bash $(printf '%q' "$ph_self") keys\` prints inside the checkout.)"
     ph_note="(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> $ph_tail"
     if ph_raw="$(_require_receipt_key "$PWD" 2>&1 && printf '\nKEYS\t%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
       ph_keys="${ph_raw##*$'\nKEYS\t'}"
       ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"; ph_note=""
     elif git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ -n "$ph_raw" ]; then
-      ph_why="${ph_raw%%$'\n'*}"
+      # the gate's own reason line if there is one (git may have printed a warning first), else the first line
+      ph_why="$(grep -m1 '^pre-pr-gate:' <<<"$ph_raw")" || ph_why="${ph_raw%%$'\n'*}"
       ph_note="(${ph_why#pre-pr-gate: } — <receipt-key> and <repo-key> $ph_tail"
     fi
     ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
@@ -3064,7 +3068,7 @@ case "${1:-}" in
     # mode and wait on stdin for a hook event nobody sends. Usage and exit 2 instead, before any read. Safe because
     # hook mode is entered with NO argument: every PreToolUse(Bash) command shape tools/install-pre-pr-gate.sh ever
     # wrote is `bash <gate>` (spec 745 E12, re-checked at implementation over all 43 commits touching it).
-    printf 'pre-pr-gate: unknown subcommand %s — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
+    printf 'pre-pr-gate: unknown subcommand %q — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
     exit 2
     ;;
 esac
@@ -3304,7 +3308,7 @@ _missing_step_hint() {
   local detail="$1"
   case ",$detail," in
     *,polish.5-review,*)
-      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation, or a review by the %s subagent (its SubagentStop hook writes the trace, and its agent:<level> receipt is accepted), stamps the review'\''s trace — a bare Agent spawn of any other type leaves none, however thorough, however clean it came back; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, or through the %s subagent, then write the receipt.' "$REVIEW_AGENT_TYPE" "$REVIEW_AGENT_TYPE" ;;
+      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation, or a review by the %s subagent (its SubagentStop hook, where wired, writes the trace, and its agent:<level> receipt is accepted), stamps the review'\''s trace — a bare Agent spawn of any other type leaves none, however thorough, however clean it came back; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, or through the %s subagent, then write the receipt.' "$REVIEW_AGENT_TYPE" "$REVIEW_AGENT_TYPE" ;;
   esac
 }
 
