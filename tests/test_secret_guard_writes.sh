@@ -403,6 +403,16 @@ for h in pre-commit pre-push; do
   check_eq "A57: ...and the earlier backup is still there" "$before" "$(cat "$hd/$h.pre-keel.bak")"
 done
 
+# a list line must match WHOLE: `pre-push <crc> 22860` does not vouch for a hook whose sum is `<crc> 2286` (a
+# substring match would — the hook's own sum is a prefix of that line).
+pf57="$(mk_stub prefix '#!/usr/bin/env bash')"
+{ for h in pre-commit pre-push; do printf '%s %s0\n' "$h" "$(cksum < "$shipped/$h")"; done; } > "$pf57/secret-guard/shipped-hook-sums"
+r57p="$(new_repo)"
+run bash "$pf57/install-secret-guard.sh" "$r57p"
+check_status "A57: a first install over a list of near-miss lines → exit 0" 0 "$STATUS"
+run bash "$pf57/install-secret-guard.sh" "$r57p"
+check_status "A57: a list line that only CONTAINS the hook's sum does not vouch for it → refused (exit 3)" 3 "$STATUS"
+
 # the list is the only thing that decides: with it missing, a Keel-marked hook cannot be told from an edited one
 # (fail closed — the refusal names the list), and a first install needs no list.
 rm57="$(mk_stub nolist '#!/usr/bin/env bash')"; rm -f "$rm57/secret-guard/shipped-hook-sums" 2>/dev/null || true
