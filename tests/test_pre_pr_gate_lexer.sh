@@ -481,6 +481,12 @@ echo $(case x in (a|esac) true;; b) git push --no-verify;; esac)
 echo $(coproc case x in a) git push --no-verify;; esac)
 @ C74af refuse
 echo $(case) && git status
+@ C74ah refuse
+echo $(case x in (esac) true;; b) git push --no-verify;; esac)
+@ C74ai refuse
+echo $(time -p case x in a) git push --no-verify;; esac)
+@ C74aj refuse
+echo $(coproc foo case x in a) git push --no-verify;; esac)
 @ C74ag allow
 echo $(case x in (a) echo 1;; esac) && git status
 @ C74j push

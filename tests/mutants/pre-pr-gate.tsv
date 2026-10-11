@@ -306,7 +306,7 @@ L295	tools/pre-pr-gate.sh	LC_ALL=C tr -d '\\000') || exit 2	LC_ALL=C tr -d '\\00
 L296	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }	else if (cty[s] == "SUB") { close_cmd() }	B10(m): a ) closing a $(…) with a case open in it is a region
 L297	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }	else if (cty[s] == "SUB") { if (casen[s] > 1) case_region(s); close_cmd() }	B10(m): one open case is enough
 L298	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && 0 && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	B10(m): an esac closes the case, so its ) ends the $(…) for real
-L299	tools/pre-pr-gate.sh	while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && (is_reserved(stok[s, i]) || stok[s, i] == "coproc")) i++	while (0 && i <= sntok[s] && stokm[s, i] ~ /^u+$/ && (is_reserved(stok[s, i]) || stok[s, i] == "coproc")) i++	B10(m): reserved words before case are skipped
+L299	tools/pre-pr-gate.sh	while (i <= sntok[s] && stokm[s, i] ~ /^u+$/) {\n    t = stok[s, i]\n    if (is_reserved(t))	while (i <= sntok[s] && stokm[s, i] ~ /^u+$/) {\n    t = stok[s, i]\n    if (0)	B10(m): reserved words before case are skipped
 L300	tools/pre-pr-gate.sh	if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0	if (i > sntok[s]) return 0	B10(m): a quoted case is a command name
 L301	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	return 1	B10(m): only the word case opens one
 L302	tools/pre-pr-gate.sh	casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0	casen[s] += (seg_kw(s) > 0)	B10(m): an esac closes a nested case
@@ -314,5 +314,7 @@ L303	tools/pre-pr-gate.sh	casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0	
 L304	tools/pre-pr-gate.sh	if (cty[s] == "SUB") { casen[s] += seg_kw(s)	if (cty[s] == "TOP") { casen[s] += seg_kw(s)	B10(m): the case count is kept per $(…)
 L305	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "(") return -1	B10(m): an esac after | is a pattern, not the end of the case
 L306	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "|") return -1	B10(m): an esac after ( is a pattern, not the end of the case
-L307	tools/pre-pr-gate.sh	(is_reserved(stok[s, i]) || stok[s, i] == "coproc")	(is_reserved(stok[s, i]))	B10(m): coproc before case is skipped
+L307	tools/pre-pr-gate.sh	else if (t == "coproc") { if (i + 2 <= sntok[s] && stok[s, i + 2] == "case") i++ }	else if (0) { if (i + 2 <= sntok[s] && stok[s, i + 2] == "case") i++ }	B10(m): coproc before case is skipped
 L308	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	if (stok[s, i] == "case" && i < sntok[s]) return 1	B10(m): a bare case word (no subject) opens one too
+L309	tools/pre-pr-gate.sh	if (t == "time" && i < sntok[s] && stok[s, i + 1] == "-p") i++	if (0) i++	B10(m): time -p before case is skipped
+L310	tools/pre-pr-gate.sh	else if (t == "coproc") { if (i + 2 <= sntok[s] && stok[s, i + 2] == "case") i++ }	else if (t == "coproc") { }	B10(m): a coproc name before case is skipped

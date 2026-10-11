@@ -1915,12 +1915,18 @@ function cmd_char(   c, s, k, op) {
 # context (`echo $(case x in a) git push …`). The text is a region, from the enclosing segment to the end (the reader
 # cannot know where the shell ends the substitution); a push it still finds as a command of its own outranks it.
 function case_region(s) { region(cpos[s], n, "case pattern ) inside $(…)", cseg[s]) }
-# seg_kw(s) — 1 when the segment just ended in s starts (after any reserved words or `coproc`)
-# with an unquoted `case`, -1 when it starts with an unquoted `esac` in command position, else 0. An `esac` after a
-# `|` or a `(` is a pattern (`case x in a|esac)`), not the end of the case.
-function seg_kw(s,   i, b) {
+# seg_kw(s) — 1 when the segment just ended in s starts with an unquoted `case`, -1 when it starts with an unquoted
+# `esac` in command position, else 0. What may come before the `case`: reserved words, `time -p`, `coproc` and its
+# name. An `esac` after a `|` or a `(` is a pattern (`case x in a|esac)`), not the end of the case.
+function seg_kw(s,   i, t, b) {
   i = 1
-  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && (is_reserved(stok[s, i]) || stok[s, i] == "coproc")) i++
+  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/) {
+    t = stok[s, i]
+    if (is_reserved(t)) { if (t == "time" && i < sntok[s] && stok[s, i + 1] == "-p") i++ }
+    else if (t == "coproc") { if (i + 2 <= sntok[s] && stok[s, i + 2] == "case") i++ }
+    else break
+    i++
+  }
   if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0
   if (stok[s, i] == "case") return 1
   b = segbeg[s]

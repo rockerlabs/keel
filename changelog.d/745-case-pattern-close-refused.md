@@ -7,4 +7,4 @@
   with the reason, as for the other parts the reader cannot settle. A push the reader still finds as a command of its
   own is denied as a push. The cost is a refusal for a harmless `$(case …)` followed by a later git command in the same
   call (a rewrite in two Bash calls clears it). The double-quoted and heredoc-body shapes, which v0.15.0 also allowed,
-  are covered by the same rule. Thirteen mutants of the new clauses join the reader's mutation list.
+  are covered by the same rule. Fifteen mutants of the new clauses join the reader's mutation list.
