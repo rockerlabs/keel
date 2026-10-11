@@ -331,12 +331,12 @@ run genv "$isg" --global --force
 check_status "S6-1 setup: a first --force run leaves pre-commit.pre-keel.bak" 0 "$STATUS"
 edit_hook "$kd61/pre-commit"
 run genv "$doctor" --install "$H/claude"
-check_contains "S6-1: ...an edit after it → the advice says to move the waiting backup first" "$(id_line W-GUARD-GLOBAL-STALE)" "move $kd61/pre-commit.pre-keel.bak aside first"
+check_contains "S6-1: ...an edit after it → the advice says to move the waiting backup aside" "$(id_line W-GUARD-GLOBAL-STALE)" "after moving $kd61/pre-commit.pre-keel.bak aside"
 run_advised W-GUARD-GLOBAL-STALE
 check_status "S6-1: ...following the advice's command without moving it is refused (exit 3)" 3 "$STATUS"
 mv "$kd61/pre-commit.pre-keel.bak" "$H/old-backup"
 run genv "$doctor" --install "$H/claude"
-check_absent "S6-1: ...with the backup moved aside the advice is the plain --force one" "$(id_line W-GUARD-GLOBAL-STALE)" "aside first"
+check_absent "S6-1: ...with the backup moved aside the advice is the plain --force one" "$(id_line W-GUARD-GLOBAL-STALE)" "after moving"
 run_advised W-GUARD-GLOBAL-STALE
 check_status "S6-1: ...and with the backup moved aside it succeeds" 0 "$STATUS"
 run genv "$doctor" --install "$H/claude"

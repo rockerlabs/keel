@@ -616,7 +616,7 @@ guard_installer_cmd() {
     if { [ -e "$dir/$h.pre-keel.bak" ] || [ -L "$dir/$h.pre-keel.bak" ]; } && [ "${edited#*"$h"}" != "$edited" ]; then waiting="${waiting:+$waiting }$(printf '%q' "$dir/$h.pre-keel.bak")"; fi
   done
   if [ -n "$waiting" ]; then
-    printf 'move %s aside first (an earlier backup waiting there makes the installer refuse even with --force), then %s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak)' "$waiting" "$2" "$edited"
+    printf '%s --force, after moving %s aside (an earlier backup waiting there makes the installer refuse even with --force; a plain run refuses the edited %s, and --force saves it as <hook>.pre-keel.bak)' "$2" "$waiting" "$edited"
   else
     printf '%s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak first)' "$2" "$edited"
   fi
