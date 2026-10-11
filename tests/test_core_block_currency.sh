@@ -167,6 +167,7 @@ safety rails first: re-run `install.sh --link --with-git` in the Keel checkout.
   check_absent "689 old crumb: …and the non-interactive route never offers a move to linked mode" "$OUT" "migrate to linked"
   run "$doctor" --install "$h"
   check_contains "689 old crumb: doctor agrees (W-CORE-DRIFT naming the note)" "$(grep -F W-CORE-DRIFT <<<"$OUT")" "its git-rails note gives linked-mode advice"
+  check_contains "689 old crumb: doctor's parenthetical is the two-part truth (S6-2)" "$(grep -F W-CORE-DRIFT <<<"$OUT")" "bare --with-git exits 2 here, and --link --with-git would migrate it"
   tty_run y "$install" --home "$h" --no-hooks
   check_copy_crumb "689 old crumb, refreshed" "$h/CLAUDE.md"
   check_absent "689 old crumb: …the trim is kept" "$(cat "$h/CLAUDE.md")" "## Git — mandatory rails"
