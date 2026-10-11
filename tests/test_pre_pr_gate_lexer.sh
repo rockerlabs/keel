@@ -432,7 +432,7 @@ echo "${v:-$(case x in x) ;; esac; git push --no-verify)}"
 echo "$(case $x in a) echo 1;; esac)"
 @ C74g refuse
 x=$(case $1 in a) echo 1;; esac); git status
-@ C74h allow
+@ C74h refuse
 echo "$(echo case a in b)" && git status
 @ C74i refuse
 echo "$(if true; then case a in a) git push --no-verify;; esac; fi)"
@@ -487,6 +487,21 @@ echo $(case x in (esac) true;; b) git push --no-verify;; esac)
 echo $(time -p case x in a) git push --no-verify;; esac)
 @ C74aj refuse
 echo $(coproc foo case x in a) git push --no-verify;; esac)
+@ C74ak refuse
+echo $(if true; then case x
+in a) git push --no-verify;; esac; fi)
+@ C74al refuse
+echo $(coproc foo { case x in a) git push --no-verify;; esac; })
+@ C74am refuse
+echo $(time -- case x in a) git push --no-verify;; esac)
+@ C74an refuse
+echo $(env case x in a) git push --no-verify;; esac)
+@ C74ao allow
+echo $(coproc cat file) && git status
+@ C74ap allow
+echo $(time -p ls) && gh pr view
+@ C74aq allow
+echo "$(echo case)" && git status
 @ C74ag allow
 echo $(case x in (a) echo 1;; esac) && git status
 @ C74j push

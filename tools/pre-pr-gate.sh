@@ -1915,22 +1915,22 @@ function cmd_char(   c, s, k, op) {
 # context (`echo $(case x in a) git push …`). The text is a region, from the enclosing segment to the end (the reader
 # cannot know where the shell ends the substitution); a push it still finds as a command of its own outranks it.
 function case_region(s) { region(cpos[s], n, "case pattern ) inside $(…)", cseg[s]) }
-# seg_kw(s) — 1 when the segment just ended in s starts with an unquoted `case`, -1 when it starts with an unquoted
-# `esac` in command position, else 0. What may come before the `case`: reserved words, `time -p`, `coproc` and its
-# name. An `esac` after a `|` or a `(` is a pattern (`case x in a|esac)`), not the end of the case.
-function seg_kw(s,   i, t, b) {
+# seg_kw(s) — 1 when the segment just ended in s opens a `case`: its first word (after any reserved words) is an
+# unquoted `case` (the subject and `in` may follow on later lines), or an unquoted `case` anywhere in it has an unquoted
+# `in` after it (`env case x in a`, `coproc foo case x in a`, `time -p case x in a`: no list of what may come before the
+# `case`, which would keep leaking). -1 when it starts with an unquoted `esac` in command position, else 0. An `esac`
+# after a `|` or a `(` is a pattern (`case x in a|esac)`), not the end of the case.
+function seg_kw(s,   i, j, k, b) {
   i = 1
-  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/) {
-    t = stok[s, i]
-    if (is_reserved(t)) { if (t == "time" && i < sntok[s] && stok[s, i + 1] == "-p") i++ }
-    else if (t == "coproc") { if (i + 2 <= sntok[s] && stok[s, i + 2] == "case") i++ }
-    else break
-    i++
-  }
+  while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
   if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0
   if (stok[s, i] == "case") return 1
   b = segbeg[s]
   if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1
+  for (j = i + 1; j < sntok[s]; j++) {
+    if (stok[s, j] != "case" || stokm[s, j] !~ /^u+$/) continue
+    for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1
+  }
   return 0
 }
 
