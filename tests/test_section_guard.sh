@@ -27,23 +27,26 @@ chmod +x "$shimdir/git"
 
 scratch="$(new_repo)"
 
-# run_draft <draft-body> [lib]: writes the draft, runs it in a fresh bash (cwd = scratch) with the shim on
-# PATH. With "lib" the child sources the real lib.sh first (a plain shell does not) and runs on the real
-# git. Sets rc, log, errtxt.
+# run_draft <draft-body> [lib|real|zsh]: writes the draft, runs it in a fresh shell (cwd = scratch). Default:
+# bash with the recording shim first on PATH. "lib": the child sources the real lib.sh first (a plain shell
+# does not) and runs on the real git, because lib.sh arms its ref guard through git config, which a shim
+# defeats. "real": bash on the real git, no lib.sh — the only mode where an unguarded `git -C ""` really
+# writes (into the scratch repo), so "nothing was written" is a binding assertion there. "zsh": the draft
+# under zsh, which a Bash tool may run. Sets rc, log, errtxt.
 n=0
 run_draft() {
   n=$((n + 1))
-  local body="$1" withlib="${2:-}" draft="$SANDBOX/draft$n.sh"
+  local body="$1" mode="${2:-}" draft="$SANDBOX/draft$n.sh"
   printf '%s\n' "$body" > "$draft"
   : > "$SANDBOX/git$n.log"
   err="$SANDBOX/err$n"
-  if [ "$withlib" = lib ]; then
-    # real git here (no shim): lib.sh arms its ref guard through git config, which a recording shim would defeat
-    (cd "$scratch" && env -u SANDBOX bash -c '. "$1" || exit 1; . "$2"' _ "$lib" "$draft" >"$SANDBOX/out$n" 2>"$err")
-  else
-    (cd "$scratch" && env -u SANDBOX SECTION_GIT_LOG="$SANDBOX/git$n.log" PATH="$shimdir:$PATH" \
-      bash -c '. "$1"' _ "$draft" >"$SANDBOX/out$n" 2>"$err")
-  fi
+  case "$mode" in
+    lib)  (cd "$scratch" && env -u SANDBOX bash -c '. "$1" || exit 1; . "$2"' _ "$lib" "$draft" >"$SANDBOX/out$n" 2>"$err") ;;
+    real) (cd "$scratch" && env -u SANDBOX bash -c '. "$1"' _ "$draft" >"$SANDBOX/out$n" 2>"$err") ;;
+    zsh)  (cd "$scratch" && env -u SANDBOX zsh -c '. "$1"' _ "$draft" >"$SANDBOX/out$n" 2>"$err") ;;
+    *)    (cd "$scratch" && env -u SANDBOX SECTION_GIT_LOG="$SANDBOX/git$n.log" PATH="$shimdir:$PATH" \
+            bash -c '. "$1"' _ "$draft" >"$SANDBOX/out$n" 2>"$err") ;;
+  esac
   rc=$?
   log="$(cat "$SANDBOX/git$n.log")"
   errtxt="$(cat "$err")"
@@ -107,11 +110,41 @@ echo DRAFT-RAN" lib
 check_eq "S4: a draft after lib.sh runs to the end" 0 "$rc"
 case "$(cat "$SANDBOX/out$n")" in *DRAFT-RAN*) pass "S4: ...and its body executed" ;; *) fail "S4: ...and its body executed" "no DRAFT-RAN in $(cat "$SANDBOX/out$n") / $errtxt" ;; esac
 
-# --- S5: nothing leaked into the scratch repo the cwd stood in --------------------------------------
+# --- S5: on the REAL git (no shim), the unguarded write would land in the scratch repo — it must not -----
+run_draft ". \"$guard\" || exit 1
+git -C \"\" config diff.context abc" real
+check_ne "S5: a draft without lib.sh, on real git, exits non-zero" "$rc" 0
 if git -C "$scratch" config --get diff.context >/dev/null 2>&1; then
-  fail "S5: the scratch repo's config stayed untouched" "diff.context was written"
+  fail "S5: ...and the scratch repo's config stayed untouched" "diff.context was written"
 else
-  pass "S5: the scratch repo's config stayed untouched"
+  pass "S5: ...and the scratch repo's config stayed untouched"
+fi
+# control: the same draft WITHOUT the guard line does write there, so the assertion above can fail
+run_draft "git -C \"\" config diff.context abc" real
+if git -C "$scratch" config --get diff.context >/dev/null 2>&1; then
+  pass "S5 control: without the guard the same draft writes into the cwd repo"
+else
+  fail "S5 control: without the guard the same draft writes into the cwd repo" "diff.context was not written"
+fi
+git -C "$scratch" config --unset diff.context
+
+# --- S6: lib.sh is bash; a shell that is not bash is refused even with the whole footprint faked --------
+run_draft "SANDBOX=\"$scratch\"; HOME=\"$scratch/home\"
+new_repo() { :; }; git() { :; }
+unset BASH_VERSION
+. \"$guard\"
+git -C \"\" config diff.context abc"
+check_ne "S6: a non-bash shell is refused (BASH_VERSION unset)" "$rc" 0
+check_eq "S6: ...before its first git call" "" "$log"
+# S6b: the felt shape — a Bash tool that is zsh. lib.sh half-loads there and returns 0; the guard refuses.
+if command -v zsh >/dev/null 2>&1; then
+  run_draft ". \"$lib\"
+. \"$guard\"
+echo ZSH-DRAFT-CONTINUED" zsh
+  check_ne "S6b: lib.sh half-loaded under zsh does not satisfy the guard" "$rc" 0
+  case "$(cat "$SANDBOX/out$n")" in *ZSH-DRAFT-CONTINUED*) fail "S6b: ...the draft body never ran" "it ran" ;; *) pass "S6b: ...the draft body never ran" ;; esac
+else
+  echo "  skip  S6b: no zsh on this machine"
 fi
 
 # --- rail: written where workers read it ----------------------------------------------------------
