@@ -75,6 +75,27 @@ where mutation actually threads a needle. Show the operator the wave plan before
 wave plan is a plan, not a report, and the operator's one intervention here is cheap compared to a
 wave already in flight.
 
+**Strict up-to-date makes every sequential merge cost an Update-branch and a CI cycle (0.16.0).** With a
+strict base, merging N clean PRs one by one costs N of those cycles, because each merge moves the base under
+the rest. Name that price in the wave plan, and put the alternative to the operator as a choice, never as a
+default.
+
+**An integration PR or a train lands several clean PRs at once (0.16.0).** Cut one branch from the default
+branch in its own worktree and merge each constituent head into it with `--no-ff`, unmodified; run a pairwise
+conflict check over every pair first, and hand a real conflict to the owner of the earlier PR to resolve on
+the branch. One release landed 19 PRs this way where serial merging was priced at six to seven hours; a train
+is the same shape, built as PRs reach clean one after another. These rules keep it safe. The manager builds the
+branch but does not run it — the pre-PR gate keys its traces off the session's working directory, so a session
+started in that worktree runs the suite, the portability leg and the pre-PR flow, and is started early (R3). **R5 holds for every constituent**: each head merged is the
+head its worker froze and the forge reports, and every head is an ancestor of the branch's tip before the PR
+opens. The branch's own fixes ride as separate commits the PR body names, never as edits inside a constituent.
+And the operator merges it with a merge commit, so the constituents close on their own.
+
+**The operator's Update branch and a worker's rebase race (0.15.0).** Both move the PR head, and once a
+worker's `--force-with-lease` replaced a head the button had already merged to an identical tree. So a
+`REBASE` message starts with a fetch and a compare of the PR's head with the worker's own; when the trees are
+already identical, nothing is pushed.
+
 ## R3 — worker launches, soft form
 
 Where the harness can launch a real, gated session directly, **the manager launches worker sessions
@@ -115,6 +136,15 @@ release manager; this section instantiates it for a release with two additions o
 and **the requirement inherits wherever this R3 soft form is itself adopted by reference** — for
 example, a release-candidate audit's Fixer-launch rule that cites this R3 by pointer inherits the
 verify step too, with no separate edit needed on that surface.
+
+**A launch needs a turn the operator started (0.15.0, again 0.16.0).** On Claude Code the harness refuses
+`start_session` on a turn that a worker's message began, so a manager that wakes on a worker's report cannot
+launch anything overnight, whatever it was told. What worked: launch while the operator is present and
+pre-stage the next launches then (a proposal card per worker, or the integration branch's session of R2
+started early); give follow-up work to an idle finished author's session through a message, which keeps its
+context (the 0.15.0 audit's fix round did exactly this); and list in the wave plan which launches wait for the
+operator's next turn, so they are held on purpose and not stalled unnamed. The refusal is the harness's own
+rate limit on the launches R11 bounds, so it is worked with, not around.
 
 ## The worker brief — one shape, whether launched or handed over
 
@@ -291,6 +321,18 @@ incidental and has already broken mid-release once.
   messaging tool does not accept as a key — the session-id-first rule that came out of it is
   delegation.md's now, in that same clause; a release adds only that the brief marks the title
   volatile.
+- **Budget the cross-session sends (0.16.0).** The harness caps the messages a session may send to other
+  sessions at about ten per operator turn, then holds them until the operator types again. A ten-message
+  broadcast spent the whole budget, and the correction sent last was never delivered; overnight the manager
+  could receive but not send, so no GO, REBASE or ACK left it. So keep a reserve for those, and put what several
+  workers must read in the shared brief file the briefs already point at, then send each worker a one-line
+  pointer, instead of spending the budget on a broadcast a file can carry.
+- **A manager change is a re-identification (0.16.0).** When the manager's session is replaced (its context
+  is full), the outgoing manager writes a handover file: the ledger's location, each live worker's token,
+  session id and task, the open PRs, the operator decisions still in force, and the tooling. The incoming one
+  updates the manager's session id in the shared brief, then sends each live worker one line carrying its token
+  and the new id, under the same ACK rule as any amendment. Workers report to the id in their brief, so until
+  they are told, they report to a session that no longer reads.
 
 ## R7 — the cost line
 
@@ -315,7 +357,10 @@ recording the figure every run is what eventually lets someone answer whether th
 never asserted from one run's feel. Where the estimate also names subscription-window points
 ([`docs/grooming.md`](grooming.md) G5), record beside the figure the points the run moved: the reading
 taken before each wave already supplies them, so keep the last reading before each window reset the run
-crosses and sum the segments.
+crosses and sum the segments. **Summing at the estimate's weights:** keel's `keel tokens` does it for one session, with
+`KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
+sessions are summed by hand until dir #654 closes, found by branch as below. Write the weights and the session set beside the figure,
+so the next groom can re-sum it.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
@@ -325,7 +370,7 @@ inside the window still carries its whole earlier history. Every transcript reco
 branch, and a branch match recovered the workers' cost afterwards. Turning the matched logs into the
 manifest `tools/self/session-cost.sh table` totals is described in
 [`docs/session-cost.md`](session-cost.md). That match is a hand step today, a compensation whose
-remover is `dir #654`.
+remover is dir #654.
 
 ## R8 — single writer to `BACKLOG.md` during the release
 
@@ -354,9 +399,17 @@ discovered by the next census.
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a
 second writer during a managed release if followed literally. Every worker brief in a managed release
-must say explicitly that marker writes route through the manager instead — see the cross-edit at the
+must say explicitly that backlog writes of any kind — a marker, a Log line, a new ticket, a closure — route
+through the manager instead — see the cross-edit at the
 bottom of this section in `commands/go.md` itself, which now names this exception rather than leaving
 a silent contradiction between the two documents a worker could follow either of.
+
+**The single writer needs a checked writer, for filings as much as markers (0.15.0).** A manager's own filing
+script opened the backlog for writing before it read it, which empties the file: the backlog was truncated,
+and only a backup could restore it. A script that touches
+the backlog reads it whole, writes a temp file beside it, refuses when the result is shorter than the
+original (a filing only adds), and renames over it; the closure-word check above rides in the same script. One such
+writer serves markers, Log lines and new tickets alike. A manager without one writes it before wave 1.
 
 ## R9 — close checklist
 
@@ -376,6 +429,12 @@ rather than only when asked — below the bar it's a standing-list line, not a t
 defect a standing line already names takes that line with it (§4); the non-delegable
 set is unchanged from [`docs/delegation.md`](delegation.md) — merges, the release itself, and deletions
 stay the operator's.
+
+**The cut PR can ride on the last fix PR (0.15.0).** Stacked on the final fix PR's branch, the cut gives the
+operator one merge for the audit's fix round and the cut together. Stacking changes what the audit's GO
+conditions describe: they were established at the fix round's head, so they are restated for the stacked tip
+(the fix head plus the cut commits and nothing else) and re-derived there before the paste block is handed
+over.
 
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
 over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the
@@ -426,6 +485,22 @@ re-creating duplication a sibling ticket had just removed. None of these were vi
 ticket, and none would have been caught by an ordinary per-PR review — a per-PR reviewer sees one
 diff, never the pair. If this doc says nothing else well, it has to say this well.
 
+**A seam plan names its resolution in BOTH merge orders (0.15.0).** The merge order is the operator's, and
+once they merged out of the proposed order, which flipped a seam: the plan said only what the second PR does
+after the first, so the PR that landed first had no instruction. For every seam handed to a worker, write both
+branches: if you land first, do this; if the sibling lands first, rebase and re-check that.
+
+**A repo-wide check landing mid-wave is a seam with every in-flight PR (0.16.0).** A new lint over all test
+files, merged in a train, turned an in-flight PR red at its Update-branch although the PR had been green:
+its new file was the first to be checked. The failure arrives as a red CI on someone else's PR, not as a
+conflict, so when such a check lands, tell every in-flight worker in the same hour what it flags and how to
+satisfy it.
+
+**The worker's Seams step covers less than the manager's duty does (dir #668).** The step each worker runs
+at its close counts changelog figures and newly sourced libraries. Two shapes it does not reach stay manual,
+and so stay with the manager's read of each merging PR: a prose fact outside the changelog that a later PR
+makes false, and a stale header or list of consumers that omits a new member.
+
 **A seam can be cumulative, not pairwise: a release-wide effect no single PR produces.** One release's
 `CHANGELOG.md` grew across ten PRs until the merge commit of one of them crossed a doc-figure floor
 the suite pins — foreseeable from a worker's own report of how much its entry added, and not put in
@@ -469,6 +544,38 @@ design worker sat idle-looking for about five hours holding a completed report t
 failure never delivered, and the manager noticed only while answering "what's left?". Sweep every
 open row's live state at a fixed point in each loop iteration — before each wave, before each
 merge — and treat "idle with no report received" as a row to probe, not a row still working.
+
+**The sweep is load-bearing, because a worker's own "waiting" is never evidence (0.16.0).** One release saw
+five wedges of this shape (a worker idle with no live background task, waiting on a notification no task could
+send, or having ended its turn on a plan) and a lost sub-reviewer whose report never came. The brief already
+carried the rule "end no turn waiting without a live background task", and it failed five times anyway; the
+sweep found each wedge, the worker none, after an hour or more of idle time. So the sweep is the control, not a
+courtesy, and it runs on a wall clock the manager sets. A host that sleeps delays that timer (one fired about
+80 minutes late), so after a late wake the first act is a sweep, not a resume. A sub-reviewer that never
+reports is probed like any worker; with the reports in hand the worker proceeds and discloses the gap.
+
+**A worker's own stop needs a named blocker (0.16.0).** A worker read a long review loop as a safety signal and
+stopped at round six with a serious finding fixed but unreviewed. The convergence rule is a round that finds
+nothing serious, so a long loop is a reason to keep reviewing the fixes, and a stop is a named blocker the
+worker reports in one line.
+
+**Suite concurrency is a budget too (0.16.0).** The bound on sessions per wave does not bound the machine:
+about seven full suites at once at the default cap (the host's CPU count outside CI) put the load average in the hundreds and every suite past
+an hour, with timing flakes rising alongside. State a per-worker concurrency cap for the suite in the wave
+plan (keel's: `KEEL_TEST_JOBS=2`), and keep a portability-leg container off the machine while the same worker's
+suite runs.
+
+**No branch cleanup while a wave runs (0.16.0).** A suite's branch-integrity canary (keel's dir #318) cannot
+tell a deliberate cleanup from a leak: four times in one release a peer moving its branch, or a wrap sweep
+deleting merged branches, tripped it in a worker's suite, about an hour a time (dir #768 tracks the remover).
+So no session runs a branch-cleanup sweep while a wave's suites run — the wrap (R13) does it — and a canary trip is
+re-run only after naming the ref that moved.
+
+**A stop that waits for the operator is settled at wave-plan time (0.16.0).** Any step that blocks on the
+operator is asked once per wave, and the answer is recorded in the shared brief with its date. Keel's example is
+`/polish`'s compaction stop (dir #739), which asks for `/compact`: every worker of one wave reached it at step
+one within the same hour, and three idled until the operator returned. The threshold and any override are the
+operator's decision, never raised on the manager's own authority.
 
 ## R12 — portability
 

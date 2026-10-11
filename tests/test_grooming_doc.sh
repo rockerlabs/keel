@@ -128,4 +128,12 @@ pin "G3 names acceptance-leg tickets as obligations, never re-tagged" "$doc" \
   'acceptance obligation of' \
   "expected G3 to keep a just-shipped release's open acceptance legs out of the build count"
 
+# --- dir #760: the command carries the 0.15.0 groom's G1/G5 amendments by pointer --------------------------
+pin "groom.md G1 carries the picked-label rule" "$cmd" \
+  'recorded as a picked label' \
+  "expected the command's G1 to point at the doc's picked-label rule (dir #760)"
+pin "groom.md G5 carries the estimate-weights rule" "$cmd" \
+  'names its weights' \
+  "expected the command's G5 to point at the doc's weighting rule (dir #760)"
+
 summary
