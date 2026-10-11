@@ -2538,10 +2538,22 @@ case "${1:-}" in
     # receipts ever reached the hook. Exempt from the CLI-mode $HOME guard above (help must work in a broken
     # environment); key resolution is best-effort: a non-repo cwd or a detached HEAD (where
     # _require_receipt_key exits, inside this substitution only) leaves the placeholders.
+    # dir #713: the note names the gate by the path it was invoked as ($0), and a failure INSIDE a work tree keeps
+    # its reason (the first line of what key resolution printed — a detached HEAD, say) instead of the generic
+    # "no checkout" text. `keys` itself stays subject to the $HOME guard: the exemption list above is -h/lex only.
     ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
-    ph_note='(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> stand for the keys `pre-pr-gate.sh keys` prints inside the checkout.)'
-    if ph_keys="$(_require_receipt_key "$PWD" 2>/dev/null && printf '%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
+    # A relative $0 would not resolve once the reader `cd`s "into the checkout", so it is anchored at the current
+    # directory (still the path it was invoked as, spelled in full); %q keeps it paste-safe.
+    ph_self="$0"; case "$ph_self" in /*) ;; *) ph_self="$PWD/${ph_self#./}" ;; esac
+    ph_tail="stand for the keys \`bash $(printf '%q' "$ph_self") keys\` prints inside the checkout.)"
+    ph_note="(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> $ph_tail"
+    if ph_raw="$(_require_receipt_key "$PWD" 2>&1 && printf '\nKEYS\t%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
+      ph_keys="${ph_raw##*$'\nKEYS\t'}"
       ph_repo_key="${ph_keys%%$'\t'*}"; ph_receipt_key="${ph_keys#*$'\t'}"; ph_note=""
+    elif git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ -n "$ph_raw" ]; then
+      # the gate's own reason line if there is one (git may have printed a warning first), else the first line
+      ph_why="$(grep -m1 '^pre-pr-gate:' <<<"$ph_raw")" || ph_why="${ph_raw%%$'\n'*}"
+      ph_note="(${ph_why#pre-pr-gate: } — <receipt-key> and <repo-key> $ph_tail"
     fi
     ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
     ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
@@ -3255,6 +3267,17 @@ case "${1:-}" in
     printf 'pre-pr-gate: sweep - recent runs look fine (a verified review within the last %s)\n' "$sw_k"
     exit 0
     ;;
+  "")
+    : # hook mode: no argument (every wiring shape the installer ever wrote, spec 745 E12)
+    ;;
+  *)
+    # dir #713 (spec 745 A21 item 7): a first argument that is none of the arms above used to fall through to hook
+    # mode and wait on stdin for a hook event nobody sends. Usage and exit 2 instead, before any read. Safe because
+    # hook mode is entered with NO argument: every PreToolUse(Bash) command shape tools/install-pre-pr-gate.sh ever
+    # wrote is `bash <gate>` (spec 745 E12, re-checked at implementation over all 43 commits touching it).
+    printf 'pre-pr-gate: unknown subcommand %q — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
+    exit 2
+    ;;
 esac
 
 # --- hook mode: PreToolUse(Bash) on `gh pr create` -------------------------------------------------
@@ -3645,7 +3668,7 @@ _missing_step_hint() {
   local detail="$1"
   case ",$detail," in
     *,polish.5-review,*)
-      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation stamps the review'\''s trace, so an agent review — however thorough, however clean it came back — satisfies nothing here; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, then write the receipt.' ;;
+      printf ' If polish.5-review is one of these because the review ran as a bare Agent spawn instead of through Skill(code-review): only a genuine Skill(...) invocation, or a review by the %s subagent (its SubagentStop hook, where wired, writes the trace, and its agent:<level> receipt is accepted), stamps the review'\''s trace — a bare Agent spawn of any other type leaves none, however thorough, however clean it came back; this gate checks the entry point, not the quality (dir #346). Re-run the review through Skill(code-review) itself, or through the %s subagent, then write the receipt.' "$REVIEW_AGENT_TYPE" "$REVIEW_AGENT_TYPE" ;;
   esac
 }
 
@@ -4186,8 +4209,16 @@ case "$status" in
           # release, so an `agent:*` outcome with no trace and no settings.json wiring the new matcher is most
           # likely a pull without the installer re-run. ONE added sentence, never reworded text (several tests pin
           # the surrounding wording); a settings file that already wires it (or matches every agent type) omits it.
-          if [[ "$review_outcome" == agent:* ]] && ! _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
-            trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+          # dir #713 (S2-1): an agent has no Skill tool to follow the Skill(code-review) remedy below. One added
+          # sentence names the one it can perform — re-run the reviewer subagent, whose SubagentStop writes the
+          # trace — but only where that hook is wired: where it is not, the installer sentence (the else arm) is the only
+          # remedy the agent can act on, and the two would contradict.
+          if [[ "$review_outcome" == agent:* ]]; then
+            if _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
+              trace_deny_detail="$trace_deny_detail For an agent review, re-run the $REVIEW_AGENT_TYPE subagent at the current HEAD — its SubagentStop hook writes the trace (no Skill tool needed)."
+            else
+              trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+            fi
           fi
           # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
           # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).
