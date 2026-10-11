@@ -34,8 +34,8 @@
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
 # earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
 # `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
-# name is no identifier); an array assignment's `(…)`
-# (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# name is no identifier); an array assignment's `(…)` (read as commands: a false deny, fail-safe); zsh's short
+# forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
 # `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
 # `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
 # for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
@@ -1616,7 +1616,7 @@ function push_ctx(t, p) {
   clim[sp] = (t == "BQ") ? bq_end(p) : n + 1
   if (t == "SUB" || t == "BQ") {
     # its first segment starts right after the opener: a backtick, or `$(` / `<(` / `>(`
-    cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
+    cid[sp] = ++gid; ngrp[sp] = 0; casen[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
     bqreg[sp] = 0
   }
   restack(); if (clim[sp] < lim) lim = clim[sp]
@@ -1700,6 +1700,7 @@ function word_end(s,   k) {
 # --- segments and the segment interface (on_segment: what every matcher sees) --------------------------------
 function seg_end(s, nextp) {
   word_end(s)
+  if (cty[s] == "SUB") { casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0 }
   if (sntok[s] > 0) on_segment(s)
   sntok[s] = 0; tgtpend[s] = 0; segbeg[s] = nextp
 }
@@ -1908,19 +1909,28 @@ function cmd_char(   c, s, k, op) {
   word_begin(pos); addsrc(pos, 1, "g"); pos++
 }
 
-# case_close(s) — a `)` is about to close the SUB at s with no group open. When the segment it ends starts with `case`
-# (after any reserved words) that `)` is a case pattern’s, which the shells read as part of the `case` and this reader
-# reads as the SUB’s end: the rest of the substitution (`;; esac; git push …)`) then lands in the enclosing context. In
-# a command context that is still read as commands; under a DQ, a PARAM or an HDATA it is data, so the text is a
-# region, from the enclosing segment to the end (the reader cannot know where the shell ends the substitution).
-function case_close(s,   i, up) {
+# case_close(s) — a `)` is about to close the SUB at s with no group open. When a `case` is open in that SUB (casen[s],
+# counted by seg_end from each segment’s first word, plus the segment this `)` ends) the `)` is a case pattern’s, which
+# the shells read as part of the `case` and this reader reads as the SUB’s end: the rest of the substitution
+# (`;; esac; git push …)`) then lands in the enclosing context. In a command context that is still read as commands;
+# under a DQ, a PARAM or an HDATA it is data, so the text is a region, from the enclosing segment to the end (the reader
+# cannot know where the shell ends the substitution).
+function case_close(s,   up) {
   up = cty[s - 1]
   if (up != "DQ" && up != "PARAM" && up != "HDATA") return
   word_end(s)
+  if (casen[s] + seg_kw(s) <= 0) return
+  region(cpos[s], n, "case pattern ) closes $(…) read in " ((up == "DQ") ? "double quotes" : (up == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
+}
+# seg_kw(s) — 1 when the pending segment of s starts (after any reserved words) with an unquoted `case` and its
+# subject, -1 when it starts with an unquoted `esac`, else 0.
+function seg_kw(s,   i) {
   i = 1
   while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
-  if (i + 2 > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return
-  region(cpos[s], n, "case pattern ) closes $(…) read in " ((up == "DQ") ? "double quotes" : (up == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
+  if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0
+  if (stok[s, i] == "case" && i < sntok[s]) return 1
+  if (stok[s, i] == "esac") return -1
+  return 0
 }
 
 # close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still

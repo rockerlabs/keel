@@ -440,6 +440,32 @@ echo "$(if true; then case a in a) git push --no-verify;; esac; fi)"
 echo "$(case)" && git status
 @ C74l allow
 echo "$("case" a in b)" && git status
+@ C74m refuse
+echo "$(case a in a) echo 1;; esac)"; git status
+@ C74n refuse
+echo "$(case x in a|b) git push --no-verify;; esac)"
+@ C74o refuse
+echo "$(case x in a | b | c) git push --no-verify;; esac)"
+@ C74p refuse
+echo "$(case x
+in a) git push --no-verify;; esac)"
+@ C74q refuse
+echo "${v:-$(case x in
+a) git push --no-verify;; esac)}"
+@ C74r refuse
+echo "$(case x in a) case y in b) git push --no-verify;; esac;; esac)"
+@ C74s refuse
+echo "$(echo 1 | case x in a) git push --no-verify;; esac)"
+@ C74t allow
+echo "$(case x in (a) echo 1;; esac)" && git status
+@ C74u allow
+echo "$(case x in (a|b) case y in (c) echo 1;; esac;; esac)" && git status
+@ C74v allow
+echo "$(echo esac)" && git status
+@ C74w refuse
+echo "$(esac; case x in a) git push --no-verify;; esac)"
+@ C74x allow
+echo $(echo $(case a in a) :;; esac) "$(echo hi)"; git status
 @ C74j push
 X=$(case a in a) git push --no-verify;; esac)
 @ C75 push
