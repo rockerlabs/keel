@@ -23,7 +23,9 @@
 # is removed on every exit path, including a signal: the suite is TERMed, waited for (bounded, then KILLed)
 # and only then is the clone removed, so no test is still writing into it. The verdict line (and the reason a
 # cut refused) go to stdout; notes and refusals go to stderr. Uncommitted or untracked changes in DIR are not
-# simulated (a NOTE says so): the cut reads tracked fragments of the committed HEAD.
+# simulated (a NOTE says so): the cut reads tracked fragments of the committed HEAD. The suite runs with stdin
+# from /dev/null and in its own process group (so it can be stopped whole); a test that branches on a terminal
+# stdin takes its non-interactive path here, as it does in CI.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -50,6 +52,7 @@ repo_dir="$(cd "$repo_dir" && pwd)"
 top="$(git -C "$repo_dir" rev-parse --show-toplevel 2>/dev/null)" || refuse "$repo_dir is not inside a git work tree"
 repo_dir="$top"
 shallow="$(git -C "$repo_dir" rev-parse --is-shallow-repository 2>/dev/null)" || shallow=unknown
+case "$shallow" in true|false) ;; *) shallow=unknown ;; esac
 [ "$shallow" != "unknown" ] || echo "cut-sim: NOTE: could not tell whether $repo_dir is shallow" >&2
 [ "$shallow" != "true" ] || refuse "$repo_dir is a shallow checkout — the history- and tag-reading tests would fail before any cut (in CI: actions/checkout with fetch-depth: 0)"
 # Capture, then test: a producer piped into `grep -q` under pipefail is the dir #280 SIGPIPE race.
@@ -63,18 +66,25 @@ child=""
 # writers, and an rm racing them ends in "Directory not empty". One retry after that: a git writer that is
 # still finishing can make the first rm fail (dir #744 R2-6); a second failure is a NOTE, never a hidden leak.
 cleanup() {
-  local rc=$? n=0
+  local rc=$? n=0 sig
   trap - EXIT
   trap '' INT TERM HUP   # a second Ctrl-C / TERM during the wait below must not abandon the clone
-  # `child` is the pid AND the process-group id of the suite (set -m at the launch). Every step tests the GROUP,
-  # not the leader: tests/run.sh may exit quickly on TERM while a descendant it never owned still runs.
-  if [ -n "$child" ] && kill -0 -- "-$child" 2>/dev/null; then
-    echo "cut-sim: stopping the suite before removing the clone..." >&2
-    kill -TERM -- "-$child" 2>/dev/null || true
-    while kill -0 -- "-$child" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
-    if kill -0 -- "-$child" 2>/dev/null; then
-      kill -KILL -- "-$child" 2>/dev/null || true
-      sleep 1
+  # `child` is the pid AND the process-group id of the suite (set -m at the launch). Steps test the GROUP, not
+  # only the leader: tests/run.sh may exit quickly on TERM while a descendant it never owned still runs. If the
+  # group is not there (a shell without job control), the leader pid is the fallback. `child` is kept after the
+  # normal wait on purpose, so a descendant a FINISHED suite leaked is swept too; a pgid is not reused while any
+  # member lives, and the signal is only sent while `kill -0` says the group exists.
+  if [ -n "$child" ]; then
+    sig="-$child"
+    kill -0 -- "$sig" 2>/dev/null || sig="$child"
+    if kill -0 -- "$sig" 2>/dev/null; then
+      echo "cut-sim: stopping the suite before removing the clone..." >&2
+      kill -TERM -- "$sig" 2>/dev/null || true
+      while kill -0 -- "$sig" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 1; n=$((n + 1)); done
+      if kill -0 -- "$sig" 2>/dev/null; then
+        kill -KILL -- "$sig" 2>/dev/null || true
+        sleep 1
+      fi
     fi
   fi
   case "$work" in
@@ -96,7 +106,8 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
 clone="$work/clone"
 head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
 dirty="$(git -C "$repo_dir" status --porcelain)"
-[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes — only the committed HEAD is simulated" >&2
+[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes (first: ${dirty%%
+*}) — only the committed HEAD is simulated" >&2
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
