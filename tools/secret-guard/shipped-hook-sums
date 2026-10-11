@@ -9,10 +9,11 @@
 # POSIX cksum, so it needs neither git nor a repo and prints the same on macOS, GNU and busybox. This guards against
 # an accidental or deliberate EDIT of a hook; it is not a security boundary.
 #
-# WHEN YOU CHANGE tools/secret-guard/pre-commit OR pre-push: ADD one line for the new body here and KEEP the old ones
-# (an older install must still be refreshed, not refused). tests/test_secret_guard_writes.sh fails until you do — it
+# WHEN YOU CHANGE tools/secret-guard/pre-commit OR pre-push: ADD one line for the new body here and KEEP the old ones,
+# also those only main carried and never released (bootstrap.sh installs from main): an older install must still be
+# refreshed, not refused. tests/test_secret_guard_writes.sh fails until you do — it
 # checks that the shipped hooks are listed and, wherever the clone has tags or origin/main, that every body a release tag
-# or a main tip (first-parent) carried is.
+# or a main tip (each first-parent state of main, up to your branch's merge-base) carried is.
 # To print the line for the current body:   printf "%s " pre-push; cksum < tools/secret-guard/pre-push
 
 # pre-commit, oldest first

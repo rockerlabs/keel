@@ -356,13 +356,15 @@ for h in pre-commit pre-push; do
   got="$(cksum < "$shipped/$h")"
   check_eq "A57: the shipped $h is listed in shipped-hook-sums" "1" "$(grep -cxF -- "$h $got" "$sums" || true)"
 done
-# Every body a RELEASE carried, and every body main's own history carried (first-parent: a merged PR's review-round
-# commits are not main states, but `bootstrap.sh` installs from main, so each state main passed through is an install
-# target), must be listed. A clone without tags or without origin/main has less to walk; it says so instead of passing.
+# Every body a RELEASE carried, and every body main passed through (first-parent: a merged PR's review-round commits are
+# not main states, but `bootstrap.sh` installs from main, so each state main passed through is an install target), must be
+# listed. Both walks are bounded by THIS branch — tags merged into HEAD, main's history up to the merge-base — so a hook
+# change merged to main later turns an unrelated branch red only once that branch is rebased onto it, not on a fetch.
 revs57=""; seen57=0; missing57=""
-for tg in $(git -C "$REPO_ROOT" tag -l 'v[0-9]*' 2>/dev/null); do revs57="$revs57 $tg"; done
-if git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  revs57="$revs57 $(git -C "$REPO_ROOT" log --first-parent --format=%H origin/main -- tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null | tr '\n' ' ')"
+for tg in $(git -C "$REPO_ROOT" tag -l --merged HEAD 'v[0-9]*' 2>/dev/null); do revs57="$revs57 $tg"; done
+base57="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || true)"
+if [ -n "$base57" ]; then
+  revs57="$revs57 $(git -C "$REPO_ROOT" log --first-parent --format=%H "$base57" -- tools/secret-guard/pre-commit tools/secret-guard/pre-push 2>/dev/null | tr '\n' ' ')"
 fi
 for rv in $revs57; do
   for h in pre-commit pre-push; do
@@ -373,9 +375,9 @@ for rv in $revs57; do
   done
 done
 if [ "$seen57" -gt 0 ]; then
-  check_eq "A57: every hook body a release or a main tip carried is listed ($seen57 bodies checked)" "" "$missing57"
+  check_eq "A57: every hook body a release or a main tip carried is listed" "" "$missing57"
 else
-  pass "A57: no tags and no origin/main in this clone — only the shipped hooks (above) are checked against the list"
+  pass "A57: nothing to walk in this clone (no tags merged into HEAD and no origin/main, or their objects are missing) — only the shipped hooks (above) are checked against the list"
 fi
 check_eq "A57: pre-commit's older body used below is listed" "1" "$(grep -cxF -- "pre-commit $(old_pre_commit | cksum)" "$sums" || true)"
 
