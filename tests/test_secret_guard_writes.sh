@@ -129,6 +129,15 @@ for um in 002 000 077; do
   check_eq "A27 modes: the re-vendored pre-commit is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/pre-commit")"
   check_eq "A27 modes: the re-vendored range-lib.sh is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/range-lib.sh")"
 done
+# --global writes through the same install_into: the machine-wide hooks dir lands the same modes
+for um in 022 002 000; do
+  h27g="$(mktemp -d "$SANDBOX/a27g.XXXXXX")"
+  run env HOME="$h27g" GIT_CONFIG_GLOBAL="$h27g/.gitconfig" bash -c 'umask "$1"; exec bash "$2" --global' _ "$um" "$ok_stub/install-secret-guard.sh"
+  check_status "A27 modes: --global under umask $um → exit 0" 0 "$STATUS"
+  for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+    check_eq "A27 modes: --global $f is 755 under umask $um" "755" "$(stat_portable_mode "$h27g/.config/git/keel-hooks/$f")"
+  done
+done
 # the real shipped tree: range-lib.sh is a non-executable library (644), the rest are executable (755)
 for um in 002 000; do
   r27r="$(new_repo)"; h27r="$r27r/.git/hooks"
