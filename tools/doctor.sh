@@ -816,14 +816,18 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # remedy (spec 685 round 2 B22): its manifest's `layout=` (link → ` --link`, link-nogit → ` --link --no-git`,
   # copy → nothing), read whether or not it recorded the slot advised on (a foreign link is unrecorded). No usable
   # manifest → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim or a link means linked,
-  # else copy. A CLAUDE.md import does not count here (dir #789 decides whether a core import means "linked"
-  # everywhere; install.sh's stickiness does not count it either).
+  # else copy (so too a manifest whose `layout=` is missing or unknown). A CLAUDE.md import does not count here
+  # (dir #789 decides whether a core import means "linked" everywhere; install.sh's stickiness does not count it
+  # either). `doctor_claude_flags detect` skips the manifest: for a W-MANIFEST-DRIFT whose manifest is the stale part.
   doctor_claude_flags() {
     local dm_man="$ihome/.keel/install-manifest.claude" dm_lay=""
-    if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
-    elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
-    elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
-    fi
+    if [ "${1:-}" != detect ] && manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"; fi
+    case "$dm_lay" in
+      copy|link|link-nogit) ;;
+      *) if keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
+         elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
+         fi ;;
+    esac
     manifest_layout_flags "$dm_lay"
   }
   # iclaude_relink — the flags for a Claude-only slot (commands/*, agents/*, keel/*): `install.sh --codex` never
@@ -947,7 +951,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
       flush_notes "$ihome/.keel/doctor-accept"
       finish
     else
-      gap G-RAILS-MISSING "no global $icontext at $ihome — the always-on rails are not wired (run install.sh$irelink_mode$ihome_flag)"
+      if [ -e "$gclaude" ] || [ -L "$gclaude" ]; then
+        # Something non-regular sits there (a dangling link, a FIFO, a directory): install declines it, so it goes first.
+        gap G-RAILS-MISSING "$icontext at $ihome is not a regular file — the always-on rails are not wired (remove what sits there first, then run install.sh$irelink_mode$ihome_flag)"
+      else
+        gap G-RAILS-MISSING "no global $icontext at $ihome — the always-on rails are not wired (run install.sh$irelink_mode$ihome_flag)"
+      fi
     fi
   elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
@@ -955,8 +964,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
       # Something non-regular at keel/CORE.md that the manifest does not prove Keel's (a link it never recorded, a
       # directory) is declined by every re-run: it has to go first. Keel's own recorded link is simply relinked.
       if { [ -L "$ihome/keel/CORE.md" ] && ! doctor_link_is_keels_own "$ihome/keel/CORE.md"; } \
-         || { [ ! -L "$ihome/keel/CORE.md" ] && [ -e "$ihome/keel/CORE.md" ]; }; then
-        ri_first="remove what sits at keel/CORE.md first (install never replaces what it cannot prove it placed), then "
+         || { [ ! -L "$ihome/keel/CORE.md" ] && [ -e "$ihome/keel/CORE.md" ]; } \
+         || { { [ -e "$ihome/keel" ] || [ -L "$ihome/keel" ]; } && [ ! -d "$ihome/keel" ]; }; then
+        ri_first="remove whatever blocks keel/CORE.md first (install never replaces what it cannot prove it placed), then "
       fi
       gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (${ri_first}re-run install.sh$irails_relink$ihome_flag)$(keel_core_has_block "$gclaude" && echo "; its embedded KEEL-CORE block is what loads the rails meanwhile — keep it until keel/CORE.md resolves")"
     elif keel_core_has_block "$gclaude"; then
@@ -1006,7 +1016,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$irelink_mode$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
     esac
   else
-    warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$irelink_mode$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
+    warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$irelink_mode$ihome_flag$([ "$CODEX_MODE" = 1 ] || case "$irelink_mode" in *--link*) ;; *) echo ", or migrate: install.sh --link$ihome_flag" ;; esac))"
   fi
 
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
@@ -1151,15 +1161,20 @@ if [ "$INSTALL_MODE" = 1 ]; then
     else
       iman_layout="$(manifest_field "$imanifest" layout)"
       iman_home="$(manifest_field "$imanifest" home)"
-      iman_drift=""
+      # iman_drift_flags — the re-run that refreshes THIS drift, by which side is right: a layout=link home whose
+      # keel/CORE.md is not a link keeps the manifest's --link (the disk is what broke); a link-nogit home whose
+      # trim was restored to a link takes the disk's (a plain --link: the manifest's --no-git would re-trim it); a
+      # manifest from another home takes the disk's too.
+      iman_drift="" iman_drift_flags="$irelink_mode"
       case "$iman_layout" in
         link)
           if [ -e "$ihome/keel/CORE.md" ] && ! keel_core_is_link "$ihome/keel/CORE.md"; then
-            iman_drift="manifest says layout=link but $ihome/keel/CORE.md is a regular file, not a symlink"
+            iman_drift="manifest says layout=link but $ihome/keel/CORE.md is not a symlink"
           fi ;;
         link-nogit)
           if keel_core_is_link "$ihome/keel/CORE.md"; then
             iman_drift="manifest says layout=link-nogit but $ihome/keel/CORE.md is a symlink (the --no-git trim looks restored)"
+            iman_drift_flags="${imode_flag:-$(doctor_claude_flags detect)}"
           fi ;;
       esac
       # Canonicalize $ihome for this ONE comparison only (never reassign the shared $ihome — every
@@ -1170,9 +1185,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       ihome_canon="$(cd "$ihome" 2>/dev/null && pwd || printf '%s' "$ihome")"
       if [ -z "$iman_drift" ] && [ -n "$iman_home" ] && [ "$iman_home" != "$ihome_canon" ]; then
         iman_drift="manifest recorded home=$iman_home, but this audit is auditing $ihome"
+        iman_drift_flags="${imode_flag:-$(doctor_claude_flags detect)}"
       fi
       if [ -n "$iman_drift" ]; then
-        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$irelink_mode$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
+        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$iman_drift_flags$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
       fi
     fi
   fi
