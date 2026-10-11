@@ -816,22 +816,19 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # remedy (spec 685 round 2 B22): its manifest's `layout=` (link → ` --link`, link-nogit → ` --link --no-git`,
   # copy → nothing), read whether or not it recorded the slot advised on (a foreign link is unrecorded). No usable
   # manifest → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim or a link means linked,
-  # else copy. Either way, a CLAUDE.md that imports THIS home's keel/CORE.md is linked: that import is the linked
-  # layout's own wiring, and a copy re-run under it never clears the import GAP below (a plain re-run over a home
-  # whose keel/CORE.md is gone lands in copy mode and records layout=copy) — so one report never advises two
-  # modes. An import of some other CORE.md (the checkout's, say) is not this home's wiring and does not count.
+  # else copy. Either way, a CLAUDE.md carrying the core import (core_import_re, the one definition install.sh,
+  # uninstall.sh and the rails check below share) is linked: the import is the linked layout's own wiring, and a copy
+  # re-run under it never clears the import GAP below (a plain re-run over a home whose keel/CORE.md is gone lands
+  # in copy mode and records layout=copy) — so one report never advises two modes.
   doctor_claude_flags() {
-    local dm_man="$ihome/.keel/install-manifest.claude" dm_lay="" dm_own="@$ihome/keel/CORE.md" dm_tilde=""
-    # install.sh writes the ~-form when the home sits under $HOME (its import_line).
-    case "$ihome" in "${HOME:-/nonexistent}"/*) dm_tilde="@~/${ihome#"$HOME"/}/keel/CORE.md" ;; esac
+    local dm_man="$ihome/.keel/install-manifest.claude" dm_lay=""
     if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
     elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
     fi
     case "$dm_lay" in
       link|link-nogit) ;;
-      *) if [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null \
-            && grep -qF -e "$dm_own" ${dm_tilde:+-e "$dm_tilde"} "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay="link"; fi ;;
+      *) if [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay="link"; fi ;;
     esac
     manifest_layout_flags "$dm_lay"
   }
@@ -881,11 +878,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # one-level "$ihome/keel"/* glob skips those dirs, so they are walked explicitly.
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/agents"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
-    # this_relink — the flags that can actually restore THIS SPECIFIC slot: commands/, agents/ and keel/ are
-    # Claude-only (see iclaude_relink above); bin/keel and the top-level files are placed by both modes, so they take
-    # the audited mode's.
+    # this_relink — the flags of the mode that places THIS SPECIFIC slot: commands/, agents/, keel/ and CLAUDE.md
+    # are Claude-only (see iclaude_relink above), AGENTS.md is codex-only, and bin/keel and the shared top-level
+    # files (INSTANCE/LEARNINGS/IDEAS, FRAMEWORK/PRINCIPLES) are placed by both, so they take the audited mode's.
     case "$l" in
-      "$ihome/commands/"*|"$ihome/agents/"*|"$ihome/keel/"*) this_relink="$iclaude_relink" ;;
+      "$ihome/commands/"*|"$ihome/agents/"*|"$ihome/keel/"*|"$ihome/CLAUDE.md") this_relink="$iclaude_relink" ;;
+      "$ihome/AGENTS.md") this_relink=" --codex" ;;
       *) this_relink="$irelink_mode" ;;
     esac
     if [ ! -e "$l" ]; then

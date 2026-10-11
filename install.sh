@@ -2081,6 +2081,9 @@ elif [ "$LINK" = 1 ]; then
     else
       echo "  OK   CLAUDE.md imports keel/CORE.md"
     fi
+  elif keel_core_has_block "$HOME_DIR/CLAUDE.md" && [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
+    echo "  WARN CLAUDE.md still embeds the rails as a copy, and keel/CORE.md does not resolve to a regular file — keep"
+    echo "       the block: an import of keel/CORE.md would load nothing until it is back."
   elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
     echo "       Migrate when ready: replace the KEEL-CORE block with the line  $import_line"
