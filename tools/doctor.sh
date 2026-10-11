@@ -812,17 +812,38 @@ if [ "$INSTALL_MODE" = 1 ]; then
   iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
   iother_reach="$(home_reach "$ihome" "$iother_default")"
   iother_doctor_arg="${iother_reach:+ \"$iother_reach\"}"
-  # irelink_mode — the re-wiring MODE for a dangling/foreign symlink (bin/keel is wired in BOTH modes,
-  # so this is reachable under --codex too, code-review found live): under Claude mode that's `--link`
-  # (recreates the linked layout); under --codex it's just $imode_flag itself, a bare re-run of --codex
-  # (copy mode has no --link equivalent, and `install.sh --codex --link` is a hard usage error) — never
-  # `--link`, which would wire a full second, Claude-mode install into the same codex home. $imode_flag
-  # is non-empty exactly when CODEX_MODE=1, so `${imode_flag:- --link}` picks it out without a branch:
-  # falls to the literal `--link` default only when $imode_flag is empty (non-codex). Kept as ITS OWN
-  # variable rather than folded into $ihome_flag (appended at each print site below) so
-  # tools/self/doctor.sh's check 1c — which greps advice lines for the LITERAL substring `ihome_flag`,
-  # not just its expanded value — still recognizes these as home-aware (dir #98).
-  irelink_mode="${imode_flag:- --link}"
+  # doctor_mode_flags MODE — the install.sh flags that re-run this home's MODE (claude|codex) install as it is,
+  # for a remedy (spec 685 round 2 B22): read from the manifest of that mode, whether or not it recorded the slot
+  # being advised on (a foreign link is unrecorded). Its `layout=` header gives ` --link` (link) or
+  # ` --link --no-git` (link-nogit), nothing for copy; its mode is the file's own suffix (the `mode=` header holds
+  # the same value), so codex gives ` --codex` — a codex home is copy-only (`--codex --link` is a usage error).
+  # No usable manifest of that mode → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim
+  # or a link means linked — and so does a CLAUDE.md importing the core, the linked layout's own wiring (a home
+  # whose keel/ is gone still needs --link to get it back) — else copy. So a copy-mode home is never advised
+  # --link, nor a Claude slot --codex.
+  doctor_mode_flags() {
+    local dm_man="$ihome/.keel/install-manifest.$1" dm_lay=""
+    [ "$1" = codex ] && { printf ' --codex'; return 0; }
+    if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
+    elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay=link-nogit
+    elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay=link
+    elif [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay=link
+    fi
+    case "$dm_lay" in
+      link) printf ' --link' ;;
+      link-nogit) printf ' --link --no-git' ;;
+    esac
+    return 0
+  }
+  # irelink_mode — the re-wiring flags for a slot of the AUDITED mode (bin/keel, wired in both modes, and the
+  # rails checks below); iclaude_relink — for a Claude-only slot (commands/*, agents/*, keel/*, the top-level
+  # FRAMEWORK/PRINCIPLES): `install.sh --codex` never creates one, so one under a --codex audit belongs to a
+  # Claude-mode install sharing this home (dir #124's shape) and takes that install's flags. Kept as their own
+  # variables rather than folded into $ihome_flag (appended at each print site below) so tools/self/doctor.sh's
+  # check 1c — which greps advice lines for the LITERAL substring `ihome_flag`, not just its expanded value —
+  # still recognizes these as home-aware (dir #98).
+  if [ "$CODEX_MODE" = 1 ]; then irelink_mode="$(doctor_mode_flags codex)"; else irelink_mode="$(doctor_mode_flags claude)"; fi
+  iclaude_relink="$(doctor_mode_flags claude)"
   # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the ONE
   # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
   # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for
@@ -859,15 +880,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # one-level "$ihome/keel"/* glob skips those dirs, so they are walked explicitly.
   for l in "$ihome"/*.md "$ihome/keel"/* "$ihome/keel/docs"/* "$ihome/keel/docs/drydock"/* "$ihome/commands"/* "$ihome/agents"/* "$ihome/bin"/*; do
     [ -L "$l" ] || continue
-    # this_relink — the re-wiring mode that can actually restore THIS SPECIFIC slot (found by a second
-    # independent code-review pass): bin/keel is the ONLY slot wired in BOTH modes, so $irelink_mode's
-    # --codex-awareness only makes sense there. Every other slot (commands/*, keel/*, top-level
-    # FRAMEWORK/PRINCIPLES) is Claude/linked-mode-only by construction — `install.sh --codex` never
-    # creates any of them — so one dangling under a --codex audit is a leftover from an UNRELATED
-    # Claude-mode install sharing this home (dir #124's shape), not something a --codex re-run could
-    # ever fix; it keeps advising `--link` unconditionally, same as before --codex existed.
+    # this_relink — the flags that can actually restore THIS SPECIFIC slot: bin/keel is the only slot wired in
+    # both modes, so it takes the audited mode's; every other slot is Claude-only (see iclaude_relink above).
     if [ "$l" = "$ihome/bin/keel" ]; then this_relink="$irelink_mode"
-    else                                    this_relink=" --link"
+    else                                    this_relink="$iclaude_relink"
     fi
     if [ ! -e "$l" ]; then
       # Keel's own link whose checkout moved or was deleted: relinking restores it. Anything else — a link no
@@ -967,7 +983,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
       fi
       if [ "$git_projects" -gt 0 ]; then
-        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh$irelink_mode$ihome_flag --with-git"
+        warn W-NOGIT-GIT-PROJECTS "core is trimmed (--no-git) but $git_projects registered project(s) live in git — the always-on git safety rails are NOT loaded; restore them before git work: install.sh --link$ihome_flag --with-git"   # never the derived flags: --no-git and --with-git are a usage error together
       fi
     elif ! keel_core_is_link "$ihome/keel/CORE.md"; then
       warn W-CORE-UNLINKED "keel/CORE.md is a regular file without the KEEL-NOGIT marker — not a live link into the checkout (it won't refresh on git pull); re-run install.sh$irelink_mode$ihome_flag"

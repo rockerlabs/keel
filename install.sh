@@ -248,6 +248,16 @@ if [ "$CODEX" = 0 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
   fi
 fi
 
+# layout_flag (spec 685 round 2 B22) — the layout half of "can this command reach the install", set once both
+# sticky detects above have settled LINK and NOGIT: ` --link`, plus ` --no-git` for a trimmed home. Every
+# install.sh command advised from here on carries it through advise_install, so a remedy re-runs THIS home's own
+# layout and a copy-mode home is never told --link. The messages above (a missing lib) keep the earlier form: the
+# mode was not resolved there.
+layout_flag=""
+[ "$LINK" = 1 ] && layout_flag=" --link"
+[ "$NOGIT" = 1 ] && layout_flag="$layout_flag --no-git"
+advise_install="install.sh$mode_flag$layout_flag$home_flag"
+
 # advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
 # THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
 # install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
@@ -2014,8 +2024,9 @@ for f in "${vfiles[@]}"; do
   elif [ "$vpresent" = 1 ] && { [ -e "$HOME_DIR/$f" ] || [ -L "$HOME_DIR/$f" ]; }; then
     # Not a regular file, yet something sits here: this run declined it on purpose (a B3 T4/T6 decline or a B5
     # seed left alone; Keel's own stale link was re-pointed above). Spec 685 B3 T4: a decline is not an error,
-    # so the run exits 0 and writes its manifest. Only an ABSENT file is MISS.
-    echo "  --   $f is yours (a link or non-regular file) — left untouched; remove it, then re-run '$advise_install' to let Keel place it"
+    # so the run exits 0 and writes its manifest. Only an ABSENT file is MISS. "Not provably Keel's", never
+    # "yours" (round 2 B21): with the manifest lost, a link Keel made itself lands here too.
+    echo "  --   $f is not provably Keel's (a link or non-regular file this run did not place) — left untouched; remove it, then re-run '$advise_install' to let Keel place it"
   else
     echo "  MISS $f" >&2; missing=1
   fi
@@ -2023,12 +2034,18 @@ done
 
 # (Rails trichotomy: parallel to tools/doctor.sh --install's core-rails check — keep the two in
 # sync. Severities differ on purpose: in a --link run an embedded block means "un-migrated" (WARN);
-# to doctor it's legitimate copy mode (OK).)
+# to doctor it's legitimate copy mode (OK).) Round 2 B21: the "will NOT load" WARN fires whenever the rails
+# cannot load. A context file that is not a regular file is never read (dir #752: a FIFO there blocks the read
+# forever); the loop above already printed its own line.
 if [ "$LINK" = 1 ]; then
-  if has_core_import "$HOME_DIR/CLAUDE.md"; then
+  if [ ! -f "$HOME_DIR/CLAUDE.md" ]; then
+    echo "  WARN CLAUDE.md is not a regular file (see its line above) — the always-on rails will NOT load."
+  elif has_core_import "$HOME_DIR/CLAUDE.md"; then
     if keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
       echo "       Remove the block (or the import line) by hand."
+    elif [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
+      echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
     else
       echo "  OK   CLAUDE.md imports keel/CORE.md"
     fi
@@ -2043,6 +2060,9 @@ if [ "$LINK" = 1 ]; then
     echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
     echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
   fi
+elif [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && { [ -e "$HOME_DIR/$CONTEXT_FILE" ] || [ -L "$HOME_DIR/$CONTEXT_FILE" ]; }; then
+  # Copy mode: the rails live in the context file itself, so one that is not a regular file carries none.
+  echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
 fi
 
 # dir #85 (code audit, finding 22): the guard's REAL state is inspected on every run, not only when
@@ -2133,6 +2153,17 @@ elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   echo "       git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then   tools/install-secret-guard.sh <repo>"
 elif [ "$DO_HOOKS" = 0 ]; then
   echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
+  # dir #743 item 1: the same conditional include would refuse a run without the flag (exit 3), so say so now.
+  # Hedged ("likely"): `conditional=` is counted against the current value, not Keel's dir.
+  if [ "$hp_is_keel" != 1 ]; then
+    case "$(wm_get conditional)" in
+      '') ;;
+      unknown) echo "       A run without --no-hooks would likely be refused: not every conditional [includeIf] include could be"
+               echo "       read (a TMPDIR inside a repository, say); fix that, or wire with tools/install-secret-guard.sh --global --force." ;;
+      *) echo "       A run without --no-hooks would likely be refused: a conditional [includeIf] include sets its own core.hooksPath;"
+         echo "       point that setting at Keel's dir or remove it, or wire with tools/install-secret-guard.sh --global --force." ;;
+    esac
+  fi
 else
   echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
   # dir #717: that run refuses over a conditional [includeIf] include that sets its own core.hooksPath, or when
@@ -2252,7 +2283,7 @@ context_created=0
 edit_kind="" edit_extra=""
 if [ "$foreign_core" != 1 ]; then
   if [ "$LINK" = 1 ]; then
-    if has_core_import "$gclaude" 2>/dev/null; then
+    if [ -f "$gclaude" ] && has_core_import "$gclaude"; then   # -f first: never read a FIFO (dir #752)
       context_created=1; edit_kind=edit; edit_extra=import-line
     fi
   elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then
@@ -2466,9 +2497,10 @@ elif [ "$EPHEMERAL" = 1 ]; then
   - installed by the one-line bootstrap: the temporary clone it ran from is removed as it exits, so
     the files above stand alone. The  keel  CLI,  keel uninstall ,  keel tokens  (the token-economy
     report), tools/install-pre-pr-gate.sh (the /polish gate), and the commands that shell out to
-    Keel's tools/ (/keel-setup project drafting, /init-project) need a KEPT checkout — either re-run
-    the one-liner with  --link  (keeps a checkout at ~/keel and wires everything to it), or git clone
-    the keel repo and run  ./$advise_install  from it (re-runs never clobber your files).
+    Keel's tools/ (/keel-setup project drafting, /init-project, /go's handoff note) need a KEPT
+    checkout — either re-run the one-liner with  --link  (keeps a checkout at ~/keel and wires
+    everything to it), or git clone the keel repo and run  ./$advise_install  from it (re-runs never
+    clobber your files).
   - lifecycle commands are in  $HOME_DIR/commands/  → on Claude Code: /wrap, /go, …
   - to update later: re-run the same one-liner.
   - remove Keel later by hand: delete Keel's files in  $HOME_DIR  (FRAMEWORK.md, PRINCIPLES.md, docs/, the

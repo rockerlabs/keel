@@ -274,7 +274,7 @@ ln -s "$SANDBOX/seed-dir-target" "$h/LEARNINGS.md"
 run "$ck_shared/install.sh" --home "$h" --no-hooks
 check_link "B5: a link to a directory at a seed path is untouched" "$h/LEARNINGS.md"
 check_contains "B5: …with one line naming it" "$OUT" "LEARNINGS.md is not a regular file"
-check_contains "B5: …and Verify reports it as yours, not MISS (a decline is not a failed install — dir #685 FIX-1)" "$OUT" "LEARNINGS.md is yours"
+check_contains "B5: …and Verify reports it as not provably Keel's, not MISS (a decline is not a failed install — dir #685 FIX-1)" "$OUT" "LEARNINGS.md is not provably Keel's"
 check_status "B5: …the run exits 0" 0 "$STATUS"
 check_file "B5: …and writes its manifest" "$(manifest_of "$h")"
 check_absent "B5: …no safe-write refusal aborted the run" "$OUT" "safe-write:"
