@@ -219,7 +219,7 @@ check_contains "wt: the installer's inert note says --worktree too" "$OUT" "conf
 advised() { printf '%s\n' "$(id_line "$1")" | grep -oE 'install-secret-guard\.sh [^ ]+ --force' | head -1; }
 run_advised() {  # run_advised ID — run what doctor advised for warning ID against the sandbox home; sets STATUS/OUT
   local cmd a; cmd="$(advised "$1")"
-  if [ -z "$cmd" ]; then check_contains "S6-1: [$1] advises an installer command ending in --force" "$(id_line "$1")" "install-secret-guard.sh"; STATUS=99; OUT=""; return 0; fi
+  if [ -z "$cmd" ]; then STATUS="no --force command advised for [$1]"; OUT="$(id_line "$1")"; return 0; fi
   read -ra a <<<"${cmd#install-secret-guard.sh }"
   run genv "$isg" "${a[@]}"
 }
@@ -286,5 +286,20 @@ edit_hook "$r61c/.git/hooks/secret-scan.sh"
 run genv "$doctor" "$r61c"
 check_contains "S6-1 control: a drifted scanner alone → W-GUARD-STALE" "$OUT" "[W-GUARD-STALE]"
 check_absent "S6-1 control: ...its advice stays a plain re-vendor (nothing is refused)" "$(id_line W-GUARD-STALE)" "--force"
+plain61="$(printf '%s\n' "$(id_line W-GUARD-STALE)" | grep -oE 'install-secret-guard\.sh [^ ]+' | head -1)"
+run genv "$isg" "${plain61#install-secret-guard.sh }"
+check_status "S6-1 control: ...and the plain command succeeds (doctor and installer agree both ways)" 0 "$STATUS"
+run genv "$doctor" "$r61c"
+check_absent "S6-1 control: ...and clears the warning" "$OUT" "[W-GUARD-STALE]"
+
+# a LINKED edited hook: --force cannot replace it, so the advice must not promise a backup (the link notes own that state)
+mk_home s61l
+run genv "$isg" --global
+kd61="$H/$kh_rel"
+cp "$kd61/pre-commit" "$H/pc-real"; edit_hook "$H/pc-real"; chmod +x "$H/pc-real"
+rm -f "$kd61/pre-commit"; ln -s "$H/pc-real" "$kd61/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: a linked, edited pre-commit still reads as a stale guard" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent "S6-1: ...whose advice does not promise a --force backup (the installer refuses links either way)" "$(id_line W-GUARD-GLOBAL-STALE)" "--force"
 
 summary

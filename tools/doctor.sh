@@ -587,12 +587,14 @@ guard_is_keel_hook() {  # guard_is_keel_hook DIR HOOK — DIR/HOOK exists and ca
 # S6-1 (the 0.16.0 delta audit): install-secret-guard.sh treats a marked hook as Keel's to refresh only when its whole body is
 # a version listed in secret-guard/shipped-hook-sums (dir #683); a marked hook that was edited is refused (exit 3) without
 # --force. guard_edited_hooks DIR prints the hooks in DIR the installer would refuse for that reason, ", "-joined (nothing
-# when there are none) — the same test as its _isg_is_shipped_hook, an unreadable list answering "refuse" too. A foreign
-# hook (no Keel marker) is not one: the arms that meet it say so already.
+# when there are none) — the same test as its _isg_is_shipped_hook, an unreadable list answering "refuse" too
+# (tests/test_doctor_guard_truth.sh pins the two agreeing both ways). A foreign hook (no Keel marker) is not one: the arms
+# that meet it say so already; neither is a linked hook, which --force cannot replace.
 guard_edited_hooks() {
   local dir="$1" h sum out="" sums="$tools_dir/secret-guard/shipped-hook-sums"
   for h in pre-commit pre-push; do
     guard_is_keel_hook "$dir" "$h" || continue
+    [ -L "$dir/$h" ] && continue   # the installer refuses a linked hook with or without --force; the link notes say so
     if [ -r "$sums" ] && sum="$(cksum < "$dir/$h" 2>/dev/null)" && grep -qxF -- "$h $sum" "$sums"; then continue; fi
     out="${out:+$out, }$h"
   done
@@ -603,7 +605,7 @@ guard_edited_hooks() {
 guard_installer_cmd() {
   local edited; edited="$(guard_edited_hooks "$1")"
   if [ -n "$edited" ]; then
-    printf '%s --force (the %s here carries Keel'"'"'s marker but was edited, so a plain run refuses it; --force saves the edited copy as <hook>.pre-keel.bak first)' "$2" "$edited"
+    printf '%s --force (a plain run refuses the edited %s; --force saves it as <hook>.pre-keel.bak first)' "$2" "$edited"
   else printf '%s' "$2"; fi
 }
 guard_drift_files() {
