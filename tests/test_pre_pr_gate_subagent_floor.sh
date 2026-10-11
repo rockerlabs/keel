@@ -172,7 +172,7 @@ sf_allow "O9: cd X && cd ~/xx" "cd $X && cd ~/xx && git stash"
 sf_allow "O10: payload cwd R/d, git -C ../../X stash (a scratch clone)" 'git -C ../../X stash' "$R/d"
 sf_allow "O11: cd X/d && cd .. && git stash" "cd $X/d && cd .. && git stash"
 
-# --- Z1–Z8, the stated blind spots (B13): ALLOW, asserted so a later widening is a deliberate change ---------------------
+# --- Z1–Z9, the stated blind spots (B13): ALLOW, asserted so a later widening is a deliberate change ---------------------
 sf_allow "Z1: a non-literal -C" 'git -C "$X" checkout -- f'
 sf_allow "Z2: sh -c" "sh -c 'git stash'"
 sf_allow "Z3: rm" 'rm f.bak'

@@ -2347,18 +2347,15 @@ function sg_has(a, list,   k) {
   for (k = a; k <= ntok; k++) if (sg_in(tok[k], list)) return 1
   return 0
 }
-function sg_cd(i,   j, c, p, kind, path) {
+function sg_cd(i,   j, c, p) {
   c = tok[i]; j = i + 1
   while (j <= ntok && substr(tok[j], 1, 1) == "-" && length(tok[j]) > 1) {
     if (tok[j++] == "--") break
   }
-  kind = "unknown"; path = ""
-  if (c != "popd" && j <= ntok && tok[j] != "-" && tok[j] !~ /^[-+][0-9]+$/) {
-    p = sg_path(tok[j], tokm[j])
-    if (p != "unknown") { kind = (substr(p, 1, 3) == "tld" ? "tilde" : "lit"); path = substr(p, 5) }
-  }
+  p = "unknown"
+  if (c != "popd" && j <= ntok && tok[j] != "-" && tok[j] !~ /^[-+][0-9]+$/) p = sg_path(tok[j], tokm[j])
   ncd++; cd_pos[ncd] = segpos
-  cd_row[ncd] = "subcd" SEP segpos SEP segscope SEP kind SEP path
+  cd_row[ncd] = "subcd" SEP segpos SEP segscope SEP p
 }
 # The classification of one git invocation (B10). a = the index of the first word after the verb.
 # sg_mut(v, a) returns 1 for a repository-mutating form; it may set sg_sub (the subcommand word, for the reason
@@ -2456,7 +2453,7 @@ function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, d
   }
   return 0
 }
-function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v, p) {
+function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v) {
   if (!agent) return
   i = cmd_start()
   if (i > ntok || !w_plain(i)) return
@@ -2494,15 +2491,14 @@ function check_subgit(   i, c, j, k, o, a, nmv, L, chain, v, p) {
   git_row[ngit] = "subgit" SEP segpos SEP segscope SEP v (sg_sub != "" ? " " sg_sub : "") SEP chain SEP sg_gd SEP sg_wt
 }
 # sg_out() — the candidate lines, each kind in source order (segments arrive in end order): subcd rows first.
-function sg_out(   i, j, t) {
-  for (i = 2; i <= ncd; i++) for (j = i; j > 1 && cd_pos[j] < cd_pos[j - 1]; j--) {
-    t = cd_pos[j]; cd_pos[j] = cd_pos[j - 1]; cd_pos[j - 1] = t
-    t = cd_row[j]; cd_row[j] = cd_row[j - 1]; cd_row[j - 1] = t
+function sg_isort(pos, row, n,   i, j, t) {
+  for (i = 2; i <= n; i++) for (j = i; j > 1 && pos[j] < pos[j - 1]; j--) {
+    t = pos[j]; pos[j] = pos[j - 1]; pos[j - 1] = t
+    t = row[j]; row[j] = row[j - 1]; row[j - 1] = t
   }
-  for (i = 2; i <= ngit; i++) for (j = i; j > 1 && git_pos[j] < git_pos[j - 1]; j--) {
-    t = git_pos[j]; git_pos[j] = git_pos[j - 1]; git_pos[j - 1] = t
-    t = git_row[j]; git_row[j] = git_row[j - 1]; git_row[j - 1] = t
-  }
+}
+function sg_out(   i) {
+  sg_isort(cd_pos, cd_row, ncd); sg_isort(git_pos, git_row, ngit)
   for (i = 1; i <= ncd; i++) print cd_row[i]
   for (i = 1; i <= ngit; i++) print git_row[i]
   return ncd + ngit
@@ -3266,10 +3262,11 @@ input=$(cat 2>/dev/null)
 # One jq call for the three event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent),
 # the cwd and the command. The command comes last, so its newlines survive the split; a field that is not a string reads
 # as empty.
-sep=$'\x1f'
-hk_ev=$(printf '%s' "$input" | jq -r '[((.agent_id // "") | if type == "string" then . else "" end), ((.cwd // "") | if type == "string" then . else "" end), ((.tool_input.command // "") | if type == "string" then . else "" end)] | join("\u001f")' 2>/dev/null)
+sep=$'\x1f'; sep2=$'\x1e'
+hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; [(.agent_id // "" | s), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
 hk_agent=${hk_ev%%"$sep"*}; hk_rest=${hk_ev#*"$sep"}
 hk_cwd=${hk_rest%%"$sep"*}; cmd=${hk_rest#*"$sep"}
+hk_cwd=${hk_cwd:-$PWD}
 
 # The command reader (PPG_AWK_PROG, defined above the CLI dispatch so `lex` can run it) judges the command text
 # the way the shell will read it, and prints at most one verdict line: `push` (a git push that bypasses the
@@ -3284,7 +3281,7 @@ case "$cmd" in *g*) ;; *) exit 0 ;; esac
 # shell side below; KEEL_SUBAGENT_GIT_FLOOR=off in the hook environment switches that off (the PR and push rules stay).
 sg_agent=0
 if [ -n "$hk_agent" ] && [ "${KEEL_SUBAGENT_GIT_FLOOR:-}" != off ]; then sg_agent=1; fi
-awk_out="$(awk -v SEP="$sep" -v SEP2=$'\x1e' -v agent="$sg_agent" "$PPG_AWK_PROG" <<< "$cmd")"
+awk_out="$(awk -v SEP="$sep" -v SEP2="$sep2" -v agent="$sg_agent" "$PPG_AWK_PROG" <<< "$cmd")"
 awk_status=$?
 verdict=""; head_branch=""; refuse_why=""; reader_bad=0
 case "$awk_status" in 0|1) ;; *) reader_bad=1 ;; esac
@@ -3301,7 +3298,7 @@ if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
       # A candidate line's tag gets its own arm here, ahead of the verdict. Only a subagent's run reports them.
       subcd)
         if [ "$sg_agent" != 1 ]; then reader_bad=1; break; fi
-        sg_cd_pos[sg_ncd]="$rd_a"; sg_cd_scope[sg_ncd]="$rd_b"; sg_cd_kind[sg_ncd]="$rd_c"; sg_cd_path[sg_ncd]="$rd_d"
+        sg_cd_pos[sg_ncd]="$rd_a"; sg_cd_scope[sg_ncd]="$rd_b"; sg_cd_val[sg_ncd]="$rd_c"
         sg_ncd=$((sg_ncd + 1))
         ;;
       subgit)
@@ -3319,7 +3316,7 @@ fi
 # same jq shape `deny()` uses) and exits 0 — calling `deny` while it is undefined would exit non-2, which
 # Claude Code treats as a non-blocking error, i.e. ALLOW.
 early_deny() {   # early_deny <guard detail> <reason>
-  log_event guard "$1" "${hk_cwd:-$PWD}"
+  log_event guard "$1" "$hk_cwd"
   jq -cn --arg r "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   exit 0
 }
@@ -3352,44 +3349,41 @@ sg_val() {
     none) sg_vk=none ;;
   esac
 }
-# sg_join BASE PATH — PATH if absolute, else BASE/PATH; empty when BASE is unknown (empty).
+# sg_join BASE PATH — sets sg_j: PATH if absolute, else BASE/PATH; empty when BASE is unknown (empty). A global, not
+# printed, so a caller pays no command-substitution fork.
 sg_join() {
-  case "$2" in /*) printf '%s' "$2"; return 0 ;; esac
-  [ -n "$1" ] || return 0
-  printf '%s/%s' "${1%/}" "$2"
+  case "$2" in
+    /*) sg_j="$2" ;;
+    *) if [ -n "$1" ]; then sg_j="${1%/}/$2"; else sg_j=""; fi ;;
+  esac
 }
 # sg_dir_hit DIR — is DIR (inside) the session repository? Each distinct dir is asked of git once.
 sg_dir_hit() {
-  [ -n "$1" ] || return 1
+  [ -d "$1" ] || return 1
   case "$sg_seen" in *"${sep}d:$1${sep}"*) return 1 ;; esac
   sg_seen="$sg_seen${sep}d:$1${sep}"
   [ "$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
 }
 sg_gitdir_hit() {
-  [ -n "$1" ] || return 1
+  [ -d "$1" ] || return 1
   case "$sg_seen" in *"${sep}g:$1${sep}"*) return 1 ;; esac
   sg_seen="$sg_seen${sep}g:$1${sep}"
   [ "$(git --git-dir="$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" = "$SESSION_GIT" ]
 }
-# sg_apply_cd KIND PATH — replay one applicable cd on the directory set (sg_members, at most 8 long). A literal path
-# that is an existing directory moves each member there; one that is not leaves the member where it was AND adds
-# the target, because a failed cd leaves bash in place and the next command still runs (the dir #669 shape).
+# sg_apply_cd VALUE — replay one applicable cd (VALUE as the reader reported it) on the directory set (sg_members, at
+# most 8 long; with sg_unk, shared with sg_check and sg_target_hit, which are bash 3.2 and have no namerefs). A
+# literal path that is an existing directory moves each member there; one that is not leaves the member where it was
+# AND adds the target, because a failed cd leaves bash in place and the next command still runs (the dir #669 shape).
 sg_apply_cd() {
-  local p="$2" m t n k have
+  local p m t n k have
   [ "$sg_unk" = 1 ] && return 0
-  case "$1" in
-    lit|tilde) ;;
-    *) sg_unk=1; return 0 ;;
-  esac
-  if [ "$1" = tilde ]; then
-    sg_val "tld:$p"
-    [ "$sg_vk" = lit ] || { sg_unk=1; return 0; }
-    p="$sg_vp"
-  fi
+  sg_val "$1"
+  [ "$sg_vk" = lit ] || { sg_unk=1; return 0; }
+  p="$sg_vp"
   [ -n "$p" ] || return 0
   local -a new=() pend=()
   for m in "${sg_members[@]}"; do
-    t="$(sg_join "$m" "$p")"
+    sg_join "$m" "$p"; t="$sg_j"
     if [ -d "$t" ]; then new[${#new[@]}]="$t"
     else new[${#new[@]}]="$m"; pend[${#pend[@]}]="$t"
     fi
@@ -3408,9 +3402,10 @@ sg_apply_cd() {
 }
 # sg_target_hit INDEX — does the INDEXth git segment target the session repository?
 sg_target_hit() {
-  local gi="$1" m cur ci item p gdk gdp wtk wtp
+  local gi="$1" m cur ci item gdk gdp wtk wtp
   local -a chain=() mlist=()
-  IFS=$'\x1e' read -r -a chain <<< "${sg_git_chain[$gi]}" || true
+  # (E) the chain is split only when the segment has one: a here-string is a temp file in bash 3.2
+  if [ -n "${sg_git_chain[$gi]}" ]; then IFS="$sep2" read -r -a chain <<< "${sg_git_chain[$gi]}" || true; fi
   sg_val "${sg_git_gd[$gi]}"; gdk="$sg_vk"; gdp="$sg_vp"
   sg_val "${sg_git_wt[$gi]}"; wtk="$sg_vk"; wtp="$sg_vp"
   if [ "$sg_unk" = 1 ]; then mlist=(""); else mlist=("${sg_members[@]}"); fi
@@ -3421,32 +3416,32 @@ sg_target_hit() {
       item="${chain[$ci]}"
       sg_val "$item"
       if [ "$sg_vk" = lit ]; then
-        if [ -n "$sg_vp" ]; then cur="$(sg_join "$cur" "$sg_vp")"; fi
+        if [ -n "$sg_vp" ]; then sg_join "$cur" "$sg_vp"; cur="$sg_j"; fi
       else cur=""
       fi
       ci=$((ci + 1))
     done
     case "$gdk" in
-      lit) p="$(sg_join "$cur" "$gdp")"; sg_gitdir_hit "$p" && return 0 ;;
+      lit) sg_join "$cur" "$gdp"; sg_gitdir_hit "$sg_j" && return 0 ;;
       dash) sg_dir_hit "$cur" && return 0 ;;
     esac
-    if [ "$wtk" = lit ]; then p="$(sg_join "$cur" "$wtp")"; sg_dir_hit "$p" && return 0; fi
+    if [ "$wtk" = lit ]; then sg_join "$cur" "$wtp"; sg_dir_hit "$sg_j" && return 0; fi
   done
   return 1
 }
 # sg_check — true (sg_verb set) when some reported git segment is a mutating form aimed at the session repository.
 sg_check() {
   local gi=0 ci sc gc
-  SESSION_GIT="$(git -C "${hk_cwd:-$PWD}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  SESSION_GIT="$(git -C "$hk_cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
   [ -n "$SESSION_GIT" ] || return 1
   while [ "$gi" -lt "$sg_ngit" ]; do
-    sg_members=("${hk_cwd:-$PWD}"); sg_unk=0
+    sg_members=("$hk_cwd"); sg_unk=0
     gc="${sg_git_scope[$gi]}"; ci=0
     while [ "$ci" -lt "$sg_ncd" ]; do
       sc="${sg_cd_scope[$ci]}"
       # A cd applies to a later segment whose scope starts with its own, component by component (dir #745 I1).
-      if [ "${sg_cd_pos[$ci]}" -lt "${sg_git_pos[$gi]}" ] 2>/dev/null && { [ "$gc" = "$sc" ] || case "$gc" in "$sc".*) true ;; *) false ;; esac; }; then
-        sg_apply_cd "${sg_cd_kind[$ci]}" "${sg_cd_path[$ci]}"
+      if [ "${sg_cd_pos[$ci]}" -lt "${sg_git_pos[$gi]}" ] 2>/dev/null; then
+        case "$gc" in "$sc"|"$sc".*) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac
       fi
       ci=$((ci + 1))
     done
