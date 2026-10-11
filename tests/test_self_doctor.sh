@@ -2067,11 +2067,10 @@ check_absent "and reports no GAP over it" "$OUT" "GAP"
 # --- 12. manifest_field/manifest_usable/core-ownership-predicate/core-block-comparator single-definition (dir #363, dir #650) ---
 # Same class as check 11 (dir #362) just above, for the OTHER hand-copy families dir #363 removed:
 # manifest_field/manifest_usable (uninstall.sh/tools/doctor.sh, now consumers of tools/lib/manifest.sh)
-# and the core-ownership functions (all three scripts, consumers of tools/lib/core-ownership.sh) — plus
-# install.sh's own documented, EXEMPT stub of manifest_usable (dir #323, predates this ticket), which
-# must NOT itself trigger a GAP. install.sh's inline fallback of the core-ownership functions, and the
-# body comparison that held it to the lib, are gone (dir #716): those functions now have exactly one
-# definition and no exemption.
+# and the core-ownership functions (all three scripts, consumers of tools/lib/core-ownership.sh).
+# install.sh's inline fallback of the core-ownership functions, and the body comparison that held it to
+# the lib, are gone (dir #716), and so is its manifest_usable() stub (spec 685 round 2 B20: manifest.sh is
+# REQUIRED in install.sh too): every listed function has exactly one definition and no exemption.
 # plant_manifest_and_ownership_libs DIR [BRACE] — BRACE selects the opening-brace shape used for the
 # ownership-predicate pair (keel_core_is_link/keel_core_is_nogit_trim) in tools/lib/core-ownership.sh:
 # "same" (default) for `fn() {`, "nextline" for `fn ()` with `{` alone on the line right after
@@ -2099,21 +2098,19 @@ plant_manifest_and_ownership_libs() {
   printf '%s\n%s\n  [ -L "$1" ]\n}\n%s\n  [ -f "$1" ] && [ ! -L "$1" ] && grep -q "KEEL-NOGIT" "$1" 2>/dev/null\n}\n' \
     '#!/usr/bin/env bash' "$open_link" "$open_trim" > "$dir/tools/lib/core-ownership.sh"
   printf '%b' "$blocks" >> "$dir/tools/lib/core-ownership.sh"
-  # install.sh's own documented, exempt stub of manifest_usable — proving it doesn't itself trip the
-  # check, same shape as its real optional-source else branch (manifest_field is NOT among them:
-  # install.sh's real code never calls it, so it carries no stub of that one). It carries NO copy of the
-  # core-ownership functions: core-ownership.sh is REQUIRED there (dir #716).
-  printf '%s\nmanifest_usable() { return 1; }\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
+  # install.sh carries NO copy of these functions: manifest.sh (spec 685 round 2 B20) and core-ownership.sh
+  # (dir #716) are both REQUIRED there.
+  printf '%s\nfor x in "$@"; do\n  case "$x" in\n    polish.md) continue ;;\n  esac\ndone\n' \
     '#!/usr/bin/env bash' > "$dir/install.sh"
   printf '#!/usr/bin/env bash\n: "smoke-references tools/doctor.sh, %s, tools/lib/manifest.sh, and tools/lib/core-ownership.sh"\n' \
     "$fake_widget" > "$dir/tests/test_tools.sh"
 }
 
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh stub" )
+( cd "$d" && git add -A && git commit -qm "single definitions" )
 run "$sd" "$d" --quiet
-check_status "manifest/core-ownership: single defs + the exempt install.sh manifest_usable stub -> exit 0" 0 "$STATUS"
-check_absent "no GAP for the correct shape (install.sh's documented stub is not a hand-copy)" "$OUT" "GAP"
+check_status "manifest/core-ownership: one definition each -> exit 0" 0 "$STATUS"
+check_absent "no GAP for the correct shape" "$OUT" "GAP"
 
 # dir #721 S10-1 (dir #513's keel_core_block_* single_def_check lines): a deleted or mistyped line turned no
 # test red. Two bindings per function. (1) the clean tree, run WITHOUT --quiet, prints the OK line naming
@@ -2142,7 +2139,7 @@ done
 # separate `git grep -l` call site (single_def_check, shared by all four calls below it) — set on
 # the fixture repo's own local config, not globally.
 d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
-( cd "$d" && git add -A && git commit -qm "single definitions, exempt install.sh stub" \
+( cd "$d" && git add -A && git commit -qm "single definitions" \
     && git config color.grep always && git config color.ui always )
 run "$sd" "$d" --quiet
 check_status "manifest/core-ownership under color.grep=always -> exit 0, not a false GAP" 0 "$STATUS"
@@ -2201,6 +2198,16 @@ run "$sd" "$d" --quiet
 check_status "an inline keel_core_is_link fallback in install.sh -> exit 1 (no exemption)" 1 "$STATUS"
 check_contains "names the function" "$OUT" "keel_core_is_link()"
 check_contains "names the canonical location" "$OUT" "tools/lib/core-ownership.sh"
+check_contains "…and the hand-copy location" "$OUT" "install.sh"
+
+# install.sh re-grows its old manifest_usable() stub (what spec 685 round 2 B20 deleted, with the
+# exemption that let it through) — any second definition is a GAP now.
+d="$(mk_clean_repo)"; plant_manifest_and_ownership_libs "$d"
+printf '\nmanifest_usable() { return 1; }\n' >> "$d/install.sh"
+( cd "$d" && git add -A && git commit -qm "install.sh manifest_usable stub returns" )
+run "$sd" "$d" --quiet
+check_status "a manifest_usable stub in install.sh -> exit 1 (no exemption)" 1 "$STATUS"
+check_contains "names the function" "$OUT" "manifest_usable()"
 check_contains "…and the hand-copy location" "$OUT" "install.sh"
 
 # a repo that defines none of these has no rule to keep in sync — silent, not a GAP (baseline coverage

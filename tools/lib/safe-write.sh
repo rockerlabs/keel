@@ -152,12 +152,31 @@ _keel_sw_inside() {
   return 1
 }
 
-# keel_dir_is_checkouts_own DIR HOME — true when DIR is really the Keel checkout's own directory (B7 and
-# B8 of the spec): its physical path is the checkout's, or below it, while HOME's is not (a home that
-# itself lies inside the checkout is excluded from the rule). install.sh's product-directory helper and
-# uninstall.sh's take() ask it, so the whole decision lives here, once.
+# keel_dir_is_checkouts_own DIR — true when DIR is really the Keel checkout's own directory (B7, B8 and
+# B19 of the spec): its physical path is the checkout's, or below it. A DIR still to be made is judged by
+# its nearest existing ancestor (a home or product directory install.sh is about to create), with the rest
+# of DIR replayed from there: `mkdir -p` makes that rest as real directories, so a `..` in it climbs back
+# (`<outside>/new/../../<checkout>/h` is inside the checkout). install.sh (the home itself, and its product
+# directories) and uninstall.sh (the home, and take()) ask it, so the whole decision lives here, once. The
+# home is never inside the checkout — both tools refuse such a home first — so no exemption for one is
+# needed.
 keel_dir_is_checkouts_own() {
-  _keel_sw_inside "$1" && ! _keel_sw_inside "$2"
+  local a="$1" rest="" c new=0
+  while [ ! -d "$a" ]; do
+    case "$a" in */*) rest="${a##*/}/$rest"; a="${a%/*}" ;; *) rest="$a/$rest"; a="." ;; esac
+    [ -n "$a" ] || a="/"
+  done
+  # Replay the rest: an existing directory is entered, a new one counted ($new deep below $a), and a `..`
+  # leaves the newest new directory first, else climbs from $a.
+  while [ -n "$rest" ]; do
+    c="${rest%%/*}"; rest="${rest#*/}"
+    case "$c" in
+      ''|.) ;;
+      ..) if [ "$new" -gt 0 ]; then new=$((new - 1)); else a="$a/.."; fi ;;
+      *) if [ "$new" = 0 ] && [ -d "$a/$c" ]; then a="$a/$c"; else new=$((new + 1)); fi ;;
+    esac
+  done
+  _keel_sw_inside "$a"
 }
 
 # _keel_sw_check FILE strict|state — the refusals shared by the EDIT and STATE writes, decided before

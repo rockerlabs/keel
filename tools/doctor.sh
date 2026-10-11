@@ -823,25 +823,23 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # tools/self/doctor.sh's check 1c — which greps advice lines for the LITERAL substring `ihome_flag`,
   # not just its expanded value — still recognizes these as home-aware (dir #98).
   irelink_mode="${imode_flag:- --link}"
-  # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the same test as
-  # install.sh's keel_own_stale_link (B3, T3): its target is the one recorded for it, and that target lies inside
-  # the checkout the manifest names (the one that wrote the record — the OLD one after a move; a dangling target
-  # is judged on the strings alone), or the record is the pre-dir-#369 `-` placeholder. No usable manifest
-  # proves nothing, so a link is then not provably Keel's.
+  # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the ONE
+  # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
+  # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for
+  # it, and that target lies inside the checkout the manifest names (the one that wrote the record — the OLD
+  # one after a move; a dangling target's checkout is judged on the strings). The pre-dir-#369 `-` placeholder
+  # stays a call-site branch here, as at install. No usable manifest proves nothing, so a link is then not
+  # provably Keel's.
   # Both modes' manifests are read: a home can hold a Claude-mode install audited with --codex (dir #124's shape).
   doctor_link_is_keels_own() {
-    local dl_rel dl_man dl_rec dl_ck
+    local dl_rel dl_man dl_rec
     dl_rel="${1#"$ihome"/}"
     for dl_man in "$ihome/.keel/install-manifest.claude" "$ihome/.keel/install-manifest.codex"; do
       manifest_usable "$dl_man" || continue
       dl_rec="$(manifest_symlink_extra "$dl_man" "$dl_rel")"
       [ -n "$dl_rec" ] || continue
       [ "$dl_rec" = "-" ] && return 0
-      [ "$dl_rec" = "$(readlink "$1")" ] || continue
-      dl_ck="$(manifest_field "$dl_man" checkout)"
-      dl_ck="${dl_ck%/}"
-      [ -n "$dl_ck" ] || continue
-      case "$dl_rec" in "$dl_ck"/*) return 0 ;; esac
+      manifest_link_is_keels "$dl_man" "$dl_rel" "$1" && return 0
     done
     return 1
   }

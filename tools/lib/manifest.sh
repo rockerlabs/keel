@@ -21,11 +21,9 @@
 # Sourced by tools/pre-pr-gate.sh, and by all three of install.sh/uninstall.sh/tools/doctor.sh (dir
 # #363 made the latter two consumers too — previously each hand-copied manifest_field/manifest_usable,
 # verified output-identical to this file's own copy; found stale here by this ticket's own
-# /code-review max pass, since this line used to say the opposite). install.sh's own consumption stays
-# OPTIONAL (dir #323, sourcing only when tools/lib/manifest.sh exists — a minimal test-fixture checkout
-# may not ship tools/ at all, and install.sh degrades to "provenance unavailable" rather than requiring
-# it); uninstall.sh's and tools/doctor.sh's are REQUIRED (guarded, not bare — see each script's own
-# sourcing-block comment for why).
+# /code-review max pass, since this line used to say the opposite). All three source it REQUIRED
+# (guarded, not bare — see each script's own sourcing-block comment for why): install.sh's consumption
+# was OPTIONAL until spec 685 round 2 (B20) gave it the link-record predicate below on every run.
 
 # manifest_field FILE KEY — the value of a top-level `key=value` line in an install/gate manifest, first
 # match, "" on any read failure. `|| true` at the end: an EXISTING but unreadable manifest
@@ -47,4 +45,65 @@ manifest_symlink_extra() {
 # readable, AND a keel_manifest_version this consumer understands (currently exactly "1").
 manifest_usable() {
   [ -f "$1" ] && [ "$(manifest_field "$1" keel_manifest_version)" = "1" ]
+}
+
+# keel_path_inside PATH CHECKOUT — PATH is CHECKOUT or below it (B7's "inside": the checkout's path or a
+# path under it, with the slash, so a sibling `<checkout>-dots` is not inside): on the strings, or — when
+# PATH still resolves — on the physical paths, so a record that spells the checkout through another link
+# (`~/.keel/engine/...` for `~/pet-projects/keel/...`) still counts. A PATH that no longer resolves
+# (its checkout moved) is judged on the strings alone.
+keel_path_inside() {
+  local p="$1" ck="${2%/}" pd ckp
+  [ -n "$ck" ] || return 1
+  case "$p" in "$ck"|"$ck"/*) return 0 ;; esac
+  [ -e "$p" ] || return 1
+  pd="$(cd -P "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  ckp="$(cd -P "$ck" 2>/dev/null && pwd -P)" || return 1
+  case "$pd/$(basename "$p")" in "$ckp"|"$ckp"/*) return 0 ;; esac
+  return 1
+}
+
+# manifest_same_path A B — A and B name the same directory entry: the same text; or, for an absolute A, the
+# same name in the same directory (`-ef` on the two parent directories, so a symlinked parent, /tmp vs
+# /private/tmp and a case-only difference in a directory name on a case-insensitive file system all match).
+# The entry's own name must match exactly. Comparing the entries themselves (`-ef`) would follow a link at
+# A, so the end of a chain of links (`x -> ~/dots/x -> <checkout>/x`) and a differently-named sibling
+# (`<checkout>/ALIAS.md -> CORE.md`, or a hard link) would pass; folding the name's case would let a
+# separate `core.md` beside `CORE.md` pass on a case-sensitive file system. None of them is "the same"
+# entry. (On a case-insensitive file system a case-only file name is then not matched either — the safe
+# direction: the link is kept, never taken.) The text half is what still answers once the directories are
+# gone (a moved checkout). The one same-entry comparison, used by install.sh's keel_link_points_at (a
+# link against the file Keel would wire now), manifest_link_is_keels below (a link against its record),
+# uninstall.sh's symlink arm and its compatibility-link count.
+manifest_same_path() {
+  [ "$1" = "$2" ] && return 0
+  case "$1" in /*) ;; *) return 1 ;; esac
+  [ "${1##*/}" = "${2##*/}" ] && [ "${1%/*}/" -ef "${2%/*}/" ]
+}
+
+# manifest_link_is_keels MANIFEST REL LINK — the ONE test that a link a manifest recorded is provably Keel's
+# (spec 685 round 2 B20): MANIFEST is usable and holds a `symlink` record for REL whose target is not the
+# pre-dir-#369 `-`, LINK's own target IS that recorded target (manifest_same_path: the same text, or the
+# same entry spelled through another directory) — and the target lies inside the checkout MANIFEST's
+# `checkout=` header names (keel_path_inside — the checkout that WROTE the record, the old one after a
+# move). An adopter's link that an older manifest recorded as Keel's fails the last test, so nothing that
+# asks this moves or re-places it. A link that only ENDS at the recorded target through another link (a
+# dotfiles manager's `~/.claude/x -> ~/dots/x -> <checkout>/x`) is not Keel's: the test compares where LINK
+# itself points, never the end of its chain. A recorded target that is ITSELF a symlink is not Keel's
+# either: Keel's tracked tree holds no symlinks (tests/test_install_never_clobber.sh pins that), so such a
+# record — written by an older install whose "in sync" test followed a chain — names an adopter's alias
+# inside the checkout (`<checkout>/ALIAS.md -> CORE.md`). (Only while that alias exists: a deleted alias, or
+# a hard-link one, is a residual — see install.sh keel_own_stale_link.) install.sh's stale-link class, tools/doctor.sh's
+# dangling-link advice and uninstall.sh's symlink arm all ask it; each keeps its own handling of a `-`
+# record at the call site.
+manifest_link_is_keels() {
+  local man="$1" rel="$2" link="$3" rec cur ck
+  manifest_usable "$man" || return 1
+  rec="$(manifest_symlink_extra "$man" "$rel")"
+  [ -n "$rec" ] && [ "$rec" != "-" ] || return 1
+  cur="$(readlink "$link" 2>/dev/null)" || return 1
+  manifest_same_path "$cur" "$rec" || return 1
+  [ ! -L "$rec" ] || return 1
+  ck="$(manifest_field "$man" checkout)"
+  keel_path_inside "$rec" "$ck"
 }
