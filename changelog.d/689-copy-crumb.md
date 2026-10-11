@@ -3,5 +3,5 @@
   `install.sh --link --with-git`, which exits 2 in a copy home (and `--link` alone would migrate it). It now
   says to replace the embedded rails block with the one in Keel's `CORE.md`, which brings back both trimmed
   sections and drops the note; `/keel-setup` gives the same copy-path advice. A copy home whose earlier
-  refresh left the linked note is offered the trim-keeping refresh again instead of reading as up to date. A
-  linked `--no-git` home keeps its `--with-git` advice (dir #689).
+  refresh left the linked note no longer reads as up to date: `install.sh` offers the trim-keeping refresh,
+  and `doctor.sh` warns. A linked `--no-git` home keeps its `--with-git` advice (dir #689).
