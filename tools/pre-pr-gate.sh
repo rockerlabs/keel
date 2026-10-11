@@ -2335,7 +2335,7 @@ case "${1:-}" in
     # its reason (the first line of what key resolution printed — a detached HEAD, say) instead of the generic
     # "no checkout" text. `keys` itself stays subject to the $HOME guard: the exemption list above is -h/lex only.
     ph_repo_key="<repo-key>"; ph_receipt_key="<receipt-key>"
-    ph_tail="stand for the keys \`bash $0 keys\` prints inside the checkout.)"
+    ph_tail="stand for the keys \`bash $(printf '%q' "$0") keys\` prints inside the checkout.)"
     ph_note="(No git checkout resolved here, or HEAD is detached: <receipt-key> and <repo-key> $ph_tail"
     if ph_raw="$(_require_receipt_key "$PWD" 2>&1 && printf '\nKEYS\t%s\t%s' "$RECEIPT_REPO_KEY" "$RECEIPT_KEY")"; then
       ph_keys="${ph_raw##*$'\nKEYS\t'}"
@@ -3056,15 +3056,16 @@ case "${1:-}" in
     printf 'pre-pr-gate: sweep - recent runs look fine (a verified review within the last %s)\n' "$sw_k"
     exit 0
     ;;
+  "")
+    : # hook mode: no argument (every wiring shape the installer ever wrote, spec 745 E12)
+    ;;
   *)
     # dir #713 (spec 745 A21 item 7): a first argument that is none of the arms above used to fall through to hook
     # mode and wait on stdin for a hook event nobody sends. Usage and exit 2 instead, before any read. Safe because
     # hook mode is entered with NO argument: every PreToolUse(Bash) command shape tools/install-pre-pr-gate.sh ever
     # wrote is `bash <gate>` (spec 745 E12, re-checked at implementation over all 43 commits touching it).
-    if [ "$#" -gt 0 ]; then
-      printf 'pre-pr-gate: unknown subcommand %s — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
-      exit 2
-    fi
+    printf 'pre-pr-gate: unknown subcommand %s — usage: pre-pr-gate.sh <subcommand> (see the script header; -h prints the state paths)\n' "$1" >&2
+    exit 2
     ;;
 esac
 
@@ -3844,13 +3845,16 @@ case "$status" in
           # release, so an `agent:*` outcome with no trace and no settings.json wiring the new matcher is most
           # likely a pull without the installer re-run. ONE added sentence, never reworded text (several tests pin
           # the surrounding wording); a settings file that already wires it (or matches every agent type) omits it.
-          # dir #713 (S2-1): an agent has no Skill tool to follow the Skill(code-review) remedy below; one added
-          # sentence names the one it can perform — the reviewer subagent's own SubagentStop writes the trace.
+          # dir #713 (S2-1): an agent has no Skill tool to follow the Skill(code-review) remedy below. One added
+          # sentence names the one it can perform — re-run the reviewer subagent, whose SubagentStop writes the
+          # trace — but only where that hook is wired: where it is not, the installer sentence (the else arm) is the only
+          # remedy the agent can act on, and the two would contradict.
           if [[ "$review_outcome" == agent:* ]]; then
-            trace_deny_detail="$trace_deny_detail For an agent review, re-run the $REVIEW_AGENT_TYPE subagent at the current HEAD — its SubagentStop hook writes the trace (no Skill tool needed)."
-          fi
-          if [[ "$review_outcome" == agent:* ]] && ! _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
-            trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+            if _gate_settings_any "$main_top" _gate_settings_has_review_hook; then
+              trace_deny_detail="$trace_deny_detail For an agent review, re-run the $REVIEW_AGENT_TYPE subagent at the current HEAD — its SubagentStop hook writes the trace (no Skill tool needed)."
+            else
+              trace_deny_detail="$trace_deny_detail No settings.json this gate can see wires a SubagentStop hook for $REVIEW_AGENT_TYPE (the matcher changed in this release): re-run tools/install-pre-pr-gate.sh with the scope flag you used before, then restart the session."
+            fi
           fi
           # dir #346 remedy (1): this used to end with "Run /polish again." — a technically-working but
           # NOT minimal remedy (it re-runs simplify/tests/depth-sizing too, none of which need redoing).

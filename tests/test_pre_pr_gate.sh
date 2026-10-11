@@ -3967,11 +3967,11 @@ check_eq "dir #674: an unset HOME still injects the block" "$sr_expect" "$(print
 mutgate() {  # mutgate NAME SED-EXPR — a copy of the gate (with its lib/) under $SANDBOX/mut-NAME, edited by SED-EXPR; prints its path
   local md="$SANDBOX/mut-$1/tools"
   mkdir -p "$md" && cp -R "$REPO_ROOT/tools/lib" "$md/lib" && sed -e "$2" "$gate" > "$md/pre-pr-gate.sh"
+  cmp -s "$gate" "$md/pre-pr-gate.sh" && fail "dir #713: mutant '$1' differs from the gate" "its sed matched nothing — the mutation is vacuous"
   printf '%s' "$md/pre-pr-gate.sh"
 }
 d="$(mkrepo)"
 # 1. the header-boundary extraction stops at its boundary: it holds nothing that exists only after it.
-gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
 check_absent "dir #713 item 1: the extracted header does NOT run on into the code (no PPG_AWK_PROG assignment)" "$gate_head" "PPG_AWK_PROG='"
 mut="$(mutgate boundary 's/^# CLI subcommands/# CLI-subcommands/')"
 mut_head="$(sed -n '1,/^# CLI subcommands/p' "$mut")"
@@ -3982,11 +3982,12 @@ check_absent "dir #713 item 2: -h in a checkout on a branch does NOT print 'No g
 mut="$(mutgate note 's/ph_note=""; *$/:/; s/ph_note=""$/:/')"
 run_in "$d" bash "$mut" -h </dev/null
 check_contains "dir #713 item 2: ...and the check CAN fail (the success branch no longer clears the note)" "$OUT" "No git checkout resolved here"
-# 3. the note names the gate by the path it was invoked as; `keys` stays subject to the $HOME guard (accepted: the
+# 3. (and 6, below, reads the same output) the note names the gate by the path it was invoked as; `keys` stays subject to the $HOME guard (accepted: the
 #    guard's exemption list is -h/--help/lex only, kept short on purpose).
 mkdir -p "$SANDBOX/nonrepo-713"
 run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
 check_contains "dir #713 item 3: the note names the gate by the path it was invoked as" "$OUT" "bash $gate keys"
+nonrepo_help="$OUT"
 run_in "$d" env -u HOME bash "$gate" keys </dev/null
 check_status "dir #713 item 3: keys with HOME unset still exits 1 (the guard is not widened)" 1 "$STATUS"
 check_contains "dir #713 item 3: ...with the HOME diagnosis" "$OUT" "cannot resolve the gate state root"
@@ -3997,8 +3998,7 @@ check_status "dir #713 item 4: -h on a detached HEAD exits 0" 0 "$STATUS"
 check_contains "dir #713 item 4: ...and prints why the keys could not be resolved" "$OUT" "cannot key the receipt — detached HEAD"
 check_absent "dir #713 item 4: ...instead of the generic 'No git checkout resolved here'" "$OUT" "No git checkout resolved here"
 # 6. the note is exactly ONE output line (the line holding its start also holds its end).
-run_in "$SANDBOX/nonrepo-713" bash "$gate" -h </dev/null
-note_line="$(printf '%s\n' "$OUT" | grep -F "No git checkout resolved here" || true)"
+note_line="$(printf '%s\n' "$nonrepo_help" | grep -F "No git checkout resolved here" || true)"
 check_eq "dir #713 item 6: exactly one line holds the note's start" "1" "$(printf '%s\n' "$note_line" | grep -c .)"
 check_contains "dir #713 item 6: ...and that same line holds its end" "$note_line" "prints inside the checkout.)"
 mut="$(mutgate split 's/\${ph_note:+"\$ph_note"}/${ph_note:+$ph_note}/')"
@@ -4017,14 +4017,24 @@ d7="$(mkrepo)"
 gate "git status" "$d7"
 check_status "dir #713 item 7: hook mode with no argument still allows an unrelated command" 0 "$STATUS"
 check_eq "dir #713 item 7: ...with an empty decision" "" "$OUT"
-# 8. S2-1: an agent:* outcome's missing-trace deny names the remedy the agent CAN perform; a bare level's does not.
-d="$(mkrepo)"
-rm -f "$(trace_for "$d")"
+# 8. S2-1: an agent:* outcome's missing-trace deny names the remedy an agent CAN perform where the reviewer's hook is
+#    wired, the installer remedy where it is not (never both: the first would be unperformable); a bare level gets neither.
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+mkdir -p "$d/.claude"
+jq -n --arg gate "$gate" \
+  '{hooks:{SubagentStop:[{matcher:"keel-polish-reviewer", hooks:[{type:"command", command:("bash " + $gate + " skill-trace")}]}]}}' \
+  > "$d/.claude/settings.json"
 write_full_receipt_review "$d" "agent:high"
 gate "gh pr create --fill" "$d"
-check_contains "dir #713 item 8: agent:* missing trace → still names the missing trace (wording untouched)" "$OUT" "no trace matching"
+check_contains "dir #713 item 8: agent:* missing trace, hook wired → still names the missing trace (wording untouched)" "$OUT" "no trace matching"
 check_contains "dir #713 item 8: ...and names the subagent that can write it" "$OUT" "re-run the keel-polish-reviewer subagent at the current HEAD"
-check_contains "dir #713 item 8: ...and the hook that writes the trace" "$OUT" "SubagentStop"
+check_contains "dir #713 item 8: ...and the hook that writes the trace" "$OUT" "its SubagentStop hook writes the trace"
+check_absent "dir #713 item 8: ...without the installer sentence (the hook IS wired)" "$OUT" "No settings.json this gate can see wires"
+d="$(mkrepo)"; rm -f "$(trace_for "$d")"
+write_full_receipt_review "$d" "agent:high"
+gate "gh pr create --fill" "$d"
+check_contains "dir #713 item 8: agent:* missing trace, hook NOT wired → the installer remedy" "$OUT" "No settings.json this gate can see wires"
+check_absent "dir #713 item 8: ...and not the unperformable re-run remedy beside it" "$OUT" "re-run the keel-polish-reviewer subagent at the current HEAD"
 d="$(mkrepo)"
 rm -f "$(trace_for "$d")"
 write_full_receipt_review "$d" "medium"
