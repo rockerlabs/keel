@@ -30,7 +30,8 @@ just-closed audit run's harvest here too (G4(c)).
 **G1 — pains are the input.**
 A release row answers a named, currently-felt operator pain, stated in the operator's own words. Propose
 a cut against a stated pain; never invent a theme without one. A row with no pain behind it says so
-("carried-over theme, not a sprint").
+("carried-over theme, not a sprint"). A pain the operator picked from labels the groom offered is
+recorded as a picked label, never as their words (the doc's G1 gives the three constraints).
 
 **G2 — read ticket bodies, not headings.**
 Read every slate ticket's body before assigning it anywhere.
@@ -54,7 +55,8 @@ entry; (c) confirmed at G0, not repeated here.
 
 **G5 — every release row, five-plus-two fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named
-risks — plus a budget estimate sized from the project's own cost-measurement data where it exists, and
+risks — plus a budget estimate sized from the project's own cost-measurement data where it exists (the
+estimate names its weights, and the release's actual is summed at the same ones), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
 against spec-return rate) is a report field, not a role — record it, judge it next cycle.
 

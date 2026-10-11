@@ -186,6 +186,9 @@ pin "mutation size rule: one shared build cache per leg" "$doc" \
 pin "mutation size rule: df floor before a leg starts" "$doc" \
   '`df` floor' \
   "expected item 5 to require a free-space check before a mutation leg starts"
+pin "mutation size rule: the df floor names a value (dir #760)" "$doc" \
+  'floor is twice the largest total' \
+  "expected item 5 to give the df floor a value derived from what a leg was measured to leave"
 pin "mutation size rule: the report states what the leg left and hands over the rm -rf" "$doc" \
   'hands the operator the `rm -rf`' \
   "expected item 5 to make the leg report what it left and give the operator the cleanup command"

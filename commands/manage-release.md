@@ -25,14 +25,15 @@ before briefing anyone — never assign from headings alone.
 
 **M3 — wave plan (R2).**
 Cut waves by file overlap. Assume every PR collides in `CHANGELOG.md` at the `[Unreleased]` anchor,
-unless the project keeps changelog fragments (keel does, dir #744) — merges serialize as a consequence (strict up-to-date still forces it). Show the operator the wave plan before wave 1 starts.
+unless the project keeps changelog fragments (keel does, dir #744) — merges serialize as a consequence (strict up-to-date still forces it); an integration or train PR is the operator's alternative, with R5 on every constituent head. Show the operator the wave plan before wave 1 starts.
 
 **M4 — launch workers (R3), one brief shape (see the doc's worker-brief section), single writer to
 the backlog (R8).**
 Where the harness can launch a real, gated session directly, launch it yourself — one health-line
-report per launch, operator can revoke to manual at any time. State the model/effort call as the
-FIRST line of the launch, not the brief's tail. Every brief states explicitly that ticket-marker
-writes route through you, not through the worker's own `/go` claim step. Every brief carries: state to
+report per launch, operator can revoke to manual at any time; a launch needs a turn the operator started.
+State the model/effort call as the FIRST line of the launch, not the brief's tail. Every brief states
+explicitly that backlog writes of any kind (a marker, a Log line, a ticket) route through you, not
+through the worker's own `/go` claim step. Every brief carries: state to
 re-derive, the ticket/coupling table, leads-not-findings, rules by pointer not paraphrase, and a
 "handed to you" line.
 
@@ -57,8 +58,8 @@ cutting the tag; fall back to reading the release-readiness doc directly where t
 exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses. Compose the release
 notes yourself from the `CHANGELOG.md` section at the verified GO SHA, before the tag exists; hand the
 operator every remaining action (merge, tag, publish, and install where the build has a daily-use
-location) as one copy-paste-ready command block, re-derived live. Append the run's cost line (R7) to your project's releases cross-run
-record.
+location) as one copy-paste-ready command block, re-derived live. Complete the run's cost line (R7), summed at the weights the groom's
+estimate names, in your project's releases cross-run record.
 
 **M9 — one wrap, at the end (R13).**
 Workers never run their own wrap; each checkpoint report carries its wrap-relevant material

@@ -128,7 +128,9 @@ This is the durable public referent a future run points at instead of re-derivin
    prunes). So: keep the artifacts of **surviving** mutants only — the leg deletes a killed mutant's
    artifacts in the same iteration that kills it; use one shared build cache per leg, never a build-cache
    copy per mutant; check a `df` floor before the leg starts (free space on the volume that holds its
-   scratch area, and stop rather than start below it); and the leg's report states what it left (paths and
+   scratch area, and stop rather than start below it; the floor is twice the largest total
+   an earlier leg of the project was measured to leave — felt up to 10 GB, so 20 GB until
+   one is measured); and the leg's report states what it left (paths and
    sizes) and hands the operator the `rm -rf` for it — a leg cannot delete its own scratch area, so the
    cleanup command is part of its report contract.
 6. **Report contract** — your report must contain, in this order:

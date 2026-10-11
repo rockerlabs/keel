@@ -264,4 +264,67 @@ pin "manage-release M3 qualifies the CHANGELOG collision assumption with changel
 pin "manage-release M3 still says merges serialize, and why (strict up-to-date)" "$cmd" 'merges serialize as a consequence (strict up-to-date still forces it)' \
   "expected M3 to keep the serialization consequence"
 
+# --- dir #760: practice corrections from the 0.15.0 run and the 0.16.0 ledger, each at its requirement ------
+pin "R2 prices sequential merges under strict up-to-date" "$doc" \
+  '**Strict up-to-date makes every sequential merge cost' \
+  "expected R2 to say a strict up-to-date base makes N merges cost N Update-branch plus CI cycles (dir #760)"
+pin "R2 names the integration PR and the train" "$doc" \
+  '**An integration PR or a train lands several clean PRs' \
+  "expected R2 to say how a multi-PR landing is built, who starts its session, and R5 on every head (dir #760)"
+pin "R2 says the manager starts the train session early, on an operator-started turn" "$doc" \
+  'The manager starts that session early,' \
+  "expected R2 to say who starts the train's session and when (dir #760)"
+pin "R2 applies R5 to every constituent head" "$doc" \
+  '**R5 holds for every constituent**' \
+  "expected R2 to apply the pushed-head rule to each PR merged into a train (dir #760)"
+pin "R2 names the Update-branch versus worker-rebase race" "$doc" \
+  "**The operator's Update branch and a worker's rebase race" \
+  "expected R2 to say a REBASE starts with a fetch and a head compare (dir #760)"
+pin "R3 requires a launch on an operator-started turn" "$doc" \
+  '**A launch needs a turn the operator started' \
+  "expected R3 to say the harness refuses a launch on a worker-started turn, and the shapes that work (dir #760)"
+pin "R6 budgets cross-session sends" "$doc" \
+  '**Budget the cross-session sends' \
+  "expected R6 to carry the per-operator-turn send cap and the batching rule (dir #760)"
+pin "R6 treats a manager change as a re-identification" "$doc" \
+  '**A manager change is a re-identification' \
+  "expected R6 to carry the handover rule: the shared brief's manager id, one line per live worker (dir #760)"
+pin "R7 points at the shipped weights override" "$doc" \
+  '`KEEL_TOKENS_WEIGHTS`' \
+  "expected R7 to name the tool and the override that sum the actual at the estimate's weights (dir #760)"
+pin "R8 requires a checked writer for filings, not only markers" "$doc" \
+  '**The single writer needs a checked writer' \
+  "expected R8 to carry the truncation incident and the read-temp-refuse-to-shrink-rename rule (dir #760)"
+check_absent "R8 no longer limits the routing rule to marker writes" "$doc_body" 'marker writes route through the manager instead'
+pin "manage-release.md M4 routes every backlog write through the manager" "$cmd" \
+  'backlog writes of any kind' \
+  "expected M4 to agree with go.md's step 6 override, which covers any backlog entry (dir #760)"
+pin "R9 states the stacked cut PR and its restated GO conditions" "$doc" \
+  '**The cut PR can ride on the last fix PR' \
+  "expected R9 to carry the stacked-cut shape and what it changes for the GO conditions (dir #760)"
+pin "R10 requires a seam plan to name both merge orders" "$doc" \
+  '**A seam plan names its resolution in BOTH merge orders' \
+  "expected R10 to say the operator may merge out of the proposed order (dir #760)"
+pin "R10 names a repo-wide check landing mid-wave as a seam" "$doc" \
+  '**A repo-wide check landing mid-wave' \
+  "expected R10 to say a new lint reddens in-flight PRs at Update-branch and must be announced (dir #760)"
+pin "R10 says which seam shapes the per-PR Seams step leaves manual" "$doc" \
+  "**The worker's Seams step covers less than the manager's duty does" \
+  "expected R10 to name the two shapes dir #668's step leaves manual (dir #760)"
+pin "R11 says the sweep is load-bearing" "$doc" \
+  '**The sweep is load-bearing' \
+  "expected R11 to carry the wedge record and the late-timer rule (dir #760)"
+pin "R11 says a worker's own stop needs a named blocker" "$doc" \
+  "**A worker's own stop needs a named blocker" \
+  "expected R11 to say a long review loop is not a reason to stop (dir #760)"
+pin "R11 treats suite concurrency as a budget" "$doc" \
+  '**Suite concurrency is a budget too' \
+  "expected R11 to carry the per-worker concurrency cap (dir #760)"
+pin "R11 keeps branch cleanup out of a running wave" "$doc" \
+  '**No branch cleanup while a wave runs' \
+  "expected R11 to carry the ref-canary false-trip rule (dir #760)"
+pin "R11 settles a stop that waits for the operator at wave-plan time" "$doc" \
+  '**A stop that waits for the operator is settled at wave-plan time' \
+  "expected R11 to carry the compaction-stop rule (dir #760)"
+
 summary
