@@ -61,6 +61,7 @@ tags="$(git -C "$repo_dir" tag -l 'v*')"
 
 work=""
 child=""
+mode=leader
 
 # Remove the clone, once, on every path. The suite is TERMed and waited for first: its tests are the clone's
 # writers, and an rm racing them ends in "Directory not empty". One retry after that: a git writer that is
@@ -69,14 +70,14 @@ cleanup() {
   local rc=$? n=0 sig
   trap - EXIT
   trap '' INT TERM HUP   # a second Ctrl-C / TERM during the wait below must not abandon the clone
-  # `child` is the pid AND the process-group id of the suite (set -m at the launch). Steps test the GROUP, not
-  # only the leader: tests/run.sh may exit quickly on TERM while a descendant it never owned still runs. If the
-  # group is not there (a shell without job control), the leader pid is the fallback. `child` is kept after the
-  # normal wait on purpose, so a descendant a FINISHED suite leaked is swept too; a pgid is not reused while any
-  # member lives, and the signal is only sent while `kill -0` says the group exists.
+  # `child` is the suite's pid; `mode` says how to reach it, decided once at the launch (set -m): `group` — it is
+  # its own process-group leader, so every step addresses the GROUP (tests/run.sh may exit quickly on TERM while
+  # a descendant it never owned still runs, and a finished suite's leaked descendant is swept too); `leader` — no
+  # job control, so only the still-unreaped leader pid is ever signalled (cleared after the wait). A signal is
+  # sent only while `kill -0` says its target exists, and cleanup runs right after the wait, so a stale pgid is
+  # not in play.
   if [ -n "$child" ]; then
-    sig="-$child"
-    kill -0 -- "$sig" 2>/dev/null || sig="$child"
+    if [ "$mode" = group ]; then sig="-$child"; else sig="$child"; fi
     if kill -0 -- "$sig" 2>/dev/null; then
       echo "cut-sim: stopping the suite before removing the clone..." >&2
       kill -TERM -- "$sig" 2>/dev/null || true
@@ -106,8 +107,8 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX")"
 clone="$work/clone"
 head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
 dirty="$(git -C "$repo_dir" status --porcelain)"
-[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes (first: ${dirty%%
-*}) — only the committed HEAD is simulated" >&2
+nl=$'\n'
+[ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes (first: ${dirty%%"$nl"*}) — only the committed HEAD is simulated" >&2
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
@@ -133,8 +134,11 @@ set -m
 (cd "$clone" && exec bash tests/run.sh </dev/null) &
 child=$!
 set +m
+# Job control took effect only if the child leads its own group; decide it now, while the leader is alive.
+if kill -0 -- "-$child" 2>/dev/null; then mode=group; fi
 rc=0
 wait "$child" || rc=$?
+if [ "$mode" = leader ]; then child=""; fi   # reaped: its pid may be reused, never signal it again
 if [ "$rc" -eq 0 ]; then
   echo "cut-sim (dir #722): the suite on the cut shape: PASS"
   exit 0

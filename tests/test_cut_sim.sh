@@ -71,13 +71,13 @@ run env TMPDIR="$tmproot" bash "$sim" --repo "$probe_src"
 check_status "the clone has a committed 9999.0.0 section dated today (UTC), no fragments, the cut-sim author" 0 "$STATUS"
 
 # --- a signal removes the clone too, AFTER the suite and its descendants are gone ---------------------------
-# The fixture suite starts a descendant (sleep), records its pid and announces itself with a sentinel file; on
-# TERM it exits WITHOUT stopping the descendant. cut-sim must signal the suite's whole process group, wait, and
-# only then remove the clone — so when the tool has exited the descendant is gone and so is the clone.
-pidfile="$SANDBOX/sig-desc.pid"; ready="$SANDBOX/sig-ready"
-# NOT well-behaved: on TERM it exits at once and leaves the descendant running (as tests/run.sh does for a
-# grandchild its test file spawned) — only a signal to the whole process group reaches the sleep.
-sig_src="$(mk_src 'trap "exit 143" TERM; sleep 61 & p=$!; echo $p > '"$pidfile"'; : > '"$ready"'; wait')"
+# The fixture suite starts a descendant that records a marker when it is TERMed, announces itself with a
+# sentinel file, and the suite itself exits on TERM WITHOUT stopping the descendant (as tests/run.sh does for a
+# grandchild a test file spawned). cut-sim must signal the suite's whole process group, wait, and only then
+# remove the clone: when the tool has exited the marker exists (the TERM reached the descendant) and the clone
+# is gone. If the signal only reached the suite, no marker ever appears.
+killed="$SANDBOX/sig-killed"; ready="$SANDBOX/sig-ready"
+sig_src="$(mk_src 'trap "exit 143" TERM; ( trap ": > '"$killed"'; exit 143" TERM; : > '"$ready"'; sleep 61 & wait ) & wait')"
 env TMPDIR="$tmproot" bash "$sim" --repo "$sig_src" >/dev/null 2>&1 &
 sim_pid=$!
 n=0
@@ -88,17 +88,8 @@ kill -TERM "$sim_pid" 2>/dev/null || true
 n=0
 while kill -0 "$sim_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
 wait "$sim_pid" 2>/dev/null || true
-desc_pid="$(cat "$pidfile" 2>/dev/null || true)"
-# Poll: on a container whose PID 1 reaps slowly the killed sleep is a zombie for an instant (it ends the loop at
-# once when the pid is gone; the bound only matters when the group kill is broken).
-n=0
-while [ -n "$desc_pid" ] && kill -0 "$desc_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
-if [ -n "$desc_pid" ] && ! kill -0 "$desc_pid" 2>/dev/null; then
-  pass "a TERM stops the suite's descendant before the tool exits"
-else
-  fail "a TERM stops the suite's descendant before the tool exits" "descendant pid '${desc_pid}' is still alive"
-  [ -n "$desc_pid" ] && kill -TERM "$desc_pid" 2>/dev/null || true   # our own fixture's sleep, started above
-fi
+[ -e "$killed" ] && pass "a TERM reaches the suite's descendant (process-group signal), before the tool exits" \
+  || fail "a TERM reaches the suite's descendant (process-group signal), before the tool exits" "no TERM marker from the descendant"
 check_eq "a TERM removes the clone" "" "$(ls -A "$tmproot")"
 
 # --- refusals: no v* tag (a shallow/tagless checkout), not a git repo --------------------------------
@@ -125,6 +116,7 @@ printf 'x\n' >> "$dirty_src/CHANGELOG.md"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$dirty_src"
 check_status "a dirty source still simulates its committed HEAD -> exit 0" 0 "$STATUS"
 check_contains "...with a NOTE that only the committed HEAD is simulated" "$OUT" "uncommitted or untracked changes"
+check_contains "...naming the first excluded entry" "$OUT" "(first:  M CHANGELOG.md)"
 # --repo on a SUBDIRECTORY of a work tree simulates that work tree's root
 run env TMPDIR="$tmproot" bash "$sim" --repo "$pass_src/tests"
 check_status "--repo on a subdirectory simulates the work tree root -> exit 0" 0 "$STATUS"
