@@ -25,12 +25,13 @@
 _section_guard_ok=1
 [ -n "${SANDBOX:-}" ] && [ -d "${SANDBOX:-/nonexistent}" ] || _section_guard_ok=0
 case "${HOME:-}" in "${SANDBOX:-/nonexistent}"/*) ;; *) _section_guard_ok=0 ;; esac
-[ "$(command -v new_repo 2>/dev/null)" = new_repo ] || _section_guard_ok=0
-[ "$(command -v git 2>/dev/null)" = git ] || _section_guard_ok=0
+for _section_guard_fn in new_repo git; do
+  [ "$(command -v "$_section_guard_fn" 2>/dev/null)" = "$_section_guard_fn" ] || _section_guard_ok=0
+done
 if [ "$_section_guard_ok" != 1 ]; then
   printf '%s\n' 'section-guard: tests/lib.sh is not loaded in this shell — refusing to run this test section (dir #758).' \
     '  A section without the sandbox runs `git -C ""` against the repository the shell stands in.' \
     '  Source "<checkout>/tests/lib.sh" || exit 1 first, then this guard; or run the section as a file under tests/.' >&2
   exit 97
 fi
-unset _section_guard_ok
+unset _section_guard_ok _section_guard_fn

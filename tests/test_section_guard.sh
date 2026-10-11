@@ -25,10 +25,7 @@ exit 0
 EOF
 chmod +x "$shimdir/git"
 
-scratch="$SANDBOX/section-scratch"
-mkdir -p "$scratch"
-type -P git >/dev/null || { echo "no git binary on PATH" >&2; exit 1; }
-"$(type -P git)" -C "$scratch" init -q
+scratch="$(new_repo)"
 
 # run_draft <draft-body> [lib]: writes the draft, runs it in a fresh bash (cwd = scratch) with the shim on
 # PATH. With "lib" the child sources the real lib.sh first (a plain shell does not) and runs on the real
@@ -111,7 +108,7 @@ check_eq "S4: a draft after lib.sh runs to the end" 0 "$rc"
 case "$(cat "$SANDBOX/out$n")" in *DRAFT-RAN*) pass "S4: ...and its body executed" ;; *) fail "S4: ...and its body executed" "no DRAFT-RAN in $(cat "$SANDBOX/out$n") / $errtxt" ;; esac
 
 # --- S5: nothing leaked into the scratch repo the cwd stood in --------------------------------------
-if "$(type -P git)" -C "$scratch" config --get diff.context >/dev/null 2>&1; then
+if git -C "$scratch" config --get diff.context >/dev/null 2>&1; then
   fail "S5: the scratch repo's config stayed untouched" "diff.context was written"
 else
   pass "S5: the scratch repo's config stayed untouched"
