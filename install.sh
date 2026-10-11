@@ -250,9 +250,15 @@ fi
 
 # layout_flag (spec 685 round 2 B22): this home's layout, once both sticky detects above settle LINK/NOGIT, carried
 # by every remedy advised from here on, so a copy-mode home is never told --link (messages above keep the old form).
-layout_flag=""
-[ "$LINK" = 1 ] && layout_flag=" --link"
-[ "$NOGIT" = 1 ] && layout_flag="$layout_flag --no-git"
+# manifest_layout is the same fact as the manifest records it (`layout=`), derived here once for both.
+manifest_layout="copy"
+[ "$LINK" = 1 ] && manifest_layout="link"
+[ "$LINK" = 1 ] && [ "$NOGIT" = 1 ] && manifest_layout="link-nogit"
+case "$manifest_layout" in
+  link) layout_flag=" --link" ;;
+  link-nogit) layout_flag=" --link --no-git" ;;
+  *) layout_flag="" ;;
+esac
 advise_install="install.sh$mode_flag$layout_flag$home_flag"
 
 # advise_refresh_force — the one remedy that actually reaches a refused/aliased Keel-owned file from
@@ -316,8 +322,7 @@ fi
 # manifest_mode / manifest_dir / manifest_file (dir #125) — hoisted here from their original spot near
 # the manifest-write step below (dir #323): the provenance check the sync block needs (keel_own_untouched,
 # defined below) has to read a PRIOR run's manifest before this run places anything, not after. Each
-# depends only on $CODEX/$HOME_DIR, already resolved above; manifest_layout stays at the write step
-# further down since it also depends on $LINK/$NOGIT and is never needed by the provenance check.
+# depends only on $CODEX/$HOME_DIR, already resolved above (manifest_layout is set with layout_flag, above).
 manifest_mode="claude"
 [ "$CODEX" = 1 ] && manifest_mode="codex"
 manifest_dir="$HOME_DIR/.keel"
@@ -2055,15 +2060,18 @@ done
 # to doctor it's legitimate copy mode (OK).) Round 2 B21: the "will NOT load" WARN fires whenever the rails
 # cannot load — in either mode, a context file that is not a regular file carries none (the loop above already
 # printed its own line).
-if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ]; then
+if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && { [ -e "$HOME_DIR/$CONTEXT_FILE" ] || [ -L "$HOME_DIR/$CONTEXT_FILE" ]; }; then
   echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
 elif [ "$LINK" = 1 ]; then
   if has_core_import "$HOME_DIR/CLAUDE.md"; then
-    if keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
-      echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
-      echo "       Remove the block (or the import line) by hand."
+    if [ ! -f "$HOME_DIR/keel/CORE.md" ] && keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
+      echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — only its embedded"
+      echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back."
     elif [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
       echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
+    elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
+      echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
+      echo "       Remove the block (or the import line) by hand."
     else
       echo "  OK   CLAUDE.md imports keel/CORE.md"
     fi
@@ -2228,12 +2236,8 @@ fi
 # manifest is now REQUIRED by every consumer — a home with no manifest (a pre-0.7 install that hasn't
 # re-run this script) gets a clear, actionable error from uninstall.sh/tools/doctor.sh naming this
 # script as the fix, never a silent heuristic fallback.
-# manifest_mode/manifest_dir/manifest_file/the manifest_dir mkdir are hoisted above the sync block now
-# (dir #323) — only manifest_layout is still derived here, since it depends on $LINK/$NOGIT and nothing
-# above the sync block needs it.
-manifest_layout="copy"
-[ "$LINK" = 1 ] && manifest_layout="link"
-[ "$LINK" = 1 ] && [ "$NOGIT" = 1 ] && manifest_layout="link-nogit"
+# manifest_mode/manifest_dir/manifest_file/the manifest_dir mkdir are hoisted above the sync block (dir #323), and
+# manifest_layout is set beside layout_flag once the mode is final (spec 685 round 2 B22).
 home_resolved="$(cd "$HOME_DIR" && pwd)"
 keel_version="$(git -C "$root" describe --tags 2>/dev/null || echo unknown)"
 installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

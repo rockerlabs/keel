@@ -815,14 +815,13 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # doctor_claude_flags — the install.sh layout flags that re-run this home's Claude-mode install as it is, for a
   # remedy (spec 685 round 2 B22): its manifest's `layout=` (link → ` --link`, link-nogit → ` --link --no-git`,
   # copy → nothing), read whether or not it recorded the slot advised on (a foreign link is unrecorded). No usable
-  # manifest → detection: keel/CORE.md a --no-git trim or a link, or a CLAUDE.md importing the core (the linked
-  # layout's own wiring, still there when keel/ is gone), means linked; else copy.
+  # manifest → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim or a link means linked,
+  # else copy.
   doctor_claude_flags() {
     local dm_man="$ihome/.keel/install-manifest.claude" dm_lay=""
     if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
     elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
-    elif [ -f "$ihome/CLAUDE.md" ] && grep -qE "$core_import_re" "$ihome/CLAUDE.md" 2>/dev/null; then dm_lay="link"
     fi
     case "$dm_lay" in
       link) printf ' --link' ;;
@@ -832,13 +831,18 @@ if [ "$INSTALL_MODE" = 1 ]; then
   }
   # iclaude_relink — the flags for a Claude-only slot (commands/*, agents/*, keel/*, the top-level
   # FRAMEWORK/PRINCIPLES): `install.sh --codex` never creates one, so one under a --codex audit belongs to a
-  # Claude-mode install sharing this home (dir #124's shape). irelink_mode — for a slot of the AUDITED mode
-  # (bin/keel, wired in both, and the rails checks below): under --codex that is ` --codex` alone (a codex home is
-  # copy-only; `--codex --link` is a usage error), so a copy-mode home is never advised --link, nor a Claude slot
-  # --codex. Their own variables, not folded into $ihome_flag, so tools/self/doctor.sh's check 1c — which greps
-  # advice lines for the LITERAL substring `ihome_flag` — still recognizes these as home-aware (dir #98).
+  # Claude-mode install sharing this home (dir #124's shape). ibin_relink — for bin/keel, the one slot wired in
+  # both modes: the audited mode's (under --codex ` --codex` alone; a codex home is copy-only). So a copy-mode home
+  # is never advised --link, nor a Claude slot --codex.
+  # irelink_mode — for the rails checks below, which fire only when the context file IMPORTS keel/CORE.md: that
+  # import is the linked layout's own wiring, so --link (or the bare --codex re-run, under --codex) whatever the
+  # manifest says — a plain re-run over a home whose keel/CORE.md is gone lands in copy mode and records
+  # layout=copy, and advising that layout back would never clear the finding.
+  # Their own variables, not folded into $ihome_flag, so tools/self/doctor.sh's check 1c — which greps advice lines
+  # for the LITERAL substring `ihome_flag` — still recognizes these as home-aware (dir #98).
   iclaude_relink="$(doctor_claude_flags)"
-  irelink_mode="${imode_flag:-$iclaude_relink}"
+  ibin_relink="${imode_flag:-$iclaude_relink}"
+  irelink_mode="${imode_flag:- --link}"
   # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the ONE
   # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
   # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for
@@ -877,7 +881,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     [ -L "$l" ] || continue
     # this_relink — the flags that can actually restore THIS SPECIFIC slot: bin/keel is the only slot wired in
     # both modes, so it takes the audited mode's; every other slot is Claude-only (see iclaude_relink above).
-    if [ "$l" = "$ihome/bin/keel" ]; then this_relink="$irelink_mode"
+    if [ "$l" = "$ihome/bin/keel" ]; then this_relink="$ibin_relink"
     else                                    this_relink="$iclaude_relink"
     fi
     if [ ! -e "$l" ]; then

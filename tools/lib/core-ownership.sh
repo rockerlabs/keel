@@ -34,7 +34,9 @@ export KEEL_CORE_BEGIN_RE KEEL_CORE_END_RE
 
 # keel_core_has_block FILE — true iff FILE holds a BEGIN marker line: the one presence check.
 keel_core_has_block() {
-  [ -f "$1" ] || return 1   # never read a non-regular file: a FIFO blocks the read forever (dir #752)
+  # Never read a non-regular file: a FIFO blocks the read forever (dir #752). The block readers below are reached
+  # only after this check (or a caller's own -f), so they carry no guard of their own.
+  [ -f "$1" ] || return 1
   grep -qE "$KEEL_CORE_BEGIN_RE" "$1" 2>/dev/null
 }
 

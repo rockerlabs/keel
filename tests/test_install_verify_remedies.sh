@@ -44,6 +44,17 @@ for m in copy link; do
   check_contains "A42 $m: …and declines the link" "$OUT" "CLAUDE.md $np"
 done
 
+# B21: an import that does not resolve beside an embedded KEEL-CORE block — the block alone loads the rails, so
+# Verify must not call it "loads twice" (removing the block as told would leave no rails at all).
+h="$SANDBOX/b21-block"; mkdir -p "$h"
+run "$install" --home "$h" --no-hooks --link
+printf '<!-- KEEL-CORE-BEGIN -->\nmy kept rails\n<!-- KEEL-CORE-END -->\n' >> "$h/CLAUDE.md"
+rm -f "$h/keel/CORE.md"; ln -s "$SANDBOX/b21-nowhere" "$h/keel/CORE.md"
+run "$install" --home "$h" --no-hooks --link
+check_status "B21 import + block, keel/CORE.md dangling → exit 0" 0 "$STATUS"
+check_contains "B21 import + block: …Verify says only the block loads the rails" "$OUT" "only its embedded"
+check_absent "B21 import + block: …never \"the rails load twice\"" "$OUT" "the rails load twice"
+
 # --- A43 (K40) install side: every Verify remedy carries the home's layout ---------------------------------------
 # remedy_of TEXT REL — the Verify decline line for REL.
 remedy_of() { grep -F -- "--   $2 $np" <<<"$1" || true; }
@@ -121,10 +132,15 @@ check_contains "A43 doctor linked, no manifest: --link from detection (keel/CORE
 cp "$h/CLAUDE.md" "$h/CLAUDE.md.keep"; printf '# mine\n' > "$h/CLAUDE.md"
 run "$doctor" --install "$h"
 check_contains "A43 doctor linked, no manifest, no import: --link from keel/CORE.md's link alone" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
-cat "$h/CLAUDE.md.keep" > "$h/CLAUDE.md"
+# The rails checks fire only on a context file that IMPORTS keel/CORE.md — the linked layout's own wiring — so
+# they keep --link even when a plain re-run has since recorded layout=copy (keel/CORE.md gone → copy mode).
+h="$SANDBOX/a43-import"; mkdir -p "$h"
+run "$install" --home "$h" --no-hooks --link
 rm -f "$h/keel/CORE.md"
+run "$install" --home "$h" --no-hooks
+check_eq "A43 import setup: the plain re-run recorded layout=copy" "copy" "$(sed -n 's/^layout=//p' "$h/.keel/install-manifest.claude")"
 run "$doctor" --install "$h"
-check_contains "A43 doctor linked, no manifest, keel/CORE.md gone: --link from CLAUDE.md's import" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
+check_contains "A43 doctor: G-RAILS-IMPORT-BROKEN still advises --link over a layout=copy manifest" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "re-run install.sh --link --home"
 h="$SANDBOX/a43-dnogit"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link --no-git
 ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
