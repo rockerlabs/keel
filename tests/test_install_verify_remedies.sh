@@ -59,7 +59,7 @@ check_absent "B21 import + block: …never \"rails load twice\", in Verify or th
 check_contains "B21 import + block: …the sync step leaves the block, saying why" "$OUT" "its embedded KEEL-CORE block is what loads the rails"
 run "$doctor" --install "$h"
 check_contains "B21 import + block: …doctor agrees: keep the block meanwhile" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "keep it until keel/CORE.md resolves"
-check_contains "B21 import + block: …and says to remove the foreign keel/CORE.md link first (a re-run alone declines it)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove the keel/CORE.md link first"
+check_contains "B21 import + block: …and says to remove the foreign keel/CORE.md link first (a re-run alone declines it)" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove what sits at keel/CORE.md first"
 # …and an IDENTICAL block is not removed as a duplicate either (it is the only copy of the rails that loads).
 h="$SANDBOX/b21-same"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
@@ -87,6 +87,12 @@ h="$SANDBOX/a43-link"; mkdir -p "$h/keel/CORE.md"
 run "$install" --home "$h" --no-hooks --link
 check_status "A43 linked, a directory at keel/CORE.md → exit 0" 0 "$STATUS"
 check_contains "A43 linked: …the Verify remedy carries --link" "$(remedy_of "$OUT" keel/CORE.md)" "re-run 'install.sh --link --home"
+# …and doctor, over the same home (manifest layout=link): every install.sh remedy keeps --link, and the import GAP
+# says the directory has to go first (a re-run declines it).
+run "$doctor" --install "$h"
+check_contains "A43 doctor, a directory at keel/CORE.md: G-RAILS-IMPORT-BROKEN says to remove it first" "$(grep -F G-RAILS-IMPORT-BROKEN <<<"$OUT")" "remove what sits at keel/CORE.md first"
+check_contains "A43 doctor: …W-MANIFEST-DRIFT's re-run keeps the manifest's --link" "$(grep -F W-MANIFEST-DRIFT <<<"$OUT")" "re-run install.sh --link --home"
+check_absent "A43 doctor: …no bare re-run anywhere in the report (it would land in copy mode)" "$OUT" "install.sh --home"
 h="$SANDBOX/a43-nogit"; mkdir -p "$h/keel/FRAMEWORK.md"
 run "$install" --home "$h" --no-hooks --link --no-git
 check_status "A43 --no-git, a directory at keel/FRAMEWORK.md → exit 0" 0 "$STATUS"

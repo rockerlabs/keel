@@ -864,7 +864,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   repo_root="$(cd "$tools_dir/.." && pwd)"
   say "● keel install ($ihome)"
   if [ ! -d "$ihome" ]; then
-    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh$imode_flag$ihome_flag)"
+    gap G-INSTALL-MISSING "no install found at $ihome (run install.sh$irelink_mode$ihome_flag)"
     flush_notes ""
     finish
   fi
@@ -947,13 +947,16 @@ if [ "$INSTALL_MODE" = 1 ]; then
       flush_notes "$ihome/.keel/doctor-accept"
       finish
     else
-      gap G-RAILS-MISSING "no global $icontext at $ihome — the always-on rails are not wired (run install.sh$imode_flag$ihome_flag)"
+      gap G-RAILS-MISSING "no global $icontext at $ihome — the always-on rails are not wired (run install.sh$irelink_mode$ihome_flag)"
     fi
   elif grep -qE "$core_import_re" "$gclaude"; then
     if [ ! -f "$ihome/keel/CORE.md" ]; then
       ri_first=""
-      if [ -L "$ihome/keel/CORE.md" ] && ! doctor_link_is_keels_own "$ihome/keel/CORE.md"; then
-        ri_first="remove the keel/CORE.md link first (install never replaces a link Keel did not make), then "
+      # Something non-regular at keel/CORE.md that the manifest does not prove Keel's (a link it never recorded, a
+      # directory) is declined by every re-run: it has to go first. Keel's own recorded link is simply relinked.
+      if { [ -L "$ihome/keel/CORE.md" ] && ! doctor_link_is_keels_own "$ihome/keel/CORE.md"; } \
+         || { [ ! -L "$ihome/keel/CORE.md" ] && [ -e "$ihome/keel/CORE.md" ]; }; then
+        ri_first="remove what sits at keel/CORE.md first (install never replaces what it cannot prove it placed), then "
       fi
       gap G-RAILS-IMPORT-BROKEN "$icontext imports keel/CORE.md but the target does not resolve (${ri_first}re-run install.sh$irails_relink$ihome_flag)$(keel_core_has_block "$gclaude" && echo "; its embedded KEEL-CORE block is what loads the rails meanwhile — keep it until keel/CORE.md resolves")"
     elif keel_core_has_block "$gclaude"; then
@@ -1000,10 +1003,10 @@ if [ "$INSTALL_MODE" = 1 ]; then
       current)         say "  OK   core rails: embedded copy (matches this checkout's CORE.md)" ;;
       current-trimmed) say "  OK   core rails: embedded copy (matches this checkout's CORE.md, trimmed)" ;;
       *)
-        warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$imode_flag$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
+        warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$irelink_mode$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
     esac
   else
-    warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$imode_flag$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
+    warn W-RAILS-UNWIRED "$icontext carries neither the @import line nor the embedded KEEL-CORE block — the rails are not wired (re-run install.sh$irelink_mode$ihome_flag$([ "$CODEX_MODE" = 1 ] || echo ", or migrate: install.sh --link"))"
   fi
 
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
@@ -1011,7 +1014,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # pointing at the root name would silently keep reading.
   for f in FRAMEWORK.md PRINCIPLES.md; do
     if [ ! -f "$ihome/keel/$f" ] && [ ! -f "$ihome/$f" ]; then
-      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh$imode_flag$ihome_flag)"
+      warn W-TIER-MISSING "$f is reachable neither at keel/$f nor at $f — the on-demand tier is missing (re-run install.sh$irelink_mode$ihome_flag)"
     elif [ -f "$ihome/keel/$f" ] && [ -e "$ihome/$f" ] && [ ! -L "$ihome/$f" ]; then
       warn W-TIER-SHADOW "$f exists both at keel/$f (linked, fresh) and as a root copy (stale shadow) — re-point your $icontext map at keel/$f, then remove the copy"
     fi
@@ -1039,7 +1042,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     if [ "$wired" = "$total" ]; then
       say "  OK   commands: $wired of $total shipped are wired"
     else
-      warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+      warn W-CMDS-MISSING "commands: only $wired of $total shipped are wired — missing:$missing_cmds (a pull refreshes content, not composition: re-run install.sh$iclaude_relink$ihome_flag; or ignore this if declined deliberately)"
     fi
   fi
 
@@ -1067,7 +1070,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     elif [ "$awired" = "$atotal" ]; then
       say "  OK   agents: $awired of $atotal shipped are wired"
     else
-      warn W-REVIEW-AGENT-MISSING "agents: only $awired of $atotal shipped are wired — missing:$missing_agents (/polish's read-only review agent; a pull refreshes content, not composition: re-run install.sh$ihome_flag; or ignore this if declined deliberately)"
+      warn W-REVIEW-AGENT-MISSING "agents: only $awired of $atotal shipped are wired — missing:$missing_agents (/polish's read-only review agent; a pull refreshes content, not composition: re-run install.sh$iclaude_relink$ihome_flag; or ignore this if declined deliberately)"
     fi
     reviewer_src="$repo_root/agents/keel-polish-reviewer.md"
     reviewer_inst="$ihome/agents/keel-polish-reviewer.md"
@@ -1109,7 +1112,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     if [ "$dpresent" = "$dtotal" ]; then
       say "  OK   docs: $dpresent of $dtotal shipped are present in $docs_rel/"
     else
-      warn W-DOCS-MISSING "docs: only $dpresent of $dtotal shipped are present in $ihome/$docs_rel — missing:$missing_docs (a pull refreshes content, not composition: re-run install.sh$imode_flag$ihome_flag)"
+      warn W-DOCS-MISSING "docs: only $dpresent of $dtotal shipped are present in $ihome/$docs_rel — missing:$missing_docs (a pull refreshes content, not composition: re-run install.sh$irelink_mode$ihome_flag)"
     fi
   fi
 
@@ -1140,11 +1143,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
   imanifest_mode="claude"; [ "$CODEX_MODE" = 1 ] && imanifest_mode="codex"
   imanifest="$ihome/.keel/install-manifest.$imanifest_mode"
   if [ ! -f "$imanifest" ]; then
-    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — this install predates Keel's install manifest or hasn't been re-run since; record one: install.sh$imode_flag$ihome_flag"
+    warn W-MANIFEST-MISSING "no install manifest recorded at $imanifest — this install predates Keel's install manifest or hasn't been re-run since; record one: install.sh$irelink_mode$ihome_flag"
   else
     iman_version="$(manifest_field "$imanifest" keel_manifest_version)"
     if [ "$iman_version" != "1" ]; then
-      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest; re-run install.sh$imode_flag$ihome_flag to record a fresh one"
+      warn W-MANIFEST-MISSING "install manifest at $imanifest has an unreadable or unsupported keel_manifest_version ('${iman_version:-none}') — treated as absent, same as no manifest; re-run install.sh$irelink_mode$ihome_flag to record a fresh one"
     else
       iman_layout="$(manifest_field "$imanifest" layout)"
       iman_home="$(manifest_field "$imanifest" home)"
@@ -1169,7 +1172,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         iman_drift="manifest recorded home=$iman_home, but this audit is auditing $ihome"
       fi
       if [ -n "$iman_drift" ]; then
-        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$imode_flag$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
+        warn W-MANIFEST-DRIFT "$iman_drift — re-run install.sh$irelink_mode$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
       fi
     fi
   fi

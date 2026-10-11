@@ -2074,9 +2074,10 @@ elif [ "$LINK" = 1 ]; then
       if [ "$v_block" = 1 ]; then
         echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — only its embedded"
         echo "       KEEL-CORE block loads the rails (a copy that won't update on git pull). Keep the block until keel/CORE.md is back:"
-        echo "       remove what sits at keel/CORE.md, then re-run '$advise_install'."
+        echo "       remove whatever blocks keel/CORE.md, then re-run '$advise_install'."
       else
         echo "  WARN CLAUDE.md imports keel/CORE.md, but keel/CORE.md does not resolve to a regular file — the always-on rails will NOT load."
+        echo "       Remove whatever blocks keel/CORE.md, then re-run '$advise_install'."
       fi
     elif [ "$v_block" = 1 ]; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
@@ -2086,7 +2087,7 @@ elif [ "$LINK" = 1 ]; then
     fi
   elif keel_core_has_block "$HOME_DIR/CLAUDE.md" && [ ! -f "$HOME_DIR/keel/CORE.md" ]; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy, and keel/CORE.md does not resolve to a regular file — keep"
-    echo "       the block: an import of keel/CORE.md would load nothing until it is back (remove what sits there, then"
+    echo "       the block: an import of keel/CORE.md would load nothing until it is back (remove whatever blocks it, then"
     echo "       re-run '$advise_install')."
   elif keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
     echo "  WARN CLAUDE.md still embeds the rails as a copy (loads fine, but won't update on git pull)."
