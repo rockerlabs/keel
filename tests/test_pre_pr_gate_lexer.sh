@@ -414,8 +414,104 @@ $G push --no-verify
 gh "pr" create --fill
 @ C73c allow
 git "push" --no-verify
-@ C74 allow
+@ C74 refuse
 echo "$(case a in a) git push --no-verify;; esac)"
+@ C74b refuse
+echo ${v:-$(case x in x) ;; esac; git push origin main --no-verify)}
+@ C74c refuse
+cat <<E
+$(case a in a) git push --no-verify;; esac)
+E
+@ C74d refuse
+cat <<E
+$(case a in a) gh pr create --fill;; esac)
+E
+@ C74e refuse
+echo "${v:-$(case x in x) ;; esac; git push --no-verify)}"
+@ C74f allow
+echo "$(case $x in a) echo 1;; esac)"
+@ C74g refuse
+x=$(case $1 in a) echo 1;; esac); git status
+@ C74h refuse
+echo "$(echo case a in b)" && git status
+@ C74i refuse
+echo "$(if true; then case a in a) git push --no-verify;; esac; fi)"
+@ C74k refuse
+echo "$(case
+x in a) git push --no-verify;; esac)"
+@ C74l allow
+echo "$("case" a in b)" && git status
+@ C74m refuse
+echo "$(case a in a) echo 1;; esac)"; git status
+@ C74n refuse
+echo "$(case x in a|b) git push --no-verify;; esac)"
+@ C74o refuse
+echo "$(case x in a | b | c) git push --no-verify;; esac)"
+@ C74p refuse
+echo "$(case x
+in a) git push --no-verify;; esac)"
+@ C74q refuse
+echo "${v:-$(case x in
+a) git push --no-verify;; esac)}"
+@ C74r refuse
+echo "$(case x in a) case y in b) git push --no-verify;; esac;; esac)"
+@ C74s refuse
+echo "$(echo 1 | case x in a) git push --no-verify;; esac)"
+@ C74t allow
+echo "$(case x in (a) echo 1;; esac)" && git status
+@ C74u allow
+echo "$(case x in (a|b) case y in (c) echo 1;; esac;; esac)" && git status
+@ C74v allow
+echo "$(echo esac)" && git status
+@ C74w refuse
+echo "$(esac; case x in a) git push --no-verify;; esac)"
+@ C74y refuse
+echo $(case x in a) git push --no-verify;; esac)
+@ C74z refuse
+echo $(echo $(case x in a) git push --no-verify;; esac))
+@ C74aa refuse
+echo "$(echo $(case x in a) git push --no-verify;; esac))"
+@ C74ab allow
+x=$(case $1 in a) echo 1;; esac); echo done
+@ C74ac refuse
+echo $(case x in a|esac) git push --no-verify;; esac)
+@ C74ad refuse
+echo $(case x in (a|esac) true;; b) git push --no-verify;; esac)
+@ C74ae refuse
+echo $(coproc case x in a) git push --no-verify;; esac)
+@ C74af refuse
+echo $(case) && git status
+@ C74ah refuse
+echo $(case x in (esac) true;; b) git push --no-verify;; esac)
+@ C74ai refuse
+echo $(time -p case x in a) git push --no-verify;; esac)
+@ C74aj refuse
+echo $(coproc foo case x in a) git push --no-verify;; esac)
+@ C74ak refuse
+echo $(if true; then case x
+in a) git push --no-verify;; esac; fi)
+@ C74al refuse
+echo $(coproc foo { case x in a) git push --no-verify;; esac; })
+@ C74am refuse
+echo $(time -- case x in a) git push --no-verify;; esac)
+@ C74an refuse
+echo $(env case x in a) git push --no-verify;; esac)
+@ C74ao allow
+echo $(coproc cat file) && git status
+@ C74ap allow
+echo $(time -p ls) && gh pr view
+@ C74aq allow
+echo "$(echo case)" && git status
+@ C74ar allow
+echo $(echo "case" x in y) && git status
+@ C74as allow
+echo $(echo case x "in" y) && git status
+@ C74at refuse
+echo "$(true; esac; case x in a) git push --no-verify;; esac)"
+@ C74ag allow
+echo $(case x in (a) echo 1;; esac) && git status
+@ C74j push
+X=$(case a in a) git push --no-verify;; esac)
 @ C75 push
 arr=(git push --no-verify)
 @ C76 push
@@ -682,13 +778,13 @@ shim_case line-with-exit1 1 'push\037\037\n'
 
 # --- dir #745: the header's residual paragraph tells the truth (B18) -------------------------------------------
 gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
-for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` pattern's" "an array assignment's" '`repeat N cmd`' \
+for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` header split over lines" "an array assignment's" '`repeat N cmd`' \
   '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
   "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' '`sudo`' '`timeout`' '`env -C`' '`/usr/bin/env …`' '`exec -a x`' \
   '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' 'a second PR-opening command' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
-for dropped in 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
+for dropped in "a \`case\` pattern's" 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do
   check_absent "header: no longer names [$dropped]" "$gate_head" "$dropped"
 done
 
