@@ -248,11 +248,8 @@ if [ "$CODEX" = 0 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
   fi
 fi
 
-# layout_flag (spec 685 round 2 B22) — the layout half of "can this command reach the install", set once both
-# sticky detects above have settled LINK and NOGIT: ` --link`, plus ` --no-git` for a trimmed home. Every
-# install.sh command advised from here on carries it through advise_install, so a remedy re-runs THIS home's own
-# layout and a copy-mode home is never told --link. The messages above (a missing lib) keep the earlier form: the
-# mode was not resolved there.
+# layout_flag (spec 685 round 2 B22): this home's layout, once both sticky detects above settle LINK/NOGIT, carried
+# by every remedy advised from here on, so a copy-mode home is never told --link (messages above keep the old form).
 layout_flag=""
 [ "$LINK" = 1 ] && layout_flag=" --link"
 [ "$NOGIT" = 1 ] && layout_flag="$layout_flag --no-git"
@@ -1294,7 +1291,7 @@ strip_template_prose() {
 # anywhere in prose as an import, so the token may sit mid-line with text around it — an anchored
 # ^@…$ would call a working import unwired (and then append a duplicate). Verify uses this too, and
 # tools/doctor.sh --install carries a mirrored copy (cross-referenced there) — keep them in sync.
-has_core_import() { grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$1" 2>/dev/null; }
+has_core_import() { [ -f "$1" ] && grep -qE '(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)' "$1" 2>/dev/null; }
 # import_line_appended FILE — FILE's bytes with the import line appended, on stdout: the CMD of linked
 # mode's append, an EDIT through tools/lib/safe-write.sh (dir #748 audit S5-2), so a CLAUDE.md linked
 # into the checkout is refused like any other edit. A newline first when FILE does not end in one; a
@@ -1972,6 +1969,27 @@ keel_where_machine() { "$root/tools/install-secret-guard.sh" --where --global 2>
 wm_get() { printf '%s\n' "$wm" | sed -n "s/^$1=//p" | tail -1; }
 # Where a hooksPath came from, for a message: "" for the common case of no origin to name.
 wm_origin_note() { local o; o="$(wm_get origin)"; [ -z "$o" ] || printf ' (%s scope, %s)' "$(wm_get scope)" "$o"; }
+# conditional_refusal_note tried|nohooks — Verify's hint when the guard is not wired and a conditional [includeIf]
+# include sets a core.hooksPath of its own (or cannot all be read): install-secret-guard.sh --global refuses over it
+# (dir #717), so a plain re-run is refused again (`tried`), and so is a run without --no-hooks (`nohooks`, dir #743
+# item 1). Hedged ("if", "likely"): `conditional=` is counted against the current value, not Keel's dir, so the
+# installer's own refusal message names the actual cause. Silent when $hp is Keel's dir or nothing is conditional.
+conditional_refusal_note() {
+  local c
+  [ "$hp_is_keel" != 1 ] || return 0
+  c="$(wm_get conditional)"
+  case "$1:$c" in
+    *:) ;;
+    tried:unknown) echo "       If it refused because it could not read every conditional [includeIf] include, its message"
+                   echo "       above names why (a TMPDIR inside a repository, say); fix that, or add --force to wire anyway." ;;
+    tried:*) echo "       If it refused over a conditional [includeIf] include that sets its own core.hooksPath, its"
+             echo "       message above names it; point that setting at Keel's dir or remove it, or add --force." ;;
+    nohooks:unknown) echo "       A run without --no-hooks would likely be refused: not every conditional [includeIf] include could be"
+                     echo "       read (a TMPDIR inside a repository, say); fix that, or wire with tools/install-secret-guard.sh --global --force." ;;
+    nohooks:*) echo "       A run without --no-hooks would likely be refused: a conditional [includeIf] include sets its own core.hooksPath;"
+               echo "       point that setting at Keel's dir or remove it, or wire with tools/install-secret-guard.sh --global --force." ;;
+  esac
+}
 if [ "$DO_HOOKS" = 1 ]; then
   # Plain-language heads-up first: felt (first fresh-adopter install, 2026-07-11) — when an AI tool
   # drives this install, its permission dialog for the git config change reads as "a bug" to a novice
@@ -2035,12 +2053,12 @@ done
 # (Rails trichotomy: parallel to tools/doctor.sh --install's core-rails check — keep the two in
 # sync. Severities differ on purpose: in a --link run an embedded block means "un-migrated" (WARN);
 # to doctor it's legitimate copy mode (OK).) Round 2 B21: the "will NOT load" WARN fires whenever the rails
-# cannot load. A context file that is not a regular file is never read (dir #752: a FIFO there blocks the read
-# forever); the loop above already printed its own line.
-if [ "$LINK" = 1 ]; then
-  if [ ! -f "$HOME_DIR/CLAUDE.md" ]; then
-    echo "  WARN CLAUDE.md is not a regular file (see its line above) — the always-on rails will NOT load."
-  elif has_core_import "$HOME_DIR/CLAUDE.md"; then
+# cannot load — in either mode, a context file that is not a regular file carries none (the loop above already
+# printed its own line).
+if [ ! -f "$HOME_DIR/$CONTEXT_FILE" ]; then
+  echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
+elif [ "$LINK" = 1 ]; then
+  if has_core_import "$HOME_DIR/CLAUDE.md"; then
     if keel_core_has_block "$HOME_DIR/CLAUDE.md"; then
       echo "  WARN CLAUDE.md imports the core AND still embeds a KEEL-CORE block — the rails load twice."
       echo "       Remove the block (or the import line) by hand."
@@ -2056,13 +2074,10 @@ if [ "$LINK" = 1 ]; then
     echo "  WARN CLAUDE.md does not import the linked core — the always-on rails will NOT load."
     echo "       Add the line:  $import_line"
   fi
-  if [ "$NOGIT" = 1 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
-    echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
-    echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
-  fi
-elif [ ! -f "$HOME_DIR/$CONTEXT_FILE" ] && { [ -e "$HOME_DIR/$CONTEXT_FILE" ] || [ -L "$HOME_DIR/$CONTEXT_FILE" ]; }; then
-  # Copy mode: the rails live in the context file itself, so one that is not a regular file carries none.
-  echo "  WARN $CONTEXT_FILE is not a regular file (see its line above) — the always-on rails will NOT load."
+fi
+if [ "$NOGIT" = 1 ] && keel_core_is_nogit_trim "$HOME_DIR/keel/CORE.md"; then
+  echo "  OK   keel/CORE.md is the trimmed --no-git core — code/git rails NOT installed"
+  echo "       (if git enters this machine's workflow, restore them first:  install.sh --link$home_flag --with-git)"
 fi
 
 # dir #85 (code audit, finding 22): the guard's REAL state is inspected on every run, not only when
@@ -2153,31 +2168,10 @@ elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   echo "       git -C <repo> config --local core.hooksPath <repo>/.git/hooks   then   tools/install-secret-guard.sh <repo>"
 elif [ "$DO_HOOKS" = 0 ]; then
   echo "  --   secret-guard not wired (--no-hooks: this run did not touch git hooks)"
-  # dir #743 item 1: the same conditional include would refuse a run without the flag (exit 3), so say so now.
-  # Hedged ("likely"): `conditional=` is counted against the current value, not Keel's dir.
-  if [ "$hp_is_keel" != 1 ]; then
-    case "$(wm_get conditional)" in
-      '') ;;
-      unknown) echo "       A run without --no-hooks would likely be refused: not every conditional [includeIf] include could be"
-               echo "       read (a TMPDIR inside a repository, say); fix that, or wire with tools/install-secret-guard.sh --global --force." ;;
-      *) echo "       A run without --no-hooks would likely be refused: a conditional [includeIf] include sets its own core.hooksPath;"
-         echo "       point that setting at Keel's dir or remove it, or wire with tools/install-secret-guard.sh --global --force." ;;
-    esac
-  fi
+  conditional_refusal_note nohooks   # dir #743 item 1: a run without the flag would meet the same refusal
 else
   echo "  WARN secret-guard not wired — run tools/install-secret-guard.sh --global"
-  # dir #717: that run refuses over a conditional [includeIf] include that sets its own core.hooksPath, or when
-  # it cannot read them all — a plain re-run is refused again. `conditional=` is counted against the current
-  # value, not Keel's dir, so this says "if": the installer's own message above names the actual cause.
-  if [ "$hp_is_keel" != 1 ]; then
-    case "$(wm_get conditional)" in
-      '') ;;
-      unknown) echo "       If it refused because it could not read every conditional [includeIf] include, its message"
-               echo "       above names why (a TMPDIR inside a repository, say); fix that, or add --force to wire anyway." ;;
-      *) echo "       If it refused over a conditional [includeIf] include that sets its own core.hooksPath, its"
-         echo "       message above names it; point that setting at Keel's dir or remove it, or add --force." ;;
-    esac
-  fi
+  conditional_refusal_note tried
 fi
 
 # The keel CLI: wired iff bin/keel resolves back into this checkout. Not graded in an ephemeral
@@ -2283,7 +2277,7 @@ context_created=0
 edit_kind="" edit_extra=""
 if [ "$foreign_core" != 1 ]; then
   if [ "$LINK" = 1 ]; then
-    if [ -f "$gclaude" ] && has_core_import "$gclaude"; then   # -f first: never read a FIFO (dir #752)
+    if has_core_import "$gclaude"; then
       context_created=1; edit_kind=edit; edit_extra=import-line
     fi
   elif [ -f "$HOME_DIR/$CONTEXT_FILE" ] && keel_core_has_block "$HOME_DIR/$CONTEXT_FILE"; then

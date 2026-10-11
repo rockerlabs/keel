@@ -812,18 +812,13 @@ if [ "$INSTALL_MODE" = 1 ]; then
   iother_default="${KEEL_HOME:-${HOME:-}/$iother_leaf}"
   iother_reach="$(home_reach "$ihome" "$iother_default")"
   iother_doctor_arg="${iother_reach:+ \"$iother_reach\"}"
-  # doctor_mode_flags MODE — the install.sh flags that re-run this home's MODE (claude|codex) install as it is,
-  # for a remedy (spec 685 round 2 B22): read from the manifest of that mode, whether or not it recorded the slot
-  # being advised on (a foreign link is unrecorded). Its `layout=` header gives ` --link` (link) or
-  # ` --link --no-git` (link-nogit), nothing for copy; its mode is the file's own suffix (the `mode=` header holds
-  # the same value), so codex gives ` --codex` — a codex home is copy-only (`--codex --link` is a usage error).
-  # No usable manifest of that mode → detection, as install.sh's stickiness detects: keel/CORE.md a --no-git trim
-  # or a link means linked — and so does a CLAUDE.md importing the core, the linked layout's own wiring (a home
-  # whose keel/ is gone still needs --link to get it back) — else copy. So a copy-mode home is never advised
-  # --link, nor a Claude slot --codex.
-  doctor_mode_flags() {
-    local dm_man="$ihome/.keel/install-manifest.$1" dm_lay=""
-    [ "$1" = codex ] && { printf ' --codex'; return 0; }
+  # doctor_claude_flags — the install.sh layout flags that re-run this home's Claude-mode install as it is, for a
+  # remedy (spec 685 round 2 B22): its manifest's `layout=` (link → ` --link`, link-nogit → ` --link --no-git`,
+  # copy → nothing), read whether or not it recorded the slot advised on (a foreign link is unrecorded). No usable
+  # manifest → detection: keel/CORE.md a --no-git trim or a link, or a CLAUDE.md importing the core (the linked
+  # layout's own wiring, still there when keel/ is gone), means linked; else copy.
+  doctor_claude_flags() {
+    local dm_man="$ihome/.keel/install-manifest.claude" dm_lay=""
     if manifest_usable "$dm_man"; then dm_lay="$(manifest_field "$dm_man" layout)"
     elif keel_core_is_nogit_trim "$ihome/keel/CORE.md"; then dm_lay="link-nogit"
     elif keel_core_is_link "$ihome/keel/CORE.md"; then dm_lay="link"
@@ -835,15 +830,15 @@ if [ "$INSTALL_MODE" = 1 ]; then
     esac
     return 0
   }
-  # irelink_mode — the re-wiring flags for a slot of the AUDITED mode (bin/keel, wired in both modes, and the
-  # rails checks below); iclaude_relink — for a Claude-only slot (commands/*, agents/*, keel/*, the top-level
+  # iclaude_relink — the flags for a Claude-only slot (commands/*, agents/*, keel/*, the top-level
   # FRAMEWORK/PRINCIPLES): `install.sh --codex` never creates one, so one under a --codex audit belongs to a
-  # Claude-mode install sharing this home (dir #124's shape) and takes that install's flags. Kept as their own
-  # variables rather than folded into $ihome_flag (appended at each print site below) so tools/self/doctor.sh's
-  # check 1c — which greps advice lines for the LITERAL substring `ihome_flag`, not just its expanded value —
-  # still recognizes these as home-aware (dir #98).
-  if [ "$CODEX_MODE" = 1 ]; then irelink_mode="$(doctor_mode_flags codex)"; else irelink_mode="$(doctor_mode_flags claude)"; fi
-  iclaude_relink="$(doctor_mode_flags claude)"
+  # Claude-mode install sharing this home (dir #124's shape). irelink_mode — for a slot of the AUDITED mode
+  # (bin/keel, wired in both, and the rails checks below): under --codex that is ` --codex` alone (a codex home is
+  # copy-only; `--codex --link` is a usage error), so a copy-mode home is never advised --link, nor a Claude slot
+  # --codex. Their own variables, not folded into $ihome_flag, so tools/self/doctor.sh's check 1c — which greps
+  # advice lines for the LITERAL substring `ihome_flag` — still recognizes these as home-aware (dir #98).
+  iclaude_relink="$(doctor_claude_flags)"
+  irelink_mode="${imode_flag:-$iclaude_relink}"
   # doctor_link_is_keels_own LINK — a DANGLING link the install manifest proves Keel's own, by the ONE
   # link-record predicate install.sh's keel_own_stale_link and uninstall.sh's symlink arm ask too
   # (tools/lib/manifest.sh manifest_link_is_keels, spec 685 round 2 B20): its target is the one recorded for

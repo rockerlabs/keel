@@ -16,7 +16,7 @@ np="is not provably Keel's"
 noload="the always-on rails will NOT load"
 
 # n_lines TEXT NEEDLE — how many lines of TEXT contain NEEDLE (a fixed string).
-n_lines() { grep -c -F -- "$2" <<<"$1" || true; }
+n_lines() { match "$1" -c -F -- "$2" || true; }
 
 # --- A41 (K38, R1-2): a link install from checkout A, the home's .keel/ lost, A moved to B, B/install.sh --link
 ca="$SANDBOX/a41-A"; cb="$SANDBOX/a41-B"; h="$SANDBOX/a41-h"
@@ -37,7 +37,8 @@ check_contains "A41: …naming the import that does not resolve" "$OUT" "keel/CO
 # --- A42 (K39, R1-1): a dangling CLAUDE.md link, copy mode and (a guard) linked mode --------------------------
 for m in copy link; do
   h="$SANDBOX/a42-$m"; mkdir -p "$h"; ln -s "$SANDBOX/a42-nowhere-$m" "$h/CLAUDE.md"
-  if [ "$m" = link ]; then run "$install" --home "$h" --no-hooks --link; else run "$install" --home "$h" --no-hooks; fi
+  lf=""; [ "$m" = link ] && lf=--link
+  run "$install" --home "$h" --no-hooks ${lf:+"$lf"}
   check_status "A42 $m: a dangling CLAUDE.md link → exit 0" 0 "$STATUS"
   check_contains "A42 $m: …Verify says the rails will NOT load" "$OUT" "$noload"
   check_contains "A42 $m: …and declines the link" "$OUT" "CLAUDE.md $np"
@@ -61,24 +62,27 @@ check_contains "A43 copy: …the Verify remedy is a plain re-run" "$(remedy_of "
 check_absent "A43 copy: …never --link" "$(remedy_of "$OUT" FRAMEWORK.md)" "--link"
 
 # --- A43 (K40) doctor side: a copy-mode home with a dangling foreign link ---------------------------------------
+# foreign_cmd — an adopter's own command name, planted as a dangling link (a variable, so the self-doctor's
+# dead-reference check does not read the planted path as a reference).
+foreign_cmd=mine.md
 # gap_of TEXT PATH-SUFFIX — doctor's G-LINK-DANGLING line for the link ending in PATH-SUFFIX.
 gap_of() { grep -F 'G-LINK-DANGLING' <<<"$1" | grep -F -- "$2 →" || true; }
 h="$SANDBOX/a43-dcopy"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks
 check_status "A43 doctor setup: a copy-mode install" 0 "$STATUS"
-ln -s "$SANDBOX/a43-nowhere" "$h/commands/mine.md"
+ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
 run "$doctor" --install "$h"
-gl="$(gap_of "$OUT" commands/mine.md)"
+gl="$(gap_of "$OUT" commands/$foreign_cmd)"
 check_contains "A43 doctor copy: a dangling foreign commands/ link is a GAP" "$gl" "dangling symlink"
 check_absent "A43 doctor copy: …whose remedy has no --link" "$gl" "--link"
 # Follow the advice as written: remove the link, then run the advised command.
 advised="$(sed -n "s/.*then re-run \(install\.sh[^()]*\) from its home.*/\1/p" <<<"$gl")"
 check_contains "A43 doctor copy: …the advised command reaches this home" "$advised" "install.sh --home \"$h\""
-rm -f "$h/commands/mine.md"
+rm -f "$h/commands/$foreign_cmd"
 eval "run \"\$REPO_ROOT\"/$advised --no-hooks"
 check_status "A43 doctor copy: following the advice → exit 0" 0 "$STATUS"
 run "$doctor" --install "$h"
-check_eq "A43 doctor copy: …0 GAP lines for that path afterwards" "" "$(gap_of "$OUT" commands/mine.md)"
+check_eq "A43 doctor copy: …0 GAP lines for that path afterwards" "" "$(gap_of "$OUT" commands/$foreign_cmd)"
 check_eq "A43 doctor copy: …and the home is still copy mode" "copy" "$(sed -n 's/^layout=//p' "$h/.keel/install-manifest.claude")"
 check_nolink "A43 doctor copy: …keel/CORE.md was not made a link" "$h/keel/CORE.md"
 # bin/keel, the slot wired in both modes: a copy home's remedy has no --link either.
@@ -88,27 +92,26 @@ gl="$(gap_of "$OUT" bin/keel)"
 check_contains "A43 doctor copy: a dangling foreign bin/keel is a GAP" "$gl" "dangling symlink"
 check_absent "A43 doctor copy: …whose remedy has no --link" "$gl" "--link"
 # A Claude-mode copy home audited --codex: a Claude slot's remedy carries neither --codex nor --link.
-ln -s "$SANDBOX/a43-nowhere" "$h/commands/mine.md"
+ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
 run "$doctor" --install --codex "$h"
-gl="$(gap_of "$OUT" commands/mine.md)"
+gl="$(gap_of "$OUT" commands/$foreign_cmd)"
 check_contains "A43 doctor --codex on a Claude copy home: the Claude slot's dangling link is a GAP" "$gl" "dangling symlink"
 check_absent "A43 doctor --codex: …its remedy has no --codex" "$gl" "--codex"
 check_absent "A43 doctor --codex: …nor --link" "$gl" "--link"
 # A linked home keeps --link (the manifest's layout=link), with and without a usable manifest (detection).
 h="$SANDBOX/a43-dlink"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link
-ln -s "$SANDBOX/a43-nowhere" "$h/commands/mine.md"
+ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
 run "$doctor" --install "$h"
-check_contains "A43 doctor linked: the remedy carries --link" "$(gap_of "$OUT" commands/mine.md)" "re-run install.sh --link"
+check_contains "A43 doctor linked: the remedy carries --link" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
 mv "$h/.keel/install-manifest.claude" "$h/.keel/install-manifest.claude.away"
 run "$doctor" --install "$h"
-check_contains "A43 doctor linked, no manifest: --link from detection (keel/CORE.md is a link)" "$(gap_of "$OUT" commands/mine.md)" "re-run install.sh --link"
-mv "$h/.keel/install-manifest.claude.away" "$h/.keel/install-manifest.claude"
+check_contains "A43 doctor linked, no manifest: --link from detection (keel/CORE.md is a link)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link"
 h="$SANDBOX/a43-dnogit"; mkdir -p "$h"
 run "$install" --home "$h" --no-hooks --link --no-git
-ln -s "$SANDBOX/a43-nowhere" "$h/commands/mine.md"
+ln -s "$SANDBOX/a43-nowhere" "$h/commands/$foreign_cmd"
 run "$doctor" --install "$h"
-check_contains "A43 doctor --no-git: the remedy keeps the trim (layout=link-nogit)" "$(gap_of "$OUT" commands/mine.md)" "re-run install.sh --link --no-git"
+check_contains "A43 doctor --no-git: the remedy keeps the trim (layout=link-nogit)" "$(gap_of "$OUT" commands/$foreign_cmd)" "re-run install.sh --link --no-git"
 
 # --- dir #752: a FIFO at the context file is declined and the run ends ------------------------------------------
 # run_fifo_bounded FIFO CMD… — `run`, backgrounded with a bounded wait (macOS has no `timeout`); a hang releases
@@ -135,11 +138,8 @@ if command -v mkfifo >/dev/null 2>&1; then
   for m in link copy; do
     h="$SANDBOX/fifo-$m"; mkdir -p "$h"; mkfifo "$h/CLAUDE.md" 2>/dev/null || true
     if [ ! -p "$h/CLAUDE.md" ]; then fail "#752 $m: the FIFO fixture was actually created" "mkfifo produced no FIFO"; continue; fi
-    if [ "$m" = link ]; then
-      run_fifo_bounded "$h/CLAUDE.md" "$install" --home "$h" --no-hooks --link
-    else
-      run_fifo_bounded "$h/CLAUDE.md" "$install" --home "$h" --no-hooks
-    fi
+    lf=""; [ "$m" = link ] && lf=--link
+    run_fifo_bounded "$h/CLAUDE.md" "$install" --home "$h" --no-hooks ${lf:+"$lf"}
     check_status "#752 $m: a FIFO at CLAUDE.md does not hang install (exit 0)" 0 "$STATUS"
     check_eq "#752 $m: …one line declines it at the seed" 1 "$(n_lines "$OUT" "CLAUDE.md is not a regular file (left untouched")"
     check_contains "#752 $m: …Verify says the rails will NOT load" "$OUT" "$noload"
