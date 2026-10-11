@@ -495,8 +495,11 @@
 # and a backgrounded `cd X &` count too), `cd -`, a cd in one pipeline stage taken as applying to the next, a write
 # aimed at the session repository as a plain argument (`git -C <scratch> push <session repo> main`: only where git
 # RUNS is judged), a plain `rm`/`cp`/`mv` of tracked files, machine-global config writes (`machine-watch` is their detector),
-# and a subagent whose event carries no `agent_id`. Accepted cost: `mkdir X && cd X && git init` run from inside the
-# session repository is denied (X does not exist when the hook runs); `git -C X init` passes. A subagent started
+# and a subagent whose event carries no `agent_id`. Accepted costs: `mkdir X && cd X && git init` run from inside the
+# session repository is denied (X does not exist when the hook runs); `git -C X init` passes. A literal git dir
+# with no work tree named counts the running directory as its work tree (git's own rule), for EVERY mutating verb, so
+# `git --git-dir=<clone>/.git commit` from inside the session repository is denied too — use `git -C <clone>`.
+# `builtin -- cd X` is not read as a cd (a false deny, never a miss). A subagent started
 # with `isolation: "worktree"` is denied its own commits for the same reason (its worktree shares the repository).
 
 set -u
