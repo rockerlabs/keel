@@ -303,9 +303,9 @@ L291	tools/pre-pr-gate.sh	    txt = txt substr(src, lstart[j], lend[j] - lstart[
 L293	tools/pre-pr-gate.sh	    lex_cmd=$(LC_ALL=C tr -d '\\000') || exit 2\n    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"	    awk -v MODE=lex "$PPG_AWK_PROG"	B17: lex takes the text through $(…) as the hook does (trailing newlines dropped)
 L294	tools/pre-pr-gate.sh	    if ! { : 3<&0; } 2>/dev/null; then exec </dev/null; fi		B17: a closed stdin reads as empty (the $(…) would hang on it)
 L295	tools/pre-pr-gate.sh	LC_ALL=C tr -d '\\000') || exit 2	LC_ALL=C tr -d '\\000')	B17: an unreadable stdin is an error, not an empty text
-L296	tools/pre-pr-gate.sh	  if (!(cty[s - 1] == "DQ" || cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return	  if (!(cty[s - 1] == "XX" || cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return	B10(m): a case pattern ) closing a $(…) under a double quote is a region
-L297	tools/pre-pr-gate.sh	cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return	cty[s - 1] == "XX" || cty[s - 1] == "HDATA")) return	B10(m): … under ${…}
-L298	tools/pre-pr-gate.sh	cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return	cty[s - 1] == "PARAM" || cty[s - 1] == "XX")) return	B10(m): … under a heredoc body
+L296	tools/pre-pr-gate.sh	  if (up != "DQ" && up != "PARAM" && up != "HDATA") return	  if (up != "XX" && up != "PARAM" && up != "HDATA") return	B10(m): a case pattern ) closing a $(…) under a double quote is a region
+L297	tools/pre-pr-gate.sh	up != "PARAM" && up != "HDATA") return	up != "XX" && up != "HDATA") return	B10(m): … under ${…}
+L298	tools/pre-pr-gate.sh	up != "PARAM" && up != "HDATA") return	up != "PARAM" && up != "XX") return	B10(m): … under a heredoc body
 L299	tools/pre-pr-gate.sh	while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++	while (0 && i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++	B10(m): reserved words before `case` are skipped
 L300	tools/pre-pr-gate.sh	if (i + 2 > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return	if (i > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return	B10(m): a bare `case` command word is no pattern
 L301	tools/pre-pr-gate.sh	if (i + 2 > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return	if (i + 2 > sntok[s] || stok[s, i] != "case") return	B10(m): a quoted `case` is a command name

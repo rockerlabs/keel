@@ -1913,13 +1913,14 @@ function cmd_char(   c, s, k, op) {
 # reads as the SUB’s end: the rest of the substitution (`;; esac; git push …)`) then lands in the enclosing context. In
 # a command context that is still read as commands; under a DQ, a PARAM or an HDATA it is data, so the text is a
 # region, from the enclosing segment to the end (the reader cannot know where the shell ends the substitution).
-function case_close(s,   i) {
-  if (!(cty[s - 1] == "DQ" || cty[s - 1] == "PARAM" || cty[s - 1] == "HDATA")) return
+function case_close(s,   i, up) {
+  up = cty[s - 1]
+  if (up != "DQ" && up != "PARAM" && up != "HDATA") return
   word_end(s)
   i = 1
   while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++
   if (i + 2 > sntok[s] || stokm[s, i] !~ /^u+$/ || stok[s, i] != "case") return
-  region(cpos[s], n, "case pattern ) closes $(…) read in " ((cty[s - 1] == "DQ") ? "double quotes" : (cty[s - 1] == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
+  region(cpos[s], n, "case pattern ) closes $(…) read in " ((up == "DQ") ? "double quotes" : (up == "PARAM") ? "${…}" : "a heredoc body"), cseg[s])
 }
 
 # close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still
