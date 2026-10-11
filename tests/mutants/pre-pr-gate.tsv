@@ -37,7 +37,7 @@
 L001	tools/pre-pr-gate.sh	src = (NR == 1) ? $0 : src "\\n" $0	src = (NR == 1) ? $0 : src " " $0	B1: lines joined with a newline
 L002	tools/pre-pr-gate.sh	    word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return	    word_begin(pos); addsrc(pos + 1, 1, "u"); pos += 2; return	B2 TOP: an escaped char is quoted
 L003	tools/pre-pr-gate.sh	    if (at(1) == "\\n") { pos += 2; return }\n    if (at(1) == "") { pos++; return }	    if (at(1) == "") { pos++; return }	B2 TOP: backslash-newline removed
-L004	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") close_cmd()	else if (cty[s] == "XSUB") close_cmd()	B2 SUB: closed by ) with no group
+L004	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }	else if (cty[s] == "XSUB") { if (casen[s] > 0) case_region(s); close_cmd() }	B2 SUB: closed by ) with no group
 L005	tools/pre-pr-gate.sh	    else if (ch[j] == "`") return j	    else if (0) return j	B2 BQ: closed by the first unescaped backtick, whatever is nested before it
 L006	tools/pre-pr-gate.sh	  while (pos + k < lim && ch[pos + k] != "\\047") k++	  while (pos + k < lim && ch[pos + k] != "X") k++	B2 SQ: closed by a quote
 L007	tools/pre-pr-gate.sh	if (ch[pos] == "\\\\" && at(1) != "") { bq_escape("\\\\"); addsrc(pos + 1, 1, "q"); pos += 2; return }	if (0) { bq_escape("\\\\"); addsrc(pos + 1, 1, "q"); pos += 2; return }	B2 AQ: backslash escapes
@@ -303,3 +303,19 @@ L291	tools/pre-pr-gate.sh	    txt = txt substr(src, lstart[j], lend[j] - lstart[
 L293	tools/pre-pr-gate.sh	    lex_cmd=$(LC_ALL=C tr -d '\\000') || exit 2\n    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"	    awk -v MODE=lex "$PPG_AWK_PROG"	B17: lex takes the text through $(…) as the hook does (trailing newlines dropped)
 L294	tools/pre-pr-gate.sh	    if ! { : 3<&0; } 2>/dev/null; then exec </dev/null; fi		B17: a closed stdin reads as empty (the $(…) would hang on it)
 L295	tools/pre-pr-gate.sh	LC_ALL=C tr -d '\\000') || exit 2	LC_ALL=C tr -d '\\000')	B17: an unreadable stdin is an error, not an empty text
+L296	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }	else if (cty[s] == "SUB") { close_cmd() }	B10(m): a ) closing a $(…) with a case open in it is a region
+L297	tools/pre-pr-gate.sh	else if (cty[s] == "SUB") { if (casen[s] > 0) case_region(s); close_cmd() }	else if (cty[s] == "SUB") { if (casen[s] > 1) case_region(s); close_cmd() }	B10(m): one open case is enough
+L298	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && 0 && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	B10(m): an esac closes the case, so its ) ends the $(…) for real
+L299	tools/pre-pr-gate.sh	while (i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++	while (0 && i <= sntok[s] && stokm[s, i] ~ /^u+$/ && is_reserved(stok[s, i])) i++	B10(m): reserved words before case are skipped
+L300	tools/pre-pr-gate.sh	if (i > sntok[s] || stokm[s, i] !~ /^u+$/) return 0	if (i > sntok[s]) return 0	B10(m): a quoted case is a command name
+L301	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	return 1	B10(m): only the word case opens one
+L302	tools/pre-pr-gate.sh	casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0	casen[s] += (seg_kw(s) > 0)	B10(m): an esac closes a nested case
+L303	tools/pre-pr-gate.sh	casen[s] += seg_kw(s); if (casen[s] < 0) casen[s] = 0	casen[s] += seg_kw(s)	B10(m): a stray esac does not bank a case
+L304	tools/pre-pr-gate.sh	if (cty[s] == "SUB") { casen[s] += seg_kw(s)	if (cty[s] == "TOP") { casen[s] += seg_kw(s)	B10(m): the case count is kept per $(…)
+L305	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "(") return -1	B10(m): an esac after | is a pattern, not the end of the case
+L306	tools/pre-pr-gate.sh	if (stok[s, i] == "esac" && ch[b - 1] != "|" && ch[b - 1] != "(") return -1	if (stok[s, i] == "esac" && ch[b - 1] != "|") return -1	B10(m): an esac after ( is a pattern, not the end of the case
+L307	tools/pre-pr-gate.sh	  for (j = i + 1; j < sntok[s]; j++) {	  for (j = i + 1; j < 0; j++) {	B10(m): a case after other words, with its in after it, opens one
+L308	tools/pre-pr-gate.sh	if (stok[s, i] == "case") return 1	if (stok[s, i] == "case" && i < sntok[s]) return 1	B10(m): a bare case word (no subject) opens one too
+L309	tools/pre-pr-gate.sh	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1	for (k = j + 1; k <= sntok[s]; k++) return 1	B10(m): a case word with no in after it opens none
+L310	tools/pre-pr-gate.sh	if (stok[s, j] != "case" || stokm[s, j] !~ /^u+$/) continue	if (stok[s, j] != "case") continue	B10(m): a quoted case word opens none
+L311	tools/pre-pr-gate.sh	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in" && stokm[s, k] ~ /^u+$/) return 1	for (k = j + 1; k <= sntok[s]; k++) if (stok[s, k] == "in") return 1	B10(m): a quoted in does not complete a case header

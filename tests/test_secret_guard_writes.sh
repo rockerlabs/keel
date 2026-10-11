@@ -15,6 +15,9 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
+# shellcheck source=tools/lib/stat-portable.sh
+. "$REPO_ROOT/tools/lib/stat-portable.sh"
+
 isg="$REPO_ROOT/tools/install-secret-guard.sh"
 shipped="$REPO_ROOT/tools/secret-guard"
 install="$REPO_ROOT/install.sh"
@@ -108,6 +111,41 @@ for f in pre-commit secret-scan.sh; do
 done
 leftover27="$(find "$h27b" "$h27" -name '*.isgtmp.*' 2>/dev/null)"
 check_eq "A27: no staging file is left behind" "" "$leftover27"
+
+# A27 modes — the placed files' modes do not depend on the caller's umask (the 0.16.0 delta audit, S7-1): the hooks
+# and the scanner are the guard's own executable code, so a group- or world-writable copy lets another account
+# rewrite the control. v0.15.0's `cp` gave 755/644 under any umask; a staged `: >` under umask 002/000 gave 775/664, 777/666.
+for um in 002 000 077; do
+  r27m="$(new_repo)"; h27m="$r27m/.git/hooks"
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$ok_stub/install-secret-guard.sh" "$r27m"
+  check_status "A27 modes: a first vendoring under umask $um → exit 0" 0 "$STATUS"
+  for f in secret-scan.sh pre-commit pre-push; do
+    check_eq "A27 modes: $f is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/$f")"
+  done
+  check_eq "A27 modes: range-lib.sh (executable in the stub) is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/range-lib.sh")"
+  # a re-vendor (the rename path over existing Keel files) lands the same modes
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$ok_stub/install-secret-guard.sh" "$r27m"
+  check_status "A27 modes: a plain re-vendor under umask $um → exit 0" 0 "$STATUS"
+  check_eq "A27 modes: the re-vendored pre-commit is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/pre-commit")"
+  check_eq "A27 modes: the re-vendored range-lib.sh is 755 under umask $um" "755" "$(stat_portable_mode "$h27m/range-lib.sh")"
+done
+# --global writes through the same install_into: the machine-wide hooks dir lands the same modes
+for um in 022 002 000; do
+  h27g="$(mktemp -d "$SANDBOX/a27g.XXXXXX")"
+  run env HOME="$h27g" GIT_CONFIG_GLOBAL="$h27g/.gitconfig" bash -c 'umask "$1"; exec bash "$2" --global' _ "$um" "$ok_stub/install-secret-guard.sh"
+  check_status "A27 modes: --global under umask $um → exit 0" 0 "$STATUS"
+  for f in secret-scan.sh pre-commit pre-push range-lib.sh; do
+    check_eq "A27 modes: --global $f is 755 under umask $um" "755" "$(stat_portable_mode "$h27g/.config/git/keel-hooks/$f")"
+  done
+done
+# the real shipped tree: range-lib.sh is a non-executable library (644), the rest are executable (755)
+for um in 002 000; do
+  r27r="$(new_repo)"; h27r="$r27r/.git/hooks"
+  run bash -c 'umask "$1"; exec bash "$2" "$3"' _ "$um" "$isg" "$r27r"
+  check_status "A27 modes: the shipped installer under umask $um → exit 0" 0 "$STATUS"
+  check_eq "A27 modes: shipped range-lib.sh is 644 under umask $um" "644" "$(stat_portable_mode "$h27r/range-lib.sh")"
+  check_eq "A27 modes: shipped pre-push is 755 under umask $um" "755" "$(stat_portable_mode "$h27r/pre-push")"
+done
 
 # =============================================================================================================
 # A28 — the mid-run race, staged; per-hook claimed names; rollback restores from them, executable as it was.

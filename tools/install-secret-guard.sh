@@ -135,7 +135,10 @@ _isg_count_in() { { git config --file "$1" --get-all "$2" 2>/dev/null || true; }
 # _isg_place SRC DEST — put SRC's bytes at DEST by RENAME, never by writing into DEST (dir #684, B4): a hard
 # link at DEST keeps its other name's bytes, and a link swapped in mid-run is replaced, not followed. Stage a
 # leftover-free `DEST.isgtmp.$$` (claimed by an exclusive create, so a planted file or link there is never
-# written through), fill it with `cat`, give it SRC's execute bit, `mv -f` it onto DEST. A directory at DEST is
+# written through), fill it with `cat`, set its mode, `mv -f` it onto DEST. The mode is 755 when SRC is executable,
+# else 644, whatever the caller's umask (the stage is created under umask 022, and the chmod is explicit): the hooks
+# and the scanner are the guard's own code, so a umask 002/000 must not leave them group- or world-writable (the
+# 0.16.0 delta audit, S7-1; v0.15.0's `cp` gave 755/644 under any umask). A directory at DEST is
 # the caller's pre-flight to refuse (`mv` would move INTO it). Returns 1 on any failure and leaves DEST untouched;
 # a staging file it created is removed, one it could not claim (a link planted there is another party's) is
 # never touched, so it stays until its owner removes it (the rollback's "left as it was" counts only the files
@@ -144,11 +147,12 @@ _isg_place() {
   local from="$1" dest="$2" tmp
   tmp="$dest.isgtmp.$$"
   rm -f "$tmp"
-  if ! { ( set -o noclobber; : > "$tmp" ) 2>/dev/null && [ -f "$tmp" ] && [ ! -L "$tmp" ]; }; then
+  if ! { ( umask 022; set -o noclobber; : > "$tmp" ) 2>/dev/null && [ -f "$tmp" ] && [ ! -L "$tmp" ]; }; then
     return 1
   fi
   cat "$from" > "$tmp" || { rm -f "$tmp"; return 1; }
-  if [ -x "$from" ]; then chmod +x "$tmp" || { rm -f "$tmp"; return 1; }; fi
+  if [ -x "$from" ]; then chmod 755 "$tmp" || { rm -f "$tmp"; return 1; }
+  else chmod 644 "$tmp" || { rm -f "$tmp"; return 1; }; fi
   mv -f "$tmp" "$dest" || { rm -f "$tmp"; return 1; }
 }
 
