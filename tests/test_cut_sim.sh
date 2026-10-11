@@ -89,9 +89,10 @@ n=0
 while kill -0 "$sim_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
 wait "$sim_pid" 2>/dev/null || true
 desc_pid="$(cat "$pidfile" 2>/dev/null || true)"
-# Poll briefly: on a container whose PID 1 reaps slowly the killed sleep is a zombie for an instant.
+# Poll: on a container whose PID 1 reaps slowly the killed sleep is a zombie for an instant (it ends the loop at
+# once when the pid is gone; the bound only matters when the group kill is broken).
 n=0
-while [ -n "$desc_pid" ] && kill -0 "$desc_pid" 2>/dev/null && [ "$n" -lt 5 ]; do sleep 1; n=$((n + 1)); done
+while [ -n "$desc_pid" ] && kill -0 "$desc_pid" 2>/dev/null && [ "$n" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; n=$((n + 1)); done
 if [ -n "$desc_pid" ] && ! kill -0 "$desc_pid" 2>/dev/null; then
   pass "a TERM stops the suite's descendant before the tool exits"
 else
