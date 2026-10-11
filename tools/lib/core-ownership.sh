@@ -131,12 +131,16 @@ keel_core_block_norm() {
 #   current-trimmed  a git-rails-trimmed block (keel_core_block_is_trimmed) equal to CORE.md's block
 #                    minus its KEEL-GIT regions — compared with the NOGIT breadcrumb and all marker
 #                    lines dropped and blank runs squeezed (keel_core_block_norm)
+#   note-linked      a trimmed block that matches, but whose KEEL-NOGIT note gives the LINKED restore
+#                    (`--link --with-git`): an older install's refresh wrote it into this copy-shaped block, where
+#                    that command cannot run (dir #689) — so it is not current; the trim-keeping refresh fixes it
 #   drift            anything else (older, newer, or edited)
 # The trim-aware half exists so a /keel-setup no-git trim, a deliberate edit, is never reported as
 # drift forever (and never silently undone by the refresh the ladder offers).
 keel_core_block_state() {
-  local inst ref
-  inst="$(keel_core_block_text "$1")"
+  local inst ref raw note
+  raw="$(keel_core_block_text "$1")"
+  inst="$raw"
   ref="$(keel_core_block_text "$2")"
   if ! keel_core_block_is_trimmed "$1"; then
     if [ "$inst" = "$ref" ]; then echo current; else echo drift; fi
@@ -144,5 +148,11 @@ keel_core_block_state() {
   fi
   inst="$(printf '%s\n' "$inst" | sed '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/d' | keel_core_block_norm)"
   ref="$(printf '%s\n' "$ref" | awk '/KEEL-GIT-BEGIN/ { skip = 1; next } /KEEL-GIT-END/ { skip = 0; next } !skip' | keel_core_block_norm)"
-  if [ "$inst" = "$ref" ]; then echo current-trimmed; else echo drift; fi
+  if [ "$inst" != "$ref" ]; then echo drift; return 0; fi
+  # Captured, then matched: a producer piped into `grep -q` can die of SIGPIPE under pipefail and read as no match.
+  note="$(printf '%s\n' "$raw" | sed -n '/KEEL-NOGIT-BEGIN/,/KEEL-NOGIT-END/p')"
+  case "$note" in
+    *'--link --with-git'*) echo note-linked ;;
+    *) echo current-trimmed ;;
+  esac
 }

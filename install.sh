@@ -1209,7 +1209,8 @@ replace_core_block() {
 # multi-line block containing backslashes (same reason strip_git_blocks uses ENVIRON below).
 # Optional second argument "trimmed" (dir #650): write the git-rails-trimmed reference form instead —
 # the shipped block through strip_git_blocks (crumb included), so a later run recognizes the trim
-# mechanically and the adopter's deliberate /keel-setup trim survives the refresh.
+# mechanically and the adopter's deliberate /keel-setup trim survives the refresh (with nogit_crumb_copy: every
+# caller is a copy-shaped home).
 # The backup goes with the write, in one call (dir #756 (d)): the write's refusals are checked first, so a
 # refused refresh (a hard-linked or checkout-linked FILE) claims no backup, and the "backed up" line is
 # printed only once the refresh has landed.
@@ -1218,7 +1219,7 @@ refresh_core_block() {
   keel_core_block_check "$file" || return 1
   fresh="$(keel_core_block_full "$root/CORE.md")"
   if [ "${2-}" = trimmed ]; then
-    fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin)"
+    fresh="$(printf '%s\n' "$fresh" | strip_git_blocks /dev/stdin "$nogit_crumb_copy")"
   fi
   # The lib runs the awk itself (its command form), so an awk that fails leaves FILE untouched.
   keel_backup_write_through "$file" keel_core_block_replace "$file" "$fresh" || return 1
@@ -1238,8 +1239,14 @@ refresh_core_block() {
 #                             about to be reaped, the two-step curl form that keeps a terminal on stdin
 #                             (`sh FILE ARGS` passes the flags straight to install.sh).
 core_block_currency() {
-  local dest="$1" state kind="" reply="" route
+  local dest="$1" state kind="" reply="" route note_linked=0
   state="$(keel_core_block_state "$dest" "$root/CORE.md")"
+  # dir #689: an older install's refresh left the LINKED note in this copy-shaped block; the trim-keeping refresh
+  # below writes the copy one, and only the note changes (the rails already match).
+  if [ "$state" = note-linked ]; then
+    echo "  ~    $CONTEXT_FILE: your trimmed rails match, but the git-rails note gives linked-mode advice (an older install's)"
+    note_linked=1; state=drift
+  fi
   case "$state" in
     current)         echo "  =    $CONTEXT_FILE (up to date)"; return 0 ;;
     current-trimmed) echo "  =    $CONTEXT_FILE (up to date — your git-rails trim kept)"; return 0 ;;
@@ -1252,7 +1259,7 @@ core_block_currency() {
   fi
   keel_core_block_is_trimmed "$dest" && kind=trimmed
   if [ -t 0 ]; then
-    echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
+    [ "$note_linked" = 1 ] || echo "  ~    $CONTEXT_FILE embeds rails that differ from the shipped core — an older release, or your edits inside the block."
     if [ -n "$kind" ]; then
       printf "       Refresh the block, keeping your git-rails trim? [y/N] "
     else
@@ -1268,16 +1275,22 @@ core_block_currency() {
         else
           echo "  =    $CONTEXT_FILE left untouched (nothing was refreshed)"
         fi ;;
-      *) echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)" ;;
+      *) if [ "$note_linked" = 1 ]; then echo "  =    $CONTEXT_FILE left untouched (its git-rails note still gives linked-mode advice)"
+         else echo "  =    $CONTEXT_FILE left untouched (your edits may live in the block)"; fi ;;
     esac
   else
     if [ "$EPHEMERAL" = 1 ]; then
       route="curl -fsSL https://raw.githubusercontent.com/rockerlabs/keel/main/bootstrap.sh -o keel-bootstrap.sh && sh keel-bootstrap.sh$mode_flag$home_flag"
     else
       route="$root/$advise_install"
-      [ "$CODEX" = 0 ] && route="$route   (or migrate to linked: $root/install.sh --link$home_flag)"
+      # Not for an old note: its fix is the copy note, never a move to linked mode.
+      [ "$CODEX" = 0 ] && [ "$note_linked" = 0 ] && route="$route   (or migrate to linked: $root/install.sh --link$home_flag)"
     fi
-    echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+    if [ "$note_linked" = 1 ]; then
+      echo "  !    $CONTEXT_FILE left untouched (non-interactive) — its git-rails note still gives linked-mode advice."
+    else
+      echo "  !    $CONTEXT_FILE embeds rails that differ from the shipped core — left untouched (non-interactive)."
+    fi
     echo "       Refresh just the block — from a terminal, run (it offers; default no):  $route"
   fi
 }
@@ -1312,7 +1325,8 @@ import_line_appended() {
   printf '%s%s\n' "$body" "$import_line"
 }
 # --no-git (linked mode): CORE.md's KEEL-GIT markers fence the code/git rails. strip_git_blocks removes
-# every marked block, replacing the FIRST with the constant breadcrumb below — always-on text that
+# every marked block, replacing the FIRST with the breadcrumb its caller names — this linked one, or the copy one
+# further down (dir #689) — always-on text that
 # (a) tells the assistant the git rails are deliberately absent and to restore them BEFORE the first
 # git command (the assistant is present at the exact moment git enters the workflow — the strongest
 # detector of the no-git → git transition), and (b) carries the KEEL-NOGIT token install/doctor read
@@ -1324,8 +1338,22 @@ nogit_crumb='<!-- KEEL-NOGIT-BEGIN — generated by install.sh --link --no-git; 
 this always-on core). If git enters the workflow — STOP before the first git command and restore the
 safety rails first: re-run `install.sh --link --with-git` in the Keel checkout.
 <!-- KEEL-NOGIT-END -->'
+# nogit_crumb_copy (dir #689) — the breadcrumb for a COPY-shaped home's trimmed block refresh: `--with-git` exits 2
+# there and `--link` would migrate it, so it gives /keel-setup's copy-path restore (keep in sync with
+# commands/keel-setup.md's reverse transition): the whole shipped block, which keel_core_block_state then reads as
+# current — sections re-added by hand, without their KEEL-GIT markers, would read as drift forever. Same markers
+# and token as the linked one.
+nogit_crumb_copy='<!-- KEEL-NOGIT-BEGIN — the code/git rails are trimmed from this copy (a /keel-setup choice the block refresh keeps) -->
+**Git rails not installed in this file** (the code/git rails are trimmed from this always-on core). If
+git enters the workflow — STOP before the first git command and restore the safety rails first:
+replace the whole embedded KEEL-CORE block in this file (from its BEGIN marker line through its END marker
+line, this note included) with the KEEL-CORE block of CORE.md in the Keel release you installed. It
+carries the two trimmed sections, "Git — mandatory rails" and "Before writing code — reconcile first".
+<!-- KEEL-NOGIT-END -->'
+# strip_git_blocks FILE CRUMB — FILE without its KEEL-GIT blocks, the first replaced by CRUMB (required: each caller
+# names its mode's crumb, so a new copy-path caller cannot fall back to the linked one silently).
 strip_git_blocks() {
-  KEEL_NOGIT_CRUMB="$nogit_crumb" awk '
+  KEEL_NOGIT_CRUMB="$2" awk '
     /KEEL-GIT-BEGIN/ { if (!seen) { seen=1; print ENVIRON["KEEL_NOGIT_CRUMB"] } skip=1; next }
     /KEEL-GIT-END/   { skip=0; next }
     !skip
@@ -1613,7 +1641,7 @@ if [ "$LINK" = 1 ]; then
     # A generated trimmed copy instead of the symlink. keel/ is Keel-owned and the KEEL-NOGIT token
     # marks the file as generated — regenerate without asking: a re-run after `git pull` is exactly
     # how a stale trim heals (doctor --install carries the matching staleness check).
-    trimmed="$(strip_git_blocks "$root/CORE.md")"
+    trimmed="$(strip_git_blocks "$root/CORE.md" "$nogit_crumb")"
     if [ -L "$core_dest" ] && ! keel_link_points_at "$core_dest" "$root/CORE.md" && ! keel_own_stale_link "$core_dest"; then
       # B3, T4: not Keel's own link (current or stale) — never replaced by the trimmed copy, whatever the flags.
       echo "  !    CORE.md is a symlink to a different target ($(readlink "$core_dest")) — your own wiring; left untouched, whatever the flags. To let Keel place its trimmed copy, remove the link and re-run."

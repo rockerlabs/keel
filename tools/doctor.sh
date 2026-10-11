@@ -1040,6 +1040,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
     case "$(keel_core_block_state "$gclaude" "$repo_root/CORE.md")" in
       current)         say "  OK   core rails: embedded copy (matches this checkout's CORE.md)" ;;
       current-trimmed) say "  OK   core rails: embedded copy (matches this checkout's CORE.md, trimmed)" ;;
+      note-linked)
+        warn W-CORE-DRIFT "the trimmed KEEL-CORE block in $icontext matches this checkout's CORE.md, but its git-rails note gives linked-mode advice (an older install's: --with-git exits 2 here): re-run install.sh$irelink_mode$ihome_flag from a terminal and accept the trim-keeping block refresh" ;;
       *)
         warn W-CORE-DRIFT "the embedded KEEL-CORE block in $icontext differs from this checkout's CORE.md (older, newer, or edited): from an up-to-date checkout, re-run install.sh$irelink_mode$ihome_flag from a terminal to refresh just the block. A deliberate edit can be accepted by listing W-CORE-DRIFT in $ihome/.keel/doctor-accept (note: that also hides FUTURE release drift for this home)" ;;
     esac
