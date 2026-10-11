@@ -73,7 +73,7 @@ skeleton, and a run-record stub. Writes into <dir> (default: .).
 Outputs, into <dir>:
   delta-files.txt   git diff --name-only <prev>..<head>, sorted — the universe
   file-pr-map.tsv   file <TAB> <n PRs> <TAB> <PR list> — one row per file touched by a merge PR
-  ledger.md         one row per file: file, class, PRs, suggested session, empty verdict column
+  ledger.md         one row per file (changelog.d/ fragments fold into one row): file, class, PRs, suggested session, empty verdict column
   run-record.md     a stub of the cross-run row for private/audit/RUNS.md
 
 Exit codes: 0 derived · 2 bad arguments · 3 refused (not a repo / a rev does not resolve / the output

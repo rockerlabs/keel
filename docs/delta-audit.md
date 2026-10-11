@@ -75,7 +75,7 @@ something, which is the whole point of naming it.
 |---|---|
 | `delta-files.txt` | the range's file list — the universe |
 | `file-pr-map.tsv` | file → PR seam map; a row with ≥2 PRs is a seam |
-| `ledger.md` | one row per file, in **pinned read order** (see §6), with an empty verdict column |
+| `ledger.md` | one row per file (the `changelog.d/` fragments fold into one `changelog.d/ (N files)` row; `file-pr-map.tsv` keeps their per-file data), in **pinned read order** (see §6), with an empty verdict column |
 | `run-record.md` | a stub for the cross-run record (§7's sizing table source) |
 
 **The closure check is the headline feature, not a nicety.** It compares the union of every per-PR

@@ -1,4 +1,4 @@
-- **A subagent can no longer change your repository through git.** dir #675: the pre-PR gate's Bash hook now
+- **A subagent's literal git commands that change your repository are now refused.** dir #675: the pre-PR gate's Bash hook now
   denies a *subagent's* repository-mutating git command — `checkout`, `restore`, `reset`, `clean`, `stash`,
   `commit`, `push`, `rebase`, the write forms of `branch`, `tag`, `config`, `remote`, `worktree` and the other
   verbs that change the tree, the index or the refs (what it leaves open is in
