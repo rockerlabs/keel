@@ -27,7 +27,8 @@
 # same never-overwrite rule; a hooksPath with no value at all cannot be recorded faithfully and is
 # refused even with --force). A hook is Keel's to refresh only when its line 2 is exactly the shipped hook's
 # marker line AND its whole body is a version listed in secret-guard/shipped-hook-sums (dir #683): a hook that
-# kept the marker but was edited is yours — refused like any foreign hook; --force backs it up first. A symlink at a hook or scanner file the install writes is refused, its target named,
+# kept the marker but was edited is yours — refused like any foreign hook; --force backs it up first.
+# A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
 # is written into, by design); a HARD-linked file is replaced by rename, never written into, so its other
 # name keeps its bytes. Bypass a single commit/push deliberately with `git ... --no-verify`;
@@ -298,8 +299,9 @@ install_into() {
     if [ "$force" != 1 ]; then
       if _isg_is_keel_hook "$t"; then
         # dir #683: Keel's marker, but a body that matches no shipped version (or no readable list to say).
-        echo "secret-guard: $t carries Keel's marker but its body differs from every shipped version listed in" >&2
-        echo "  $isg_sums (or that list is unreadable) — it has been edited, so it is your data: refusing to overwrite it." >&2
+        echo "secret-guard: $t carries Keel's marker but its body matches no version listed in $isg_sums" >&2
+        echo "  (or that list is unreadable): edited since install, or from a Keel build newer or older than this installer." >&2
+        echo "  Either way it is not a copy this run can vouch for, so it is treated as your data: refusing to overwrite it." >&2
       else
         echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
       fi

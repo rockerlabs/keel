@@ -356,18 +356,19 @@ for h in pre-commit pre-push; do
   got="$(cksum < "$shipped/$h")"
   check_eq "A57: the shipped $h is listed in shipped-hook-sums" "1" "$(grep -cxF -- "$h $got" "$sums" || true)"
 done
-if [ "$(git -C "$REPO_ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
-  missing57=""
+# Every body a RELEASE carried must be listed (an install from a release must stay refreshable). Tags, not every commit:
+# a merged PR keeps its review-round commits in history, and an unreleased intermediate body is never an install target
+# worth a line. A clone without tags (or a shallow one) has nothing to walk, so this passes vacuously there.
+missing57=""; tags57=0
+for tg in $(git -C "$REPO_ROOT" tag -l 'v*' 2>/dev/null); do
+  tags57=$((tags57 + 1))
   for h in pre-commit pre-push; do
-    for c in $(git -C "$REPO_ROOT" log --format=%H -- "tools/secret-guard/$h"); do
-      got="$(git -C "$REPO_ROOT" show "${c}:tools/secret-guard/$h" 2>/dev/null | cksum)" || continue
-      grep -qxF -- "$h $got" "$sums" || missing57="$missing57 $h@${c:0:8}"
-    done
+    got="$(git -C "$REPO_ROOT" show "${tg}:tools/secret-guard/$h" 2>/dev/null | cksum)" || continue
+    case "$got" in "4294967295 0") continue ;; esac   # the hook did not exist at this tag
+    grep -qxF -- "$h $got" "$sums" || missing57="$missing57 $h@$tg"
   done
-  check_eq "A57: every hook body this repo ever shipped is listed (a full clone sees all of history)" "" "$missing57"
-else
-  pass "A57: shallow clone — only the shipped hooks (above) are checked against the list, not their history"
-fi
+done
+check_eq "A57: every hook body a release tag carried is listed ($tags57 tags seen)" "" "$missing57"
 check_eq "A57: pre-commit's older body used below is listed" "1" "$(grep -cxF -- "pre-commit $(old_pre_commit | cksum)" "$sums" || true)"
 
 # an EDITED Keel hook (marker intact, body changed) — each hook, each way
@@ -378,7 +379,7 @@ for h in pre-commit pre-push; do
   before="$(cat "$hd/$h")"
   run bash "$ok_stub/install-secret-guard.sh" "$r"
   check_status "A57: an edited Keel $h, plain re-install → refused (exit 3)" 3 "$STATUS"
-  check_contains "A57: ...saying it carries Keel's marker but was edited" "$OUT" "carries Keel's marker but its body differs from every shipped version"
+  check_contains "A57: ...saying it carries Keel's marker but matches no listed version" "$OUT" "carries Keel's marker but its body matches no version listed"
   check_contains "A57: ...and that nothing was changed" "$OUT" "Nothing was changed"
   check_eq "A57: ...the user's edit is untouched" "$before" "$(cat "$hd/$h")"
   check_nofile "A57: ...and no backup was made" "$hd/$h.pre-keel.bak"
