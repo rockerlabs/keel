@@ -80,6 +80,12 @@ check_status "an absent core file still fails the install (exit 1)" 1 "$STATUS"
 check_contains "…naming it as MISS" "$OUT" "MISS FRAMEWORK.md"
 check_contains "…and saying verification failed" "$OUT" "verification FAILED"
 
+# rec_set H REL TARGET — rewrite the manifest's symlink record for REL to TARGET (REL must already hold one).
+rec_set() {
+  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' \
+    "$1/.keel/install-manifest.claude" > "$SANDBOX/dl-rec.new" && cat "$SANDBOX/dl-rec.new" > "$1/.keel/install-manifest.claude"
+}
+
 # --- acceptance 4: doctor's G-LINK-DANGLING remedy ------------------------------------------------------------
 # (1) a dangling link Keel cannot prove its own (an adopter's wiring): remove it first.
 h="$SANDBOX/dl-foreign"; mkdir -p "$h"
@@ -94,8 +100,7 @@ check_contains "doctor: …saying install never replaces a link Keel did not mak
 # the relink advice stays.
 gone="$REPO_ROOT/commands/moved-away-go.md"
 ln -sfn "$gone" "$h/commands/go.md"
-awk -F'\t' -v OFS='\t' -v t="$gone" '$1 == "artifact=symlink" && $2 == "commands/go.md" { $3 = t } { print }' \
-  "$h/.keel/install-manifest.claude" > "$SANDBOX/dl-manifest.new" && cat "$SANDBOX/dl-manifest.new" > "$h/.keel/install-manifest.claude"
+rec_set "$h" commands/go.md "$gone"
 run "$doctor" --install "$h"
 gl="$(grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F 'commands/go.md')"
 check_contains "doctor: a moved checkout's own link is still a GAP" "$gl" "dangling symlink"
@@ -112,11 +117,6 @@ check_absent "doctor --codex: …without telling you to remove it" "$gl" "remove
 # placeholder (a call-site branch, kept at doctor and install), and the one shared link-record predicate
 # (tools/lib/manifest.sh manifest_link_is_keels — target equals the recorded one, inside the recording
 # checkout). Deleting the `-` line, or replacing the predicate call with a bare `return 0`, left (2) above green.
-# rec_set H REL TARGET — rewrite the manifest's symlink record for REL to TARGET (REL must already hold one).
-rec_set() {
-  awk -F'\t' -v OFS='\t' -v r="$2" -v t="$3" '$1 == "artifact=symlink" && $2 == r { $3 = t } { print }' \
-    "$1/.keel/install-manifest.claude" > "$SANDBOX/dl-rec.new" && cat "$SANDBOX/dl-rec.new" > "$1/.keel/install-manifest.claude"
-}
 # dl_gap H REL — the one G-LINK-DANGLING line the doctor prints for REL.
 dl_gap() { run "$doctor" --install "$1"; grep -F 'G-LINK-DANGLING' <<<"$OUT" | grep -F "$2" || true; }
 h="$SANDBOX/dl-r19"; mkdir -p "$h"

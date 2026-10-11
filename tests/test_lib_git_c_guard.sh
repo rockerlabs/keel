@@ -130,7 +130,7 @@ type_p_bypass() {
   # one hop of copying: `h="$g"` / `h=$g` / `h="${g}"` / `h=("$g")` makes h a type -P path too.
   cvars=""
   for tv in $tvars; do
-    cvars="$cvars $(grep -oE "(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=\(?\"?\\\$\{?$tv\}?\"?[)[:space:];]|(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=\(?\"?\\\$\{?$tv\}?\"?\)?\$" "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly )?([A-Za-z_0-9]+)=.*/\2/' || true)"
+    cvars="$cvars $(grep -oE "(^|[[:space:];])(local |export |readonly )?[A-Za-z_][A-Za-z_0-9]*=\(?\"?\\\$\{?$tv\}?\"?(\)|[[:space:];]|\$)" "$tf" | sed -E 's/^[[:space:];]*(local |export |readonly )?([A-Za-z_0-9]+)=.*/\2/' || true)"
   done
   for tv in $tvars $cvars; do
     grep -nE "(\\\$\\{$tv(\\[[^]]*\\])?\\}|\\\$$tv([^A-Za-z0-9_]|\$))([^|;\&]*[[:space:]])?-C([^[:alpha:]]|\$)" "$tf" | sed "s|^|${tf##*/} ($tv): |" || true
