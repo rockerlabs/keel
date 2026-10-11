@@ -68,6 +68,13 @@ check_eq "P1: the parent's git checkout is untouched" "" "$OUT"
 sf_hook "$R" 'git checkout -- f' ""
 check_eq "P2: a present but EMPTY agent_id is the parent" "" "$OUT"
 
+# P3–P4: only a non-empty STRING agent_id marks a subagent (a number or null is not one).
+for aj in 7 null; do
+  json="$(jq -n --arg c 'git checkout -- f' --arg d "$R" --argjson a "$aj" '{tool_name:"Bash", cwd:$d, agent_id:$a, tool_input:{command:$c}}')"
+  OUT="$(cd "$S/u/v" && printf '%s' "$json" | bash "$gate" 2>&1)"
+  check_eq "P3: an agent_id of $aj is not a subagent" "" "$OUT"
+done
+
 # --- R1–R8, reads in R ------------------------------------------------------------------------------------------------
 n=0
 for c in 'git status' 'git diff HEAD' 'git log -1' 'git show HEAD' 'git blame f' 'git fetch' 'git stash list' 'git stash show'; do
