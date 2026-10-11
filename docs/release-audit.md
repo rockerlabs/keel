@@ -162,7 +162,10 @@ tool appends every `changelog.d/` fragment to `## [Unreleased]`, renames that he
 flow like any other change. The cut empties the live section and the fragment directory,
 so no test may pin their text: an assertion on a changelog cite reads `CHANGELOG.md` plus
 `tools/self/changelog-fragments.sh`'s output, never one fragment file and never `[Unreleased]` alone, or it
-turns the cut PR's own CI red. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
+turns the cut PR's own CI red. Before the cut PR is opened, run `tools/self/cut-sim.sh` (CI's non-required `cut-simulation` job runs it on every PR): it
+cuts a throwaway clone of `HEAD` as `9999.0.0`, commits it there and runs the suite on that shape, so a pin the cut
+breaks is red before the release is (dir #722). It reads committed content only, so commit first; a `FAIL` means a
+test pins the pre-cut shape. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
 outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
 prepares everything up to "tag ready to cut," names the exact SHA, and stops.
 

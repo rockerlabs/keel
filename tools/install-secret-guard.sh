@@ -457,6 +457,8 @@ _isg_same_dir() {
 #   own=        absolute dir a `<repo>` install writes (the LOCAL hooksPath, else the common dir's hooks)
 #   effective=  absolute dir git actually reads this repo's hooks from (any scope: `--git-path hooks`)
 #   scope=      none | local | worktree | global | system | command | unknown  — where core.hooksPath is set
+#   novalue=1   the hooksPath is a bare line with no `=` (git fails on it) — set=1 with an empty value otherwise
+#               means the EMPTY value (every hook off); omitted when not (dir #747)
 #   read-error=1  git could not read the config at all (a corrupt file): every other line is then a guess —
 #               omitted when the read worked (dir #743)
 #   set=        1 when core.hooksPath is set at any scope, the empty value included (decided by the read's EXIT
@@ -857,6 +859,7 @@ _isg_where_repo() {
   echo "scope=${m_scope:-none}"
   echo "set=$m_set"
   [ "$m_err" = 0 ] || echo "read-error=1"
+  [ "$m_novalue" = 0 ] || echo "novalue=1"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   # machine-dir: the one place that decides "this repo's hooks are the machine-wide ones" (dir #688); a
@@ -874,6 +877,7 @@ _isg_where_machine() {
   echo "scope=${m_scope:-none}"
   echo "set=$m_set"
   [ "$m_err" = 0 ] || echo "read-error=1"
+  [ "$m_novalue" = 0 ] || echo "novalue=1"
   [ -z "$m_value" ] || echo "value=$m_value"
   [ -z "$m_origin" ] || echo "origin=$m_origin"
   [ "$m_fallback" != 1 ] || echo "fallback=1"
@@ -889,7 +893,9 @@ _isg_inert_note() {  # repo own effective scope
   echo "secret-guard: NOTE — this copy is inert: core.hooksPath ($4 scope) sends git to $3 for this repo, not $2."
   echo "  Either replace the machine-wide setting (install-secret-guard.sh --global --force; the old value is"
   echo "  recorded and --uninstall restores it), or give this repo its own hooks dir:"
-  echo "    git -C $1 config --local core.hooksPath $2   then re-run install-secret-guard.sh $1"
+  # a WORKTREE-scope setting outranks --local, so only --worktree replaces it (dir #747)
+  local scope_flag="--local"; [ "$4" != worktree ] || scope_flag="--worktree"
+  echo "    git -C $1 config $scope_flag core.hooksPath $2   then re-run install-secret-guard.sh $1"
 }
 
 if [ "$where" = 1 ]; then

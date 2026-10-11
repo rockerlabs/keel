@@ -377,7 +377,7 @@ if [ "$uninstall" = 1 ]; then
   if [ "$n_removed" = 0 ] && [ "$n_retired" = 0 ]; then
     echo "install-pre-pr-gate: nothing to remove — no wired hook at $settings matches what this installer would wire"
     if [ "$n_kept" -gt 0 ]; then
-      echo "  ($n_kept hook(s) present on the same event+matcher, but differing from ours — left in place)"
+      echo "  ($n_kept hook entries present on the same event+matcher, but differing from ours — left in place)"
       while IFS=$'\t' read -r status event matcher; do
         [ "$status" = "KEPT" ] || continue
         print_removal_status "$status" "$event" "$matcher"

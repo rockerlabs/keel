@@ -16,27 +16,32 @@
 # Unlock: run /polish — it writes the receipt automatically as it completes each step.
 #
 # One secret-adjacent rule (dir #731): the same hook also DENIES a `git … push` segment that carries a bypass
-# of the pre-push secret scan the lexer can see — `--no-verify` (and its accepted prefixes), `-c
-# core.hooksPath…`, `--config-env core.hooksPath=…`, or an inline `GIT_CONFIG_*` / `HOME` / `XDG_CONFIG_HOME`
-# prefix that disables or redirects the config the guard is wired from. A bypassed COMMIT is not denied: the
-# plain push that follows it is refused by pre-push itself. Why here: the agent's push to a public remote is
-# the one place a bypass actually leaks and the one place its command is visible, so this gate, otherwise only
-# a workflow reminder, also carries this rule — still not the secret boundary (that is secret-guard). Named
-# residuals, caught only by the CI scan on the PR: a variable exported earlier, an alias or wrapper, `sh -c
-# '…'`, quoted text (also a QUOTED bypass argument — `git push '--no-verify'` — the lexer strips it), a
-# bypass split off by a backslash-newline continuation, a `git config` write in an earlier segment, a
-# leading word outside the skip set (`sudo`, `env -C`, a redirect, `/usr/bin/env …` — only a bare `env` is
-# skipped), the closing line of a heredoc commit message (a `git commit -m "$(cat` with a heredoc body, then
-# `)" && git push --no-verify` on the line after the terminator: the `)"` opens a quote the lexer never
-# closes, so the push after it is not seen; the same push on its own line IS), a stray heredoc operator
-# earlier in the command (the shift in `$(( ))` arithmetic reads as a heredoc opener: a push after it
-# separated by `;`, or on a later line, is swallowed as heredoc text; one after `&&` or `|` is still seen),
-# a partly quoted prefix assignment (`VAR="x"y git push …` splits into `VAR=` and `y`, so the command word
-# is never `git`; it hides a `gh pr create` the same way), a missing jq, another harness, the operator's own
-# terminal. The four forms the 0.15.0 audit added (`/usr/bin/env`, the heredoc closing line, the stray
-# heredoc operator, the partly quoted assignment) were each fed through this hook and allowed; the lexer fix
-# is dir #745.
-# Spec B15, docs/specs/717.
+# of the pre-push secret scan — `--no-verify` (and its accepted prefixes), `-c core.hooksPath…`, `--config-env
+# core.hooksPath=…`, or an inline `GIT_CONFIG_*` / `HOME` / `XDG_CONFIG_HOME` assignment that disables or
+# redirects the config the guard is wired from — quoted or not. A bypassed COMMIT is not denied: the plain push
+# that follows it is refused by pre-push itself. Why here: the agent's push to a public remote is the one place
+# a bypass actually leaks and the one place its command is visible, so this gate, otherwise only a workflow
+# reminder, also carries this rule — still not the secret boundary (that is secret-guard).
+#
+# Both rules read the command the way the shell will (dir #745): quotes glued to the words they touch, `$(…)` and
+# backticks (inside double quotes and expanding heredoc bodies too), heredocs, arithmetic, redirections, comments,
+# backslash-newline. Where bash, zsh and busybox read a part differently, or the reader cannot know, and that part's
+# segment mentions git or gh, the hook REFUSES the command and says why, so a bypass cannot hide there;
+# `pre-pr-gate.sh lex` shows how a command was read. It guards habits, not a deliberate disguise. Named residuals,
+# caught only by the CI scan on the PR: a variable exported earlier, or set in an earlier segment of the same
+# command; an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted
+# subcommand word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion
+# (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
+# earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
+# `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
+# name is no identifier); a `case` pattern's `)` inside `$(…)` within double quotes; an array assignment's `(…)`
+# (read as commands: a false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
+# `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
+# for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
+# index holds an expansion or a blank (`a[$i]=1 git …`, read as the command word); bash 3.2's misreading of a
+# heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only from a
+# body line that starts with `)`); a missing jq, another harness, the operator's own terminal. dir #731.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
@@ -77,6 +82,9 @@
 #                                           sharper now the root itself can move)
 #   pre-pr-gate.sh prev-sentinel-path <key> print the retired-backup path for a receipt key (dir #398,
 #                                           ditto — commands/polish-guide.md § Step 5's (c) recipe uses this)
+#   pre-pr-gate.sh lex                     print how the hook reads a command (its text on stdin): the
+#                                           words of each segment and the parts it could not read — a
+#                                           debugging and test aid (dir #745)
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
 # decides allow/deny for `gh pr create`.
@@ -477,7 +485,7 @@ unset _ppg_dir
 # `gate_state_root` check just before the first `sentinel=` resolution, further down) — by then
 # `deny()` is defined and `$cwd` is parsed, so that check uses the file's own real, established
 # decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
-if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ]; then
+if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != lex ]; then
   gate_state_root >/dev/null || {
     printf 'pre-pr-gate: $HOME %s — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' \
       "$(gate_home_diagnosis)" >&2
@@ -1514,6 +1522,788 @@ log_event() {
   printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ty" pre-pr-gate "$detail" "$key" >> "$log" 2>/dev/null || true
 }
 
+# --- the command reader (dir #745) ------------------------------------------------------------------------
+# One awk program, run by hook mode on every Bash command and by `lex`. It lexes the whole command text the way
+# the shell will — quotes glued to the words they touch, `$(…)`, backticks, `${…}`, arithmetic, heredocs owned by
+# the context they were read in, redirections, comments, backslash-newline — and hands each segment (the words
+# between two separators) to the matchers. Where bash, zsh and busybox disagree, or the reader cannot know, it
+# records a region; a region whose segment mentions git or gh refuses the command (fail closed, with a reason).
+# It never reads a file, runs a command or resolves a path: a matcher that needs one reports a candidate line
+# and the shell side resolves it.
+# A single-quoted string, not a heredoc read: `read -d ''` takes a heredoc one byte per system call, which cost
+# ~30 ms on every Bash call at this size. So the program holds no single quote; it spells one \047. (Its
+# comments use typographic apostrophes, which shellcheck flags inside a quoted string as SC1112.)
+# shellcheck disable=SC1112
+PPG_AWK_PROG='
+# The whole command is one text, lexed once in END: no state is per line.
+{ src = (NR == 1) ? $0 : src "\n" $0 }
+END { lex_main() }
+
+# rep(c, k) — k copies of c, by doubling: a run’s mask costs O(log k) appends, not k.
+function rep(c, k,   s) {
+  s = ""
+  while (k > 0) { if (k % 2) s = s c; c = c c; k = int(k / 2) }
+  return s
+}
+# at(k) — the character k places past pos, or "" past the current limit (an HDATA body’s end, or the text’s).
+function at(k) { return (pos + k < lim) ? ch[pos + k] : "" }
+function is_cmd(t) { return (t == "TOP" || t == "SUB" || t == "BQ") }
+
+# --- the context stack ------------------------------------------------------------------------------------
+# Command contexts TOP, SUB (`$(`, `<(`, `>(`) and BQ (a backtick) make words and segments; SQ, AQ (`$` and a quote), DQ,
+# ARITH (`$((`, `$[`, `((`), PARAM (`${`) and HDATA (an expanding heredoc body) are data. cty[] type, cpos[]
+# opener position, cseg[] the owner’s segment start when it opened (where a region’s scope starts), cid[] a
+# SUB/BQ’s group id (segscope). ownsp is the nearest command context; opq is 1 while a PARAM, ARITH or HDATA
+# sits between it and the top — their text is not a word’s own (a whole ${…} or $(( )) counts once).
+function restack(   i) {
+  ownsp = 0; opq = 0
+  for (i = sp; i >= 1; i--) {
+    if (is_cmd(cty[i])) { ownsp = i; break }
+    if (cty[i] == "PARAM" || cty[i] == "ARITH" || cty[i] == "HDATA") opq = 1
+  }
+}
+function push_ctx(t, p) {
+  flushrun()
+  sp++; cty[sp] = t; cpos[sp] = p; cseg[sp] = segbeg[ownsp]; adepth[sp] = 0; flagged[sp] = 0; qflagged[sp] = 0
+  clim[sp] = (t == "BQ") ? bq_end(p) : n + 1
+  if (t == "SUB" || t == "BQ") {
+    # its first segment starts right after the opener: a backtick, or `$(` / `<(` / `>(`
+    cid[sp] = ++gid; ngrp[sp] = 0; hqn[sp] = 0; sntok[sp] = 0; wst[sp] = 0; tgtpend[sp] = 0; segbeg[sp] = p + ((t == "BQ") ? 1 : 2)
+    bqreg[sp] = 0
+  }
+  restack(); if (clim[sp] < lim) lim = clim[sp]
+}
+# (the rescan only when the popped end was a real limit: with none, lim is already n + 1, and a rescan per pop costs
+# a quadratic time on deep nesting)
+function pop_ctx() { flushrun(); sp--; restack(); if (clim[sp + 1] <= n && clim[sp + 1] <= lim) set_lim() }
+# A BQ ends where the shell ends it — at the first backtick no unescaped backslash precedes, whatever is nested
+# before it (a quote, ${…}, $(…), a comment, a heredoc body) — and an expanding heredoc body at its delimiter line.
+# clim[] holds each context’s end (n + 1: none); lim, the nearest one, bounds every read.
+function bq_end(p,   j) {
+  for (j = p + 1; j <= n; j++) {
+    if (ch[j] == "\\") j++
+    else if (ch[j] == "`") return j
+  }
+  return n + 1
+}
+function set_lim(   i) {
+  lim = n + 1
+  for (i = 1; i <= sp; i++) if (clim[i] < lim) lim = clim[i]
+}
+# at_limit() — pos reached (or a reader stepped past) the nearest end: an expanding body’s, or a BQ’s closing
+# backtick. Anything still open inside a BQ there is a region (the reader’s nesting and the shell’s end disagree),
+# closed at the backtick; reading resumes right after it.
+function at_limit(   k, e) {
+  for (k = sp; k >= 1; k--) if (clim[k] <= pos && (cty[k] == "HDATA" || (cty[k] == "BQ" && clim[k] <= n))) break
+  if (k < 1) return 0
+  if (cty[k] == "HDATA") { end_hdata(); return 1 }
+  e = clim[k]
+  if (sp > k) bq_region(k)
+  while (sp > k) close_any(e)
+  pos = e; close_cmd(); pos = e + 1
+  return 1
+}
+# bq_region(b, why) — the BQ at stack index b is a region, once; its end is set when it closes. The default reason:
+# the BQ ends (at its first unescaped backtick) inside something the reader has open.
+function bq_region(b, why) {
+  if (why == "") why = "backtick inside a nested context in backticks"
+  if (b && !bqreg[b]) bqreg[b] = region(cpos[b], -1, why, rseg(segbeg[b]))
+}
+function bq_open(   i) {
+  for (i = sp; i >= 1; i--) if (cty[i] == "BQ") return i
+  return 0
+}
+# bq_in_dq() — the innermost BQ sits inside a DQ: there `\"` un-escapes to a plain `"` before the BQ is read.
+function bq_in_dq(   b) { b = bq_open(); return b > 1 && cty[b - 1] == "DQ" }
+
+# --- words ------------------------------------------------------------------------------------------------
+# A word keeps its text after quote removal and a mask, one letter per character: u unquoted, q quoted or
+# escaped, x produced by an expansion, g an unquoted glob or brace-expansion character. It grows by runs — one
+# substr per run of source characters of one class, never per character (a long word would cost quadratic time).
+function flushrun() {
+  if (run_len > 0) {
+    wtext[run_s] = wtext[run_s] substr(src, run_a, run_len)
+    wmask[run_s] = wmask[run_s] rep(run_cls, run_len)
+    run_len = 0
+  }
+}
+function word_begin(p) {
+  if (opq || wst[ownsp]) return
+  wst[ownsp] = 1; wtext[ownsp] = ""; wmask[ownsp] = ""; wpos[ownsp] = p
+  wtgt[ownsp] = tgtpend[ownsp]; tgtpend[ownsp] = 0
+}
+function addsrc(p, k, cls) {
+  if (opq || k <= 0) return
+  if (run_len > 0 && run_s == ownsp && run_cls == cls && run_a + run_len == p) { run_len += k; return }
+  flushrun(); run_s = ownsp; run_cls = cls; run_a = p; run_len = k
+}
+function addlit(t, m) {
+  if (opq) return
+  flushrun(); wtext[ownsp] = wtext[ownsp] t; wmask[ownsp] = wmask[ownsp] m
+}
+function word_end(s,   k) {
+  if (run_s == s) flushrun()
+  if (!wst[s]) return
+  wst[s] = 0
+  if (wtgt[s]) return
+  k = ++sntok[s]; stok[s, k] = wtext[s]; stokm[s, k] = wmask[s]; stokp[s, k] = wpos[s]
+}
+
+# --- segments and the segment interface (on_segment: what every matcher sees) --------------------------------
+function seg_end(s, nextp) {
+  word_end(s)
+  if (sntok[s] > 0) on_segment(s)
+  sntok[s] = 0; tgtpend[s] = 0; segbeg[s] = nextp
+}
+function scope_of(s,   i, g, path) {
+  path = "0"
+  for (i = 1; i <= s; i++) {
+    if (!is_cmd(cty[i])) continue
+    if (cty[i] != "TOP") path = path "." cid[i]
+    for (g = 1; g <= ngrp[i]; g++) path = path "." grp[i, g]
+  }
+  return path
+}
+function on_segment(s,   i, k) {
+  ntok = sntok[s]
+  for (k = 1; k <= ntok; k++) { tok[k] = stok[s, k]; tokm[k] = stokm[s, k] }
+  segctx = cty[s]; segdepth = 0
+  for (i = 1; i < s; i++) if (is_cmd(cty[i])) segdepth++
+  segpos = stokp[s, 1]; segline = lno[segpos]; segscope = scope_of(s)
+  if (MODE == "lex") lex_segment()
+  check_push()
+  check_segment()
+}
+function lex_segment(   line, k, m, cls) {
+  line = segctx "@" segline "\td" segdepth "\ts" segscope "\tp" segpos
+  for (k = 1; k <= ntok; k++) {
+    m = tokm[k]; cls = ""
+    if (index(m, "u")) cls = cls "u"
+    if (index(m, "q")) cls = cls "q"
+    if (index(m, "x")) cls = cls "x"
+    if (index(m, "g")) cls = cls "g"
+    line = line "\t" cls ":" lex_esc(tok[k])
+  }
+  print line
+}
+# lex_esc(t) — t with a backslash, a TAB and a newline written as \\, \t and \n. A character loop, not gsub: busybox
+# awk reads a backslash in a gsub replacement differently from the other awks.
+function lex_esc(t,   o, i, c) {
+  if (t !~ /[\\\t\n]/) return t
+  o = ""
+  for (i = 1; i <= length(t); i++) {
+    c = substr(t, i, 1)
+    if (c == "\\") o = o "\\\\"; else if (c == "\t") o = o "\\t"; else if (c == "\n") o = o "\\n"; else o = o c
+  }
+  return o
+}
+# Word predicates the matchers use.
+function w_plain(i) { return index(tokm[i], "x") == 0 }
+function w_literal(i) { return index(tokm[i], "x") == 0 && index(tokm[i], "g") == 0 }
+function w_unquoted(i) { return index(tokm[i], "q") == 0 && index(tokm[i], "x") == 0 }
+# assign_len(t) — the length of t’s `NAME[index]+=` prefix, 0 when t has none.
+function assign_len(t) {
+  if (match(t, /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?\+?=/)) return RLENGTH
+  return 0
+}
+function w_assign(i,   t, m, L, nl, ie) {
+  t = tok[i]; m = tokm[i]; L = assign_len(t)
+  if (!L) return 0
+  match(t, /^[A-Za-z_][A-Za-z0-9_]*/); nl = RLENGTH
+  if (substr(t, nl + 1, 1) != "[") return substr(m, 1, L) ~ /^u+$/
+  ie = nl + index(substr(t, nl + 1), "]")
+  return substr(m, 1, nl) ~ /^u+$/ && substr(m, nl + 1, ie - nl - 1) ~ /^[uqg]+$/ && substr(m, ie, L - ie + 1) ~ /^u+$/
+}
+function w_assign_name(i) { match(tok[i], /^[A-Za-z_][A-Za-z0-9_]*/); return substr(tok[i], 1, RLENGTH) }
+
+# --- the main loop ----------------------------------------------------------------------------------------
+function lex_main(   i, L, t) {
+  n = split(src, ch, "")
+  L = 1; lstart[1] = 1
+  for (i = 1; i <= n; i++) { lno[i] = L; if (ch[i] == "\n") { lend[L] = i - 1; L++; lstart[L] = i + 1 } }
+  lend[L] = n; nlines = L; lno[n + 1] = L
+  sp = 0; ownsp = 0; gid = 0; nreg = 0; hd_sp = 0; hb_s = 0; lim = n + 1
+  push_ctx("TOP", 1); segbeg[1] = 1
+  pos = 1
+  while (1) {
+    if (pos >= lim && at_limit()) continue
+    if (pos > n) break
+    t = cty[sp]
+    if (is_cmd(t)) cmd_char()
+    else if (t == "DQ") dq_char()
+    else if (t == "SQ") sq_char()
+    else if (t == "AQ") aq_char()
+    else if (t == "PARAM") param_char()
+    else if (t == "ARITH") arith_char()
+    else hdata_char()
+  }
+  finish()
+  out()
+}
+
+# A `$` in a command context, DQ, PARAM, ARITH or HDATA. Returns 1 when it consumed something.
+function dollar(   c, k) {
+  c = at(1)
+  if (c == "(" && at(2) == "(") { word_begin(pos); push_ctx("ARITH", pos); akind[sp] = "$(("; pos += 3; return 1 }
+  if (c == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; return 1 }
+  if (c == "[") { word_begin(pos); push_ctx("ARITH", pos); akind[sp] = "$["; pos += 2; return 1 }
+  if (c == "{") { word_begin(pos); push_ctx("PARAM", pos); pos += 2; return 1 }
+  if (c ~ /^[A-Za-z_]$/) {
+    k = 2
+    while (pos + k < lim && ch[pos + k] ~ /^[A-Za-z0-9_]$/) k++
+    word_begin(pos); addsrc(pos, k, "x"); pos += k; return 1
+  }
+  if (c != "" && index("0123456789@*#?$!-", c)) { word_begin(pos); addsrc(pos, 2, "x"); pos += 2; return 1 }
+  return 0
+}
+# bq_escape(set) — at a backslash: inside a backtick substitution the shell turns \`, \$ and \\ back into `, $ and \
+# before it reads the text, so there an escaped backtick runs (nested backticks), an escaped $ expands, and a
+# doubled backslash moves a quote’s end. set: the escaped characters that matter in the current context (inside
+# $’…’ only \\ does). The BQ’s text is a region, once.
+function bq_escape(set,   b) {
+  if (at(1) == "" || !index(set, at(1))) return
+  b = bq_open()
+  bq_region(b, (at(1) == "`") ? "nested backticks" : "escaped " at(1) " inside backticks")
+}
+# rseg(sb) — where a region’s scope starts: sb, or inside an expanding heredoc body the segment of its operator when
+# that starts earlier (a context’s own segment restarts at the body’s first line).
+function rseg(sb) { return (hd_sp && hd_seg < sb) ? hd_seg : sb }
+# brace_g(p) — 1 when the unquoted `{` at p opens a brace expansion: its matching `}` in the same word comes
+# after an unquoted `,` or `..` at its nesting level. One pass to the word’s end settles every `{` it meets (a
+# stack of open braces), cached by position — a rescan per `{` cost quadratic time on a word of many braces.
+function brace_g(p,   j, c, d) {
+  if (p in bgx) return bgx[p]
+  d = 0
+  for (j = p; j < lim; j++) {
+    c = ch[j]
+    if (c == "\\") { j++; continue }
+    if (c == "\047") { while (++j < lim && ch[j] != "\047") ; continue }
+    if (c == "\"") { while (++j < lim && ch[j] != "\"") if (ch[j] == "\\") j++; continue }
+    if (index(" \t\n;&|<>()", c)) break
+    if (c == "{") { bst[++d] = j; bseen[d] = 0; bgx[j] = 0 }
+    else if (c == "}") { if (d > 0) { bgx[bst[d]] = bseen[d]; d-- } }
+    else if (d > 0 && (c == "," || (c == "." && ch[j + 1] == "."))) bseen[d] = 1
+  }
+  return bgx[p]
+}
+# tilde_x() — 1 when the unquoted `~` at pos is a tilde expansion (a word’s start, or after `=`/`:` in an assignment).
+function tilde_x(   t) {
+  if (!wst[ownsp]) return 1
+  if (ch[pos - 1] != "=" && ch[pos - 1] != ":") return 0
+  flushrun(); t = wtext[ownsp]
+  return (substr(wmask[ownsp], length(wmask[ownsp]), 1) == "u" && assign_len(t) > 0)
+}
+
+function cmd_char(   c, s, k, op) {
+  c = ch[pos]; s = sp
+  if (index(CMDSPECIAL, c) == 0) {
+    k = 1
+    while (pos + k < lim && index(CMDSPECIAL, ch[pos + k]) == 0) k++
+    word_begin(pos); addsrc(pos, k, "u"); pos += k; return
+  }
+  if (c == " " || c == "\t") { word_end(s); pos++; return }
+  if (c == "\n") { seg_end(s, pos + 1); pos++; if (hqn[s] > 0) start_bodies(s); return }
+  if (c == "#" && !wst[s]) { while (pos < lim && ch[pos] != "\n") pos++; return }
+  if (c == "\\") {
+    if (at(1) == "\n") { pos += 2; return }
+    if (at(1) == "") { pos++; return }
+    bq_escape(BQESC)
+    if (at(1) == "\"" && bq_in_dq()) { pos++; return }
+    word_begin(pos); addsrc(pos + 1, 1, "q"); pos += 2; return
+  }
+  if (c == "\047") { word_begin(pos); push_ctx("SQ", pos); pos++; return }
+  if (c == "\"") { word_begin(pos); push_ctx("DQ", pos); pos++; return }
+  if (c == "`") { word_begin(pos); push_ctx("BQ", pos); pos++; return }
+  if (c == "$") {
+    if (at(1) == "\047") { word_begin(pos); push_ctx("AQ", pos); pos += 2; return }
+    if (at(1) == "\"") { word_begin(pos); push_ctx("DQ", pos); pos += 2; return }
+    if (dollar()) return
+    word_begin(pos); addsrc(pos, 1, "u"); pos++; return
+  }
+  if (c == "<" || c == ">") { redirect(); return }
+  if (c == "&") {
+    if (at(1) == ">") { redirect(); return }
+    k = (at(1) == "&") ? 2 : 1
+    seg_end(s, pos + k); pos += k; return
+  }
+  if (c == ";") {
+    k = 1
+    if (at(1) == ";") k = (at(2) == "&") ? 3 : 2
+    else if (at(1) == "&") k = 2
+    seg_end(s, pos + k); pos += k; return
+  }
+  if (c == "|") {
+    k = (at(1) == "|" || at(1) == "&") ? 2 : 1
+    seg_end(s, pos + k); pos += k; return
+  }
+  if (c == "(") {
+    if (!wst[s] && at(1) == "(") { word_begin(pos); push_ctx("ARITH", pos); akind[sp] = "(("; pos += 2; return }
+    seg_end(s, pos + 1); grp[s, ++ngrp[s]] = ++gid; pos++; return
+  }
+  if (c == ")") {
+    seg_end(s, pos + 1); pos++
+    if (ngrp[s] > 0) ngrp[s]--
+    else if (cty[s] == "SUB") close_cmd()
+    return
+  }
+  if (c == "~") {
+    op = tilde_x(); word_begin(pos); k = 1
+    if (op) { while (pos + k < lim && ch[pos + k] ~ /^[A-Za-z0-9_]$/) k++; addsrc(pos, k, "x") }
+    else addsrc(pos, 1, "u")
+    pos += k; return
+  }
+  if (c == "{") { word_begin(pos); addsrc(pos, 1, brace_g(pos) ? "g" : "u"); pos++; return }
+  if (c == "#") { word_begin(pos); addsrc(pos, 1, "u"); pos++; return }
+  # `*`, `?`, `[`
+  word_begin(pos); addsrc(pos, 1, "g"); pos++
+}
+
+# close_cmd — the SUB or BQ on top closes: its segment ends and the enclosing word gains `$()`. A heredoc it still
+# owns: in a $(…), a region to the end of the text, or to the backtick of a BQ around it (the shells disagree on the
+# lines after it; they are read as commands); in a BQ, an empty body — the BQ’s text ends at its backtick, so every
+# shell gives it no lines.
+function close_cmd(   s, k) {
+  s = sp
+  seg_end(s, pos)
+  for (k = 1; k <= hqn[s]; k++) {
+    if (cty[s] == "BQ") empty_body(s, k)
+    else region(hqop[s, k], lim - 1, "heredoc pending when $(…) closed", hqsb[s, k])
+  }
+  hqn[s] = 0
+  if (bqreg[s]) rend[bqreg[s]] = (pos > n) ? n : pos
+  pop_ctx(); addlit("$()", "xxx")
+}
+
+# A redirection operator, longest first; a fd word before it is dropped; the next word is its target, read (its
+# substitutions are judged) but not a word of the segment — so `2>&1`, `>&2` and `&>/dev/null` split nothing.
+function redirect(   c, op, s, t, m) {
+  s = sp; c = ch[pos]
+  if ((c == "<" || c == ">") && at(1) == "(") { word_begin(pos); push_ctx("SUB", pos); pos += 2; return }
+  if (c == "&") op = (at(2) == ">") ? "&>>" : "&>"
+  else if (c == "<") {
+    if (at(1) == "<" && at(2) == "<") op = "<<<"
+    else if (at(1) == "<" && at(2) == "-") op = "<<-"
+    else if (at(1) == "<") op = "<<"
+    else if (at(1) == ">" || at(1) == "&") op = c at(1)
+    else op = "<"
+  } else {
+    if (at(1) == ">" || at(1) == "|" || at(1) == "&") op = c at(1)
+    else op = ">"
+  }
+  if (wst[s]) {
+    if (run_s == s) flushrun()
+    t = wtext[s]; m = wmask[s]
+    if (op !~ /^&/ && ((t ~ /^[0-9]+$/ && m ~ /^u+$/) || (t ~ /^\{[A-Za-z_][A-Za-z0-9_]*\}$/ && m ~ /^u+$/))) wst[s] = 0
+    else word_end(s)
+  }
+  if (op == "<<" || op == "<<-") { heredoc_op(op == "<<-"); return }
+  pos += length(op); tgtpend[s] = 1
+}
+
+# Read a heredoc delimiter word after `<<`/`<<-` (quotes and escaping backslashes removed, nothing expanded; any
+# quoting makes the body literal) and queue the heredoc on its owner, the command context it was read in.
+function heredoc_op(strip,   s, op, d, quoted, c, got, k, w, r, why) {
+  s = sp; op = pos; pos += strip ? 3 : 2
+  while (pos < lim && (ch[pos] == " " || ch[pos] == "\t")) pos++
+  d = ""; quoted = 0; got = 0; w = pos
+  while (pos < lim) {
+    c = ch[pos]
+    # what this reader does not model (delim_odd) is a region, and the lexer reads the word again as the target
+    if ((why = delim_odd(0, got)) != "") { delim_redo(s, op, w, why); return }
+    if (index(" \t\n;&|<>()", c)) break
+    got = 1
+    if (c == "\047") {
+      quoted = 1; pos++; r = pos; while (pos < lim && ch[pos] != "\047") pos++
+      if (index(substr(src, r, pos - r), "\\") && bq_open()) { delim_redo(s, op, w, RDSUB); return }
+      d = d substr(src, r, pos - r); pos++; continue
+    }
+    if (c == "\"") {
+      quoted = 1; pos++
+      while (pos < lim && ch[pos] != "\"") {
+        if ((why = delim_odd(1, 0)) != "") { delim_redo(s, op, w, why); return }
+        if (ch[pos] == "\\" && at(1) != "" && index("$`\"\\", at(1))) { d = d at(1); pos += 2; continue }
+        r = pos++; while (pos < lim && !index("\"\\$`", ch[pos])) pos++
+        d = d substr(src, r, pos - r)
+      }
+      pos++; continue
+    }
+    if (c == "\\") { quoted = 1; pos++; if (pos < lim) d = d ch[pos++]; continue }
+    r = pos++; while (pos < lim && !index(" \t\n;&|<>()\047\"\\$`", ch[pos])) pos++
+    d = d substr(src, r, pos - r)
+  }
+  if (!got) { region(op, n, "heredoc operator without a delimiter", rseg(segbeg[s])); return }
+  if (hd_sp) { region(op, n, "heredoc inside a heredoc substitution", rseg(segbeg[s])); return }
+  k = ++hqn[s]; hqd[s, k] = d; hqs[s, k] = strip; hqx[s, k] = !quoted; hqop[s, k] = op; hqsb[s, k] = segbeg[s]
+}
+# delim_odd(dq, got) — why the delimiter character at pos is one this reader does not model, or "". Glued to a
+# started word (got; the double-quoted reader passes 0), bash and zsh read on into the word what this reader takes
+# for a separator: a `(` (zsh glob qualifiers and extglob, `E(x)`, `E@(x)`), a process substitution (`E<(x)`,
+# `E>(x)`) and zsh’s numeric glob `<N-M>` of any length (a plain `<` or `>` is a redirection in every shell).
+# Anywhere: a substitution (`$(`, `${`, `$[`, a backtick), outside double quotes also a $-single or $-double quote,
+# a backslash-newline, or any backslash inside backticks (the shells unescape the backticks first; in a
+# single-quoted span too, heredoc_op).
+function delim_odd(dq, got,   c, c1, k) {
+  c = ch[pos]; c1 = at(1)
+  if (got) {
+    if (c == "(") return RDGLOB
+    if ((c == "<" || c == ">") && c1 == "(") return RDSUB
+    if (c == "<") {
+      for (k = 1; at(k) ~ /^[0-9]$/; k++) ;
+      if (at(k) == "-") { for (k++; at(k) ~ /^[0-9]$/; k++) ; if (at(k) == ">") return RDGLOB }
+    }
+  }
+  if (c == "`" || (c == "\\" && (c1 == "\n" || bq_open())) || (c == "$" && c1 != "" && index(dq ? "({[" : "({[\047\"", c1)))
+    return RDSUB
+  return ""
+}
+function delim_redo(s, op, w, why) { region(op, n, why, rseg(segbeg[s])); pos = w; tgtpend[s] = 1 }
+
+# start_bodies(s) — a newline read in s itself (not in a context nested in it): its pending bodies follow, in
+# order. A literal body is skipped by line; an expanding one is read as HDATA, its substitutions judged.
+function start_bodies(s) { hb_s = s; hb_k = 0; next_body() }
+function next_body(   s, k, L, txt, found, bstop, after, hline, cmp, kline) {
+  s = hb_s
+  while (1) {
+    k = ++hb_k
+    if (k > hqn[s]) { hqn[s] = 0; hb_s = 0; kreg = 0; return }
+    # no body left — past the text, or at or past the backtick that ends the BQ the heredoc sits in (the newline was
+    # the BQ’s last character, or an earlier delimiter line was cut at it; after such a line pos may lie past the
+    # backtick, and at_limit() resumes right after it): an empty body, as every shell gives it
+    if (pos > n || pos >= lim) { empty_body(s, k); continue }
+    found = 0; hline = 0; kline = 0
+    for (L = lno[pos]; L <= nlines && lstart[L] < lim; L++) {
+      txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
+      cmp = txt; if (hqs[s, k]) sub(/^\t+/, "", cmp)
+      if (cmp == hqd[s, k]) { found = 1; break }
+      if (cty[s] == "SUB" && !kline && txt ~ /^[ \t]*\)/) kline = lstart[L]
+      if (hqx[s, k] && !hline && txt ~ /\\$/ && bs_joins(L, s, k)) hline = lstart[L]
+    }
+    # not found: the body runs to the end of the text — a region — or to the backtick of the BQ it sits in, where
+    # every shell ends it too
+    bstop = found ? lstart[L] : lim
+    after = found ? lend[L] + 2 : lim
+    if (!found && lim > n) region(pos, n, "heredoc " hqd[s, k] " not closed", hqsb[s, k])
+    if (hline) region(hline, bstop - 1, "backslash-joined heredoc delimiter", hqsb[s, k])
+    # bash 3.2 closes the $(…) at the first `)`-led line and runs every body line after it as commands — the
+    # later bodies of the same line’s heredocs too, so one region grows over them
+    if (kreg) rend[kreg] = bstop - 1
+    else if (kline) kreg = region(kline, bstop - 1, ") line in a heredoc body inside $(…)", hqsb[s, k])
+    if (hqx[s, k] && pos < bstop) {
+      push_ctx("HDATA", pos); hd_sp = sp; hd_after = after; hd_seg = hqsb[s, k]; clim[sp] = bstop; if (bstop < lim) lim = bstop
+      return
+    }
+    pos = after
+  }
+}
+# bs_joins(L, s, k) — line L ends in an unescaped backslash and its join with the next line(s) equals the
+# delimiter: bash and zsh end the body there, busybox and dash read on.
+function bs_joins(L, s, k,   txt, j, t2) {
+  txt = substr(src, lstart[L], line_end(L) - lstart[L] + 1)
+  j = L
+  # the join stops at lim: its BQ’s backtick (past it the join would keep the backtick, which no expanding
+  # heredoc’s delimiter holds unquoted) or the end of the text (which never ends in a newline: the hook and lex
+  # both read the command through $(…))
+  while (txt ~ /\\$/ && !(txt ~ /\\\\$/ && odd_tail(txt) == 0) && j < nlines && lstart[j + 1] < lim) {
+    txt = substr(txt, 1, length(txt) - 1); j++
+    # the whole line, not line_end(): a line cut at its BQ’s backtick keeps the backtick, so a join can never
+    # meet the delimiter there (bs_joins runs only for an expanding heredoc, and an unquoted backtick in its
+    # delimiter is a region, delim_odd) — every shell ends that body at the backtick, joined or not. Line L itself
+    # is cut (line_end): the caller tests it for a trailing \.
+    txt = txt substr(src, lstart[j], lend[j] - lstart[j] + 1)
+    t2 = txt; if (hqs[s, k]) sub(/^\t+/, "", t2)
+    if (t2 == hqd[s, k]) return 1
+  }
+  return 0
+}
+# empty_body(s, k) — heredoc k of context s gets no body: an empty region, never refused (lex shows it).
+function empty_body(s, k) { region(hqop[s, k], -1, "heredoc " hqd[s, k] " not closed", hqsb[s, k]) }
+# line_end(L) — where line L ends for a body read: its last character, or the character before its BQ’s backtick.
+function line_end(L) { return (lend[L] < lim) ? lend[L] : lim - 1 }
+function odd_tail(t,   c) { c = 0; while (substr(t, length(t) - c, 1) == "\\") c++; return c % 2 }
+# end_hdata — the expanding body’s end: anything still open inside it is a region, closed there.
+function end_hdata() {
+  if (sp > hd_sp) region(cpos[hd_sp + 1], clim[hd_sp] - 1, "substitution not closed in a heredoc body", hd_seg)
+  while (sp > hd_sp) close_any(clim[hd_sp])
+  pop_ctx(); hd_sp = 0; pos = hd_after
+  next_body()
+}
+# close_any(p) — close the top context as if its closer followed at p.
+function close_any(p,   t) {
+  t = cty[sp]
+  if (t == "SUB" || t == "BQ") { pos = p; close_cmd(); return }
+  if (t == "PARAM") { pop_ctx(); addsrc(cpos[sp + 1], p - cpos[sp + 1], "x"); return }
+  if (t == "ARITH") {
+    pop_ctx(); addlit("$()", "xxx")
+    if (akind[sp + 1] == "((") word_end(ownsp)
+    return
+  }
+  pop_ctx()
+}
+
+function dq_char(   c, k) {
+  c = ch[pos]
+  if (c == "\"") { pop_ctx(); pos++; return }
+  if (c == "\\") {
+    if (at(1) == "\n") { pos += 2; return }
+    if (at(1) == "\"" && bq_in_dq()) { pos++; return }
+    if (at(1) != "" && index("$`\"\\", at(1))) { bq_escape(BQESC); addsrc(pos + 1, 1, "q"); pos += 2; return }
+    addsrc(pos, 1, "q"); pos++; return
+  }
+  if (c == "$" && dollar()) return
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
+  k = 1
+  while (pos + k < lim && index("\"\\$`", ch[pos + k]) == 0) k++
+  addsrc(pos, k, "q"); pos += k
+}
+function sq_char(   k) {
+  if (ch[pos] == "\047") { pop_ctx(); pos++; return }
+  k = 1
+  while (pos + k < lim && ch[pos + k] != "\047") k++
+  addsrc(pos, k, "q"); pos += k
+}
+function aq_char() {
+  if (ch[pos] == "\047") { pop_ctx(); pos++; return }
+  if (ch[pos] == "\\" && at(1) != "") { bq_escape("\\"); addsrc(pos + 1, 1, "q"); pos += 2; return }
+  addsrc(pos, 1, "q"); pos++
+}
+# PARAM: closed by the first unquoted `}` (bash, busybox). Regions, where the shells disagree: a single quote in it
+# under a DQ or HDATA whose span to the next quote holds a } " $ ` or \ (or has no next quote), and an unquoted `{`
+# in it outside a DQ or HDATA (zsh counts it toward the closer).
+# param_quoted() — the ${…} on top sits, through any ${…} around it, in a DQ or an expanding heredoc body.
+function param_quoted(   i) {
+  for (i = sp; i >= 1 && cty[i] == "PARAM"; i--) ;
+  return cty[i] == "DQ" || cty[i] == "HDATA"
+}
+function param_char(   c, j, k) {
+  c = ch[pos]
+  if (c == "}") { pop_ctx(); addsrc(cpos[sp + 1], pos - cpos[sp + 1] + 1, "x"); pos++; return }
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "\"") { push_ctx("DQ", pos); pos++; return }
+  if (c == "$" && at(1) == "\047") { push_ctx("AQ", pos); pos += 2; return }
+  if (c == "$" && dollar()) return
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
+  if (c == "\047") {
+    if (param_quoted()) {
+      # bash reads the quotes, zsh and busybox read them as text: the readings agree only on a span up to the next
+      # quote holding no } or " (where they would end differently) and nothing that expands ($, a backtick, \) —
+      # that span is plain text in every reading; anything else is a region, and the quote is read as text.
+      for (j = pos + 1; j < lim && ch[j] != "\047"; j++) if (index("}\"$`\\", ch[j])) break
+      if (j < lim && ch[j] == "\047") { pos = j + 1; return }
+      if (!qflagged[sp]) { qflagged[sp] = 1; region(pos, n, "quote inside ${…} in double quotes", rseg(segbeg[ownsp])) }
+      pos++; return
+    }
+    push_ctx("SQ", pos); pos++; return
+  }
+  if (c == "{") {
+    if (!param_quoted() && !flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "brace inside ${…}", rseg(cseg[sp])) }
+    pos++; return
+  }
+  k = 1
+  while (pos + k < lim && index(PARAMSPECIAL, ch[pos + k]) == 0) k++
+  pos += k
+}
+# ARITH: `((`/`$((` close at `))` on depth 0, `$[` at `]`; `<<` in it is a shift. A lone `)` on depth 0 is a
+# region: bash, zsh and busybox re-read `((…) && (…))` as nested subshells.
+function arith_char(   c) {
+  c = ch[pos]
+  if (c == "(" || (c == "[" && akind[sp] == "$[")) { adepth[sp]++; pos++; return }
+  if (c == "]" && akind[sp] == "$[") {
+    if (adepth[sp] > 0) { adepth[sp]--; pos++; return }
+    pos++; close_any(pos); return
+  }
+  if (c == ")") {
+    if (adepth[sp] > 0) { adepth[sp]--; pos++; return }
+    if (akind[sp] == "$[") { pos++; return }
+    if (at(1) == ")") { pos += 2; close_any(pos); return }
+    if (!flagged[sp]) { flagged[sp] = 1; region(cpos[sp], n, "(( read as nested subshells", rseg(cseg[sp])) }
+    pos++; return
+  }
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "$" && dollar()) return
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
+  if (c == "\047") { push_ctx("SQ", pos); pos++; return }
+  if (c == "\"") { push_ctx("DQ", pos); pos++; return }
+  pos++
+}
+# HDATA: an expanding heredoc body — only its substitutions are read.
+function hdata_char(   c, k) {
+  c = ch[pos]
+  if (c == "\\") { bq_escape(BQESC); pos += (at(1) != "") ? 2 : 1; return }
+  if (c == "$" && dollar()) return
+  if (c == "`") { push_ctx("BQ", pos); pos++; return }
+  k = 1
+  while (pos + k < lim && index("\\$`", ch[pos + k]) == 0) k++
+  pos += k
+}
+
+# --- regions: what the lexer cannot read alike in bash, zsh and busybox --------------------------------------
+# region(start, end, reason, segment start) — end -1: filled in later (nested backticks), or empty (a heredoc
+# whose body never started). Lexing goes on past every region; every segment is still judged.
+function region(a, b, why, sb) {
+  nreg++; rstart[nreg] = a; rend[nreg] = b; rwhy[nreg] = why; rsb[nreg] = sb; rline[nreg] = lno[a]
+  return nreg
+}
+function finish(   s, k, i, m, p, ng, lo, hi) {
+  # a heredoc still pending at the end: an empty body, never refused
+  for (s = 1; s <= sp; s++) if (is_cmd(cty[s])) {
+    for (k = 1; k <= hqn[s]; k++) empty_body(s, k)
+    hqn[s] = 0
+  }
+  if (sp > 1) region(cpos[2], n, "unclosed " cty[2], cseg[2])
+  pos = n + 1
+  while (sp > 1) close_any(n + 1)
+  seg_end(1, n + 1)
+  # a non-empty region whose segment-to-end text mentions git or gh refuses the command; any other cannot hide
+  # either rule, which both need that text
+  # (read once: every git and gh in the text, by start, then for each region the first at or past its segment
+  # start, by halving — a region per line of a long body must not copy the text once per region)
+  ng = 0
+  if (nreg) {
+    m = split(src, gpart, "g"); p = 0
+    for (k = 1; k < m; k++) {
+      p += length(gpart[k]) + 1
+      if (substr(src, p + 1, 1) == "h") { ng++; gbeg[ng] = p; gend[ng] = p + 1 }
+      else if (substr(src, p + 1, 2) == "it") { ng++; gbeg[ng] = p; gend[ng] = p + 2 }
+    }
+  }
+  for (i = 1; i <= nreg; i++) {
+    if (rend[i] < rstart[i]) { rscope[i] = "empty"; continue }
+    lo = 1; hi = ng + 1
+    while (lo < hi) { k = int((lo + hi) / 2); if (gbeg[k] < rsb[i]) lo = k + 1; else hi = k }
+    rscope[i] = (lo <= ng && gend[lo] <= rend[i]) ? "yes" : "no"
+  }
+  # source order
+  for (i = 1; i <= nreg; i++) ord[i] = i
+  for (i = 2; i <= nreg; i++) { k = ord[i]; for (s = i - 1; s >= 1 && rstart[ord[s]] > rstart[k]; s--) ord[s + 1] = ord[s]; ord[s + 1] = k }
+  refused = 0
+  for (i = 1; i <= nreg; i++) if (rscope[ord[i]] == "yes") { refused = 1; refuse_reason = rwhy[ord[i]]; refuse_line = rline[ord[i]]; break }
+}
+
+# --- the command start: the one skip set both matchers share ----------------------------------------------
+# Three phases in the shells’ own order, never going back: reserved words (unquoted only — a quoted `if` is a
+# command name; the reserved `time` takes one `-p`), then shell assignments, then wrappers (quoted or not), each
+# with its own flags. assign_at[] collects the assignments and env’s NAME=value arguments skipped.
+function is_reserved(t) {
+  return t == "if" || t == "then" || t == "elif" || t == "else" || t == "do" || t == "while" || t == "until" || t == "!" || t == "{" || t == "time"
+}
+function is_wrapper(t) {
+  return t == "nohup" || t == "exec" || t == "xargs" || t == "env" || t == "command" || t == "time"
+}
+function cmd_start(   i, t) {
+  nassign = 0; i = 1
+  while (i <= ntok && w_unquoted(i) && is_reserved(tok[i])) {
+    if (tok[i] == "time" && i < ntok && tok[i + 1] == "-p") i++
+    i++
+  }
+  while (i <= ntok && w_assign(i)) assign_at[++nassign] = i++
+  while (i <= ntok && w_plain(i) && is_wrapper(tok[i])) {
+    t = tok[i++]
+    if (t == "env") {
+      while (i <= ntok) {
+        if (w_plain(i) && substr(tok[i], 1, 1) == "-") { if (tok[i] == "-u" || tok[i] == "--unset") i++; i++ }
+        else if (assign_len(tok[i]) && index(substr(tokm[i], 1, length(w_assign_name(i))), "x") == 0) assign_at[++nassign] = i++
+        else break
+      }
+    }
+    else if (t == "command") { while (i <= ntok && w_plain(i) && substr(tok[i], 1, 1) == "-") i++ }
+    else if (t == "time") { if (i <= ntok && tok[i] == "-p") i++ }
+  }
+  return i
+}
+
+# --- the matchers -----------------------------------------------------------------------------------------
+# The subcommand words push/pr/create/api count only unquoted; bypass evidence and every other word they compare
+# count quoted or not. A third matcher is: its function, its call in on_segment, its verdict or candidate tag in
+# out(), and its arm on the shell side — one place each.
+function config_redirect(name) {
+  return (name == "GIT_CONFIG_GLOBAL" || name == "GIT_CONFIG_SYSTEM" || name == "GIT_CONFIG_NOSYSTEM" ||
+          name == "GIT_CONFIG_PARAMETERS" || name == "HOME" || name == "XDG_CONFIG_HOME")
+}
+# An assignment that turns the hooks off (a core.hooksPath key) or redirects the git config the guard is wired from.
+function assign_bypass(i,   nm) {
+  nm = w_assign_name(i)
+  if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(tok[i], assign_len(tok[i]) + 1)) == "core.hookspath") return 1
+  return config_redirect(nm)
+}
+function check_push(   i, j, k, t, lt, nx, bypass, found_push) {
+  i = cmd_start()
+  if (i > ntok) return
+  t = tok[i]
+  if (!((t == "git" && w_plain(i)) || (length(t) > 4 && substr(t, length(t) - 3) == "/git" && index(substr(tokm[i], length(t) - 3), "x") == 0))) return
+  bypass = 0
+  for (k = 1; k <= nassign; k++) if (assign_bypass(assign_at[k])) bypass = 1
+  found_push = 0
+  for (j = i + 1; j <= ntok; j++) {
+    t = tok[j]; lt = tolower(t)
+    if (t == "push" && w_unquoted(j)) found_push = 1
+    if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1
+    nx = (j + 1 <= ntok) ? tolower(tok[j + 1]) : ""
+    if (t == "-c" && (nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)) bypass = 1
+    if (index(lt, "--config-env=core.hookspath=") == 1) bypass = 1
+    if (t == "--config-env" && index(nx, "core.hookspath=") == 1) bypass = 1
+  }
+  if (found_push && bypass) pushbypass = 1
+}
+function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_field, method) {
+  i = cmd_start()
+  if (i > ntok || tok[i] != "gh" || !w_plain(i)) return
+  found_api = 0; ep_pulls = 0; has_field = 0; method = ""
+  for (j = i + 1; j <= ntok; j++) {
+    if (tok[j] == "api" && w_unquoted(j)) found_api = 1
+    else if (tok[j] ~ /(^|\/)pulls$/) ep_pulls = 1
+    else if (tok[j] == "-X" || tok[j] == "--method") {
+      if (j + 1 <= ntok) method = toupper(tok[j + 1])
+    }
+    else if (tok[j] ~ /^--method=/) { method = toupper(substr(tok[j], 10)) }
+    else if (tok[j] == "-f" || tok[j] == "-F" || tok[j] == "--field" ||
+             tok[j] == "--raw-field" || tok[j] == "--input") has_field = 1
+  }
+  if (method != "") writes = (method == "POST")
+  else writes = has_field
+  if (found_api && ep_pulls && writes) {
+    head_out = ""
+    for (k = i + 1; k <= ntok; k++) {
+      if (tok[k] ~ /^head=/ && w_plain(k)) { head_out = substr(tok[k], 6); sub(/^[^:]*:/, "", head_out) }
+    }
+    matched = 1
+    return
+  }
+  found_pr = 0
+  for (j = i + 1; j <= ntok; j++) {
+    if (!found_pr) {
+      if (tok[j] == "pr" && w_unquoted(j)) found_pr = 1
+    } else if (tok[j] == "create" && w_unquoted(j)) {
+      matched = 1; head_out = ""
+      for (k = i + 1; k <= ntok; k++) {
+        if (tok[k] == "--head" || tok[k] == "-H") { if (k + 1 <= ntok && w_plain(k + 1)) head_out = tok[k + 1] }
+        else if (tok[k] ~ /^--head=/ && w_plain(k)) { head_out = substr(tok[k], 8) }
+      }
+      return
+    }
+  }
+}
+
+# --- the output: at most one verdict line first (push, then refuse, then pr — the only place the order lives),
+# then candidate lines from the registered tags (none yet). Fields are joined by SEP, passed in with -v (macOS
+# awk reads a \x escape in a literal greedily). Exit 0 when a line was printed, 1 when none.
+function out(   i, r, v) {
+  if (MODE == "lex") {
+    for (i = 1; i <= nreg; i++) { r = ord[i]; print "refuse\t" rwhy[r] "\tline " rline[r] "\tscope:" rscope[r] }
+    exit 0
+  }
+  v = ""
+  if (pushbypass) v = "push"
+  else if (refused) v = "refuse"
+  else if (matched) v = "pr"
+  if (v == "") exit 1
+  print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
+  exit 0
+}
+BEGIN {
+  RDSUB = "substitution or escape in a heredoc delimiter"; RDGLOB = "zsh glob glued to a heredoc delimiter"
+  BQESC = "`$\\"; CMDSPECIAL = " \t\n#\\\047\"`$<>&;|()~*?[{"; PARAMSPECIAL = "}\\\"$`\047{" }
+'
+
 case "${1:-}" in
   -h|--help)
     # dir #583: both key shapes side by side, with this checkout's live paths — a worker whose `gh pr create`
@@ -1541,6 +2331,21 @@ case "${1:-}" in
       'A "no receipt on file" deny can mean the receipts were written from a sandboxed shell (a private view of this state' \
       'directory). From an UNSANDBOXED call, `ls` the sentinel: if it is absent, re-run `init` and every `receipt` with the sandbox disabled.'
     exit 0
+    ;;
+  lex)
+    # dir #745: how the hook reads a command. Command text on stdin (not a hook event); one line per segment —
+    # `<context>@<line>`, `d<depth>`, `s<scope>`, `p<offset>`, then `<classes>:<text>` per word — then one line per
+    # region it could not read alike in every shell. A debugging and test aid; it reads no state, so it is exempt
+    # from the $HOME guard above, like -h. It takes the text as the hook takes its command: through $(…), so
+    # trailing newlines and NUL bytes go, then into awk on a here-string (tr drops the NULs bytewise: no bash 5
+    # warning). The hook’s awk only ever sees jq’s text, valid UTF-8 (a bad byte becomes U+FFFD); lex reads the
+    # bytes it is given, so give it UTF-8 to see the hook’s reading. A closed stdin would hang that $(…) — its
+    # pipe takes fd 0 (dir #691) — so it reads as empty; an unreadable one is an error (the hook reads it as empty).
+    [ "$#" -eq 1 ] || { printf 'usage: pre-pr-gate.sh lex < command-text\n' >&2; exit 2; }
+    if ! { : 3<&0; } 2>/dev/null; then exec </dev/null; fi
+    lex_cmd=$(LC_ALL=C tr -d '\000') || exit 2
+    awk -v MODE=lex "$PPG_AWK_PROG" <<< "$lex_cmd"
+    exit $?
     ;;
   repo-key)
     # Exposes _repo_key() (the worktree-aware main_top_for(...) resolution, dir #61, reduced to a
@@ -2201,259 +3006,57 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Fast-exit: only care about `gh pr create` — and, since dir #731, a bypassed `git push` (check_push below) —
-# in real command position (backlog dir #58 — replaces the earlier substring match, S6/backlog dir #4, which false-fired on any command merely CONTAINING the
-# phrase: a KB write whose heredoc/quoted TEXT mentioned it, a commit message, a grep for the phrase
-# itself). A small lexer over $cmd: strips heredoc bodies, strips quoted spans, splits on command
-# separators (`;` `&` `|` `&&` `||` `(` `)` backtick, `$(`, newline), then per segment skips leading
-# `VAR=value` assignments and `env`/`command` wrappers (incl. their own flags/assignments) and matches
-# iff the first remaining token is exactly `gh`, followed later by `pr`, followed later by `create` —
-# any tokens in between. That also closes the `gh --repo owner/name pr create` bypass (a global flag
-# before the subcommand, no longer a residual gap) that the old substring match missed.
-#
-# A second command shape opens a PR without that subcommand at all: `gh api repos/O/R/pulls -f head=…`
-# (found 2026-07-26 auditing the dir #57 rework — the natural reach once `gh pr create` is denied). It's
-# matched when it is a genuine WRITE to a pulls collection: an endpoint ending in `/pulls` PLUS either
-# an explicit `POST` or — absent any named method — a field/input flag, since gh itself defaults to POST
-# once fields are supplied. An explicit method always wins over that inference, so `-X GET …/pulls -f
-# state=open` (fields become query parameters on a GET) stays a read. Reads stay allowed on purpose —
-# `.../pulls` with no write flag (list), `.../pulls/123` (one PR), `.../pulls/123/comments -f body=…`
-# (commenting on an existing PR): this gate blocks OPENING a PR, not looking at or annotating one, and a
-# gate that denies status checks teaches the next session to route around it. The branch is read out of
-# `-f head=…` for the same dir #61 reason the `pr create` path reads `--head`.
-#
-# Still lexical, not a real shell parse: within this model it errs toward catching — an unstripped
-# exotic heredoc form, or prose that happens to sit at a real command position, falls through as a
-# false positive (an unneeded /polish reminder, not a bypass). Known accepted residuals (this is a
-# WORKFLOW gate, not the secret boundary — that's secret-guard): `sh -c 'gh pr create'` / `eval "gh pr
-# create"` (quoted → stripped, invisible to the lexer — a conscious regression from the old substring
-# match, which DID catch these); `gh "pr" create` (quoting the bare subcommand splits it out of the
-# token stream); a `gh` alias/wrapper-script rename; `env -u VAR gh pr create` (an `env` flag that
-# takes its own separate value token, e.g. `-u VAR`, is not itself a flag or a `VAR=value` assignment,
-# so the skip-loop stops on the value token instead of reaching `gh` — a flag-arity table to handle
-# this generically is disproportionate for a workflow gate; the plain-prefix `VAR=value gh pr create`
-# and `env VAR=value gh pr create` shapes above remain caught).
-IFS= read -r -d '' PPG_AWK_PROG <<'PPG_AWK_EOF' || true
-function flush_tok() {
-  if (buf != "") { ntok++; tok[ntok] = buf; buf = "" }
-}
-function is_assign(t) {
-  return (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/)
-}
-# dir #731 (b'): a `git ... push` segment carrying a bypass the lexer can see. Its own skip set, wider than
-# check_segment's (the shell words below, `env -u NAME`); returns after setting pushbypass.
-function is_shellword(t) {
-  return (t == "if" || t == "then" || t == "elif" || t == "else" || t == "do" || t == "while" ||
-          t == "until" || t == "!" || t == "{" || t == "time" || t == "nohup" || t == "exec" || t == "xargs")
-}
-function config_redirect(name) {
-  return (name == "GIT_CONFIG_GLOBAL" || name == "GIT_CONFIG_SYSTEM" || name == "GIT_CONFIG_NOSYSTEM" ||
-          name == "GIT_CONFIG_PARAMETERS" || name == "HOME" || name == "XDG_CONFIG_HOME")
-}
-# An assignment that turns the hooks off (a core.hooksPath key) or redirects/silences the git config the guard
-# is wired from: returns 1.
-function assign_bypass(t,   eq, nm) {
-  eq = index(t, "=")
-  nm = substr(t, 1, eq - 1)
-  if (nm ~ /^GIT_CONFIG_KEY_[0-9]+$/ && tolower(substr(t, eq + 1)) == "core.hookspath") return 1
-  return config_redirect(nm)
-}
-function check_push(   i,j,t,lt,nx,bypass,found_push) {
-  i = 1; bypass = 0
-  while (i <= ntok) {
-    t = tok[i]
-    if (is_assign(t)) { if (assign_bypass(t)) bypass = 1; i++; continue }
-    if (is_shellword(t)) { i++; continue }
-    if (t == "env") {
-      i++
-      while (i <= ntok && (substr(tok[i], 1, 1) == "-" || is_assign(tok[i]))) {
-        if (is_assign(tok[i])) { if (assign_bypass(tok[i])) bypass = 1; i++ }
-        else if (tok[i] == "-u" || tok[i] == "--unset") i += 2
-        else i++
-      }
-      continue
-    }
-    if (t == "command") {
-      i++
-      while (i <= ntok && substr(tok[i], 1, 1) == "-") i++
-      continue
-    }
-    break
-  }
-  if (i > ntok) return
-  t = tok[i]
-  if (t != "git" && !(length(t) > 4 && substr(t, length(t) - 3) == "/git")) return
-  found_push = 0
-  for (j = i + 1; j <= ntok; j++) {
-    t = tok[j]; lt = tolower(t)
-    if (t == "push") found_push = 1
-    if (length(t) >= 9 && index("--no-verify", t) == 1) bypass = 1
-    nx = (j + 1 <= ntok) ? tolower(tok[j + 1]) : ""
-    if (t == "-c" && (nx == "core.hookspath" || index(nx, "core.hookspath=") == 1)) bypass = 1
-    if (index(lt, "--config-env=core.hookspath=") == 1) bypass = 1
-    if (t == "--config-env" && index(nx, "core.hookspath=") == 1) bypass = 1
-  }
-  if (found_push && bypass) pushbypass = 1
-}
-function check_segment(   i,j,k,found_pr,found_api,ep_pulls,writes,has_field,method) {
-  i = 1
-  while (i <= ntok) {
-    if (is_assign(tok[i])) { i++; continue }
-    if (tok[i] == "env" || tok[i] == "command") {
-      i++
-      while (i <= ntok && (substr(tok[i], 1, 1) == "-" || is_assign(tok[i]))) i++
-      continue
-    }
-    break
-  }
-  if (i <= ntok && tok[i] == "gh") {
-    # dir #63 sibling fix: `gh api repos/O/R/pulls -f head=…` creates a PR without ever using the
-    # `pr create` subcommand, so the token scan below never saw it — the natural thing to reach for
-    # once `gh pr create` is denied. Matched only when it's genuinely a WRITE to a pulls collection:
-    # an endpoint ending in `/pulls` plus an explicit POST or any field/input flag. A plain
-    # `gh api repos/O/R/pulls` (list) or `.../pulls/123` (read) stays allowed — this gate blocks
-    # opening a PR, not looking at one.
-    found_api = 0; ep_pulls = 0; has_field = 0; method = ""
-    for (j = i + 1; j <= ntok; j++) {
-      if (tok[j] == "api") found_api = 1
-      else if (tok[j] ~ /(^|\/)pulls$/) ep_pulls = 1
-      else if (tok[j] == "-X" || tok[j] == "--method") {
-        if (j + 1 <= ntok) method = toupper(tok[j + 1])
-      }
-      else if (tok[j] ~ /^--method=/) { method = toupper(substr(tok[j], 10)) }
-      else if (tok[j] == "-f" || tok[j] == "-F" || tok[j] == "--field" ||
-               tok[j] == "--raw-field" || tok[j] == "--input") has_field = 1
-    }
-    # A field flag implies a write ONLY when no method was named — that's just gh's own default
-    # (fields present ⇒ POST). An explicit method always wins: `-X GET … -f state=open` sends the
-    # fields as query parameters and is a read, so inferring "write" from the flag alone would deny
-    # exactly the listing this gate promises to leave alone.
-    if (method != "") writes = (method == "POST")
-    else writes = has_field
-    if (found_api && ep_pulls && writes) {
-      # Same purpose as the --head scan in the pr-create branch below (dir #61): name the branch the
-      # PR is actually FOR, so the SHA check still resolves when the hook's event cwd isn't that
-      # branch's own checkout. Here the branch arrives as a field, `-f head=branch`; a cross-fork
-      # `head=owner:branch` carries an owner prefix that is not part of the ref.
-      for (k = i + 1; k <= ntok; k++) {
-        if (tok[k] ~ /^head=/) { head_out = substr(tok[k], 6); sub(/^[^:]*:/, "", head_out) }
-      }
-      matched = 1
-      return
-    }
-
-    found_pr = 0
-    for (j = i + 1; j <= ntok; j++) {
-      if (!found_pr) {
-        if (tok[j] == "pr") found_pr = 1
-      } else if (tok[j] == "create") {
-        matched = 1
-        # dir #61: an explicit --head/-H names the branch the PR is actually FOR — the hook uses this
-        # (instead of a bare HEAD) so the SHA check still works when the event cwd isn't that branch's
-        # own checkout (e.g. `gh pr create --head <branch>` run from the main checkout's session root).
-        for (k = i + 1; k <= ntok; k++) {
-          if (tok[k] == "--head" || tok[k] == "-H") { if (k + 1 <= ntok) head_out = tok[k + 1] }
-          else if (tok[k] ~ /^--head=/) { head_out = substr(tok[k], 8) }
-        }
-        return
-      }
-    }
-  }
-}
-function end_segment() {
-  flush_tok()
-  if (ntok > 0) { check_push(); check_segment() }
-  ntok = 0
-}
-{
-  line = $0
-  if (in_hd) {
-    check = line
-    if (hd_strip) { while (substr(check, 1, 1) == "\t") check = substr(check, 2) }
-    if (check == hd_delim) { in_hd = 0 }
-    next
-  }
-  p = index(line, "<<")
-  kept = line
-  if (p > 0 && substr(line, p, 3) != "<<<") {
-    rest = substr(line, p + 2)
-    idx = 1
-    strip = 0
-    if (substr(rest, idx, 1) == "-") { strip = 1; idx++ }
-    while (substr(rest, idx, 1) == " ") idx++
-    q = substr(rest, idx, 1)
-    quote = ""
-    if (q == "'" || q == "\"") { quote = q; idx++ }
-    start = idx
-    rlen = length(rest)
-    while (idx <= rlen) {
-      c = substr(rest, idx, 1)
-      if (quote != "") { if (c == quote) break } else { if (c == " " || c == "\t") break }
-      idx++
-    }
-    delim = substr(rest, start, idx - start)
-    if (delim != "") {
-      if (quote != "") idx++
-      # Only the "<<[-]DELIM" token itself is heredoc syntax — trailing same-line content (e.g. a
-      # chained `&& real-command`) is NOT part of the heredoc and must stay in scope for scanning.
-      kept = substr(line, 1, p - 1) substr(rest, idx)
-      in_hd = 1; hd_delim = delim; hd_strip = strip
-    }
-  }
-  n = length(kept)
-  pos = 1
-  while (pos <= n) {
-    c = substr(kept, pos, 1)
-    if (c == "\\") {
-      if (pos < n) { buf = buf substr(kept, pos + 1, 1); pos += 2 } else { pos++ }
-      continue
-    }
-    if (c == "'") {
-      flush_tok(); pos++
-      while (pos <= n && substr(kept, pos, 1) != "'") pos++
-      pos++
-      continue
-    }
-    if (c == "\"") {
-      flush_tok(); pos++
-      while (pos <= n) {
-        cc = substr(kept, pos, 1)
-        if (cc == "\\" && pos < n) { pos += 2; continue }
-        if (cc == "\"") { pos++; break }
-        pos++
-      }
-      continue
-    }
-    if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "`") {
-      end_segment()
-      pos++
-      continue
-    }
-    if (c == " " || c == "\t") { flush_tok(); pos++; continue }
-    buf = buf c
-    pos++
-  }
-  end_segment()
-}
-END { if (matched || pushbypass) { print (pushbypass ? "1" : "0") ":" head_out; exit 0 }; exit 1 }
-PPG_AWK_EOF
-
-awk_out="$(awk "$PPG_AWK_PROG" <<< "$cmd")"
+# The command reader (PPG_AWK_PROG, defined above the CLI dispatch so `lex` can run it) judges the command text
+# the way the shell will read it, and prints at most one verdict line: `push` (a git push that bypasses the
+# pre-push secret scan), `refuse` (a part it cannot read alike in bash, zsh and busybox mentions git or gh), or
+# `pr` (a command that opens a PR — `gh pr create`, or a `gh api …/pulls` write). Every reader failure — an awk
+# error, output of the wrong shape — denies a git/gh command and allows the rest: the reader fails closed, never
+# open. What it does not see is listed in the header's residual paragraph.
+# No rule can fire without a `g` in the text (git, gh), and a reader failure denies only git/gh: a command with no
+# `g` is allowed without running awk — most Bash calls (ls, cat, cd, make) save the whole read.
+case "$cmd" in *g*) ;; *) exit 0 ;; esac
+sep=$'\x1f'
+awk_out="$(awk -v SEP="$sep" "$PPG_AWK_PROG" <<< "$cmd")"
 awk_status=$?
-if [ "$awk_status" -ne 0 ]; then
+verdict=""; head_branch=""; refuse_why=""; reader_bad=0
+case "$awk_status" in 0|1) ;; *) reader_bad=1 ;; esac
+[ "$awk_status" = 1 ] && [ -n "$awk_out" ] && reader_bad=1
+[ "$awk_status" = 0 ] && [ -z "$awk_out" ] && reader_bad=1
+if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
+  while IFS="$sep" read -r rd_first rd_head rd_reason; do
+    case "$rd_first" in
+      push|refuse|pr)
+        if [ -n "$verdict" ]; then reader_bad=1; break; fi
+        verdict="$rd_first"; head_branch="$rd_head"; refuse_why="$rd_reason"
+        ;;
+      # A candidate line's tag gets its own arm here, ahead of the verdict (none registered yet).
+      *) reader_bad=1; break ;;
+    esac
+  done <<< "$awk_out"
+fi
+# The push, refusal and reader-failure denies come BEFORE the `gh pr create` machinery below: `deny()` and the
+# real $cwd are defined further down and the script runs under `set -u`, so each emits its own deny JSON (the
+# same jq shape `deny()` uses) and exits 0 — calling `deny` while it is undefined would exit non-2, which
+# Claude Code treats as a non-blocking error, i.e. ALLOW.
+early_deny() {   # early_deny <guard detail> <reason>
+  local ed_cwd
+  ed_cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+  log_event guard "$1" "${ed_cwd:-$PWD}"
+  jq -cn --arg r "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
+  exit 0
+}
+if [ "$reader_bad" = 1 ]; then
+  case "$cmd" in
+    *git*|*gh*) early_deny reader-failed "Pre-PR gate: the command reader failed (awk exit $awk_status) — run this git/gh step in its own Bash call, or report it." ;;
+  esac
   exit 0
 fi
-# dir #731 (b'): the awk output is "<push-bypass 0|1>:<head branch>". A bypassed push is denied here, BEFORE
-# the `gh pr create` machinery below: `deny()` and the real $cwd are defined further down and the script runs
-# under `set -u`, so this emits its own deny JSON (the same jq shape `deny()` uses) and exits 0 — calling
-# `deny` while it is undefined would exit non-2, which Claude Code treats as a non-blocking error, i.e. ALLOW.
-head_branch="${awk_out#*:}"
-if [ "${awk_out%%:*}" = 1 ]; then
-  push_cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
-  log_event guard blocked "${push_cwd:-$PWD}"
-  jq -cn --arg r "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
-  exit 0
-fi
+case "$verdict" in
+  push) early_deny blocked "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." ;;
+  refuse) early_deny refused "Pre-PR gate: could not read this command reliably — $refuse_why. The part that could not be read mentions git or gh, so neither of this gate's rules (the bypassed-push deny, the gh pr create receipt check) can judge it. Rewrite it so bash and zsh read it the same way (close the quote; put a heredoc terminator alone on its line, with the closing ) on the next line), or run the git/gh step as its own Bash call." ;;
+  pr) ;;
+  *) exit 0 ;;
+esac
 
 # dir #61: resolve the sentinel by the REPO's main checkout, not the raw event cwd — a receipt written
 # from inside a worktree and a hook event reporting a different checkout of the same repo (the

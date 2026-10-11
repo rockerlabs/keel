@@ -3319,4 +3319,26 @@ for n746 in c.txt d.txt; do
     "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $n746"
 done
 
+# --- dir #695: the shipped example documents the rules the scanner enforces, and is itself accepted -------
+ex="$REPO_ROOT/tools/secret-guard/secret-scan-personal.example"
+ex_doc="$(tr '\n' ' ' < "$ex" | tr -s ' #' ' ')"
+check_contains "dir #695: the example names the odd-backslash refusal" "$ex_doc" "ENDS in a backslash is refused"
+check_contains "dir #695: ...the invalid-ERE refusal" "$ex_doc" "not a valid ERE is refused"
+check_contains "dir #695: ...the trailing-comment strip" "$ex_doc" "is stripped (whitespace"
+check_contains "dir #695: ...where the reason shows (selftest and install.sh Verify)" "$ex_doc" "install.sh's Verify"
+run env SECRET_SCAN_PERSONAL_FILE="$ex" "$scan" --selftest
+check_status "dir #695: the shipped example is accepted by the scanner (selftest exits 0)" 0 "$STATUS"
+# Each rule the example states, shown on the scanner itself (a documented rule that drifted would read as truth).
+rule="$SANDBOX/rule-personal"
+printf 'Alpha[[:space:]]+Beta # trailing note\r\n' > "$rule"
+run env SECRET_SCAN_PERSONAL_FILE="$rule" "$scan" --selftest
+check_status "dir #695: a CRLF line with a trailing ' # note' is accepted" 0 "$STATUS"
+printf 'ends\\\\\n' > "$rule"
+run env SECRET_SCAN_PERSONAL_FILE="$rule" "$scan" --selftest
+check_status "dir #695: an EVEN run of trailing backslashes is accepted" 0 "$STATUS"
+printf 'ends\\\n' > "$rule"
+run env SECRET_SCAN_PERSONAL_FILE="$rule" "$scan" --selftest
+check_status "dir #695: an ODD run is refused" 2 "$STATUS"
+check_contains "dir #695: ...with the reason as the first stderr line" "${OUT%%$'\n'*}" "ends in a backslash"
+
 summary

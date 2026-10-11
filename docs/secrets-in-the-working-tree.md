@@ -201,7 +201,7 @@ never change its exit code. Each can be accepted by ID in `.keel/doctor-accept`.
 
 | ID | Fires when |
 |---|---|
-| `W-SECRETS-EXPOSED` | an env-shaped file (`.env`, `.env.*`, `*.env`; templates excluded) is tracked, or untracked and not ignored |
+| `W-SECRETS-EXPOSED` | an env-shaped file (`.env`, `.env.*`, `*.env`, and a `*.env` backup such as `*.env.bak`/`.old`/`.orig`/`.save`/`.backup` or `*.env~`, in any letter case; templates excluded) is tracked, or untracked and not ignored |
 | `W-SECRETS-PLAINTEXT` | an env-shaped file rests untracked and gitignored — plaintext still on disk |
 | `W-SECRETS-IGNORE` | `.sops.yaml` exists but the ignore rules above are missing |
 | `H-DENY-ENV` | (`--install`, Claude Code only) a Read-deny glob above is missing from your user settings |
@@ -223,9 +223,13 @@ a fresh clone warns again until you recreate it.
 - **Transcripts.** Retention of past transcripts is out of scope here; a value that was ever in plaintext
   and ever read by an agent may already be in one.
 - **Build and dependency trees.** `doctor` does not walk `dist/`, `build/`, `out/`, `vendor/`, `target/`,
-  `node_modules/`, `.build/`, `.gradle/` or `.claude/` looking for env-shaped files, so a plaintext one
-  that is untracked there is not reported. A file **git tracks** is judged wherever it sits, those
-  directories included.
+  `node_modules/`, `.build/`, `.gradle/` or `.claude/` below the project root looking for env-shaped files, so a
+  plaintext one that is untracked there is not reported. A file **git tracks** is judged wherever it sits, those
+  directories included, and a project whose own root directory has one of those names is scanned like any other.
+  `.envrc` (direnv) is not env-shaped: it is committed by design and holds no values. The `.gitignore` recipe and the
+  Read deny globs above name `.env`, `.env.*` and `*.env` only: a `*.env.bak`-style backup is reported but neither rule
+  covers it, so ignore or remove such a file by its own name. The same holds for the other backup forms with a prefix
+  before `.env` (for example `prod.env.old`) and for `*.env~`; a bare `.env.old` is already covered by `.env.*`.
 - **Names, not content.** `doctor` checks file names and git state, never what a file holds — a secret in
   a file with an ordinary name is invisible to it.
 - **Read deny covers Read only.** The deny globs stop the Read tool; shell verbs such as `cat` stay open,

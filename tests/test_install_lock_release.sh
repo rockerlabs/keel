@@ -32,12 +32,13 @@ abandon() {
   fail "$2: the install reached its pause checkpoint" "no $mk.ready"
 }
 # reap PID — a bounded wait for PID, its exit status in $REAPED. Called in the test's own shell, never
-# inside `$( )`: a subshell cannot wait for its parent's child. A pid still alive after 120s is killed
-# (status 137), so a build that ignores the signal fails its row instead of hanging the suite — 120s
-# because a full install after the pause, under a parallel test wave's load, can take well past 30s.
+# inside `$( )`: a subshell cannot wait for its parent's child. A pid still alive after KEEL_TEST_HANG_BOUND
+# seconds (default 120; dir #744 B31) is killed (status 137), so a build that ignores the signal fails its row
+# instead of hanging the suite — a long bound, because a full install after the pause, under a parallel test
+# wave's load, can take well past 30s.
 reap() {
   local p="$1" dog
-  ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep 120 & s=$!; wait "$s"; kill -9 "$p" ) > /dev/null 2>&1 &
+  ( trap 'kill "${s:-}" 2>/dev/null; exit 0' TERM; sleep "${KEEL_TEST_HANG_BOUND:-120}" & s=$!; wait "$s"; kill -9 "$p" ) > /dev/null 2>&1 &
   dog=$!
   wait "$p"; REAPED=$?
   kill "$dog" 2>/dev/null || true; wait "$dog" 2>/dev/null || true

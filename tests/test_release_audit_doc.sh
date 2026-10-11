@@ -210,5 +210,7 @@ check_contains "Phase 7's cut paragraph names changelog.d" "$cut_para" "changelo
 check_contains "Phase 7's cut paragraph names the one cut command" "$cut_para" "tools/self/changelog-cut.sh"
 check_contains "Phase 7's cut paragraph tells a cite check to read the fragment reader's output too" "$cut_para" "tools/self/changelog-fragments.sh"
 check_contains "Phase 7's cut paragraph keeps the no-test-may-pin-it rule" "$cut_para" "no test may pin"
+check_contains "Phase 7's cut paragraph names the cut-shape check (dir #722)" "$cut_para" "tools/self/cut-sim.sh"
+check_contains "...and says to run it before the cut PR is opened" "$cut_para" "Before the cut PR is opened"
 
 summary
