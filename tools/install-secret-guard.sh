@@ -25,8 +25,10 @@
 # create, moving on to <hook>.pre-keel.2.bak, .3.bak … (dir #684). For the global hooksPath it records the
 # old value — the empty value included — in `git config --global keel.displacedHooksPath`, under the
 # same never-overwrite rule; a hooksPath with no value at all cannot be recorded faithfully and is
-# refused even with --force). A hook is Keel's only when its line 2 is exactly the shipped hook's
-# marker line. A symlink at a hook or scanner file the install writes is refused, its target named,
+# refused even with --force). A hook is Keel's to refresh only when its line 2 is exactly the shipped hook's
+# marker line AND its whole body is one of the versions listed in secret-guard/shipped-hook-sums (dir #683): a
+# hook that kept the marker but was edited since is yours — the install refuses it like any foreign hook, and
+# --force backs it up first. A symlink at a hook or scanner file the install writes is refused, its target named,
 # never written through (the hooks DIRECTORY itself is not checked: a linked or configured shared dir
 # is written into, by design); a HARD-linked file is replaced by rename, never written into, so its other
 # name keeps its bytes. Bypass a single commit/push deliberately with `git ... --no-verify`;
@@ -62,6 +64,7 @@ isg_bak_upgrade="keel-upgrade.bak"
 # Every file install_into copies, named once: the copy loop and the symlink pre-flight (dir #659) read
 # the same list, so a newly shipped file can't be copied without also being guarded.
 isg_files="secret-scan.sh pre-commit pre-push range-lib.sh"  # pre-push sources range-lib.sh next to itself
+isg_sums="$src/shipped-hook-sums"  # dir #683: the checksum of every shipped hook body (read, never copied)
 # dir #659 (S3-3): where --global --force records the core.hooksPath it displaces, for --uninstall to
 # restore. A global git config key, not a file in the hooks dir: it sits beside the setting it backs
 # up, survives the hooks dir being deleted, and `git config --global --list` shows it.
@@ -232,6 +235,20 @@ _isg_is_keel_hook() {
   [ -n "$marker" ] && [ "$(sed -n 2p "$1" 2>/dev/null)" = "$marker" ]
 }
 
+# dir #683: the marker only says a hook was Keel's at install time — a user who then EDITED it (kept the marker
+# line, added their own steps) was indistinguishable from an untouched one, and a re-install overwrote the edit
+# with no backup. So a hook is Keel's to refresh only when its marker is right AND its whole body is one of the
+# versions this repo has shipped: `<name> <cksum CRC> <byte count>` lines in $src/shipped-hook-sums. POSIX cksum,
+# so it needs neither git nor a repo. A list that cannot be read answers "no" (the callers treat a Keel-marked hook
+# they cannot verify as the user's, and say the list is why): refusing a re-install is cheap, losing an edit is not.
+_isg_is_shipped_hook() {
+  local sum
+  _isg_is_keel_hook "$1" || return 1
+  [ -r "$isg_sums" ] || return 1
+  sum="$(cksum < "$1" 2>/dev/null)" || return 1
+  grep -qxF -- "${1##*/} $sum" "$isg_sums"
+}
+
 install_into() {
   local hooks_dir="$1" h t f l
   # Every refusal below is a READ-ONLY pre-flight that runs before the source selftest and before any
@@ -281,15 +298,26 @@ install_into() {
   # symlink at the backup path makes `-e` false, yet it is still occupied.
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
-    { [ -e "$t" ] && ! _isg_is_keel_hook "$t"; } || continue
+    { [ -e "$t" ] && ! _isg_is_shipped_hook "$t"; } || continue
     if [ "$force" != 1 ]; then
-      echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
+      if _isg_is_keel_hook "$t"; then
+        # dir #683: Keel's marker, a body that is none of the shipped ones — edited since install.
+        if [ -r "$isg_sums" ]; then
+          echo "secret-guard: $t carries Keel's marker but its body differs from every shipped version —" >&2
+          echo "  it has been edited, so it is your data: refusing to overwrite it." >&2
+        else
+          echo "secret-guard: $t carries Keel's marker, but $isg_sums is missing or unreadable, so an" >&2
+          echo "  untouched Keel hook cannot be told from an edited one: refusing to overwrite it." >&2
+        fi
+      else
+        echo "secret-guard: $t exists and is not a Keel hook — refusing to overwrite your data." >&2
+      fi
       echo "  Re-run with --force to back it up (.$isg_bak_force) and replace, or call secret-scan.sh from" >&2
       echo "  your own hook by hand. Nothing was changed." >&2
       exit 3
     fi
     if [ -e "$t.$isg_bak_force" ] || [ -L "$t.$isg_bak_force" ]; then
-      echo "secret-guard: $t is not a Keel hook, and an earlier backup of a hook is waiting at" >&2
+      echo "secret-guard: $t is not a (shipped) Keel hook, and an earlier backup of a hook is waiting at" >&2
       echo "  $t.$isg_bak_force — restore or move it first, then re-run with --force. Nothing was changed." >&2
       exit 3
     fi
@@ -334,8 +362,10 @@ install_into() {
   for h in pre-commit pre-push; do
     t="$hooks_dir/$h"
     if [ -e "$t" ]; then
-      if _isg_is_keel_hook "$t"; then
-        # Already ours — re-vendoring over it needs no --force and no refuse-and-ask. But the cp
+      if _isg_is_shipped_hook "$t"; then
+        # Already ours (a shipped version of it; dir #683: Keel's marker alone no longer says so — an edited hook
+        # falls through to the --force branch below, whose backup is permanent) — re-vendoring over it needs no
+        # --force and no refuse-and-ask. But the cp
         # below is about to overwrite a WORKING hook, so it still needs a backup: without one, a
         # later failure in this same run (the next cp, chmod, or the post-copy verify) rolled back
         # by deleting the just-copied file and leaving NO hook at all — not "left as it was before
