@@ -1,0 +1,32 @@
+# shipped-hook-sums — the checksum of every version of the Keel hooks that main has carried or a release has shipped (dir #683).
+#
+# install-secret-guard.sh treats a hook as Keel's only when its line 2 is the marker line AND its whole body is one of
+# the versions listed here. A hook that carries the marker but matches none of them was edited after install (or comes
+# from a build this list does not know), so it is the user's data: a plain re-install refuses, and --force backs it up
+# to <hook>.pre-keel.bak before replacing it. Without this list a re-install overwrote such an edit silently.
+#
+# One line per version: <hook name> <cksum CRC> <cksum byte count> — exactly what `cksum < <hook>` prints after the name.
+# POSIX cksum, so it needs neither git nor a repo and prints the same on macOS, GNU and busybox. This guards against
+# an accidental or deliberate EDIT of a hook; it is not a security boundary.
+#
+# WHEN YOU CHANGE tools/secret-guard/pre-commit OR pre-push: ADD one line for the new body here and KEEP the old ones,
+# also those only main carried and never released (bootstrap.sh installs from main): an older install must still be
+# refreshed, not refused. tests/test_secret_guard_writes.sh fails until you do — it
+# checks that the shipped hooks are listed and, wherever the clone has tags or origin/main, that every body a release tag
+# or a main tip (each first-parent state of main, up to your branch's merge-base) carried is.
+# To print the line for the current body:   printf "%s " pre-push; cksum < tools/secret-guard/pre-push
+
+# pre-commit, oldest first
+pre-commit 4044985620 465
+pre-commit 1449654094 474
+
+# pre-push, oldest first
+pre-push 1487544417 1039
+pre-push 3938131623 1048
+pre-push 1045065492 1410
+pre-push 3530715719 1155
+pre-push 3462109640 810
+pre-push 4009704086 804
+pre-push 1724597077 1522
+pre-push 2501220878 1688
+pre-push 3855901725 2286
