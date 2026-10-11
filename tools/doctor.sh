@@ -1214,9 +1214,9 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
 
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
-    # other 6 (SessionStart/PostToolUse x2/UserPromptExpansion/SubagentStop/SubagentStart — PostToolUse's
-    # AskUserQuestion matcher, added dir #88, and SubagentStart, added dir #674, are the newest) are enhancements. gate_hook_wired (shared with the
-    # per-project loop's own half of this check, below) does the structural jq-else-grep test.
+    # other hooks (SessionStart, PostToolUse, UserPromptExpansion, SubagentStop, SubagentStart) are enhancements.
+    # gate_hook_wired (shared with the per-project loop's own half of this check, below) does the structural
+    # jq-else-grep test.
     if gate_hook_wired "$igate_settings"; then
       if [ "$igate_manifest_usable" = 1 ]; then
         say "  OK   /polish gate: wired machine-global ($igate_settings; manifest confirms)"

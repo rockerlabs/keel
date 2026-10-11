@@ -2924,17 +2924,13 @@ case "${1:-}" in
     sr_type=$(printf '%s' "$sr_input" | jq -r '.agent_type // ""' 2>/dev/null) || sr_type=""
     SUBAGENT_RAILS_TYPES="general-purpose Explore Plan claude claude-code-guide"
     if [ -n "$sr_type" ]; then
-      sr_listed=0
-      for sr_t in $SUBAGENT_RAILS_TYPES; do
-        if [ "$sr_t" = "$sr_type" ]; then sr_listed=1; fi
-      done
-      [ "$sr_listed" = 1 ] || exit 0
+      case " $SUBAGENT_RAILS_TYPES " in *" $sr_type "*) ;; *) exit 0 ;; esac
     fi
     # The block: from the first `- You are read-only:` line through the next `- DELEGATION RUN:` line — the
     # patterns tests/lib.sh's extract_rails_block uses, so the hook and the byte-equality pin agree on what
     # "the block" is. BOTH markers must be there, in that order (a range with only its start would run to the
-    # end of the file). The checkout is recomputed here: $_ppg_dir was unset after the libs were sourced.
-    sr_checkout="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
+    # end of the file). The checkout comes from _gate_checkout_root: $_ppg_dir was unset after the libs were sourced.
+    sr_checkout="$(_gate_checkout_root)" || exit 0
     sr_file="${KEEL_SUBAGENT_RAILS_FILE:-$sr_checkout/docs/delegation.md}"
     sr_block=$(awk '
       !on && /^[[:space:]]*- You are read-only:/ { on = 1 }
