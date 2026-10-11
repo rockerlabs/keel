@@ -13,6 +13,10 @@
 # new_repo() / new_repo_with_origin() below. For this repo's own content or history,
 # git clone "$REPO_ROOT" into $SANDBOX and write in the clone. The guard armed below (ref_guard_arm)
 # refuses the rest and fails the file.
+#
+# A draft test section (a scratch file sourced to try a fixture) must load this file first, then source
+# tests/section-guard.sh: a section that never loaded lib.sh has no guard at all and its `git -C ""` writes
+# the repo the shell stands in (dir #758; docs/delegation.md "Draft test sections").
 set -uo pipefail
 
 # dir #644 (closes dir #318 residual N8): a foreign GIT_DIR + a GIT_COMMON_DIR that happens to equal
