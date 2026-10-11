@@ -104,7 +104,9 @@ keep them around and paste the one you need when you need it.
   `gh pr create` until `/polish` has run, with a mechanical trace closing the "claimed a review ran"
   bypass — is built entirely on Claude Code `PreToolUse`/`PostToolUse`/`SessionStart`/`UserPromptExpansion`
   hooks (`tools/install-pre-pr-gate.sh` wires them). It **does not port**: on another tool, `/polish`'s
-  steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them.
+  steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them. The
+  same installer's seventh hook, which injects `docs/delegation.md`'s worker rails into every subagent at
+  start, is a Claude Code `SubagentStart` feature and does not port either.
 - **The restricted review agent** — `agents/keel-polish-reviewer.md` (`tools: Read, Grep, Glob`, no
   shell) is `/polish`'s review subagent, wired by `install.sh` into `<home>/agents/`. The tool allowlist
   is a Claude Code feature (`agents/*.md` with a `tools:` list). On another harness `/polish`'s review has

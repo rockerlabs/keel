@@ -213,6 +213,13 @@ tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global cov
   you already have: a foreign hook on the same slot is left alone and ours is appended beside it (unlike
   `install-secret-guard.sh`, which refuses a foreign hook without `--force`); `--force` is only for a stale
   copy of the same hook at another path, and backs it up.
+- **Hands the worker rails to every subagent.** The installer also wires a `SubagentStart` hook that puts
+  [`docs/delegation.md`](docs/delegation.md)'s Worker rails (read-only, no spawns of its own) into the
+  starting context of every `general-purpose`, `Explore`, `Plan`, `claude` and `claude-code-guide` subagent,
+  the ones a built-in skill composes itself included. It is a nudge, not a floor.
+  `KEEL_SUBAGENT_RAILS=off` in the session environment turns it off. Wired the gate before this hook
+  existed? Re-run the installer with your scope flag and restart your sessions; `tools/doctor.sh` names the
+  gap (`W-GATE-SUBAGENT-RAILS`).
 - **Gates the agent, not you.** The hook fires on the assistant's own tool calls — your terminal, and a
   human typing `gh pr create` by hand, are never blocked.
 - **Claude-Code-specific.** Hooks are a Claude Code mechanism; see [`ADAPTING.md`](ADAPTING.md) for the

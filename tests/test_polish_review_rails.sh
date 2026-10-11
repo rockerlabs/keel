@@ -92,4 +92,11 @@ pin "A7: B4 — never retry as general-purpose" "$guide" 'Never retry as `genera
 pin "A7: B3 — the 65536-byte cap" "$guide" '65536 bytes' "expected B3's diff cap"
 pin "A7: B4 names the remedy install.sh" "$guide" 're-run `install.sh`' "expected B4 to name install.sh as the remedy"
 
+# --- dir #674 (A4, slice 1): polish.md's K2 paragraph says the rails now reach the fork ------------------------
+# The sentence wraps across lines, so the check runs over the file with its line breaks and blank runs collapsed.
+polish_flat="$(tr '\n' ' ' < "$polish" | tr -s ' ')"
+check_absent "A4: polish.md no longer says the rails never reach the /code-review fork" "$polish_flat" 'its rails never reach it'
+pin "A4: polish.md names the SubagentStart hook as the channel the rails now take" "$polish" 'SubagentStart' \
+  "expected the K2 paragraph to say the hook delivers the rails to the fork (dir #674 B8)"
+
 summary

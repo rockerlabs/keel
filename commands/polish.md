@@ -91,10 +91,10 @@ Steps, in order:
      below; and these instructions. Your first action: invoke `Skill(code-review)` with the args `<level>
      origin/<default>...HEAD` — the level first (the gate reads the args' first word as the level), then the
      diff target. **The args are the only channel to the review itself:** invoked from a subagent,
-     `/code-review` runs as a forked agent one level deeper whose whole prompt is the skill's recipe plus the
-     args; this prompt and its rails never reach it (`docs/delegation.md`, "Keel's reach stops at the prompts
-     keel writes"), and without the target in the args the fork picks its own scope (felt: `git diff HEAD~1`
-     on a two-commit PR). The skill's own fork is not "a subagent of your own" under the rails' no-spawn
+     `/code-review` runs as a forked agent one level deeper whose prompt is the skill's recipe plus the
+     args; this prompt never reaches it, the `SubagentStart` hook delivers the rails (`docs/delegation.md`,
+     "Keel's reach stops at the prompts keel writes"), and without the target in the args the fork picks its scope (felt: `git diff HEAD~1`
+     on a two-commit PR). The skill's fork is not "a subagent of your own" under the rails' no-spawn
      line. Then: edit nothing, commit nothing; wait for the skill to finish, including any background agents
      it starts; restate every finding in your final message as `file:line — quoted text — failure scenario`,
      even after a `ReportFindings` call, and write `0 findings` explicitly when there are none, quoting the skill's first line after `Result:`; print no

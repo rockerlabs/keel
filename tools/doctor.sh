@@ -72,6 +72,11 @@
 #                              agent type since dir #413's flip, so /polish's independent-agent review leaves
 #                              no trace and step 8 denies until tools/install-pre-pr-gate.sh is re-run (a
 #                              pull refreshes the script, not the installed settings). Both scopes
+#   WARN  W-GATE-SUBAGENT-RAILS the /polish gate is wired (load-bearing PreToolUse/Bash hook present) but no
+#                              SubagentStart entry runs `pre-pr-gate.sh subagent-rails` — subagents start
+#                              without the worker rails until tools/install-pre-pr-gate.sh is re-run and the
+#                              session restarted (dir #674; a pull refreshes the script, not the installed
+#                              settings). Both scopes
 #   WARN  W-SECRETS-EXPOSED    an env-shaped file (.env, .env.*, *.env and its backups *.env.bak/.old/.orig/
 #                              .save/.backup, *.env~ — any letter case; templates excluded) that git
 #                              tracks or would commit — a plaintext secrets file one `cat` from a
@@ -448,6 +453,21 @@ gate_review_matcher_wired() {
   [ -f "$settings" ] || return 1
   if command -v jq >/dev/null 2>&1; then
     jq -e '.hooks.SubagentStop // [] | any((.matcher == "keel-polish-reviewer" or .matcher == null or .matcher == "" or .matcher == "*") and (.hooks // [] | any(.command // "" | contains("pre-pr-gate.sh"))))' \
+      "$settings" >/dev/null 2>&1
+  else
+    return 0
+  fi
+}
+
+# gate_subagent_rails_wired SETTINGS_JSON — true iff a SubagentStart entry in SETTINGS_JSON runs
+# pre-pr-gate.sh's `subagent-rails` subcommand (dir #674). Called only once gate_hook_wired already said the
+# gate is wired. Without jq it answers "wired" (fail-open, like gate_review_matcher_wired: a grep cannot back
+# a finding structurally, and the hook itself needs jq to inject anything).
+gate_subagent_rails_wired() {
+  local settings="$1"
+  [ -f "$settings" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.hooks.SubagentStart // [] | any(.hooks // [] | any(.command // "" | (contains("pre-pr-gate.sh") and contains("subagent-rails"))))' \
       "$settings" >/dev/null 2>&1
   else
     return 0
@@ -1194,8 +1214,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
 
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
-    # other 5 (SessionStart/PostToolUse x2/UserPromptExpansion/SubagentStop — the newest, PostToolUse's
-    # AskUserQuestion matcher, added dir #88) are enhancements. gate_hook_wired (shared with the
+    # other 6 (SessionStart/PostToolUse x2/UserPromptExpansion/SubagentStop/SubagentStart — PostToolUse's
+    # AskUserQuestion matcher, added dir #88, and SubagentStart, added dir #674, are the newest) are enhancements. gate_hook_wired (shared with the
     # per-project loop's own half of this check, below) does the structural jq-else-grep test.
     if gate_hook_wired "$igate_settings"; then
       if [ "$igate_manifest_usable" = 1 ]; then
@@ -1218,6 +1238,11 @@ if [ "$INSTALL_MODE" = 1 ]; then
     # now trusts only keel-polish-reviewer, so the independent-agent-review leg would leave no trace.
     if gate_hook_wired "$igate_settings" && ! gate_review_matcher_wired "$igate_settings"; then
       warn W-GATE-REVIEW-MATCHER "the gate is wired at $igate_settings but no SubagentStop hook covers the keel-polish-reviewer agent — /polish's independent-agent review would leave no trace and step 8 would deny; a pull refreshes the script, not the installed settings: re-run tools/install-pre-pr-gate.sh $gate_flag, then restart the session"
+    fi
+    # dir #674: wired, but no SubagentStart entry hands the worker rails to a subagent (a gate installed before
+    # that hook existed) — nothing breaks, subagents just start without the rails.
+    if gate_hook_wired "$igate_settings" && ! gate_subagent_rails_wired "$igate_settings"; then
+      warn W-GATE-SUBAGENT-RAILS "the gate is wired at $igate_settings but no SubagentStart hook runs its subagent-rails subcommand — subagents start without the worker rails; a pull refreshes the script, not the installed settings: re-run tools/install-pre-pr-gate.sh $gate_flag, then restart the session"
     fi
   fi
 
@@ -1890,6 +1915,9 @@ for d in "${DIRS[@]}"; do
     say "  OK   /polish gate: wired (project scope, $proj_settings)"
     if ! gate_review_matcher_wired "$proj_settings"; then
       warn W-GATE-REVIEW-MATCHER "$proj_settings wires the gate but no SubagentStop hook covers the keel-polish-reviewer agent — /polish's independent-agent review would leave no trace and step 8 would deny; re-run tools/install-pre-pr-gate.sh $d, then restart the session"
+    fi
+    if ! gate_subagent_rails_wired "$proj_settings"; then
+      warn W-GATE-SUBAGENT-RAILS "$proj_settings wires the gate but no SubagentStart hook runs its subagent-rails subcommand — subagents start without the worker rails; re-run tools/install-pre-pr-gate.sh $d, then restart the session"
     fi
   elif gate_any_reference "$proj_settings"; then
     warn W-GATE-PARTIAL "$proj_settings references pre-pr-gate.sh but the load-bearing PreToolUse/Bash hook isn't wired — gh pr create is NOT actually gated here; re-run tools/install-pre-pr-gate.sh $d (--force if it refuses over a stale path)"

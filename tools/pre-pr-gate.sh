@@ -74,6 +74,8 @@
 #   pre-pr-gate.sh handoff-check           print+exit 0 if a handoff matches current HEAD, else exit 1 (dir #63)
 #   pre-pr-gate.sh skill-trace             hook subcommand (see dir #63 section below) — not run by hand
 #   pre-pr-gate.sh rollout-check           SessionStart hook subcommand (dir #64 tier 1) — not run by hand
+#   pre-pr-gate.sh subagent-rails          SubagentStart hook subcommand (dir #674): hands the worker rails to a
+#                                           subagent — not run by hand
 #   pre-pr-gate.sh sweep [K]               /wrap-time floor (dir #64 tier 2b): warn when the last K
 #                                           polish runs closed without a verified (non-self-reported) review (default K=3)
 #   pre-pr-gate.sh sentinel-path <key>      print the sentinel path for a receipt key (dir #398, for
@@ -93,7 +95,7 @@
 # Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
 # free-form string the model writes about itself, so a real in-session `/code-review <level>` pass and
 # a session that only claims one are byte-identical. Fix: two ADDITIONAL hooks (same settings.json as
-# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all six together) write a mechanical
+# the PreToolUse gate above — tools/install-pre-pr-gate.sh wires all seven together) write a mechanical
 # trace line to a HOOK-OWNED side channel the model isn't expected to touch — a materially higher bar
 # than getting one self-report right, though not literally unfakeable (the model still has Bash; see the
 # residual limit below):
@@ -454,6 +456,23 @@
 # (altitude review) but deliberately NOT retrofitted here — those checks and their own test coverage
 # predate this ticket and are out of its scope; named so it isn't silently assumed away, a candidate for
 # its own follow-up ticket if ever felt in practice.
+#
+# --- dir #674: the worker rails at SubagentStart --------------------------------------------------
+# A subagent runs Bash with no floor unless keel wrote its spawn, and the rails that forbid it
+# (docs/delegation.md "Worker rails") reached a subagent only when a keel-written prompt pasted them —
+# `Explore` and `Plan` start with no CLAUDE.md at all. The 7th hook (`SubagentStart`, matcher "",
+# `pre-pr-gate.sh subagent-rails`, wired by tools/install-pre-pr-gate.sh) prints the block as the
+# subagent's `additionalContext`, verbatim and read live from `<checkout>/docs/delegation.md` under a
+# two-sentence preface (no second copy to drift). It injects for `general-purpose`, `Explore`, `Plan`,
+# `claude` and `claude-code-guide` (SUBAGENT_RAILS_TYPES, below) and for an event with no type; every other
+# type is its author's contract or already carries the block, and gets nothing. The list lives in the
+# script, not in the hook matcher, so it is unit-testable offline. It always exits 0 and prints at most one
+# JSON object, so it can never block a spawn; no jq, a missing file or a missing marker print nothing.
+# `KEEL_SUBAGENT_RAILS=off` in the session environment is the rollback that needs no settings edit.
+# **This is prose delivery, not a floor** — a rail delivered as prose is read and then sometimes not
+# applied; the mechanical half is dir #675. A keel prompt that already pastes the block (K2, drydock,
+# delta-audit) now delivers it twice, on purpose. A session open before the install gets nothing until it
+# restarts (hooks load at session start).
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -485,7 +504,8 @@ unset _ppg_dir
 # `gate_state_root` check just before the first `sentinel=` resolution, further down) — by then
 # `deny()` is defined and `$cwd` is parsed, so that check uses the file's own real, established
 # decision-signalling mechanism (exit-0-plus-JSON) directly, rather than inlining a duplicate here.
-if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != lex ]; then
+if [ -n "${1:-}" ] && [ "${1:-}" != "-h" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != lex ] \
+   && [ "${1:-}" != subagent-rails ]; then
   gate_state_root >/dev/null || {
     printf 'pre-pr-gate: $HOME %s — cannot resolve the gate state root ($HOME/.keel/tmp); set $HOME and retry\n' \
       "$(gate_home_diagnosis)" >&2
@@ -951,7 +971,7 @@ main_top_for() {
 # (dir #98 added `--home` to BOTH installers after this paragraph was first written — a prior version of
 # it claimed the gate installer "has no --home of its own", which stopped being true and became this
 # section's own stale comment, the exact class of bug B2 is named after). `install-pre-pr-gate.sh --home
-# DIR` wires the 6 hooks at `DIR/settings.json`, a path none of the four static candidates above ever
+# DIR` wires the 7 hooks at `DIR/settings.json`, a path none of the four static candidates above ever
 # probe — a genuinely wired AskUserQuestion leg there reads as UNARMED and the dir #88 mandatory-dialog
 # deny silently no-ops, the same class PR #165 closed for `KEEL_HOME` and PR #173's `--home` flag
 # reopened (dir #125's own B2 finding).
@@ -2889,6 +2909,42 @@ case "${1:-}" in
         _append_trace_line "$st_cwd" "unparsed:$sk_raw"
       fi
     fi
+    exit 0
+    ;;
+  subagent-rails)
+    # SubagentStart hook (dir #674) — see the dir #674 header section above. Prints the worker rails as the
+    # subagent's `additionalContext`; never blocks a spawn: it always exits 0 and prints at most one JSON
+    # object. Order: kill switch, jq, the type rule, the block, print. It reads no gate state, so it is exempt
+    # from the CLI-mode $HOME guard above (an unusable $HOME must not make a prose nudge exit 1).
+    [ "${KEEL_SUBAGENT_RAILS:-}" = off ] && exit 0
+    command -v jq >/dev/null 2>&1 || exit 0
+    sr_input=$(cat 2>/dev/null) || sr_input=""
+    # A missing or empty type, or an event that does not parse, injects: a nudge errs toward delivery. Any
+    # OTHER type is skipped (its author's contract, or already carries the block / a structural floor).
+    sr_type=$(printf '%s' "$sr_input" | jq -r '.agent_type // ""' 2>/dev/null) || sr_type=""
+    SUBAGENT_RAILS_TYPES="general-purpose Explore Plan claude claude-code-guide"
+    if [ -n "$sr_type" ]; then
+      sr_listed=0
+      for sr_t in $SUBAGENT_RAILS_TYPES; do
+        if [ "$sr_t" = "$sr_type" ]; then sr_listed=1; fi
+      done
+      [ "$sr_listed" = 1 ] || exit 0
+    fi
+    # The block: from the first `- You are read-only:` line through the next `- DELEGATION RUN:` line — the
+    # patterns tests/lib.sh's extract_rails_block uses, so the hook and the byte-equality pin agree on what
+    # "the block" is. BOTH markers must be there, in that order (a range with only its start would run to the
+    # end of the file). The checkout is recomputed here: $_ppg_dir was unset after the libs were sourced.
+    sr_checkout="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || exit 0
+    sr_file="${KEEL_SUBAGENT_RAILS_FILE:-$sr_checkout/docs/delegation.md}"
+    sr_block=$(awk '
+      !on && /^[[:space:]]*- You are read-only:/ { on = 1 }
+      on { print }
+      on && /^[[:space:]]*- DELEGATION RUN:/ { done = 1; exit }
+      END { if (!done) exit 1 }
+    ' "$sr_file" 2>/dev/null) || exit 0
+    [ -n "$sr_block" ] || exit 0
+    sr_preface="Keel worker rails — injected into this subagent by keel's SubagentStart hook (dir #674), verbatim from docs/delegation.md \"Worker rails\"."
+    jq -cn --arg p "$sr_preface" --arg b "$sr_block" '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:($p + "\n\n" + $b)}}' 2>/dev/null
     exit 0
     ;;
   rollout-check)
