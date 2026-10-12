@@ -833,11 +833,15 @@ run genv "$doctor" --install "$H/claude"
 check_absent "A14 control: ...and no doctor line" "$OUT" "conditional [includeIf]"
 
 # --- A15 / A16: the prose ------------------------------------------------------------------------------------
-# The README's linked-install sentence moved to docs/getting-started.md when the README was slimmed.
+# The linked-install caveat lives on both pages: the README's short form and getting-started.md's full one.
 check_eq "A15: getting-started no longer says a pull 'refreshes what is already wired'" "0" \
   "$(grep -c 'refreshes what is already wired' "$REPO_ROOT/docs/getting-started.md" || true)"
 check_eq "A15: getting-started says the secret-guard hook is a copy (one line)" "1" \
   "$(grep -cF 'the secret-guard hook is a copy' "$REPO_ROOT/docs/getting-started.md" || true)"
+check_eq "A15: README no longer says a pull alone updates a linked install" "0" \
+  "$(grep -cF 'so a `git pull` updates it' "$REPO_ROOT/README.md" || true)"
+check_eq "A15: README says the secret-guard hook is a copy (one line)" "1" \
+  "$(grep -cF 'the secret-guard hook is a copy' "$REPO_ROOT/README.md" || true)"
 check_eq "A16: docs/reference.md names the conditional-include refusal (one line)" "1" \
   "$(grep -cF 'a conditional `[includeIf]` include sets elsewhere' "$REPO_ROOT/docs/reference.md" || true)"
 

@@ -134,7 +134,8 @@ consistent across sessions.
 
 The moment above is one exchange. Zoomed out to a whole session, here's who does each step —
 **agent** or **operator** — once you've wired the `/polish` gate
-(`tools/install-pre-pr-gate.sh <repo>`; see the [README](../README.md#the-pre-pr-gate--the-agent-cant-lie-about-review)):
+(`tools/install-pre-pr-gate.sh <repo>`; see
+[getting-started.md §6](getting-started.md#6-the-polish-pre-pr-gate-claude-code-opt-in)):
 
 | Step | Actor | What happens |
 |---|---|---|
@@ -163,7 +164,7 @@ step 5 of `/polish` — see [`docs/getting-started.md`](getting-started.md#6-the
 | PR | agent | opens whenever it decides to, reviewed or not — nothing checks |
 
 Both entry points here (`/go`, `/wrap`) already ship to every adopter, so the 3-touch claim holds for
-you, not just the maintainer — the gate is the one piece that's opt-in (see the README section linked
+you, not just the maintainer — the gate is the one piece that's opt-in (see the setup guide linked
 above for why: a hook changes session behavior, so it's never wired without a yes).
 
 ## The honest boundary

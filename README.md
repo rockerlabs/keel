@@ -25,7 +25,8 @@ Four properties, independent of which model or tool you run:
 
 1. **Economy.** A thin, stable core (~2.5K tokens) instead of a context dump — the re-explanation
    tax ("we branch off main… there's already a client in `net/`…") stops being paid every session.
-   `keel tokens` reads your own sessions' actual spend, so you can check this on your machine.
+   `keel tokens` reads your own sessions' actual spend, so you can check this on your machine
+   ([`docs/token-economy.md`](docs/token-economy.md)).
 2. **Stability.** The same rails load every session, so behavior stops drifting between sessions —
    and the unchanged prefix is prime prompt-cache material.
 3. **Constraint.** The secret-guard git hook blocks a key-shaped leak no matter what the model decides.
@@ -46,9 +47,11 @@ Then **restart Claude Code and run `/keel-setup`** — the assistant finishes se
 Run it again inside each project you want Keel on (not the `keel` clone itself): there it writes a first
 draft of that project's `CLAUDE.md` from its own code, for you to review.
 
-The installer **never overwrites a file you own**: linked mode's one edit to an existing file is a single
-announced import line in `~/.claude/CLAUDE.md`, and a re-run only *offers* to refresh a rails block Keel
-itself wrote, backing it up first. `--link` wires Keel by reference, so a `git pull` updates it; plain
+The installer also turns on the secret-guard git hook, and it **never overwrites a file you own**: linked
+mode's one edit to an existing file is a single announced import line in `~/.claude/CLAUDE.md`, and a
+re-run only *offers* to refresh a rails block Keel itself wrote, backing it up first. `--link` wires Keel
+by reference, so a `git pull` refreshes the linked files; the secret-guard hook is a copy, though, so
+re-run `./install.sh --link` after a pull to refresh it and to wire any file a release adds. Plain
 `./install.sh` makes a one-time copy instead (for tools other than Claude Code; Codex has
 `./install.sh --codex`). *Want to see it work first?* `./examples/tour.sh` runs a safe demo in a
 throwaway sandbox.
@@ -149,8 +152,7 @@ rc) on the tool call that made it → [docs/reference.md](docs/reference.md).
 > `CLAUDE.md`, run the [standalone tools](#just-want-the-git-hook) next to what you have, or grab one
 > `commands/*.md` and ignore the rest.
 
-> **One command for the rest.** The install adds a `keel` CLI — `keel help` lists its verbs (sync,
-> doctor, tokens, uninstall, …).
+> **One command for the rest.** The install adds a `keel` CLI; `keel help` lists its verbs.
 
 > **Status: early experiment.** A cleaned-up copy of one person's working setup, public to find out
 > whether it helps anyone besides its author. Feedback welcome; expect rough edges.

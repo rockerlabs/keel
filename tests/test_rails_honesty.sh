@@ -203,12 +203,13 @@ pin "polish-guide.md: step 3 states the no-rerun condition as 'touched only exem
 # only ever falls back to the subagent. dir #254 lifted that restriction and polish.md/getting-started.md
 # already say /polish attempts the real /code-review pass first, falling back only on refusal — README
 # was the one stale copy. `check_absent` guards the retired claim directly so a later edit can't quietly
-# restore it; the presence pin confirms the attempt-first/fallback framing landed.
+# restore it; the presence pin confirms the subagent-first framing landed (the README slim left the
+# fallback chain to getting-started.md §6, whose own pins are below).
 check_absent "README: no longer claims the built-in reviewer is model-invocation-disabled by design" \
   "$(cat "$readme")" "model-invocation-disabled"
-pin "README: pre-PR gate section states /polish runs the real review first, in a fresh-context subagent, falling back on refusal" \
+pin "README: pre-PR gate section states /polish runs the real review first, in a fresh-context subagent" \
   "$readme" 'a fresh-context subagent run the real, built-in `/code-review` pass first' \
-  "expected README's pre-PR gate section to match polish.md/getting-started.md's subagent-first/fallback framing (dir #516 F15, dir #670)"
+  "expected README's pre-PR gate section to match polish.md/getting-started.md's subagent-first framing (dir #516 F15, dir #670)"
 
 # --- dir #516 (F16, operator-decided 2026-09-18): FRAMEWORK.md's two runner-label policies ---------
 # L602 forbids `ubuntu-latest` as a pinning example; L608 used to call a managed `*-latest` CI runner

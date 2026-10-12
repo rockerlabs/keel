@@ -129,7 +129,7 @@ check_contains "a manifested Codex home gets --codex too, via the manifest" "$OU
 # (dir #85 found docs/reference.md and README.md each missing 2 of 9 verbs, undetected). Enumerate
 # the arms from the REAL keel script (not the fake stub), then assert every verb is still quoted in
 # docs/reference.md's keel row — same shape as test_doc_figures.sh pinning doc prose against template
-# headings. (README.md listed the verbs too until it was slimmed; it now points at `keel help` only.)
+# headings. (README.md listed the verbs too until it was slimmed; it now names no verb, only `keel help`.)
 case_block="$(awk '/^case "\$cmd" in/,/^esac/' "$REPO_ROOT/keel")"
 # Leading whitespace is `[[:space:]]+`, not a fixed two spaces — a case arm re-indented with a tab
 # or a different width wouldn't match a fixed prefix, silently dropping that ONE verb from the list
