@@ -23,7 +23,7 @@ check_file "tools/delta-audit/derive.sh exists" "$derive"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
 pin "docs/reference.md Docs index links docs/delta-audit.md" \
-  "$REPO_ROOT/docs/reference.md" '[`docs/delta-audit.md`](delta-audit.md)' \
+  "$reference" '[`docs/delta-audit.md`](delta-audit.md)' \
   "expected docs/reference.md's Docs index to list delta-audit.md the way it lists drydock.md"
 
 # --- phase 6 <-> delta-audit.md, pinned on BOTH legs -----------------------------------------------

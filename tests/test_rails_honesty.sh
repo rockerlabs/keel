@@ -241,7 +241,7 @@ pin "polish-guide.md: step 9 names a non-gate gh pr create failure as still spen
 # --- dir #413 slice 1 (A14): the read-only /polish review agent is a Claude Code feature, said so ------
 # The agent (agents/keel-polish-reviewer.md, `tools: Read, Grep, Glob`) is a structural floor only where
 # Claude Code loads agents/*.md. ADAPTING.md must say the floor does not port (the prose rails stay the
-# only containment elsewhere); docs/reference.md and the README name the agents/ channel so an adopter
+# only containment elsewhere); docs/reference.md names the agents/ channel so an adopter
 # can find what install.sh wires. One pin per site — a single shared phrase would let one satisfy all.
 pin "ADAPTING.md: the honest boundary says the review agent's tool floor is Claude Code-only" \
   "$REPO_ROOT/ADAPTING.md" 'keel-polish-reviewer' \

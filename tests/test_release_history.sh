@@ -45,7 +45,7 @@ if [ ! -f "$history" ]; then
   exit $?
 fi
 
-# --- README discoverability: an adopter-usable doc not linked from the Docs index is as good as
+# --- discoverability: an adopter-usable doc not linked from the Docs index is as good as
 # unshipped (same class test_release_audit_doc.sh already guards for release-audit.md). -------------
 pin "docs/reference.md Docs index links docs/release-history.md" \
   "$REPO_ROOT/docs/reference.md" '[`docs/release-history.md`](release-history.md)' \

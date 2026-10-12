@@ -37,7 +37,7 @@ check_file "tools/audit-packet/import.sh exists" "$REPO_ROOT/tools/audit-packet/
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
 pin "docs/reference.md Docs index links docs/drydock.md" \
-  "$REPO_ROOT/docs/reference.md" '[`docs/drydock.md`](drydock.md)' \
+  "$reference" '[`docs/drydock.md`](drydock.md)' \
   "expected docs/reference.md's Docs index to list drydock.md the way it lists release-audit.md"
 
 # --- the family cross-links, pinned on BOTH legs (the changelog claims they are two-way) ----------

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for docs/vendor-review.md — dir #614: the doc must be discoverable (README, reference.md) and
+# Tests for docs/vendor-review.md — dir #614: the doc must be discoverable (reference.md lists it) and
 # the four sibling docs it displaces an "unnamed harness" reference in must point at it by name.
 # Same idiom as test_delta_audit_doc.sh: fixed-string pins on both legs of each cross-reference.
 # shellcheck source=tests/lib.sh
@@ -21,9 +21,9 @@ check_executable "tools/vendor-review.sh" "$tool"
 check_file "tools/vendor-review/agy.sh exists" "$client"
 check_executable "tools/vendor-review/agy.sh" "$client"
 
-# --- discoverability: README and reference.md both list it -----------------------------------------
+# --- discoverability: reference.md lists it (Docs index and Tools table) ------------------------
 pin "docs/reference.md Docs index links docs/vendor-review.md" \
-  "$REPO_ROOT/docs/reference.md" '[`docs/vendor-review.md`](vendor-review.md)' \
+  "$reference" '[`docs/vendor-review.md`](vendor-review.md)' \
   "expected docs/reference.md's Docs index to list vendor-review.md the way it lists drydock.md"
 pin "reference.md Tools table lists tools/vendor-review.sh" \
   "$reference" '[`tools/vendor-review.sh`](../tools/vendor-review.sh)' \

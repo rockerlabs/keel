@@ -9,14 +9,12 @@
 doc="$REPO_ROOT/docs/parallel-sessions.md"
 core="$REPO_ROOT/CORE.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/parallel-sessions.md exists" "$doc"
 check_file "CORE.md exists" "$core"
 check_file "FRAMEWORK.md exists" "$framework"
-check_file "README.md exists" "$readme"
 
-# --- README discoverability: an adopter-usable doc not linked from the Docs index is as good as
+# --- discoverability: an adopter-usable doc not linked from the Docs index is as good as
 # unshipped (same class dir #85's docs layer would have flagged). --------------------------------
 pin "docs/reference.md Docs index links docs/parallel-sessions.md" \
   "$REPO_ROOT/docs/reference.md" '[`docs/parallel-sessions.md`](parallel-sessions.md)' \
