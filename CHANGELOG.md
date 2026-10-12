@@ -118,7 +118,7 @@ two calls (an accepted false deny of dir #745's reader). The audit's other open 
   reached the suite. It now also derives every default-expansion / `ENVIRON` / `printenv` read of an
   UPPER_CASE name, and any credential-shaped name (`*_API_KEY`, `*_TOKEN`, `*_SECRET`, `*_PASSWORD`), from the
   shipped scripts and proves, in a child that sources `tests/lib.sh` with each one poisoned, that none
-  survives (only `PATH` and `TMPDIR` are exempt, with reasons); `tests/lib.sh` neutralizes every one it found (26 unset; `HOME` and `GIT_CONFIG_GLOBAL` redirected). A
+  survives (only `PATH` and `TMPDIR` are exempt, with reasons); `tests/lib.sh` neutralizes every one it found (unsets them; `HOME` and `GIT_CONFIG_GLOBAL` are redirected). A
   self-default assignment (`AGY_BIN="${AGY_BIN:-d}"`) now counts as a read in the `KEEL_*` half too.
 - **`examples/tour.sh` and `docs/demo/record-demo.sh` no longer read the operator's git config through `GIT_CONFIG_COUNT`,
   `GIT_CONFIG_PARAMETERS` or `GIT_CONFIG_SYSTEM`, and guard their sandbox right after `mktemp` (dir #753).** Both demos
@@ -358,7 +358,7 @@ two calls (an accepted false deny of dir #745's reader). The audit's other open 
   of those letters in that stretch is allowed, and a rewrite in two Bash calls clears a refusal. The double-quoted
   and heredoc-body shapes, which v0.15.0 also allowed, are covered by the same rule. Still open, and not a refusal: an
   `esac` as the first pattern on its own line, a prefix word before a `case` header split over lines (both named in
-  the gate's header), and a `case` inside a `( … )` group inside a `${v:-$(…)}`, unquoted, double-quoted or in a heredoc body (dir #792). Sixteen mutants of the new clauses join the reader's mutation list.
+  the gate's header), and a `case` inside a `( … )` group inside a `$(…)` that is double-quoted or in a heredoc body, or inside an unquoted `${v:-$(…)}` (dir #792). Sixteen mutants of the new clauses join the reader's mutation list.
 
 - **The pre-PR gate reads a command the way the shell will.** dir #745 (PR-2 of 3): one lexer reads the whole
   command — quotes glued to their words, `$(…)` and backticks (inside double quotes and expanding heredoc bodies
