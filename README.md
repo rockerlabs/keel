@@ -14,6 +14,8 @@ stops drowning in a context dump. Alongside it are a few zero-dependency Bash to
 blocks secrets and personal data, a setup checker, and a go-public audit. It's **tool-independent** —
 works with any assistant, not just Claude Code — and takes about 10 minutes to set up.
 
+https://github.com/user-attachments/assets/653ede31-639b-4d2b-9ad5-b1b619f221c5
+
 **Built for the case where the clutter compounds:** you run an assistant across several projects on a
 months-long horizon, and/or you're taking a private repo public. If that's you, read on.
 
