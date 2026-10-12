@@ -348,8 +348,11 @@ this rule nor G7 said so, which is how a manager ends up either duplicating a ro
 groom's figures to be retold inside the next one. It is deliberately a DIFFERENT file from the record
 audits keep: this rule's scope is the release-management run, the audit record's is the RC pass that
 follows it. Until this clause pointed at G7 it named only the audit record, leaving a manager with a
-genre and no path. **The manager is expensive by construction: it holds the whole release's
-context, which is the same property that makes it useful.** The sharp edge is duration — a release
+genre and no path. Where the two share a file name (keel's are both `RUNS.md`), the close names this one
+by its full path, and the release is not closed while its row still carries the groom's "completes this
+at the tag" placeholder: the 0.16.0 manager wrote only the audit row and closed with this row's run
+cells empty (the 0.17.0 groom). A rule of the procedure, not a compensation. **The manager is expensive
+by construction: it holds the whole release's context, which is the same property that makes it useful.** The sharp edge is duration — a release
 spanning more than one day, with breaks, means paying full input price on that context repeatedly
 instead of reading it from cache, so a single-sitting release and a week-long one have completely
 different economics for the same work. This is a real trade against convenience, not a free win, and
@@ -361,14 +364,6 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 `KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
 sessions are summed by hand until dir #654 closes, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
-
-**Two records share one file name, so the close names this one by path and checks it (the 0.17.0 groom,
-reading the 0.16.0 close).** Keel's releases record and its audit record are both called `RUNS.md`. The
-0.16.0 manager appended the audit row, logged it as "the R7 cost row", and closed the release. The
-releases row kept its empty run cells, and the next groom found the release's cost unrecorded. So the
-close step names the releases record by its full path, and the release is not closed while that row
-still carries the groom's "completes this at the tag" placeholder. A rule of the procedure, not a
-compensation.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree

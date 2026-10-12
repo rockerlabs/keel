@@ -47,7 +47,8 @@ Call each mechanism another ticket owns, never reimplement it: pool report + dra
 project's own mechanism exists (keel: `dir #360`); staleness marker + cap check, where the project has
 one; archive re-sweep when the closed share crosses its threshold, carrying whatever traps that
 mechanism has recorded against itself (keel: `dir #359`). Dedup/absorption with reproduced evidence,
-never a silent close. Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags.
+never a silent close. Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags. Fold
+every leftover ticket draft `→ pool` by the project's own fold procedure (keel: `/backlog` step 2b).
 **Plus the accumulator triage:** (a) re-read the project's standing list (keel: `## Standing list` in
 `BACKLOG.md`), (b) the project's ideas file, and the project's learnings file — all three run under
 `/triage` ([`docs/triage.md`](../docs/triage.md)), called by reference: its verdicts decide each
