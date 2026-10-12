@@ -121,7 +121,12 @@ G0 the first moment its absence is visible to anyone — and the first groom to 
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
 is recorded as lost rather than invented. The same applies to that run's harvest, which the paragraph
-below already owns — check it there, not twice.
+below already owns — check it there, not twice. **The same check covers the releases record's row
+(the 0.17.0 groom).** The 0.16.0 audit row existed, but the releases row's run cells were still empty
+after the close. The manager had written the other `RUNS.md`
+([`docs/release-management.md`](release-management.md) R7 now names this case). The transcripts were
+still on disk, so that groom re-summed the run by branch, the way R7 describes. Record the figure as
+reconstructed by the groom, never as the manager's own.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
@@ -375,6 +380,15 @@ settled fact.
 - **Re-examine on merit.** A ticket carried by two or more consecutive mechanical re-tags (its release
   tag moved without anyone reading its body) gets one read-the-body pass rather than a third silent
   carry-forward.
+- **Fold the leftover ticket drafts.** Where the project keeps unnumbered drafts beside its backlog
+  (keel: `BACKLOG.drafts/`), a draft is a ticket that no census, pool reading or slate can see. Each one
+  waits for its own session's wrap to fold it, or for a backlog listing that catches leftovers. A
+  draft written from another project's session, or from a release worker, has neither. The 0.17.0
+  groom found 23 such drafts, the oldest three weeks old, one of them a spec-ready design whose fold
+  had been deferred to a release close that never did it. So the sweep folds every leftover draft by
+  the project's own fold procedure (keel: `/backlog` step 2b's dup check and numbering), and folds it
+  `→ pool`. A folded ticket joins a slate only through G1's lane rule, priced like any other. A rule of
+  the procedure, not a compensation.
 
 **Plus the accumulator triage** — three places findings and ideas already pile up and, without a named
 owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`

@@ -362,6 +362,14 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 sessions are summed by hand until dir #654 closes, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
 
+**Two records share one file name, so the close names this one by path and checks it (the 0.17.0 groom,
+reading the 0.16.0 close).** Keel's releases record and its audit record are both called `RUNS.md`. The
+0.16.0 manager appended the audit row, logged it as "the R7 cost row", and closed the release. The
+releases row kept its empty run cells, and the next groom found the release's cost unrecorded. So the
+close step names the releases record by its full path, and the release is not closed while that row
+still carries the groom's "completes this at the tag" placeholder. A rule of the procedure, not a
+compensation.
+
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
 names get recycled, so a directory search found nothing and that release left its 23 workers
@@ -395,6 +403,11 @@ is checked against the constant at write time — before writing each closure ma
 a non-zero exit means the word is not recognised, and the manager either writes a recognised word or
 widens the constant in the same PR — so the next unlisted word is refused there rather than
 discovered by the next census.
+
+**A ticket the manager files carries a release tag on its heading, `→ pool` when nothing else fits
+(the 0.17.0 groom).** Seven of the 0.16.0 manager's filings had none. The census lists them as
+`untagged`, and the pool report counts only `→ pool`, so they sat outside every pool reading until a
+groom tagged them. A rule of the procedure, not a compensation.
 
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a
