@@ -164,8 +164,9 @@ step 5 of `/polish` — see [`docs/getting-started.md`](getting-started.md#6-the
 | PR | agent | opens whenever it decides to, reviewed or not — nothing checks |
 
 Both entry points here (`/go`, `/wrap`) already ship to every adopter, so the 3-touch claim holds for
-you, not just the maintainer — the gate is the one piece that's opt-in (see the setup guide linked
-above for why: a hook changes session behavior, so it's never wired without a yes).
+you, not just the maintainer — the gate is the one piece that's opt-in (see
+[getting-started.md §6](getting-started.md#6-the-polish-pre-pr-gate-claude-code-opt-in) for why: a hook
+changes session behavior, so it's never wired without a yes).
 
 ## The honest boundary
 

@@ -47,14 +47,14 @@ Then **restart Claude Code and run `/keel-setup`** — the assistant finishes se
 Run it again inside each project you want Keel on (not the `keel` clone itself): there it writes a first
 draft of that project's `CLAUDE.md` from its own code, for you to review.
 
-The installer also turns on the secret-guard git hook, and it **never overwrites a file you own**: linked
-mode's one edit to an existing file is a single announced import line in `~/.claude/CLAUDE.md`, and a
-re-run only *offers* to refresh a rails block Keel itself wrote, backing it up first. `--link` wires Keel
-by reference, so a `git pull` refreshes the linked files; the secret-guard hook is a copy, though, so
-re-run `./install.sh --link` after a pull to refresh it and to wire any file a release adds. Plain
-`./install.sh` makes a one-time copy instead (for tools other than Claude Code; Codex has
-`./install.sh --codex`). *Want to see it work first?* `./examples/tour.sh` runs a safe demo in a
-throwaway sandbox.
+The installer also turns on the secret-guard git hook (not over another global `core.hooksPath`, and not
+with `--no-hooks`), and it **never overwrites a file you own**: linked mode's one edit to an existing file
+is a single announced import line in `~/.claude/CLAUDE.md`, and a re-run only *offers* to refresh a rails
+block Keel itself wrote, backing it up first. `--link` wires Keel by reference, so a `git pull` refreshes
+the linked files; the secret-guard hook is a copy, though, so re-run `./install.sh --link` after a pull
+to refresh it and to wire any file a release adds. Plain `./install.sh` makes a one-time copy instead,
+updated by `git pull && ./install.sh` (for tools other than Claude Code; Codex has `./install.sh --codex`).
+*Want to see it work first?* `./examples/tour.sh` runs a safe demo in a throwaway sandbox.
 
 ### Other ways to install
 
