@@ -28,6 +28,80 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.16.0 — 2026-10-12
+
+A managed release that drained the live backlog pool: 57 slated tickets, 51 credited in the CHANGELOG section by
+`dir #N` and the other six accounted for there with their reasons (two returned to the pool, one superseded, two
+delivered on the knowledge-base side, one an analysis report). The pre-PR gate's Bash hook grew a real command
+reader that parses a command the way the shell will, so a `case` pattern's `)` or a quoted word no longer hides a
+bypassed push (dir #745), and a subagent floor refuses a subagent's repository-mutating git commands against the
+session's repository (dir #675); every subagent now starts with the worker rails (dir #674) and a draft test
+section is stopped before it can write the shared checkout's git config (dir #758). The secret guard and installers
+hardened further: `secret-scan.sh` reads every byte it reports on and matches each personal literal as written
+(dir #741, dir #742), `public-audit.sh` never prints "no publication blockers found" over a read it could not
+complete (dir #738), the guard installer writes by rename, claims backups exclusively and no longer overwrites a
+hook you edited (dir #683, dir #684), and `install.sh` / `uninstall.sh` stop clobbering the checkout, an adopter's
+links and consented edits (dir #748). The release process itself changed shape: a PR's changelog entry is now a file
+under `changelog.d/` assembled by one deterministic cut command (dir #744), CI runs the macOS suite as two shards
+with a per-file watchdog, and `/polish` gained a mutation pass, a compaction stop and a review subagent that must
+quote its own clean result. The audit's fix round corrected the false sentences it found, restored the secret
+guard installer's hook modes regardless of umask, made the changelog-fragment reader refuse on a failing
+listing, and fixed `doctor`'s advice loop on an edited Keel hook. Known issues ship disclosed in the CHANGELOG
+section.
+
+**Verification.** **Scope:** 177 files (25 of them changelog fragments, read as one folded row) across 50 PRs, 20 first-parent
+merges and 380 commits, +15,938/−1,906, range v0.15.0 (`837a9f5`) to the release candidate `831dc14` — twice the
+previous delta, so raw counts below are not comparable with earlier releases; plus a fix round of five PRs (#617,
+#618, #619, #620, #621), 31 files, +471/−46, to the audited head `db26b92`. The cut itself is a text-only commit on top
+of that head: it folds the 30 fragments into the changelog section (56 top-level bullets from the cut, 55 after
+curation), adds this entry, and re-states one figure row. **Method:** a managed release. Pass 1: a mechanical
+baseline leg (Sonnet, medium effort), sixteen whole-read cluster legs cut by surface (Sonnet, high), a diverse leg
+that was a different method rather than a different vendor — a blind claim-falsification of the release's changelog
+with live adversarial probes, reconciled afterwards (Sonnet, high) — and a verifier (Sonnet, xhigh); no external
+vendor leg, by the operator's decision. The verifier returned NO-GO at `831dc14`. Four Fixer sessions, launched by the
+release manager, made the fixes. Pass 2 was scoped to the fix round: a fresh-context reader (with a 1,512-command gate
+differential) and a behaviour-first prober (with 38 single-hunk mutants), blind to each other and parallel on the
+fixed head, then a second verifier (Sonnet, xhigh) fresh from the written record, which returned a conditional GO at
+`db26b92` — transferable to the cut's merge commit only if the cut's diff stays text-only and its stated
+conditions hold. **Coverage:** pass 1, 153 ledger rows with exactly one verdict each — 78 clean, 2 mechanical-only,
+73 finding, 0 waived — and 177 of 177 files in exactly one cluster; CI green by commit on every leg at the candidate;
+suite 148 files, 13,818 passed, 0 failed in a clean clone. Pass 2, every one of the 17 closure rows (the pass-1
+fix-before-tag set, the two promoted riders, the operator's extra gate fix and the cut's curation item) has a
+status: 11 closed, 5 partial (each a clause too narrow, a count that moved, or a gate variant) and 1 left to the cut.
+**Findings:** pass 1, 99 ids filed, 93 distinct, 90 accepted (2 medium, 8 low-medium, 80 low), 3 rejected; of the
+accepted, 13 were fix-before-tag (one code, twelve wording) and the rest ticketed, disclosed or recorded as
+no-action. The one code finding — the secret-guard installer's hooks and scanner coming out group-writable under
+umask 002 and world-writable under umask 000, where 0.15.0 gave 755/644 — was fixed in the round, with the two
+promoted riders (the fragment reader failing on a failing listing, doctor's advice loop on an edited Keel hook) and
+the operator's gate fix for a `case` pattern's `)`. Pass 2, 14 ids filed, 13 distinct, 12 accepted, all low, none
+medium or higher, no new class; the wording ones were corrected in the cut. Open at the cut: the code findings are
+ticketed, the rest recorded as no-action, and three known issues are disclosed in the changelog section.
+**Behavioural defects:** pass 1, 28 in adopter-facing code (16 range-introduced or mixed, 12 baseline) plus 10 in
+maintainer-only code; the hard regressions against v0.15.0 were the installer's modes (fixed), the gate's `case`
+pattern bypass (closed for its named shapes), a spec-accepted false deny, and doctor's advice loop (fixed). Pass 2, 5
+more, none medium: one latency defect and one false-deny breadth induced by the gate fix, a grouped-`case` shape
+still allowed that v0.15.0 denied, a stale code comment beside a foreign hook, and a status-hiding reader in a
+maintainer tool; cumulative 43 (the two passes' scopes differ). **Which layer found what:** in pass 1 the cluster legs
+found 88 of the 90 accepted findings, including the code defect, the gate regression and the false deny; the diverse
+leg found what they did not (an unreadable global config read as unset, a worktree remedy that leads with the wrong
+command, two header residuals) and gave independent positive evidence the clusters could not (fifty historical hook
+bodies all recognised); neither alone would have been enough. In pass 2 the fresh-context reader found the five
+wording defects and the latency one; the prober found the grouped-`case` hole the reader's corpus missed, the
+false-deny breadth, the foreign-hook comment and seven unpinned hunks; each missed several of the other's.
+**What was NOT checked:** the cut's own content beyond its stated conditions — a separate read of the cut diff is the
+only read of the hand edits made in it; the full suite and any Linux or Alpine execution by the verifiers (macOS
+only; Linux behaviour rests on CI's Ubuntu and Alpine legs and on the legs' own container runs), so bash 4+ execution
+of the grouped-`case` shapes is unverified; about fifty low baseline, prose and test-only findings accepted on the legs'
+quoted evidence rather than re-derived; the real GitHub merge-queue payload, the real subagent hook payload and the
+model-behavioural rules (the review subagent's void rule, the compaction stop, the mutation pass); member PR diffs
+were not re-read by the verifiers, only re-scanned for hand-resolved merge hunks; the rollback-path modes of the
+installer beyond the legs' own measurements; and the tag itself, which is the operator's. The cut-simulation CI job
+is red on the cut commit by construction — it re-cuts an already-cut tree — and is not a required check.
+**Induced-defect rate:** pass 1, 0 / 99 (the first wave has no earlier fix to be induced from); pass 2, 10 / 12 as
+adjudicated (12 / 14 as the legs filed them): ten of the twelve accepted findings were created by the fix round's own
+edits, four of them in the wording batch itself; cumulative 10 / 102 adjudicated (12 / 113 filed). **Records:** the
+run's own audit directory, gitignored.
+
 ## v0.15.0 — 2026-10-09
 
 A managed release built from three operator pains, groomed the day of the v0.14.0 tag: the secret guard's

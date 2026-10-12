@@ -213,4 +213,145 @@ check_contains "wt: ...the advice says --worktree (a --local setting is outranke
 run genv "$isg" "$rwt"
 check_contains "wt: the installer's inert note says --worktree too" "$OUT" "config --worktree"
 
+# --- S6-1 (0.16.0 delta audit): an EDITED Keel hook is refused by the body-exact installer (dir #683), so every advice --
+# --- arm that points at the installer names --force there; each fixture RUNS the advised command as doctor printed it --
+# advised ID — the installer command (path and flags, from "install-secret-guard.sh" to its "--force") warning ID advises
+advised() { printf '%s\n' "$(id_line "$1")" | grep -oE 'install-secret-guard\.sh ((\\ |[^ ])+) --force' | head -1; }
+run_advised() {  # run_advised ID — run what doctor advised for warning ID against the sandbox home; sets STATUS/OUT
+  local cmd; cmd="$(advised "$1")"
+  if [ -z "$cmd" ]; then STATUS="no --force command advised for [$1]"; OUT="$(id_line "$1")"; return 0; fi
+  eval "set -- ${cmd#install-secret-guard.sh }"   # as a shell reads the printed words: a quoted path stays one word
+  run genv "$isg" "$@"
+}
+edit_hook() { printf '\n# my edit\n' >> "$1"; }
+
+mk_home s61g
+run genv "$isg" --global
+check_status "S6-1 setup: wire the machine-global guard" 0 "$STATUS"
+kd61="$H/$kh_rel"
+edit_hook "$kd61/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: an edited Keel pre-commit (marker kept) → W-GUARD-GLOBAL-STALE" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_contains "S6-1: ...its advice names --force and the backup" "$(id_line W-GUARD-GLOBAL-STALE)" "install-secret-guard.sh --global --force"
+check_contains "S6-1: ...and says why a plain re-run is refused" "$(id_line W-GUARD-GLOBAL-STALE)" "pre-keel.bak"
+run_advised W-GUARD-GLOBAL-STALE
+check_status "S6-1: the advised command, run as printed, succeeds (a plain re-run exits 3)" 0 "$STATUS"
+check_file "S6-1: ...and saved the edited hook" "$kd61/pre-commit.pre-keel.bak"
+run genv "$doctor" --install "$H/claude"
+check_absent "S6-1: ...after it doctor no longer flags the stale guard" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent "S6-1: ...nor a half-wired one" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "S6-1: ...and reads OK" "$OUT" "OK   secret-guard: machine-global"
+
+mk_home s61h
+run genv "$isg" --global
+kd61="$H/$kh_rel"
+edit_hook "$kd61/pre-commit"; mv "$kd61/pre-push" "$kd61/pre-push.away"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: edited pre-commit + pre-push absent → W-GUARD-UNWIRED (half wired)" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "S6-1: ...its advice names --global --force" "$(id_line W-GUARD-UNWIRED)" "install-secret-guard.sh --global --force"
+run_advised W-GUARD-UNWIRED
+check_status "S6-1: the advised command succeeds" 0 "$STATUS"
+run genv "$doctor" --install "$H/claude"
+check_absent "S6-1: ...and clears the half-wired warning" "$OUT" "[W-GUARD-UNWIRED]"
+check_absent "S6-1: ...and the stale one" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+
+mk_home s61r; r61="$(mk_repo)"
+run genv "$isg" "$r61"
+check_status "S6-1 setup: vendor into a repo" 0 "$STATUS"
+edit_hook "$r61/.git/hooks/pre-commit"; mv "$r61/.git/hooks/pre-push" "$r61/.git/hooks/pre-push.away"
+run genv "$doctor" "$r61"
+check_contains "S6-1: a vendored edited pre-commit with no pre-push → W-GUARD-UNWIRED" "$OUT" "[W-GUARD-UNWIRED]"
+check_contains "S6-1: ...its re-vendor advice names this repo and --force" "$(id_line W-GUARD-UNWIRED)" "install-secret-guard.sh $r61 --force"
+check_contains "S6-1: ...and so does the stale warning" "$(id_line W-GUARD-STALE)" "install-secret-guard.sh $r61 --force"
+run_advised W-GUARD-UNWIRED
+check_status "S6-1: the advised re-vendor succeeds" 0 "$STATUS"
+run genv "$doctor" "$r61"
+check_absent "S6-1: ...and clears the half-wired warning" "$OUT" "[W-GUARD-UNWIRED]"
+check_absent "S6-1: ...and the stale one" "$OUT" "[W-GUARD-STALE]"
+
+mk_home s61s; r61s="$(mk_repo)"
+run genv "$isg" "$r61s"
+edit_hook "$r61s/.git/hooks/pre-push"
+run genv "$doctor" "$r61s"
+check_contains "S6-1: a vendored edited pre-push alone → W-GUARD-STALE naming --force" "$(id_line W-GUARD-STALE)" "install-secret-guard.sh $r61s --force"
+run_advised W-GUARD-STALE
+check_status "S6-1: ...and its advised command succeeds" 0 "$STATUS"
+run genv "$doctor" "$r61s"
+check_absent "S6-1: ...and clears the stale warning" "$OUT" "[W-GUARD-STALE]"
+
+# control: a drifted scanner with both hooks UNEDITED is re-vendored by a plain run — no --force in that advice
+mk_home s61c; r61c="$(mk_repo)"
+run genv "$isg" "$r61c"
+edit_hook "$r61c/.git/hooks/secret-scan.sh"
+run genv "$doctor" "$r61c"
+check_contains "S6-1 control: a drifted scanner alone → W-GUARD-STALE" "$OUT" "[W-GUARD-STALE]"
+check_absent "S6-1 control: ...its advice stays a plain re-vendor (nothing is refused)" "$(id_line W-GUARD-STALE)" "--force"
+plain61="$(printf '%s\n' "$(id_line W-GUARD-STALE)" | grep -oE 'install-secret-guard\.sh [^ ]+' | head -1)"
+run genv "$isg" "${plain61#install-secret-guard.sh }"
+check_status "S6-1 control: ...and the plain command succeeds (doctor and installer agree both ways)" 0 "$STATUS"
+run genv "$doctor" "$r61c"
+check_absent "S6-1 control: ...and clears the warning" "$OUT" "[W-GUARD-STALE]"
+
+# a LINKED edited hook: --force cannot replace it, so the advice must not promise a backup (the link notes own that state)
+mk_home s61l
+run genv "$isg" --global
+kd61="$H/$kh_rel"
+cp "$kd61/pre-commit" "$H/pc-real"; edit_hook "$H/pc-real"; chmod +x "$H/pc-real"
+rm -f "$kd61/pre-commit"; ln -s "$H/pc-real" "$kd61/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: a linked, edited pre-commit still reads as a stale guard" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent "S6-1: ...whose advice does not promise a --force backup (the installer refuses links either way)" "$(id_line W-GUARD-GLOBAL-STALE)" "--force"
+
+# a LINKED sibling hook: the installer stops on it with or without --force, so an edited pre-commit beside it gets no --force promise
+mk_home s61m
+run genv "$isg" --global
+kd61="$H/$kh_rel"
+edit_hook "$kd61/pre-commit"
+cp "$kd61/pre-push" "$H/pp-real"; rm -f "$kd61/pre-push"; ln -s "$H/pp-real" "$kd61/pre-push"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: an edited pre-commit beside a linked pre-push → W-GUARD-GLOBAL-STALE" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent "S6-1: ...whose advice makes no --force promise (the link stops the installer)" "$(id_line W-GUARD-GLOBAL-STALE)" "--force"
+
+# a user's OWN global hooks dir holding edited, Keel-marked copies: --force would displace their hooksPath, so the advice stays plain
+mk_home s61u
+mkdir -p "$H/own-hooks"
+for f in pre-commit pre-push secret-scan.sh range-lib.sh; do cp "$REPO_ROOT/tools/secret-guard/$f" "$H/own-hooks/$f"; done
+chmod +x "$H/own-hooks/pre-commit" "$H/own-hooks/pre-push"; edit_hook "$H/own-hooks/pre-commit"
+printf '[core]\n\thooksPath = %s/own-hooks\n' "$H" > "$H/.gitconfig"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: edited Keel-marked copies in the user's own global dir → W-GUARD-GLOBAL-STALE" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+check_absent "S6-1: ...whose advice never offers --force (it would replace their hooksPath)" "$(id_line W-GUARD-GLOBAL-STALE)" "--force"
+
+# an earlier --force backup waiting at <hook>.pre-keel.bak stops the installer even with --force: the advice says to run --force after moving it aside
+mk_home s61w
+run genv "$isg" --global
+kd61="$H/$kh_rel"
+edit_hook "$kd61/pre-commit"
+run genv "$isg" --global --force
+check_status "S6-1 setup: a first --force run leaves pre-commit.pre-keel.bak" 0 "$STATUS"
+edit_hook "$kd61/pre-commit"
+run genv "$doctor" --install "$H/claude"
+check_contains "S6-1: ...an edit after it → the advice says to move the waiting backup aside" "$(id_line W-GUARD-GLOBAL-STALE)" "after moving $kd61/pre-commit.pre-keel.bak aside"
+run_advised W-GUARD-GLOBAL-STALE
+check_status "S6-1: ...following the advice's command without moving it is refused (exit 3)" 3 "$STATUS"
+mv "$kd61/pre-commit.pre-keel.bak" "$H/old-backup"
+run genv "$doctor" --install "$H/claude"
+check_absent "S6-1: ...with the backup moved aside the advice is the plain --force one" "$(id_line W-GUARD-GLOBAL-STALE)" "after moving"
+run_advised W-GUARD-GLOBAL-STALE
+check_status "S6-1: ...and with the backup moved aside it succeeds" 0 "$STATUS"
+run genv "$doctor" --install "$H/claude"
+check_absent "S6-1: ...clearing the warning" "$OUT" "[W-GUARD-GLOBAL-STALE]"
+
+# a repo path with a space: the printed command is quoted so it pastes as one word
+mk_home s61p; r61p="$SANDBOX/fx s61p repo"; mkdir -p "$r61p"; git -C "$r61p" init -q
+run genv "$isg" "$r61p"
+check_status "S6-1 setup: vendor into a repo whose path has a space" 0 "$STATUS"
+edit_hook "$r61p/.git/hooks/pre-commit"
+run genv "$doctor" "$r61p"
+check_contains "S6-1: the stale advice quotes the path" "$(id_line W-GUARD-STALE)" "fx\\ s61p\\ repo --force"
+run_advised W-GUARD-STALE
+check_status "S6-1: ...and the printed command runs as one word" 0 "$STATUS"
+run genv "$doctor" "$r61p"
+check_absent "S6-1: ...clearing the warning" "$OUT" "[W-GUARD-STALE]"
+
 summary
