@@ -28,6 +28,29 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.16.0 — 2026-10-12
+
+A managed release that drained the live backlog pool: 57 slated tickets, 51 credited in the CHANGELOG section by
+`dir #N` and the other six accounted for there with their reasons (two returned to the pool, one superseded, two
+delivered on the knowledge-base side, one an analysis report). The pre-PR gate's Bash hook grew a real command
+reader that parses a command the way the shell will, so a `case` pattern's `)` or a quoted word no longer hides a
+bypassed push (dir #745), and a subagent floor refuses a subagent's repository-mutating git commands against the
+session's repository (dir #675); every subagent now starts with the worker rails (dir #674) and a draft test
+section is stopped before it can write the shared checkout's git config (dir #758). The secret guard and installers
+hardened further: `secret-scan.sh` reads every byte it reports on and matches each personal literal as written
+(dir #741, dir #742), `public-audit.sh` never prints "no publication blockers found" over a read it could not
+complete (dir #738), the guard installer writes by rename, claims backups exclusively and no longer overwrites a
+hook you edited (dir #683, dir #684), and `install.sh` / `uninstall.sh` stop clobbering the checkout, an adopter's
+links and consented edits (dir #748). The release process itself changed shape: a PR's changelog entry is now a file
+under `changelog.d/` assembled by one deterministic cut command (dir #744), CI runs the macOS suite as two shards
+with a per-file watchdog, and `/polish` gained a mutation pass, a compaction stop and a review subagent that must
+quote its own clean result. The audit's fix round corrected the false sentences it found, restored the secret
+guard installer's hook modes regardless of umask, made the changelog-fragment reader refuse on a failing
+listing, and fixed `doctor`'s advice loop on an edited Keel hook. Known issues ship disclosed in the CHANGELOG
+section.
+
+**Verification.** **Scope:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Method:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Coverage:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Findings:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Behavioural defects:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Which layer found what:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **What was NOT checked:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Induced-defect rate:** [PLACEHOLDER — filled from the audit's GO record at the tag; this entry is not complete until then.] **Records:** the run's own audit directory, gitignored.
+
 ## v0.15.0 — 2026-10-09
 
 A managed release built from three operator pains, groomed the day of the v0.14.0 tag: the secret guard's

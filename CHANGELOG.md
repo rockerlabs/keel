@@ -15,6 +15,16 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-12
+
+**Known issues, disclosed at the cut.** These things from the 0.16.0 delta audit ship known-imperfect; each is
+filed or sits on the project's standing list. (1) Vendor-review round stores written by an earlier version keep
+their old modes: run `chmod -R go-rwx "$HOME/.keel/vendor-review"` once to close them (dir #705). (2) The
+self-check `tools/self/doctor.sh` still prints OK when one of its `git grep`, `git log` or `git tag` reads fails
+(dir #766). (3) The pre-PR gate now refuses a Bash call that holds a `$(case … in …)` expansion followed by
+a git or gh command, even when the case word is harmless; split it into two calls (an accepted false deny of
+dir #745's reader). The audit's other open findings are filed or sit on the project's standing list.
+
 - **`/polish` step 5: the K2 review subagent quotes the skill's first line after `Result:`, and a bare `(none)` is clean only at `low`.**
   dir #736: a forked `/code-review` that returned a bare `(none)` read as a clean pass, though no review body
   existed to tell a clean run from an empty one. `(none)` is the `low` recipe's own clean output (all 8 bare
@@ -187,6 +197,308 @@ sections real content going forward — see that page for exactly when each one 
   `tests/test_pre_pr_gate_lexer.sh` kills 29 of the 46 before this change and all 46 after (17 new deny forms, and
   every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
   `commands/polish-guide.md` § Step 9 cite itself.
+
+- **`/polish` gains a mutation pass for a diff that adds or changes a filter, threshold, guard or exclusion rule.**
+  dir #673 (a), slice 3 of spec 739: step 3 of `commands/polish.md` points at the guide's § Step 3, which mutates
+  one clause of the changed rule at a time in a scratch clone, runs only the tests that pin it, and treats a
+  survivor as a finding to fix or record, disclosed in step 10 and with no receipt of its own. A rule written
+  only in prose never triggers it. The same slice dedupes the guide pointers of steps 8 and 9 to the short form,
+  keeping `commands/polish.md` at 2,985 words. dir #673 (b), the delta-audit verifier's default mutation mandate,
+  is not part of this change.
+
+- **Every subagent now starts with the worker rails.** dir #674: `tools/install-pre-pr-gate.sh` wires a seventh
+  hook, `SubagentStart`, that puts the Worker rails block of
+  [`docs/delegation.md`](/docs/delegation.md) (read-only, no spawns of its own) into the starting context of
+  every `general-purpose`, `Explore`, `Plan`, `claude` and `claude-code-guide` subagent — including the ones a
+  built-in skill composes itself, and `Explore` and `Plan`, which start with no `CLAUDE.md` at all. The text is
+  read live from the checkout, so there is no second copy to drift; every other agent type gets nothing. It is a
+  nudge, not a floor. `KEEL_SUBAGENT_RAILS=off` in the session environment switches it off. **To upgrade:**
+  re-run `tools/install-pre-pr-gate.sh` with your scope flag (the six existing hooks read as already wired) and
+  restart your sessions; until you do, `tools/doctor.sh` reports `W-GATE-SUBAGENT-RAILS`.
+
+- **A subagent's literal git commands that change your repository are now refused.** dir #675: the pre-PR gate's Bash hook now
+  denies a *subagent's* repository-mutating git command — `checkout`, `restore`, `reset`, `clean`, `stash`,
+  `commit`, `push`, `rebase`, the write forms of `branch`, `tag`, `config`, `remote`, `worktree` and the other
+  verbs that change the tree, the index or the refs (what it leaves open is in
+  [`docs/delegation.md`](/docs/delegation.md)) — when it is aimed at the session's repository or any worktree of it, found through the payload cwd, the `cd`s before it, `-C`, `--git-dir`/`GIT_DIR` and
+  `--work-tree`/`GIT_WORK_TREE`. Reads, and work in a scratch clone (`git -C <clone>`), are untouched; your own
+  commands are never touched. It needs no installer re-run: a `git pull` is enough, in every session whose gate is
+  wired. It needs git 2.31 or newer (an older git leaves the floor silently off), and `git fetch <remote> +src:<local-branch>` and other plumbing ref writers pass. It is a seatbelt, not a sandbox — a script, `sh -c`, an alias, a variable path or a plain `rm` are not
+  seen. A subagent started with `isolation: "worktree"` is denied its own commits too.
+  `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment switches it off; the PR and push rules stay.
+
+- **`install-secret-guard.sh` no longer overwrites a Keel hook you edited.** A hook was Keel's whenever its second
+  line was the marker, so a pre-commit or pre-push that you had extended after install (marker kept, your own steps
+  added) was replaced by the next plain re-install, with no backup and no prompt. It is now Keel's to refresh only when
+  its whole body is one of the versions this repo has shipped (`tools/secret-guard/shipped-hook-sums`, one POSIX
+  `cksum` line per version shipped so far); anything else behind the marker is treated as yours: a plain install
+  refuses and names why, and `--force` first saves it to `<hook>.pre-keel.bak` like any other foreign hook. An older
+  shipped version is still refreshed without `--force`. The list has to grow with the hooks: a test fails until the
+  next hook change adds its line (dir #683).
+
+- **A copy-mode block refresh that keeps a `/keel-setup` git-rails trim no longer writes linked-mode advice.**
+  The always-on note it leaves in `CLAUDE.md` (or `--codex`'s `AGENTS.md`) used to tell the assistant to run
+  `install.sh --with-git` (which exits 2 in a copy home) or `--link --with-git` (which would migrate it). It now
+  says to replace the embedded rails block with the one in Keel's `CORE.md`, which brings back both trimmed
+  sections and drops the note; `/keel-setup` gives the same copy-path advice. A copy home whose earlier
+  refresh left the linked note no longer reads as up to date: `install.sh` offers the trim-keeping refresh,
+  and `doctor.sh` warns. A linked `--no-git` home keeps its `--with-git` advice (dir #689).
+
+- **A failing secret-guard selftest says why, and the personal-literals example documents the rules.** Since dir #680 a malformed personal-literals file (a line ending in a backslash, an invalid regex, an unreadable file) hard-fails the scanner with a reason message on stderr, but `install.sh` Verify printed only "selftest FAILS" and `secret-scan-personal.example` did not mention the rules. Verify now adds a `Reason:` line carrying the scanner's first refusal line, and the example lists what the scanner accepts and refuses (dir #695).
+
+- **The pre-PR gate's riders from dir #583's last review round (dir #713, spec 745 PR-3).**
+  `pre-pr-gate.sh -h` now names the gate by the path it was invoked as, and inside a work tree where key resolution
+  fails (a detached HEAD) it prints why instead of the generic "no checkout" note. A first argument that is none of
+  the gate's subcommands (`--halp`, `foo`) prints a usage line and exits 2 at once, instead of falling into hook mode
+  and waiting on stdin; the hook is always wired with no argument, so nothing that runs it changes. The
+  missing-review-trace deny for an `agent:*` outcome now names the remedy an agent can perform (re-run the
+  `keel-polish-reviewer` subagent, whose `SubagentStop` writes the trace), and the `polish.5-review` hint no longer
+  says an agent review satisfies nothing: the reviewer's own `agent:<level>` receipt is accepted, a bare Agent spawn
+  of any other type is not. Three guards gained tests proved by mutated copies of the gate (the header-boundary
+  extraction, no sandbox note in a checkout, the note as exactly one line). Not changed, with the reason: `keys`
+  stays under the `$HOME` guard, and the released changelog bullet for dir #583 is history, so it is not rewritten.
+
+- **`tools/self/cut-sim.sh` runs the suite on the cut shape of the changelog, and CI runs it as a non-required
+  `cut-simulation` job (dir #722, dir #744 slice 4).** The 0.14.0 delta audit found three tests that pinned
+  `## [Unreleased]` shipping to the release candidate, because nothing ran the suite after the cut moved that text
+  under a dated heading. `cut-sim.sh [--repo DIR]` clones DIR's `HEAD` into `${TMPDIR:-/tmp}/keel-cut-sim.XXXXXX`,
+  runs the clone's `tools/self/changelog-cut.sh` as `9999.0.0` with today's UTC date, commits that under a fixed
+  identity and runs the clone's `tests/run.sh`, printing `PASS` or `FAIL` (exit 0, 1). It never writes to DIR,
+  removes the clone on every exit path (on a signal it stops the suite and waits for it first), and refuses with
+  exit 2, naming `fetch-depth: 0`, when DIR is shallow or has no `v*` tag. The `cut-simulation` job (`ubuntu-24.04`,
+  `fetch-depth: 0`, 20-minute timeout, pull requests only) is not a
+  required check; requiring it is the operator's branch-protection call. `docs/release-audit.md` Phase 7's cut
+  paragraph names the check to run before the cut PR is opened.
+
+- **`tools/self/citation-resolvability.sh` now reads the unreleased changelog text, and flags a PR number written as a ticket (dir #729).**
+  Besides `docs/*.md` it scans CHANGELOG.md's `[Unreleased]` section and the `changelog.d/` fragments (released
+  sections stay out: their aged-out citations are history). A cited `dir #N` that resolves to no ticket is
+  DEAD as before; when that number is also a merged PR number in the repo's history the line says so, since
+  four PR numbers were written as tickets in one 0.14.0 fix brief. The PR-number match is a hint on a DEAD
+  line, never a finding of its own: ticket and PR numbers overlap, and with no `BACKLOG.md` (gitignored,
+  maintainer-side) the check skips, as it always did.
+
+- **`/polish` stops for `/compact` when the session's context is already large (dir #739).**
+  The per-PR `/polish` tail tracks the primary session's context × turns: windows opened at 250k or more tokens
+  of context carried 442M of the 582M measured over 46 closed windows. Step 1 now runs the new
+  `tools/token-report.sh --context` (also `keel tokens --context`), which prints one line, `context: <N>
+  threshold: <M> verdict: <compact|stay>`, from the session's last turn (`$CLAUDE_CODE_SESSION_ID`'s own
+  transcript; `unknown … verdict: stay` when that cannot be read, never a guess). On `verdict: compact` the
+  guide's § Step 1 "Compaction stop" commits all work, writes a hand-over file outside the repo, and ends the
+  turn with two paste-ready lines for the operator: `/compact`, then a `/polish … after a compaction stop`
+  invocation that reloads the procedure and reads the file. A run that says `after a compaction stop` never
+  stops again. The threshold is `KEEL_POLISH_COMPACT_TOKENS` (default 250000; a malformed value exits 2, and a
+  huge value such as 999999999 turns the stop off). `tools/self/doctor.sh`'s slash-command check allowlists the
+  harness builtin `/compact`. `commands/polish.md` shrinks by one word (2,993 → 2,992).
+
+- **`tools/install-secret-guard.sh`'s conditional-include walk and machine-wide reads close their residuals.** dir #743:
+  a dangling symlink into a directory that cannot be searched is no longer skipped as missing (the walk was incomplete
+  there but read as clean — an edge fail-open); a bare `path = ~` (git's `$HOME`, a directory git then fails to read)
+  and any `~user/` or `%(prefix)/` include are expanded by git itself (one `git config --type=path --default` call)
+  instead of by the walk's own rules; a file reached again under a second, independent condition is reported under
+  both, with the includes nested in it; the "git config failed on …" line for a path git never read now says
+  "cannot tell whether … exists". A command-scope `core.hooksPath` (`git -c`) is no longer taken for the machine-wide one, so it is never recorded as the
+  displaced global nor written into `~/.gitconfig` by `--uninstall`; a git config git cannot parse is refused instead of
+  read as "unset"; and a `core.hooksPath` one global config file sets twice is refused up front, in words, instead of git
+  exiting 5 after the hooks were placed (one value in each of two files is fine). `--where` prints `read-error=1` for an unparsable config.
+
+- **A PR's changelog entry is now a file of its own under `changelog.d/`, not a bullet at the top of
+  `[Unreleased]` (dir #744 slice 1).** Two PRs that each added a bullet at that one anchor conflicted, and a
+  PR that fell behind turned DIRTY with no CI run; two PRs that each add their own file do not.
+  `changelog.d/README.md` states the rules; `tools/self/changelog-fragments.sh` reads and lints the directory
+  (`--check`); `tools/self/changelog-cut.sh VERSION DATE` is the release cut as one deterministic command,
+  and [`docs/release-audit.md`](/docs/release-audit.md) Phase 7 now names it. This entry is itself the first
+  fragment. Bullets already under `[Unreleased]` stay valid beside fragments.
+- **The checks that read the changelog read the fragments too (dir #744 slice 1).** `tools/self/doctor.sh`
+  matches a commit's `dir #N` against `[Unreleased]` and the fragments, and takes the newest commit touching
+  either as the changelog's age; the five tests that pin a changelog cite read `CHANGELOG.md` plus the
+  fragment reader's output; the delta-audit, audit-packet, drydock and line-citation tools class a fragment as
+  history, like `CHANGELOG.md`, as one unit; the pre-PR gate keeps `changelog.d/` in the tests-receipt hash;
+  `/go`'s seam step scans fragments for numeric claims; and `doctor` fails when a fragment merges after the
+  cut but before the tag. The wave-plan prose in
+  [`docs/release-management.md`](/docs/release-management.md) R2 and `commands/manage-release.md` M3 no longer
+  assumes every PR collides in `CHANGELOG.md`.
+
+- **A hung test file no longer holds a CI job for six hours, and a slow machine no longer fails the suite
+  (dir #744 slice 2).** `tests/run.sh` gains a per-file watchdog (`KEEL_TEST_FILE_TIMEOUT`, 600 s under CI,
+  off locally; it prints `watchdog: <N>s` up front and `=== <file> (timed out after <N>s) ===` with the file's
+  log so far) and ends every run with the five slowest files. Every CI job sets `timeout-minutes`, sized to
+  its leg. `tests/test_run_sh.sh` proves its concurrency checks by a peak count and times only kill→exit,
+  never runner start-up; each `kill -0` wait on a background process takes its bound from
+  `KEEL_TEST_HANG_BOUND` (120 s) in whole seconds, linted by `tests/test_suite_hygiene.sh`; a few
+  start-marker waits keep a literal 5–20 s bound.
+- **The test sandbox explains its own failures (dir #744 slice 2).** `tests/lib.sh` turns off git's
+  detached auto-maintenance for every test (appended to the `GIT_CONFIG_COUNT` triple, so an inherited entry
+  survives); a sandbox teardown that fails names what survived and which processes held it, then retries
+  once; and `check_status_out` prints the command's output when a status check fails, used by the
+  self-doctor smoke and the token-report `--since` case.
+
+- **CI's macOS leg runs as two shards, and every required check runs on the merge queue's event (dir #744
+  slice 3).** `tests/run.sh` gains `KEEL_TEST_SHARD=K/N`: it runs shard K's share of the test files, assigned
+  size-greedy by byte size so the shards come out near-even and every file runs exactly once, prints
+  `shard K/N: <m> of <total> test files`, refuses a malformed value before any file runs, and removes the
+  variable so a nested runner sees all of its own fixtures. `ci.yml` runs macOS as `tests (macos-14, shard 1/2)`
+  and `… 2/2`; an aggregator job on ubuntu reports the one required name, `tests (macos-14)`, green only when both
+  shards succeed, so branch protection needs no change. `on:` gains `merge_group:`, and
+  `tools/secret-guard/ci-scan.sh` scans a merge group's base..head exactly like a pull request — the
+  prerequisite for turning on GitHub's merge queue.
+
+- **The pre-PR gate no longer lets a `case` pattern's `)` hide a bypassed push (dir #745, 0.16.0 audit S2-5).** The
+  lexer read the first `)` of `${v:-$(case x in x) ;; esac; git push --no-verify)}` as the end of the `$(…)`, so the
+  rest of the substitution was read in the enclosing context — as data inside the `${…}`, or as more arguments of the
+  enclosing command (`echo $(case x in a) git push --no-verify;; esac)`) — and a push v0.15.0 denied was allowed. A
+  `)` that closes a `$(…)` while a `case` is open in it (any pattern form: `a|b`, a newline before `in`, a nested
+  `case`, a prefix such as `env` or `coproc` before the `case`), in any context, is now an unread part: if the text
+  from there to the end mentions git or gh, the command is refused with the reason, as for the other parts the reader
+  cannot settle. A push the reader still finds as a command of its own is denied as a push. The cost is a refusal for
+  a harmless `$(case …)`, or a `$(…)` holding the words `case … in`, followed by a later git command in the same call
+  (a rewrite in two Bash calls clears it). The double-quoted and heredoc-body shapes, which v0.15.0 also allowed, are
+  covered by the same rule. Sixteen mutants of the new clauses join the reader's mutation list.
+
+- **The pre-PR gate reads a command the way the shell will.** dir #745 (PR-2 of 3): one lexer reads the whole
+  command — quotes glued to their words, `$(…)` and backticks (inside double quotes and expanding heredoc bodies
+  too), heredocs owned by the context they were read in, arithmetic, redirections, comments, backslash-newline —
+  and both rules share one skip set. Now caught: a partly quoted prefix assignment, the heredoc-commit closing
+  line `)" && git push --no-verify`, a stray `<<`, a redirection or backslash-newline before the bypass, a quoted
+  bypass argument, and `if`/`time`/`nohup`/`!`/`{`/`env -u` before `gh pr create`; multi-line quoted text that
+  mentions a push is no longer denied. Where bash, zsh and busybox read a part differently and it mentions git or
+  gh, the gate refuses the command and says why; if the reader itself fails it denies git/gh commands instead of
+  allowing everything. `pre-pr-gate.sh lex` shows how a command was read; the header lists what stays unseen.
+
+- **`secret-scan.sh` allow decisions read the right field, and `--tracked` reads every tracked file.** A hit is now
+  a record whose label and content are kept apart: the inline `secret-scan:allow` marker and every ERE allowlist
+  entry match the matched line only, so a file named `notes-secret-scan:allow.txt`, or `README.md:x.txt` under
+  `path:README.md`, no longer exempts its own key, and a `path:` glob never exempts a commit or tag message
+  (dir #741). Under `--range`, a `path:` glob exempts a blob only when every path the push introduces it at is
+  exempt: the same key added at `fixtures/key.txt` and `src/real.txt` — in one commit, on two merged branches, or
+  by an evil merge — is reported under the path that is not exempt (dir #742).
+  A tracked file `--tracked` could not read from the working tree used to be skipped — with a WARN when it was
+  unreadable, silently when it was deleted, replaced by a directory or hidden — and the run reported clean. It now
+  scans that file's index copy, with a WARN naming why: unreadable, missing, not a regular file, or hidden by a
+  directory that cannot be searched. A tracked file replaced by a symlink has its target string scanned, as
+  before, and now its index copy too. An absent sparse-checkout (skip-worktree) entry is scanned from its index
+  copy, counted in one summary line. A mid-merge (unmerged) file is read from its working file or symlink, if
+  any, and from each of its stages' index copies; a hit they share prints once, and one WARN names the path.
+  New causes of exit 2: git cannot read an index copy; the working file of an unmerged path cannot be read — it
+  is unreadable, or a directory that cannot be searched hides whether it exists; or its working symlink cannot be
+  read (dir #746).
+  Hit lines print in the same form as before. Upgrading: an ERE allowlist entry now matches the line's content
+  only; use `path:` for a path.
+
+- **`tools/self/doctor.sh` refuses instead of reporting OK when it cannot list the files it checks.** A failing
+  `shellcheck-targets.sh` used to read "OK   shellcheck: no tracked shell scripts to check" (a process substitution
+  hid its exit status), and a corrupt index printed OK beside `fatal:` for the dead-reference, slash-command and
+  PIPESTATUS checks. Each of the five `git ls-files` enumerations and the selector now checks its status: a failure is
+  a GAP, `could not list <what> (exit <N>) — <check> is INCOMPLETE`, that check prints no OK line, and the run exits 1.
+  The tool-wiring loop is skipped when its reference files could not be listed, so no tool is falsely named
+  unreferenced. Its `git grep`, `git log` and `git tag` reads still print OK when git fails (dir #766). A stale "line 56" cite in a comment is now "near the top" (dir #738).
+
+- **`tools/doctor.sh`'s secret-guard checks stop saying OK when the guard is not whole.** dir #747:
+  Keel's `pre-push` absent or not executable beside a working `pre-commit` — and a `secret-scan.sh` absent beside Keel's hooks — is now a
+  `W-GUARD-UNWIRED` / stale finding in `--install` and the per-repo audit (a commit made with hooks bypassed used to
+  reach the remote while doctor said OK; a user's own hooks dir keeps its old bar). An EMPTY or valueless
+  `core.hooksPath` is named, with the way out per scope (the old advice was refused by the installer), a
+  worktree-scope setting gets `--worktree` advice, and `--install` checks the `artifact-cksum.sh` and `safe-write.sh`
+  libs that `install.sh` and `uninstall.sh` require (`G-REQUIRED-LIB`). The env-file floor (and every other scan that skips build trees, the per-stack gate scans included) now scans a project whose own
+  root is named `build`/`dist`/`out`/`vendor`/`target`, and also reports `*.env.bak`-style backups and upper-case
+  `*.ENV`.
+
+- **`install.sh` and `uninstall.sh` stop clobbering the checkout, an adopter's links and consented edits.**
+  A home that is the Keel checkout, or lies inside it, is refused by both with exit 2 before anything is
+  created (an uninstall there used to move tracked files out). Whether a link recorded with its target is
+  Keel's is now one test, shared by install, uninstall and `doctor.sh`'s dangling-link check: that target
+  must lie inside the checkout that wrote the record, so uninstall no longer moves an adopter's link that an
+  older manifest recorded; `tools/lib/manifest.sh` is therefore required by `install.sh` too. Answering `y`
+  at "Overwrite your copy" or `[u]` at the alias prompt now backs the file up first, as `--force` does.
+  Smaller fixes: linked mode no longer advises deleting a `docs/` that is a link into the checkout; a
+  `CLAUDE.md` with no rails is reported as carrying no Keel rails block; the hook installers count "hook
+  entries"; uninstall names the compatibility links Keel left under `.keel` (dir #748, dir #754).
+
+- **The installer's guards are pinned against the code as it now stands, and the adopter prose is swept.** dir #749
+  (the last slice of spec 685 round 2) adds the missing fixtures behind guards the 0.15.0 audit could remove without a
+  test noticing: the `bin/` product-directory guard, a copy-mode run over Keel's own stale links, the legacy `-`
+  placeholder record (a dead link is Keel's, a live one is not), the `bin/keel` in-sync adopter link whose old record
+  must be dropped, uninstall's anchored rails check (a prose-only `CLAUDE.md` is no longer a rails file), the doctor's
+  provenance clauses for a dangling link, every `single_def_check` line of the self-doctor (deleted or given an
+  `install.sh` exemption), the demo scripts' sandbox-escape rows (one override per run, and a `KEEL_HOME` fixture the
+  resolver really reads), and the `$(type -P git) -C` detector's other spellings. Each pin names the mutation that turns
+  it red. dir #723 corrects the removal lists (they omit the agent link and `bin/keel`; `uninstall.sh`'s header omits
+  `agents/` and `docs/`), says the `templates/CLAUDE.md` map is at the top and where `docs/` goes, dates the
+  `LEARNINGS.md` entry format and gives `IDEAS.md` its drop convention (so `docs/triage.md` agrees with both), drops the
+  `REVIEW_HISTORY.md` name `docs/triage.md` used for a file nothing ships, restates the FRAMEWORK + PRINCIPLES figure in
+  `docs/loading-and-cost.md` (~19.3K; its test now pins the sum to the line's own rounding, not just to ±10%), and lists
+  the commands, tools and doc that `docs/reference.md` left out.
+
+- **`install.sh`'s Verify now says when the always-on rails will not load, and the remedies it and `doctor.sh`
+  advise keep the home's own mode.** A link or non-regular file the run declined is reported as "not provably
+  Keel's" instead of "yours": with the manifest lost, a link Keel made itself lands there too. The "rails will
+  NOT load" warning now also fires, in linked mode, when `CLAUDE.md` imports `keel/CORE.md` but that file does
+  not resolve, and, in either mode, when the context file is not a regular file; the run still exits 0, and an
+  embedded rails block is kept while it is the only copy that loads. Verify's re-run advice carries `--link`
+  (and `--no-git`) for a linked home, and `doctor.sh`'s remedies take the flags from the home's install
+  manifest (or, without one, from its layout), so following a dangling-link remedy no longer turns a copy-mode
+  home into a linked one or advises `--codex` for a Claude slot. The one exception is the advice for a
+  `CLAUDE.md` importing a `keel/CORE.md` that does not resolve: it still names `--link`, now after removing
+  whatever blocks that file (dir #789 decides what such an import means). A named pipe at `CLAUDE.md` no
+  longer hangs `install.sh --link`: it is declined with one line. Under `--no-hooks`, Verify says when a
+  conditional `[includeIf]` include would refuse a run without the flag. The one-line bootstrap's summary lists
+  `/go`'s handoff note among the things that need a kept checkout (dir #751, dir #752, dir #743, dir #691).
+
+- **`install.sh` no longer leaves its run lock behind when it stops early.** Every exit after the lock is
+  taken and its pid recorded now releases it — a refused write, a failed check, a missing library, a
+  `set -u` abort, Ctrl-C or `kill` — through one exit trap in the completion-marker form, so an abort is
+  still reported as a failure, never as success; Ctrl-C and `kill` exit 130 and 143. A run removes the
+  lock only while it still names that run, so a lock another install has taken over is left alone. A
+  missing `tools/lib/safe-write.sh` is now caught before the home is created, so that refusal leaves
+  nothing behind. Only a crash no handler can follow (`kill -9`, a power loss) still leaves the lock,
+  which the next run reclaims as before (dir #757, dir #756).
+
+- **A draft test section that sources `tests/section-guard.sh` now stops before its first git call unless `tests/lib.sh`'s sandbox is loaded.** A worker's scratch
+  fixture sourced in a plain shell has no `new_repo`, so `git -C "" config …` wrote the repository the shell stood
+  in (once, the main checkout's shared `.git/config`, which broke git in every worktree). `tests/section-guard.sh`,
+  sourced right after a draft's `lib.sh` line, exits the shell unless `tests/lib.sh`'s sandbox is loaded, and
+  refuses outright under any shell that is not bash (`lib.sh` half-loads under zsh and still returns 0).
+  `docs/delegation.md` carries the rail ("Draft test sections"), written for any project's test harness with
+  Keel's own form marked; `tests/test_section_guard.sh` pins both. dir #758.
+
+- **`docs/release-management.md`: practice corrections from the 0.15.0 and 0.16.0 managed releases, each written at
+  its requirement (R2, R3, R6–R11).** They cover the cost of sequential merges and how an integration or train PR
+  is built, a launch needing an operator-started turn, a cap on cross-session sends, a checked backlog writer, a
+  stacked cut PR, seam plans for both merge orders, and the sweep, stop and concurrency rules of R11.
+  `commands/manage-release.md` and `commands/groom.md` carry matching pointers, and `docs/delta-audit.md`'s
+  mutation-leg `df` floor now names a value. dir #760.
+
+- **Two review rails, adapted from a public gated motion-design harness prompt (dir #773).** `/polish` step
+  10's summary names every fixed finding as `file:line` and what changed, never a bare "addressed".
+  [`docs/verification-economics.md`](/docs/verification-economics.md) §7 treats the operator's own review as
+  the last net: an error it finds that nothing caught earns a check one layer up; a taste note goes into the
+  project's conventions only if it recurs, never into a check.
+
+- **The secret-guard installer's files no longer depend on your umask, and the changelog cut refuses instead of dropping fragments.**
+  Found by the 0.16.0 delta audit (S7-1, S11-4). `tools/install-secret-guard.sh` now places the hooks and the
+  scanner with mode 755 (the library `range-lib.sh` 644) under any umask; since the rename-based write landed they
+  came out group-writable under umask 002 and world-writable under umask 000, where 0.15.0 gave 755/644.
+  `tools/self/changelog-fragments.sh` now exits 2 (`could not list changelog.d/`) when `git ls-files` fails, rather
+  than reading it as "no fragments" — the cut used to write the release section without them and exit 0.
+
+- **The 0.16.0 audit's remaining wording fixes land.** The header prose of the ledger's session column, the subagent git floor's git-version and plumbing-ref disclosure, the self-doctor headline's scope (dir #766 names what still reads OK on a failed git read), the unparsable-config wording in the include-walk entry, the cut-simulation FAIL and grooming G5 sentences, and one prune horizon for FRAMEWORK.md and docs/triage.md now say what the code and docs do.
+
+- **The 0.16.0 release-candidate audit's false sentences are corrected.** The changelog entries for the subagent git floor, the copy-mode advice, the test-section guard, the hang bound, the ledger `session` column, the mutant list's size and `--no-history`'s missing-file GAP now say what the code does; `docs/reference.md` says the secret-guard installer decides "Keel's hook" by marker plus a shipped body; `docs/delta-audit.md` and `derive.sh --help` say `changelog.d/` fragments fold into one ledger row; `FRAMEWORK.md` and `docs/triage.md` state one prune horizon (`/triage`'s).
+
+- **`tools/doctor.sh`'s secret-guard advice no longer loops on an edited Keel hook.** The body-exact installer
+  (dir #683) refuses to replace a Keel-marked hook that was edited, yet doctor's stale and half-wired advice (machine-wide
+  and per repo) told the user to re-run it plainly and got exit 3. Where the installer would refuse, the advice now adds
+  `--force` and says the edited copy is saved as `<hook>.pre-keel.bak` (and to move an earlier waiting `.pre-keel.bak`
+  aside first, which the installer refuses even with `--force`); a linked hook, or a hooks dir that is not Keel's own,
+  gets no `--force`; the per-repo stale advice names the repo's path instead of `<this repo>`. A fixture runs each advised command as printed and checks the warning clears.
+  The note-linked `W-CORE-DRIFT` message now says bare `--with-git` exits 2 in a copy home and `--link --with-git` would migrate it
+  (the 0.16.0 delta audit, S6-1 and S6-2).
+
+- **Tickets slated for 0.16.0 that carry no entry of their own, and why.** Returned to the pool for 0.17.0: dir #700
+  and dir #702. Superseded: dir #676, by dir #675. Delivered on the knowledge-base side, so no Keel artifact:
+  dir #690 and dir #727. An analysis report only, nothing shipped: dir #733. Partly deferred: the (b) half of
+  dir #673 moves to dir #783, and slice 5 of dir #744 to dir #784. Every other slated ticket (51 of the 57) is
+  credited above by its `dir #N`.
 
 ## [0.15.0] — 2026-10-09
 
