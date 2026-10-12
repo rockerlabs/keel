@@ -348,8 +348,11 @@ this rule nor G7 said so, which is how a manager ends up either duplicating a ro
 groom's figures to be retold inside the next one. It is deliberately a DIFFERENT file from the record
 audits keep: this rule's scope is the release-management run, the audit record's is the RC pass that
 follows it. Until this clause pointed at G7 it named only the audit record, leaving a manager with a
-genre and no path. **The manager is expensive by construction: it holds the whole release's
-context, which is the same property that makes it useful.** The sharp edge is duration — a release
+genre and no path. Where the two share a file name (keel's are both `RUNS.md`), the close names this one
+by its full path, and the release is not closed while its row still carries the groom's "completes this
+at the tag" placeholder: the 0.16.0 manager wrote only the audit row and closed with this row's run
+cells empty (the 0.17.0 groom). A rule of the procedure, not a compensation. **The manager is expensive
+by construction: it holds the whole release's context, which is the same property that makes it useful.** The sharp edge is duration — a release
 spanning more than one day, with breaks, means paying full input price on that context repeatedly
 instead of reading it from cache, so a single-sitting release and a week-long one have completely
 different economics for the same work. This is a real trade against convenience, not a free win, and
@@ -395,6 +398,11 @@ is checked against the constant at write time — before writing each closure ma
 a non-zero exit means the word is not recognised, and the manager either writes a recognised word or
 widens the constant in the same PR — so the next unlisted word is refused there rather than
 discovered by the next census.
+
+**A ticket the manager files carries a release tag on its heading, `→ pool` when nothing else fits
+(the 0.17.0 groom).** Seven of the 0.16.0 manager's filings had none. The census lists them as
+`untagged`, and the pool report counts only `→ pool`, so they sat outside every pool reading until a
+groom tagged them. A rule of the procedure, not a compensation.
 
 **This overrides a conforming `/go`'s own claim step.** `/go`'s own instructions have the worker write
 its own `⏳ IN FLIGHT` marker directly onto the ticket heading — correct in a standalone run, and a

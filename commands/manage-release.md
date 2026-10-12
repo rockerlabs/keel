@@ -59,7 +59,9 @@ exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses
 notes yourself from the `CHANGELOG.md` section at the verified GO SHA, before the tag exists; hand the
 operator every remaining action (merge, tag, publish, and install where the build has a daily-use
 location) as one copy-paste-ready command block, re-derived live. Complete the run's cost line (R7), summed at the weights the groom's
-estimate names, in your project's releases cross-run record.
+estimate names, in your project's releases cross-run record — named by its full path, never the audits'
+record (keel: `private/releases/RUNS.md`); the release is not closed while that row still carries the
+groom's placeholder.
 
 **M9 — one wrap, at the end (R13).**
 Workers never run their own wrap; each checkpoint report carries its wrap-relevant material

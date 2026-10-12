@@ -121,7 +121,10 @@ G0 the first moment its absence is visible to anyone — and the first groom to 
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
 is recorded as lost rather than invented. The same applies to that run's harvest, which the paragraph
-below already owns — check it there, not twice.
+below already owns — check it there, not twice. **The releases record's row is checked
+too (the 0.17.0 groom):** where its run cells are still empty after the close
+([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
+describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
 inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
@@ -375,6 +378,12 @@ settled fact.
 - **Re-examine on merit.** A ticket carried by two or more consecutive mechanical re-tags (its release
   tag moved without anyone reading its body) gets one read-the-body pass rather than a third silent
   carry-forward.
+- **Fold the leftover ticket drafts.** An unnumbered draft beside the backlog (keel: `BACKLOG.drafts/`,
+  the convention in `FRAMEWORK.md`'s backlog section) is invisible to every census, pool reading and
+  slate, and one written from another project's session or by a release worker has no wrap of its own to
+  fold it; the 0.17.0 groom found 23, one a spec-ready design. The sweep folds each by the project's own
+  fold procedure (keel: `/backlog` step 2b), tagged `→ pool`; it joins a slate only through G1's lane
+  rule. A rule of the procedure, not a compensation.
 
 **Plus the accumulator triage** — three places findings and ideas already pile up and, without a named
 owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`
