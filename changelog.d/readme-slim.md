@@ -8,6 +8,8 @@
   - The gate's `SubagentStart` rails hook, its git floor and their off switches are in
     [`docs/getting-started.md`](/docs/getting-started.md) §6, beside the rest of the gate's wiring; the
     linked install's note that the secret-guard hook is a copy is in its Linked install section.
+  - The machine-watch watcher's one-time macOS Script Editor step is on `docs/reference.md`'s
+    `tools/machine-watch.sh` row, beside its notification switches.
   - The `keel` CLI's verb list is pinned on `docs/reference.md`'s keel row alone; the README points at
     `keel help`.
   - The tests that pinned this prose in the README now pin it where it lives.
