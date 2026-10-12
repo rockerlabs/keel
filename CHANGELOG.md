@@ -21,9 +21,9 @@ sections real content going forward — see that page for exactly when each one 
 filed or sits on the project's standing list. (1) Vendor-review round stores written by an earlier version keep
 their old modes: run `chmod -R go-rwx "$HOME/.keel/vendor-review"` once to close them (dir #705). (2) The
 self-check `tools/self/doctor.sh` still prints OK when one of its `git grep`, `git log` or `git tag` reads fails
-(dir #766). (3) The pre-PR gate now refuses a Bash call that holds a `$(case … in …)` expansion followed by
-a git or gh command, even when the case word is harmless; split it into two calls (an accepted false deny of
-dir #745's reader). The audit's other open findings are filed or sit on the project's standing list.
+(dir #766). (3) The pre-PR gate now refuses a Bash call whose segment holds a `$(case … in …)` expansion and the
+letters `git` or `gh` anywhere from there to the end of the command, even when the words are harmless; split it into
+two calls (an accepted false deny of dir #745's reader). The audit's other open findings are filed or sit on the project's standing list.
 
 - **`/polish` step 5: the K2 review subagent quotes the skill's first line after `Result:`, and a bare `(none)` is clean only at `low`.**
   dir #736: a forked `/code-review` that returned a bare `(none)` read as a clean pass, though no review body
@@ -62,7 +62,7 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
   failure is a GAP `could not <step> (exit N) — the audit is INCOMPLETE`, the check it fed is skipped, the audit
   goes on, and the exit is 1. The content-reading `git log`s pass `--text --no-textconv --no-ext-diff` (a `-diff`
   attribute or a textconv driver hid a literal from history), the history spools are NUL-stripped, a repository
-  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed when a `--token` or a personal-literals file is in play. dir #746:
+  with no commit yet is audited, and `--no-history` GAPs on a tracked file deleted but not committed when a `--token`, a `token:` line in `.public-audit` or a personal-literals file is in play. dir #746:
   `public-audit.sh` on a directory that is not a git repository (or when `mktemp` fails) now exits 2 instead of
   scanning nothing — so `keel audit` run from a non-git directory exits 2. dir #694, dir #740: the personal
   literals are read from a pattern file, one pattern per line (two literals never fuse into one ERE), the byte
@@ -193,7 +193,7 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
   dir #745 (PR-1 of 3, no gate behaviour change): `tools/self/mutation-sweep.sh <list>` breaks one clause of a
   file per row of a checked-in list, runs a test file against each break and reports KILLED, SURVIVED, TIMEOUT or
   CRASHED (its `--check` mode keeps the list current; `tests/test_mutation_lists.sh` runs it).
-  `tests/mutants/pre-pr-gate.tsv` lists the gate reader's single-clause mutants (46 of the bypassed-push deny at PR-1, rewritten against the lexer in PR-2: 269 rows); the dir #731 A18 block moved to
+  `tests/mutants/pre-pr-gate.tsv` lists the gate reader's single-clause mutants (46 of the bypassed-push deny at PR-1, rewritten against the lexer in PR-2: 269 rows then, 285 after the case-pattern fix); the dir #731 A18 block moved to
   `tests/test_pre_pr_gate_lexer.sh` kills 29 of the 46 before this change and all 46 after (17 new deny forms, and
   every deny now asserts the push rule's own reason). `tests/test_release_audit_doc.sh` also pins the
   `commands/polish-guide.md` § Step 9 cite itself.
@@ -223,7 +223,7 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
   [`docs/delegation.md`](/docs/delegation.md)) — when it is aimed at the session's repository or any worktree of it, found through the payload cwd, the `cd`s before it, `-C`, `--git-dir`/`GIT_DIR` and
   `--work-tree`/`GIT_WORK_TREE`. Reads, and work in a scratch clone (`git -C <clone>`), are untouched; your own
   commands are never touched. It needs no installer re-run: a `git pull` is enough, in every session whose gate is
-  wired. It needs git 2.31 or newer (an older git leaves the floor silently off), and `git fetch <remote> +src:<local-branch>` and other plumbing ref writers pass. It is a seatbelt, not a sandbox — a script, `sh -c`, an alias, a variable path or a plain `rm` are not
+  wired. It needs git 2.31 or newer (an older git leaves the floor silently off), and these pass: `git fetch <remote> +src:<local-branch>` (any fetch with a local destination), `git fast-import`, `git subtree` and `git pack-refs` (`update-ref` and `symbolic-ref` are denied). It is a seatbelt, not a sandbox — a script, `sh -c`, an alias, a variable path or a plain `rm` are not
   seen. A subagent started with `isolation: "worktree"` is denied its own commits too.
   `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment switches it off; the PR and push rules stay.
 
@@ -326,7 +326,7 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
   its leg. `tests/test_run_sh.sh` proves its concurrency checks by a peak count and times only kill→exit,
   never runner start-up; each `kill -0` wait on a background process takes its bound from
   `KEEL_TEST_HANG_BOUND` (120 s) in whole seconds, linted by `tests/test_suite_hygiene.sh`; a few
-  start-marker waits keep a literal 5–20 s bound.
+  start-marker waits keep a literal 5–30 s bound.
 - **The test sandbox explains its own failures (dir #744 slice 2).** `tests/lib.sh` turns off git's
   detached auto-maintenance for every test (appended to the `GIT_CONFIG_COUNT` triple, so an inherited entry
   survives); a sandbox teardown that fails names what survived and which processes held it, then retries
@@ -347,13 +347,18 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
   lexer read the first `)` of `${v:-$(case x in x) ;; esac; git push --no-verify)}` as the end of the `$(…)`, so the
   rest of the substitution was read in the enclosing context — as data inside the `${…}`, or as more arguments of the
   enclosing command (`echo $(case x in a) git push --no-verify;; esac)`) — and a push v0.15.0 denied was allowed. A
-  `)` that closes a `$(…)` while a `case` is open in it (any pattern form: `a|b`, a newline before `in`, a nested
-  `case`, a prefix such as `env` or `coproc` before the `case`), in any context, is now an unread part: if the text
-  from there to the end mentions git or gh, the command is refused with the reason, as for the other parts the reader
-  cannot settle. A push the reader still finds as a command of its own is denied as a push. The cost is a refusal for
-  a harmless `$(case …)`, or a `$(…)` holding the words `case … in`, followed by a later git command in the same call
-  (a rewrite in two Bash calls clears it). The double-quoted and heredoc-body shapes, which v0.15.0 also allowed, are
-  covered by the same rule. Sixteen mutants of the new clauses join the reader's mutation list.
+  `)` that closes a `$(…)` while a `case` is open in it (a `a|b` pattern, a newline before `in`, a nested `case`, a
+  prefix such as `env` or `coproc` before the `case`), in any context, is now an unread part: if the text from the
+  start of the segment holding the `$(case …)` to the end of the command holds the letters `git` or `gh`, the command
+  is refused with the reason, as for the other parts the reader cannot settle. The test is on the letters, so `high`,
+  `right`, `github`, `digit` and `legit` count, the case's own patterns included. A push the reader still finds as a
+  command of its own is denied as a push. The cost is a refusal for a harmless `$(case …)`, or a `$(…)` holding the
+  words `case … in`, with those letters anywhere in that stretch — and so also for a git or gh command that carries
+  the substitution as an argument (`git commit -m "$(case …)"`, `git log --since=$(case …)`); a `$(case …)` with none
+  of those letters in that stretch is allowed, and a rewrite in two Bash calls clears a refusal. The double-quoted
+  and heredoc-body shapes, which v0.15.0 also allowed, are covered by the same rule. Still open, and not a refusal: an
+  `esac` as the first pattern on its own line, a prefix word before a `case` header split over lines (both named in
+  the gate's header), and a `case` inside a `( … )` group inside an unquoted `${v:-$(…)}` (dir #792). Sixteen mutants of the new clauses join the reader's mutation list.
 
 - **The pre-PR gate reads a command the way the shell will.** dir #745 (PR-2 of 3): one lexer reads the whole
   command — quotes glued to their words, `$(…)` and backticks (inside double quotes and expanding heredoc bodies
@@ -476,14 +481,11 @@ dir #745's reader). The audit's other open findings are filed or sit on the proj
 
 - **The secret-guard installer's files no longer depend on your umask, and the changelog cut refuses instead of dropping fragments.**
   Found by the 0.16.0 delta audit (S7-1, S11-4). `tools/install-secret-guard.sh` now places the hooks and the
-  scanner with mode 755 (the library `range-lib.sh` 644) under any umask; since the rename-based write landed they
-  came out group-writable under umask 002 and world-writable under umask 000, where 0.15.0 gave 755/644.
+  scanner with mode 755 (the library `range-lib.sh` 644) under any umask, so what lands no longer depends on the
+  caller's. 0.15.0's copy gave 755/644 under umask 022, 002 and 000 and 700/600 under umask 077; under umask 077 the
+  files are now 755/644.
   `tools/self/changelog-fragments.sh` now exits 2 (`could not list changelog.d/`) when `git ls-files` fails, rather
   than reading it as "no fragments" — the cut used to write the release section without them and exit 0.
-
-- **The 0.16.0 audit's remaining wording fixes land.** The header prose of the ledger's session column, the subagent git floor's git-version and plumbing-ref disclosure, the self-doctor headline's scope (dir #766 names what still reads OK on a failed git read), the unparsable-config wording in the include-walk entry, the cut-simulation FAIL and grooming G5 sentences, and one prune horizon for FRAMEWORK.md and docs/triage.md now say what the code and docs do.
-
-- **The 0.16.0 release-candidate audit's false sentences are corrected.** The changelog entries for the subagent git floor, the copy-mode advice, the test-section guard, the hang bound, the ledger `session` column, the mutant list's size and `--no-history`'s missing-file GAP now say what the code does; `docs/reference.md` says the secret-guard installer decides "Keel's hook" by marker plus a shipped body; `docs/delta-audit.md` and `derive.sh --help` say `changelog.d/` fragments fold into one ledger row; `FRAMEWORK.md` and `docs/triage.md` state one prune horizon (`/triage`'s).
 
 - **`tools/doctor.sh`'s secret-guard advice no longer loops on an edited Keel hook.** The body-exact installer
   (dir #683) refuses to replace a Keel-marked hook that was edited, yet doctor's stale and half-wired advice (machine-wide
