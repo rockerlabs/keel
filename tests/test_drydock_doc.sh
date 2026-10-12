@@ -12,7 +12,6 @@ doc="$REPO_ROOT/docs/drydock.md"
 audit="$REPO_ROOT/docs/release-audit.md"
 rollout="$REPO_ROOT/docs/rollout-audit.md"
 checklist="$REPO_ROOT/docs/publishing-checklist.md"
-readme="$REPO_ROOT/README.md"
 delegation="$REPO_ROOT/docs/delegation.md"
 delta_audit="$REPO_ROOT/docs/delta-audit.md"
 reference="$REPO_ROOT/docs/reference.md"
@@ -37,9 +36,9 @@ check_file "tools/audit-packet/export.sh exists" "$REPO_ROOT/tools/audit-packet/
 check_file "tools/audit-packet/import.sh exists" "$REPO_ROOT/tools/audit-packet/import.sh"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
-pin "README Docs section links docs/drydock.md" \
-  "$readme" '[`docs/drydock.md`](docs/drydock.md)' \
-  "expected the Docs section to list drydock.md the way it lists release-audit.md"
+pin "docs/reference.md Docs index links docs/drydock.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/drydock.md`](drydock.md)' \
+  "expected docs/reference.md's Docs index to list drydock.md the way it lists release-audit.md"
 
 # --- the family cross-links, pinned on BOTH legs (the changelog claims they are two-way) ----------
 pin "drydock.md links release-audit.md" "$doc" '](release-audit.md)' \
@@ -197,7 +196,7 @@ pin "drydock.md links the code-auditor prompt" "$doc" '](drydock/code-auditor.md
   "expected the role-prompt section to link the fourth template"
 pin "reference.md now counts five drydock role-prompt templates" \
   "$reference" 'five [`docs/drydock/`](drydock/) role-prompt templates' \
-  "dir #495 PR2 ships a fifth template; the Extras section's count must follow"
+  "dir #495 PR2 ships a fifth template; reference.md's count must follow"
 check_absent "reference.md no longer undercounts at four" \
   "$(cat "$reference")" 'four [`docs/drydock/`](drydock/) role-prompt templates'
 

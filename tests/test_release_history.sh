@@ -36,7 +36,6 @@
 # test_self_doctor.sh's own, for a single-page digest check) rather than silently accepted.
 
 history="$REPO_ROOT/docs/release-history.md"
-readme="$REPO_ROOT/README.md"
 changelog="$REPO_ROOT/CHANGELOG.md"
 
 check_file "docs/release-history.md exists" "$history"
@@ -48,9 +47,9 @@ fi
 
 # --- README discoverability: an adopter-usable doc not linked from the Docs index is as good as
 # unshipped (same class test_release_audit_doc.sh already guards for release-audit.md). -------------
-pin "README Docs section links docs/release-history.md" \
-  "$readme" '[`docs/release-history.md`](docs/release-history.md)' \
-  "expected the Docs section to list release-history.md the way it lists release-audit.md"
+pin "docs/reference.md Docs index links docs/release-history.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/release-history.md`](release-history.md)' \
+  "expected docs/reference.md's Docs index to list release-history.md the way it lists release-audit.md"
 
 pin "CHANGELOG.md header links docs/release-history.md" \
   "$changelog" '[`docs/release-history.md`](docs/release-history.md)' \

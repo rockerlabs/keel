@@ -21,9 +21,9 @@ check_file "README.md exists" "$readme"
 
 # --- README discoverability: a new adopter-usable doc that isn't linked from the Docs index is as
 # good as unshipped (same class dir #85's docs layer would have flagged). ------------------------
-pin "README Docs section links docs/release-audit.md" \
-  "$readme" '[`docs/release-audit.md`](docs/release-audit.md)' \
-  "expected the Docs section to list release-audit.md the way it lists rollout-audit.md/going-public.md"
+pin "docs/reference.md Docs index links docs/release-audit.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/release-audit.md`](release-audit.md)' \
+  "expected docs/reference.md's Docs index to list release-audit.md the way it lists rollout-audit.md/going-public.md"
 
 # --- commands/backlog.md carries the two new steps release-audit.md's phase 2 hands work to -------
 pin "backlog.md: step 3b (target-release label) exists" \

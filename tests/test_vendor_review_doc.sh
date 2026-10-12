@@ -6,7 +6,6 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 doc="$REPO_ROOT/docs/vendor-review.md"
-readme="$REPO_ROOT/README.md"
 reference="$REPO_ROOT/docs/reference.md"
 delta_audit="$REPO_ROOT/docs/delta-audit.md"
 grooming="$REPO_ROOT/docs/grooming.md"
@@ -23,9 +22,9 @@ check_file "tools/vendor-review/agy.sh exists" "$client"
 check_executable "tools/vendor-review/agy.sh" "$client"
 
 # --- discoverability: README and reference.md both list it -----------------------------------------
-pin "README Docs section links docs/vendor-review.md" \
-  "$readme" '[`docs/vendor-review.md`](docs/vendor-review.md)' \
-  "expected the Docs section to list vendor-review.md the way it lists drydock.md"
+pin "docs/reference.md Docs index links docs/vendor-review.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/vendor-review.md`](vendor-review.md)' \
+  "expected docs/reference.md's Docs index to list vendor-review.md the way it lists drydock.md"
 pin "reference.md Tools table lists tools/vendor-review.sh" \
   "$reference" '[`tools/vendor-review.sh`](../tools/vendor-review.sh)' \
   "expected the Tools table to name the shipped script"
