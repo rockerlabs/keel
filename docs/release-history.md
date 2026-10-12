@@ -69,7 +69,7 @@ suite 148 files, 13,818 passed, 0 failed in a clean clone. Pass 2, every one of 
 fix-before-tag set, the two promoted riders, the operator's extra gate fix and the cut's curation item) has a
 status: 11 closed, 5 partial (each a clause too narrow, a count that moved, or a gate variant) and 1 left to the cut.
 **Findings:** pass 1, 99 ids filed, 93 distinct, 90 accepted (2 medium, 8 low-medium, 80 low), 3 rejected; of the
-accepted, 13 were fix-before-tag (one code, twelve wording), 33 ticket-next, 3 known-issue-in-changelog and 45
+accepted, 13 were fix-before-tag (one code, twelve wording) and the rest ticketed, disclosed or recorded as
 no-action. The one code finding — the secret-guard installer's hooks and scanner coming out group-writable under
 umask 002 and world-writable under umask 000, where 0.15.0 gave 755/644 — was fixed in the round, with the two
 promoted riders (the fragment reader failing on a failing listing, doctor's advice loop on an edited Keel hook) and
