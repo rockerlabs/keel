@@ -215,9 +215,14 @@ if ! git -C "$work" checkout -q --detach "$sha" 2>/dev/null; then
 fi
 [ -f "$work/$tfile" ] || refuse "the test file is not in HEAD: $tfile"
 
-# sig_group SIGNAL PID — signal PID's process group; if there is none (job control did not take, so PID leads no
-# group of its own), fall back to PID alone — the old alarm's reach — rather than let a hang block the sweep forever.
-sig_group() { kill "-$1" -- "-$2" 2>/dev/null || kill "-$1" "$2" 2>/dev/null || true; }
+# sig_group SIGNAL PID [group-only] — signal PID's process group. If there is none (job control did not take, so PID
+# leads no group of its own) fall back to PID alone — the old alarm's reach — rather than let a hang block the sweep
+# forever; but never once PID has been reaped (`group-only`): its number may be someone else's by then.
+sig_group() {
+  kill "-$1" -- "-$2" 2>/dev/null && return 0
+  [ "${3:-}" = group-only ] || kill "-$1" "$2" 2>/dev/null || true
+  return 0
+}
 
 # run_test → sets rc, summary ('' when none), nfailed (its failed count) and out_file (this run's output).
 run_test() {
@@ -229,21 +234,23 @@ run_test() {
   # mutant that makes a CHILD spin (the gate's awk, under a `$(…)` the test file's bash waits on) is cut down with
   # it, where an alarm to the file's bash alone left the child running. TERM first, so the file's own cleanup traps
   # run; KILL 5 s later, and again right after the leader is reaped — a child that ignores TERM outlives its leader.
-  # The watchdog leaves a marker before it signals; TIMEOUT needs the marker AND a signal death (status >= 128), so a
-  # file that finished on its own just as the bound passed keeps its real verdict and a mutant that merely dies of a
-  # signal is CRASHED. `wait` runs inside braces so bash's "Killed" report goes to the null device.
+  # The watchdog leaves a marker, only while the leader is still alive, right before it signals: marker = TIMEOUT, so
+  # a hang whose TERM trap exits with a small status still counts as one, a file that finished on its own as the bound
+  # passed keeps its real verdict, and a mutant that merely dies of a signal is CRASHED. Without job control the
+  # sweep degrades to the leader alone (a child that outlives it leaks). `wait` runs inside braces so bash's "Killed"
+  # report goes to the null device.
   local pid wd
   set -m
   ( cd "$work" && exec bash "$tfile" ) </dev/null >"$out_file" 2>&1 &
   pid=$!
-  ( sleep "$timeout"; : >"$out_file.timeout"; sig_group TERM "$pid"; sleep 5; sig_group KILL "$pid" ) >/dev/null 2>&1 &
+  ( sleep "$timeout"; kill -0 "$pid" 2>/dev/null || exit 0; : >"$out_file.timeout"; sig_group TERM "$pid"; sleep 5; sig_group KILL "$pid" group-only ) >/dev/null 2>&1 &
   wd=$!
   set +m
   { wait "$pid" || rc=$?; } 2>/dev/null
   sig_group KILL "$wd"; { wait "$wd" || true; } 2>/dev/null   # the watchdog's own group, so its `sleep` goes too
   if [ -e "$out_file.timeout" ]; then
-    sig_group KILL "$pid"
-    if [ "$rc" -ge 128 ]; then rc=142; fi
+    sig_group KILL "$pid" group-only
+    rc=142
   fi
   rm -f "$out_file.timeout"
   summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$out_file" | tail -n 1 || true)"

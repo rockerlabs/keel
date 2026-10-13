@@ -198,12 +198,16 @@ check_contains "…it occurs twice" "$OUT" "m-over: needle occurs 2 times in ove
 # The mutated test file waits on a `$(…)` child that never ends (the gate's awk, in the felt case). A signal to the
 # test file's own bash alone — the old perl alarm — left that child running; the sweep now signals the whole process
 # group. The child records its own pid first so the check can name it; a survivor is killed here so a red run does
-# not leave it behind. Two children: one that dies of TERM, and one that ignores it (so it outlives its leader and only
-# the KILL after the leader is reaped removes it).
+# not leave it behind. Three hangs: a child that dies of TERM; one that ignores it (so it outlives its leader and only
+# the KILL after the leader is reaped removes it); and a test file whose TERM trap exits 1, which must still read as
+# TIMEOUT, not as a failing run that killed the mutant.
 spin_test() {
   fixture_test | sed '$d'
   cat <<'EOS'
 if grep -q 'spin_marker=yes' app.sh; then
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+elif grep -q 'spin_marker=trapexit' app.sh; then
+  trap 'exit 1' TERM
   x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
 elif grep -q 'spin_marker=term' app.sh; then
   x="$(sh -c 'trap "" TERM; echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
@@ -237,6 +241,7 @@ spin_case() {
 }
 spin_case m-spin spin_marker=yes "a child that never ends"
 spin_case m-spin-term spin_marker=term "a child that ignores TERM"
+spin_case m-spin-trapexit spin_marker=trapexit "a child while its TERM trap exits 1 (a hang is not a failing run)"
 
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
 sweep_in "$fx"
