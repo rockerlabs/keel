@@ -291,7 +291,7 @@ BEGIN {
   blank("[0-9]?[0-9]:[0-9][0-9]Z?", 0, 0)
   blank("[0-9]+(st|nd|rd|th)", 0, 0)
   blank_shas()
-  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?[A-Za-z]*", 0, 1)
+  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?(\\.[0-9]+)*[A-Za-z]*", 0, 1)
   blank(re_x6, 1, 1)
   blank(re_x6s, 0, 0)
   blank(re_x7, 1, 1)
@@ -322,7 +322,7 @@ BEGIN {
     } else if (substr(s, e, 1) == "-" && substr(s, e + 1, 1) ~ /[A-Za-z]/) {
       match(substr(s, e + 1), /^[A-Za-z]+/); e += 1 + RLENGTH; nword = 1
     }
-    if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*/)) { e += RLENGTH; nonint = 1 }
+    if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*(\.[0-9]+)*/)) { e += RLENGTH; nonint = 1 }
     nc++
     cpos[nc] = st; ctext[nc] = substr(s, ds, e - ds)
     v = digits; gsub(/,/, "", v); cval[nc] = nonint ? "-" : v
