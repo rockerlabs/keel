@@ -222,15 +222,15 @@ EOS
 fxs="$(mkfixture "$(spin_test)")"
 printf 'spin_marker=no\n' >>"$fxs/app.sh"
 git -C "$fxs" commit -qam 'spin marker'
-# spin_case ID REPLACEMENT KIND — sweep one spinning mutant and check the outcome and that its child is gone
+# spin_case ID REPLACEMENT KIND [SUMMARY] — sweep one spinning mutant (SUMMARY: the row's third field, default - for no summary line) and check the outcome and that its child is gone
 spin_case() {
-  local id="$1" repl="$2" kind="$3" spin_pidfile="$SANDBOX/spin.$1.pid" t0 spent spin_pid waited gone
+  local id="$1" repl="$2" kind="$3" want_sum="${4:--}" spin_pidfile="$SANDBOX/spin.$1.pid" t0 spent spin_pid waited gone
   row "$id" app.sh 'spin_marker=no' "$repl" "makes the test wait on $kind" >"$SANDBOX/$id.tsv"
   rm -f "$spin_pidfile"
   t0=$SECONDS
   KEEL_SPIN_PIDFILE="$spin_pidfile" KEEL_SWEEP_TIMEOUT=2 sweep_in "$fxs" "$SANDBOX/$id.tsv" t.sh
   spent=$((SECONDS - t0))
-  check_contains "782-A1 ($id) a mutant whose child spins is recorded TIMEOUT" "$OUT" "${id}${TAB}TIMEOUT${TAB}"
+  check_contains "782-A1 ($id) a mutant whose child spins is recorded TIMEOUT" "$OUT" "${id}${TAB}TIMEOUT${TAB}${want_sum}"
   check_status "782-A1 ($id) …and TIMEOUT is not a survivor: exit 0" 0 "$STATUS"
   check_eq "782-A1 ($id) …with only the mutant line and the total (no shell job-kill noise)" "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
   if [ "$spent" -lt 20 ]; then pass "782-A1 ($id) …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s (took ${spent}s)"
@@ -245,7 +245,7 @@ spin_case() {
 }
 spin_case m-spin spin_marker=yes "a child that never ends"
 spin_case m-spin-term spin_marker=term "a child that ignores TERM"
-spin_case m-spin-post spin_marker=post "a child after the summary line is printed (a hang the summary does not excuse)"
+spin_case m-spin-post spin_marker=post "a child after the summary line is printed (a hang the summary does not excuse)" "t.sh: 3 passed, 0 failed"
 spin_case m-spin-trapexit spin_marker=trapexit "a child while its TERM trap exits 1 (a hang is not a failing run)"
 
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
