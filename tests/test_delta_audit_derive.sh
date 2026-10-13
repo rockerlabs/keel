@@ -440,7 +440,6 @@ check_contains "816: requirements.txt (by name) classes config" "$mix_ledger" "|
 check_contains "816: .sh still classes code" "$mix_ledger" "| build.sh | code |"
 check_contains "816: .md and .txt class prose" "$mix_ledger" "| aa-notes.md | prose |"
 check_contains "816: a .txt that is not a manifest classes prose" "$mix_ledger" "| aa-more.txt | prose |"
-mix_rows="$(grep -n '^| ' <<< "$mix_ledger")"
 mix_line() { grep -n -F "$1" <<< "$mix_ledger" | head -1 | cut -d: -f1; }
 check_eq "816: sources read before prose (main.swift above aa-notes.md)" 1 \
   "$([ "$(mix_line '| App/main.swift |')" -lt "$(mix_line '| aa-notes.md |')" ] && echo 1 || echo 0)"
