@@ -377,6 +377,9 @@ else fail "control: the anchored pattern matches a graded line" "no AUTO line: $
 for v in '@{-1}' 'a..b' HEAD @; do
   KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
   check_status   "KEEL_DEFAULT_BRANCH=$v is rejected" 2 "$STATUS"
+  check_contains "KEEL_DEFAULT_BRANCH=$v is rejected by name" "$OUT" "not a valid branch name"
+  if match "$OUT" -qE '^(AUTO|ASK|FLAG) '; then fail "KEEL_DEFAULT_BRANCH=$v is rejected: grades nothing" "a branch was graded"
+  else pass "KEEL_DEFAULT_BRANCH=$v is rejected: grades nothing"; fi
 done
 export KEEL_DEFAULT_BRANCH=nonexistent
 run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
