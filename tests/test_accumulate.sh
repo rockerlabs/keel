@@ -159,6 +159,10 @@ d="$(mk)"; cls "$d" x
 ASOF=2028-02-29 sight "$d" 2028-01-01 x /polish audit:keel@a yes no
 ASOF=2028-02-29 A "$d" count x; check_eq "leap day: 59 days after 2028-01-01 counts" 1 "$OUT"
 ASOF=2028-03-01 A "$d" count x; check_eq "leap day: 60 days after 2028-01-01 does not" 0 "$OUT"
+ASOF=2028-03-01 sight "$d" 2028-01-02 x /go audit:keel@jan2 yes no
+ASOF=2028-03-01 A "$d" count x; check_eq "leap year: 59 days from 2028-01-02 across Feb 29 counts (2028-01-01 is 60, out)" 1 "$OUT"
+ASOF=2027-03-01 sight "$d" 2027-01-02 x /go audit:keel@jan2b yes no
+ASOF=2027-03-01 A "$d" count x; check_eq "common year: 58 days from 2027-01-02 to 2027-03-01 counts" 1 "$OUT"
 A "$d" new-class lp t f commands
 ASOF=2028-02-29 A "$d" add 2028-02-29 lp /go audit:keel@l yes no m ev
 check_status "add: 2028-02-29 is a real date" 0 "$STATUS"

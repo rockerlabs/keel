@@ -209,7 +209,6 @@ class_row() { ACC_C="$1" AWK -F'\t' 'NR > 1 && $1 == ENVIRON["ACC_C"] { print; f
 class_exists() { class_row "$1" >/dev/null; }
 class_status() { ACC_C="$1" AWK -F'\t' 'NR > 1 && $1 == ENVIRON["ACC_C"] { print $6 }' "$CF"; }
 class_word() { local s; s="$(class_status "$1")"; printf '%s' "${s%%:*}"; }
-class_date() { local s; s="$(class_status "$1")"; printf '%s' "${s: -10}"; }
 set_status() {   # set_status CLASS NEWSTATUS — rewrites only the status cell of one row
   local tmp
   tmp="$(mktemp "$DIR/.acc.XXXXXX")" || die "mktemp failed in $DIR"
