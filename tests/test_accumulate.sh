@@ -343,7 +343,7 @@ check_status "status without --owner -> exit 2" 2 "$STATUS"
 
 # --- closed: three heading forms, a draft, an orphan -------------------------------------------------------------------------------------------
 d="$(mk)"
-for c in tie tie-rev wrapped-date pr-number open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
+for c in tie tie-rev wrapped-date pr-number later-date bad-date dash-wrap open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
 bl="$SANDBOX/bl.md"
 cat > "$bl" <<'EOF'
 # Backlog
@@ -416,9 +416,22 @@ Opened 2025-03-04 elsewhere
 
 Observer-class: wrapped-date
 
-### dir #71 — a PR number before the date — ✅ FIXED in PR #345 (2026-10-01)
+### dir #71 — words between the tag and the date — ✅ FIXED in PR #345 (2026-10-01)
 
 Observer-class: pr-number
+
+### dir #72 — a later unrelated date on the line — ✅ SUPERSEDED by dir #12, opened 2025-01-01
+
+Observer-class: later-date
+
+### dir #73 — an impossible date — ✅ CLOSED (2026-13-45)
+
+Observer-class: bad-date
+
+### dir #74 — a heading that wraps right after the dash —
+✅ FIXED (2026-10-04)
+
+Observer-class: dash-wrap
 
 ### dir #14 — an unrelated closed ticket — ✅ CLOSED (2026-01-01)
 
@@ -455,8 +468,11 @@ A "$d" closed two-closed-rev --backlog "$bl" --drafts "$dr";  check_eq "closed: 
 A "$d" closed tie --backlog "$bl" --drafts "$dr";             check_eq "closed: equal dates -> a real closure beats a supersede, whichever file order" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed tie-rev --backlog "$bl" --drafts "$dr";         check_eq "closed: ... and with the real closure first" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed wrapped-date --backlog "$bl" --drafts "$dr";    check_eq "closed: a date on a wrapped continuation line is not the closure date" "closed ✅ —" "$OUT"
-A "$d" closed pr-number --backlog "$bl" --drafts "$dr";       check_eq "closed: a number before the date does not hide the date" "closed ✅ 2026-10-01" "$OUT"
-A "$d" closed glued --backlog "$bl" --drafts "$dr";           check_eq "closed: a date glued to the closure word is still parsed" "closed ✅ 2026-10-05" "$OUT"
+A "$d" closed pr-number --backlog "$bl" --drafts "$dr";       check_eq "closed: the date is the one right after the tag (TAG (date) — words between make it undated" "closed ✅ —" "$OUT"
+A "$d" closed later-date --backlog "$bl" --drafts "$dr";      check_eq "closed: a later unrelated date on the line is not the closure date" "closed ✅ —" "$OUT"
+A "$d" closed bad-date --backlog "$bl" --drafts "$dr";        check_eq "closed: an impossible date is undated" "closed ✅ —" "$OUT"
+A "$d" closed dash-wrap --backlog "$bl" --drafts "$dr";       check_eq "closed: a heading wrapped right after the dash keeps its date" "closed ✅ 2026-10-04" "$OUT"
+A "$d" closed glued --backlog "$bl" --drafts "$dr";           check_eq "closed: a date glued to the closure word is undated (the form is TAG (date)" "closed ✅ —" "$OUT"
 A "$d" closed not-in-the-registry --backlog "$bl" --drafts "$dr"; check_status "closed: a class that is not in the registry -> exit 2, not 'orphaned'" 2 "$STATUS"
 A "$d" closed nowhere --backlog "$bl" --drafts "$dr";        check_eq "closed: a tag in no backlog and no draft -> orphaned" "orphaned" "$OUT"
 A "$d" closed fenced-only --backlog "$bl" --drafts "$dr";    check_eq "closed: a tag line inside a code fence does not count" "orphaned" "$OUT"

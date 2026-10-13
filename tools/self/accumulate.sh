@@ -293,7 +293,7 @@ hits_in_file() {
 
 # closed_state CLASS → prints open | closed <glyph> <date|—> | draft | orphaned
 closed_state() {
-  local cls="$1" f d rec block stripped m tagline glyph cdate own
+  local cls="$1" f d rec block stripped m glyph cdate own
   local any_open=0 any_draft=0 best_glyph="" best_date="" best_key="" ckey
   for f in ${BACKLOGS[@]+"${BACKLOGS[@]}"}; do
     while IFS= read -r rec; do
@@ -304,11 +304,14 @@ closed_state() {
       if [[ "$stripped" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
         m="${BASH_REMATCH[0]}"
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
-        # the closure date is the first YYYY-MM-DD at or after the tag, on the tag's own line: the matched text (which may end
-        # in the first char of a glued date) plus what follows it, cut at the first newline
-        tagline="$m${stripped#*"$m"}"; tagline="${tagline%%"$NL"*}"
+        # the closure date is the one the heading writes right after the tag, `TAG (YYYY-MM-DD` — the form
+        # tools/self/archive-sweep-check.sh already reads; anything else is undated (`—`). The date group is the last one,
+        # whatever groups BB_CLOSURE_TAG_PATTERN has.
         cdate="—"
-        if [[ "$tagline" =~ ([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        if [[ "$stripped" =~ ${BB_CLOSURE_TAG_PATTERN}[[:space:]]*\(([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then
+          cdate="${BASH_REMATCH[${#BASH_REMATCH[@]}-1]}"
+          valid_date "$cdate" || cdate="—"
+        fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
         case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac
         if [ -z "$best_key" ] || [ "$ckey" -gt "$best_key" ]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
