@@ -88,7 +88,10 @@ diff no longer shows (`only_in_map`) — is reported as `transient in range` and
 closure: added and then deleted, edited and then reverted, or any other shape whose touches net to
 zero inside the range, its two endpoints agree by construction, so it says nothing about whether the
 map is complete (dir #288). Read `--help` for the full refusal/exit-code contract and the tuning
-environment variables (`DELTA_HISTORICAL`, `DELTA_INVARIANT_PATHS`, `DELTA_SESSION_FILES`).
+environment variables (`DELTA_HISTORICAL`, `DELTA_INVARIANT_PATHS`, `DELTA_SESSION_FILES`, and the
+three extension lists `DELTA_CODE_EXTENSIONS`, `DELTA_CONFIG_EXTENSIONS`, `DELTA_PROSE_EXTENSIONS`:
+a non-shell product's sources class `code`, its manifests `config`, and a file no list names falls to
+`prose` with one stderr note rather than silently).
 
 ## 4. The Protocol — 8 rules, binding for every session this run spawns
 

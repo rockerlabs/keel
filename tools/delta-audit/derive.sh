@@ -34,13 +34,18 @@
 #   1. CHANGELOG.md, a changelog.d/*.md fragment (dir #744; not its README.md), or a path in
 #      DELTA_HISTORICAL                                      -> prose-historical
 #   2. a path containing a DELTA_INVARIANT_PATHS substring   -> code-invariant
-#   3. a path starting with tests/                           -> test
-#   4. a *.sh/*.yml/*.yaml path, or one executable at <head-rev> -> code
-#   5. everything else (*.md and the rest)                   -> prose
+#   3. a path under tests/, test/, Tests/, spec/, __tests__/, or named *Tests.swift / *_test.*
+#                                                            -> test
+#   4. a basename or extension in DELTA_CODE_EXTENSIONS      -> code   (dir #816)
+#   5. a basename or extension in DELTA_CONFIG_EXTENSIONS    -> config (dir #816; read WITH code)
+#   6. a basename or extension in DELTA_PROSE_EXTENSIONS     -> prose
+#   7. executable at <head-rev> (an extensionless CLI)       -> code
+#   8. everything else                                       -> prose, and ONE stderr note lists the
+#                                                               files that got here (dir #816)
 #
 # Emission ORDER in ledger.md is a pinned behaviour, not a formatting detail (docs/delta-audit.md's
 # read-order rule, dir #207's own corollary): seams (>=2 PRs) and code-invariant files FIRST, the
-# remaining code/test files next, prose and prose-historical LAST — never git diff --name-only's
+# remaining code/config/test files next, prose and prose-historical LAST — never git diff --name-only's
 # alphabetical order. "Suggested session" numbers pack that same read-ordered list into groups of
 # DELTA_SESSION_FILES, starting at S2 (S1 is the mechanical baseline this script itself produces, and
 # covers every row).
@@ -50,6 +55,13 @@
 #                           CHANGELOG.md)
 #   DELTA_INVARIANT_PATHS  substrings marking behaviour-with-a-rail code (default: "pre-pr-gate
 #                           secret-guard install.sh uninstall.sh .github/workflows/")
+#   DELTA_CODE_EXTENSIONS   space-separated extensions or exact basenames classed code (default: sh bash
+#                           zsh swift m mm c cc cpp h hpp rs go py rb js jsx ts tsx java kt cs php
+#                           Makefile Package.swift). A set value REPLACES the default.
+#   DELTA_CONFIG_EXTENSIONS same, classed config (default: yml yaml json toml plist xcconfig ini cfg
+#                           requirements.txt)
+#   DELTA_PROSE_EXTENSIONS  same, classed prose and exempt from the fall-through note (default: md txt
+#                           rst adoc LICENSE NOTICE .gitignore .gitattributes)
 #   DELTA_SESSION_FILES    files packed into one suggested session (default: 12)
 #
 # Every sort in this script is LC_ALL=C: a locale-dependent collation would make the byte-identical
@@ -268,19 +280,39 @@ is_invariant() {
   done
   return 1
 }
-is_test() { case "$1" in tests/*) return 0 ;; esac; return 1; }
-# $2 is the executable flag (0/1) the join below already resolved — no `git ls-tree` call here.
-is_code() {
+is_test() {
   case "$1" in
-    *.sh|*.yml|*.yaml) return 0 ;;
+    tests/*|*/tests/*|test/*|*/test/*|Tests/*|*/Tests/*|spec/*|*/spec/*|__tests__/*|*/__tests__/*) return 0 ;;
+    *Tests.swift|*_test.*) return 0 ;;
   esac
-  [ "$2" = 1 ]
+  return 1
 }
+# dir #816: each knob is a list of extensions (no dot) or exact basenames; $1 is the path, $2.. the list.
+# A set variable REPLACES its default list, like DELTA_INVARIANT_PATHS.
+read -r -a code_ext <<< "${DELTA_CODE_EXTENSIONS-sh bash zsh swift m mm c cc cpp h hpp rs go py rb js jsx ts tsx java kt cs php Makefile Package.swift}"
+read -r -a config_ext <<< "${DELTA_CONFIG_EXTENSIONS-yml yaml json toml plist xcconfig ini cfg requirements.txt}"
+read -r -a prose_ext <<< "${DELTA_PROSE_EXTENSIONS-md txt rst adoc LICENSE NOTICE .gitignore .gitattributes}"
+# `${a[@]+"${a[@]}"}`, not a bare expansion: an EMPTY knob (DELTA_CODE_EXTENSIONS=) leaves an empty array,
+# a hard error under `set -u` on bash < 4.4.
+in_ext_list() {
+  local f="${1##*/}" e
+  shift
+  for e in "$@"; do
+    [ -n "$e" ] || continue
+    [ "$f" = "$e" ] && return 0
+    case "$f" in *."$e") return 0 ;; esac
+  done
+  return 1
+}
+# $2 is the executable flag (0/1) the join below already resolved — no `git ls-tree` call here.
 classify() {
   if is_historical "$1"; then printf 'prose-historical'
   elif is_invariant "$1"; then printf 'code-invariant'
   elif is_test "$1"; then printf 'test'
-  elif is_code "$1" "$2"; then printf 'code'
+  elif in_ext_list "$1" ${code_ext[@]+"${code_ext[@]}"}; then printf 'code'
+  elif in_ext_list "$1" ${config_ext[@]+"${config_ext[@]}"}; then printf 'config'
+  elif in_ext_list "$1" ${prose_ext[@]+"${prose_ext[@]}"}; then printf 'prose'
+  elif [ "$2" = 1 ]; then printf 'code'
   else printf 'prose'
   fi
 }
@@ -336,9 +368,15 @@ bucket1=(); bucket2=(); bucket3=()
 # prose rows would bury the real prose in the ledger. They fold into a single prose-historical row
 # `changelog.d/ (N files)` carrying the union of their PRs, appended after the other prose rows.
 frag_files=0; frag_prs=""; frag_n=0
+unknown_n=0; unknown_eg=""
 while IFS="$TAB" read -r f n exe prs; do
   [ -n "$f" ] || continue
   class="$(classify "$f" "$exe")"
+  # dir #816: a plain-prose row that matched NO list is a default, not a verdict — surface it below.
+  if [ "$class" = prose ] && [ "$exe" != 1 ] && ! in_ext_list "$f" ${prose_ext[@]+"${prose_ext[@]}"}; then
+    unknown_n=$((unknown_n + 1))
+    [ "$unknown_n" -le 5 ] && unknown_eg="$unknown_eg${unknown_eg:+, }$f"
+  fi
   if [ "$class" = prose-historical ]; then
     case "$f" in
       changelog.d/README.md) ;;
@@ -366,6 +404,11 @@ done < "$joined"
 if [ "$frag_files" -gt 0 ]; then
   bucket3+=("changelog.d/ ($frag_files files)${TAB}prose-historical${TAB}${frag_n}${TAB}${frag_prs}")
 fi
+if [ "$unknown_n" -gt 0 ]; then
+  printf 'derive.sh: %s file(s) have an unrecognised extension and fell to the default class prose (%s%s) —\n' \
+    "$unknown_n" "$unknown_eg" "$([ "$unknown_n" -gt 5 ] && printf ', ...')" >&2
+  printf '  set DELTA_CODE_EXTENSIONS / DELTA_CONFIG_EXTENSIONS / DELTA_PROSE_EXTENSIONS to classify them.\n' >&2
+fi
 
 # `[ "${#bucketN[@]}" -gt 0 ] &&`, not a bare `"${bucketN[@]}"` expansion: under `set -u`, expanding
 # an EMPTY array is a hard error on bash < 4.4 (this repo's own stock-macOS bash is 3.2) — the length
@@ -387,7 +430,7 @@ emit_bucket() {
   printf 'Generated mechanically by `tools/delta-audit/derive.sh` from `git diff --name-only\n'
   printf '%s..%s` and the per-merge PR map. Fill the verdict column per docs/delta-audit.md.\n\n' \
     "$prev" "$head_sha"
-  printf 'Read order: seams and code-invariant files first, remaining code/test next, prose and\n'
+  printf 'Read order: seams and code-invariant files first, remaining code/config/test next, prose and\n'
   printf 'prose-historical last (docs/delta-audit.md read-order rule) — S1 is the mechanical\n'
   printf 'baseline and covers every row; suggested sessions below start at S2.\n\n'
   printf '| file | class | #PRs | PRs | suggested session | verdict |\n'

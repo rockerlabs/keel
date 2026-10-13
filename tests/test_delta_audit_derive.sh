@@ -405,4 +405,76 @@ check_contains "A29: overriding DELTA_HISTORICAL (CHANGELOG.md no longer histori
   "$(cat "$SANDBOX/out-frag2/ledger.md")" "| changelog.d/9-x.md | prose |"
 check_absent "A29: ...and then no folded row" "$(cat "$SANDBOX/out-frag2/ledger.md")" "changelog.d/ ("
 
+# --- dir #816: a non-shell product's sources are code, not prose -------------------------------------
+# A mixed-language range (the sidecast/traverse/hermes shape): Swift + Python sources, a Swift test, a
+# dependency manifest, a plist, a yml, a shell script, markdown, and (in a second range) an unknown
+# extension. Alphabetical order and read order disagree again: 'aa-notes.md' sorts first and must read last.
+rm8="$(mk_repo)"
+base8="$(git -C "$rm8" rev-parse HEAD)"
+git -C "$rm8" checkout -qb prm
+mkdir -p "$rm8/App" "$rm8/Tests" "$rm8/ios"
+printf 'print(1)\n' > "$rm8/App/main.swift"
+printf 'print(2)\n' > "$rm8/App/zz.py"
+printf 'x\n' > "$rm8/App/Package.swift"
+printf 'x\n' > "$rm8/requirements.txt"
+printf 'x\n' > "$rm8/Tests/ThingTests.swift"
+printf 'x\n' > "$rm8/ios/Info.plist"
+printf 'x\n' > "$rm8/ios/project.yml"
+printf '#!/bin/sh\n' > "$rm8/build.sh"
+printf 'n\n' > "$rm8/aa-notes.md"
+printf 'n\n' > "$rm8/aa-more.txt"
+git -C "$rm8" add -A; git -C "$rm8" commit -qm "mixed-language range"
+git -C "$rm8" checkout -q main
+merge_pr "$rm8" 801 prm
+head8="$(git -C "$rm8" rev-parse HEAD)"
+run_in "$rm8" "$TOOL" --out "$SANDBOX/out-mix" "$base8" "$head8"
+check_status "816: a mixed-language range -> exit 0" 0 "$STATUS"
+mix_ledger="$(cat "$SANDBOX/out-mix/ledger.md")"
+check_contains "816: .swift classes code" "$mix_ledger" "| App/main.swift | code |"
+check_contains "816: .py classes code" "$mix_ledger" "| App/zz.py | code |"
+check_contains "816: Package.swift (by name) classes code" "$mix_ledger" "| App/Package.swift | code |"
+check_contains "816: a *Tests.swift under Tests/ classes test" "$mix_ledger" "| Tests/ThingTests.swift | test |"
+check_contains "816: .plist classes config" "$mix_ledger" "| ios/Info.plist | config |"
+check_contains "816: .yml classes config, no longer code" "$mix_ledger" "| ios/project.yml | config |"
+check_contains "816: requirements.txt (by name) classes config" "$mix_ledger" "| requirements.txt | config |"
+check_contains "816: .sh still classes code" "$mix_ledger" "| build.sh | code |"
+check_contains "816: .md and .txt class prose" "$mix_ledger" "| aa-notes.md | prose |"
+check_contains "816: a .txt that is not a manifest classes prose" "$mix_ledger" "| aa-more.txt | prose |"
+mix_rows="$(grep -n '^| ' <<< "$mix_ledger")"
+mix_line() { grep -n -F "$1" <<< "$mix_ledger" | head -1 | cut -d: -f1; }
+check_eq "816: sources read before prose (main.swift above aa-notes.md)" 1 \
+  "$([ "$(mix_line '| App/main.swift |')" -lt "$(mix_line '| aa-notes.md |')" ] && echo 1 || echo 0)"
+check_eq "816: config reads before prose (project.yml above aa-notes.md)" 1 \
+  "$([ "$(mix_line '| ios/project.yml |')" -lt "$(mix_line '| aa-notes.md |')" ] && echo 1 || echo 0)"
+check_absent "816: no fall-through note when every extension is known" "$OUT" "unrecognised"
+
+# an unknown extension falls to prose AND prints one note naming it; a known one prints none
+git -C "$rm8" checkout -qb prm2
+printf 'x\n' > "$rm8/blob.zzz"
+git -C "$rm8" add -A; git -C "$rm8" commit -qm "unknown extension"
+git -C "$rm8" checkout -q main
+merge_pr "$rm8" 802 prm2
+run_in "$rm8" "$TOOL" --out "$SANDBOX/out-mix2" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+check_contains "816: an unknown extension classes prose" "$(cat "$SANDBOX/out-mix2/ledger.md")" "| blob.zzz | prose |"
+check_contains "816: ...and prints the one-line fall-through note naming it" "$OUT" "unrecognised extension"
+check_contains "816: ...naming the file" "$OUT" "blob.zzz"
+# the knob: DELTA_CODE_EXTENSIONS adds to / replaces the default list
+run_in "$rm8" env "DELTA_CODE_EXTENSIONS=zzz" "$TOOL" --out "$SANDBOX/out-mix3" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+check_contains "816: DELTA_CODE_EXTENSIONS=zzz classes the .zzz file code" "$(cat "$SANDBOX/out-mix3/ledger.md")" "| blob.zzz | code |"
+check_absent "816: ...and then no fall-through note" "$OUT" "unrecognised"
+run_in "$rm8" env "DELTA_PROSE_EXTENSIONS=md txt zzz" "$TOOL" --out "$SANDBOX/out-mix4" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+check_absent "816: DELTA_PROSE_EXTENSIONS naming it silences the note" "$OUT" "unrecognised"
+run_in "$rm8" env "DELTA_CODE_EXTENSIONS=py" "$TOOL" --out "$SANDBOX/out-mix5" "$base8" "$head8"
+check_contains "816: a replaced code list drops swift to the fall-through (prose)" "$(cat "$SANDBOX/out-mix5/ledger.md")" "| App/main.swift | prose |"
+# an executable bit on a known prose file is a mode accident, not code; on an unknown extension it still is code
+git -C "$rm8" checkout -qb prm3
+chmod +x "$rm8/aa-notes.md" "$rm8/blob.zzz"
+git -C "$rm8" add -A; git -C "$rm8" commit -qm "exec bits"
+git -C "$rm8" checkout -q main
+merge_pr "$rm8" 803 prm3
+run_in "$rm8" "$TOOL" --out "$SANDBOX/out-mix6" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+mix6="$(cat "$SANDBOX/out-mix6/ledger.md")"
+check_contains "816: +x on a .md stays prose" "$mix6" "| aa-notes.md | prose |"
+check_contains "816: +x on an unknown extension still classes code (the fallback stays)" "$mix6" "| blob.zzz | code |"
+
 summary
