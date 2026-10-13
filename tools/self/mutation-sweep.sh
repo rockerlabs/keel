@@ -227,7 +227,6 @@ run_test() {
   # run; KILL 5 s later. The watchdog leaves a marker before it signals, so a mutant that merely dies of a signal
   # is CRASHED, not TIMEOUT. `wait` runs inside a group so bash's "Killed" report goes to the null device.
   local pid wd
-  rm -f "$out_file.timeout"
   set -m
   ( cd "$work" && exec bash "$tfile" ) </dev/null >"$out_file" 2>&1 &
   pid=$!
