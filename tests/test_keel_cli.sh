@@ -128,7 +128,8 @@ check_contains "a manifested Codex home gets --codex too, via the manifest" "$OU
 # The dispatcher's `case "$cmd" in ... esac` block is the one source of truth for what verbs exist
 # (dir #85 found docs/reference.md and README.md each missing 2 of 9 verbs, undetected). Enumerate
 # the arms from the REAL keel script (not the fake stub), then assert every verb is still quoted in
-# both docs — same shape as test_doc_figures.sh pinning doc prose against template headings.
+# docs/reference.md's keel row — same shape as test_doc_figures.sh pinning doc prose against template
+# headings. (README.md listed the verbs too until it was slimmed; it now names no verb, only `keel help`.)
 case_block="$(awk '/^case "\$cmd" in/,/^esac/' "$REPO_ROOT/keel")"
 # Leading whitespace is `[[:space:]]+`, not a fixed two spaces — a case arm re-indented with a tab
 # or a different width wouldn't match a fixed prefix, silently dropping that ONE verb from the list
@@ -157,9 +158,7 @@ header_block="$(awk '/^# Verbs:/,/^# *$/' "$REPO_ROOT/keel")"
 [ -n "$header_block" ] || fail "found keel's own header '# Verbs:' comment block" "no '# Verbs:' section found"
 
 ref_line="$(grep -F '](../keel)' "$REPO_ROOT/docs/reference.md")"
-readme_block="$(awk '/lists the verbs:/{f=1} f{print; if (/`keel help`\./) exit}' "$REPO_ROOT/README.md")"
 [ -n "$ref_line" ] || fail "found the keel row in docs/reference.md" "no line links to ../keel"
-[ -n "$readme_block" ] || fail "found the verb-list paragraph in README.md" "no line matches 'lists the verbs:'"
 
 # match(), not a direct `printf | grep -qw` pipe (dir #280 — see tests/lib.sh's match() for why).
 # This is dir #153/#154's original flake ("README.md quotes verb: help/audit"), mitigated there only
@@ -180,11 +179,6 @@ for v in $verbs; do
     pass "docs/reference.md quotes verb: $v"
   else
     fail "docs/reference.md quotes verb: $v" "missing from the keel row — dispatcher has it, doc doesn't"
-  fi
-  if match "$readme_block" -qw "$v"; then
-    pass "README.md quotes verb: $v"
-  else
-    fail "README.md quotes verb: $v" "missing from the verb-list paragraph — dispatcher has it, doc doesn't"
   fi
 done
 

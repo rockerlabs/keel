@@ -17,7 +17,7 @@ tok_of() { local c; c="$(wc -c < "$1" | tr -d ' ')"; echo $(( c / 4 )); }
 
 # k_fig_to_tokens LINE — print the trailing "~N[.N]K" figure on LINE as a plain token count (no "~"/"K").
 # LC_ALL=C: awk parses "1.8" by locale — a comma-decimal locale would read it as 1 and false-fail. One
-# copy shared by every "~N.NK" parser below (assert_readme_figure, assert_derived_core_figures,
+# copy shared by every "~N.NK" parser below (assert_quoted_figure, assert_derived_core_figures,
 # assert_derived_quoted_sum) — found duplicated three ways by review.
 k_fig_to_tokens() {
   printf '%s' "$1" | grep -oE '~[0-9]+(\.[0-9]+)?K' | tail -1 | tr -d '~K' | LC_ALL=C awk '{printf "%d", $1*1000}'
@@ -180,23 +180,25 @@ assert_commands_range() {
   [ -n "$open_upper" ] && note_if_over_open_bound "$label" "$max_file" "$max_tok" "$hi" "row's own ceiling"
 }
 
-# README.md's mermaid "How it works" diagram quotes its own rounded ~N.NK figures for the same files —
-# a separate line from loading-and-cost.md's table, so assert_figure's table-row grep never reaches it.
-# That's exactly how FRAMEWORK.md's figure went stale (~4.2K in README vs ~5.0K real) while the
-# loading-and-cost.md row stayed guarded — close the same hole here.
-assert_readme_figure() {
-  local label="$1" file="$2" pattern="$3" path="$REPO_ROOT/$2" readme="$REPO_ROOT/README.md"
+# The mermaid "what loads when" diagram (in docs/loading-and-cost.md since the README was slimmed; it
+# began in README.md) and README.md's Economy bullet quote their own rounded ~N.NK figures for the same
+# files — lines apart from loading-and-cost.md's table, so assert_figure's table-row grep never reaches
+# them. That's exactly how FRAMEWORK.md's figure went stale (~4.2K in README vs ~5.0K real) while the
+# loading-and-cost.md row stayed guarded — close the same hole here. The 4th arg names the quoting doc.
+assert_quoted_figure() {
+  local label="$1" file="$2" pattern="$3" path="$REPO_ROOT/$2" quoter="$4"
+  local quoted="$REPO_ROOT/$quoter"
   if [ ! -f "$path" ]; then fail "$label" "missing file: $path"; return; fi
 
   local actual="" line="" fig=""   # init all (set -u safe on bash 3.2)
   actual="$(tok_of "$path")"
 
-  line="$(grep -E "$pattern" "$readme" | head -1)"
-  if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in README.md"; return; fi
+  line="$(grep -E "$pattern" "$quoted" | head -1)"
+  if [ -z "$line" ]; then fail "$label" "no line matching /$pattern/ in $quoter"; return; fi
   fig="$(k_fig_to_tokens "$line")"
-  if [ -z "$fig" ]; then fail "$label" "no ~N[.N]K figure on the matched README.md line: $line"; return; fi
+  if [ -z "$fig" ]; then fail "$label" "no ~N[.N]K figure on the matched $quoter line: $line"; return; fi
 
-  assert_band "$label" "$fig" "$actual" "README"
+  assert_band "$label" "$fig" "$actual" "$quoter"
 }
 
 # dir #105 (2nd instance): docs/loading-and-cost.md DERIVES two prose figures from its own quoted
@@ -319,10 +321,10 @@ assert_figure "commands/polish.md figure (open floor)"        commands/polish.md
 assert_figure "commands/polish-guide.md figure (open floor)"  commands/polish-guide.md
 assert_commands_range "commands/*.md (excl. polish.md, polish-guide.md) sizes fall inside the quoted range"
 
-assert_readme_figure "README FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'
-assert_readme_figure "README PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'
-assert_readme_figure "README always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens'
-assert_readme_figure "README Economy bullet core figure within 10%" templates/CLAUDE.md 'Economy\.\*\* A thin, stable core \(~[0-9.]+K tokens\)'
+assert_quoted_figure "diagram FRAMEWORK.md figure within 10%"       FRAMEWORK.md         'FRAMEWORK\.md \(~[0-9.]+K\)'         docs/loading-and-cost.md
+assert_quoted_figure "diagram PRINCIPLES.md figure within 10%"      PRINCIPLES.md        'PRINCIPLES\.md \(~[0-9.]+K\)'        docs/loading-and-cost.md
+assert_quoted_figure "diagram always-loaded core figure within 10%" templates/CLAUDE.md 'Always loaded.*~[0-9.]+K tokens' docs/loading-and-cost.md
+assert_quoted_figure "README Economy bullet core figure within 10%" templates/CLAUDE.md 'Economy\.\*\* A thin, stable core \(~[0-9.]+K tokens\)' README.md
 
 # /keel-setup step 3 and ADAPTING.md tell a no-git adopter which two template sections to drop BY NAME —
 # a heading rename in templates/CLAUDE.md would strand those instructions silently. Pin BOTH legs of the

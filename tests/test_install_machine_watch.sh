@@ -168,7 +168,7 @@ noosa="$SANDBOX/no-osascript-bin"; path_farm "$noosa" osascript
 run env PATH="$noosa" "$installer" "$repo"
 check_status "without osascript -> install exit 0" 0 "$STATUS"
 check_absent "without osascript the install says nothing about Script Editor" "$OUT" "Script Editor"
-for f in README.md docs/delegation.md; do
+for f in docs/reference.md docs/delegation.md; do
   pin "$f names the one-time Script Editor step" "$REPO_ROOT/$f" 'display notification "test" with title "keel"' \
     "expected $f to carry the Script Editor permission step (dir #657)"
 done

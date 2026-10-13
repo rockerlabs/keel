@@ -12,7 +12,6 @@
 
 doc="$REPO_ROOT/docs/grooming.md"
 cmd="$REPO_ROOT/commands/groom.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/grooming.md exists" "$doc"
 check_file "commands/groom.md exists" "$cmd"
@@ -26,9 +25,9 @@ pin "docs/grooming.md names commands/groom.md back" \
   "expected the doc to name its own entrypoint, per the drydock/delta-audit/release-management mutual-reference precedent"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ----------------
-pin "README Docs section links docs/grooming.md" \
-  "$readme" '[`docs/grooming.md`](docs/grooming.md)' \
-  "expected the Docs section to list the new doc the way it lists drydock.md/delta-audit.md/release-management.md"
+pin "docs/reference.md Docs index links docs/grooming.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/grooming.md`](grooming.md)' \
+  "expected docs/reference.md's Docs index to list the new doc the way it lists drydock.md/delta-audit.md/release-management.md"
 
 # --- the family cross-links: the manager-family loop this doc closes -------------------------------
 pin "grooming.md links release-management.md" "$doc" '](release-management.md)' \

@@ -24,7 +24,7 @@ Every file, tool, and command — grouped, one line each.
 
 | Tool | What it does |
 |---|---|
-| [`keel`](../keel) | One CLI over the rest, installed to `~/.claude/bin` (the install summary prints a one-line PATH hint if that dir isn't on your PATH): `keel install \| sync \| doctor \| audit \| init \| check \| tokens \| uninstall \| version \| help`. A thin dispatcher, so it works from any directory. |
+| [`keel`](../keel) | One CLI over the rest, installed to `~/.claude/bin` (the install summary prints a one-line PATH hint if that dir isn't on your PATH): `keel install \| sync \| doctor \| audit \| init \| check \| tokens \| uninstall \| version \| help`. A thin dispatcher, so it works from any directory. It needs a checkout to point into, so the plain `curl \| sh` copy install skips it (its temp clone is deleted right after); `--link` and manual-clone installs wire it. |
 | [`bootstrap.sh`](../bootstrap.sh) | The `curl … \| sh` entry point: fetches the repo (git clone, or a tarball on a git-less machine) and runs `install.sh`. |
 | [`install.sh`](../install.sh) | One-command setup: copies (or, with `--link`, symlinks) the always-on files and turns on secret-guard. Safe to re-run; never overwrites your own files — bar one consented exception: a terminal re-run offers (default no) to refresh only the rails block inside `CLAUDE.md`/`AGENTS.md`, backing the file up first. Also places Keel's own `docs/` beside `FRAMEWORK.md`. A drifted Keel-owned file (`FRAMEWORK`, `PRINCIPLES`, a command, a doc) refreshes automatically when it provably is Keel's own untouched older release, else it asks (or flags non-interactively); `--force` takes over a drifted/refused Keel-owned file anyway, backed up first — never your own files, hooks, or `settings.json`, and a symlink Keel did not make is never replaced. On a machine with no git projects, `--link --no-git` trims the code/git rails from the always-on core (sticky across re-runs; `--with-git` restores). |
 | [`uninstall.sh`](../uninstall.sh) | Reverses `install.sh` (`keel uninstall`): removes only Keel-owned content, backs up what it removes, leaves your own files and the machine-global secret-guard alone. Mirrors install's mode flags — `--home DIR`, and `--codex` for an `install.sh --codex` install (`~/.codex`, `AGENTS.md`); a run names an install of the other mode it finds rather than leaving it behind, and refuses when pointed at the other mode's home (most of what it removes is shared, so it would half-dismantle that install). |
@@ -41,8 +41,8 @@ Every file, tool, and command — grouped, one line each.
 | [`tools/branch-cleanup.sh`](../tools/branch-cleanup.sh) | Classifies local branches after merges into AUTO/ASK/FLAG confidence tiers so post-merge cleanup never blanket-deletes live work. |
 | [`tools/pre-pr-gate.sh`](../tools/pre-pr-gate.sh) | The `/polish` pre-PR gate: a Claude Code hook that blocks the agent's own `gh pr create` until `/polish` (simplify + tests + a depth-matched review) has run cleanly on the current commit. It also denies a `git push` that disables the pre-push secret scan (`--no-verify`, `-c core.hooksPath=…`, an inline `GIT_CONFIG_GLOBAL=…`/`HOME=…` prefix), and refuses, with the reason, a command whose git/gh part it cannot read the way bash, zsh and busybox would all read it; a bypass it cannot see is left to the CI scan. Ships with `commands/polish.md`, but is never auto-wired — see `install-pre-pr-gate.sh` below. |
 | [`tools/install-pre-pr-gate.sh`](../tools/install-pre-pr-gate.sh) | Wires the `/polish` gate's 7 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` (every repo; `--home DIR` targets the same home an `install.sh --home DIR` install used). The seventh, `SubagentStart`, injects the worker rails into every `general-purpose`, `Explore`, `Plan`, `claude` and `claude-code-guide` subagent (`KEEL_SUBAGENT_RAILS=off` switches it off; `doctor.sh` flags a missing one as `W-GATE-SUBAGENT-RAILS`). The gate's Bash hook also denies a subagent's repository-mutating git against the session repository, with no re-run needed (`KEEL_SUBAGENT_GIT_FLOOR=off` switches it off). Opt-in and separate from `install.sh` on purpose: a hook changes what a session can do without asking each time. Never clobbers a hook already on the same slot — it appends beside a foreign one, where `install-secret-guard.sh` refuses without `--force`. |
-| [`tools/machine-watch.sh`](../tools/machine-watch.sh) | The sandbox rail's detector (dir #437): fingerprints the machine-global files a live check must never touch (git global/system config, the global hooks dir, ssh config, shell rc — alert tier; harness settings, `known_hosts`, `~/.config` — quiet tier) and reports what changed. `hook` is Claude Code hook mode (never blocks, always exits 0); `snapshot NAME` / `check NAME` do the same by hand on any harness. Baselines live in `$HOME/.keel/machine-watch`; your own paths go in `$HOME/.keel/machine-watch.paths`. It cannot say who made a change, only that it happened. An alert-tier report also raises one native OS notification (macOS `osascript`, Linux `notify-send`; the hook banner is not rendered in the Claude desktop app) — off with `KEEL_MACHINE_WATCH_NOTIFY=0`, replaceable with `KEEL_MACHINE_WATCH_NOTIFIER`. |
-| [`tools/install-machine-watch.sh`](../tools/install-machine-watch.sh) | Wires the watcher's 4 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` / `--home DIR`. Opt-in and separate from `install.sh`; appends beside a hook already on the same slot; `--uninstall` removes exactly its own; never writes a deny rule (the recipe in [`delegation.md`](delegation.md) is documentation only). |
+| [`tools/machine-watch.sh`](../tools/machine-watch.sh) | The sandbox rail's detector (dir #437): fingerprints the machine-global files a live check must never touch (git global/system config, the global hooks dir, ssh config, shell rc — alert tier; harness settings, `known_hosts`, `~/.config` — quiet tier) and reports what changed. `hook` is Claude Code hook mode (never blocks, always exits 0); `snapshot NAME` / `check NAME` do the same by hand on any harness. Baselines live in `$HOME/.keel/machine-watch`; your own paths go in `$HOME/.keel/machine-watch.paths`. It cannot say who made a change, only that it happened. An alert-tier report also raises one native OS notification (macOS `osascript`, Linux `notify-send`; the hook banner is not rendered in the Claude desktop app) — off with `KEEL_MACHINE_WATCH_NOTIFY=0`, replaceable with `KEEL_MACHINE_WATCH_NOTIFIER`. On macOS that notification comes from Script Editor and is dropped silently until Script Editor may notify: once, open Script Editor, run `display notification "test" with title "keel"`, and accept the prompt. |
+| [`tools/install-machine-watch.sh`](../tools/install-machine-watch.sh) | Wires the watcher's 4 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` / `--home DIR`. Opt-in and separate from `install.sh`; appends beside a hook already on the same slot; `--uninstall` removes exactly its own; never writes a deny rule (the recipe in [`delegation.md`](delegation.md) is documentation only). Project scope survives a deleted `~/.claude` but covers only that repo's sessions; `--global` covers every session but lives in `~/.claude`. |
 | [`tools/drydock/inventory.sh`](../tools/drydock/inventory.sh) | Freezes a [drydock](drydock.md) run's scope as code: measures the tracked prose and code surface (markdown whole-file, shell comment blocks, whole shell code) at one baseline commit and derives the per-auditor batches. Refuses a dirty tree or a HEAD that isn't the baseline — with no bypass flag — because an inventory measured off the baseline scopes the whole audit against a commit nobody chose. `--prev <sha>` scopes an incremental run to what changed since the last one. `--paths` prints a bare path list instead of the report, for a caller like `export.sh` below. |
 | [`tools/audit-packet/export.sh`](../tools/audit-packet/export.sh) | Builds a leak-gated packet for [drydock](drydock.md)'s external leg: a caller-supplied file list (`inventory.sh --paths`, or `delta-audit/derive.sh`'s file list), chunked with a `PROBE.md` window-measuring chunk 0 and a `PROMPT.md` role prompt, scanned by the secret-guard leak gate twice — once before anything is written, once more over the fully assembled packet dir. Refuses a dirty tree, a HEAD that isn't `--baseline`, or any leak-gate hit at either pass — no bypass. |
 | [`tools/audit-packet/import.sh`](../tools/audit-packet/import.sh) | Imports an external auditor's replies (chunked, `export.sh`'s own packet; or unchunked, a tooled reader's single reply) into drydock's ordinary `<slug>-audit.md` file contract, so phase 2 verifies them exactly as it verifies a subagent's findings. Refuses a chunk that doesn't quote its own `CHUNK-END` line as truncated. |
@@ -97,21 +97,61 @@ hook and retires the legacy `general-purpose` one, and `doctor.sh --install` fla
 migrated (`W-GATE-REVIEW-MATCHER`), as it flags a gate wired without the `SubagentStart` rails hook
 (`W-GATE-SUBAGENT-RAILS`).
 
+## Docs
+
+Every adopter-facing doc, one line each — the README lists only the few to start with.
+
+- [`docs/getting-started.md`](getting-started.md) — the longer setup walk-through, install flows, version pinning.
+- [`docs/loading-and-cost.md`](loading-and-cost.md) — what loads when and the per-session token cost.
+- [`docs/token-economy.md`](token-economy.md) — `keel tokens`: where your own agent sessions'
+  tokens went, and three diagnosed patterns (fan-out, cold prompt-cache resumes, repeated file reads)
+  instead of only a total.
+- [`docs/keel-ab.md`](keel-ab.md) — the Keel-vs-cold A/B: one operator-present data point measuring
+  the "What Keel brings" claims against a cold baseline, with the frozen protocol and reproducible scripts.
+- [`docs/going-public.md`](going-public.md) — a safe step-by-step for making a private repo public.
+- [`docs/rollout-audit.md`](rollout-audit.md) — checklist for verifying a model/harness upgrade
+  didn't silently break your pipeline.
+- [`docs/release-audit.md`](release-audit.md) — a repeatable flow for a project's own
+  release-readiness sweep, before tagging.
+- [`docs/release-history.md`](release-history.md) — a one-paragraph-per-release digest, newest
+  first, so you don't reconstruct "what shipped in vX.Y" from the full `CHANGELOG.md`.
+- [`docs/delta-audit.md`](delta-audit.md) — the release-candidate pass release-audit.md's
+  phase 6 calls: a mechanically derived universe (every file a release range touched, plus its
+  seam map) instead of a scope chosen by judgment.
+- [`docs/drydock.md`](drydock.md) — a whole-tree audit of whether your knowledge base is still
+  true: the prose your agent executes drifts silently, and nothing fails when it does.
+- [`docs/verification-economics.md`](verification-economics.md) — when to stop auditing, what to
+  file from a run, and how to tell whether your verification method is improving: the stopping rule
+  and filing bar that govern `release-audit.md`, `delta-audit.md` and `drydock.md` runs.
+- [`docs/vendor-review.md`](vendor-review.md) — a scriptable cross-vendor reading leg: a
+  leak-gated bundle, a swappable client per vendor CLI, one round dir per launch.
+- [`docs/delegation.md`](delegation.md) — fan bulk read-only analysis out to parallel subagent
+  workers behind a file contract, keeping every gate in your own session.
+- [`docs/release-management.md`](release-management.md) — running a whole release with one
+  manager session and gated worker sessions — the gap between the two docs on either side of it here.
+- [`docs/grooming.md`](grooming.md) — assembling the next release from the backlog on a fixed
+  cadence: retro first, pains supplied only by the operator, a mandatory fresh-reviewer round.
+- [`docs/triage.md`](triage.md) — the promote-or-drop pass over the staging tiers (learnings,
+  ideas, the standing list): one verdict per entry, filed or deleted in the same pass.
+- [`docs/parallel-sessions.md`](parallel-sessions.md) — running 2+ agent sessions against one
+  repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
+- [`docs/memory-layers.md`](memory-layers.md) — what Keel does (and doesn't) do about memory, and the stale or
+  unreachable memory file `doctor` reports.
+- [`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) — keeping a plaintext secrets
+  file out of an agent's reach (SOPS + age), and the `doctor` check that flags one in your tree.
+- [`ADAPTING.md`](../ADAPTING.md) — running Keel on tools other than Claude Code, with live cross-tool results.
+- [`PRINCIPLES.md`](../PRINCIPLES.md) · [`FRAMEWORK.md`](../FRAMEWORK.md) — the foundation and the reusable how-to.
+
+A few docs stay out of this index on purpose: `keel-impact.md`, `keel-impact-evidence.md`,
+`mcp-decision.md`, `publishing-checklist.md` and
+the five [`docs/drydock/`](drydock/) role-prompt templates are reached from the doc or command that uses
+them, and [`session-cost.md`](session-cost.md) is Keel's own self-maintenance doc.
+
+References like `dir #N`, `KB.n` and `SEC4` — in code comments, `CHANGELOG.md`, or a doc like
+[`release-audit.md`](release-audit.md) — are internal shorthand for a private backlog this repo doesn't
+ship; you don't need to resolve one, since the full context is always in the prose around it.
+
 ## Extras
 
 [`examples/`](../examples/) is a runnable, safe 5-minute tour: `init-project` → `doctor` → secret-guard
-blocking a key. Most of the docs are indexed in the [README's Docs section](../README.md#docs) too — a
-few (`keel-impact.md`, `keel-impact-evidence.md`, `mcp-decision.md`, `publishing-checklist.md`, and the
-five [`docs/drydock/`](drydock/) role-prompt templates) aren't. [`docs/session-cost.md`](session-cost.md)
-is Keel's own self-maintenance doc and is indexed nowhere on purpose.
-
-[`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) is another adopter-facing doc the
-README's Docs section does not list: how to keep a plaintext secrets file out of an agent's reach (SOPS +
-age), and the `doctor` check that flags one in your tree.
-
-[`docs/memory-layers.md`](memory-layers.md) answers "does Keel do memory?": the five memory layers mapped
-onto Keel's files, what Keel deliberately does not build, and the `doctor` checks that find stale or
-unreachable memory files.
-
-Setting Keel up for a tool other than Claude Code (installer flags, the by-hand copy) →
-[`docs/getting-started.md`](getting-started.md) and [`ADAPTING.md`](../ADAPTING.md).
+blocking a key.

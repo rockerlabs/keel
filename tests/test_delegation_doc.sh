@@ -11,15 +11,14 @@
 doc="$REPO_ROOT/docs/delegation.md"
 drydock="$REPO_ROOT/docs/drydock.md"
 delta_audit="$REPO_ROOT/docs/delta-audit.md"
-readme="$REPO_ROOT/README.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "docs/delegation.md exists" "$doc"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
-pin "README Docs section links docs/delegation.md" \
-  "$readme" '[`docs/delegation.md`](docs/delegation.md)' \
-  "expected the Docs section to list delegation.md the way it lists drydock.md"
+pin "docs/reference.md Docs index links docs/delegation.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/delegation.md`](delegation.md)' \
+  "expected docs/reference.md's Docs index to list delegation.md the way it lists drydock.md"
 
 # --- cross-links, pinned on both legs (drydock.md is the doc's own worked instantiation) -----------
 pin "drydock.md links delegation.md back" "$drydock" '](delegation.md)' \

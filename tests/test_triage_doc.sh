@@ -10,7 +10,6 @@
 
 doc="$REPO_ROOT/docs/triage.md"
 cmd="$REPO_ROOT/commands/triage.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/triage.md exists" "$doc"
 check_file "commands/triage.md exists" "$cmd"
@@ -20,8 +19,8 @@ pin "commands/triage.md names docs/triage.md" "$cmd" '](../docs/triage.md)' \
   "expected the entrypoint to point at the doc it is a thin wrapper over"
 pin "docs/triage.md names commands/triage.md back" "$doc" '](../commands/triage.md)' \
   "expected the doc to name its own entrypoint"
-pin "README Docs section links docs/triage.md" "$readme" '[`docs/triage.md`](docs/triage.md)' \
-  "expected the Docs section to list the new doc next to docs/grooming.md"
+pin "docs/reference.md Docs index links docs/triage.md" "$REPO_ROOT/docs/reference.md" '[`docs/triage.md`](triage.md)' \
+  "expected docs/reference.md's Docs index to list the new doc next to docs/grooming.md"
 pin "docs/reference.md Commands table has a /triage row" "$REPO_ROOT/docs/reference.md" '| `/triage` |' \
   "expected the Commands table to list the new command"
 
