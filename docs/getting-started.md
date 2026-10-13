@@ -126,7 +126,9 @@ clone — the linked path needs a checkout that survives, so this variant keeps 
 
 - **Update = `git pull` in the clone.** The next session runs the fresh rails, commands, and docs.
   Then re-run `./install.sh --link` once: a pull refreshes *content*, not *composition* — a file a new
-  release ADDS doesn't wire itself. `tools/doctor.sh --install` checks nothing is missing or dangling.
+  release ADDS doesn't wire itself (the `CHANGELOG` says when). And the secret-guard hook is a copy, not a
+  link: the re-run refreshes it too, and `doctor` warns while it is stale. `tools/doctor.sh --install`
+  checks nothing is missing or dangling.
 - **Have your own `~/.claude/CLAUDE.md`?** Linked mode appends the single import line to it
   (announced; delete that line to unlink) — your rules stay yours, the rails ride in under them.
 - **Migrating from a copy install:** re-run with `--link` — it swaps the embedded rails block for the
@@ -156,8 +158,7 @@ code/git rails from the always-on core on a machine with **no** git projects (st
 | `INSTANCE.md` | your **private** layer — machine details + a list of your projects | fill in the **machine details**; the project list fills itself as you `init-project`/`register-project`. Keep it private (git-ignored). |
 | a global git check | `secret-guard` | nothing — it runs on its own |
 
-(What loads when → the README's [*How it works*](../README.md#how-it-works) diagram and
-[`loading-and-cost.md`](loading-and-cost.md).)
+(What loads when → the diagram and the per-file costs in [`loading-and-cost.md`](loading-and-cost.md).)
 
 ## 3. Per project (each repo you work in)
 
@@ -299,6 +300,18 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
 - **`tools/pre-pr-gate.sh sweep`** is a manual, read-only check (run it yourself, e.g. as part of your
   own `/wrap` habit) that warns when the last few `/polish` runs all closed on a self-reported review
   rather than a trace-confirmed one — the blind spot the trace mechanism exists to close.
+- **Hands the worker rails to every subagent.** The installer also wires a `SubagentStart` hook that puts
+  [`delegation.md`](delegation.md)'s Worker rails (read-only, no spawns of its own) into the starting
+  context of every `general-purpose`, `Explore`, `Plan`, `claude` and `claude-code-guide` subagent, the
+  ones a built-in skill composes itself included. It is a nudge, not a floor. `KEEL_SUBAGENT_RAILS=off`
+  in the session environment turns it off. Wired the gate before this hook existed? Re-run the installer
+  with your scope flag and restart your sessions; `tools/doctor.sh` names the gap (`W-GATE-SUBAGENT-RAILS`).
+- **Denies a subagent's git against your repository.** The gate's Bash hook also refuses a *subagent's*
+  repository-mutating git command (`checkout`, `stash`, `reset`, `commit`, `clean`, …) aimed at the
+  session's repository or any worktree of it; reads and work in a scratch clone (`git -C <clone>`) are
+  fine, and your own commands are never touched. It needs no installer re-run — a pull is enough. A
+  seatbelt, not a sandbox: a script, `sh -c`, an alias or a variable path are not seen.
+  `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment turns it off.
 - **Costs:** `jq` on PATH (required — without it the installer prints the hooks JSON to paste in by hand
   instead of writing anything), a few small `/tmp` state files per repo, and a few extra minutes per PR
   for the review pass itself.

@@ -11,19 +11,17 @@ audit="$REPO_ROOT/docs/release-audit.md"
 backlog_cmd="$REPO_ROOT/commands/backlog.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 checklist="$REPO_ROOT/docs/publishing-checklist.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/release-audit.md exists" "$audit"
 check_file "commands/backlog.md exists" "$backlog_cmd"
 check_file "FRAMEWORK.md exists" "$framework"
 check_file "docs/publishing-checklist.md exists" "$checklist"
-check_file "README.md exists" "$readme"
 
-# --- README discoverability: a new adopter-usable doc that isn't linked from the Docs index is as
+# --- discoverability: a new adopter-usable doc that isn't linked from the Docs index is as
 # good as unshipped (same class dir #85's docs layer would have flagged). ------------------------
-pin "README Docs section links docs/release-audit.md" \
-  "$readme" '[`docs/release-audit.md`](docs/release-audit.md)' \
-  "expected the Docs section to list release-audit.md the way it lists rollout-audit.md/going-public.md"
+pin "docs/reference.md Docs index links docs/release-audit.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/release-audit.md`](release-audit.md)' \
+  "expected docs/reference.md's Docs index to list release-audit.md the way it lists rollout-audit.md/going-public.md"
 
 # --- commands/backlog.md carries the two new steps release-audit.md's phase 2 hands work to -------
 pin "backlog.md: step 3b (target-release label) exists" \

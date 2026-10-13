@@ -15,7 +15,6 @@ delegation="$REPO_ROOT/docs/delegation.md"
 release_audit="$REPO_ROOT/docs/release-audit.md"
 drydock="$REPO_ROOT/docs/drydock.md"
 reference="$REPO_ROOT/docs/reference.md"
-readme="$REPO_ROOT/README.md"
 derive="$REPO_ROOT/tools/delta-audit/derive.sh"
 
 check_file "docs/delta-audit.md exists" "$doc"
@@ -23,9 +22,9 @@ check_file "docs/delegation.md exists" "$delegation"
 check_file "tools/delta-audit/derive.sh exists" "$derive"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ---------------
-pin "README Docs section links docs/delta-audit.md" \
-  "$readme" '[`docs/delta-audit.md`](docs/delta-audit.md)' \
-  "expected the Docs section to list delta-audit.md the way it lists drydock.md"
+pin "docs/reference.md Docs index links docs/delta-audit.md" \
+  "$reference" '[`docs/delta-audit.md`](delta-audit.md)' \
+  "expected docs/reference.md's Docs index to list delta-audit.md the way it lists drydock.md"
 
 # --- phase 6 <-> delta-audit.md, pinned on BOTH legs -----------------------------------------------
 pin "release-audit.md phase 6 names docs/delta-audit.md" \

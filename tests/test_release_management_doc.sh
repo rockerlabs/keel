@@ -16,7 +16,6 @@ cmd="$REPO_ROOT/commands/manage-release.md"
 delegation="$REPO_ROOT/docs/delegation.md"
 go_cmd="$REPO_ROOT/commands/go.md"
 checklist="$REPO_ROOT/docs/publishing-checklist.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/release-management.md exists" "$doc"
 check_file "commands/manage-release.md exists" "$cmd"
@@ -30,9 +29,9 @@ pin "docs/release-management.md names commands/manage-release.md back" \
   "expected the doc to name its own entrypoint, per the drydock/delta-audit mutual-reference precedent"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped ----------------
-pin "README Docs section links docs/release-management.md" \
-  "$readme" '[`docs/release-management.md`](docs/release-management.md)' \
-  "expected the Docs section to list the new doc the way it lists drydock.md/delta-audit.md"
+pin "docs/reference.md Docs index links docs/release-management.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/release-management.md`](release-management.md)' \
+  "expected docs/reference.md's Docs index to list the new doc the way it lists drydock.md/delta-audit.md"
 
 # --- the family cross-links: sits in the gap, cited on all three legs ------------------------------
 pin "release-management.md links delegation.md" "$doc" '](delegation.md)' \

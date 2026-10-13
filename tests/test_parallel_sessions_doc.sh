@@ -9,18 +9,16 @@
 doc="$REPO_ROOT/docs/parallel-sessions.md"
 core="$REPO_ROOT/CORE.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/parallel-sessions.md exists" "$doc"
 check_file "CORE.md exists" "$core"
 check_file "FRAMEWORK.md exists" "$framework"
-check_file "README.md exists" "$readme"
 
-# --- README discoverability: an adopter-usable doc not linked from the Docs index is as good as
+# --- discoverability: an adopter-usable doc not linked from the Docs index is as good as
 # unshipped (same class dir #85's docs layer would have flagged). --------------------------------
-pin "README Docs section links docs/parallel-sessions.md" \
-  "$readme" '[`docs/parallel-sessions.md`](docs/parallel-sessions.md)' \
-  "expected the Docs section to list parallel-sessions.md the way it lists rollout-audit.md/drydock.md"
+pin "docs/reference.md Docs index links docs/parallel-sessions.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/parallel-sessions.md`](parallel-sessions.md)' \
+  "expected docs/reference.md's Docs index to list parallel-sessions.md the way it lists rollout-audit.md/drydock.md"
 
 # --- cross-doc rail citations: the doc's "linked" rails must name a heading that still exists on the
 # other side. The rails table has five rows citing three distinct source headings (three CORE.md rows

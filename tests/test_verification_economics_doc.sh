@@ -27,14 +27,13 @@ delta="$REPO_ROOT/docs/delta-audit.md"
 drydock="$REPO_ROOT/docs/drydock.md"
 release_audit="$REPO_ROOT/docs/release-audit.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
-readme="$REPO_ROOT/README.md"
 
 check_file "docs/verification-economics.md exists" "$doc"
 
 # --- discoverability: an adopter-usable doc nobody links to is as good as unshipped --------------
-pin "README Docs section links docs/verification-economics.md" \
-  "$readme" '[`docs/verification-economics.md`](docs/verification-economics.md)' \
-  "expected the Docs section to list verification-economics.md the way it lists delta-audit.md"
+pin "docs/reference.md Docs index links docs/verification-economics.md" \
+  "$REPO_ROOT/docs/reference.md" '[`docs/verification-economics.md`](verification-economics.md)' \
+  "expected docs/reference.md's Docs index to list verification-economics.md the way it lists delta-audit.md"
 
 # --- D2: the two axes. The whole doc rests on this; without it every rule below inherits the ------
 # --- falsified "review until clean" premise the ticket's datasets overturned. ---------------------

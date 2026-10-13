@@ -22,6 +22,7 @@ wrap="$REPO_ROOT/commands/wrap.md"
 # GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
 guide="$REPO_ROOT/commands/polish-guide.md"
 readme="$REPO_ROOT/README.md"
+gs="$REPO_ROOT/docs/getting-started.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "docs/publishing-checklist.md exists" "$checklist"
@@ -202,12 +203,16 @@ pin "polish-guide.md: step 3 states the no-rerun condition as 'touched only exem
 # only ever falls back to the subagent. dir #254 lifted that restriction and polish.md/getting-started.md
 # already say /polish attempts the real /code-review pass first, falling back only on refusal — README
 # was the one stale copy. `check_absent` guards the retired claim directly so a later edit can't quietly
-# restore it; the presence pin confirms the attempt-first/fallback framing landed.
+# restore it; the presence pin confirms the subagent-first framing landed (the README slim left the
+# fallback chain to getting-started.md §6, pinned just below).
 check_absent "README: no longer claims the built-in reviewer is model-invocation-disabled by design" \
   "$(cat "$readme")" "model-invocation-disabled"
-pin "README: pre-PR gate section states /polish runs the real review first, in a fresh-context subagent, falling back on refusal" \
+pin "README: pre-PR gate section states /polish runs the real review first, in a fresh-context subagent" \
   "$readme" 'a fresh-context subagent run the real, built-in `/code-review` pass first' \
-  "expected README's pre-PR gate section to match polish.md/getting-started.md's subagent-first/fallback framing (dir #516 F15, dir #670)"
+  "expected README's pre-PR gate section to match polish.md/getting-started.md's subagent-first framing (dir #516 F15, dir #670)"
+pin "getting-started.md §6 keeps the in-session fallback when the subagent cannot run the review" \
+  "$gs" 'If the subagent cannot run it, step 5 attempts the pass in-session.' \
+  "expected getting-started.md §6 to carry the fallback chain the README slim left to it (dir #516 F15)"
 
 # --- dir #516 (F16, operator-decided 2026-09-18): FRAMEWORK.md's two runner-label policies ---------
 # L602 forbids `ubuntu-latest` as a pinning example; L608 used to call a managed `*-latest` CI runner
@@ -240,7 +245,7 @@ pin "polish-guide.md: step 9 names a non-gate gh pr create failure as still spen
 # --- dir #413 slice 1 (A14): the read-only /polish review agent is a Claude Code feature, said so ------
 # The agent (agents/keel-polish-reviewer.md, `tools: Read, Grep, Glob`) is a structural floor only where
 # Claude Code loads agents/*.md. ADAPTING.md must say the floor does not port (the prose rails stay the
-# only containment elsewhere); docs/reference.md and the README name the agents/ channel so an adopter
+# only containment elsewhere); docs/reference.md names the agents/ channel so an adopter
 # can find what install.sh wires. One pin per site — a single shared phrase would let one satisfy all.
 pin "ADAPTING.md: the honest boundary says the review agent's tool floor is Claude Code-only" \
   "$REPO_ROOT/ADAPTING.md" 'keel-polish-reviewer' \
@@ -254,9 +259,9 @@ pin "docs/reference.md: an agents/ entry beside Commands" \
 pin "docs/reference.md: the agents/ entry names the shipped review agent" \
   "$REPO_ROOT/docs/reference.md" '`keel-polish-reviewer`' \
   "expected the agents/ entry to name keel-polish-reviewer (dir #413)"
-pin "README.md: the layout diagram names the agents/ channel" \
-  "$readme" 'agents/keel-polish-reviewer' \
-  "expected the README's how-it-works diagram to show the shipped review agent (dir #413)"
+pin "docs/loading-and-cost.md: the layout diagram names the agents/ channel" \
+  "$REPO_ROOT/docs/loading-and-cost.md" 'agents/keel-polish-reviewer' \
+  "expected the what-loads-when diagram (moved from the README) to show the shipped review agent (dir #413)"
 
 # --- dir #413 slice 2 (A9 header half, A14 S2 half): the flip is said where the claim lives --------------------
 gate_sh="$REPO_ROOT/tools/pre-pr-gate.sh"
@@ -282,12 +287,12 @@ for nd in '7 hooks' 'KEEL_SUBAGENT_RAILS' 'W-GATE-SUBAGENT-RAILS'; do
   pin "dir #674: docs/reference.md carries: $nd" "$REPO_ROOT/docs/reference.md" "$nd" "expected the installer row to name the seventh hook's facts (dir #674 B8)"
 done
 pin "dir #674: ADAPTING.md names the SubagentStart hook as Claude-Code-only" "$REPO_ROOT/ADAPTING.md" 'SubagentStart' "expected ADAPTING.md's gate bullet to say the injection does not port (dir #674 B8)"
-pin "dir #674: README.md names the SubagentStart hook and its kill switch" "$readme" 'SubagentStart' "expected the gate section to say what wiring it opts into (dir #674 F3)"
-pin "dir #674: README.md names the kill switch" "$readme" 'KEEL_SUBAGENT_RAILS=off' "expected the gate section to name the rollback (dir #674 F3)"
+pin "dir #674: getting-started.md names the SubagentStart hook and its kill switch" "$gs" 'SubagentStart' "expected the gate section (moved from the README) to say what wiring it opts into (dir #674 F3)"
+pin "dir #674: getting-started.md names the kill switch" "$gs" 'KEEL_SUBAGENT_RAILS=off' "expected the gate section to name the rollback (dir #674 F3)"
 
 # --- dir #675 (A4, slice 2): the subagent git floor and its opt-out are said where an adopter reads about the gate ------
-pin "dir #675: README.md names the git floor's kill switch" "$readme" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the gate section to name the floor's opt-out (dir #675 F3)"
+pin "dir #675: getting-started.md names the git floor's kill switch" "$gs" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the gate section to name the floor's opt-out (dir #675 F3)"
 pin "dir #675: docs/reference.md names the git floor's kill switch" "$REPO_ROOT/docs/reference.md" 'KEEL_SUBAGENT_GIT_FLOOR' "expected the installer row to name the floor's opt-out (dir #675 F3)"
-pin "dir #675: README.md says the floor is a seatbelt, not a sandbox" "$readme" 'not a sandbox' "expected the limit stated next to the floor (dir #675 B13)"
+pin "dir #675: getting-started.md says the floor is a seatbelt, not a sandbox" "$gs" 'not a sandbox' "expected the limit stated next to the floor (dir #675 B13)"
 
 summary
