@@ -234,11 +234,11 @@ run_test() {
   # mutant that makes a CHILD spin (the gate's awk, under a `$(…)` the test file's bash waits on) is cut down with
   # it, where an alarm to the file's bash alone left the child running. TERM first, so the file's own cleanup traps
   # run; KILL 5 s later, and again right after the leader is reaped — a child that ignores TERM outlives its leader.
-  # The watchdog leaves a marker, only while the leader is still alive, right before it signals: marker = TIMEOUT, so
-  # a hang whose TERM trap exits with a small status still counts as one, a file that finished on its own as the bound
-  # passed keeps its real verdict, and a mutant that merely dies of a signal is CRASHED. Without job control the
-  # sweep degrades to the leader alone (a child that outlives it leaks). `wait` runs inside braces so bash's "Killed"
-  # report goes to the null device.
+  # The watchdog leaves a marker, only while the leader is still alive, right before it signals: marker and no
+  # summary line = TIMEOUT, so a hang whose TERM trap exits with a small status still counts as one, a file that
+  # finished on its own as the bound passed keeps its real verdict, and a mutant that merely dies of a signal is
+  # CRASHED. Without job control the sweep would degrade to the leader alone (a child that outlives it leaks), so
+  # the probe below refuses to start. `wait` runs inside braces so bash's "Killed" report goes to the null device.
   local pid wd
   set -m
   ( cd "$work" && exec bash "$tfile" ) </dev/null >"$out_file" 2>&1 &
@@ -248,14 +248,26 @@ run_test() {
   set +m
   { wait "$pid" || rc=$?; } 2>/dev/null
   sig_group KILL "$wd"; { wait "$wd" || true; } 2>/dev/null   # the watchdog's own group, so its `sleep` goes too
+  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$out_file" | tail -n 1 || true)"
   if [ -e "$out_file.timeout" ]; then
     sig_group KILL "$pid" group-only
-    rc=142
+    # a summary line is the file's last act: one that printed it finished on its own as the bound passed, and keeps
+    # its real verdict; without one the file was cut off, whatever status its TERM trap chose
+    [ -n "$summary" ] || rc=142
   fi
   rm -f "$out_file.timeout"
-  summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$out_file" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
 }
+
+# dir #782: the group kill is the whole point — refuse to sweep where `set -m` gives a backgrounded job no group of its
+# own (a job that leads none has no `-pid` to signal), rather than time mutants out into leaked children.
+set -m
+sleep 30 >/dev/null 2>&1 &
+probe=$!
+set +m
+probe_ok=0; kill -0 -- "-$probe" 2>/dev/null || probe_ok=1
+sig_group KILL "$probe"; { wait "$probe" || true; } 2>/dev/null
+[ "$probe_ok" -eq 0 ] || refuse "job control is unavailable here: a backgrounded job did not get its own process group, so a hung mutant could not be cut down whole"
 
 runs=0
 run_test
