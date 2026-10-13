@@ -34,5 +34,10 @@ civil-month-offset	tools/self/accumulate.sh	(m > 2 ? -3 : 9)	(m > 2 ? -3 : 8)	dn
 felt-open-vocabulary	tools/self/accumulate.sh	case "$s_felt" in yes|no) ;;	case "$s_felt" in yes|no|maybe) ;;	add: felt is yes or no
 init-clobbers	tools/self/accumulate.sh	if [ -e "$DIR/classes.tsv" ] || [ -e "$DIR/sightings.tsv" ]; then die	if false; then die	init never overwrites
 status-rewrites-all	tools/self/accumulate.sh	NR > 1 && $1 == ENVIRON["ACC_C"] { $6 = ENVIRON["ACC_S"] }	NR > 1 { $6 = ENVIRON["ACC_S"] }	set_status rewrites only the named row
-write-lock-not-honoured	tools/self/accumulate.sh	[ -d "$DIR/.lock" ] && return 0	false && return 0	a write under the caller's lock proceeds
+write-lock-not-honoured	tools/self/accumulate.sh	[ "$(lock_kind)" != write ]; then return 0; fi	[ "$(lock_kind)" != wr1te ]; then return 0; fi	a write under the caller's lock proceeds
 own-lock-not-released	tools/self/accumulate.sh	if [ "$TOOK_LOCK" = 1 ]; then lock_release	if [ "$TOOK_LOCK" = 9 ]; then lock_release	a write that took its own lock releases it
+undated-closure-sorts-last	tools/self/accumulate.sh	[ "$cdate" = "—" ] && ckey=0000-00-00	[ "$cdate" = "—" ] && ckey=9999-99-99	closed: a dated closure wins over an undated one
+closed-unregistered-class	tools/self/accumulate.sh	class_exists "${pos[1]}" || die "unknown class: ${pos[1]}"\n    need_paths	    need_paths	closed refuses a class that is not in the registry
+glued-date-lost	tools/self/accumulate.sh	rest="${m: -1}${stripped#*"$m"}"	rest="${stripped#*"$m"}"	closed: a date glued to the closure word
+option-terminator-off	tools/self/accumulate.sh	--) shift; while	--) die "no --"; while	a -- terminator makes the rest positional
+help-as-value	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi;	-h|--help) usage; exit 0;	-h after the subcommand is a value
