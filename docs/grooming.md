@@ -243,9 +243,10 @@ the lane up front, got "the whole lane", and planned all 42 tickets: every body 
 The same day the operator cut the slate to its 11 pain tickets. The answer had come before anyone
 could see what the lane would cost. So the pain rows are planned and reviewed first. The lane follows
 as its own row, priced by G5's per-ticket rule from its ticket count alone. Its body reads and its
-own G6 pass happen only after a "yes" given against that price; G2's premise check does not wait for it.
-A rule of the procedure, not a compensation. It holds for any set the operator opts into wholesale, a parked file included (keel's
-0.14.0 groom took "full groom" before the parked file had a price, then priced it and asked again).
+own G6 pass happen only after a "yes" given against that price; a ticket offered by name instead gets
+G2's premise check before the offer. A rule of the procedure, not a compensation. It holds for any set
+the operator opts into wholesale, a parked file included (keel's 0.14.0 groom took "full groom" before
+the parked file had a price, then priced it and asked again).
 
 **A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
 grooms).** At 0.14.0 two of three pains were labels the groom wrote and the operator chose; at 0.15.0
@@ -479,7 +480,7 @@ was measured on; [`docs/release-management.md`](release-management.md) R7 record
 moved, so the next groom converts at a fresh ratio. Reading the window is a permanent limit, not a gap:
 it lives in the harness, where no repository tool can read it. So the offer reads the gauge there once,
 never from memory, and each priced option says where the gauge stands now and where the option leaves
-it ("10% now, about 75–86% after"), plus the date the window, or the plan that sizes it, ends. The
+it ("10% now, about 63–72% after"), plus the date the window, or the plan that sizes it, ends. The
 0.17.0 re-cut priced its options as a bare delta ("53–62 points"); the operator asked what a point is
 and read the delta as the gauge's end, which cost a question round.
 
