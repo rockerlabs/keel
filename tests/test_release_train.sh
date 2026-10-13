@@ -224,6 +224,34 @@ check_status_out "body of a train with an update-branch merge -> exit 0" 0
 check_contains "...lists it as update-branch (not reviewed)" "$OUT" "update-branch (not reviewed)"
 check_contains "...and does not count it as an integration commit" "$OUT" "integration commits: 0"
 
+# --- build --continue against a head that conflicts with the train ---------------------------------------
+wt7="$SANDBOX/wt-t7"
+rt build --branch t7 --base main --worktree "$wt7" "2=$s2" "4=$s4"
+check_status "t7 build -> exit 0" 0 "$STATUS"
+rt build --continue --worktree "$wt7" --base main "3=$s3"
+check_status "continue with a head that conflicts with the train head -> exit 1" 1 "$STATUS"
+check_contains "...names the head and the file" "$OUT" "#3: f"
+check_eq "...nothing merged, no merge in progress" "train: #2 ($s2)
+train: #4 ($s4)" "$(fp "$wt7" main)"
+git -C "$wt7" rev-parse -q --verify MERGE_HEAD >/dev/null && fail "...no merge in progress" "MERGE_HEAD present" || pass "...no merge in progress"
+rt build --continue --worktree "$wt7" --base main --allow-conflicts "3=$s3"
+check_status "continue --allow-conflicts -> exit 1, left in progress" 1 "$STATUS"
+check_contains "...lists UU f" "$OUT" "UU f"
+git -C "$wt7" rev-parse -q --verify MERGE_HEAD >/dev/null && pass "...MERGE_HEAD present" || fail "...MERGE_HEAD present" "no merge in progress"
+rt build --continue --worktree "$wt7" --base main "1=$s1"
+check_status "continue while a merge is in progress -> exit 2" 2 "$STATUS"
+
+# --- the default base is origin/main, and the new branch does not track it ----------------------------------
+gd update-ref refs/remotes/origin/main main
+wt8="$SANDBOX/wt-t8"
+rt build --branch t8 --worktree "$wt8" "1=$s1" "4=$s4"
+check_status_out "build with the default base (origin/main) -> exit 0" 0
+check_eq "a branch cut from a remote-tracking base has no upstream" "" "$(gd config --get branch.t8.merge || true)"
+rt body --branch t8
+check_status_out "body with the default base -> exit 0" 0
+rt check --branch t8 "1=$s1" "4=$s4"
+check_status_out "check with the default base -> exit 0" 0
+
 # --- body of a non-train branch ----------------------------------------------------------------------------
 rt body --branch b1 --base main
 check_status "body on a non-train branch -> exit 2" 2 "$STATUS"
