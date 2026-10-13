@@ -307,7 +307,7 @@ closed_state() {
         rest="$m${stripped#*"$m"}"
         cdate="—"
         # the tag word is the first capitals in $rest (BB_CLOSURE_TAG_PATTERN is uppercase-only); the date must follow it on the same line
-        if [[ "$rest" =~ ^[^A-Z]*[A-Z]+[^0-9${NL}]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        if [[ "$rest" =~ ^[^[:upper:]]*[[:upper:]]+[^0-9${NL}]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
         case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac
         if [ -z "$best_key" ] || [ "$ckey" -gt "$best_key" ]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
@@ -578,6 +578,5 @@ case "$cmd" in
     exit $?
     ;;
 
-  *) die "unknown subcommand: $cmd" ;;
 esac
 exit 0
