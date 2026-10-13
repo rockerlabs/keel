@@ -572,6 +572,21 @@ SHIM
       elif [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
         printf '!!! %s exited 0 but its log shows "command not found" — an unknown assertion likely vanished silently (dir #627)\n' "${active_files[$i]}"
         rc=1
+      elif [ "$rc" -eq 0 ] && grep -qE '^(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/${active_files[$i]}" 2>/dev/null; then
+        # dir #772, third fail-open: a file that sources lib.sh owes the run its OWN verdict line, which only
+        # `summary` prints (`<file>: N passed, M failed`, preceded by a newline). Without it the exit status is the
+        # last command's — a file ending in `exit 0`, `true` or an echo passes with FAIL lines in its log (the
+        # 0.16.0 alpine leg shipped three red checks green that way). Judged here, from the log, so it holds
+        # whatever the file did with its EXIT trap (a file's own `trap ... EXIT` replaces lib.sh's) and on every
+        # bash. Gated on the file sourcing lib.sh: tests/test_run_sh.sh's synthetic fixtures do not, and have no
+        # summary to owe. Only an otherwise-green file is escalated: a timed-out or already-failed one is counted
+        # under its own reason, so a killed file never reads as "no summary".
+        case $'\n'"$log_content"$'\n' in
+          *$'\n'"${active_files[$i]}: "[0-9]*" passed, "[0-9]*" failed"$'\n'*) ;;
+          *)
+            printf '!!! %s exited 0 but its log has no "%s: N passed, M failed" line — it never reached summary (dir #772)\n' "${active_files[$i]}" "${active_files[$i]}"
+            rc=1 ;;
+        esac
       fi
       [ "$rc" -eq 0 ] || failed=$((failed + 1))
       reaped=$((reaped + 1))
