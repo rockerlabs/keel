@@ -265,6 +265,82 @@ run_in "$globrepo" bash "$TOOL" --days 0
 unset KEEL_CLEANUP_GLOBS
 check_contains "KEEL_CLEANUP_GLOBS makes the custom name AUTO" "$(line_for experiment/thing)" "AUTO"
 
+# --- dir #814: a repo with NO remote grades against its LOCAL default branch, whatever it is called -----
+# Felt twice on a local-only repo whose default is `master`: the old "origin/HEAD's target, else main"
+# resolution found no `main`, printed "no main to compare against (fetch first?)" and graded nothing.
+nr="$(new_repo)"
+git -C "$nr" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$nr" commit -q --allow-empty -m c1
+git -C "$nr" branch claude/old-merged HEAD           # merged, ephemeral, old   -> AUTO
+git -C "$nr" branch staging HEAD                     # merged, off-pattern, old -> ASK
+git -C "$nr" commit -q --allow-empty -m c2           # master moves on (recent)
+git -C "$nr" checkout -q -b claude/unmerged; git -C "$nr" commit -q --allow-empty -m wip
+git -C "$nr" checkout -q master
+run_in "$nr" bash "$TOOL" --days 7 --live-hours 0
+check_status   "no remote, default master: exits 0" 0 "$STATUS"
+check_absent   "no remote, default master: no 'compare against' error" "$OUT" "to compare against"
+check_contains "no remote, default master: merged old ephemeral -> AUTO" "$(line_for claude/old-merged)" "AUTO"
+check_contains "no remote, default master: off-pattern -> ASK"           "$(line_for staging)" "ASK"
+check_absent   "no remote, default master: unmerged branch left alone"   "$OUT" "claude/unmerged"
+check_absent   "no remote, default master: the default itself is never listed" "$OUT" "master "
+# the felt shape: invoked from a LINKED worktree of that repo (the wrap runs from one)
+git -C "$nr" worktree add -q "$nr.wt" -b claude/session HEAD >/dev/null
+run_in "$nr.wt" bash "$TOOL" --days 7 --live-hours 0
+check_contains "no remote, from a linked worktree: still graded (AUTO)" "$(line_for claude/old-merged)" "AUTO"
+# --prune-safe acts on the same grading
+run_in "$nr" bash "$TOOL" --days 7 --live-hours 0 --prune-safe
+check_contains "no remote: --prune-safe deletes the AUTO branch" "$OUT" "deleted  claude/old-merged"
+check_status   "no remote: the AUTO branch is really gone" 1 "$(git -C "$nr" rev-parse --verify -q refs/heads/claude/old-merged >/dev/null; echo $?)"
+
+# the main worktree sitting on a FEATURE branch must not become the base: a false negative here would
+# grade against live work. Local main/master wins over whatever HEAD happens to be.
+fb="$(new_repo)"
+git -C "$fb" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$fb" commit -q --allow-empty -m c1
+git -C "$fb" checkout -q -b claude/feat; git -C "$fb" commit -q --allow-empty -m feat-work
+git -C "$fb" branch claude/on-feat HEAD              # merged into the checked-out feature branch, NOT into master
+run_in "$fb" bash "$TOOL" --days 0 --live-hours 0
+check_absent   "HEAD on a feature branch is not the base: a branch merged only into it is not graded" "$OUT" "claude/on-feat"
+
+# init.defaultBranch names a non-main/master default
+td="$(new_repo)"
+git -C "$td" symbolic-ref HEAD refs/heads/trunk
+git -C "$td" config init.defaultBranch trunk
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$td" commit -q --allow-empty -m c1
+git -C "$td" branch claude/old HEAD
+git -C "$td" commit -q --allow-empty -m c2
+run_in "$td" bash "$TOOL" --days 7 --live-hours 0
+check_contains "init.defaultBranch=trunk is honoured with no remote" "$(line_for claude/old)" "AUTO"
+
+# KEEL_DEFAULT_BRANCH overrides, and is validated
+tk="$(new_repo)"
+git -C "$tk" symbolic-ref HEAD refs/heads/trunk
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$tk" commit -q --allow-empty -m c1
+git -C "$tk" branch claude/old HEAD
+git -C "$tk" commit -q --allow-empty -m c2
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unguessable default (trunk, nothing configured): nothing graded" "$OUT" "to compare against"
+check_contains "unguessable default names the override" "$OUT" "KEEL_DEFAULT_BRANCH"
+check_absent   "no remote: the message does not say 'fetch first?'" "$OUT" "fetch first"
+export KEEL_DEFAULT_BRANCH=trunk
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_contains "KEEL_DEFAULT_BRANCH=trunk grades against trunk" "$(line_for claude/old)" "AUTO"
+export KEEL_DEFAULT_BRANCH=nonexistent
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_status   "KEEL_DEFAULT_BRANCH naming no branch: exits 0, nothing graded" 0 "$STATUS"
+check_contains "KEEL_DEFAULT_BRANCH naming no branch: says so" "$OUT" "to compare against"
+export KEEL_DEFAULT_BRANCH=--bogus
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_status   "KEEL_DEFAULT_BRANCH that is not a branch name exits 2" 2 "$STATUS"
+check_contains "invalid KEEL_DEFAULT_BRANCH explains itself" "$OUT" "KEEL_DEFAULT_BRANCH"
+unset KEEL_DEFAULT_BRANCH
+
+# the "fetch first?" hint stays for a repo that HAS a remote (origin/HEAD merely not fetched yet)
+wr="$(new_repo)"
+git -C "$wr" remote add origin "$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+run_in "$wr" bash "$TOOL"
+check_contains "remote present, base unresolved: still hints at fetch" "$OUT" "fetch first?"
+
 # --- usage / arg handling / guards -------------------------------------------------------------
 run bash "$TOOL" -h
 check_status   "help exits 0" 0 "$STATUS"

@@ -42,6 +42,8 @@
 # Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
 #      KEEL_KEEP_WORKTREE=<path> names the worktree to never touch (defaults to this run's own
 #      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
+#      KEEL_DEFAULT_BRANCH names the default branch to grade against (dir #814); unset, it is origin/HEAD's
+#      target, or -- in a repo with NO remote -- init.defaultBranch / main / master, whichever exists locally.
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
@@ -74,6 +76,8 @@ FLAG = merged worktree with live work -> reported for review, no destructive com
        session still mid-wrap, not a stale leftover.
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
+     KEEL_DEFAULT_BRANCH default branch to grade against (default: origin/HEAD's target; with no remote,
+                         init.defaultBranch, then main, then master -- whichever exists locally).
 EOF
 }
 
@@ -109,16 +113,44 @@ require_nonneg_int --live-hours "$LIVE_HOURS"
 
 git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
-# Default branch: origin/HEAD's target, else main. Compare against the REMOTE default when it resolves
-# (authoritative -- the merge lands there), else the local branch (offline / no remote, e.g. the tests).
-# symbolic-ref (not `rev-parse --abbrev-ref origin/HEAD`, which prints the literal "origin/HEAD" + exits
-# 128 with no remote); an absent origin/HEAD just leaves default empty -> main.
+# Default branch (dir #814), first match wins:
+#   1. KEEL_DEFAULT_BRANCH -- the operator's explicit word (validated as a branch name; exit 2 if not one).
+#   2. origin/HEAD's target (symbolic-ref, not `rev-parse --abbrev-ref origin/HEAD`, which prints the
+#      literal "origin/HEAD" + exits 128 with no remote).
+#   3. A remote exists but origin/HEAD is unset (never fetched): `main`, with the "fetch first?" hint below.
+#   4. NO remote -- nothing to fetch, so guess locally: init.defaultBranch, then main, then master, whichever
+#      exists as a local branch first. The checked-out HEAD is deliberately NOT a candidate: a main
+#      worktree sitting on a feature branch would make live work the base, and a wrong base deletes work.
+#      Nothing matches -> the "no <x> to compare against" line, which names KEEL_DEFAULT_BRANCH.
+# Compare against the REMOTE default when it resolves (authoritative -- the merge lands there), else the
+# local branch (offline / no remote, e.g. the tests).
+has_remote=0; [ -n "$(git remote 2>/dev/null || true)" ] && has_remote=1
 default=""
-if _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then default="${_ref#refs/remotes/origin/}"; fi
-[ -n "$default" ] || default=main
+if [ -n "${KEEL_DEFAULT_BRANCH:-}" ]; then
+  git check-ref-format --branch "$KEEL_DEFAULT_BRANCH" >/dev/null 2>&1 \
+    || { printf 'branch-cleanup: KEEL_DEFAULT_BRANCH is not a valid branch name: %s\n' "$KEEL_DEFAULT_BRANCH" >&2; exit 2; }
+  default="$KEEL_DEFAULT_BRANCH"
+elif _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then
+  default="${_ref#refs/remotes/origin/}"
+elif [ "$has_remote" -eq 1 ]; then
+  default=main
+else
+  for _c in "$(git config --get init.defaultBranch 2>/dev/null || true)" main master; do
+    [ -n "$_c" ] || continue
+    git check-ref-format --branch "$_c" >/dev/null 2>&1 || continue
+    git rev-parse --verify -q "refs/heads/$_c" >/dev/null 2>&1 && { default="$_c"; break; }
+  done
+  [ -n "$default" ] || default=main
+fi
 if git rev-parse --verify -q "origin/$default" >/dev/null 2>&1; then base="origin/$default"; else base="$default"; fi
-git rev-parse --verify -q "$base" >/dev/null 2>&1 \
-  || { printf 'branch-cleanup: no %s to compare against (fetch first?)\n' "$base" >&2; exit 0; }
+git rev-parse --verify -q "$base" >/dev/null 2>&1 || {
+  if [ "$has_remote" -eq 1 ]; then
+    printf 'branch-cleanup: no %s to compare against (fetch first?)\n' "$default" >&2
+  else
+    printf 'branch-cleanup: no %s to compare against (no remote; set KEEL_DEFAULT_BRANCH or init.defaultBranch)\n' "$default" >&2
+  fi
+  exit 0
+}
 
 # The one worktree we must never suggest removing: the one this run sits in (you can't `git worktree
 # remove` your own CWD, and at wrap the session usually sits on an already-merged branch). Identify it by
