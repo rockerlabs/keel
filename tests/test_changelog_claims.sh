@@ -11,6 +11,9 @@
 
 ccl="$REPO_ROOT/tools/self/changelog-claims.sh"
 scratch_cwd="$(mktemp -d "$SANDBOX/cwd.XXXXXX")"
+# The label the tool prints for the changelog's own lines — held in a variable so no `name:LINE` citation
+# shape sits in this file's text (tools/self/line-citations.sh would flag it).
+cl="CHANGELOG.md"
 
 check_file "tools/self/changelog-claims.sh exists" "$ccl"
 
@@ -243,8 +246,8 @@ frag "$d" a.md $'- frag a 777\n'
 frag "$d" b.md $'- frag b 888\n'
 run "$ccl" --repo "$d" --section 1.0.0
 check_status "A9: --section 1.0.0 -> exit 0" 0 "$STATUS"
-check_contains "A9: --section reads its own body" "$OUT" "CHANGELOG.md:9: 222"
-check_contains "A9: ...including a ### sub-heading's text" "$OUT" "CHANGELOG.md:17: 555"
+check_contains "A9: --section reads its own body" "$OUT" "${cl}:9: 222"
+check_contains "A9: ...including a ### sub-heading's text" "$OUT" "${cl}:17: 555"
 check_absent "A9: ...a fenced number is not read" "$OUT" ": 444"
 check_absent "A9: ...[Unreleased] is absent" "$OUT" ": 111"
 check_absent "A9: ...an older section is absent" "$OUT" ": 333"
@@ -252,9 +255,9 @@ check_absent "A9: ...fragments are absent" "$OUT" "changelog.d/"
 run "$ccl" --repo "$d"
 check_contains "A9: the default reads fragment a" "$OUT" "changelog.d/a.md:1: 777"
 check_contains "A9: ...fragment b" "$OUT" "changelog.d/b.md:1: 888"
-check_contains "A9: ...and [Unreleased]'s body" "$OUT" "CHANGELOG.md:5: 111"
+check_contains "A9: ...and [Unreleased]'s body" "$OUT" "${cl}:5: 111"
 check_absent "A9: ...not a released section" "$OUT" ": 222"
-check_eq "A9: fragments come before [Unreleased] (file order)" "changelog.d/a.md:1:changelog.d/b.md:1:CHANGELOG.md:5:" \
+check_eq "A9: fragments come before [Unreleased] (file order)" "changelog.d/a.md:1:changelog.d/b.md:1:${cl}:5:" \
   "$(sed -E -n 's/^[A-Z]+ ([^ ]+:[0-9]+:) .*/\1/p' <<< "$OUT" | tr -d '\n')"
 run "$ccl" --repo "$d" --fragment changelog.d/a.md
 check_status "A9: --fragment reads one fragment -> exit 0" 0 "$STATUS"
