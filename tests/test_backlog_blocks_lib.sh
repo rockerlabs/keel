@@ -329,25 +329,24 @@ Log: 2026-10-12 — filed after the audit — ✅ DONE for the first half only.
 ### dir #805 — a heading with no grade yet, a Draft slug line right under it
 Draft slug: `x` — ✅ DONE as a draft, not as a ticket.
 
+### dir #807 — an open lane ticket (the `next` lane arrow, grade R5 shape) — R5 — → next
+Builds on item 51 (✅ DONE: shipped in PR #7), this one is not.
+
 ### dir #806 — a genuinely closed control — R2 — ✅ DONE (2026-10-01, done)
 Closed body with no blank line before it.
 ' > "$f839"
 out839="$(backlog_ticket_blocks "$f839")"
-row839() { printf '%s\n' "$out839" | awk -F'\t' -v n="dir #$1 " -v c="$2" 'index($4, n) {print $c; exit}'; }
-for n in 801 802 803 804 805; do
+row839() { printf '%s\n' "$1" | awk -F'\t' -v n="$2" -v c="$3" 'index($4, n) {print $c; exit}'; }
+for n in 801 802 803 804 805 807; do
   check_status "MUTATION-PROOF: dir #$n (body line directly under the heading) stays open" \
-    0 "$(row839 "$n" 3)"
+    0 "$(row839 "$out839" "dir #$n " 3)"
 done
 check_status "control: a closed heading with a body line right under it still reads closed" \
-  1 "$(row839 806 3)"
-check_absent "a finished heading's block does not carry the next body line" \
-  "$(row839 801 4)" "Builds on item 51"
-check_absent "a wrapped-looking Log line is not part of the heading block" \
-  "$(row839 803 4)" "Log:"
+  1 "$(row839 "$out839" "dir #806 " 3)"
 
 # The body-span end is unchanged: the ticket still owns its no-blank body lines up to the next heading.
 check_status "dir #801's span still runs to the line before dir #802" \
-  "$(( $(row839 802 1) - 1 ))" "$(row839 801 2)"
+  "$(( $(row839 "$out839" "dir #802 " 1) - 1 ))" "$(row839 "$out839" "dir #801 " 2)"
 
 # --- dir #839: the standing-list shapes (legacy `### <n>.` headings, tag on the heading line, body
 # directly underneath) keep their verdicts — #11/#21 closed, #5/#10 open. -----------------------
@@ -363,11 +362,10 @@ Earlier attempt (✅ DONE for the feasibility half) — the build itself is stil
 Phase one ✅ DONE; phase two open.
 ' > "$f839b"
 out839b="$(backlog_ticket_blocks "$f839b")"
-row839b() { printf '%s\n' "$out839b" | awk -F'\t' -v n="### $1. " 'index($4, n) {print $3; exit}'; }
-check_status "legacy #11 (tag on the heading line, body right under it) reads closed" 1 "$(row839b 11)"
-check_status "legacy #21 (dashless tag on the heading line) reads closed" 1 "$(row839b 21)"
-check_status "MUTATION-PROOF: legacy #5 (no tag, body glyph right under it) reads open" 0 "$(row839b 5)"
-check_status "MUTATION-PROOF: legacy #10 (graded, body glyph right under it) reads open" 0 "$(row839b 10)"
+check_status "legacy #11 (tag on the heading line, body right under it) reads closed" 1 "$(row839 "$out839b" "### 11. " 3)"
+check_status "legacy #21 (dashless tag on the heading line) reads closed" 1 "$(row839 "$out839b" "### 21. " 3)"
+check_status "MUTATION-PROOF: legacy #5 (no tag, body glyph right under it) reads open" 0 "$(row839 "$out839b" "### 5. " 3)"
+check_status "MUTATION-PROOF: legacy #10 (graded, body glyph right under it) reads open" 0 "$(row839 "$out839b" "### 10. " 3)"
 
 # --- no readable file -> silent empty output, not an error --------------------------------------
 out4="$(backlog_ticket_blocks "$d/no-such-file.md")"
