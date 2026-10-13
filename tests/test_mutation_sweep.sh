@@ -10,11 +10,6 @@
 sweep="$REPO_ROOT/tools/self/mutation-sweep.sh"
 check_file "tools/self/mutation-sweep.sh exists" "$sweep"
 
-if ! command -v perl >/dev/null 2>&1; then
-  pass "perl not available — mutation-sweep tests skipped (the sweep's timeout is a perl alarm)"
-  summary; exit $?
-fi
-
 sweeptmp="$SANDBOX/sweeptmp"
 mkdir -p "$sweeptmp"
 
@@ -198,6 +193,44 @@ row m-over over.txt 'aa' 'bb' 'overlapping' >"$SANDBOX/over.tsv"
 sweep_in "$fx" --check "$SANDBOX/over.tsv"
 check_status "--check: a needle matching at two overlapping offsets is not 'exactly once'" 1 "$STATUS"
 check_contains "…it occurs twice" "$OUT" "m-over: needle occurs 2 times in over.txt, want 1"
+
+# --- 7. dir #782 — a mutant that makes a CHILD spin is TIMEOUT within the bound and leaves no process behind ------------
+# The mutated test file waits on a `$(…)` child that never ends (the gate's awk, in the felt case). A signal to the
+# test file's own bash alone — the old perl alarm — left that child running; the sweep now signals the whole process
+# group. The child records its own pid first so the check can name it; a survivor is killed here so a red run does
+# not leave it behind.
+spin_test() {
+  fixture_test | sed '$d'
+  cat <<'EOS'
+if grep -q 'spin_marker=yes' app.sh; then
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+fi
+echo "t.sh: $p passed, $f failed"
+EOS
+}
+fxs="$(mkfixture "$(spin_test)")"
+printf 'spin_marker=no\n' >>"$fxs/app.sh"
+git -C "$fxs" commit -qam 'spin marker'
+row m-spin app.sh 'spin_marker=no' 'spin_marker=yes' 'makes the test wait on a child that never ends' >"$SANDBOX/spin.tsv"
+spin_pidfile="$SANDBOX/spin.pid"
+rm -f "$spin_pidfile"
+t0=$SECONDS
+KEEL_SPIN_PIDFILE="$spin_pidfile" KEEL_SWEEP_TIMEOUT=2 sweep_in "$fxs" "$SANDBOX/spin.tsv" t.sh
+spent=$((SECONDS - t0))
+check_contains "782-A1 a mutant whose child spins is recorded TIMEOUT" "$OUT" "m-spin${TAB}TIMEOUT${TAB}-"
+check_status "782-A1 …and TIMEOUT is not a survivor: exit 0" 0 "$STATUS"
+check_eq "782-A1 …with only the mutant line and the total (no shell job-kill noise)" "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+if [ "$spent" -lt 20 ]; then pass "782-A1 …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s (took ${spent}s)"
+else fail "782-A1 …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s" "took ${spent}s"; fi
+spin_pid="$(cat "$spin_pidfile" 2>/dev/null || true)"
+check_status "782-A2 the spinning child recorded its pid" 0 "$([ -n "$spin_pid" ] && echo 0 || echo 1)"
+gone=1; n=0
+while [ -n "$spin_pid" ] && [ "$n" -lt 30 ]; do
+  kill -0 "$spin_pid" 2>/dev/null || { gone=0; break; }
+  sleep 0.1; n=$((n + 1))
+done
+check_status "782-A2 …and it is gone after the sweep (no process left behind)" 0 "$gone"
+[ -z "$spin_pid" ] || kill -KILL "$spin_pid" 2>/dev/null || true
 
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
 sweep_in "$fx"

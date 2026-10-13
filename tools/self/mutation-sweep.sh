@@ -20,7 +20,8 @@
 #                stdout; exit 0 when the list is sound, 1 otherwise. tests/test_mutation_lists.sh is its caller —
 #                one parser and one path rule, so the sweep (which tests committed HEAD, and refuses a dirty named
 #                file) and the staleness check agree on a row whenever the named files are clean.
-#   KEEL_SWEEP_TIMEOUT   seconds per test run (default 600), via `perl -e 'alarm shift; exec @ARGV'`.
+#   KEEL_SWEEP_TIMEOUT   seconds per test run (default 600). The run is its own process group, and the group gets
+#                        TERM at the bound and KILL 5 s later (dir #782).
 #
 # Run from inside a keel checkout; the repo is that checkout's top level. The sweep tests COMMITTED HEAD: it
 # refuses (exit 2) when a file the list names, or the test file, has a tracked change, staged or not (an
@@ -34,9 +35,9 @@
 # is M. Per mutant the needle must occur exactly once in the file, counted as substring occurrences,
 # overlapping ones included (else BADNEEDLE; so is a row naming a tracked symlink, or a file under one); it is replaced literally; the file
 # must change (else NOCHANGE). Outcome: TIMEOUT (exit status 142), else CRASHED (no summary), else KILLED (failed >= 1)
-# or SURVIVED (failed = 0). The file is restored from git after each mutant. Known limits: the timeout kills the test
-# file's bash, not its children — a mutant that makes a child (the gate's awk) spin leaves that child running after
-# TIMEOUT; and a mutant file that lacks a final newline gains one (awk reads lines).
+# or SURVIVED (failed = 0). The file is restored from git after each mutant. Known limits: a process that leaves the test run's
+# process group (a child that calls setsid or setpgid) escapes the timeout; and a mutant file that lacks a final
+# newline gains one (awk reads lines).
 #
 # Output: one line per mutant, `<id><TAB><outcome><TAB><summary, or ->`, then
 # `N killed, S survived, T timeout, C crashed, B bad` (B counts BADNEEDLE and NOCHANGE). Exit 0 when S = 0 and
@@ -173,7 +174,6 @@ EOF
   exit 0
 fi
 
-command -v perl >/dev/null 2>&1 || refuse "perl is required: the per-run timeout is a perl alarm"
 timeout="${KEEL_SWEEP_TIMEOUT:-600}"
 { _nonneg_int_valid "$timeout" && [ "$timeout" -gt 0 ]; } || refuse "KEEL_SWEEP_TIMEOUT must be a positive integer (got '$timeout')"
 
@@ -220,7 +220,24 @@ run_test() {
   rc=0; runs=$((runs + 1))
   # a fresh output file per run: a child orphaned by an earlier TIMEOUT may still hold the previous one open
   out_file="$tmp/out.$runs"
-  ( cd "$work" && perl -e 'alarm shift; exec @ARGV' "$timeout" bash "$tfile" ) </dev/null >"$out_file" 2>&1 || rc=$?
+  # dir #782: the test file runs in its OWN process group (`set -m` makes a backgrounded job a group leader — no perl,
+  # no setsid; the mechanism tests/run.sh's watchdog shares, dir #770), so the watchdog signals the whole group: a
+  # mutant that makes a CHILD spin (the gate's awk, under a `$(…)` the test file's bash waits on) is cut down with
+  # it, where an alarm to the file's bash alone left the child running. TERM first, so the file's own cleanup traps
+  # run; KILL 5 s later. The watchdog leaves a marker before it signals, so a mutant that merely dies of a signal
+  # is CRASHED, not TIMEOUT. `wait` runs inside a group so bash's "Killed" report goes to the null device.
+  local pid wd
+  rm -f "$out_file.timeout"
+  set -m
+  ( cd "$work" && exec bash "$tfile" ) </dev/null >"$out_file" 2>&1 &
+  pid=$!
+  ( sleep "$timeout"; : >"$out_file.timeout"; kill -TERM -- "-$pid" 2>/dev/null; sleep 5; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  wd=$!
+  set +m
+  { wait "$pid" || rc=$?; } 2>/dev/null
+  kill -KILL -- "-$wd" 2>/dev/null; { wait "$wd" || true; } 2>/dev/null   # the watchdog's own group, so its `sleep` goes too
+  if [ -e "$out_file.timeout" ]; then rc=142; fi
+  rm -f "$out_file.timeout"
   summary="$(grep -E ': [0-9]+ passed, [0-9]+ failed$' "$out_file" | tail -n 1 || true)"
   nfailed="${summary% failed}"; nfailed="${nfailed##* }"
 }
