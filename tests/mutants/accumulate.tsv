@@ -1,0 +1,38 @@
+# tests/mutants/accumulate.tsv — single-clause mutants of tools/self/accumulate.sh (dir #838 slice 1a, spec A13).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_accumulate.sh) and checked for
+# staleness by tests/test_mutation_lists.sh. Rows 1-10 are the spec's ten; the rest are this tool's own.
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
+window-le	tools/self/accumulate.sh	if (Dn - dn($1) >= win[id]) next	if (Dn - dn($1) > win[id]) next	A13 1: the window edge — a 60-day-old sighting must not count
+future-accepted	tools/self/accumulate.sh	[[ "$s_date" > "$ASOF" ]] && die	[[ "$s_date" > "9999-99-99" ]] && die	A13 2: add rejects a date after --as-of
+count-rows	tools/self/accumulate.sh	if (!(k in seen)) { seen[k] = 1; count[id]++ }	{ seen[k] = 1; count[id]++ }	A13 3: count distinct sources, not rows (/go + /polish on one source)
+threshold-gt	tools/self/accumulate.sh	($5 >= $4 || $6 == 1) {	($5 > $4 || $6 == 1) {	A13 4: due at exactly the threshold
+danger-unfelt	tools/self/accumulate.sh	if ($5 == "yes" && $6 == "yes") danger[id] = 1	if ($6 == "yes") danger[id] = 1	A13 5: danger needs felt yes
+fixed-recount-all	tools/self/accumulate.sh	if (sw[id] == "fixed" && $1 <= sd[id]) next		A13 6: after fixed only later sightings count
+retire-promoted	tools/self/accumulate.sh	$3 == "open" && $5 == 0 { print $1 }	($3 == "open" || $3 == "promoted") && $5 == 0 { print $1 }	A13 7: retire never touches a promoted class
+window-column-ignored	tools/self/accumulate.sh	win[id] = ($8 == "" ? 60 : $8 + 0)	win[id] = 60	A13 8: the per-class window column
+closed-dir-only	tools/self/accumulate.sh	else if (line[i] ~ /^### /) h = i	else if (line[i] ~ /^### dir #/) h = i	A13 9: closed reads KB.N / B.N headings
+no-stale-break	tools/self/accumulate.sh	if [ "$age" -gt "$LOCK_STALE_SECONDS" ]; then	if [ "$age" -gt 99999999999 ]; then	A13 10: a lock older than 2 hours is broken
+dedupe-off	tools/self/accumulate.sh	$3 == ENVIRON["ACC_K"] { f = 1 }	$3 == ENVIRON["ACC_K"] && 0 { f = 1 }	a duplicate (class, source, consumer) is a no-op
+counts-felt-ignored	tools/self/accumulate.sh	if (cnt[id] == "felt" && $5 != "yes") next		counts felt filters unfelt sightings
+owner-filter-dropped	tools/self/accumulate.sh	$2 == ENVIRON["ACC_O"] && ($3 == "open"	1 && ($3 == "open"	due --owner filters
+fixed-date-inclusive	tools/self/accumulate.sh	$1 <= sd[id]	$1 < sd[id]	a sighting dated on the closure day is not after it
+promoted-due	tools/self/accumulate.sh	($3 == "open" || $3 == "fixed") && ($5 >= $4	($3 == "open" || $3 == "fixed" || $3 == "promoted") && ($5 >= $4	a promoted class is never due
+retired-not-reopened	tools/self/accumulate.sh	= retired ]; then set_status	= retiredX ]; then set_status	a new sighting reopens a retired class
+foreign-citation-kept	tools/self/accumulate.sh	stripped="$(bb_strip_foreign_citations "$block" "$own" "$BB_CLOSURE_TAG_PATTERN")"	stripped="$block"	closed ignores a foreign ticket's citation
+fence-not-blanked	tools/self/accumulate.sh	fb="$(blank_fenced_blocks "$1")"	fb="$(cat "$1")"	a tag line inside a code fence does not count
+tag-unanchored	tools/self/accumulate.sh	if (t == tag) {	if (index(t, tag) > 0) {	the tag must start its own line
+seen-again-inclusive	tools/self/accumulate.sh	if (sw[id] == "promoted" && $1 > sd[id]) again[id] = 1	if (sw[id] == "promoted" && $1 >= sd[id]) again[id] = 1	seen-again needs a sighting dated after the promotion
+verdict-consumer-unfiltered	tools/self/accumulate.sh	case ",$v_cons," in *",$CONSUMER,"*) ;; *) continue ;; esac	case ",$v_cons," in *",$CONSUMER,"*) ;; *) ;; esac	verdict looks only at the consumer's own classes
+verdict-closed-promotion	tools/self/accumulate.sh	closed*) ;; *) hit=1 ;; esac	closed*) hit=1 ;; *) hit=1 ;; esac	a promotion whose ticket closed is not NEEDS-REWORK
+lint-dup-off	tools/self/accumulate.sh	if (k in seen) err(f, FNR,	if (0 && (k in seen)) err(f, FNR,	lint: duplicate (class, source, consumer)
+lint-unknown-class-off	tools/self/accumulate.sh	if (!($2 in known)) err(	if (0) err(	lint: unknown class
+lint-date-off	tools/self/accumulate.sh	if (!isdate($1)) err(	if (0) err(	lint: sighting date
+lint-status-off	tools/self/accumulate.sh	if (!statusok($6)) err(	if (0) err(	lint: class status
+lint-owner-off	tools/self/accumulate.sh	if ($4 == "" || $4 !~ /^[a-z0-9:-]+$/) err(	if (0) err(	lint: missing owner
+leap-year-off	tools/self/accumulate.sh	(y % 4 == 0 && y % 100 != 0)	(y % 4 == 0 && 0)	isdate: Feb 29 of a leap year
+civil-month-offset	tools/self/accumulate.sh	(m > 2 ? -3 : 9)	(m > 2 ? -3 : 8)	dn: the March-based month offset across a leap day
+felt-open-vocabulary	tools/self/accumulate.sh	case "$s_felt" in yes|no) ;;	case "$s_felt" in yes|no|maybe) ;;	add: felt is yes or no
+init-clobbers	tools/self/accumulate.sh	if [ -e "$DIR/classes.tsv" ] || [ -e "$DIR/sightings.tsv" ]; then die	if false; then die	init never overwrites
+status-rewrites-all	tools/self/accumulate.sh	NR > 1 && $1 == ENVIRON["ACC_C"] { $6 = ENVIRON["ACC_S"] }	NR > 1 { $6 = ENVIRON["ACC_S"] }	set_status rewrites only the named row
+write-lock-not-honoured	tools/self/accumulate.sh	[ -d "$DIR/.lock" ] && return 0	false && return 0	a write under the caller's lock proceeds
+own-lock-not-released	tools/self/accumulate.sh	if [ "$TOOK_LOCK" = 1 ]; then rm -f	if [ "$TOOK_LOCK" = 9 ]; then rm -f	a write that took its own lock releases it
