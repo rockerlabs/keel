@@ -164,6 +164,32 @@ run "$ccl" --repo "$d"
 check_contains "A5: an odd-backtick line is not code-blanked — its number lists" "$OUT" "UNBOUND changelog.d/a.md:1: 17"
 check_contains "A5: ...and the context shows the text that was not deleted" "$OUT" "17 files and"
 
+# Review round 1: the code-span blanking never rewrites a marker's own text, a number glued to letters or
+# digits is one token (not a stray head), a leading-dot decimal is not an integer, and the context keeps
+# glued text glued.
+d="$(one_frag $'- 2 <!-- claim: matches \'^`[a-z]`$\' t.txt -->\n')"
+put "$d" t.txt $'`a`\n`b`\nzz\n'
+run "$ccl" --repo "$d" --strict
+check_status "R1: backticks inside a marker's ERE are data -> OK, exit 0" 0 "$STATUS"
+check_contains "R1: ...and the OK line prints the ERE as written" "$OUT" "matches '^\`[a-z]\`\$' t.txt = 2"
+d="$(one_frag $'- 1e5 and 12h30m and .5 and see a.sh:12 and 5/6 here\n')"
+run "$ccl" --repo "$d"
+check_contains "R1: 1e5 is one claim as written" "$OUT" "UNBOUND changelog.d/a.md:1: 1e5 —"
+check_contains "R1: 12h30m is one claim as written" "$OUT" "UNBOUND changelog.d/a.md:1: 12h30m —"
+check_contains "R1: .5 is a decimal claim as written" "$OUT" "UNBOUND changelog.d/a.md:1: .5 —"
+check_contains "R1: the context keeps a.sh:12 glued" "$OUT" "see a.sh:12"
+check_contains "R1: the context keeps 5/6 glued" "$OUT" "5/6 here"
+check_eq "R1: six claims (1e5, 12h30m, .5, 12, 5, 6), no stray head or tail" "6" "$(count_of "$OUT" '^UNBOUND')"
+d="$(one_frag $'- 3 <!-- claim: hand it was defaced here -->\n')"
+run "$ccl" --repo "$d"
+check_contains "R1: an English hex-letter word is not a sha as-of" "$OUT" "without an as-of"
+d="$(one_frag $'- 3 <!-- claim: hand see commit 3b8b41c for it -->\n')"
+run "$ccl" --repo "$d" --strict
+check_status "R1: a real commit sha is an as-of" 0 "$STATUS"
+d="$(one_frag $'- 3 files\n')"
+run "$ccl" --repo "$d" --section ''
+check_status "R1: an empty --section -> exit 2" 2 "$STATUS"
+
 # --- A6: BADMARK (exit 1 without --strict), each case separately --------------------------------------------------------
 badmark() {   # badmark LABEL MARKER-TEXT [REASON-FRAGMENT]  (fixture: x.md, a.md present; 'sub' a symlink out)
   local label="$1" mk="$2" want="${3:-}" b

@@ -67,6 +67,7 @@ die() { echo "changelog-claims.sh: $1" >&2; exit 2; }
 
 repo_dir="$(cd "$self_dir/../.." && pwd)"
 section=""
+have_section=0
 strict=0
 frag_args=""
 nfrag=0
@@ -80,7 +81,7 @@ while [ $# -gt 0 ]; do
       repo_dir="$2"; shift 2 ;;
     --section)
       [ $# -ge 2 ] || die_args "--section needs a version"
-      section="$2"; shift 2 ;;
+      section="$2"; have_section=1; shift 2 ;;
     --fragment)
       [ $# -ge 2 ] || die_args "--fragment needs a changelog.d/NAME.md path"
       frag_args="$frag_args$2"$'\n'; nfrag=$((nfrag + 1)); shift 2 ;;
@@ -91,7 +92,7 @@ done
 [ -d "$repo_dir" ] || die_args "no such directory: $repo_dir"
 repo_dir="$(cd "$repo_dir" && pwd)"
 repo_real="$(cd "$repo_dir" && pwd -P)"
-if [ -n "$section" ]; then
+if [ "$have_section" = 1 ]; then
   [ "$nfrag" -eq 0 ] || die_args "--section and --fragment are exclusive"
   grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$section" || die_args "--section '$section' is not x.y.z"
 fi
@@ -106,12 +107,12 @@ changelog="$repo_dir/CHANGELOG.md"
 read -r -d '' awk_prog <<'AWK' || true
 function trim(x) { sub(/^[ \t]+/, "", x); sub(/[ \t]+$/, "", x); return x }
 function bad(i, why) { mst[i] = "B"; mbad[i] = why }
-function is_sha(w) { return length(w) >= 7 && length(w) <= 40 && w ~ /^[0-9a-f]+$/ && w ~ /[a-f]/ }
+function is_sha(w, needdigit) { return length(w) >= 7 && length(w) <= 40 && w ~ /^[0-9a-f]+$/ && w ~ /[a-f]/ && (!needdigit || w ~ /[0-9]/) }
 function has_asof(t,    n, a, k, w) {
   if (t ~ /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) return 1
   if (t ~ /v[0-9]+\.[0-9]+\.[0-9]+/) return 1
   n = split(t, a, /[^0-9A-Za-z]+/)
-  for (k = 1; k <= n; k++) if (is_sha(a[k])) return 1
+  for (k = 1; k <= n; k++) if (is_sha(a[k], 1)) return 1   # a digit too: "defaced" is a word, not a commit
   return 0
 }
 function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, after, j) {
@@ -190,7 +191,9 @@ function context(pos,    left, right, na, nb, a, b, out, i, k) {
   na = split(left, a, " "); nb = split(right, b, " ")
   out = ""
   for (i = (na > 2 ? na - 1 : 1); i <= na; i++) out = out (out == "" ? "" : " ") a[i]
-  for (k = 1; k <= 4 && k <= nb; k++) out = out (out == "" ? "" : " ") b[k]
+  # the claim's own word keeps any text glued to its left ("a.sh:12", "5/6")
+  glue = (out != "" && substr(left, length(left), 1) != " ")
+  for (k = 1; k <= 4 && k <= nb; k++) out = out (out == "" || (k == 1 && glue) ? "" : " ") b[k]
   return out
 }
 function emit(type, ln, text, val, ctx, k) {
@@ -221,18 +224,26 @@ BEGIN {
   }
   s = $0
   gsub(sanit, " ", s)
-  # 1. inline code spans (not on a line with an odd backtick count: a span wrapped across lines)
+  # 1. inline code spans, blanked length-preserving (not on a line with an odd backtick count: a span
+  # wrapped across lines). s0 keeps the line as written: a marker's text is read from it, so a backtick
+  # pair inside a marker's ERE or hand text is data, never a span.
+  s0 = s
   nb = gsub(/`/, "&", s)
-  if (nb > 0 && nb % 2 == 0) gsub(/`[^`]*`/, " ", s)
-  # 2. markers, left to right; each marker's text becomes one placeholder byte so claims keep a side
-  nm = 0; out = ""; rest = s
+  if (nb > 0 && nb % 2 == 0) {
+    from = 1
+    while (match(substr(s, from), /`[^`]*`/)) { blank_range(from + RSTART - 1, RLENGTH); from += RSTART - 1 + RLENGTH }
+  }
+  # 2. markers, found on the span-blanked line (one inside a span is not a marker), read from s0, left to
+  # right; each marker's text becomes one placeholder byte so claims keep a side
+  nm = 0; out = ""; rest = s; rest0 = s0
   while ((p = index(rest, "<!-- claim")) > 0) {
     body = substr(rest, p + 10)
+    body0 = substr(rest0, p + 10)
     q = index(body, "-->")
     nm++
     pre = substr(rest, 1, p - 1)
-    if (q == 0) { parse_marker(nm, body, 0); rest = "" }
-    else { parse_marker(nm, substr(body, 1, q - 1), 1); rest = substr(body, q + 3) }
+    if (q == 0) { parse_marker(nm, body0, 0); rest = ""; rest0 = "" }
+    else { parse_marker(nm, substr(body0, 1, q - 1), 1); rest = substr(body, q + 3); rest0 = substr(body0, q + 3) }
     out = out pre PH
   }
   s = out rest
@@ -273,7 +284,7 @@ BEGIN {
   blank("[0-9]?[0-9]:[0-9][0-9]Z?", 0, 0)
   blank("[0-9]+(st|nd|rd|th)", 0, 0)
   blank_shas()
-  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?[A-Za-z]*", 0, 0)
+  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?[A-Za-z]*", 0, 1)
   blank(re_x6, 1, 1)
   blank(re_x6s, 0, 0)
   blank(re_x7, 1, 1)
@@ -296,6 +307,7 @@ BEGIN {
     nonint = 0; ds = st
     if (substr(s, e, 1) == "." && substr(s, e + 1, 1) ~ /[0-9]/) { match(substr(s, e), /^\.[0-9]+/); e += RLENGTH; nonint = 1 }
     if (st > 1 && substr(s, st - 1, 1) == "~") { ds = st - 1; nonint = 1 }
+    if (st > 1 && substr(s, st - 1, 1) == "." && (st == 2 || substr(s, st - 2, 1) !~ /[A-Za-z0-9]/)) { ds = st - 1; nonint = 1 }
     nword = 0
     sw = (substr(s, e, 1) == "-") ? 1 : ((substr(s, e, 3) == en) ? 3 : 0)
     if (sw && substr(s, e + sw, 1) ~ /[0-9]/) {
@@ -303,7 +315,7 @@ BEGIN {
     } else if (substr(s, e, 1) == "-" && substr(s, e + 1, 1) ~ /[A-Za-z]/) {
       match(substr(s, e + 1), /^[A-Za-z]+/); e += 1 + RLENGTH; nword = 1
     }
-    if (!nword && match(substr(s, e), /^[A-Za-z%]+/)) { e += RLENGTH; nonint = 1 }
+    if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*/)) { e += RLENGTH; nonint = 1 }
     nc++
     cpos[nc] = st; ctext[nc] = substr(s, ds, e - ds)
     v = digits; gsub(/,/, "", v); cval[nc] = nonint ? "-" : v
