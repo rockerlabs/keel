@@ -49,9 +49,8 @@
 #   --selftest | --help
 # `closed` finds the `Observer-class: CLASS` line (anchored, outside code fences), takes the nearest `### ` heading above
 # it (any id form: `dir #N`, `KB.N`, `B.N`, `H.N`), and tests that heading block — the heading line plus its wrapped
-# continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. The closure date it prints is the first
-# parenthesised YYYY-MM-DD after the tag on the tag's own line (`✅ CLOSED (2026-10-01)`, `✅ FIXED in PR #9 (2026-10-01)`);
-# no such date, or an impossible one, prints `—` (callers then take the day they saw the closure). Several tags for one class (an old closed
+# continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN; the date it prints is `—` unless the tag
+# carries one (rule at closed_state; deliberately wider than tools/self/archive-sweep-check.sh's). Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
 # for that single write. The lock is cooperative and guards a RUN, not a single write: a write that finds ANY lock
@@ -309,8 +308,10 @@ closed_state() {
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
         # the closure date is the first parenthesised date after THIS tag on its own line: `TAG … (YYYY-MM-DD`, where the
         # words between may be anything but an opening parenthesis (`✅ CLOSED BY CONSTRUCTION (2026-…`, `✅ FIXED in PR #9
-        # (2026-…`). The text after the tag starts at the tag's last matched char (it may be the `(`). No such date, a
-        # `(` that does not open a date, a date on another line, or an impossible one: undated (`—`).
+        # (2026-…`) — wider than tools/self/archive-sweep-check.sh, which wants `TAG (date` and so calls these two undated.
+        # The text after the tag starts at the tag's last matched char (it may be the `(`). No such date, a first `(` that
+        # does not open a date, a date on another line, or an impossible one: undated (`—`, a safe answer — callers then
+        # use the day they saw the closure).
         after="${m: -1}${stripped#*"$m"}"; after="${after%%"$NL"*}"
         cdate="—"
         if [[ "$after" =~ $DATE_AFTER_TAG_RE ]]; then
