@@ -362,8 +362,21 @@ check_contains "compaction stop (d): an uncommittable tree stops the run" "$g1" 
 check_contains "compaction stop (e): the hand-over file lives outside the repo" "$g1" 'outside the repo'
 check_contains "compaction stop (e): ... and carries the final report with the PR URL left blank" "$g1" 'the PR URL left blank'
 check_contains "compaction stop (e): a /go run's handoff note says next: /polish (compaction stop, dir #739)" "$g1" 'next: /polish (compaction stop, dir #739)'
-check_contains "compaction stop (f): no tool call after the two lines" "$g1" 'no further tool call'
-check_contains "compaction stop (f): a managed-release worker tells its manager" "$g1" 'to its manager'
+check_contains "compaction stop (f): no tool call after the hand-on" "$g1" 'make no further tool call'
+# dir #845: the stop continues itself — three routes, the two operator lines only as the fallback.
+g1f="$(tr '\n' ' ' <<< "$g1" | tr -s ' ')"
+check_contains "compaction stop (f): the continued run is one skill call (works where a leading /polish may not)" "$g1f" 'invoke the `polish` skill with args `<--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first`'
+check_contains "compaction stop (f) route 1: an operator-started turn launches a successor with start_session" "$g1f" 'launch a successor with `start_session`'
+check_contains "compaction stop (f) route 1: the successor runs in the same worktree" "$g1f" '`use_worktree: false`'
+check_contains "compaction stop (f) route 2: a managed worker sends the manager COMPACT <token> <file>" "$g1f" 'send the manager `COMPACT <token> <absolute hand-over file>`'
+check_contains "compaction stop (f) route 2: the manager clears the idle session and sends a continuation" "$g1f" 'The manager clears this session'
+check_contains "compaction stop (f) route 3: the two lines are the fallback, naming the refusal" "$g1f" 'Fallback — the harness refused'
+check_contains "compaction stop (f) route 3: ... and the turn names the refusal" "$g1f" 'naming the refusal'
+check_contains "compaction stop (g): the continued run runs init anew, the gate keyed by repo and branch" "$g1f" 'keyed by repository and branch, not by session'
+f_head="${g1f%%'(1) **A turn the operator started**'*}"
+f_two="${g1f#*'Fallback — the harness refused'}"
+check_eq "compaction stop (f): the paste-ready lines sit under route 3 only" "0" "$(grep -c '/compact' <<< "$f_head" || true)"
+check_contains "compaction stop (f): route 3 carries the /compact line" "$f_two" '/compact'
 check_contains "compaction stop (g): the continued run's conformance mandate reads the hand-over file" "$g1" 'conformance mandate'
 check_contains "compaction stop (g): a missing hand-over file is recomposed" "$g1" 'recompose it from'
 check_contains "compaction stop (g): the operator may decline the stop" "$g1" 'continue without compacting'
@@ -381,6 +394,14 @@ blocks="$(fenced_blocks)"
 tmpl='/polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first'
 check_eq "compaction stop (f): exactly one fenced block is the bare /compact line" "1" "$(grep -cxF '/compact' <<< "$blocks" || true)"
 check_eq "compaction stop (f): exactly one fenced block is the verbatim /polish template, alone" "1" "$(grep -cxF "$tmpl" <<< "$blocks" || true)"
+# dir #845: R11 and token-economy name the self-continuing stop, not the operator's `/compact`.
+rm_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/release-management.md" | tr -s ' ')"
+te_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/token-economy.md" | tr -s ' ')"
+check_contains "R11: the compaction stop sends the manager COMPACT <token> <file> (dir #845)" "$rm_flat" 'sends the manager `COMPACT <token> <absolute hand-over file>`'
+check_contains "R11: the manager clears the idle session and sends a continuation message" "$rm_flat" 'the manager clears that idle session'
+check_absent "R11: no longer says the stop asks for /compact" "$rm_flat" 'which asks for `/compact`'
+check_contains "token-economy: the stop hands the run on, the operator's lines only on a refusal" "$te_flat" 'only when the harness refuses'
+check_absent "token-economy: no longer says the stop waits for the operator's /compact" "$te_flat" 'stops so the operator can send `/compact`'
 # B12a: the guide's trigger lists name a compaction stop.
 check_contains "guide description names a compaction stop" "$guide_head" 'a compaction stop'
 check_contains "docs/loading-and-cost.md's guide row names a compaction stop" "$(grep -F '`commands/polish-guide.md`' "$REPO_ROOT/docs/loading-and-cost.md" || true)" 'a compaction stop'

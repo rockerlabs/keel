@@ -77,23 +77,39 @@ Steps, in order:
 
   A `/go` run also writes its handoff note under `go-guide.md` I3.4, with `next: /polish (compaction stop,
   dir #739)` and the hand-over file's absolute path in `carry:`.
-- (f) **End the turn with two paste-ready lines for the operator, each in its own fenced block, to be sent as
-  two messages in this order**, then make no further tool call:
+- (f) **Hand the run on — the first route that applies, then make no further tool call.** The continued run is
+  always the same skill call, `<call>`: invoke the `polish` skill with args `<--no-test if this run had it> after a
+  compaction stop (dir #739): read <absolute hand-over file> first` (the skill call works wherever a leading `/polish`
+  might not run as a command).
+  - (1) **A turn the operator started** (a standalone `/go` or `/polish` they typed): launch a successor with
+    `start_session` — `initiation: user_asked`, `context: fresh`, `use_worktree: false` (the same worktree, the
+    committed branch), a `prompt` that is `<call>`, a `background` naming the ticket, the branch and the hand-over
+    file — then end the turn with one line linking the successor. The successor is the continued run (g).
+  - (2) **A managed-release worker** (its turn started by its manager's message, so `start_session` is refused
+    there; the release's brief names this line): send the manager `COMPACT <token> <absolute hand-over file>` —
+    `<token>` is the worker's own, from its overlay — and end the turn. The manager clears this session (it is idle
+    by then) and sends one self-contained continuation message: the worker id, the overlay paths and `<call>`.
+    A manager reading this without the release's overlay does exactly that.
+  - (3) **Fallback — the harness refused** (a launch refused; a turn that no operator and no manager started;
+    `clear_session` refused because the session is pinned or open on screen, which the manager reports): end the
+    turn naming the refusal, then two paste-ready lines for the operator, each in its own fenced block, to be sent
+    as two messages in this order:
 
-  ```
-  /compact
-  ```
+    ```
+    /compact
+    ```
 
-  ```
-  /polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first
-  ```
+    ```
+    /polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first
+    ```
 
-  The second line is a real `/polish` invocation, so the whole procedure reloads: a manual `/compact`
-  re-injects no skill body. The blocks are separate because text sent together with `/compact` becomes its
-  summary instructions. A managed-release worker also sends one line to its manager: it stopped for `/compact`
-  in its own chat.
-- (g) **The continued run.**
-  - It re-reads the hand-over file.
+    The second line is a real `/polish` invocation, so the whole procedure reloads: a manual `/compact`
+    re-injects no skill body. The blocks are separate because text sent together with `/compact` becomes its
+    summary instructions.
+- (g) **The continued run** (a successor, a cleared session, or a compacted one).
+  - It re-reads the hand-over file, and a managed worker its overlays named in the continuation message.
+  - It runs step 1's `init` anew: the gate's state is keyed by repository and branch, not by session, and the
+    stopped run wrote none (c).
   - Step 5's conformance mandate takes the done-criterion from the file, and steps 9–10 take the PR body and
     the report from it.
   - If the file is missing, recompose it from `git log origin/<default>..HEAD` and the ticket, and say so.
