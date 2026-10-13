@@ -45,5 +45,7 @@ help-recorded-as-data	tools/self/accumulate.sh	die "unexpected $1 after the subc
 date-compare-string-order	tools/self/accumulate.sh	date_gt() { [ "${1//-/}" -gt "${2//-/}" ]; }	date_gt() { [ "${1//-/}" -lt "${2//-/}" ]; }	add / fixed: a date after --as-of is refused
 help-guard-dropped	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage	-h|--help) if true; then usage	--help before the subcommand prints usage; after it, an error
 arity-check-after-dir	tools/self/accumulate.sh	cmd="${pos[0]}"	cmd="${pos[0]}"; [ -n "$DIR" ] || die "--dir is required"	the subcommand/arity check comes before --dir
-date-anywhere-on-line	tools/self/accumulate.sh	[[:space:]]*\(([0-9][0-9][0-9][0-9]-	.*([0-9][0-9][0-9][0-9]-	closed: only the date right after the tag is the closure date
 closure-date-unvalidated	tools/self/accumulate.sh	valid_date "$cdate" || cdate="—"	true	closed: an impossible date is undated
+date-anywhere-on-line	tools/self/accumulate.sh	'^[^(]*\\(([0-9][0-9][0-9][0-9]-	'^.*([0-9][0-9][0-9][0-9]-	closed: only a parenthesised date counts
+date-borrowed-from-later-tag	tools/self/accumulate.sh	after="${m: -1}${stripped#*"$m"}"; after="${after%%"$NL"*}"	after="${stripped}"	closed: the date belongs to the same tag and the same line as the glyph
+date-from-next-line	tools/self/accumulate.sh	after="${after%%"$NL"*}"	after="${after}"	closed: the date must be on the tag's own line

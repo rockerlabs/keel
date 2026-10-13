@@ -49,7 +49,9 @@
 #   --selftest | --help
 # `closed` finds the `Observer-class: CLASS` line (anchored, outside code fences), takes the nearest `### ` heading above
 # it (any id form: `dir #N`, `KB.N`, `B.N`, `H.N`), and tests that heading block — the heading line plus its wrapped
-# continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. Several tags for one class (an old closed
+# continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. The closure date it prints is the first
+# parenthesised YYYY-MM-DD after the tag on the tag's own line (`✅ CLOSED (2026-10-01)`, `✅ FIXED in PR #9 (2026-10-01)`);
+# no such date, or an impossible one, prints `—` (callers then take the day they saw the closure). Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
 # for that single write. The lock is cooperative and guards a RUN, not a single write: a write that finds ANY lock
@@ -73,6 +75,7 @@ US=$'\037'
 HDR_CLASSES="class${TAB}title${TAB}fix${TAB}owner${TAB}created${TAB}status${TAB}threshold${TAB}window${TAB}counts"
 HDR_SIGHTINGS="date${TAB}class${TAB}consumer${TAB}source${TAB}felt${TAB}danger${TAB}model${TAB}evidence${TAB}note"
 LOCK_STALE_SECONDS=7200
+DATE_AFTER_TAG_RE='^[^(]*\(([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])'   # see closed_state
 
 die() { printf 'accumulate: %s\n' "$*" >&2; exit 2; }
 lock_release() { rm -f "$DIR/.lock/info"; rmdir "$DIR/.lock" 2>/dev/null; }
@@ -293,7 +296,7 @@ hits_in_file() {
 
 # closed_state CLASS → prints open | closed <glyph> <date|—> | draft | orphaned
 closed_state() {
-  local cls="$1" f d rec block stripped m glyph cdate own
+  local cls="$1" f d rec block stripped m after glyph cdate own
   local any_open=0 any_draft=0 best_glyph="" best_date="" best_key="" ckey
   for f in ${BACKLOGS[@]+"${BACKLOGS[@]}"}; do
     while IFS= read -r rec; do
@@ -304,12 +307,14 @@ closed_state() {
       if [[ "$stripped" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
         m="${BASH_REMATCH[0]}"
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
-        # the closure date is the one the heading writes right after the tag, `TAG (YYYY-MM-DD` — the form
-        # tools/self/archive-sweep-check.sh already reads; anything else is undated (`—`). The date group is the last one,
-        # whatever groups BB_CLOSURE_TAG_PATTERN has.
+        # the closure date is the first parenthesised date after THIS tag on its own line: `TAG … (YYYY-MM-DD`, where the
+        # words between may be anything but an opening parenthesis (`✅ CLOSED BY CONSTRUCTION (2026-…`, `✅ FIXED in PR #9
+        # (2026-…`). The text after the tag starts at the tag's last matched char (it may be the `(`). No such date, a
+        # `(` that does not open a date, a date on another line, or an impossible one: undated (`—`).
+        after="${m: -1}${stripped#*"$m"}"; after="${after%%"$NL"*}"
         cdate="—"
-        if [[ "$stripped" =~ ${BB_CLOSURE_TAG_PATTERN}[[:space:]]*\(([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then
-          cdate="${BASH_REMATCH[${#BASH_REMATCH[@]}-1]}"
+        if [[ "$after" =~ $DATE_AFTER_TAG_RE ]]; then
+          cdate="${BASH_REMATCH[1]}"
           valid_date "$cdate" || cdate="—"
         fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
