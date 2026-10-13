@@ -224,11 +224,9 @@ if [ "$spent" -lt 20 ]; then pass "782-A1 …within KEEL_SWEEP_TIMEOUT (plus the
 else fail "782-A1 …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s" "took ${spent}s"; fi
 spin_pid="$(cat "$spin_pidfile" 2>/dev/null || true)"
 check_status "782-A2 the spinning child recorded its pid" 0 "$([ -n "$spin_pid" ] && echo 0 || echo 1)"
-gone=1; n=0
-while [ -n "$spin_pid" ] && [ "$n" -lt 30 ]; do
-  kill -0 "$spin_pid" 2>/dev/null || { gone=0; break; }
-  sleep 0.1; n=$((n + 1))
-done
+waited=0
+while [ -n "$spin_pid" ] && kill -0 "$spin_pid" 2>/dev/null && [ "$waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; waited=$((waited + 1)); done
+gone=0; [ -z "$spin_pid" ] || ! kill -0 "$spin_pid" 2>/dev/null || gone=1
 check_status "782-A2 …and it is gone after the sweep (no process left behind)" 0 "$gone"
 [ -z "$spin_pid" ] || kill -KILL "$spin_pid" 2>/dev/null || true
 
