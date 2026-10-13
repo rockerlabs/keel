@@ -187,9 +187,9 @@ set -m
 ( exec sleep 30 ) >/dev/null 2>&1 &
 probe=$!
 set +m
-probe_ok=0; kill -0 -- "-$probe" 2>/dev/null || probe_ok=1
+probe_failed=0; kill -0 -- "-$probe" 2>/dev/null || probe_failed=1
 sig_group KILL "$probe"; { wait "$probe" || true; } 2>/dev/null
-[ "$probe_ok" -eq 0 ] || refuse "job control is unavailable here: a backgrounded job did not get its own process group, so a hung mutant could not be cut down whole"
+[ "$probe_failed" -eq 0 ] || refuse "job control is unavailable here: a backgrounded job did not get its own process group, so a hung mutant could not be cut down whole"
 
 rows="$(awk -F'\t' -v mode=list "$AWK_PROG" "$list")"
 [ -n "$rows" ] || refuse "the list has no mutant rows: $list"

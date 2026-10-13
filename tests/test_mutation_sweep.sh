@@ -198,9 +198,10 @@ check_contains "…it occurs twice" "$OUT" "m-over: needle occurs 2 times in ove
 # The mutated test file waits on a `$(…)` child that never ends (the gate's awk, in the felt case). A signal to the
 # test file's own bash alone — the old perl alarm — left that child running; the sweep now signals the whole process
 # group. The child records its own pid first so the check can name it; a survivor is killed here so a red run does
-# not leave it behind. Three hangs: a child that dies of TERM; one that ignores it (so it outlives its leader and only
+# not leave it behind. Four hangs: a child that dies of TERM; one that ignores it (so it outlives its leader and only
 # the KILL after the leader is reaped removes it); and a test file whose TERM trap exits 1, which must still read as
-# TIMEOUT, not as a failing run that killed the mutant.
+# TIMEOUT, not as a failing run that killed the mutant; and a hang after the summary line, which a finished file
+# would not have.
 spin_test() {
   fixture_test | sed '$d'
   cat <<'EOS'
@@ -213,6 +214,9 @@ elif grep -q 'spin_marker=term' app.sh; then
   x="$(sh -c 'trap "" TERM; echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
 fi
 echo "t.sh: $p passed, $f failed"
+if grep -q 'spin_marker=post' app.sh; then
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+fi
 EOS
 }
 fxs="$(mkfixture "$(spin_test)")"
@@ -226,7 +230,7 @@ spin_case() {
   t0=$SECONDS
   KEEL_SPIN_PIDFILE="$spin_pidfile" KEEL_SWEEP_TIMEOUT=2 sweep_in "$fxs" "$SANDBOX/$id.tsv" t.sh
   spent=$((SECONDS - t0))
-  check_contains "782-A1 ($id) a mutant whose child spins is recorded TIMEOUT" "$OUT" "${id}${TAB}TIMEOUT${TAB}-"
+  check_contains "782-A1 ($id) a mutant whose child spins is recorded TIMEOUT" "$OUT" "${id}${TAB}TIMEOUT${TAB}"
   check_status "782-A1 ($id) …and TIMEOUT is not a survivor: exit 0" 0 "$STATUS"
   check_eq "782-A1 ($id) …with only the mutant line and the total (no shell job-kill noise)" "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
   if [ "$spent" -lt 20 ]; then pass "782-A1 ($id) …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s (took ${spent}s)"
@@ -241,6 +245,7 @@ spin_case() {
 }
 spin_case m-spin spin_marker=yes "a child that never ends"
 spin_case m-spin-term spin_marker=term "a child that ignores TERM"
+spin_case m-spin-post spin_marker=post "a child after the summary line is printed (a hang the summary does not excuse)"
 spin_case m-spin-trapexit spin_marker=trapexit "a child while its TERM trap exits 1 (a hang is not a failing run)"
 
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
