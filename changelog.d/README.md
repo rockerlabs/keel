@@ -12,7 +12,8 @@ falls behind turns DIRTY, with no CI run); two PRs that each add their own file 
 - **Name** it `changelog.d/<ticket>-<slug>.md`: `<ticket>` is the PR's main `dir` number, digits only;
   `<slug>` is lowercase kebab-case. A PR with no ticket uses `<slug>.md`. Two PRs that pick the same name
   conflict visibly (add/add), never silently. Do not edit another PR's fragment unless correcting it is
-  your PR's purpose.
+  your PR's purpose. Fixing a claim in one that the checker shows as a MISMATCH — on your tree or
+  on the default branch — *is* such a correction, whoever made it stale (see Numbers below).
 - **Content** is only the bullets, exactly as they would sit under `## [Unreleased]`: the first non-blank
   line starts `- `, continuation lines are indented (fenced blocks too: indent the fence markers and what is
   inside), fence markers come in pairs, and no line starts with `#` (a heading would split the cut's
@@ -40,15 +41,12 @@ source with a marker on the same line, next to the number: `2,983 words <!-- cla
 fails CI; a number with no marker is only listed at PR time, and fails at the cut (`--strict`). Binding is
 optional while you write: bind a present-tense count of a repo file, and `claim: hand` a measurement or a
 history number with its as-of (a date, a commit or a version). The marker names the definition, so a reviewer
-can judge it. A correction that writes a number names the source it was derived from, or drops the number.
+can judge it. A correction that writes a number names the source it was derived from, or drops the number
+(`docs/delta-audit.md` §10 states the same rule for a fix round).
 
 ```bash
 tools/self/changelog-claims.sh --strict --fragment changelog.d/<ticket>-<slug>.md
 ```
-
-The rule above (do not edit another PR's fragment unless correcting it is your PR's purpose) has one
-standing case: a claim the checker shows as a MISMATCH — on your tree or on the default branch — is
-a correction *you* may make to another fragment, whoever made it stale.
 
 ## How the entries are read
 

@@ -106,11 +106,12 @@ changelog="$repo_dir/CHANGELOG.md"
 read -r -d '' awk_prog <<'AWK' || true
 function trim(x) { sub(/^[ \t]+/, "", x); sub(/[ \t]+$/, "", x); return x }
 function bad(i, why) { mst[i] = "B"; mbad[i] = why }
+function is_sha(w) { return length(w) >= 7 && length(w) <= 40 && w ~ /^[0-9a-f]+$/ && w ~ /[a-f]/ }
 function has_asof(t,    n, a, k, w) {
   if (t ~ /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) return 1
   if (t ~ /v[0-9]+\.[0-9]+\.[0-9]+/) return 1
   n = split(t, a, /[^0-9A-Za-z]+/)
-  for (k = 1; k <= n; k++) { w = a[k]; if (length(w) >= 7 && length(w) <= 40 && w ~ /^[0-9a-f]+$/ && w ~ /[a-f]/) return 1 }
+  for (k = 1; k <= n; k++) if (is_sha(a[k])) return 1
   return 0
 }
 function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, after, j) {
@@ -129,7 +130,7 @@ function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, a
   }
   if (kind == "words" || kind == "lines") {
     np = split(rest, a, " ")
-    if (rest == "" || np < 1) bad(i, "missing argument: " kind " needs a PATH")
+    if (rest == "") bad(i, "missing argument: " kind " needs a PATH")
     else if (np > 1) bad(i, "extra argument: " kind " takes exactly one PATH")
     else mpaths[i] = a[1]
     return
@@ -155,33 +156,31 @@ function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, a
   }
   bad(i, "unknown kind '" kind "'")
 }
+function blank_range(st, ln,    sp) {
+  sp = sprintf("%" ln "s", "")
+  s = substr(s, 1, st - 1) sp substr(s, st + ln)
+}
 # blank(re, ci, lb): overwrite every match of re with spaces of the same length (positions never shift).
-# ci matches on the lowercase copy; lb requires a non-alphanumeric byte to the match's left.
-function blank(re, ci, lb,    t, from, st, ln, sp) {
+# ci matches on the lowercase copy (same byte positions under LC_ALL=C); lb requires a non-alphanumeric
+# byte to the match's left.
+function blank(re, ci, lb,    t, from, st, ln) {
   from = 1
   while (from <= length(s)) {
-    t = substr(ci ? l : s, from)
+    t = substr(ci ? tolower(s) : s, from)
     if (!match(t, re)) return
     st = from + RSTART - 1; ln = RLENGTH
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
-    sp = sprintf("%" ln "s", "")
-    s = substr(s, 1, st - 1) sp substr(s, st + ln)
-    l = substr(l, 1, st - 1) sp substr(l, st + ln)
+    blank_range(st, ln)
     from = st + ln
   }
 }
-function blank_range(st, ln,    sp) {
-  sp = sprintf("%" ln "s", "")
-  s = substr(s, 1, st - 1) sp substr(s, st + ln)
-  l = substr(l, 1, st - 1) sp substr(l, st + ln)
-}
-function blank_shas(    from, t, st, ln, w) {
+function blank_shas(    from, st, ln, w) {
   from = 1
   while (from <= length(s)) {
     if (!match(substr(s, from), /[A-Za-z0-9]+/)) return
     st = from + RSTART - 1; ln = RLENGTH; w = substr(s, st, ln)
-    if (ln >= 7 && ln <= 40 && w ~ /^[0-9a-f]+$/ && w ~ /[a-f]/) blank_range(st, ln)
+    if (is_sha(w)) blank_range(st, ln)
     from = st + ln
   }
 }
@@ -207,6 +206,7 @@ BEGIN {
   split("two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand", wl, " ")
   for (i in wl) wset[wl[i]] = 1
   num = "[0-9]+(,[0-9][0-9][0-9])*"
+  dec = num "(\\.[0-9]+)?"
   sep = "(, and |, | and | or | to |-|" en ")"
   list = num "(" sep num ")*"
   re_x6 = "(steps?|slices?|phase|rounds?|spec|lines?|turn|fd|items?|legs?|pass(es)?|part) " list
@@ -258,10 +258,11 @@ BEGIN {
   }
   s = out rest
   c = s
-  l = tolower(s)
-  # 4. exclusions X1-X8 (an excluded number is not a claim)
-  blank("PR-[0-9]+ of [0-9]+", 0, 0)
-  blank("PR-[0-9]+", 0, 0)
+  # 4. exclusions X1-X8 (an excluded number is not a claim). ORDER MATTERS: a rule that runs earlier hides
+  # its text from the later ones. X1's "of M" tail goes with its PR id (else "of 3" stays a claim), SHAs
+  # and versions go before the identifier shape (else "3b8b41c" is cut at "b8"), the structure words
+  # (X6/X7) go after it, and "(N)" ordinals last.
+  blank("PR-[0-9]+( of [0-9]+)?", 0, 0)
   blank("#[0-9]+", 0, 0)
   blank("KB\\.[0-9]+", 0, 1)
   blank("H\\.[0-9]+", 0, 1)
@@ -296,10 +297,9 @@ BEGIN {
     if (substr(s, e, 1) == "." && substr(s, e + 1, 1) ~ /[0-9]/) { match(substr(s, e), /^\.[0-9]+/); e += RLENGTH; nonint = 1 }
     if (st > 1 && substr(s, st - 1, 1) == "~") { ds = st - 1; nonint = 1 }
     nword = 0
-    if (substr(s, e, 1) == "-" && substr(s, e + 1, 1) ~ /[0-9]/) {
-      match(substr(s, e + 1), /^[0-9]+(,[0-9][0-9][0-9])*(\.[0-9]+)?/); e += 1 + RLENGTH; nonint = 1
-    } else if (substr(s, e, 3) == en && substr(s, e + 3, 1) ~ /[0-9]/) {
-      match(substr(s, e + 3), /^[0-9]+(,[0-9][0-9][0-9])*(\.[0-9]+)?/); e += 3 + RLENGTH; nonint = 1
+    sw = (substr(s, e, 1) == "-") ? 1 : ((substr(s, e, 3) == en) ? 3 : 0)
+    if (sw && substr(s, e + sw, 1) ~ /[0-9]/) {
+      match(substr(s, e + sw), "^" dec); e += sw + RLENGTH; nonint = 1
     } else if (substr(s, e, 1) == "-" && substr(s, e + 1, 1) ~ /[A-Za-z]/) {
       match(substr(s, e + 1), /^[A-Za-z]+/); e += 1 + RLENGTH; nword = 1
     }
@@ -312,9 +312,10 @@ BEGIN {
   }
   # 5b. spelled numbers (outside code spans, comments and markers: the prepared line)
   nw = 0; i = 1
-  while (i <= length(l)) {
-    if (!match(substr(l, i), /[a-z]+/)) break
-    st = i + RSTART - 1; ln = RLENGTH; w = substr(l, st, ln); i = st + ln
+  lc = tolower(s)
+  while (i <= length(lc)) {
+    if (!match(substr(lc, i), /[a-z]+/)) break
+    st = i + RSTART - 1; ln = RLENGTH; w = substr(lc, st, ln); i = st + ln
     if (w in wset) { nw++; wpos[nw] = st; wtext[nw] = substr(s, st, ln) }
   }
   # 6. bind: each marker takes the nearest unbound claim to its left
@@ -340,9 +341,6 @@ BEGIN {
     else if (itype[a] == "W") emit("W", NR, wtext[j], "-", context(wpos[j]), 0)
     else emit("M", NR, "-", "-", context(ipos[a]), j)
   }
-  split("", cpos); split("", ctext); split("", cval); split("", cb); split("", wpos); split("", wtext)
-  split("", ipos); split("", itype); split("", iidx)
-  split("", mst); split("", mkind); split("", mere); split("", mpaths); split("", margs); split("", mbad)
 }
 AWK
 
@@ -445,11 +443,11 @@ scan() {
       printf 'HAND %s:%s: %s — %s\n' "$label" "$ln" "$txt" "$margs"
       continue
     fi
-    got="$(derive "$mkind" "$mere" "$mpaths")" || { got=""; }
+    got="$(derive "$mkind" "$mere" "$mpaths")" || true
     if [ -z "$got" ]; then
       n_bad=$((n_bad + 1))
-      printf 'BADMARK %s:%s: %s — %s\n' "$label" "$ln" "$txt" "invalid ERE: grep rejects it"
-    elif [ "$(strip_zeros "$got")" = "$(strip_zeros "$val")" ]; then
+      printf 'BADMARK %s:%s: %s — %s\n' "$label" "$ln" "$txt" "grep failed on the marker's file"
+    elif [ "$got" = "$(strip_zeros "$val")" ]; then
       n_ok=$((n_ok + 1))
       printf 'OK %s:%s: %s — %s %s = %s\n' "$label" "$ln" "$txt" "$mkind" "$margs" "$got"
     else
@@ -488,16 +486,12 @@ if [ "$read_changelog" = 1 ]; then
 fi
 
 if [ "$read_frags" = 1 ]; then
-  if listing="$("$reader" --repo "$repo_dir" --list)"; then :; else die "the fragment reader failed (changelog-fragments.sh --list)"; fi
+  listing="$("$reader" --repo "$repo_dir" --list)" || die "the fragment reader failed (changelog-fragments.sh --list)"
   if [ "$nfrag" -gt 0 ]; then
     chosen=""
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      found=0
-      while IFS= read -r known; do
-        [ "$known" != "$f" ] || { found=1; break; }
-      done <<< "$listing"
-      [ "$found" = 1 ] || die_args "--fragment '$f' is not a fragment the reader lists (changelog-fragments.sh --list)"
+      grep -qxF -- "$f" <<< "$listing" || die_args "--fragment '$f' is not a fragment the reader lists (changelog-fragments.sh --list)"
       chosen="$chosen$f"$'\n'
     done <<< "$frag_args"
     listing="$chosen"
@@ -511,11 +505,7 @@ if [ "$read_frags" = 1 ]; then
 fi
 
 if [ "$read_changelog" = 1 ] && [ -f "$changelog" ]; then
-  if [ -n "$section" ]; then
-    scan CHANGELOG.md "## [$section]" <<< "$blanked"
-  else
-    scan CHANGELOG.md "## [Unreleased]" <<< "$blanked"
-  fi
+  scan CHANGELOG.md "## [${section:-Unreleased}]" <<< "$blanked"
 fi
 
 printf 'changelog-claims: %d claim(s): %d ok, %d mismatched, %d hand, %d unbound, %d word, %d bad marker(s)\n' \

@@ -23,8 +23,6 @@ put() { mkdir -p "$(dirname "$1/$2")"; printf '%s' "$3" > "$1/$2"; }
 frag() { put "$1" "changelog.d/$2" "$3"; git -C "$1" add -f "changelog.d/$2"; }
 chg() { put "$1" CHANGELOG.md "$2"; }
 words_n() { awk -v n="$1" 'BEGIN { for (i = 1; i <= n; i++) printf "w%d%s", i, (i % 10 ? " " : "\n"); printf "\n" }'; }
-# runc CWD CMD… — like run, from another working directory (stdin is /dev/null either way).
-runc() { local cwd="$1"; shift; OUT="$(cd "$cwd" && "$@" 2>&1 </dev/null)"; STATUS=$?; }
 count_of() { local n; n="$(grep -c -- "$2" <<< "$1" || true)"; printf '%s' "$n"; }
 one_frag() { local d; d="$(new_repo)"; frag "$d" a.md "$1"; printf '%s' "$d"; }
 
@@ -67,8 +65,7 @@ check_status "A2(a): a stale words claim -> exit 1 without --strict" 1 "$STATUS"
 check_contains "A2(a): MISMATCH names the derived value" "$OUT" "MISMATCH changelog.d/a.md:1: 2,985 — words commands/polish.md gives 2983"
 
 d="$(one_frag $'- 269 rows <!-- claim: matches \'^[A-Z][0-9]\' tests/mutants/pre-pr-gate.tsv -->\n')"
-{ printf '# header\n# more\n'; for i in $(seq 1 285); do printf 'A%d\trow\n' "$i"; done; } > "$SANDBOX/tsv.$$"
-put "$d" tests/mutants/pre-pr-gate.tsv "$(cat "$SANDBOX/tsv.$$")"$'\n'
+put "$d" tests/mutants/pre-pr-gate.tsv "$({ printf '# header\n# more\n'; for i in $(seq 1 285); do printf 'A%d\trow\n' "$i"; done; })"$'\n'
 run "$ccl" --repo "$d"
 check_status "A2(b): a stale matches claim -> exit 1" 1 "$STATUS"
 check_contains "A2(b): MISMATCH 'gives 285'" "$OUT" "gives 285"
@@ -85,8 +82,7 @@ check_contains "A2(c): HAND" "$OUT" "HAND changelog.d/a.md:1: 5–20 — install
 check_contains "A2(c): one claim, one hand" "$OUT" "changelog-claims: 1 claim(s): 0 ok, 0 mismatched, 1 hand, 0 unbound, 0 word, 0 bad marker(s)"
 
 d="$(one_frag $'- 26 <!-- claim: matches \'^  [A-Z_]+$\' tests/lib.sh -->\n')"
-{ for i in $(seq 1 26); do printf '  VAR_%s\n' "$(printf '%s' "$i" | tr 0-9 A-J)"; done; printf '  lower\nother\n'; } > "$SANDBOX/lib.$$"
-put "$d" tests/lib.sh "$(cat "$SANDBOX/lib.$$")"$'\n'
+put "$d" tests/lib.sh "$({ for i in $(seq 1 26); do printf '  VAR_%s\n' "$(printf '%s' "$i" | tr 0-9 A-J)"; done; printf '  lower\nother\n'; })"$'\n'
 run "$ccl" --repo "$d" --strict
 check_status "A2(d): a too-narrow definition that counts 26 -> exit 0" 0 "$STATUS"
 check_contains "A2(d): the OK line carries the ERE" "$OUT" "OK changelog.d/a.md:1: 26 — matches '^  [A-Z_]+\$' tests/lib.sh = 26"
@@ -159,8 +155,7 @@ d="$(one_frag $'- 5 files `<!-- claim: words a.md -->` here\n')"
 run "$ccl" --repo "$d"
 check_contains "A5: a marker in backticks is not a marker — the number stays UNBOUND" "$OUT" "UNBOUND changelog.d/a.md:1: 5"
 d="$(one_frag $'- 7 <!-- claim: hand counted 7 of 9 on 2026-10-12 -->\n- 285 <!-- claim: matches \'^[A-Z][0-9]{2}\' t.tsv -->\n')"
-{ for i in $(seq 1 285); do printf 'A%02d\n' $((i % 100)); done; } > "$SANDBOX/t.$$"
-put "$d" t.tsv "$(cat "$SANDBOX/t.$$")"$'\n'
+put "$d" t.tsv "$({ for i in $(seq 1 285); do printf 'A%02d\n' $((i % 100)); done; })"$'\n'
 run "$ccl" --repo "$d" --strict
 check_status "A5: a hand as-of and an ERE's {2} are not claims — --strict -> exit 0" 0 "$STATUS"
 check_contains "A5: exactly the two bound claims" "$OUT" "changelog-claims: 2 claim(s): 1 ok, 0 mismatched, 1 hand, 0 unbound, 0 word, 0 bad marker(s)"
@@ -219,7 +214,7 @@ put "$d" a.md $'x\n'
 frag "$d" a.md $'- 3 <!-- claim: matches \'$(touch PWNED)\' a.md -->\n- 4 <!-- claim: words $(touch PWNED) -->\n- 5 <!-- claim: hand `touch PWNED` on 2026-10-12 -->\n'
 git -C "$d" add -A
 git -C "$d" -c user.name=Test -c user.email=test@example.com commit -q -m fixture
-runc "$scratch_cwd" "$ccl" --repo "$d"
+run_in "$scratch_cwd" "$ccl" --repo "$d"
 check_nofile "A7: no PWNED file in the fixture repo" "$d/PWNED"
 check_nofile "A7: no PWNED file in the cwd" "$scratch_cwd/PWNED"
 check_eq "A7: git status --porcelain is empty after the run" "" "$(git -C "$d" status --porcelain)"
@@ -271,9 +266,9 @@ for bad in "--section 9.9.9" "--section 1.2" "--section 1.0.0 --fragment changel
   run "$ccl" --repo "$d" $bad
   check_status "A9: '$bad' -> exit 2" 2 "$STATUS"
 done
-runc "$scratch_cwd" "$ccl" --repo "$d" --section 1.0.0
+run_in "$scratch_cwd" "$ccl" --repo "$d" --section 1.0.0
 from_scratch="$OUT"
-OUT="$(cd "$d" && "$ccl" --repo "$d" --section 1.0.0 2>&1 </dev/null)"
+run_in "$d" "$ccl" --repo "$d" --section 1.0.0
 check_eq "A9: a run from a scratch cwd gives the same output as cwd = DIR" "$OUT" "$from_scratch"
 OUT="$("$ccl" --repo "$d" --section 1.0.0 2>&1 <&-)"
 check_eq "A9: with stdin closed the output is the same" "$from_scratch" "$OUT"
