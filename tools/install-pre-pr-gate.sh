@@ -335,35 +335,31 @@ hook_specs="$(jq -n --arg gate "$gate" '[
 # dir #811: the `code-review` UserPromptExpansion slot widened to `code-review|manage-release|keel-manage-release`
 # (the typed /manage-release lists the release manager). The merge keys on the EXACT matcher, so without the
 # retirement the widened entry lands BESIDE the old one and a typed /code-review fires the hook twice.
+# `why` names what replaced the slot, for the status lines (hook_install_remove reads only event, matcher, command).
 retired_specs="$(jq -n --arg gate "$gate" '[
-  {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash " + ($gate|@sh) + " skill-trace")}
+  {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace"),
+   why: "replaced by keel-polish-reviewer"},
+  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash " + ($gate|@sh) + " skill-trace"),
+   why: "widened to code-review|manage-release|keel-manage-release"}
 ]')"
 
-# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out, $n_retired
-# to how many came out and $retired_slots to their event/matcher, one per line. Sets globals, never prints: a
-# command substitution would lose n_retired.
+# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out,
+# $retired_slots to one `event/matcher<TAB>why` line per slot that came out, and $n_retired to their count. Sets
+# globals, never prints: a command substitution would lose them.
 # hook_install_remove matches by the lib's `covers`, so our command inside a match-all entry (no matcher, ""
 # or "*") also comes out of that entry; the merge that follows re-wires it under the named matcher, so the
 # end state is the same wiring — one narrow entry — and the "retired" line is the only imprecise part.
 retire_legacy() {
   local removal
   removal="$(hook_install_remove "$retired_specs" "$1")"
-  n_retired="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
-  retired_slots="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{print $2 "/" $3}')"
+  retired_slots="$(jq -r --argjson specs "$retired_specs" '.report | split("\n")[] | split("\t") as $r
+    | select($r[0] == "REMOVED") | $specs[] | select(.event == $r[1] and .matcher == $r[2])
+    | "\(.event)/\(.matcher)\t\(.why)"' <<<"$removal")"
+  n_retired="$(grep -c . <<<"$retired_slots" || true)"
   retired_json="$1"
   if [ "$n_retired" -gt 0 ]; then
     retired_json="$(jq -c '.new' <<<"$removal")"
   fi
-}
-
-# retired_why EVENT/MATCHER — what replaced a retired slot, for the status lines.
-retired_why() {
-  case "$1" in
-    SubagentStop/general-purpose) echo "replaced by keel-polish-reviewer" ;;
-    UserPromptExpansion/code-review) echo "widened to code-review|manage-release|keel-manage-release" ;;
-    *) echo "retired" ;;
-  esac
 }
 
 # Backup/atomic-write/shape-check/merge/remove all live in tools/lib/hook-install.sh (dir #437 MW8),
@@ -418,8 +414,8 @@ if [ "$uninstall" = 1 ]; then
   new_settings="$(jq '.new' <<<"$removal")"
   hook_install_backup_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
-  while IFS= read -r slot; do
-    [ -n "$slot" ] && echo "  -    $slot removed (a legacy matcher, $(retired_why "$slot"))"
+  while IFS=$'\t' read -r slot why; do
+    [ -n "$slot" ] && echo "  -    $slot removed (a legacy matcher, $why)"
   done <<<"$retired_slots"
 
   while IFS=$'\t' read -r status event matcher; do
@@ -496,7 +492,7 @@ elif { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; 
     backup_why="--force"
   fi
   if [ "$n_retired" -gt 0 ]; then
-    retired_list="$(awk 'NF { printf "%s%s", (n++ ? ", " : ""), $0 }' <<<"$retired_slots")"
+    retired_list="$(awk -F'\t' 'NF { printf "%s%s", (n++ ? ", " : ""), $1 }' <<<"$retired_slots")"
     backup_why="${backup_why}${backup_why:+, }retiring the legacy $retired_list $([ "$n_retired" -gt 1 ] && echo entries || echo entry)"
   fi
   new_settings="$(jq '.new' <<<"$merged")"
@@ -507,8 +503,8 @@ else
   hook_install_atomic_write "$settings" "$new_settings"
 fi
 
-while IFS= read -r slot; do
-  [ -n "$slot" ] && echo "  -    $slot retired (a legacy matcher — $(retired_why "$slot"); your other hooks untouched)"
+while IFS=$'\t' read -r slot why; do
+  [ -n "$slot" ] && echo "  -    $slot retired (a legacy matcher — $why; your other hooks untouched)"
 done <<<"$retired_slots"
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue

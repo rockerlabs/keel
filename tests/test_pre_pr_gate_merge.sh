@@ -176,6 +176,11 @@ deny "(d) an upper-case 40-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-he
 deny "(d) 40 characters, not all hex" "$R_PIN" "gh pr merge 597 --merge --match-head-commit ${SHA%?}g" "$P" "$MID"
 deny "(d) a valid pin beside a bad one" "$R_PIN" "$MERGE --match-head-commit 04d11f" "$P" "$MID"
 deny "(d) a forbidden flag wins over a missing pin" "$R_DROP --squash " "gh pr merge 597 --squash" "$P" "$MID"
+# Two merges in one command: the first failing one decides, and the API shape outranks every other code.
+allow "(d) two merges, both right" "$MERGE && gh pr merge 598 --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) the first of two merges carries --squash" "$R_DROP --squash " "$MERGE --squash && $MERGE" "$P" "$MID"
+deny "(d) the second of two merges has no pin" "$R_PIN" "$MERGE && gh pr merge 598 --merge" "$P" "$MID"
+deny "(d) an earlier flag code does not hide a later API merge" "$R_API" "$MERGE --squash; gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$MID"
 
 # --- (e) --help / -h ------------------------------------------------------------------------------------------------
 for h in --help -h; do

@@ -1347,6 +1347,10 @@ _session_id_ok() {
   case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   [ "${#1}" -le 128 ]
 }
+# The jq definitions both readers of an event's identity share — the skill-trace writer and the hook's merge rule. `sid`:
+# the session id, or "" when it holds a newline (it would end skill-trace's line-based read early) or the field
+# separator (it would shift the fields after it); `is_sub`: either agent field present and non-empty, whatever its type.
+_JQ_IDENTITY='def sid: if type == "string" and index("\n") == null and index("\u001f") == null then . else "" end; def is_sub: (.agent_id | . != null and . != "") or (.agent_type | . != null and . != "");'
 # _manager_listed FILE ID — ID equals the first tab-separated field of a line of FILE, exactly (never a substring).
 _manager_listed() { [ -f "$1" ] && awk -F'\t' -v id="$2" '$1 == id { f = 1 } END { exit !f }' "$1"; }
 # _record_manager CWD SESSION_ID SUBAGENT — the writer: one line per session, appended once, never removed.
@@ -2425,14 +2429,14 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
   }
 }
 
-# --- dir #811: the merge rule (candidate lines for the shell side) ----------------------------------------------
-# A `merge` line per merge segment: `gh … pr … merge` (any words between; the subcommand words count unquoted) or
-# `gh … api` on a `…/pulls/<n>/merge` endpoint that writes (a method other than GET/HEAD, or a field flag and no
-# method). The flag check (B6 (i)) is decided here, where the words are: code `ok`, `api`, `flag` (a forbidden flag,
-# named), `pin` (no head pin, or one that is not exactly 40 lower-case hex) or `nomerge` (no merge-commit flag). The
-# shell side checks the session and the policy first and acts on the code last. `--help`/`-h` right after `merge`
-# is a read: no line.
+# --- dir #811: the merge rule (a candidate line for the shell side; the rule itself: the merge-rule header section) -
+# Each merge segment gets a code, decided here where the words are: `api` (the API shape), `flag` (a forbidden flag,
+# named), `pin`, `nomerge` or `ok`. The command’s ONE `merge` line carries the deciding code: `api` if any segment
+# has it, else the first segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is a read: no code.
 function mg_bool(v) { return v == "" || v == "true" }
+function mg_note(c, t) {
+  if (c == "api" || mg_code == "" || mg_code == "ok") { mg_code = c; mg_tok = t }
+}
 function check_merge(   i, j, t, nm, eq, v, p_at, m_at, api, ep, meth, fld, bad, pins, pinbad, hasm) {
   i = cmd_start()
   if (i > ntok || !w_plain(i) || tok[i] != "gh") return
@@ -2451,7 +2455,7 @@ function check_merge(   i, j, t, nm, eq, v, p_at, m_at, api, ep, meth, fld, bad,
     }
   }
   if (api) {
-    if (ep && (meth != "" ? (meth != "GET" && meth != "HEAD") : fld)) { mg_n++; mg_code[mg_n] = "api"; mg_tok[mg_n] = "" }
+    if (ep && (meth != "" ? (meth != "GET" && meth != "HEAD") : fld)) mg_note("api", "")
     return
   }
   if (!m_at) return
@@ -2473,19 +2477,17 @@ function check_merge(   i, j, t, nm, eq, v, p_at, m_at, api, ep, meth, fld, bad,
       if (length(v) != 40 || v !~ /^[0-9a-f]+$/) pinbad = 1
     }
   }
-  mg_n++; mg_tok[mg_n] = ""
-  if (bad != "") { mg_code[mg_n] = "flag"; mg_tok[mg_n] = bad }
-  else if (!pins || pinbad) mg_code[mg_n] = "pin"
-  else if (!hasm) mg_code[mg_n] = "nomerge"
-  else mg_code[mg_n] = "ok"
+  if (bad != "") mg_note("flag", bad)
+  else if (!pins || pinbad) mg_note("pin", "")
+  else if (!hasm) mg_note("nomerge", "")
+  else mg_note("ok", "")
 }
-# mg_out() — prints the merge lines; a named flag that could forge a field (a newline, a separator) prints as `?`.
-function mg_out(   k, t) {
-  for (k = 1; k <= mg_n; k++) {
-    t = mg_tok[k]; if (!sg_safe(t)) t = "?"
-    print "merge" SEP mg_code[k] SEP t
-  }
-  return mg_n
+# mg_out() — prints the merge line, if any; a named flag that could forge a field (a newline, a separator) prints as `?`.
+function mg_out(   t) {
+  if (mg_code == "") return 0
+  t = mg_tok; if (!sg_safe(t)) t = "?"
+  print "merge" SEP mg_code SEP t
+  return 1
 }
 
 # --- dir #675: the subagent git floor (candidate lines for the shell side) --------------------------------------
@@ -3101,16 +3103,14 @@ case "${1:-}" in
     # `str` coerces every field to a plain string first — an unexpected shape (args as an object/array,
     # say) would otherwise make `join` throw and lose the WHOLE row, including the hook_event_name/skill
     # fields that were perfectly fine, turning one malformed field into total silence from this hook.
-    # dir #811: the session id and a subagent flag (either agent field present and non-empty) ride BEFORE the
-    # args — a multi-line args value ends `read` at its first newline, which may cost the fields after it. An id
-    # holding a newline or the separator reads as none (it would end the read early, or shift the fields after it).
-    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_sid st_sub st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r '
+    # dir #811: the session id and the subagent flag (_JQ_IDENTITY) ride BEFORE the args — a multi-line args value
+    # ends `read` at its first newline, which may cost the fields after it.
+    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_sid st_sub st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r "$_JQ_IDENTITY"'
       def str: if . == null then "" elif type == "string" then . else tostring end;
-      def sid: if type == "string" and index("\n") == null and index("\u001f") == null then . else "" end;
       [.hook_event_name, (.cwd|str), (.tool_name|str),
        (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end|str),
        (.session_id|sid),
-       (if ((.agent_id|str) != "" or (.agent_type|str) != "") then "1" else "0" end),
+       (if is_sub then "1" else "0" end),
        (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str),
        (.agent_type|str)
       ] | join("\u001f")' 2>/dev/null)"
@@ -3459,12 +3459,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)
 # One jq call for the event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent),
-# the session id (dir #811's merge rule; one holding the separator reads as none, so it cannot shift the fields
-# after it), a subagent flag (1 when agent_id or agent_type is present and non-empty, whatever its type), the cwd
-# and the command. The command comes last, so its newlines survive the split; a field that is not a string reads as
-# empty.
+# the session id and the subagent flag (dir #811's merge rule, _JQ_IDENTITY), the cwd and the command. The command
+# comes last, so its newlines survive the split; a field that is not a string reads as empty.
 sep=$'\x1f'; sep2=$'\x1e'
-hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; def present: . != null and . != ""; def sid: if type == "string" and index("\u001f") == null then . else "" end; [(.agent_id // "" | s), (.session_id // "" | sid), (if (.agent_id | present) or (.agent_type | present) then "1" else "0" end), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
+hk_ev=$(printf '%s' "$input" | jq -r "$_JQ_IDENTITY"'def s: if type == "string" then . else "" end; [(.agent_id // "" | s), (.session_id // "" | sid), (if is_sub then "1" else "0" end), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
 hk_agent=${hk_ev%%"$sep"*}; hk_rest=${hk_ev#*"$sep"}
 hk_sid=${hk_rest%%"$sep"*}; hk_rest=${hk_rest#*"$sep"}
 hk_sub=${hk_rest%%"$sep"*}; hk_rest=${hk_rest#*"$sep"}
@@ -3490,7 +3488,7 @@ verdict=""; head_branch=""; refuse_why=""; reader_bad=0
 case "$awk_status" in 0|1) ;; *) reader_bad=1 ;; esac
 [ "$awk_status" = 1 ] && [ -n "$awk_out" ] && reader_bad=1
 [ "$awk_status" = 0 ] && [ -z "$awk_out" ] && reader_bad=1
-sg_ncd=0; sg_ngit=0; mg_count=0
+sg_ncd=0; sg_ngit=0; mg_code=""; mg_tok=""
 if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
   while IFS="$sep" read -r rd_first rd_a rd_b rd_c rd_d rd_e rd_f; do
     case "$rd_first" in
@@ -3498,10 +3496,10 @@ if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
         if [ -n "$verdict" ]; then reader_bad=1; break; fi
         verdict="$rd_first"; head_branch="$rd_a"; refuse_why="$rd_b"
         ;;
-      # dir #811: one line per merge segment, any session.
+      # dir #811: at most one line, any session.
       merge)
-        mg_codes[mg_count]="$rd_a"; mg_toks[mg_count]="$rd_b"
-        mg_count=$((mg_count + 1))
+        if [ -n "$mg_code" ]; then reader_bad=1; break; fi
+        mg_code="$rd_a"; mg_tok="$rd_b"
         ;;
       # A candidate line's tag gets its own arm here, ahead of the verdict. Only a subagent's run reports them.
       subcd)
@@ -3671,18 +3669,12 @@ case "$verdict" in
   push) early_deny blocked "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." ;;
   refuse) early_deny refused "Pre-PR gate: could not read this command reliably — $refuse_why. The part that could not be read mentions git or gh, so none of this gate's rules (the bypassed-push deny, the gh pr create receipt check, the gh pr merge rule) can judge it. Rewrite it so bash and zsh read it the same way (close the quote; put a heredoc terminator alone on its line, with the closing ) on the next line), or run the git/gh step as its own Bash call." ;;
 esac
-# dir #811 (B6): the merge rule — after the push and refuse denies, before the `gh pr create` machinery (a command
-# may hold both a merge and a create). Checks in the order (ii) identity, (iii) the project's policy, (i) the flags,
-# so a session that may not merge is told so before it is told how; the reason names the first failed check. When all
-# hold it emits nothing — the harness's own permission flow decides, never a forced allow.
+# dir #811 (B6): the merge rule (its header section) — after the push and refuse denies, before the `gh pr create`
+# machinery (a command may hold both a merge and a create).
 merge_rule() {
-  local k mg_top mg_path mg_why="Pre-PR gate (merge rule, dir #811):"
+  local mg_top mg_path mg_why="Pre-PR gate (merge rule, dir #811):"
   # The API shape carries no head pin: denied to every session, a release manager included.
-  k=0
-  while [ "$k" -lt "$mg_count" ]; do
-    [ "${mg_codes[$k]}" = api ] && early_deny blocked "$mg_why merge with \`gh pr merge --merge --match-head-commit\`, never the API — a \`gh api …/pulls/<n>/merge\` write carries no head pin."
-    k=$((k + 1))
-  done
+  [ "$mg_code" = api ] && early_deny blocked "$mg_why merge with \`gh pr merge --merge --match-head-commit\`, never the API — a \`gh api …/pulls/<n>/merge\` write carries no head pin."
   # (ii) identity: never a subagent, a session id the manager file lists, inside a git checkout.
   [ "$hk_sub" = 1 ] && early_deny blocked "$mg_why a subagent never merges — the merge is the release manager's own step (docs/release-management.md R14)."
   _session_id_ok "$hk_sid" || early_deny blocked "$mg_why not a release-manager session (the event carries no usable session_id) — in a managed release the release manager merges; otherwise the merge is the operator's."
@@ -3692,20 +3684,16 @@ merge_rule() {
   _manager_listed "$mg_path" "$hk_sid" || early_deny blocked "$mg_why not a release-manager session — $mg_path does not list this session ($hk_sid). A session is listed when it launches /manage-release in this repository; a merge in any other session is the operator's."
   # (iii) the project's own opt-in: a line carrying the token in the main checkout's CLAUDE.md.
   grep -qF KEEL-MANAGER-MERGES "$mg_top/CLAUDE.md" 2>/dev/null || early_deny blocked "$mg_why this project's policy keeps the merge with the operator — $mg_top/CLAUDE.md carries no KEEL-MANAGER-MERGES line (docs/release-management.md R14); hand the merge over as R9's command block."
-  # (i) the flags, decided by the reader per merge segment.
-  k=0
-  while [ "$k" -lt "$mg_count" ]; do
-    case "${mg_codes[$k]}" in
-      ok) ;;
-      flag) early_deny blocked "$mg_why a merge commit only: drop ${mg_toks[$k]} — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
-      pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on (B3(a))." ;;
-      nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
-      *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check (${mg_codes[$k]}) — run the merge as its own Bash call, or report it." ;;
-    esac
-    k=$((k + 1))
-  done
+  # (i) the flags, decided by the reader.
+  case "$mg_code" in
+    ok) ;;
+    flag) early_deny blocked "$mg_why a merge commit only: drop $mg_tok — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
+    pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on (B3(a))." ;;
+    nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
+    *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check ($mg_code) — run the merge as its own Bash call, or report it." ;;
+  esac
 }
-[ "$mg_count" -gt 0 ] && merge_rule
+[ -n "$mg_code" ] && merge_rule
 case "$verdict" in
   pr) ;;
   *) exit 0 ;;
