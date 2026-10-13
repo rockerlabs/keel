@@ -43,6 +43,8 @@ A "$d" bogus
 check_status "unknown subcommand -> exit 2" 2 "$STATUS"
 run bash "$ACC" bogus
 check_contains "unknown subcommand is named even with no --dir" "$OUT" "unknown subcommand: bogus"
+run bash "$ACC" init extra --as-of garbage
+check_contains "a stray argument is reported ahead of --dir / --as-of problems" "$OUT" "unexpected argument: extra"
 A "$d" lint
 check_status "a data dir without the TSVs -> exit 2 (I/O), not a lint finding" 2 "$STATUS"
 A "$d" count x
@@ -341,7 +343,7 @@ check_status "status without --owner -> exit 2" 2 "$STATUS"
 
 # --- closed: three heading forms, a draft, an orphan -------------------------------------------------------------------------------------------
 d="$(mk)"
-for c in tie tie-rev wrapped-date open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
+for c in tie tie-rev wrapped-date pr-number open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
 bl="$SANDBOX/bl.md"
 cat > "$bl" <<'EOF'
 # Backlog
@@ -414,6 +416,10 @@ Opened 2025-03-04 elsewhere
 
 Observer-class: wrapped-date
 
+### dir #71 — a PR number before the date — ✅ FIXED in PR #345 (2026-10-01)
+
+Observer-class: pr-number
+
 ### dir #14 — an unrelated closed ticket — ✅ CLOSED (2026-01-01)
 
 See Observer-class: midline-only for context; the tag must start its own line.
@@ -449,6 +455,7 @@ A "$d" closed two-closed-rev --backlog "$bl" --drafts "$dr";  check_eq "closed: 
 A "$d" closed tie --backlog "$bl" --drafts "$dr";             check_eq "closed: equal dates -> a real closure beats a supersede, whichever file order" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed tie-rev --backlog "$bl" --drafts "$dr";         check_eq "closed: ... and with the real closure first" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed wrapped-date --backlog "$bl" --drafts "$dr";    check_eq "closed: a date on a wrapped continuation line is not the closure date" "closed ✅ —" "$OUT"
+A "$d" closed pr-number --backlog "$bl" --drafts "$dr";       check_eq "closed: a number before the date does not hide the date" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed glued --backlog "$bl" --drafts "$dr";           check_eq "closed: a date glued to the closure word is still parsed" "closed ✅ 2026-10-05" "$OUT"
 A "$d" closed not-in-the-registry --backlog "$bl" --drafts "$dr"; check_status "closed: a class that is not in the registry -> exit 2, not 'orphaned'" 2 "$STATUS"
 A "$d" closed nowhere --backlog "$bl" --drafts "$dr";        check_eq "closed: a tag in no backlog and no draft -> orphaned" "orphaned" "$OUT"
