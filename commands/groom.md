@@ -34,7 +34,8 @@ a cut against a stated pain; never invent a theme without one. A row with no pai
 recorded as a picked label, never as their words (the doc's G1 gives the three constraints).
 
 **G2 — read ticket bodies, not headings.**
-Read every slate ticket's body before assigning it anywhere.
+Read every slate ticket's body before assigning it anywhere; run each ticket's live premise check
+before it is offered by name in a priced option.
 
 **G3 — derive, don't assert.**
 Every list and count in the produced plan is regenerated from live heading tags, never hand-written and
@@ -57,7 +58,9 @@ entry; (c) confirmed at G0, not repeated here.
 **G5 — every release row, five-plus-two fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named
 risks — plus a budget estimate sized from the project's own cost-measurement data where it exists (the
-estimate names its weights, and the release's actual is summed at the same ones), and
+estimate names its weights, and the release's actual is summed at the same ones; where the binding
+limit is a subscription window, also in window points quoted as the gauge's live start and end, with
+the date the window, or the plan that sizes it, ends), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
 against spec-return rate) is a report field, not a role — record it, judge it next cycle.
 

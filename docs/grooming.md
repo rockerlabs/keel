@@ -243,9 +243,10 @@ the lane up front, got "the whole lane", and planned all 42 tickets: every body 
 The same day the operator cut the slate to its 11 pain tickets. The answer had come before anyone
 could see what the lane would cost. So the pain rows are planned and reviewed first. The lane follows
 as its own row, priced by G5's per-ticket rule from its ticket count alone. Its body reads and its
-own G6 pass happen only after a "yes" given against that price. A rule of the procedure, not a
-compensation. It holds for any set the operator opts into wholesale, a parked file included (keel's
-0.14.0 groom took "full groom" before the parked file had a price, then priced it and asked again).
+own G6 pass happen only after a "yes" given against that price; a ticket offered by name instead gets
+G2's premise check before the offer. A rule of the procedure, not a compensation. It holds for any set
+the operator opts into wholesale, a parked file included (keel's 0.14.0 groom took "full groom" before
+the parked file had a price, then priced it and asked again).
 
 **A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
 grooms).** At 0.14.0 two of three pains were labels the groom wrote and the operator chose; at 0.15.0
@@ -284,10 +285,19 @@ still. That run found two of those on unchanged bodies: a ticket whose blocking 
 and was recorded only in ANOTHER ticket's body (an operator login noted in a launcher ticket's log
 closed a "CLI not authenticated" ticket untouched since August), and a chore whose project list had
 drifted a third time against a live doctor run. So the compressed pass still owes each unchanged
-ticket its live check — the doctor line, the blocker's tag, the measured figure — and the plan
+ticket its live check — the cited file and line, the doctor line, the blocker's tag, the measured
+figure — and the plan
 states the diff's numbers and the rule applied, so a reader can tell a compression from a skip.
 Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
 known body-read commit), G2 applies whole, as written above.
+
+**The premise check runs before a ticket is offered by name, not after the "yes" (the 0.17.0
+re-cut).** A ticket named in a priced option gets the live check above before the offer goes out; a
+lane priced by its count alone names none, so G1's lane rule still defers its per-ticket work. That
+re-cut offered eight parked tickets by name and checked five of them only after the "yes"; one had
+already been fixed by a later ticket, so the operator had priced a set the slate could not hold. A check
+run before the offer is G2's check for that ticket unless the tree has moved since. A rule of the
+procedure, not a compensation.
 
 ## G3 — derive, don't assert
 
@@ -459,7 +469,8 @@ judgement. A rule of the procedure; summing a session at those weights is a hand
 compensation whose remover is `dir #654`.
 
 **When the operator's binding limit is a subscription window, state the estimate in window points
-too, and name the ratio it was converted at (the same groom).** A weighted figure alone does not say
+too, as the gauge's start and end, and name the ratio it was converted at (the same groom; the form,
+the 0.17.0 re-cut).** A weighted figure alone does not say
 whether a release fits the window it has to run in. 0.15.0 moved the weekly all-models window from 47%
 to 77% for 246.5M weighted, about 8.2M a point; its manager's intake calibration had assumed 10M a
 point, so it under-read the draw by about a fifth. The ratio is a release-wide average and errs low: the
@@ -467,7 +478,11 @@ window also counted the groom and sessions outside the release, and phases diffe
 ran near 10M a point). The estimate cell therefore carries both figures and names the release the ratio
 was measured on; [`docs/release-management.md`](release-management.md) R7 records the points the run
 moved, so the next groom converts at a fresh ratio. Reading the window is a permanent limit, not a gap:
-it lives in the harness, where no repository tool can read it.
+it lives in the harness, where no repository tool can read it. So the offer reads the gauge there once,
+never from memory, and each priced option says where the gauge stands now and where the option leaves
+it ("10% now, about 63–72% after"), plus the date the window, or the plan that sizes it, ends. The
+0.17.0 re-cut priced its options as a bare delta ("53–62 points"); the operator asked what a point is
+and read the delta as the gauge's end, which cost a question round.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
