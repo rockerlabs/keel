@@ -124,8 +124,8 @@ check_eq "count: a second distinct source -> 2" 2 "$OUT"
 A "$d" add "$T" x /polish audit:keel@dash yes no m ev -- --starts-with-dashes
 check_status "add: a note beginning with -- after a -- terminator is recorded" 0 "$STATUS"
 check_contains "... verbatim" "$(tail -1 "$d/sightings.tsv")" "--starts-with-dashes"
-A "$d" add "$T" x /polish audit:keel@help yes no m ev -h
-check_status "add: -h as a note value is a value, not --help" 0 "$STATUS"
+A "$d" add "$T" x /polish audit:keel@help yes no m ev -- -h
+check_status "add: -h after a -- terminator is a value, not --help" 0 "$STATUS"
 check_eq "... the row was written" "added" "$OUT"
 A "$d" count nope
 check_status "count: an unknown class -> exit 2" 2 "$STATUS"
@@ -327,7 +327,7 @@ check_status "status without --owner -> exit 2" 2 "$STATUS"
 
 # --- closed: three heading forms, a draft, an orphan -------------------------------------------------------------------------------------------
 d="$(mk)"
-for c in open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
+for c in tie open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
 bl="$SANDBOX/bl.md"
 cat > "$bl" <<'EOF'
 # Backlog
@@ -379,6 +379,14 @@ Observer-class: two-closed-rev
 
 Observer-class: glued
 
+### dir #65 — same date, superseded — ❌ SUPERSEDED (2026-10-01)
+
+Observer-class: tie
+
+### dir #66 — same date, a real closure — ✅ CLOSED (2026-10-01)
+
+Observer-class: tie
+
 ### dir #14 — an unrelated closed ticket — ✅ CLOSED (2026-01-01)
 
 See Observer-class: midline-only for context; the tag must start its own line.
@@ -411,6 +419,7 @@ A "$d" closed drafted --backlog "$bl" --drafts "$dr";        check_eq "closed: a
 A "$d" closed midline-only --backlog "$bl" --drafts "$dr";   check_eq "closed: a tag mentioned mid-line is not a tag line" "orphaned" "$OUT"
 A "$d" closed two-closed --backlog "$bl" --drafts "$dr";     check_eq "closed: several closed tickets -> the dated one wins over an undated one" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed two-closed-rev --backlog "$bl" --drafts "$dr";  check_eq "closed: ... in either file order" "closed ✅ 2026-10-02" "$OUT"
+A "$d" closed tie --backlog "$bl" --drafts "$dr";             check_eq "closed: equal dates -> a real closure beats a supersede, whichever file order" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed glued --backlog "$bl" --drafts "$dr";           check_eq "closed: a date glued to the closure word is still parsed" "closed ✅ 2026-10-05" "$OUT"
 A "$d" closed not-in-the-registry --backlog "$bl" --drafts "$dr"; check_status "closed: a class that is not in the registry -> exit 2, not 'orphaned'" 2 "$STATUS"
 A "$d" closed nowhere --backlog "$bl" --drafts "$dr";        check_eq "closed: a tag in no backlog and no draft -> orphaned" "orphaned" "$OUT"
@@ -471,13 +480,6 @@ A "$d" unlock
 A "$d" unlock; check_status "unlock: with no lock is still exit 0" 0 "$STATUS"
 A "$d" new-class self-locked t f commands
 check_absent "a write that took its own lock released it" "$(ls -a "$d")" ".lock"
-# a write finding ANOTHER write's own fresh lock does not write; it waits briefly and exits 2
-now="$(date +%s)"
-mkdir "$d/.lock"; printf '4242\t%s\twrite\n' "$now" > "$d/.lock/info"
-A "$d" new-class blocked-write t f commands
-check_status "a write that finds another write's lock -> exit 2, not an unguarded write" 2 "$STATUS"
-check_absent "... and wrote nothing" "$(cat "$d/classes.tsv")" "blocked-write"
-rm -f "$d/.lock/info"; rmdir "$d/.lock"
 # a lock older than two hours is broken, and the break is said
 now="$(date +%s)"
 mkdir "$d/.lock"; printf '4242\t%s\n' "$((now - 7300))" > "$d/.lock/info"

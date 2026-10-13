@@ -52,12 +52,12 @@
 # continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
-# for that single write. A write that finds a run-level lock proceeds (the tool cannot tell its own caller from another
-# run, so exclusion between runs is `lock` itself, exit 2); one that finds another write's own lock waits up to 3 s, then
-# exits 2. Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
+# for that single write. The lock is cooperative: a write that finds ANY lock proceeds, because the run that took it was
+# a separate process and the tool cannot tell its own caller from another run — the exclusion between runs is `lock`
+# itself (exit 2), and every run takes it first. A value that starts with a dash goes after `--`. Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
 set -u
-# bash's `[[ a > b ]]` collates by locale; every date and key compared below is byte-ordered ASCII.
-LC_COLLATE=C
+# bash's `[[ a > b ]]` collates by locale; the dates and keys it compares below are byte-ordered ASCII.
+export LC_COLLATE=C
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
@@ -137,7 +137,7 @@ DIR=""; ASOF=""; OWNER=""; CONSUMER=""; FDATE=""; VERBOSE=0; SELFTEST=0
 pos=(); BACKLOGS=(); DRAFTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;;
+    -h|--help) usage; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
     --selftest) SELFTEST=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
@@ -168,9 +168,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- the lock: a dir inside DIR holding `pid<TAB>epoch<TAB>kind` (run = the caller's; write = one write's own) -------------------------------------------------------------------------------
-lock_take() {   # lock_take [KIND] → 0 taken, 2 held by a live run; prints the report line for a stale break
-  local l="$DIR/.lock" kind="${1:-run}" now ts pid age
+# --- the lock: a dir inside DIR holding `pid<TAB>epoch` -------------------------------------------------------------------------------
+lock_take() {   # lock_take → 0 taken, 2 held by a live run; prints the report line for a stale break
+  local l="$DIR/.lock" now ts pid age
   now="$(date +%s)"
   if [ -d "$l" ]; then
     ts=""; pid=""
@@ -192,19 +192,14 @@ lock_take() {   # lock_take [KIND] → 0 taken, 2 held by a live run; prints the
     fi
   fi
   mkdir "$l" 2>/dev/null || { printf 'accumulate: lock held (taken just now by another run)\n' >&2; return 2; }
-  printf '%s\t%s\t%s\n' "$$" "$now" "$kind" > "$l/info"
+  printf '%s\t%s\n' "$$" "$now" > "$l/info"
   return 0
 }
-lock_kind() { AWK -F'\t' 'NR == 1 { print $3 }' "$DIR/.lock/info" 2>/dev/null; }
 
-write_lock() {   # a write holds the lock: the caller's run-level one, else its own (kind `write`) for this one process
-  local _try
-  for _try in 1 2 3; do
-    if [ -d "$DIR/.lock" ] && [ "$(lock_kind)" != write ]; then return 0; fi
-    if lock_take write >/dev/null; then TOOK_LOCK=1; return 0; fi
-    sleep 1   # another process is mid-write
-  done
-  die "another write holds the lock in $DIR"
+write_lock() {   # a write holds the lock: the caller's, else its own for this one process
+  [ -d "$DIR/.lock" ] && return 0
+  lock_take >/dev/null || die "could not take the lock"
+  TOOK_LOCK=1
 }
 
 # --- TSV helpers ------------------------------------------------------------------------------------------------------------------------
@@ -309,10 +304,11 @@ closed_state() {
       if [[ "$stripped" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
         m="${BASH_REMATCH[0]}"
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
-        rest="${m: -1}${stripped#*"$m"}"
+        rest="$m${stripped#*"$m"}"
         cdate="—"
-        if [[ "$rest" =~ ^[^0-9]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        if [[ "$rest" =~ [A-Z][^0-9]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
+        case "$glyph" in ✅) ckey="${ckey}1" ;; *) ckey="${ckey}0" ;; esac
         if [ -z "$best_key" ] || [[ "$ckey" > "$best_key" ]]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
       else
         any_open=1
