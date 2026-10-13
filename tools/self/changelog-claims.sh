@@ -26,6 +26,8 @@
 #                                        one run with no spaces)
 #   <!-- claim: hand TEXT -->            says where the number comes from, with an as-of (a date YYYY-MM-DD,
 #                                        a commit sha or a version vX.Y.Z); never re-derived
+# A hand as-of that is a commit sha needs a digit in it ("defaced" is a word). A marker holding an odd number
+# of backticks is a BADMARK: it cannot be told from a code span.
 # A PATH is repo-relative: no leading /, no .. segment, a regular file that is not a symlink, physically
 # under DIR. words/lines/matches take an INTEGER claim only (no ~, decimal, range or suffix: use hand). Marker
 # text is data: it reaches awk, wc and grep as argv and never eval, sh -c or $(...).
@@ -118,6 +120,7 @@ function has_asof(t,    n, a, k, w) {
 function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, after, j) {
   mst[i] = "K"; mkind[i] = ""; mere[i] = ""; mpaths[i] = ""; margs[i] = ""; mbad[i] = ""
   if (!closed) { bad(i, "marker has no closing -->"); return }
+  if (gsub(/`/, "&", inner) % 2 == 1) { bad(i, "a marker with an odd number of backticks cannot be told from a code span"); return }
   if (substr(inner, 1, 1) != ":") { bad(i, "malformed marker: expected 'claim:' after '<!--'"); return }
   t = trim(substr(inner, 2))
   if (t == "") { bad(i, "missing argument: no kind"); return }
@@ -233,17 +236,18 @@ BEGIN {
     from = 1
     while (match(substr(s, from), /`[^`]*`/)) { blank_range(from + RSTART - 1, RLENGTH); from += RSTART - 1 + RLENGTH }
   }
-  # 2. markers, found on the span-blanked line (one inside a span is not a marker), read from s0, left to
-  # right; each marker's text becomes one placeholder byte so claims keep a side
+  # 2. markers, found and read on s0 (so a backtick inside a marker never hides its end); one whose start
+  # the span blanking reached is inside a code span and is not a marker. Left to right; each marker's
+  # text becomes one placeholder byte so claims keep a side.
   nm = 0; out = ""; rest = s; rest0 = s0
-  while ((p = index(rest, "<!-- claim")) > 0) {
-    body = substr(rest, p + 10)
-    body0 = substr(rest0, p + 10)
-    q = index(body, "-->")
-    nm++
+  while ((p = index(rest0, "<!-- claim")) > 0) {
     pre = substr(rest, 1, p - 1)
+    if (substr(rest, p, 10) != "<!-- claim") { out = out pre substr(rest, p, 10); rest = substr(rest, p + 10); rest0 = substr(rest0, p + 10); continue }
+    body0 = substr(rest0, p + 10)
+    q = index(body0, "-->")
+    nm++
     if (q == 0) { parse_marker(nm, body0, 0); rest = ""; rest0 = "" }
-    else { parse_marker(nm, substr(body0, 1, q - 1), 1); rest = substr(body, q + 3); rest0 = substr(body0, q + 3) }
+    else { parse_marker(nm, substr(body0, 1, q - 1), 1); rest = substr(rest, p + 10 + q + 2); rest0 = substr(body0, q + 3) }
     out = out pre PH
   }
   s = out rest
@@ -307,7 +311,7 @@ BEGIN {
     nonint = 0; ds = st
     if (substr(s, e, 1) == "." && substr(s, e + 1, 1) ~ /[0-9]/) { match(substr(s, e), /^\.[0-9]+/); e += RLENGTH; nonint = 1 }
     if (st > 1 && substr(s, st - 1, 1) == "~") { ds = st - 1; nonint = 1 }
-    if (st > 1 && substr(s, st - 1, 1) == "." && (st == 2 || substr(s, st - 2, 1) !~ /[A-Za-z0-9]/)) { ds = st - 1; nonint = 1 }
+    if (st > 1 && substr(s, st - 1, 1) == "." && (st == 2 || substr(c, st - 2, 1) !~ /[A-Za-z0-9.]/)) { ds = st - 1; nonint = 1 }
     nword = 0
     sw = (substr(s, e, 1) == "-") ? 1 : ((substr(s, e, 3) == en) ? 3 : 0)
     if (sw && substr(s, e + sw, 1) ~ /[0-9]/) {

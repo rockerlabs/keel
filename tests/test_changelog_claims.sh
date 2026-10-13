@@ -172,6 +172,15 @@ put "$d" t.txt $'`a`\n`b`\nzz\n'
 run "$ccl" --repo "$d" --strict
 check_status "R1: backticks inside a marker's ERE are data -> OK, exit 0" 0 "$STATUS"
 check_contains "R1: ...and the OK line prints the ERE as written" "$OUT" "matches '^\`[a-z]\`\$' t.txt = 2"
+d="$(one_frag $'- 2 <!-- claim: matches \'^`\' t.txt --> and `x`\n')"
+put "$d" t.txt $'`a\n`b\nzz\n'
+run "$ccl" --repo "$d"
+check_contains "R2: an odd backtick count in a marker is a BADMARK, not a mangled end" "$OUT" "odd number of backticks"
+d="$(one_frag $'- wait...5 more and v1.2 here, `<!-- claim: words a.md -->` in code\n')"
+run "$ccl" --repo "$d"
+check_absent "R2: an ellipsis is not a leading-dot decimal" "$OUT" ".5 —"
+check_absent "R2: v1.2 is not a leading-dot decimal either" "$OUT" ".2 —"
+check_contains "R2: a marker wholly inside a code span is no marker" "$OUT" "UNBOUND changelog.d/a.md:1: 5"
 d="$(one_frag $'- 1e5 and 12h30m and .5 and see a.sh:12 and 5/6 here\n')"
 run "$ccl" --repo "$d"
 check_contains "R1: 1e5 is one claim as written" "$OUT" "UNBOUND changelog.d/a.md:1: 1e5 —"
