@@ -3,7 +3,7 @@
 # staleness by tests/test_mutation_lists.sh. Rows 1-10 are the spec's ten; the rest are this tool's own.
 # Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
 window-le	tools/self/accumulate.sh	if (Dn - dn($1) >= win[id]) next	if (Dn - dn($1) > win[id]) next	A13 1: the window edge — a 60-day-old sighting must not count
-future-accepted	tools/self/accumulate.sh	[[ "$s_date" > "$ASOF" ]] && die	[[ "$s_date" > "9999-99-99" ]] && die	A13 2: add rejects a date after --as-of
+future-accepted	tools/self/accumulate.sh	date_gt "$s_date" "$ASOF" && die	date_gt "$s_date" "9999-99-99" && die	A13 2: add rejects a date after --as-of
 count-rows	tools/self/accumulate.sh	if (!(k in seen)) { seen[k] = 1; count[id]++ }	{ seen[k] = 1; count[id]++ }	A13 3: count distinct sources, not rows (/go + /polish on one source)
 threshold-gt	tools/self/accumulate.sh	($5 >= $4 || $6 == 1) {	($5 > $4 || $6 == 1) {	A13 4: due at exactly the threshold
 danger-unfelt	tools/self/accumulate.sh	if ($5 == "yes" && $6 == "yes") danger[id] = 1	if ($6 == "yes") danger[id] = 1	A13 5: danger needs felt yes
@@ -42,5 +42,6 @@ glued-date-lost	tools/self/accumulate.sh	rest="$m${stripped#*"$m"}"	rest="${stri
 option-terminator-off	tools/self/accumulate.sh	--) shift; while	--) die "no --"; while	a -- terminator makes the rest positional
 tie-prefers-supersede	tools/self/accumulate.sh	case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac	case "$glyph" in ✅) ckey="${ckey//-/}0" ;; *) ckey="${ckey//-/}1" ;; esac	closed: equal closure dates -> a real closure beats a supersede
 positional-count-unchecked	tools/self/accumulate.sh	[ "${#pos[@]}" -le "$max_pos" ] || die	true || die	a stray argument is an error
-help-before-subcommand-only	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;;	-h|--help) usage; exit 0 ;;	-h after the subcommand is a value, not help
+help-recorded-as-data	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; die "unexpected $1	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;; die "unexpected $1	-h after the subcommand is a value, not help
 date-crosses-lines	tools/self/accumulate.sh	[^0-9${NL}]{0,40}	[^0-9]{0,40}	closed: a date on a wrapped line is not the closure date
+date-compare-string-order	tools/self/accumulate.sh	date_gt() { [ "${1//-/}" -gt "${2//-/}" ]; }	date_gt() { [ "${1//-/}" -lt "${2//-/}" ]; }	add / fixed: a date after --as-of is refused

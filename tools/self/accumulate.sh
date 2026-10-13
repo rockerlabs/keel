@@ -129,6 +129,7 @@ valid_date() { ACC_V="$1" AWK "${AWKLIB}"'BEGIN { exit !isdate(ENVIRON["ACC_V"])
 no_ctl() { case "$1" in *"$TAB"*|*"$NL"*) return 1 ;; esac; return 0; }
 is_id() { [[ "$1" =~ ^[a-z0-9:-]+$ ]]; }
 valid_ref() { no_ctl "$1" && [ -n "$1" ]; }
+date_gt() { [ "${1//-/}" -gt "${2//-/}" ]; }   # ISO dates compared as integers: no locale collation involved
 is_posint() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 
 # --- arguments ---------------------------------------------------------------------------------------------------------------------
@@ -136,7 +137,7 @@ DIR=""; ASOF=""; OWNER=""; CONSUMER=""; FDATE=""; VERBOSE=0; SELFTEST=0
 pos=(); BACKLOGS=(); DRAFTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;;
+    -h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; die "unexpected $1 after the subcommand (a value starting with a dash goes after --)" ;;
     --) shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
     --selftest) SELFTEST=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
@@ -305,6 +306,7 @@ closed_state() {
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
         rest="$m${stripped#*"$m"}"
         cdate="—"
+        # the tag word is the first capitals in $rest (BB_CLOSURE_TAG_PATTERN is uppercase-only); the date must follow it on the same line
         if [[ "$rest" =~ ^[^A-Z]*[A-Z]+[^0-9${NL}]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
         case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac
@@ -410,7 +412,7 @@ case "$cmd" in
   promote|fixed) max_pos=3 ;;
   new-class) max_pos=8 ;;
   add) max_pos=10 ;;
-  *) max_pos=1000 ;;
+  *) die "unknown subcommand: $cmd" ;;
 esac
 [ "${#pos[@]}" -le "$max_pos" ] || die "unexpected argument: ${pos[$max_pos]} (a value starting with a dash goes after --)"
 
@@ -461,7 +463,7 @@ case "$cmd" in
       no_ctl "$v" || die "a field holds a TAB or newline"
     done
     valid_date "$s_date" || die "date is not a date: $s_date"
-    [[ "$s_date" > "$ASOF" ]] && die "date $s_date is after --as-of $ASOF"
+    date_gt "$s_date" "$ASOF" && die "date $s_date is after --as-of $ASOF"
     class_exists "$s_class" || die "unknown class: $s_class"
     [[ "$s_cons" =~ ^/?[a-z0-9-]+$ ]] || die "consumer must match /?[a-z0-9-]+: $s_cons"
     [[ "$s_src" =~ ^[a-z]+:. ]] || die "source must be kind:value (audit:… session:… spec:… entry:…): $s_src"
@@ -527,7 +529,7 @@ case "$cmd" in
     f_class="${pos[1]}"; f_ref="${pos[2]}"; f_date="${FDATE:-$ASOF}"
     valid_ref "$f_ref" || die "ref must be non-empty, without TAB or newline"
     valid_date "$f_date" || die "--date is not a date: $f_date"
-    [[ "$f_date" > "$ASOF" ]] && die "--date $f_date is after --as-of $ASOF"
+    date_gt "$f_date" "$ASOF" && die "--date $f_date is after --as-of $ASOF"
     class_exists "$f_class" || die "unknown class: $f_class"
     f_word="$(class_word "$f_class")"
     [ "$f_word" = promoted ] || die "class $f_class is $f_word; only a promoted class can be fixed"

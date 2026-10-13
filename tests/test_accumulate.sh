@@ -132,8 +132,13 @@ check_status "add: a note beginning with -- after a -- terminator is recorded" 0
 check_contains "... verbatim" "$(tail -1 "$d/sightings.tsv")" "--starts-with-dashes"
 A "$d" add "$T" x /polish audit:keel@help yes no m ev -- -h
 check_status "add: -h after a -- terminator is a value, not --help" 0 "$STATUS"
+check_eq "... and the row was written" "added" "$OUT"
+check_contains "... with -h as the note" "$(tail -1 "$d/sightings.tsv")" "${TAB}-h"
 A "$d" add "$T" x /polish audit:keel@extra yes no m ev note -h
 check_status "add: one argument too many is an error, never a silent help" 2 "$STATUS"
+A "$d" add "$T" x /polish audit:keel@typo yes no m --help
+check_status "add: --help in a value slot (no --) is an error, never recorded as data" 2 "$STATUS"
+check_eq "... and nothing was written" 0 "$(grep -c 'audit:keel@typo' "$d/sightings.tsv")"
 A "$d" count nope
 check_status "count: an unknown class -> exit 2" 2 "$STATUS"
 want="$(printf '%s\tx\t/polish\taudit:keel@a\tyes\tno\tm\tev\t' "$T")"
