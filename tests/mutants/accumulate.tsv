@@ -40,4 +40,7 @@ undated-closure-sorts-last	tools/self/accumulate.sh	[ "$cdate" = "—" ] && ckey
 closed-unregistered-class	tools/self/accumulate.sh	class_exists "${pos[1]}" || die "unknown class: ${pos[1]}"\n    need_paths	    need_paths	closed refuses a class that is not in the registry
 glued-date-lost	tools/self/accumulate.sh	rest="$m${stripped#*"$m"}"	rest="${stripped#*"$m"}"	closed: a date glued to the closure word
 option-terminator-off	tools/self/accumulate.sh	--) shift; while	--) die "no --"; while	a -- terminator makes the rest positional
-tie-prefers-supersede	tools/self/accumulate.sh	case "$glyph" in ✅) ckey="${ckey}1" ;; *) ckey="${ckey}0" ;; esac	case "$glyph" in ✅) ckey="${ckey}0" ;; *) ckey="${ckey}1" ;; esac	closed: equal closure dates -> a real closure beats a supersede
+tie-prefers-supersede	tools/self/accumulate.sh	case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac	case "$glyph" in ✅) ckey="${ckey//-/}0" ;; *) ckey="${ckey//-/}1" ;; esac	closed: equal closure dates -> a real closure beats a supersede
+positional-count-unchecked	tools/self/accumulate.sh	[ "${#pos[@]}" -le "$max_pos" ] || die	true || die	a stray argument is an error
+help-before-subcommand-only	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;;	-h|--help) usage; exit 0 ;;	-h after the subcommand is a value, not help
+date-crosses-lines	tools/self/accumulate.sh	[^0-9${NL}]{0,40}	[^0-9]{0,40}	closed: a date on a wrapped line is not the closure date

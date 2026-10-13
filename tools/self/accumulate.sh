@@ -52,12 +52,11 @@
 # continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
-# for that single write. The lock is cooperative: a write that finds ANY lock proceeds, because the run that took it was
-# a separate process and the tool cannot tell its own caller from another run — the exclusion between runs is `lock`
-# itself (exit 2), and every run takes it first. A value that starts with a dash goes after `--`. Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
+# for that single write. The lock is cooperative and guards a RUN, not a single write: a write that finds ANY lock
+# proceeds (the run that took it was a separate process and the tool cannot tell its own caller from another run), so two
+# bare writes with no `lock` held are not serialised, and a stale lock is only reported and broken by `lock` itself. The
+# exclusion between runs is `lock` (exit 2); every run takes it first. A value that starts with a dash goes after `--`. Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
 set -u
-# bash's `[[ a > b ]]` collates by locale; the dates and keys it compares below are byte-ordered ASCII.
-export LC_COLLATE=C
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
@@ -137,7 +136,7 @@ DIR=""; ASOF=""; OWNER=""; CONSUMER=""; FDATE=""; VERBOSE=0; SELFTEST=0
 pos=(); BACKLOGS=(); DRAFTS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help) usage; exit 0 ;;
+    -h|--help) if [ "${#pos[@]}" -eq 0 ]; then usage; exit 0; fi; pos+=("$1"); shift ;;
     --) shift; while [ $# -gt 0 ]; do pos+=("$1"); shift; done ;;
     --selftest) SELFTEST=1; shift ;;
     --verbose) VERBOSE=1; shift ;;
@@ -306,10 +305,10 @@ closed_state() {
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
         rest="$m${stripped#*"$m"}"
         cdate="—"
-        if [[ "$rest" =~ [A-Z][^0-9]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        if [[ "$rest" =~ ^[^A-Z]*[A-Z]+[^0-9${NL}]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
-        case "$glyph" in ✅) ckey="${ckey}1" ;; *) ckey="${ckey}0" ;; esac
-        if [ -z "$best_key" ] || [[ "$ckey" > "$best_key" ]]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
+        case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac
+        if [ -z "$best_key" ] || [ "$ckey" -gt "$best_key" ]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
       else
         any_open=1
       fi
@@ -404,6 +403,16 @@ cmd="${pos[0]}"
 [ -n "$DIR" ] || die "--dir is required"
 if [ -z "$ASOF" ]; then ASOF="$(date +%Y-%m-%d)"; fi
 valid_date "$ASOF" || die "--as-of is not a date: $ASOF"
+# a stray argument (a misplaced --help, a forgotten --) is an error, never a silent no-op or a surprise write
+case "$cmd" in
+  init|lock|unlock|retire|lint|due|status|verdict) max_pos=1 ;;
+  count|closed) max_pos=2 ;;
+  promote|fixed) max_pos=3 ;;
+  new-class) max_pos=8 ;;
+  add) max_pos=10 ;;
+  *) max_pos=1000 ;;
+esac
+[ "${#pos[@]}" -le "$max_pos" ] || die "unexpected argument: ${pos[$max_pos]} (a value starting with a dash goes after --)"
 
 case "$cmd" in
   init)

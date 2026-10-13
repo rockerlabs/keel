@@ -46,6 +46,12 @@ check_status "a data dir without the TSVs -> exit 2 (I/O), not a lint finding" 2
 A "$d" count x
 check_status "count on a dir without the TSVs -> exit 2" 2 "$STATUS"
 
+d0="$(mktemp -d "$SANDBOX/acc.XXXXXX")"
+A "$d0" init --help
+check_status "init --help (a stray argument after the subcommand) -> exit 2" 2 "$STATUS"
+check_nofile "... and init wrote nothing" "$d0/classes.tsv"
+A "$d0" init extra
+check_status "init with an extra positional -> exit 2" 2 "$STATUS"
 # --- init: the headers byte for byte (A2) --------------------------------------------------------------------------------
 d="$(mk)"
 printf 'class\ttitle\tfix\towner\tcreated\tstatus\tthreshold\twindow\tcounts\n' > "$SANDBOX/want-classes"
@@ -126,7 +132,8 @@ check_status "add: a note beginning with -- after a -- terminator is recorded" 0
 check_contains "... verbatim" "$(tail -1 "$d/sightings.tsv")" "--starts-with-dashes"
 A "$d" add "$T" x /polish audit:keel@help yes no m ev -- -h
 check_status "add: -h after a -- terminator is a value, not --help" 0 "$STATUS"
-check_eq "... the row was written" "added" "$OUT"
+A "$d" add "$T" x /polish audit:keel@extra yes no m ev note -h
+check_status "add: one argument too many is an error, never a silent help" 2 "$STATUS"
 A "$d" count nope
 check_status "count: an unknown class -> exit 2" 2 "$STATUS"
 want="$(printf '%s\tx\t/polish\taudit:keel@a\tyes\tno\tm\tev\t' "$T")"
@@ -327,7 +334,7 @@ check_status "status without --owner -> exit 2" 2 "$STATUS"
 
 # --- closed: three heading forms, a draft, an orphan -------------------------------------------------------------------------------------------
 d="$(mk)"
-for c in tie open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
+for c in tie tie-rev wrapped-date open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
 bl="$SANDBOX/bl.md"
 cat > "$bl" <<'EOF'
 # Backlog
@@ -387,6 +394,19 @@ Observer-class: tie
 
 Observer-class: tie
 
+### dir #68 — same date, a real closure first — ✅ CLOSED (2026-10-01)
+
+Observer-class: tie-rev
+
+### dir #69 — same date, superseded second — ❌ SUPERSEDED (2026-10-01)
+
+Observer-class: tie-rev
+
+### dir #70 — an undated closure with a later date on its wrapped line — ✅ CLOSED (see PR)
+Opened 2025-03-04 elsewhere
+
+Observer-class: wrapped-date
+
 ### dir #14 — an unrelated closed ticket — ✅ CLOSED (2026-01-01)
 
 See Observer-class: midline-only for context; the tag must start its own line.
@@ -420,6 +440,8 @@ A "$d" closed midline-only --backlog "$bl" --drafts "$dr";   check_eq "closed: a
 A "$d" closed two-closed --backlog "$bl" --drafts "$dr";     check_eq "closed: several closed tickets -> the dated one wins over an undated one" "closed ✅ 2026-10-01" "$OUT"
 A "$d" closed two-closed-rev --backlog "$bl" --drafts "$dr";  check_eq "closed: ... in either file order" "closed ✅ 2026-10-02" "$OUT"
 A "$d" closed tie --backlog "$bl" --drafts "$dr";             check_eq "closed: equal dates -> a real closure beats a supersede, whichever file order" "closed ✅ 2026-10-01" "$OUT"
+A "$d" closed tie-rev --backlog "$bl" --drafts "$dr";         check_eq "closed: ... and with the real closure first" "closed ✅ 2026-10-01" "$OUT"
+A "$d" closed wrapped-date --backlog "$bl" --drafts "$dr";    check_eq "closed: a date on a wrapped continuation line is not the closure date" "closed ✅ —" "$OUT"
 A "$d" closed glued --backlog "$bl" --drafts "$dr";           check_eq "closed: a date glued to the closure word is still parsed" "closed ✅ 2026-10-05" "$OUT"
 A "$d" closed not-in-the-registry --backlog "$bl" --drafts "$dr"; check_status "closed: a class that is not in the registry -> exit 2, not 'orphaned'" 2 "$STATUS"
 A "$d" closed nowhere --backlog "$bl" --drafts "$dr";        check_eq "closed: a tag in no backlog and no draft -> orphaned" "orphaned" "$OUT"
