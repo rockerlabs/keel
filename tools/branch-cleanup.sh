@@ -43,8 +43,7 @@
 #      KEEL_KEEP_WORKTREE=<path> names the worktree to never touch (defaults to this run's own
 #      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
 #      KEEL_DEFAULT_BRANCH names the default branch to grade against (dir #814); unset, it is origin/HEAD's
-#      target, else (no remote, or one never fetched) the main worktree's branch if it is main / master /
-#      init.defaultBranch, then init.defaultBranch / main / master, whichever exists locally.
+#      target, else -- in a repo with NO remote -- init.defaultBranch / main / master, whichever exists locally.
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
@@ -77,8 +76,8 @@ FLAG = merged worktree with live work -> reported for review, no destructive com
        session still mid-wrap, not a stale leftover.
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
-     KEEL_DEFAULT_BRANCH default branch to grade against (default: origin/HEAD's target; else the local
-                         main / master / init.defaultBranch that exists -- the checked-out one first).
+     KEEL_DEFAULT_BRANCH default branch to grade against (default: origin/HEAD's target; with no remote,
+                         init.defaultBranch, then main / master -- whichever exists locally).
 EOF
 }
 
@@ -115,48 +114,63 @@ require_nonneg_int --live-hours "$LIVE_HOURS"
 git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
 # Default branch (dir #814), first match wins:
-#   1. KEEL_DEFAULT_BRANCH -- the operator's explicit word. A leading refs/heads/, refs/remotes/origin/ or
-#      origin/ is stripped (a remote-qualified name would defeat the default's self-exclusion below); what is
-#      left must be a valid branch name, else exit 2.
+#   1. KEEL_DEFAULT_BRANCH -- the operator's explicit word, used EXACTLY as given (no prefix stripping:
+#      every normalization rule was a hole). It must be a plain branch name, else exit 2; a value that names
+#      no local or origin branch (`origin/main`, `refs/heads/main`, `upstream/main`) simply finds nothing to
+#      compare against and grades nothing -- fail closed.
 #   2. origin/HEAD's target (symbolic-ref, not `rev-parse --abbrev-ref origin/HEAD`, which prints the
 #      literal "origin/HEAD" + exits 128 with no remote).
-#   3. Otherwise guess from LOCAL branches -- whether the remote was never fetched or there is none at all:
-#      the main worktree's checked-out branch IF it is one of init.defaultBranch / main / master (so a stale
-#      `main` beside a live `master` loses to the one HEAD is on), then init.defaultBranch, main, master --
-#      whichever exists as a local branch first. An arbitrary checked-out HEAD is deliberately NOT a
-#      candidate: a main worktree sitting on a feature branch would make live work the base, and a wrong
-#      base deletes work. Nothing matches -> `main`, and the "no <x> to compare against" line below.
+#   3. A remote exists but origin/HEAD is unset (never fetched): `main`, as before -- the remote's real
+#      default is unknowable offline, so a guess could grade against a stale local branch.
+#   4. NO remote -- nothing to fetch, so guess from the LOCAL branches: the ONE of init.defaultBranch / main /
+#      master that exists. Two or more existing (a stale `main` beside a live `master`) is ambiguous, and a
+#      wrong base deletes work, so it grades NOTHING and names the candidates; the checked-out HEAD is never
+#      consulted (a main worktree on a feature branch would make live work the base). The guess is announced
+#      on stderr. None exists -> `main` and the "no <x> to compare against" line.
+# Refs are fully qualified below, so a branch named like a remote ref cannot be mistaken for one.
 # Compare against the REMOTE default when it resolves (authoritative -- the merge lands there), else the
 # local branch (offline / no remote, e.g. the tests).
-default=""
+has_remote=0; [ -z "$(git remote 2>/dev/null || true)" ] || has_remote=1
+default=""; guessed=0
 if [ -n "${KEEL_DEFAULT_BRANCH:-}" ]; then
-  default="${KEEL_DEFAULT_BRANCH#refs/heads/}"; default="${default#refs/remotes/origin/}"; default="${default#origin/}"
-  git check-ref-format --branch "$default" >/dev/null 2>&1 \
+  default="$KEEL_DEFAULT_BRANCH"
+  case "$default" in -*) _bad=1 ;; *) _bad=0 ;; esac
+  { [ "$_bad" -eq 0 ] && git check-ref-format "refs/heads/$default" >/dev/null 2>&1; } \
     || { printf 'branch-cleanup: KEEL_DEFAULT_BRANCH is not a valid branch name: %s\n' "$KEEL_DEFAULT_BRANCH" >&2; exit 2; }
 elif _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then
   default="${_ref#refs/remotes/origin/}"
+elif [ "$has_remote" -eq 1 ]; then
+  default=main
 else
-  _init="$(git config --get init.defaultBranch 2>/dev/null || true)"
-  _mwt="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /,""); print; exit}' || true)"
-  _head=""
-  [ -z "$_mwt" ] || _head="$(git -C "$_mwt" symbolic-ref --short -q HEAD 2>/dev/null || true)"
-  case "$_head" in main|master) ;; *) [ -n "$_init" ] && [ "$_head" = "$_init" ] || _head="" ;; esac
-  for _c in "$_head" "$_init" main master; do
+  _found=""; _n=0
+  for _c in "$(git config --get init.defaultBranch 2>/dev/null || true)" main master; do
     [ -n "$_c" ] || continue
-    git check-ref-format --branch "$_c" >/dev/null 2>&1 || continue
-    git rev-parse --verify -q "refs/heads/$_c" >/dev/null 2>&1 && { default="$_c"; break; }
+    git check-ref-format "refs/heads/$_c" >/dev/null 2>&1 || continue
+    case " $_found " in *" $_c "*) continue ;; esac
+    git rev-parse --verify -q "refs/heads/$_c" >/dev/null 2>&1 || continue
+    _found="$_found $_c"; _n=$((_n + 1)); default="$_c"
   done
+  if [ "$_n" -gt 1 ]; then
+    printf 'branch-cleanup: ambiguous local default (%s); set KEEL_DEFAULT_BRANCH to the right one\n' "${_found# }" >&2
+    exit 0
+  fi
+  [ "$_n" -eq 0 ] || guessed=1
   [ -n "$default" ] || default=main
 fi
-if git rev-parse --verify -q "origin/$default" >/dev/null 2>&1; then base="origin/$default"; else base="$default"; fi
-git rev-parse --verify -q "$base" >/dev/null 2>&1 || {
-  if [ -n "$(git remote 2>/dev/null || true)" ]; then
-    printf 'branch-cleanup: no %s to compare against (fetch first?)\n' "$default" >&2
+if git rev-parse --verify -q "refs/remotes/origin/$default" >/dev/null 2>&1; then
+  base="origin/$default"; base_ref="refs/remotes/origin/$default"
+else
+  base="$default"; base_ref="refs/heads/$default"
+fi
+git rev-parse --verify -q "$base_ref" >/dev/null 2>&1 || {
+  if [ "$has_remote" -eq 1 ]; then
+    printf 'branch-cleanup: no %s to compare against (fetch first? or set KEEL_DEFAULT_BRANCH)\n' "$default" >&2
   else
     printf 'branch-cleanup: no %s to compare against (no remote; set KEEL_DEFAULT_BRANCH or init.defaultBranch)\n' "$default" >&2
   fi
   exit 0
 }
+[ "$guessed" -eq 0 ] || printf 'branch-cleanup: no remote, so grading against local %s (set KEEL_DEFAULT_BRANCH to override)\n' "$default" >&2
 
 # The one worktree we must never suggest removing: the one this run sits in (you can't `git worktree
 # remove` your own CWD, and at wrap the session usually sits on an already-merged branch). Identify it by
@@ -290,7 +304,7 @@ while read -r b cd; do
     reason=recent; [ "$age" -ge "$DAYS" ] && reason=off-pattern
     ask="${ask}${b}"$'\t'"${age}"$'\t'"${reason}"$'\n'; n_ask=$((n_ask + 1))
   fi
-done < <(git for-each-ref --merged="$base" --format='%(refname:short) %(committerdate:unix)' refs/heads/)
+done < <(git for-each-ref --merged="$base_ref" --format='%(refname:short) %(committerdate:unix)' refs/heads/)
 
 # --- act + report -------------------------------------------------------------------------------
 # delete_branch NAME — -d first (belt); -D fallback only because -d compares against the current HEAD, not

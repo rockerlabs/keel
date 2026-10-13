@@ -306,7 +306,7 @@ run_in "$fb" bash "$TOOL" --days 0 --live-hours 0
 check_contains "HEAD on a feature branch: master is still the base (positive control graded)" "$(line_for claude/on-master)" "AUTO"
 check_absent   "HEAD on a feature branch is not the base: a branch merged only into it is not graded" "$OUT" "claude/on-feat"
 
-# a stale `main` beside the live `master` HEAD is on: HEAD wins among the known default names
+# a stale `main` beside the live `master`: ambiguous -> grade NOTHING (a wrong base deletes work), name both
 sm="$(new_repo)"
 git -C "$sm" symbolic-ref HEAD refs/heads/master
 GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-empty -m c1
@@ -315,9 +315,15 @@ GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-
 git -C "$sm" branch claude/x HEAD                    # merged into master (c2), NOT into the stale main (c1)
 git -C "$sm" commit -q --allow-empty -m c3
 run_in "$sm" bash "$TOOL" --days 7 --live-hours 0
-check_contains "stale main beside a live master HEAD: master is the base" "$(line_for claude/x)" "AUTO"
+check_status   "main AND master exist: exits 0" 0 "$STATUS"
+check_contains "main AND master exist: says it is ambiguous" "$OUT" "ambiguous"
+check_contains "main AND master exist: names both candidates" "$OUT" "main master"
+check_absent   "main AND master exist: nothing is graded" "$OUT" "claude/x"
+KEEL_DEFAULT_BRANCH=master run_in "$sm" bash "$TOOL" --days 7 --live-hours 0
+check_contains "the override resolves the ambiguity" "$(line_for claude/x)" "AUTO"
 
-# a remote that was never fetched (no origin/HEAD) must not force `main`: a master repo still grades
+# a remote that was never fetched (no origin/HEAD) keeps the old fail-closed `main` guess: the remote's real
+# default is unknowable offline; the hint names the override, which then grades
 ur="$(new_repo)"
 git -C "$ur" symbolic-ref HEAD refs/heads/master
 GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$ur" commit -q --allow-empty -m c1
@@ -325,7 +331,11 @@ git -C "$ur" branch claude/old HEAD
 git -C "$ur" commit -q --allow-empty -m c2
 git -C "$ur" remote add origin "$(mktemp -d "$SANDBOX/origin.XXXXXX")"
 run_in "$ur" bash "$TOOL" --days 7 --live-hours 0
-check_contains "unfetched remote, default master: graded against local master" "$(line_for claude/old)" "AUTO"
+check_contains "unfetched remote: grades nothing, hints at fetch" "$OUT" "fetch first?"
+check_contains "unfetched remote: the hint names the override" "$OUT" "KEEL_DEFAULT_BRANCH"
+check_absent   "unfetched remote: nothing is graded" "$OUT" "claude/old"
+KEEL_DEFAULT_BRANCH=master run_in "$ur" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unfetched remote + KEEL_DEFAULT_BRANCH=master: graded" "$(line_for claude/old)" "AUTO"
 
 # init.defaultBranch names a non-main/master default
 td="$(new_repo)"
@@ -336,6 +346,7 @@ git -C "$td" branch claude/old HEAD
 git -C "$td" commit -q --allow-empty -m c2
 run_in "$td" bash "$TOOL" --days 7 --live-hours 0
 check_contains "init.defaultBranch=trunk is honoured with no remote" "$(line_for claude/old)" "AUTO"
+check_contains "a guessed default is announced" "$OUT" "grading against local trunk"
 
 # KEEL_DEFAULT_BRANCH overrides, and is validated
 tk="$(new_repo)"
@@ -350,11 +361,23 @@ check_absent   "no remote: the message does not say 'fetch first?'" "$OUT" "fetc
 export KEEL_DEFAULT_BRANCH=trunk
 run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
 check_contains "KEEL_DEFAULT_BRANCH=trunk grades against trunk" "$(line_for claude/old)" "AUTO"
-export KEEL_DEFAULT_BRANCH=origin/trunk
-run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
-check_contains "KEEL_DEFAULT_BRANCH=origin/trunk is normalized to trunk" "$(line_for claude/old)" "AUTO"
-if match "$OUT" -qE '^(AUTO|ASK|FLAG) +trunk( |$)'; then fail "origin/-qualified override: the default is still never listed" "trunk was graded"
-else pass "origin/-qualified override: the default is still never listed"; fi
+# the override is used EXACTLY as given: a value naming no branch (remote-qualified, fully-qualified, other
+# remote) finds nothing to compare against and grades nothing -- never a normalized guess
+for v in origin/trunk refs/heads/trunk upstream/trunk; do
+  KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+  check_status   "KEEL_DEFAULT_BRANCH=$v: exits 0" 0 "$STATUS"
+  check_contains "KEEL_DEFAULT_BRANCH=$v: finds nothing to compare against" "$OUT" "to compare against"
+  if match "$OUT" -qE '^(AUTO|ASK|FLAG) '; then fail "KEEL_DEFAULT_BRANCH=$v: grades nothing" "a branch was graded"
+  else pass "KEEL_DEFAULT_BRANCH=$v: grades nothing"; fi
+done
+# control: the same column-anchored pattern DOES match a graded line when the override is right
+KEEL_DEFAULT_BRANCH=trunk run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+if match "$OUT" -qE '^AUTO +claude/old'; then pass "control: the anchored pattern matches a graded line"
+else fail "control: the anchored pattern matches a graded line" "no AUTO line: $OUT"; fi
+for v in '@{-1}' 'a..b'; do
+  KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+  check_status   "KEEL_DEFAULT_BRANCH=$v is rejected" 2 "$STATUS"
+done
 export KEEL_DEFAULT_BRANCH=nonexistent
 run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
 check_status   "KEEL_DEFAULT_BRANCH naming no branch: exits 0, nothing graded" 0 "$STATUS"
