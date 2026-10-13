@@ -537,7 +537,8 @@
 # event carries `session_id`.
 # Named residuals of this rule — none was closed by the `settings.json` deny on `gh pr merge` it replaces either,
 # so `main`'s branch protection stays the floor: a `gh api graphql` `mergePullRequest` mutation (inside a quoted
-# argument the reader does not open); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper, a path to `gh`;
+# argument the reader does not open); a quoted subcommand word (`gh pr "merge"`, `gh "api"`: unquoted only, so a
+# quoted `--title "merge"` stays a create); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper, a path to `gh`;
 # `curl` against the REST merge endpoint; a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`);
 # a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command) — judged by the cwd's
 # file and policy line; and self-listing — any session that calls `Skill(manage-release)` or types
@@ -1307,6 +1308,7 @@ _gate_ensure_parent() { gate_ensure_owner_dir "$(dirname "$1")"; }
 _gate_prune_stale() {
   local root="$1" days="${KEEL_GATE_PRUNE_DAYS:-30}" d
   [ -d "$root" ] || return 0
+  # manager/ is not in the list on purpose (dir #811): a release manager runs for days, and its line must outlive any age.
   for d in sentinel prev-sentinel trace handoff rollout; do
     [ -d "$root/$d" ] || continue
     find "$root/$d" -type f -mtime "+$days" -exec rm -f {} + 2>/dev/null

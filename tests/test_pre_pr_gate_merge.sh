@@ -137,6 +137,11 @@ allow "(a) -m" "gh pr merge 597 -m --match-head-commit $SHA" "$P" "$MID"
 allow "(a) a short cluster holding m (-dm)" "gh pr merge 597 -dm --match-head-commit $SHA" "$P" "$MID"
 allow "(a) --merge=true" "gh pr merge 597 --merge=true --match-head-commit $SHA" "$P" "$MID"
 allow "(a) a flag before the subcommand (gh pr -R o/r merge)" "gh pr -R o/r merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
+# The shapes a manager's real command takes: a redirect, a pipe, a chained read, a quoted subject and body.
+allow "(a) a redirect and a pipe" "$MERGE 2>&1 | tail -n 5" "$P" "$MID"
+allow "(a) chained with a read of the PR" "$MERGE && gh pr view 597 --json state" "$P" "$MID"
+allow "(a) a quoted subject and body" "$MERGE --subject \"0.17.0 train 1: land #601-#609\" --body 'no -s here' -d" "$P" "$MID"
+allow "(a) GH_REPO=o/r env prefix" "GH_REPO=o/r $MERGE" "$P" "$MID"
 
 # --- (b) identity ---------------------------------------------------------------------------------------------------
 deny "(b) an unlisted session" "$R_ID" "$MERGE" "$P" "$OTHER"
