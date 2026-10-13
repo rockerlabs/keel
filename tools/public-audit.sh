@@ -439,7 +439,7 @@ decode_binary() {  # $1 = source file, $2 = destination file for the decoded vie
         END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
       ' || exit $?; echo
     fi
-    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$src" || exit $?; echo  # raw printable runs
+    LC_ALL=C tr -cs '[:print:]\t' '\n' < "$src" | LC_ALL=C awk -v n="${run_floor:-1}" 'length($0) >= n' || exit $?; echo  # raw printable runs, short ones dropped (dir #830)
   } | LC_ALL=C tr -d '\000' > "$dst" || return $?
 }
 

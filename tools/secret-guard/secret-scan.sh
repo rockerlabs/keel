@@ -267,6 +267,81 @@ if [ -n "$has_personal" ]; then
   fi
 fi
 
+# --- the decode's run floor (dir #830) --------------------------------------------------------------
+# emit_blob's last view is the raw printable runs of a binary, one run per line. Every line costs the class-1 grep a
+# fixed ~12 µs however short it is (a long alternation with counted repeats), and incompressible data is ~63 %
+# non-printable: a 20 MiB blob made ~12.6 M lines and ~3 min of CPU, minutes more on a loaded machine. A run shorter
+# than the shortest string any pattern can match holds no hit, so it is dropped, and the floor is derived from the
+# patterns themselves — class 1 and every personal literal — so a new pattern moves it. `_min_match_len` reads one
+# ERE per line and prints the smallest length in bytes any of them can match; an ERE outside the subset it parses
+# (literals, escapes, `.`, brackets, groups, alternation, `* + ? {n} {n,} {n,m}`, anchors) makes it print 1, which
+# keeps every run: never guess a floor. Pinned by tests/test_secret_guard_binary_cost.sh.
+# run-floor:begin
+_min_match_len() {
+  LC_ALL=C awk '
+    function alt(   m, v) {
+      m = seq()
+      while (!bad && substr(s, p, 1) == "|") { p++; v = seq(); if (v < m) m = v }
+      return m
+    }
+    function seq(   t, c) {
+      t = 0
+      while (!bad && p <= n) {
+        c = substr(s, p, 1)
+        if (c == "|" || c == ")") break
+        t += atom()
+      }
+      return t
+    }
+    function bracket(   c, d, e) {
+      if (substr(s, p, 1) == "^") p++
+      if (substr(s, p, 1) == "]") p++
+      while (p <= n) {
+        c = substr(s, p, 1)
+        if (c == "]") { p++; return }
+        d = substr(s, p + 1, 1)
+        if (c == "[" && (d == ":" || d == "=" || d == ".")) {
+          e = index(substr(s, p + 2), d "]")
+          if (!e) { bad = 1; return }
+          p += e + 3
+        } else p++
+      }
+      bad = 1
+    }
+    function atom(   c, w, q, e, body, lo) {
+      c = substr(s, p, 1); p++
+      if (c == "(") { w = alt(); if (!bad && substr(s, p, 1) != ")") bad = 1; p++ }
+      else if (c == "[") { bracket(); w = 1 }
+      else if (c == "\\") { q = substr(s, p, 1); p++; if (q == "") bad = 1; w = (q ~ /[0-9]/) ? 0 : 1 }
+      else if (c == "^" || c == "$") w = 0
+      else if (c == "*" || c == "+" || c == "?" || c == "{") bad = 1
+      else w = 1
+      while (!bad && p <= n) {
+        q = substr(s, p, 1)
+        if (q == "*" || q == "?") { w = 0; p++ }
+        else if (q == "+") p++
+        else if (q == "{") {
+          e = index(substr(s, p), "}")
+          body = e ? substr(s, p + 1, e - 2) : ""
+          if (body !~ /^[0-9]+(,[0-9]*)?$/) { bad = 1; break }
+          lo = body; sub(/,.*/, "", lo); w *= lo; p += e
+        } else break
+      }
+      return w
+    }
+    {
+      s = $0; n = length(s); p = 1; bad = 0
+      v = alt()
+      if (p <= n) bad = 1
+      if (bad) fail = 1
+      else if (!seen || v < m) { m = v; seen = 1 }
+    }
+    END { if (fail || !seen || m < 1) m = 1; print m }
+  '
+}
+# run-floor:end
+run_floor=""   # derived by emit_blob on the first binary it decodes, so a scan with no binary never runs awk for it
+
 # --- gather the hits as records ---------------------------------------------------------------------
 # dir #741 (spec 746 B10): one record is one index into five parallel arrays, so a label never reads as
 # content: the allow channels each read their own field (the filter loop below), and a file name holding
@@ -419,6 +494,8 @@ collect_matches() {
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
   # its caller's `||` turns errexit off in here (emit_file), so each read returns its own status
+  # the floor over everything a decoded view is grepped for: the joined class-1 patterns and each personal literal
+  [ -n "$run_floor" ] || run_floor="$({ printf '%s\n' "$joined"; [ -z "$has_personal" ] || cat "$personal_pat"; } | _min_match_len)" || return $?
   tmp="$(spool)" || return $?
   dec="$(spool)" || return $?
   cat > "$tmp" || return $?
@@ -459,7 +536,7 @@ emit_blob() {  # $1 = record label (path)
         END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
       ' || exit $?; echo
     fi
-    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp" || exit $?; echo  # raw printable runs
+    LC_ALL=C tr -cs '[:print:]\t' '\n' < "$tmp" | LC_ALL=C awk -v n="${run_floor:-1}" 'length($0) >= n' || exit $?; echo  # raw printable runs, short ones dropped (dir #830)
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
   collect_matches "$label" "$dec" -o
   rm -f "$tmp" "$dec"
