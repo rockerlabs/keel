@@ -27,7 +27,7 @@
 #   <!-- claim: hand TEXT -->            says where the number comes from, with an as-of (a date YYYY-MM-DD,
 #                                        a commit sha or a version vX.Y.Z); never re-derived
 # A hand as-of that is a commit sha needs a digit in it ("defaced" is a word). A marker holding an odd number
-# of backticks is a BADMARK: it cannot be told from a code span.
+# of backticks, or on a line with an odd number, is a BADMARK: it cannot be told from a code span.
 # A PATH is repo-relative: no leading /, no .. segment, a regular file that is not a symlink, physically
 # under DIR. words/lines/matches take an INTEGER claim only (no ~, decimal, range or suffix: use hand). Marker
 # text is data: it reaches awk, wc and grep as argv and never eval, sh -c or $(...).
@@ -120,6 +120,7 @@ function has_asof(t,    n, a, k, w) {
 function parse_marker(i, inner, closed,    t, k, kind, rest, np, a, r, q, ere, after, j) {
   mst[i] = "K"; mkind[i] = ""; mere[i] = ""; mpaths[i] = ""; margs[i] = ""; mbad[i] = ""
   if (!closed) { bad(i, "marker has no closing -->"); return }
+  if (oddline) { bad(i, "a marker on a line with an odd number of backticks cannot be told from one documented in a code span"); return }
   if (gsub(/`/, "&", inner) % 2 == 1) { bad(i, "a marker with an odd number of backticks cannot be told from a code span"); return }
   if (substr(inner, 1, 1) != ":") { bad(i, "malformed marker: expected 'claim:' after '<!--'"); return }
   t = trim(substr(inner, 2))
@@ -232,7 +233,8 @@ BEGIN {
   # pair inside a marker's ERE or hand text is data, never a span.
   s0 = s
   nb = gsub(/`/, "&", s)
-  if (nb > 0 && nb % 2 == 0) {
+  oddline = (nb % 2 == 1)
+  if (nb > 0 && !oddline) {
     from = 1
     while (match(substr(s, from), /`[^`]*`/)) { blank_range(from + RSTART - 1, RLENGTH); from += RSTART - 1 + RLENGTH }
   }
@@ -282,7 +284,7 @@ BEGIN {
   blank("KB\\.[0-9]+", 0, 1)
   blank("H\\.[0-9]+", 0, 1)
   blank("https?://[^ ]*", 0, 0)
-  blank("v?[0-9]+\\.[0-9]+\\.[0-9]+", 0, 0)
+  blank("(v[0-9]+\\.[0-9]+|[0-9]+\\.[0-9]+\\.[0-9]+)(\\.[0-9]+)*", 0, 0)
   blank("(bash|git|zsh|awk|perl|python) [0-9]+(\\.[0-9]+)?( and [0-9]+(\\.[0-9]+)?)?", 1, 1)
   blank("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9](T[0-9][0-9]:[0-9][0-9](:[0-9][0-9])?Z?)?", 0, 0)
   blank("[0-9]?[0-9]:[0-9][0-9]Z?", 0, 0)
