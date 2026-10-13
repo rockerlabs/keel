@@ -89,7 +89,7 @@ refused "one constituent" build --branch t-one --base main "1=$s1"
 refused "no constituent" build --branch t-none --base main
 refused "an unknown sha" build --branch t-unk --base main "1=$s1" "2=0123456789abcdef0123456789abcdef01234567"
 refused "a malformed constituent" build --branch t-bad --base main "1=$s1" "two"
-refused "a 3-digit sha" build --branch t-short --base main "1=$s1" "2=abc"
+refused "a 5-digit sha prefix" build --branch t-short --base main "1=$s1" "2=${s2:0:5}"
 refused "a duplicate N" build --branch t-dup --base main "1=$s1" "1=$s2"
 refused "an existing branch" build --branch b4 --base main "1=$s1" "4=$s4"
 refused "an existing non-empty worktree path" build --branch t-busy --base main --worktree "$SANDBOX/wt-busy" "1=$s1" "4=$s4"
