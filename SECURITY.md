@@ -90,8 +90,9 @@ model decided — the one model-independent floor ([`ADAPTING.md`](ADAPTING.md) 
 known limits above (a prefix backstop, not DLP). CI re-scans server-side. The human-in-the-loop rails —
 never merge autonomously, confirm irreversible or outward-facing actions — gate a coding agent's main
 outbound channels, but as prose they bias the agent rather than enforce; on Claude Code the pre-PR gate
-mechanically denies the agent's own `gh pr create` until `/polish` has run, which covers that one step and
-nothing wider. A channel Keel does not watch (a network call from a tool, a package install) stays open.
+mechanically denies the agent's own `gh pr create` until `/polish` has run, and denies `gh pr merge` to any
+session that is not a release manager or that does not pin the head it verified, which covers those two steps
+and nothing wider. A channel Keel does not watch (a network call from a tool, a package install) stays open.
 
 **Proportionate to what you can lose.** A learning side project and a production service holding other
 people's data call for different amounts of this. Treat the table as a map of where Keel helps, not as an

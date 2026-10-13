@@ -23,7 +23,10 @@
 # a bypass actually leaks and the one place its command is visible, so this gate, otherwise only a workflow
 # reminder, also carries this rule — still not the secret boundary (that is secret-guard).
 #
-# Both rules read the command the way the shell will (dir #745): quotes glued to the words they touch, `$(…)` and
+# A third rule (dir #811): `gh pr merge` is denied to any session that is not this repository's release manager, or
+# that does not pin the head it verified — the merge-rule section below.
+#
+# All three rules read the command the way the shell will (dir #745): quotes glued to the words they touch, `$(…)` and
 # backticks (inside double quotes and expanding heredoc bodies too), heredocs, arithmetic, redirections, comments,
 # backslash-newline. Where bash, zsh and busybox read a part differently, or the reader cannot know, and that part's
 # segment mentions git or gh, the hook REFUSES the command and says why, so a bypass cannot hide there;
@@ -90,7 +93,7 @@
 #                                           debugging and test aid (dir #745)
 #
 # With no subcommand, it runs as the PreToolUse(Bash) hook: reads the tool-call JSON event on stdin,
-# decides allow/deny for `gh pr create`.
+# decides allow/deny for `gh pr create` — and for `gh pr merge` (dir #811, the merge-rule section below).
 #
 # --- dir #63: making step 5's review outcome verifiable -------------------------------------------
 # Hole A (a fabricated in-session review claim is unfalsifiable): `polish.5-review`'s receipt is a
@@ -502,6 +505,45 @@
 # `git --git-dir=<clone>/.git commit` from inside the session repository is denied too — use `git -C <clone>`.
 # `builtin -- cd X` is not read as a cd (a false deny, never a miss). A subagent started
 # with `isolation: "worktree"` is denied its own commits for the same reason (its worktree shares the repository).
+#
+# --- dir #811: the merge rule — only a release manager merges, pinned, as a merge commit --------------------------
+# In a managed release the release manager merges (docs/release-management.md R14); everywhere else the merge is the
+# operator's. This hook mode DENIES a merge segment — `gh … pr … merge` (any words between, `gh pr -R o/r merge`
+# included), or `gh api` on a `…/pulls/<n>/merge` endpoint with a method other than GET/HEAD or a field flag and no
+# method — unless all three hold, checked in this order and denied with the first that fails:
+#   (ii)  identity — the event is not a subagent's (no non-empty `agent_id`/`agent_type`: a subagent's event carries
+#         its parent's `session_id`, so the id alone cannot tell them apart), its `session_id` is a plain token, the
+#         cwd is a git checkout, and the release-manager file for that repository (`gate_manager_path_for_key`,
+#         keyed like the review trace) has a line whose first tab-separated field EQUALS the id. No id, no file, a
+#         prefix of a listed id: denied.
+#   (iii) policy — the main checkout's CLAUDE.md carries a line with the token `KEEL-MANAGER-MERGES` (the project's
+#         own opt-in; without it a manager's merge is still the operator's).
+#   (i)   flags — `--merge` (or `-m`, or a short cluster holding m) and `--match-head-commit <sha>` (space or `=`
+#         form; exactly 40 lower-case hex), and none of `--squash`/`-s`, `--rebase`/`-r`, `--auto`, `--admin`, bare
+#         or with `=…`, nor a short cluster holding s or r. Every flag is read from the whole segment.
+# The `gh api` merge shape is denied to every session, a manager included: it can carry no head pin. `--help`/`-h`
+# as the first word after `merge` is a read, for any session; anywhere else it may be a flag's value (gh takes the
+# next word as `--subject`'s value even when it starts with `-`), so the segment is a merge. When all three hold the
+# hook emits nothing and the harness's own permission flow decides (a prompting mode asks the operator).
+# The file: `skill-trace` appends `<session_id>\t<UTC time>` once per session when a session launches the skill —
+# Claude's `Skill` call (PostToolUse) or the operator's typed `/manage-release` (UserPromptExpansion; the installer
+# wires that matcher as `code-review|manage-release|keel-manage-release`) — in the shapes `manage-release`,
+# `<plugin>:manage-release`, `/manage-release` and the same three for `keel-manage-release`. A subagent's call lists
+# nobody. Lines are never removed and the file is not pruned: a gone session's id is inert, and two managers in one
+# repository are both listed. Hooks load at session start, so a session started before the installer wired the
+# typed-launch matcher is never listed by a typed launch. Measured 2026-10-14 (dir #118's dump technique, a headless
+# session in a scratch directory, Claude Code 2.1.296): a resumed session keeps its `session_id`; a subagent's Bash
+# event carries the parent's `session_id` plus `agent_id` and `agent_type`; a typed command's UserPromptExpansion
+# event carries `session_id`.
+# Named residuals of this rule — none was closed by the `settings.json` deny on `gh pr merge` it replaces either,
+# so `main`'s branch protection stays the floor: a `gh api graphql` `mergePullRequest` mutation (inside a quoted
+# argument the reader does not open); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper, a path to `gh`;
+# `curl` against the REST merge endpoint; a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`);
+# a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command) — judged by the cwd's
+# file and policy line; and self-listing — any session that calls `Skill(manage-release)` or types
+# `/manage-release x` is listed (PostToolUse fires on the call's success, not on the release it starts: the dir
+# #229 marker-spoof class). Accepted cost: an unquoted `merge` word after `pr` (`gh pr create --title merge`) reads
+# as a merge segment — quote it.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -1296,6 +1338,26 @@ _trace_path_for_key() { gate_trace_path_for_key "$1"; }
 # dir #80: trace_path_for stays per-repo (NOT $RECEIPT_KEY) — see the dir #80 header section above for
 # why (append-only, matched by sha+level, concurrent branches already interleave harmlessly).
 trace_path_for() { _trace_path_for_key "$(_repo_key "${1:-$PWD}")"; }
+# dir #811: the release-manager file — see the merge-rule header section. A session id is used only when it is
+# a plain token (the shape every Claude Code session id has): a tab or a newline in it could forge a line of
+# the file, so anything else is "no session id" on both sides — nothing written, every merge denied.
+_session_id_ok() {
+  case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  [ "${#1}" -le 128 ]
+}
+# _manager_listed FILE ID — ID equals the first tab-separated field of a line of FILE, exactly (never a substring).
+_manager_listed() { [ -f "$1" ] && awk -F'\t' -v id="$2" '$1 == id { f = 1 } END { exit !f }' "$1"; }
+# _record_manager CWD SESSION_ID SUBAGENT — the writer: one line per session, appended once, never removed.
+_record_manager() {
+  local mp
+  [ "$3" = 1 ] && return 0
+  _session_id_ok "$2" || return 0
+  _cwd_not_a_repo "$1" && return 0
+  mp="$(gate_manager_path_for_key "$(_repo_key "$1")")" || return 0
+  _manager_listed "$mp" "$2" && return 0
+  _gate_ensure_parent "$mp"
+  printf '%s\t%s\n' "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$mp"
+}
 # dir #80: reads the already-resolved $RECEIPT_KEY (set by _require_receipt_key, called inline by
 # every CLI subcommand that uses this below) rather than re-deriving it itself — deriving it here
 # would mean calling the detached-HEAD-checking _require_receipt_key from inside a function that's
@@ -1723,6 +1785,7 @@ function on_segment(s,   i, k) {
   if (MODE == "lex") lex_segment()
   check_push()
   check_segment()
+  check_merge()
   check_subgit()
 }
 function lex_segment(   line, k, m, cls) {
@@ -2360,6 +2423,69 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
   }
 }
 
+# --- dir #811: the merge rule (candidate lines for the shell side) ----------------------------------------------
+# A `merge` line per merge segment: `gh … pr … merge` (any words between; the subcommand words count unquoted) or
+# `gh … api` on a `…/pulls/<n>/merge` endpoint that writes (a method other than GET/HEAD, or a field flag and no
+# method). The flag check (B6 (i)) is decided here, where the words are: code `ok`, `api`, `flag` (a forbidden flag,
+# named), `pin` (no head pin, or one that is not exactly 40 lower-case hex) or `nomerge` (no merge-commit flag). The
+# shell side checks the session and the policy first and acts on the code last. `--help`/`-h` right after `merge`
+# is a read: no line.
+function mg_bool(v) { return v == "" || v == "true" }
+function check_merge(   i, j, t, nm, eq, v, p_at, m_at, api, ep, meth, fld, bad, pins, pinbad, hasm) {
+  i = cmd_start()
+  if (i > ntok || !w_plain(i) || tok[i] != "gh") return
+  api = 0; ep = 0; meth = ""; fld = 0; p_at = 0; m_at = 0
+  for (j = i + 1; j <= ntok; j++) {
+    t = tok[j]
+    if (!api && !p_at && t == "api" && w_unquoted(j)) api = j
+    else if (!api && !p_at && t == "pr" && w_unquoted(j)) p_at = j
+    else if (p_at && !m_at && t == "merge" && w_unquoted(j)) m_at = j
+    if (api && j > api) {
+      if (t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/) ep = 1
+      else if (t == "-X" || t == "--method") { if (j < ntok) meth = toupper(tok[j + 1]) }
+      else if (t ~ /^-X./) meth = toupper(substr(t, 3))
+      else if (t ~ /^--method=/) meth = toupper(substr(t, 10))
+      else if (t ~ /^-[fF]/ || t ~ /^--(field|raw-field|input)(=|$)/) fld = 1
+    }
+  }
+  if (api) {
+    if (ep && (meth != "" ? (meth != "GET" && meth != "HEAD") : fld)) { mg_n++; mg_code[mg_n] = "api"; mg_tok[mg_n] = "" }
+    return
+  }
+  if (!m_at) return
+  if (m_at < ntok && (tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h")) return
+  bad = ""; pins = 0; pinbad = 0; hasm = 0
+  for (j = i + 1; j <= ntok; j++) {
+    if (j == p_at || j == m_at) continue
+    t = tok[j]; eq = index(t, "=")
+    nm = eq ? substr(t, 1, eq - 1) : t; v = eq ? substr(t, eq + 1) : ""
+    if (nm == "--squash" || nm == "--rebase" || nm == "--auto" || nm == "--admin") { if (bad == "") bad = t }
+    else if (nm ~ /^-[A-Za-z]+$/) {
+      if (nm ~ /[sr]/) { if (bad == "") bad = t }
+      if (index(nm, "m") && mg_bool(v)) hasm = 1
+    }
+    else if (nm == "--merge") { if (mg_bool(v)) hasm = 1 }
+    else if (nm == "--match-head-commit") {
+      if (!eq) { v = (j < ntok) ? tok[++j] : "" }
+      pins++
+      if (length(v) != 40 || v !~ /^[0-9a-f]+$/) pinbad = 1
+    }
+  }
+  mg_n++; mg_tok[mg_n] = ""
+  if (bad != "") { mg_code[mg_n] = "flag"; mg_tok[mg_n] = bad }
+  else if (!pins || pinbad) mg_code[mg_n] = "pin"
+  else if (!hasm) mg_code[mg_n] = "nomerge"
+  else mg_code[mg_n] = "ok"
+}
+# mg_out() — prints the merge lines; a named flag that could forge a field (a newline, a separator) prints as `?`.
+function mg_out(   k, t) {
+  for (k = 1; k <= mg_n; k++) {
+    t = mg_tok[k]; if (!sg_safe(t)) t = "?"
+    print "merge" SEP mg_code[k] SEP t
+  }
+  return mg_n
+}
+
 # --- dir #675: the subagent git floor (candidate lines for the shell side) --------------------------------------
 # With agent=1 (the event carries a non-empty agent_id, passed with -v) a cd/pushd/popd segment is reported as a
 # `subcd` candidate and a repository-mutating git segment (B10) as a `subgit` one. This code reads no file, runs no
@@ -2539,7 +2665,7 @@ function sg_out(   i) {
 }
 
 # --- the output: at most one verdict line first (push, then refuse, then pr — the only place the order lives),
-# then candidate lines from the registered tags (subcd and subgit, dir #675). Fields are joined by SEP, passed in with -v (macOS
+# then candidate lines from the registered tags (subcd and subgit, dir #675; merge, dir #811). Fields are joined by SEP, passed in with -v (macOS
 # awk reads a \x escape in a literal greedily). Exit 0 when a line was printed, 1 when none.
 function out(   i, r, v) {
   if (MODE == "lex") {
@@ -2551,7 +2677,7 @@ function out(   i, r, v) {
   else if (refused) v = "refuse"
   else if (matched) v = "pr"
   if (v != "") print v SEP (v == "pr" ? head_out : "") SEP (v == "refuse" ? refuse_reason " (line " refuse_line ")" : "")
-  if (sg_out() == 0 && v == "") exit 1
+  if (sg_out() + mg_out() == 0 && v == "") exit 1
   exit 0
 }
 BEGIN {
@@ -2585,14 +2711,17 @@ case "${1:-}" in
     fi
     ph_sentinel="$(_sentinel_path_for_key "$ph_receipt_key")" || ph_sentinel="(unavailable: \$HOME $(gate_home_diagnosis))"
     ph_trace="$(_trace_path_for_key "$ph_repo_key")" || ph_trace="(unavailable: \$HOME $(gate_home_diagnosis))"
+    ph_manager="$(gate_manager_path_for_key "$ph_repo_key")" || ph_manager="(unavailable: \$HOME $(gate_home_diagnosis))"
     printf '%s\n' \
-      'pre-pr-gate.sh — the /polish pre-PR gate, a PreToolUse(Bash) hook on `gh pr create` (subcommands: see the script header).' \
+      'pre-pr-gate.sh — the /polish pre-PR gate, a PreToolUse(Bash) hook on `gh pr create` and `gh pr merge` (subcommands: see the script header).' \
       '' \
       'State files for the checkout of the current directory — two keys, side by side:' \
       "  sentinel (the receipts)  $ph_sentinel" \
       '                           keyed by repo AND branch' \
       "  review trace             $ph_trace" \
       '                           keyed by repo only' \
+      "  release-manager file     $ph_manager" \
+      '                           keyed by repo only — the sessions that may run gh pr merge (dir #811)' \
       ${ph_note:+"$ph_note"} \
       '' \
       'A "no receipt on file" deny can mean the receipts were written from a sandboxed shell (a private view of this state' \
@@ -2969,10 +3098,16 @@ case "${1:-}" in
     # `str` coerces every field to a plain string first — an unexpected shape (args as an object/array,
     # say) would otherwise make `join` throw and lose the WHOLE row, including the hook_event_name/skill
     # fields that were perfectly fine, turning one malformed field into total silence from this hook.
-    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r '
+    # dir #811: the session id and a subagent flag (either agent field present and non-empty) ride BEFORE the
+    # args — a multi-line args value ends `read` at its first newline, which may cost the fields after it. An id
+    # holding a newline or the separator reads as none (it would end the read early, or shift the fields after it).
+    IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_sid st_sub st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r '
       def str: if . == null then "" elif type == "string" then . else tostring end;
+      def sid: if type == "string" and index("\n") == null and index("\u001f") == null then . else "" end;
       [.hook_event_name, (.cwd|str), (.tool_name|str),
        (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end|str),
+       (.session_id|sid),
+       (if ((.agent_id|str) != "" or (.agent_type|str) != "") then "1" else "0" end),
        (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str),
        (.agent_type|str)
       ] | join("\u001f")' 2>/dev/null)"
@@ -3103,7 +3238,11 @@ case "${1:-}" in
       UserPromptExpansion) ;;
       *) exit 0 ;;
     esac
+    # dir #811: a /manage-release launch (Claude's Skill call, or the operator's typed command) lists the session
+    # as this repo's release manager — the file the hook's merge rule reads.
     case "$st_skill" in
+      manage-release|*:manage-release|/manage-release|keel-manage-release|*:keel-manage-release|/keel-manage-release)
+        _record_manager "$st_cwd" "$st_sid" "$st_sub"; exit 0 ;;
       code-review|*:code-review|/code-review) ;;
       *) exit 0 ;;
     esac
@@ -3316,12 +3455,15 @@ esac
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)
-# One jq call for the three event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent),
-# the cwd and the command. The command comes last, so its newlines survive the split; a field that is not a string reads
-# as empty.
+# One jq call for the event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent), the
+# session id (dir #811's merge rule; one holding the separator reads as none, so it cannot shift the fields after it) and
+# a subagent flag (1 when agent_id or agent_type is present and non-empty, whatever its type), the cwd and the command. The command comes last, so its newlines survive the split; a field that is not a
+# string reads as empty.
 sep=$'\x1f'; sep2=$'\x1e'
-hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; [(.agent_id // "" | s), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
+hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; def present: . != null and . != ""; def sid: if type == "string" and index("\u001f") == null then . else "" end; [(.agent_id // "" | s), (.session_id // "" | sid), (if (.agent_id | present) or (.agent_type | present) then "1" else "0" end), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
 hk_agent=${hk_ev%%"$sep"*}; hk_rest=${hk_ev#*"$sep"}
+hk_sid=${hk_rest%%"$sep"*}; hk_rest=${hk_rest#*"$sep"}
+hk_sub=${hk_rest%%"$sep"*}; hk_rest=${hk_rest#*"$sep"}
 hk_cwd=${hk_rest%%"$sep"*}; cmd=${hk_rest#*"$sep"}
 hk_cwd=${hk_cwd:-$PWD}
 
@@ -3344,13 +3486,18 @@ verdict=""; head_branch=""; refuse_why=""; reader_bad=0
 case "$awk_status" in 0|1) ;; *) reader_bad=1 ;; esac
 [ "$awk_status" = 1 ] && [ -n "$awk_out" ] && reader_bad=1
 [ "$awk_status" = 0 ] && [ -z "$awk_out" ] && reader_bad=1
-sg_ncd=0; sg_ngit=0
+sg_ncd=0; sg_ngit=0; mg_count=0
 if [ "$reader_bad" = 0 ] && [ -n "$awk_out" ]; then
   while IFS="$sep" read -r rd_first rd_a rd_b rd_c rd_d rd_e rd_f; do
     case "$rd_first" in
       push|refuse|pr)
         if [ -n "$verdict" ]; then reader_bad=1; break; fi
         verdict="$rd_first"; head_branch="$rd_a"; refuse_why="$rd_b"
+        ;;
+      # dir #811: one line per merge segment, any session.
+      merge)
+        mg_codes[mg_count]="$rd_a"; mg_toks[mg_count]="$rd_b"
+        mg_count=$((mg_count + 1))
         ;;
       # A candidate line's tag gets its own arm here, ahead of the verdict. Only a subagent's run reports them.
       subcd)
@@ -3518,7 +3665,44 @@ if [ "$sg_ngit" -gt 0 ] && sg_check; then
 fi
 case "$verdict" in
   push) early_deny blocked "Pre-PR gate: a git push with the secret-guard hooks disabled (--no-verify / core.hooksPath override / a redirected git config) skips the pre-push secret scan — the last local check before these commits leave the machine. Push without it; if the guard blocks, fix the finding (a fixture belongs in .secret-scan-allow), or ask the operator to push." ;;
-  refuse) early_deny refused "Pre-PR gate: could not read this command reliably — $refuse_why. The part that could not be read mentions git or gh, so neither of this gate's rules (the bypassed-push deny, the gh pr create receipt check) can judge it. Rewrite it so bash and zsh read it the same way (close the quote; put a heredoc terminator alone on its line, with the closing ) on the next line), or run the git/gh step as its own Bash call." ;;
+  refuse) early_deny refused "Pre-PR gate: could not read this command reliably — $refuse_why. The part that could not be read mentions git or gh, so none of this gate's rules (the bypassed-push deny, the gh pr create receipt check, the gh pr merge rule) can judge it. Rewrite it so bash and zsh read it the same way (close the quote; put a heredoc terminator alone on its line, with the closing ) on the next line), or run the git/gh step as its own Bash call." ;;
+esac
+# dir #811 (B6): the merge rule — after the push and refuse denies, before the `gh pr create` machinery (a command
+# may hold both a merge and a create). Checks in the order (ii) identity, (iii) the project's policy, (i) the flags,
+# so a session that may not merge is told so before it is told how; the reason names the first failed check. When all
+# hold it emits nothing — the harness's own permission flow decides, never a forced allow.
+merge_rule() {
+  local k mg_top mg_path mg_why="Pre-PR gate (merge rule, dir #811):"
+  # The API shape carries no head pin: denied to every session, a release manager included.
+  k=0
+  while [ "$k" -lt "$mg_count" ]; do
+    [ "${mg_codes[$k]}" = api ] && early_deny blocked "$mg_why merge with \`gh pr merge --merge --match-head-commit\`, never the API — a \`gh api …/pulls/<n>/merge\` write carries no head pin."
+    k=$((k + 1))
+  done
+  # (ii) identity: never a subagent, a session id the manager file lists, inside a git checkout.
+  [ "$hk_sub" = 1 ] && early_deny blocked "$mg_why a subagent never merges — the merge is the release manager's own step (docs/release-management.md R14)."
+  _session_id_ok "$hk_sid" || early_deny blocked "$mg_why not a release-manager session (the event carries no usable session_id) — in a managed release the release manager merges; otherwise the merge is the operator's."
+  _cwd_not_a_repo "$hk_cwd" && early_deny blocked "$mg_why not a git checkout ($hk_cwd) — the release-manager file is keyed by repository."
+  mg_top="$(main_top_for "$hk_cwd")"
+  mg_path="$(gate_manager_path_for_key "$(_repo_key_from_path "$mg_top")")" || early_deny blocked "$mg_why not a release-manager session — \$HOME $(gate_home_diagnosis), so the release-manager file cannot be read."
+  _manager_listed "$mg_path" "$hk_sid" || early_deny blocked "$mg_why not a release-manager session — $mg_path does not list this session ($hk_sid). A session is listed when it launches /manage-release in this repository; a merge in any other session is the operator's."
+  # (iii) the project's own opt-in: a line carrying the token in the main checkout's CLAUDE.md.
+  grep -qF KEEL-MANAGER-MERGES "$mg_top/CLAUDE.md" 2>/dev/null || early_deny blocked "$mg_why this project's policy keeps the merge with the operator — $mg_top/CLAUDE.md carries no KEEL-MANAGER-MERGES line (docs/release-management.md R14); hand the merge over as R9's command block."
+  # (i) the flags, decided by the reader per merge segment.
+  k=0
+  while [ "$k" -lt "$mg_count" ]; do
+    case "${mg_codes[$k]}" in
+      ok) ;;
+      flag) early_deny blocked "$mg_why a merge commit only: drop ${mg_toks[$k]} — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
+      pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on (B3(a))." ;;
+      nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
+      *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check (${mg_codes[$k]}) — run the merge as its own Bash call, or report it." ;;
+    esac
+    k=$((k + 1))
+  done
+}
+[ "$mg_count" -gt 0 ] && merge_rule
+case "$verdict" in
   pr) ;;
   *) exit 0 ;;
 esac
