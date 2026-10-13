@@ -374,7 +374,7 @@ done
 KEEL_DEFAULT_BRANCH=trunk run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
 if match "$OUT" -qE '^AUTO +claude/old'; then pass "control: the anchored pattern matches a graded line"
 else fail "control: the anchored pattern matches a graded line" "no AUTO line: $OUT"; fi
-for v in '@{-1}' 'a..b'; do
+for v in '@{-1}' 'a..b' HEAD @; do
   KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
   check_status   "KEEL_DEFAULT_BRANCH=$v is rejected" 2 "$STATUS"
 done

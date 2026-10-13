@@ -43,7 +43,8 @@
 #      KEEL_KEEP_WORKTREE=<path> names the worktree to never touch (defaults to this run's own
 #      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
 #      KEEL_DEFAULT_BRANCH names the default branch to grade against (dir #814); unset, it is origin/HEAD's
-#      target, else -- in a repo with NO remote -- init.defaultBranch / main / master, whichever exists locally.
+#      target; with a remote but no origin/HEAD, main; with NO remote, the ONE of init.defaultBranch / main /
+#      master that exists locally (two or more: grades nothing and names them).
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
@@ -76,8 +77,9 @@ FLAG = merged worktree with live work -> reported for review, no destructive com
        session still mid-wrap, not a stale leftover.
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
-     KEEL_DEFAULT_BRANCH default branch to grade against (default: origin/HEAD's target; with no remote,
-                         init.defaultBranch, then main / master -- whichever exists locally).
+     KEEL_DEFAULT_BRANCH default branch to grade against, used exactly as given (default: origin/HEAD's
+                         target; with a remote but no origin/HEAD, main; with no remote, the one of
+                         init.defaultBranch / main / master that exists -- two or more: grades nothing).
 EOF
 }
 
@@ -120,8 +122,9 @@ git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git r
 #      compare against and grades nothing -- fail closed.
 #   2. origin/HEAD's target (symbolic-ref, not `rev-parse --abbrev-ref origin/HEAD`, which prints the
 #      literal "origin/HEAD" + exits 128 with no remote).
-#   3. A remote exists but origin/HEAD is unset (never fetched): `main`, as before -- the remote's real
-#      default is unknowable offline, so a guess could grade against a stale local branch.
+#   3. A remote exists but origin/HEAD is unset (never fetched): `main`, exactly as before this ticket --
+#      the remote's real default is unknowable offline, and no local guess is added here. (A stray local
+#      `main` still becomes the base in that case; that is the pre-existing behaviour, not widened.)
 #   4. NO remote -- nothing to fetch, so guess from the LOCAL branches: the ONE of init.defaultBranch / main /
 #      master that exists. Two or more existing (a stale `main` beside a live `master`) is ambiguous, and a
 #      wrong base deletes work, so it grades NOTHING and names the candidates; the checked-out HEAD is never
@@ -134,7 +137,7 @@ has_remote=0; [ -z "$(git remote 2>/dev/null || true)" ] || has_remote=1
 default=""; guessed=0
 if [ -n "${KEEL_DEFAULT_BRANCH:-}" ]; then
   default="$KEEL_DEFAULT_BRANCH"
-  case "$default" in -*) _bad=1 ;; *) _bad=0 ;; esac
+  case "$default" in -*|HEAD|@) _bad=1 ;; *) _bad=0 ;; esac   # HEAD/@ are refs, not branches: they would defeat the self-exclusion below
   { [ "$_bad" -eq 0 ] && git check-ref-format "refs/heads/$default" >/dev/null 2>&1; } \
     || { printf 'branch-cleanup: KEEL_DEFAULT_BRANCH is not a valid branch name: %s\n' "$KEEL_DEFAULT_BRANCH" >&2; exit 2; }
 elif _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then
@@ -269,7 +272,7 @@ ask="";    n_ask=0           # free branches to confirm
 askwt=""                    # worktrees to confirm: name<TAB>age<TAB>path<TAB>reason
 flag="";   n_flag=0          # worktrees with live work (dirty OR recently-touched-but-clean) — never auto-touched
 
-# --merged="$base" does the "merged" gate in git itself (tip reachable from base — an unmerged or
+# --merged="$base_ref" (the fully-qualified ref, never the short name) does the "merged" gate in git itself (tip reachable from base — an unmerged or
 # squash-merged branch is simply not listed), replacing a per-branch `git merge-base` fork. The committer
 # date rides along free from the same call (a ref name can't contain a space, so `read b cd` splits
 # cleanly) — no per-branch `git log` fork either. (`--merged` needs git >= 2.7, 2016; macOS/Alpine clear it.)
