@@ -282,7 +282,9 @@ check_absent   "no remote, default master: no 'compare against' error" "$OUT" "t
 check_contains "no remote, default master: merged old ephemeral -> AUTO" "$(line_for claude/old-merged)" "AUTO"
 check_contains "no remote, default master: off-pattern -> ASK"           "$(line_for staging)" "ASK"
 check_absent   "no remote, default master: unmerged branch left alone"   "$OUT" "claude/unmerged"
-check_absent   "no remote, default master: the default itself is never listed" "$OUT" "master "
+# column-anchored (not a "master " substring): a format change must not turn this into a vacuous pass
+if match "$OUT" -qE '^(AUTO|ASK|FLAG) +master( |$)'; then fail "no remote, default master: the default itself is never listed" "master was graded"
+else pass "no remote, default master: the default itself is never listed"; fi
 # the felt shape: invoked from a LINKED worktree of that repo (the wrap runs from one)
 git -C "$nr" worktree add -q "$nr.wt" -b claude/session HEAD >/dev/null
 run_in "$nr.wt" bash "$TOOL" --days 7 --live-hours 0
@@ -299,8 +301,31 @@ git -C "$fb" symbolic-ref HEAD refs/heads/master
 GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$fb" commit -q --allow-empty -m c1
 git -C "$fb" checkout -q -b claude/feat; git -C "$fb" commit -q --allow-empty -m feat-work
 git -C "$fb" branch claude/on-feat HEAD              # merged into the checked-out feature branch, NOT into master
+git -C "$fb" branch claude/on-master master          # merged into master: the positive control
 run_in "$fb" bash "$TOOL" --days 0 --live-hours 0
+check_contains "HEAD on a feature branch: master is still the base (positive control graded)" "$(line_for claude/on-master)" "AUTO"
 check_absent   "HEAD on a feature branch is not the base: a branch merged only into it is not graded" "$OUT" "claude/on-feat"
+
+# a stale `main` beside the live `master` HEAD is on: HEAD wins among the known default names
+sm="$(new_repo)"
+git -C "$sm" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-empty -m c1
+git -C "$sm" branch main HEAD                        # stale: stays at c1
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-empty -m c2
+git -C "$sm" branch claude/x HEAD                    # merged into master (c2), NOT into the stale main (c1)
+git -C "$sm" commit -q --allow-empty -m c3
+run_in "$sm" bash "$TOOL" --days 7 --live-hours 0
+check_contains "stale main beside a live master HEAD: master is the base" "$(line_for claude/x)" "AUTO"
+
+# a remote that was never fetched (no origin/HEAD) must not force `main`: a master repo still grades
+ur="$(new_repo)"
+git -C "$ur" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$ur" commit -q --allow-empty -m c1
+git -C "$ur" branch claude/old HEAD
+git -C "$ur" commit -q --allow-empty -m c2
+git -C "$ur" remote add origin "$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+run_in "$ur" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unfetched remote, default master: graded against local master" "$(line_for claude/old)" "AUTO"
 
 # init.defaultBranch names a non-main/master default
 td="$(new_repo)"
@@ -325,6 +350,11 @@ check_absent   "no remote: the message does not say 'fetch first?'" "$OUT" "fetc
 export KEEL_DEFAULT_BRANCH=trunk
 run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
 check_contains "KEEL_DEFAULT_BRANCH=trunk grades against trunk" "$(line_for claude/old)" "AUTO"
+export KEEL_DEFAULT_BRANCH=origin/trunk
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_contains "KEEL_DEFAULT_BRANCH=origin/trunk is normalized to trunk" "$(line_for claude/old)" "AUTO"
+if match "$OUT" -qE '^(AUTO|ASK|FLAG) +trunk( |$)'; then fail "origin/-qualified override: the default is still never listed" "trunk was graded"
+else pass "origin/-qualified override: the default is still never listed"; fi
 export KEEL_DEFAULT_BRANCH=nonexistent
 run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
 check_status   "KEEL_DEFAULT_BRANCH naming no branch: exits 0, nothing graded" 0 "$STATUS"
