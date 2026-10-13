@@ -247,6 +247,13 @@ own G6 pass happen only after a "yes" given against that price. A rule of the pr
 compensation. It holds for any set the operator opts into wholesale, a parked file included (keel's
 0.14.0 groom took "full groom" before the parked file had a price, then priced it and asked again).
 
+**The lane rule defers body reads, not premise checks (the 0.17.0 re-cut).** Before a ticket is named
+in a priced option, run the cheap live check G2 owes every carried body: the cited file and line, the
+doctor line, the blocker's state. That re-cut checked three parked candidates live before its offer
+and dropped one whose premise was gone. It then offered eight by name, checked the other five after
+the "yes", and one of those had already been fixed by a later ticket's rewrite of the command text it
+cited. The operator had priced a set the slate could not hold. A rule of the procedure, not a compensation.
+
 **A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
 grooms).** At 0.14.0 two of three pains were labels the groom wrote and the operator chose; at 0.15.0
 all three were. Offering labels is fair, since an operator recognizes a pain faster than they phrase
@@ -468,6 +475,14 @@ ran near 10M a point). The estimate cell therefore carries both figures and name
 was measured on; [`docs/release-management.md`](release-management.md) R7 records the points the run
 moved, so the next groom converts at a fresh ratio. Reading the window is a permanent limit, not a gap:
 it lives in the harness, where no repository tool can read it.
+
+**Quote an option's window points as the gauge's start and end, not as a bare delta (the 0.17.0
+re-cut).** That re-cut offered four options priced as "53–62 points", "65–76 points" and so on. The
+operator's reply was a question, what a point is, and a misreading: the delta was read as the gauge's
+end. One question round went on the unit. So each priced option says where the weekly gauge stands now,
+read from the harness at that moment and never carried from memory, and where the option leaves it: "10%
+now, about 75–86% after". It also names the date the window, or the plan that sizes it, ends. A rule of
+the procedure, not a compensation.
 
 **A value claim's SUBJECT SET is derived, then diffed against the slate — never asserted (two
 consecutive G6 rounds, 2026-09-09 and 2026-09-11, each returned as its top finding a value claim not
