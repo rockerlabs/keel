@@ -31,6 +31,25 @@ Lint your fragment before you push; it prints nothing when everything passes:
 tools/self/changelog-fragments.sh --check
 ```
 
+## Numbers
+
+A number in changelog text is a claim, and reviewers were the only check on it (dir #810).
+`tools/self/changelog-claims.sh` finds the numbers in your fragment and re-derives the ones you bound to a
+source with a marker on the same line, next to the number: `2,983 words <!-- claim: words commands/polish.md -->`
+(kinds: `words PATH`, `lines PATH`, `matches ERE PATH…`, and `hand TEXT`). A stale bound number is a MISMATCH and
+fails CI; a number with no marker is only listed at PR time, and fails at the cut (`--strict`). Binding is
+optional while you write: bind a present-tense count of a repo file, and `claim: hand` a measurement or a
+history number with its as-of (a date, a commit or a version). The marker names the definition, so a reviewer
+can judge it. A correction that writes a number names the source it was derived from, or drops the number.
+
+```bash
+tools/self/changelog-claims.sh --strict --fragment changelog.d/<ticket>-<slug>.md
+```
+
+The rule above (do not edit another PR's fragment unless correcting it is your PR's purpose) has one
+standing case: a claim the checker shows as a MISMATCH — on your tree or on the default branch — is
+a correction *you* may make to another fragment, whoever made it stale.
+
 ## How the entries are read
 
 `tools/self/changelog-fragments.sh` is the one reader. It prints every fragment in `LC_ALL=C` filename order

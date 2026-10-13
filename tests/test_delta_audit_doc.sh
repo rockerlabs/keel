@@ -221,4 +221,9 @@ pin "release-audit.md's cut step: the history entry states only events already o
   "$release_audit" '**The entry states only events already on record.**' \
   "expected the cut step to forbid a history entry that states a waiver, GO or tag not yet recorded"
 
+# --- dir #810: section 10 (the disclosure-only fix round) hands a correction's numbers to the claim lint --------
+sec10="$(awk '/^## 10\. /{p=1; next} /^## 11\. /{p=0} p' "$doc")"
+check_contains "section 10 names tools/self/changelog-claims.sh (dir #810)" "$sec10" "changelog-claims.sh"
+check_contains "section 10 states the pre-cut pass condition (--strict --fragment)" "$sec10" "--strict --fragment"
+
 summary
