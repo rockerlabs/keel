@@ -113,6 +113,30 @@ tu_session_files() {
   done
 }
 
+# tu_files_for_branch REPO_TOP BRANCH — the primary session files of REPO_TOP (tu_session_files) in which
+# at least one record carries `gitBranch == BRANCH` (dir #654): how a release ledger's worker branch finds
+# its session logs. Matched on the branch name the transcript itself records — never on the worktree
+# directory (names get recycled) or mtime (a touched log still carries its whole history) — and exactly,
+# so `claude/w1-x` never matches `claude/w1-x-extra`. A ticket restarted on the same branch yields every
+# file. Empty output (not an error) when none matches; a subagent sibling is not listed, because
+# tu_session_totals folds it in from its parent file.
+tu_files_for_branch() {
+  local repo_top="$1" branch="$2" f
+  tu_require_jq || return 1
+  [ -n "$branch" ] || return 1
+  while IFS= read -r f; do
+    # grep -F is a cheap prefilter for the common case; a branch with a JSON-escaped char skips it and jq decides.
+    case "$branch" in
+      *'"'*|*'\'*) ;;
+      *) grep -q -F -- "\"gitBranch\":\"$branch\"" "$f" 2>/dev/null || continue ;;
+    esac
+    # `any(inputs; …)` stops at the first match; a file jq cannot parse is no match, never a crash.
+    if jq -n -e --arg b "$branch" 'any(inputs; .gitBranch == $b)' "$f" >/dev/null 2>&1; then
+      printf '%s\n' "$f"
+    fi
+  done < <(tu_session_files "$repo_top")
+}
+
 # tu_subagent_files SESSION_JSONL_FILE — every subagent sibling of one primary session file (dir #313
 # manager correction / dir #314 SPEC §6.2): `<same-dir>/<uuid>/subagents/agent-*.jsonl`. Empty output,
 # not an error, for a session that spawned no subagents (the common case).

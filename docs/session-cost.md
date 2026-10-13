@@ -113,14 +113,47 @@ tools/self/session-cost.sh ticket R1 sonnet <session-file> [<session-file>...]
 tools/self/session-cost.sh table <manifest.tsv>
 tools/self/session-cost.sh selfcheck <session-file>...
 tools/self/session-cost.sh tail [--json] <session-file>...
+tools/self/session-cost.sh manifest [--repo <dir>] <ledger.tsv>
+tools/self/session-cost.sh weighted [--weights <input,write,read>] <manifest.tsv>
 ```
 
 A manifest is a tab-separated file, one ticket per line: `TICKET<TAB>TIER<TAB>MODEL<TAB>FILE1[,FILE2,...]`.
-Session files are resolved by hand today (`tools/lib/transcript-usage.sh`'s `tu_session_files` finds
-every session belonging to a repo, including its worktrees; matching one to a ticket is a `gitBranch`
-lookup dir #313's own body already worked out — see that ticket for the mechanism). `selfcheck` is the
-visible guard against a transcript format that moves silently: it names any record type the reader has
-never seen before, rather than absorbing it into "known, ignorable" without comment.
+`selfcheck` is the visible guard against a transcript format that moves silently: it names any record
+type the reader has never seen before, rather than absorbing it into "known, ignorable" without comment.
+
+## `manifest` and `weighted` — from a release ledger's branches to one number (dir #654)
+
+A release ledger records each worker's **branch**, not its session files, and the files are what `table`
+needs. `manifest` is that step:
+
+```
+tools/self/session-cost.sh manifest [--repo <dir>] <ledger.tsv> > manifest.tsv
+```
+
+A ledger line is `TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH` (`#` comments and blank lines skipped). For each
+line it lists the repo's primary session files (`tu_session_files`: the checkout's own directory plus every
+worktree's) in which a record carries `gitBranch` equal to that branch, and prints the `table` manifest.
+The match is on the branch the transcript itself recorded, exactly — never the worktree directory (names
+get recycled) or the file's modification time (a log touched in the window still carries its whole earlier
+history) — and a ticket restarted on one branch yields every file. A branch no session records is **never
+dropped**: it prints as a `# UNMATCHED:` comment line (which `table` and `weighted` skip, and `weighted`
+repeats under its total), is named on stderr, and the exit status is 1. `--repo` defaults to the current
+directory's main checkout.
+
+`weighted` sums a manifest at the estimate's weights, the way `keel tokens` prices a session
+([`docs/token-economy.md`](token-economy.md)): new input × input weight + cache writes × write weight +
+cache reads × read weight, output tokens unweighted, primary and subagent shown apart and then summed.
+The weights are `--weights input,write,read`, else `KEEL_TOKENS_WEIGHTS` (malformed: the defaults, said
+so), else `1.0,2.0,0.1`; the output ends with the weights it used, so the figure can be re-summed later.
+It is a ruler, not a price. A release close is one pipeline:
+
+```
+tools/self/session-cost.sh manifest ledger.tsv > manifest.tsv
+tools/self/session-cost.sh weighted manifest.tsv
+```
+
+`table` over the same manifest still gives the per-(tier, model) medians. Both read only what the
+transcripts hold; the ledger's `TIER` and `MODEL` columns are still the caller's.
 
 ## `tail` — what the fixed per-PR tail of a `/go` session costs (dir #670)
 

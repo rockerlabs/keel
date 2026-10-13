@@ -362,7 +362,7 @@ never asserted from one run's feel. Where the estimate also names subscription-w
 taken before each wave already supplies them, so keep the last reading before each window reset the run
 crosses and sum the segments. **Summing at the estimate's weights:** keel's `keel tokens` does it for one session, with
 `KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
-sessions are summed by hand until dir #654 closes, found by branch as below. Write the weights and the session set beside the figure,
+sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
@@ -370,10 +370,10 @@ session log by that branch — never by worktree directory or modification time 
 names get recycled, so a directory search found nothing and that release left its 23 workers
 `unmeasured`. A modification-time window over-counts roughly thirty times, because a log touched
 inside the window still carries its whole earlier history. Every transcript records the session's git
-branch, and a branch match recovered the workers' cost afterwards. Turning the matched logs into the
-manifest `tools/self/session-cost.sh table` totals is described in
-[`docs/session-cost.md`](session-cost.md). That match is a hand step today, a compensation whose
-remover is dir #654.
+branch, and a branch match recovered the workers' cost afterwards. That match is one command:
+`tools/self/session-cost.sh manifest <ledger>` turns the ledger's `TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH`
+lines into the manifest, and `weighted` sums it (see [`docs/session-cost.md`](session-cost.md)). A branch
+no session records is named, never dropped; fix that before writing the row.
 
 ## R8 — single writer to `BACKLOG.md` during the release
 
