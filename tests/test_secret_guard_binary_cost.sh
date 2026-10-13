@@ -39,6 +39,8 @@ check_eq "F12: anchors are zero-width"                    2  "$(floor_of '^ab$')
 check_eq "F13: a dot is one character"                    1  "$(floor_of '.')"
 check_eq "F14: an escaped dot is one character"           3  "$(floor_of 'a\.b')"
 check_eq "F15: a back-reference can be empty"             1  "$(floor_of '(a)\1')"
+check_eq "F27: a GNU word boundary is zero-width"          3  "$(floor_of '\bfoo\b')"
+check_eq "F28: a GNU word edge is zero-width"              3  "$(floor_of '\<foo\>')"
 check_eq "F16: stacked bounds multiply"                   6  "$(floor_of 'x{2}{3}')"
 check_eq "F17: an optional group can vanish"              1  "$(floor_of '(abc)?')"
 check_eq "F18: the smallest of several EREs"              4  "$(floor_of 'abcdef' 'wxyz' 'hello')"

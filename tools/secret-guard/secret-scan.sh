@@ -269,13 +269,15 @@ fi
 
 # --- the decode's run floor (dir #830) --------------------------------------------------------------
 # emit_blob's last view is the raw printable runs of a binary, one run per line. Every line costs the class-1 grep a
-# fixed ~12 µs however short it is (a long alternation with counted repeats), and incompressible data is ~63 %
+# fixed ~12 µs however short it is (measured on macOS BSD grep), and incompressible data is ~63 %
 # non-printable: a 20 MiB blob made ~12.6 M lines and ~3 min of CPU, minutes more on a loaded machine. A run shorter
 # than the shortest string any pattern can match holds no hit, so it is dropped, and the floor is derived from the
 # patterns themselves — class 1 and every personal literal — so a new pattern moves it. `_min_match_len` reads one
 # ERE per line and prints the smallest length in bytes any of them can match; an ERE outside the subset it parses
 # (literals, escapes, `.`, brackets, groups, alternation, `* + ? {n} {n,} {n,m}`, anchors) makes it print 1, which
-# keeps every run: never guess a floor. Pinned by tests/test_secret_guard_binary_cost.sh.
+# keeps every run: never guess a floor. A backslash before a letter, a digit, `<`, `>`, a backtick or a quote may
+# be zero-width or a back-reference (`\b`, `\<`, `\1`), so it counts 0: a floor too high would drop a run that holds
+# a hit. Pinned by tests/test_secret_guard_binary_cost.sh.
 # run-floor:begin
 _min_match_len() {
   LC_ALL=C awk '
@@ -312,7 +314,7 @@ _min_match_len() {
       c = substr(s, p, 1); p++
       if (c == "(") { w = alt(); if (!bad && substr(s, p, 1) != ")") bad = 1; p++ }
       else if (c == "[") { bracket(); w = 1 }
-      else if (c == "\\") { q = substr(s, p, 1); p++; if (q == "") bad = 1; w = (q ~ /[0-9]/) ? 0 : 1 }
+      else if (c == "\\") { q = substr(s, p, 1); p++; if (q == "") bad = 1; w = (q ~ /[A-Za-z0-9<>`]/ || q == sq) ? 0 : 1 }
       else if (c == "^" || c == "$") w = 0
       else if (c == "*" || c == "+" || c == "?" || c == "{") bad = 1
       else w = 1
@@ -329,6 +331,7 @@ _min_match_len() {
       }
       return w
     }
+    BEGIN { sq = sprintf("%c", 39) }
     {
       s = $0; n = length(s); p = 1; bad = 0
       v = alt()
