@@ -18,7 +18,8 @@
 #   Emits one line per ticket heading found, TAB-separated:
 #     start_line  end_line  closed(0|1)  heading_block
 #   heading_block is the heading's own text (the `### ...` line plus any wrapped continuation
-#   lines up to the first blank line, dir #255) with internal newlines flattened to spaces so
+#   lines up to the first blank line, dir #255, ended earlier by bb_heading_continues, dir #839)
+#   with internal newlines flattened to spaces so
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
 #   first), the same boundary rule doctor.sh check 5 uses. closed=1 iff the heading block
@@ -149,6 +150,35 @@ bb_own_ticket_num() {
   printf '%s' "$num"
 }
 
+# bb_heading_continues <block_so_far> <next_line>
+#   dir #839: does the non-blank <next_line> belong to the heading whose text so far is
+#   <block_so_far>, or is it the ticket's first body line written with no blank line before it?
+#   Returns 0 (continuation) or 1 (body). Only a file's own text can answer this, and no lexical
+#   test is exact (a wrapped title and a prose body line look alike), so the rule is built from
+#   the two signals the file does carry, and its one residual is named:
+#     1. A body-shaped opener ends the block: `Log:`, `Draft slug:` or a leading `**` start a body
+#        paragraph, never a wrapped title.
+#     2. A FINISHED heading takes no further line. Finished = the block so far shows its tail: an
+#        R grade after a dash (`— R2`), a release/pool arrow (`→ 0.17.0`, `→ pool`) or a status
+#        glyph (`✅` `❌` `⏳`). Every current heading line carries one of the three; the one
+#        wrapped heading in the live file (dir #207) carries its tag on its first line. An
+#        UNFINISHED heading (a title that wraps before its grade or tag, the dir #255 shape)
+#        keeps taking lines until it finishes or a blank line comes.
+#     3. The exception to 2: a line opening with the tag's own em-dash (`— ✅ CLOSED`) continues
+#        even a finished heading (a tag wrapped onto its own line).
+#   Residual, accepted: a prose body line directly under a heading that shows no tail at all (a
+#   legacy title with no grade, arrow or glyph) is still read as the title's continuation. The
+#   writer-side cure is the blank line after every heading; dir #839's census fixtures pin both.
+bb_heading_continues() {
+  local so_far="$1" next="$2"
+  local body_re='^(Log:|Draft slug:|\*\*)'
+  local tail_re='(—|-)[[:space:]]*R[0-4]([^0-9]|$)|→[[:space:]]*(pool|[0-9]+\.[0-9]+)|✅|❌|⏳'
+  local dash_re='^[[:space:]]*—'
+  [[ "$next" =~ $body_re ]] && return 1
+  [[ "$so_far" =~ $tail_re ]] || return 0
+  [[ "$next" =~ $dash_re ]]
+}
+
 backlog_ticket_blocks() {
   local file="$1"
   [ -f "$file" ] && [ -r "$file" ] || return 0
@@ -210,7 +240,13 @@ backlog_ticket_blocks() {
     probe=$((start + 1))
     block_scan_end="$end"
     [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
-    while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
+    block_so_far="$heading_line"
+    # dir #839: a non-blank next line is a continuation only when bb_heading_continues says so —
+    # a bare "first blank line" rule also swallowed a body line written directly under a FINISHED
+    # heading, and a `✅ DONE` in it closed an open ticket.
+    while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ] \
+      && bb_heading_continues "$block_so_far" "${stripped_lines[$((probe - 1))]}"; do
+      block_so_far+=$'\n'"${stripped_lines[$((probe - 1))]}"
       block_end="$probe"
       probe=$((probe + 1))
     done

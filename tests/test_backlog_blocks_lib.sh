@@ -306,6 +306,69 @@ else
   fail "backlog_ticket_blocks scans legacy numbered headings too (1 row)" "got $row3"
 fi
 
+# --- dir #839: a heading with NO blank line after it must not take its body lines into the heading
+# block. The 0.17.0 groom folded twenty tickets whose first body line sat directly under a finished
+# heading (`— R2 — → 0.17.0`); a body line reading "Builds on item 51 (✅ DONE: …)" then closed the
+# OPEN ticket for the census and the pool report. A heading is FINISHED once it shows its tail (an
+# R grade, a release/pool arrow or a status glyph); after that only a line opening with the tag's
+# own em-dash continues it. Rows are selected by the ticket number inside field 4, never by line. -
+d839="$(new_repo)"
+f839="$d839/BACKLOG.md"
+printf '### dir #801 — an open ticket, prose body right under the heading — R2 — → 0.17.0
+Builds on item 51 (✅ DONE: shipped in PR #5), so this one is unblocked.
+
+### dir #802 — an open ticket, a dashed body line right under the heading — R2 — → pool
+Shipped earlier — ✅ DONE in PR #6, this follow-up is not.
+
+### dir #803 — an open ticket, a Log line right under the heading — R2 — → 0.17.0
+Log: 2026-10-12 — filed after the audit — ✅ DONE for the first half only.
+
+### dir #804 — an open ticket, a bold lead right under the heading — R2 — → 0.17.0
+**Found 2026-10-12 — ✅ DONE earlier by hand**, the rest is still open.
+
+### dir #805 — a heading with no grade yet, a Draft slug line right under it
+Draft slug: `x` — ✅ DONE as a draft, not as a ticket.
+
+### dir #806 — a genuinely closed control — R2 — ✅ DONE (2026-10-01, done)
+Closed body with no blank line before it.
+' > "$f839"
+out839="$(backlog_ticket_blocks "$f839")"
+row839() { printf '%s\n' "$out839" | awk -F'\t' -v n="dir #$1 " -v c="$2" 'index($4, n) {print $c; exit}'; }
+for n in 801 802 803 804 805; do
+  check_status "MUTATION-PROOF: dir #$n (body line directly under the heading) stays open" \
+    0 "$(row839 "$n" 3)"
+done
+check_status "control: a closed heading with a body line right under it still reads closed" \
+  1 "$(row839 806 3)"
+check_absent "a finished heading's block does not carry the next body line" \
+  "$(row839 801 4)" "Builds on item 51"
+check_absent "a wrapped-looking Log line is not part of the heading block" \
+  "$(row839 803 4)" "Log:"
+
+# The body-span end is unchanged: the ticket still owns its no-blank body lines up to the next heading.
+check_status "dir #801's span still runs to the line before dir #802" \
+  "$(( $(row839 802 1) - 1 ))" "$(row839 801 2)"
+
+# --- dir #839: the standing-list shapes (legacy `### <n>.` headings, tag on the heading line, body
+# directly underneath) keep their verdicts — #11/#21 closed, #5/#10 open. -----------------------
+d839b="$(new_repo)"
+f839b="$d839b/BACKLOG.md"
+printf '### 11. First fresh-adopter install feedback (captured 2026-07-11 — ✅ CLOSED same day, PR #61)
+Findings were folded into the install flow.
+### 21. Install-flow redesign — make adoption dead-simple (captured 2026-07-12) ✅ DONE
+Shipped as PR #70.
+### 5. Token-usage tracing mode (captured 2026-07-03) — → 0.13.0
+Earlier attempt (✅ DONE for the feasibility half) — the build itself is still open.
+### 10. Impact-track keel itself (captured 2026-07-10) — R1 — → 0.9.0
+Phase one ✅ DONE; phase two open.
+' > "$f839b"
+out839b="$(backlog_ticket_blocks "$f839b")"
+row839b() { printf '%s\n' "$out839b" | awk -F'\t' -v n="### $1. " 'index($4, n) {print $3; exit}'; }
+check_status "legacy #11 (tag on the heading line, body right under it) reads closed" 1 "$(row839b 11)"
+check_status "legacy #21 (dashless tag on the heading line) reads closed" 1 "$(row839b 21)"
+check_status "MUTATION-PROOF: legacy #5 (no tag, body glyph right under it) reads open" 0 "$(row839b 5)"
+check_status "MUTATION-PROOF: legacy #10 (graded, body glyph right under it) reads open" 0 "$(row839b 10)"
+
 # --- no readable file -> silent empty output, not an error --------------------------------------
 out4="$(backlog_ticket_blocks "$d/no-such-file.md")"
 if [ -z "$out4" ]; then
