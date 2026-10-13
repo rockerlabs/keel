@@ -89,6 +89,7 @@ refused "one constituent" build --branch t-one --base main "1=$s1"
 refused "no constituent" build --branch t-none --base main
 refused "an unknown sha" build --branch t-unk --base main "1=$s1" "2=0123456789abcdef0123456789abcdef01234567"
 refused "a malformed constituent" build --branch t-bad --base main "1=$s1" "two"
+refused "a 3-digit sha" build --branch t-short --base main "1=$s1" "2=abc"
 refused "a duplicate N" build --branch t-dup --base main "1=$s1" "1=$s2"
 refused "an existing branch" build --branch b4 --base main "1=$s1" "4=$s4"
 refused "an existing non-empty worktree path" build --branch t-busy --base main --worktree "$SANDBOX/wt-busy" "1=$s1" "4=$s4"
@@ -205,10 +206,10 @@ rt check --branch t3 "2=$s2b" "1=$s1" "4=$s4"
 check_status_out "check with the live shas -> exit 0" 0
 rt check --branch t3 "2=$s2"
 check_status "check with a moved head (the first sha of #2) -> exit 1" 1 "$STATUS"
-check_contains "...naming #2" "$OUT" "#2"
+check_contains "...naming #2 as moved" "$OUT" "moved: #2"
 rt check --branch t3 "9=$s1"
 check_status "check with an N not in the train -> exit 1" 1 "$STATUS"
-check_contains "...naming #9" "$OUT" "#9"
+check_contains "...naming #9 as missing" "$OUT" "missing: #9"
 rt check --branch no-such-branch "1=$s1"
 check_status "check on an unknown branch -> exit 2" 2 "$STATUS"
 
@@ -242,6 +243,8 @@ rt build --continue --worktree "$wt7" --base main "1=$s1"
 check_status "continue while a merge is in progress -> exit 2" 2 "$STATUS"
 
 # --- the default base is origin/main, and the new branch does not track it ----------------------------------
+gd remote add origin "$SANDBOX/no-such-origin"
+gd config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 gd update-ref refs/remotes/origin/main main
 wt8="$SANDBOX/wt-t8"
 rt build --branch t8 --worktree "$wt8" "1=$s1" "4=$s4"
@@ -251,6 +254,63 @@ rt body --branch t8
 check_status_out "body with the default base -> exit 0" 0
 rt check --branch t8 "1=$s1" "4=$s4"
 check_status_out "check with the default base -> exit 0" 0
+
+# --- a merge that would fast-forward still gets a merge commit (--no-ff) ----------------------------------
+gd checkout -q -b bff main
+printf 'ff\n' > "$d/ff.txt"; gd add ff.txt; gd commit -q -m "bff: fast-forwardable"
+gd checkout -q main
+sff="$(gd rev-parse bff)"
+wt10="$SANDBOX/wt-t10"
+rt build --branch t10 --base main --worktree "$wt10" "5=$sff" "4=$s4"
+check_status_out "build whose first head fast-forwards -> exit 0" 0
+check_eq "...both are merge commits named train: #N" "train: #5 ($sff)
+train: #4 ($s4)" "$(fp "$wt10" main)"
+
+# --- stacked heads: the second is already contained in the first -> exit 1, named ---------------------------
+rt build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "5=$s2b" "6=$s2"
+check_status "a head already contained in an earlier merge -> exit 1" 1 "$STATUS"
+check_contains "...says the merge made no merge commit" "$OUT" "made no merge commit"
+
+# --- build --continue: an uncommitted resolved merge, and unmerged paths with no merge in progress ----------------
+wt12="$SANDBOX/wt-t12"
+rt build --branch t12 --base main --worktree "$wt12" --allow-conflicts "2=$s2" "3=$s3"
+check_status "t12 build stops in progress -> exit 1" 1 "$STATUS"
+printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$wt12/f"
+git -C "$wt12" add f
+rt build --continue --worktree "$wt12" --base main "4=$s4"
+check_status "continue with a resolved but uncommitted merge -> exit 2" 2 "$STATUS"
+check_contains "...says a merge is still in progress" "$OUT" "merge is still in progress"
+git -C "$wt12" commit -q --no-edit
+wt13="$SANDBOX/wt-t13"
+rt build --branch t13 --base main --worktree "$wt13" "2=$s2" "4=$s4"
+check_status "t13 build -> exit 0" 0 "$STATUS"
+git -C "$wt13" cherry-pick "$s3" >/dev/null 2>&1 || true
+check_contains "precondition: a cherry-pick conflict leaves UU f" "$(git -C "$wt13" status --porcelain)" "UU f"
+git -C "$wt13" rev-parse -q --verify MERGE_HEAD >/dev/null && fail "precondition: no merge in progress" "MERGE_HEAD present" || pass "precondition: no merge in progress"
+rt build --continue --worktree "$wt13" --base main "1=$s1"
+check_status "continue with unmerged paths and no merge in progress -> exit 2" 2 "$STATUS"
+check_contains "...names the unresolved paths" "$OUT" "unresolved paths"
+
+# --- a registered worktree whose directory is gone: refused before any git write -------------------------------
+wt14="$SANDBOX/wt-t14"
+rt build --branch t14 --base main --worktree "$wt14" "1=$s1" "4=$s4"
+check_status "t14 build -> exit 0" 0 "$STATUS"
+mv "$wt14" "$wt14.gone"
+before="$(snap)"
+rt build --branch t14b --base main --worktree "$wt14" "1=$s1" "4=$s4"
+check_status "build into a registered-but-missing worktree path -> exit 2" 2 "$STATUS"
+check_eq "...no stray branch" "$before" "$(snap)"
+
+# --- a forged train subject (names a sha that is not the second parent) is an integration commit ----------------
+wt15="$SANDBOX/wt-t15"
+rt build --branch t15 --base main --worktree "$wt15" "1=$s1" "2=$s2"
+check_status "t15 build -> exit 0" 0 "$STATUS"
+git -C "$wt15" merge -q --no-ff -m "train: #7 ($s3)" "$s4"
+rt body --branch t15 --base main
+check_status_out "body of a train with a forged subject -> exit 0" 0
+check_eq "...the forged #7 is not a table row" "2" "$(grep -c '^| #[0-9]* | <fill> | ' <<<"$OUT")"
+check_contains "...it is listed as an integration commit" "$OUT" "train: #7 ($s3)"
+check_contains "...and counted" "$OUT" "integration commits: 1"
 
 # --- body of a non-train branch ----------------------------------------------------------------------------
 rt body --branch b1 --base main

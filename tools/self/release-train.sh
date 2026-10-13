@@ -105,6 +105,16 @@ if [ "$allow" -eq 1 ] && [ "$cmd" != build ]; then refuse "--allow-conflicts bel
 if [ -n "$wt" ] && [ "$cmd" != build ]; then refuse "--worktree belongs to build"; fi
 
 abs_path() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$PWD" "$1" ;; esac; }
+# canon_path P — P absolute with symlinks resolved through its nearest existing ancestor (git lists worktrees by
+# their real path, so a /var vs /private/var spelling must not hide a registered one).
+canon_path() {
+  local p tail=""
+  p="$(abs_path "$1")"
+  p="${p%/}"
+  while [ -n "$p" ] && [ ! -d "$p" ]; do tail="/${p##*/}$tail"; p="${p%/*}"; done
+  p="$(cd -P "${p:-/}" && pwd -P)"
+  printf '%s%s' "${p%/}" "$tail"
+}
 
 # For `build --continue` the repository IS the worktree (its branch, its objects).
 if [ "$cont" -eq 1 ]; then
@@ -363,7 +373,7 @@ cmd_build() {
       name="${branch//\//-}"
       wt="$main_co/.claude/worktrees/$name"
     fi
-    wtabs="$(abs_path "$wt")"
+    wtabs="$(canon_path "$wt")"
     registered="$(git -C "$repo" worktree list --porcelain | awk '$1 == "worktree" { sub(/^worktree /, ""); print }')"
     if grep -qxF -- "$wtabs" <<<"$registered"; then refuse "worktree path $wtabs is already a registered worktree"; fi
     if [ -e "$wtabs" ]; then
