@@ -1,8 +1,10 @@
-# tests/mutants/pre-pr-gate-merge.tsv — single-clause mutants of tools/pre-pr-gate.sh's merge rule (dir #811, spec B6, A8).
+# tests/mutants/pre-pr-gate-merge.tsv — single-clause mutants of tools/pre-pr-gate.sh's merge rule (dir #811,
+# spec B6, acceptance A8).
 # keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_pre_pr_gate_merge.sh) and
 # checked for staleness by tests/test_mutation_lists.sh.
 # Columns, TAB-separated: id, file, needle, replacement, note — the format tests/mutants/pre-pr-gate.tsv documents.
-# Run: KEEL_SWEEP_TIMEOUT=600 bash tools/self/mutation-sweep.sh tests/mutants/pre-pr-gate-merge.tsv tests/test_pre_pr_gate_merge.sh
+# Run: KEEL_SWEEP_TIMEOUT=600 bash tools/self/mutation-sweep.sh tests/mutants/pre-pr-gate-merge.tsv \
+#        tests/test_pre_pr_gate_merge.sh
 # Every condition of B6 has at least one mutant; the note names it. Not listed, with the reason:
 # - the reader-side session-id check in merge_rule (`_session_id_ok "$hk_sid"`): with it gone an empty or non-token
 #   id still meets the first-field match, and the writer never writes an empty or non-token first field, so the

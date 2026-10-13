@@ -8,9 +8,9 @@
 # tools/self/mutation-sweep.sh runs per mutant of tests/mutants/pre-pr-gate-merge.tsv (A8), so it stays small and
 # every deny asserts its OWN reason text: a mutant that makes another check deny must not count as caught.
 #
-# A manager is listed only through the skill-trace leg (`list_as`), never by writing the file by hand: a writer/reader
-# format mismatch would pass a hand-listed id and leave the feature dead. The hook is fed JSON events only — nothing
-# here runs gh.
+# A manager is listed only through the skill-trace leg (`list_as`), never by writing the file by hand: a
+# writer/reader format mismatch would pass a hand-listed id and leave the feature dead. The hook is fed JSON events
+# only; nothing here runs gh.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 

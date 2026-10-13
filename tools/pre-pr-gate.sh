@@ -2667,8 +2667,9 @@ function sg_out(   i) {
 }
 
 # --- the output: at most one verdict line first (push, then refuse, then pr — the only place the order lives),
-# then candidate lines from the registered tags (subcd and subgit, dir #675; merge, dir #811). Fields are joined by SEP, passed in with -v (macOS
-# awk reads a \x escape in a literal greedily). Exit 0 when a line was printed, 1 when none.
+# then candidate lines from the registered tags (subcd and subgit, dir #675; merge, dir #811). Fields are joined by
+# SEP, passed in with -v (macOS awk reads a \x escape in a literal greedily). Exit 0 when a line was printed, 1 when
+# none.
 function out(   i, r, v) {
   if (MODE == "lex") {
     for (i = 1; i <= nreg; i++) { r = ord[i]; print "refuse\t" rwhy[r] "\tline " rline[r] "\tscope:" rscope[r] }
@@ -3457,10 +3458,11 @@ esac
 command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat 2>/dev/null)
-# One jq call for the event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent), the
-# session id (dir #811's merge rule; one holding the separator reads as none, so it cannot shift the fields after it) and
-# a subagent flag (1 when agent_id or agent_type is present and non-empty, whatever its type), the cwd and the command. The command comes last, so its newlines survive the split; a field that is not a
-# string reads as empty.
+# One jq call for the event fields the hook needs (dir #675 B15): the agent id (non-empty only inside a subagent),
+# the session id (dir #811's merge rule; one holding the separator reads as none, so it cannot shift the fields
+# after it), a subagent flag (1 when agent_id or agent_type is present and non-empty, whatever its type), the cwd
+# and the command. The command comes last, so its newlines survive the split; a field that is not a string reads as
+# empty.
 sep=$'\x1f'; sep2=$'\x1e'
 hk_ev=$(printf '%s' "$input" | jq -r 'def s: if type == "string" then . else "" end; def present: . != null and . != ""; def sid: if type == "string" and index("\u001f") == null then . else "" end; [(.agent_id // "" | s), (.session_id // "" | sid), (if (.agent_id | present) or (.agent_type | present) then "1" else "0" end), (.cwd // "" | s), (.tool_input.command // "" | s)] | join("\u001f")' 2>/dev/null)
 hk_agent=${hk_ev%%"$sep"*}; hk_rest=${hk_ev#*"$sep"}
