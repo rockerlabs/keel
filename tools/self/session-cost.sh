@@ -189,15 +189,11 @@ cmd_ticket() {
   _sc_ticket_cost "$tier" "$model" "" "$@"
 }
 
-# cmd_table MANIFEST — the cross-ticket view: one row per ticket (from _sc_ticket_cost), then one row
-# per (tier, model) cell with the MEDIAN cost_tokens across its tickets (SPEC §1: median, not mean — n
-# is small and a single long session must not dominate a cell).
-cmd_table() {
-  local manifest="${1:-}"
-  [ -n "$manifest" ] || { printf 'session-cost.sh: table needs a MANIFEST file\n' >&2; exit 2; }
-  [ -f "$manifest" ] || { printf 'session-cost.sh: no such manifest: %s\n' "$manifest" >&2; exit 2; }
-
-  local tmp; tmp="$(mktemp)" || exit 1
+# _sc_manifest_rows MANIFEST TMP — read a table manifest (see the header) into TMP, one _sc_ticket_cost JSON row
+# per ticket; shared by `table` and `weighted` (dir #654). Exits 2 on a malformed line or no rows, 1 on an unreadable
+# session file, removing TMP first.
+_sc_manifest_rows() {
+  local manifest="$1" tmp="$2"
   # dir #313 review: every error path below cleans up "$tmp" explicitly before exiting, rather than a
   # `trap ... EXIT` — tried and reverted (see _sc_ticket_cost's own comment, tools/self/session-cost.sh,
   # and tu_session_totals', tools/lib/transcript-usage.sh): bash RETURN traps proved to be a single
@@ -233,6 +229,19 @@ cmd_table() {
     printf 'session-cost.sh: manifest carried no ticket rows: %s\n' "$manifest" >&2
     rm -f "$tmp"; exit 2
   fi
+}
+
+
+# cmd_table MANIFEST — the cross-ticket view: one row per ticket (from _sc_ticket_cost), then one row
+# per (tier, model) cell with the MEDIAN cost_tokens across its tickets (SPEC §1: median, not mean — n
+# is small and a single long session must not dominate a cell).
+cmd_table() {
+  local manifest="${1:-}"
+  [ -n "$manifest" ] || { printf 'session-cost.sh: table needs a MANIFEST file\n' >&2; exit 2; }
+  [ -f "$manifest" ] || { printf 'session-cost.sh: no such manifest: %s\n' "$manifest" >&2; exit 2; }
+
+  local tmp; tmp="$(mktemp)" || exit 1
+  _sc_manifest_rows "$manifest" "$tmp"
 
   # dir #313 review: one format string per table, used for both its header and its data rows, so the
   # two can never silently drift out of column alignment the way two hand-typed copies could.
@@ -552,29 +561,7 @@ cmd_weighted() {
   wr="$(awk -v x="$_SC_W_READ" 'BEGIN{print x+0}')"
 
   local tmp; tmp="$(mktemp)" || exit 1
-  local ticket tier model files_csv ff row
-  local -a files
-  while IFS=$'\t' read -r ticket tier model files_csv || [ -n "$ticket" ]; do
-    case "$ticket" in ''|'#'*) continue ;; esac
-    [ -n "$tier" ] && [ -n "$model" ] && [ -n "$files_csv" ] || {
-      printf 'session-cost.sh: malformed manifest line (want TICKET\\tTIER\\tMODEL\\tFILE1,FILE2,...): %s\\t%s\\t%s\\t%s\n' \
-        "$ticket" "$tier" "$model" "$files_csv" >&2
-      rm -f "$tmp"; exit 2
-    }
-    files=()
-    while IFS= read -r ff; do
-      [ -n "$ff" ] && files+=("$ff")
-    done < <(printf '%s' "$files_csv" | tr ',' '\n' | awk '!seen[$0]++')
-    row="$(_sc_ticket_cost "$tier" "$model" "$ticket" "${files[@]}")" || {
-      printf 'session-cost.sh: failed to read %s (ticket %s)\n' "$files_csv" "$ticket" >&2
-      rm -f "$tmp"; exit 1
-    }
-    printf '%s\n' "$row" >> "$tmp"
-  done < "$manifest"
-  if [ ! -s "$tmp" ]; then
-    printf 'session-cost.sh: manifest carried no ticket rows: %s\n' "$manifest" >&2
-    rm -f "$tmp"; exit 2
-  fi
+  _sc_manifest_rows "$manifest" "$tmp"
 
   local fmt='%-10s %-6s %-8s %16s %16s %16s\n'
   # shellcheck disable=SC2059  # $fmt is a fixed local format, not user input
