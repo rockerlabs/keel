@@ -306,8 +306,9 @@ closed_state() {
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
         rest="$m${stripped#*"$m"}"
         cdate="—"
-        # the tag word is the first capitals in $rest (BB_CLOSURE_TAG_PATTERN is uppercase-only); the date must follow it on the same line
-        if [[ "$rest" =~ ^[^[:upper:]]*[[:upper:]]+[^0-9${NL}]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        # $rest = the matched tag (an optional dash, the glyph, the word and one more char) plus what follows it: the closure
+        # date is the first digit run after the tag, on the same line, so no character class has to find the tag word
+        if [[ "$rest" =~ ^[^0-9${NL}]{0,70}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
         ckey="$cdate"; [ "$cdate" = "—" ] && ckey=0000-00-00
         case "$glyph" in ✅) ckey="${ckey//-/}1" ;; *) ckey="${ckey//-/}0" ;; esac
         if [ -z "$best_key" ] || [ "$ckey" -gt "$best_key" ]; then best_glyph="$glyph"; best_date="$cdate"; best_key="$ckey"; fi
@@ -402,10 +403,8 @@ do_selftest() {
 [ "$SELFTEST" = 1 ] && { do_selftest; exit 0; }
 [ "${#pos[@]}" -gt 0 ] || { usage >&2; exit 2; }
 cmd="${pos[0]}"
-[ -n "$DIR" ] || die "--dir is required"
-if [ -z "$ASOF" ]; then ASOF="$(date +%Y-%m-%d)"; fi
-valid_date "$ASOF" || die "--as-of is not a date: $ASOF"
-# a stray argument (a misplaced --help, a forgotten --) is an error, never a silent no-op or a surprise write
+# the one list of subcommands and their arity; a stray argument (a misplaced --help, a forgotten --) is an error,
+# never a silent no-op or a surprise write
 case "$cmd" in
   init|lock|unlock|retire|lint|due|status|verdict) max_pos=1 ;;
   count|closed) max_pos=2 ;;
@@ -415,6 +414,9 @@ case "$cmd" in
   *) die "unknown subcommand: $cmd" ;;
 esac
 [ "${#pos[@]}" -le "$max_pos" ] || die "unexpected argument: ${pos[$max_pos]} (a value starting with a dash goes after --)"
+[ -n "$DIR" ] || die "--dir is required"
+if [ -z "$ASOF" ]; then ASOF="$(date +%Y-%m-%d)"; fi
+valid_date "$ASOF" || die "--as-of is not a date: $ASOF"
 
 case "$cmd" in
   init)
@@ -578,5 +580,6 @@ case "$cmd" in
     exit $?
     ;;
 
+  *) die "internal: subcommand $cmd is in the arity table but has no handler" ;;
 esac
 exit 0

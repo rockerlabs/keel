@@ -41,6 +41,8 @@ check_status "no --dir -> exit 2" 2 "$STATUS"
 d="$(mktemp -d "$SANDBOX/acc.XXXXXX")"
 A "$d" bogus
 check_status "unknown subcommand -> exit 2" 2 "$STATUS"
+run bash "$ACC" bogus
+check_contains "unknown subcommand is named even with no --dir" "$OUT" "unknown subcommand: bogus"
 A "$d" lint
 check_status "a data dir without the TSVs -> exit 2 (I/O), not a lint finding" 2 "$STATUS"
 A "$d" count x
