@@ -23,7 +23,7 @@ fence-not-blanked	tools/self/accumulate.sh	fb="$(blank_fenced_blocks "$1")"	fb="
 tag-unanchored	tools/self/accumulate.sh	if (t == tag) {	if (index(t, tag) > 0) {	the tag must start its own line
 seen-again-inclusive	tools/self/accumulate.sh	if (sw[id] == "promoted" && $1 > sd[id]) again[id] = 1	if (sw[id] == "promoted" && $1 >= sd[id]) again[id] = 1	seen-again needs a sighting dated after the promotion
 verdict-consumer-unfiltered	tools/self/accumulate.sh	case ",$v_cons," in *",$CONSUMER,"*) ;; *) continue ;; esac	case ",$v_cons," in *",$CONSUMER,"*) ;; *) ;; esac	verdict looks only at the consumer's own classes
-verdict-closed-promotion	tools/self/accumulate.sh	closed*) ;; *) hit=1 ;; esac	closed*) hit=1 ;; *) hit=1 ;; esac	a promotion whose ticket closed is not NEEDS-REWORK
+verdict-closed-promotion	tools/self/accumulate.sh	closed*) ;; *) flagged="$flagged $v_id" ;; esac	closed*) flagged="$flagged $v_id" ;; *) flagged="$flagged $v_id" ;; esac	a promotion whose ticket closed is not NEEDS-REWORK
 lint-dup-off	tools/self/accumulate.sh	if (k in seen) err(f, FNR,	if (0 && (k in seen)) err(f, FNR,	lint: duplicate (class, source, consumer)
 lint-unknown-class-off	tools/self/accumulate.sh	if (!($2 in known)) err(	if (0) err(	lint: unknown class
 lint-date-off	tools/self/accumulate.sh	if (!isdate($1)) err(	if (0) err(	lint: sighting date
@@ -35,4 +35,4 @@ felt-open-vocabulary	tools/self/accumulate.sh	case "$s_felt" in yes|no) ;;	case 
 init-clobbers	tools/self/accumulate.sh	if [ -e "$DIR/classes.tsv" ] || [ -e "$DIR/sightings.tsv" ]; then die	if false; then die	init never overwrites
 status-rewrites-all	tools/self/accumulate.sh	NR > 1 && $1 == ENVIRON["ACC_C"] { $6 = ENVIRON["ACC_S"] }	NR > 1 { $6 = ENVIRON["ACC_S"] }	set_status rewrites only the named row
 write-lock-not-honoured	tools/self/accumulate.sh	[ -d "$DIR/.lock" ] && return 0	false && return 0	a write under the caller's lock proceeds
-own-lock-not-released	tools/self/accumulate.sh	if [ "$TOOK_LOCK" = 1 ]; then rm -f	if [ "$TOOK_LOCK" = 9 ]; then rm -f	a write that took its own lock releases it
+own-lock-not-released	tools/self/accumulate.sh	if [ "$TOOK_LOCK" = 1 ]; then lock_release	if [ "$TOOK_LOCK" = 9 ]; then lock_release	a write that took its own lock releases it

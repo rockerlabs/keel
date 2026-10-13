@@ -52,7 +52,8 @@
 # continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN. Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
-# for that single write. Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
+# for that single write. The lock is cooperative: a write that finds ANY lock proceeds, since the run that took it was a
+# separate process and the tool cannot tell its own caller from another run; the exclusion is `lock` itself (exit 2). Exit: 0 ok, 1 a `lint` finding, 2 a usage, lock or I/O error.
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -72,6 +73,7 @@ HDR_SIGHTINGS="date${TAB}class${TAB}consumer${TAB}source${TAB}felt${TAB}danger${
 LOCK_STALE_SECONDS=7200
 
 die() { printf 'accumulate: %s\n' "$*" >&2; exit 2; }
+lock_release() { rm -f "$DIR/.lock/info"; rmdir "$DIR/.lock" 2>/dev/null; }
 
 usage() {
   cat <<'EOF'
@@ -124,6 +126,7 @@ AWK() { LC_ALL=C awk "$@"; }
 valid_date() { ACC_V="$1" AWK "${AWKLIB}"'BEGIN { exit !isdate(ENVIRON["ACC_V"]) }'; }
 no_ctl() { case "$1" in *"$TAB"*|*"$NL"*) return 1 ;; esac; return 0; }
 is_id() { [[ "$1" =~ ^[a-z0-9:-]+$ ]]; }
+valid_ref() { no_ctl "$1" && [ -n "$1" ]; }
 is_posint() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 
 # --- arguments ---------------------------------------------------------------------------------------------------------------------
@@ -156,7 +159,7 @@ done
 TOOK_LOCK=0; TMPF=""
 cleanup() {
   [ -n "$TMPF" ] && rm -f "$TMPF"
-  if [ "$TOOK_LOCK" = 1 ]; then rm -f "$DIR/.lock/info"; rmdir "$DIR/.lock" 2>/dev/null; fi
+  if [ "$TOOK_LOCK" = 1 ]; then lock_release; fi
   return 0
 }
 trap cleanup EXIT
@@ -178,7 +181,7 @@ lock_take() {   # lock_take → 0 taken, 2 held by a live run; prints the report
     age=$((now - ts))
     if [ "$age" -gt "$LOCK_STALE_SECONDS" ]; then
       printf 'accumulate: stale lock broken (held by pid %s since epoch %s, %s s old)\n' "$pid" "$ts" "$age"
-      rm -f "$l/info"; rmdir "$l" 2>/dev/null || die "could not remove the stale lock $l"
+      lock_release; [ ! -d "$l" ] || die "could not remove the stale lock $l"
     else
       printf 'accumulate: lock held by pid %s since epoch %s (%s s old)\n' "$pid" "$ts" "$age" >&2
       return 2
@@ -197,16 +200,18 @@ write_lock() {   # a write holds the lock: the caller's, else its own for this o
 
 # --- TSV helpers ------------------------------------------------------------------------------------------------------------------------
 CF=""; SF=""
-need_files() {
+need_dir() {
   [ -n "$DIR" ] || die "--dir is required"
   [ -d "$DIR" ] || die "data dir $DIR does not exist"
+}
+need_files() {
+  need_dir
   CF="$DIR/classes.tsv"; SF="$DIR/sightings.tsv"
   [ -f "$CF" ] && [ -r "$CF" ] || die "no readable $CF (run init)"
   [ -f "$SF" ] && [ -r "$SF" ] || die "no readable $SF (run init)"
 }
 ensure_newline() { if [ -n "$(tail -c1 "$1")" ]; then printf '\n' >> "$1"; fi; }
-class_row() { ACC_C="$1" AWK -F'\t' 'NR > 1 && $1 == ENVIRON["ACC_C"] { print; found = 1 } END { exit !found }' "$CF"; }
-class_exists() { class_row "$1" >/dev/null; }
+class_exists() { ACC_C="$1" AWK -F'\t' 'NR > 1 && $1 == ENVIRON["ACC_C"] { found = 1 } END { exit !found }' "$CF"; }
 class_status() { ACC_C="$1" AWK -F'\t' 'NR > 1 && $1 == ENVIRON["ACC_C"] { print $6 }' "$CF"; }
 class_word() { local s; s="$(class_status "$1")"; printf '%s' "${s%%:*}"; }
 set_status() {   # set_status CLASS NEWSTATUS — rewrites only the status cell of one row
@@ -260,6 +265,7 @@ facts() {
 # hits_in_file FILE CLASS → one record per tagged heading block, newlines inside the block turned into US
 hits_in_file() {
   local fb
+  grep -qF -- "Observer-class: $2" "$1" || return 0
   fb="$(blank_fenced_blocks "$1")"
   printf '%s\n' "$fb" | ACC_C="$2" AWK '
   { sub(/\r$/, ""); line[NR] = $0 }
@@ -283,22 +289,21 @@ hits_in_file() {
 
 # closed_state CLASS → prints open | closed <glyph> <date|—> | draft | orphaned
 closed_state() {
-  local cls="$1" f rec block stripped m rest glyph date own
-  local any_open=0 any_draft=0 best_glyph="" best_date="" any_closed=0
+  local cls="$1" f d rec block stripped m rest glyph cdate own
+  local any_open=0 any_draft=0 best_glyph="" best_date=""
   for f in ${BACKLOGS[@]+"${BACKLOGS[@]}"}; do
     while IFS= read -r rec; do
       [ -n "$rec" ] || continue
-      block="$(sed -E 's/`[^`]*`//g' <<< "${rec//$US/$NL}")"
+      block="$(blank_inline_code_spans <<< "${rec//$US/$NL}")"
       own="$(bb_own_ticket_num "$block")"
       stripped="$(bb_strip_foreign_citations "$block" "$own" "$BB_CLOSURE_TAG_PATTERN")"
       if [[ "$stripped" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
         m="${BASH_REMATCH[0]}"
         case "$m" in *❌*) glyph="❌" ;; *) glyph="✅" ;; esac
         rest="${stripped#*"$m"}"
-        date="—"
-        if [[ "$rest" =~ ^[^0-9]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then date="${BASH_REMATCH[1]}"; fi
-        any_closed=1
-        if [ -z "$best_date" ] || [[ "$date" > "$best_date" ]]; then best_glyph="$glyph"; best_date="$date"; fi
+        cdate="—"
+        if [[ "$rest" =~ ^[^0-9]{0,40}([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ]]; then cdate="${BASH_REMATCH[1]}"; fi
+        if [ -z "$best_date" ] || [[ "$cdate" > "$best_date" ]]; then best_glyph="$glyph"; best_date="$cdate"; fi
       else
         any_open=1
       fi
@@ -306,7 +311,6 @@ closed_state() {
   done
   for f in ${DRAFTS[@]+"${DRAFTS[@]}"}; do
     [ -d "$f" ] || continue
-    local d
     for d in "$f"/*.md; do
       [ -f "$d" ] || continue
       if [ -n "$(hits_in_file "$d" "$cls")" ]; then any_draft=1; fi
@@ -314,7 +318,7 @@ closed_state() {
   done
   if [ "$any_open" = 1 ]; then printf 'open\n'
   elif [ "$any_draft" = 1 ]; then printf 'draft\n'
-  elif [ "$any_closed" = 1 ]; then printf 'closed %s %s\n' "$best_glyph" "$best_date"
+  elif [ -n "$best_glyph" ]; then printf 'closed %s %s\n' "$best_glyph" "$best_date"
   else printf 'orphaned\n'
   fi
 }
@@ -369,7 +373,7 @@ do_lint() {
 
 # --- selftest ---------------------------------------------------------------------------------------------------------------------------------
 do_selftest() {
-  local d out
+  local d out rc
   d="$(mktemp -d "${TMPDIR:-/tmp}/accumulate-selftest.XXXXXX")" || die "mktemp failed"
   out="$(
     set -e
@@ -381,8 +385,9 @@ do_selftest() {
     [ "$(t count st-class)" = 2 ] || { echo "count != 2"; exit 1; }
     [ "$(t due --owner commands)" = st-class ] || { echo "due != st-class"; exit 1; }
     t lint
-  )" || { rm -f "$d/classes.tsv" "$d/sightings.tsv"; rmdir "$d" 2>/dev/null; printf '%s\n' "$out" >&2; die "selftest failed"; }
+  )"; rc=$?
   rm -f "$d/classes.tsv" "$d/sightings.tsv"; rmdir "$d" 2>/dev/null
+  [ "$rc" -eq 0 ] || { printf '%s\n' "$out" >&2; die "selftest failed"; }
   printf 'accumulate: selftest ok\n'
 }
 
@@ -403,14 +408,14 @@ case "$cmd" in
     ;;
 
   lock)
-    [ -d "$DIR" ] || die "data dir $DIR does not exist"
-    lock_take; rc=$?
-    exit "$rc"
+    need_dir
+    lock_take
+    exit $?
     ;;
 
   unlock)
-    [ -d "$DIR" ] || die "data dir $DIR does not exist"
-    rm -f "$DIR/.lock/info"; rmdir "$DIR/.lock" 2>/dev/null
+    need_dir
+    lock_release
     ;;
 
   new-class)
@@ -493,9 +498,10 @@ case "$cmd" in
     need_files
     [ "${#pos[@]}" -ge 3 ] || die "promote CLASS REF"
     p_class="${pos[1]}"; p_ref="${pos[2]}"
-    no_ctl "$p_ref" && [ -n "$p_ref" ] || die "ref must be non-empty, without TAB or newline"
+    valid_ref "$p_ref" || die "ref must be non-empty, without TAB or newline"
     class_exists "$p_class" || die "unknown class: $p_class"
-    case "$(class_word "$p_class")" in open|fixed) ;; *) die "class $p_class is $(class_word "$p_class"); only open or fixed can be promoted" ;; esac
+    p_word="$(class_word "$p_class")"
+    case "$p_word" in open|fixed) ;; *) die "class $p_class is $p_word; only open or fixed can be promoted" ;; esac
     write_lock
     set_status "$p_class" "promoted:$p_ref:$ASOF"
     ;;
@@ -504,11 +510,12 @@ case "$cmd" in
     need_files
     [ "${#pos[@]}" -ge 3 ] || die "fixed CLASS REF [--date D]"
     f_class="${pos[1]}"; f_ref="${pos[2]}"; f_date="${FDATE:-$ASOF}"
-    no_ctl "$f_ref" && [ -n "$f_ref" ] || die "ref must be non-empty, without TAB or newline"
+    valid_ref "$f_ref" || die "ref must be non-empty, without TAB or newline"
     valid_date "$f_date" || die "--date is not a date: $f_date"
     [[ "$f_date" > "$ASOF" ]] && die "--date $f_date is after --as-of $ASOF"
     class_exists "$f_class" || die "unknown class: $f_class"
-    [ "$(class_word "$f_class")" = promoted ] || die "class $f_class is $(class_word "$f_class"); only a promoted class can be fixed"
+    f_word="$(class_word "$f_class")"
+    [ "$f_word" = promoted ] || die "class $f_class is $f_word; only a promoted class can be fixed"
     write_lock
     set_status "$f_class" "fixed:$f_ref:$f_date"
     ;;
@@ -535,17 +542,14 @@ case "$cmd" in
     [ -n "$CONSUMER" ] || die "verdict needs --consumer"
     need_paths
     flagged=""
-    while IFS="$TAB" read -r v_id v_owner v_word v_thr v_cnt v_dng v_again v_cons v_sd; do
+    while IFS="$TAB" read -r v_id _ v_word v_thr v_cnt v_dng _ v_cons _; do
       [ -n "$v_id" ] || continue
-      : "$v_owner" "$v_again" "$v_sd"
       case ",$v_cons," in *",$CONSUMER,"*) ;; *) continue ;; esac
-      hit=0
       case "$v_word" in
-        open|fixed) if [ "$v_cnt" -ge "$v_thr" ] || [ "$v_dng" = 1 ]; then hit=1; fi ;;
+        open|fixed) if [ "$v_cnt" -ge "$v_thr" ] || [ "$v_dng" = 1 ]; then flagged="$flagged $v_id"; fi ;;
         promoted)
-          case "$(closed_state "$v_id")" in closed*) ;; *) hit=1 ;; esac ;;
+          case "$(closed_state "$v_id")" in closed*) ;; *) flagged="$flagged $v_id" ;; esac ;;
       esac
-      if [ "$hit" = 1 ]; then flagged="$flagged $v_id"; fi
     done <<< "$(facts)"
     if [ -n "$flagged" ]; then printf 'NEEDS-REWORK%s\n' "$flagged"; else printf 'CLEAR\n'; fi
     ;;

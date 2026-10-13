@@ -439,8 +439,7 @@ A "$d" lock;  check_status "lock: free again after unlock" 0 "$STATUS"
 A "$d" unlock
 A "$d" unlock; check_status "unlock: with no lock is still exit 0" 0 "$STATUS"
 A "$d" new-class self-locked t f commands
-ls -a "$d" > "$SANDBOX/ls-after"
-check_absent "a write that took its own lock released it" "$(cat "$SANDBOX/ls-after")" ".lock"
+check_absent "a write that took its own lock released it" "$(ls -a "$d")" ".lock"
 # a lock older than two hours is broken, and the break is said
 now="$(date +%s)"
 mkdir "$d/.lock"; printf '4242\t%s\n' "$((now - 7300))" > "$d/.lock/info"
@@ -451,7 +450,7 @@ A "$d" unlock
 mkdir "$d/.lock"; printf '4242\t%s\n' "$((now - 3600))" > "$d/.lock/info"
 A "$d" lock
 check_status "lock: one an hour old is still live -> exit 2" 2 "$STATUS"
-rmdir_out="$(rm -f "$d/.lock/info" && rmdir "$d/.lock" 2>&1)"; : "$rmdir_out"
+rm -f "$d/.lock/info"; rmdir "$d/.lock" 2>/dev/null
 
 # --- lint: header, tabs, shapes, and the six broken copies of A3 ----------------------------------------------------------------------------------
 base="$(mk)"; cls "$base" x; cls "$base" y commands 3 90 felt
