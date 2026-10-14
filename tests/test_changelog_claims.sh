@@ -373,6 +373,12 @@ check_eq "846-1: ...one claim per line, nothing else" "4" "$(count_of "$OUT" '^U
 d="$(one_frag $'- step 5 runs the gate; exit 0 with output; exits 2 on failure; phase 7 said so; line 56 now; steps 1, 2 and 4 are done; status 4 means no\n- item 3, round 2: and lines 5-9 in a.sh\n')"
 run "$ccl" --repo "$d"
 check_contains "846-1: references followed by a verb, a connective or punctuation stay excluded" "$OUT" "changelog-claims: 0 claim(s)"
+d="$(one_frag $'- step 3 added a check\n- phase 2 changed\n- round 2 findings\n- step 5 times out\n- step 2 session\n')"
+run "$ccl" --repo "$d"
+check_contains "846-1: ambiguous nouns and a change verb after a non-lines reference stay references" "$OUT" "changelog-claims: 0 claim(s)"
+d="$(one_frag $'- step 3 added a check\n- phase 2 changed\n- round 2 findings\n- step 5 times out\n- step 2 session\n')"
+run "$ccl" --repo "$d"
+check_contains "846-1: ambiguous nouns and a change verb after a non-lines reference stay references" "$OUT" "changelog-claims: 0 claim(s)"
 # 846-2: "top-10" / "over-100" carry a count (a count qualifier before the hyphen); other word-number shapes stay identifiers.
 d="$(one_frag $'- A top-10 list, over-100 files, UTF-8 and PR-22 and SHA-256 and x86-64 and S2-9 and round-3 and exit-0 and Latin-1 and check-10\n')"
 run "$ccl" --repo "$d"
@@ -407,6 +413,13 @@ check_contains "846-6: '40KB' binds as the integer 40 (MISMATCH, not BADMARK)" "
 check_contains "846-6: '2ms' binds as the integer 2 (OK)" "$OUT" "OK changelog.d/a.md:3: 2ms — lines f.md = 2"
 check_contains "846-6: '5k' (a scale suffix) stays a BADMARK" "$OUT" "BADMARK changelog.d/a.md:4: 5k — lines on a non-integer claim"
 check_contains "846-6: '12%' stays a BADMARK" "$OUT" "BADMARK changelog.d/a.md:5: 12% — lines on a non-integer claim"
+d="$(new_repo)"; put "$d" f.md $'a\n'
+frag "$d" a.md $'- 0xff <!-- claim: lines f.md -->\n- 3D <!-- claim: lines f.md -->\n- 2FA <!-- claim: lines f.md -->\n'
+run "$ccl" --repo "$d"
+check_eq "846-6: letters that are not a known unit (0xff, 3D, 2FA) stay non-integer — three BADMARKs" "3" "$(count_of "$OUT" '^BADMARK')"
+d="$(new_repo)"; frag "$d" a.md $'- three apples\n'
+run "$ccl" --repo "$d" --fragment changelog.d/a.md --fragment ./changelog.d/a.md --fragment "$d/changelog.d/a.md"
+check_contains "846-4: the same fragment named three ways is read once" "$OUT" "0 unbound, 1 word,"
 
 # --- A11: the live leg — keel's own changelog text ---------------------------------------------------------------------------------
 run "$ccl" --repo "$REPO_ROOT"

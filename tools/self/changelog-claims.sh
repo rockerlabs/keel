@@ -169,10 +169,15 @@ function blank_range(st, ln,    sp) {
   sp = sprintf("%" ln "s", "")
   s = substr(s, 1, st - 1) sp substr(s, st + ln)
 }
-# counted(pos): the text from pos on starts with a COUNT unit or a change verb ("12 tests", "120 changed"):
-# the number just before it is a count, not a reference (dir #846). A reference is followed by a verb, a
-# connective or punctuation ("step 5 runs the gate"), which are the overwhelming majority in real sections.
-function counted(pos) { return tolower(substr(s, pos)) ~ units }
+# counted(pos, lines): the text from pos on starts with a COUNT unit ("12 tests") or, after "lines" only, a change
+# verb ("lines 120 changed"): the number just before it is a count, not a reference (dir #846). A reference is
+# followed by a verb, a connective or punctuation ("step 5 runs the gate", "step 3 added a check"), which are
+# the overwhelming majority in real sections; the lists are closed on purpose, so a noun that can also name
+# the thing a step or round produced ("round 2 findings") is not in them.
+function counted(pos, lines,    r) {
+  r = tolower(substr(s, pos))
+  return r ~ units || (lines && r ~ verbs)
+}
 # blank(re, ci, lb, rb): overwrite every match of re with spaces of the same length (positions never shift).
 # ci matches on the lowercase copy (same byte positions under LC_ALL=C); lb requires a non-alphanumeric
 # byte to the match's left; rb keeps a match whose number is counted() (right boundary).
@@ -184,7 +189,7 @@ function blank(re, ci, lb, rb,    t, from, st, ln) {
     st = from + RSTART - 1; ln = RLENGTH
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
-    if (rb && counted(st + ln)) { from = st + ln; continue }
+    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /)) { from = st + ln; continue }
     blank_range(st, ln)
     from = st + ln
   }
@@ -242,7 +247,9 @@ BEGIN {
   re_x6s = sect " ?" list
   re_x7 = "(exit(s|ing|ed)?|exit code|return(s)?|status) " list
   qre = "^(top|over|under|above|below|around|about|nearly|almost|max|min|first|last|next|only|least|most)-[0-9]"
-  units = "^ +(tests?|values?|files?|lines?|words?|rows?|bytes?|tokens?|chars?|characters?|seconds?|minutes?|hours?|days?|times?|cases?|assertions?|entries|entry|findings?|tickets?|commits?|branches|branch|sessions?|mutants?|claims?|numbers?|bullets?|sections?|docs?|pages?|errors?|failures?|changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
+  units = "^ +(tests?|values?|files?|lines?|words?|rows?|bytes?|tokens?|chars?|characters?|seconds?|minutes?|hours?|days?|assertions?|mutants?|commits?|errors?|failures?)([^a-z0-9]|$)"
+  verbs = "^ +(changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
+  unitre = "^(x|s|ms|us|ns|sec|secs|min|mins|h|hr|hrs|d|w|px|pt|[kKMGT][bB]|[kKMGT]iB)$"
   on = (h == "")
 }
 {
@@ -348,9 +355,9 @@ BEGIN {
     }
     if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*(\.[0-9]+)*/)) {
       tail = substr(s, e, RLENGTH); e += RLENGTH
-      # a glued letter unit (2x, 40KB, 30s) leaves an integer claim; a scale suffix (5k, 3M, 2B), %, a digit or a
-      # dot in the tail (1e5, 12h30m, 2v1.5) does not
-      if (tail !~ /^[A-Za-z]+$/ || tail ~ /^[kKMBGT]$/) nonint = 1
+      # a glued unit from a closed list (2x, 40KB, 30s) leaves an integer claim; a scale suffix (5k, 3M, 2B), %,
+      # any other letters (0xff, 3D, 2FA), a digit or a dot in the tail (1e5, 12h30m, 2v1.5) do not
+      if (tail !~ unitre) nonint = 1
     }
     nc++
     cpos[nc] = st; ctext[nc] = substr(s, ds, e - ds)
@@ -555,7 +562,7 @@ if [ "$read_frags" = 1 ]; then
       [ -n "$f" ] || continue
       f="$(normalise_fragment_path "$f")" || die_args "--fragment '$f' is outside the repository"
       grep -qxF -- "$f" <<< "$listing" || die_args "--fragment '$f' is not a fragment the reader lists (changelog-fragments.sh --list)"
-      chosen="$chosen$f"$'\n'
+      grep -qxF -- "$f" <<< "$chosen" || chosen="$chosen$f"$'\n'
     done <<< "$frag_args"
     listing="$chosen"
   fi
