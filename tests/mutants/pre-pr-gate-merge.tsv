@@ -53,12 +53,12 @@ M31	tools/pre-pr-gate.sh	  [ "$mg_code" = api ] && early_deny blocked	  [ "$mg_c
 M32	tools/pre-pr-gate.sh	[ -n "$mg_code" ] && merge_rule\n	[ -n "$mg_code" ] && merge_rule && exit 0\n	B6: a passing merge skips the create rule
 M33	tools/pre-pr-gate.sh	v !~ /^[0-9a-f]+$/	v !~ /^[0-9a-fA-F]+$/	B6 (i): accept an upper-case sha
 M34	tools/pre-pr-gate.sh	function mg_bool(v) { return v == "" || v == "true" }	function mg_bool(v) { return 1 }	B6 (i): --merge=false counts as --merge
-M35	tools/pre-pr-gate.sh	else if (c == "m") { if (mg_bool(v)) cm_hasm = 1 }	else if (c == "m") { cm_hasm = cm_hasm }	B6 (i): -m (a short cluster holding m) is no --merge
+M35	tools/pre-pr-gate.sh	else if (c == "m") { if (mg_bool(v) && !cm_dd) cm_hasm = 1 }	else if (c == "m") { cm_hasm = cm_hasm }	B6 (i): -m (a short cluster holding m) is no --merge
 M36	tools/pre-pr-gate.sh	  [ "$hk_sub" = 1 ] && early_deny	  [ "$hk_sub" = 9 ] && early_deny	B6 (ii): a subagent merges
 M37	tools/pre-pr-gate.sh	  _cwd_not_a_repo "$hk_cwd" && early_deny	  false && early_deny	B6 (ii): a non-git cwd gets the identity reason
 M38	tools/pre-pr-gate.sh	cm_meth = toupper(eq ? substr(t, eq + 1) : (nx ? tok[nx] : ""))	cm_meth = toupper(eq ? substr(t, eq + 1) : "")	B6: miss --method PUT
 M39	tools/pre-pr-gate.sh	(.session_id // "" | sid)	(.session_id // "" | s)	B6 (ii): a session id holding the separator shifts the fields after it
-M40	tools/pre-pr-gate.sh	if (nm == "--merge") { if (mg_bool(v)) cm_hasm = 1; return 0 }	if (nm == "--merge") { return 0 }	B6 (i): --merge is no merge flag
+M40	tools/pre-pr-gate.sh	if (nm == "--merge") { if (mg_bool(v) && !cm_dd) cm_hasm = 1; return 0 }	if (nm == "--merge") { return 0 }	B6 (i): --merge is no merge flag
 M41	tools/pre-pr-gate.sh	if (s1 && tok[s1] == "api" && w_unquoted(s1)) {	if (0) {	B6: miss the gh api shape
 M42	tools/pre-pr-gate.sh	  print "merge" SEP mg_code SEP t\n		B6: the reader prints no merge line
 M43	tools/pre-pr-gate.sh	        mg_code="$rd_a"; mg_tok="$rd_b"\n		B6: the shell side drops the merge line
@@ -85,7 +85,7 @@ M78	tools/pre-pr-gate.sh	    if (cm_meth != "" ? (cm_meth != "GET" && cm_meth !=
 M81	tools/pre-pr-gate.sh	  if (w_assign(j)) return 0\n		B6: an assignment ending in /gh reads as a gh word
 M82	tools/pre-pr-gate.sh	(n >= 3 && substr	(n > 3 && substr	B6: a gh binary at /gh (three characters) is not read
 M83	tools/pre-pr-gate.sh	{ if (mg_shape(j, 1)) mg_note("unread", "command"); return }	{ if (0) mg_note("unread", "command"); return }	B6: a merge whose command word is not gh (timeout 5 gh …) is not noted
-M84	tools/pre-pr-gate.sh	if (mg_gh(j) && w_unquoted(j)) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }	if (0) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }	B6: a second unquoted gh word (env -C gh xargs gh …) does not make the merge unread
+M84	tools/pre-pr-gate.sh	if (mg_gh(j)) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }	if (0) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }	B6: a second gh word (env -C gh xargs gh …) does not make the merge unread
 M85	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && early_deny	  [ "$mg_code" = unreadX ] && early_deny	B6: the words-cause unread arm is not acted on
 M86	tools/pre-pr-gate.sh	    else if (p && t == "merge" && w_unquoted(j)) return 1	    else if (p && t == "merge" && w_unquoted(j)) return 0	B6: an unread pr merge shape is missed
 M87	tools/pre-pr-gate.sh	    if (t == "api" && w_unquoted(j)) a = 1	    if (t == "apiX" && w_unquoted(j)) a = 1	B6: an unread API merge-endpoint shape is missed
@@ -98,14 +98,16 @@ M96	tools/pre-pr-gate.sh	    if (t == "--") return 0\n		B6: a -- before the subc
 M98	tools/pre-pr-gate.sh	    if (!ep) { if (mg_shape(i, 0)) mg_note("unread", "words"); return }	    if (!ep) return	B6: an API call holding pr … merge words but no endpoint is allowed
 M99	tools/pre-pr-gate.sh	  if (t ~ /^-/) return 0\n  l = tolower(t)	  l = tolower(t)	B6: a dash-led word (a glued field value) is read as the endpoint
 M100	tools/pre-pr-gate.sh	  l = tolower(t)\n	  l = t\n	B6: an upper-case MERGE endpoint is no endpoint
-M101	tools/pre-pr-gate.sh	return l ~ /(^|\/)pulls\/+[^\/]+\/+merge	return l ~ /(^|\/)pulls\/[^\/]+\/+merge	B6: a doubled slash after pulls hides the endpoint
+M101	tools/pre-pr-gate.sh	if (l ~ /(^|\/)pulls\/+[^\/]+\/+merge	if (l ~ /(^|\/)pulls\/[^\/]+\/+merge	B6: a doubled slash after pulls hides the endpoint
 M102	tools/pre-pr-gate.sh	[^\/]+\/+merge	[^\/]+\/merge	B6: a doubled slash before merge hides the endpoint
 M103	tools/pre-pr-gate.sh	merge\/*([?#].*)?$/	merge\/?([?#].*)?$/	B6: a doubled trailing slash hides the endpoint
 M104	tools/pre-pr-gate.sh	merge\/*([?#].*)?$/	merge\/*$/	B6: a query string hides the endpoint
 M105	tools/pre-pr-gate.sh	    else if (a && ep && mg_ep(t)) return 1	    else if (a && mg_ep(t)) return 1	B6: an API call holding a merge-endpoint word but no pr merge words is unread in the api fallback
 M106	tools/pre-pr-gate.sh	[ "$mg_code" = unread ] && [ "$mg_tok" = command ] && early_deny	[ "$mg_code" = unread ] && [ "$mg_tok" = commandX ] && early_deny	B6: the unread deny names the wrong cause
-M107	tools/pre-pr-gate.sh	 || l ~ /(^|\/)pulls\/+(\{branch\}|:branch)/		B6: a {branch}/:branch path gh fills in is not read as the endpoint
-M108	tools/pre-pr-gate.sh	 || l ~ /(^|\/)pulls\/+[^\/]+\/+[^\/]*%/		B6: a %-escaped last part is not read as the endpoint
+M107	tools/pre-pr-gate.sh	return l ~ /\{branch\}|(^|\/):branch(\/|$)|%/	return l ~ /%/	B6: a {branch}/:branch path gh fills in is not read as the endpoint
+M108	tools/pre-pr-gate.sh	return l ~ /\{branch\}|(^|\/):branch(\/|$)|%/	return l ~ /\{branch\}|(^|\/):branch(\/|$)/	B6: a %-escaped path is not read as the endpoint
 M109	tools/pre-pr-gate.sh	      if (cm_dd) return (eq || !nx) ? 0 : 1\n		B6 (i): a pin after a real -- (gh's PR selector) counts as a pin
-M110	tools/pre-pr-gate.sh	if (mg_gh(j) && w_unquoted(j))	if (mg_gh(j))	B6: a quoted second gh word (text) makes a merge unread (a false deny)
+M110	tools/pre-pr-gate.sh	  sub(/[?#].*/, "", l)\n		B6: a % in the query string reads as an endpoint (a false deny)
 M111	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && [ "$mg_tok" = command ] && early_deny blocked	  false && early_deny blocked	B6: the command-cause unread arm removed (the words arm answers)
+M112	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api" && mg_code != "unread")	(c == "unread" && mg_code != "api")	B6: a later unread cause overwrites the first
+M113	tools/pre-pr-gate.sh	if (mg_bool(v) && !cm_dd) cm_hasm = 1; return 0 }	if (mg_bool(v)) cm_hasm = 1; return 0 }	B6 (i): --merge after a real -- counts as the merge flag

@@ -232,7 +232,8 @@ deny "(f) -X =GET keeps its = (gh's reading: a method that is no GET)" "$R_API" 
 for c in "gh api -X PUT repos/o/r/pulls/5/MERGE" "gh api -X PUT repos/o/r/pulls/5//merge" "gh api -X PUT repos/o/r/pulls//5/merge" \
          "gh api -X PUT repos/o/r/pulls/5/merge//" "gh api -X PUT repos/o/r/pulls/5/merge?x=1" "gh api -X PUT repos/o/r/pulls/5/merge#x" \
          "gh api -X PUT repos/{owner}/{repo}/pulls/{branch}" "gh api -X PUT :owner/:repo/pulls/:branch" \
-         "gh api -X PUT repos/o/r/pulls/5/%6Derge"; do
+         "gh api -X PUT repos/o/r/pulls/5/%6Derge" "gh api -X PUT repos/o/r/pulls/5/{branch}" "gh api -X PUT repos/o/r/{branch}" \
+         "gh api -X PUT repos/o/r/pull%73/5/merge" "gh api -X PUT repos/o/r/pulls/5%2Fmerge"; do
   deny "(f) the endpoint read case- and slash-insensitively: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 allow "(f) a separate flag value holding a merge-endpoint path is a value, not the endpoint" "gh api repos/o/r/issues/5/comments -f body=see/pulls/5/merge" "$P" "$OTHER"
@@ -272,7 +273,12 @@ deny "(g) a gh binary at /gh" "$R_ID" "/gh pr merge 5 --squash" "$P" "$OTHER"
 allow "(g) an assignment ending in /gh is no gh word (the shell runs pr)" "X=/opt/bin/gh pr merge 5" "$P" "$OTHER"
 deny "(d) an unread merge outranks an earlier segment's flag code" "$R_UNREAD" "$MERGE --squash; timeout 5 $MERGE" "$P" "$MID"
 deny "accepted cost: a second unquoted word gh in a merge segment makes it unread (its cause: cannot be placed)" "cannot be placed" "$MERGE --subject gh pr merge" "$P" "$MID"
-allow "(a) manager: a quoted second gh is text" "$MERGE --subject \"gh\"" "$P" "$MID"
+deny "accepted cost: a quoted second gh is unread too (a wrapper may have taken the first)" "cannot be placed" "$MERGE --subject \"gh\"" "$P" "$MID"
+deny "(g) a flag between env -C gh and a quoted gh: unread" "$R_UNREAD" "echo --admin | env -C gh -v xargs -t \"gh\" pr merge 5 --merge --match-head-commit=$SHA" "$P" "$MID"
+deny "(g) env -C gh -C <pin> -v \"gh\": the pin is env's value — unread" "$R_UNREAD" "env -C gh -C --match-head-commit=$SHA -v \"gh\" pr merge 5 --merge" "$P" "$MID"
+deny "(d) manager: --merge after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- --merge" "$P" "$MID"
+deny "accepted cost: api and a merge-endpoint path in another gh command are unread" "$R_UNREAD" "gh issue comment 5 --body api see/pulls/5/merge" "$P" "$OTHER"
+allow "(f) a % in the query string is no endpoint" "gh api repos/o/r/pulls/5/comments?x=%40 -f body=hi" "$P" "$OTHER"
 deny "(g) env -C gh \"gh\" pr merge: the quoted gh hides the subcommand — unread" "$R_UNREAD" "env -C gh \"gh\" pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(g) the first unread cause is kept" "gh is not the command word" "timeout 5 $MERGE; gh pr --admin merge 6" "$P" "$MID"
 deny "(d) manager: a lone word after a real -- is gh's PR selector, no pin" "$R_PIN" "gh pr merge --merge -- --match-head-commit=$SHA" "$P" "$MID"
