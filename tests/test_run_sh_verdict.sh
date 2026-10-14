@@ -72,6 +72,12 @@ printf '#!/usr/bin/env bash\n%s\necho "test_other.sh: 3 passed, 0 failed"\nexit 
 run bash "$d/run.sh"
 check_status "another file's summary line does not count" 1 "$STATUS"
 
+# The verdict line must START its line: the same words embedded mid-line (quoted output) are not a verdict.
+d="$(mkfake)"
+printf '#!/usr/bin/env bash\n%s\necho "see test_embed.sh: 1 passed, 0 failed"\nexit 0\n' "$SRC" > "$d/test_embed.sh"
+run bash "$d/run.sh"
+check_status "a summary-shaped phrase embedded mid-line does not count" 1 "$STATUS"
+
 # A file that never sources lib.sh has no summary to owe (the synthetic fixtures of tests/test_run_sh.sh).
 d="$(mkfake)"
 printf '#!/usr/bin/env bash\necho no-lib\nexit 0\n' > "$d/test_nolib.sh"
