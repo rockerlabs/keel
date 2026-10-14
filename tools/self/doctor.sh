@@ -654,8 +654,8 @@ heading_dir_id() {
 # from tools/lib/backlog-blocks.sh's `BB_CLOSURE_TAG_PATTERN` (dir #432/#581): that constant
 # covers the WHOLE closure vocabulary (ABSORBED/SUPERSEDED/etc.) for a heading's own tag, a wider
 # question than this test asks ("does this ticket's BODY read like prose that already recorded a
-# close?"); doctor.sh does not currently source backlog-blocks.sh at all, and wiring that
-# dependency for one shared literal is out of this ticket's scope (KEEL-0.11.0-W3-ee9f amendment
+# close?"); sharing the constant would widen what a body-prose test accepts, and wiring one shared
+# literal across two different questions is out of scope (KEEL-0.11.0-W3-ee9f amendment
 # A1 also asks this ticket to stay off that file's L110-130, where the constant lives).
 # dir #609 widened the heading-tag constant to UPPER/Title case and left THIS one UPPER-only on purpose:
 # its `.*` gap spans prose, so folding would match any later "done"/"closed" on a line that merely carries
@@ -695,6 +695,10 @@ strip_dir_citation() {
 # themselves by an earlier /code-review medium pass.
 # shellcheck source=tools/lib/fence-blank.sh
 . "$self_dir/../lib/fence-blank.sh"
+# dir #766 (fold of dir #839's draft): check 5's heading-block rule is the lib's `bb_heading_continues`, not a second
+# copy of the old "up to the first blank line" loop. This checkout's OWN lib, as for fence-blank.sh above.
+# shellcheck source=tools/lib/backlog-blocks.sh
+. "$self_dir/../lib/backlog-blocks.sh"
 
 # --- 5. BACKLOG.md heading/status drift -----------------------------------------------------------
 # `### dir #N` tickets carry their own status tag on the heading line itself (✅ DONE/CLOSED,
@@ -827,7 +831,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # three live false positives (dirs #192, #205, #251) whose tag sat on the 3rd/7th/6th
       # physical line of their own heading. Build the whole heading BLOCK instead — the heading
       # line plus continuation lines up to the first blank line (the natural end of a heading's
-      # own text) — and check THAT for the tag.
+      # own text) or the first line bb_heading_continues rejects (dir #766) — and check THAT for the tag.
       # Scanned to a small fixed cap, not to `end`: `end` is this ticket's full body-span
       # boundary, which dir #352 just widened (some real tickets run past 1,900 lines) — a
       # wrapped TITLE realistically never runs past a handful of physical lines even at this
@@ -836,23 +840,19 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # independent of how far a ticket's body-span happens to reach (found by /simplify's
       # efficiency pass; the cap's SIZE was then sized up by /code-review medium's altitude pass,
       # which measured the historical margin above).
-      block_end="$start"
       probe=$((start + 1))
       block_scan_end="$end"
       [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
-      while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
-        block_end="$probe"
+      heading_block="$heading_line"
+      # dir #766: the lib's shared rule (dir #839) decides which following lines belong to the heading — a body line
+      # written with no blank line after a FINISHED heading is not absorbed into it (it used to be, so a `— ✅` at the
+      # start of that body line read as the heading's own tag and the check went quiet). The common case (a blank
+      # line right after the heading) never reaches the function.
+      while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ] \
+        && bb_heading_continues "$heading_block" "${stripped_lines[$((probe - 1))]}"; do
+        heading_block+=$'\n'"${stripped_lines[$((probe - 1))]}"
         probe=$((probe + 1))
       done
-      # The common case (326 of 327 real headings today) never wraps at all, i.e. block_end ==
-      # start — skip the printf/subshell fork entirely then and reuse heading_line, already read
-      # above. /code-review medium's efficiency pass measured the unconditional fork costing ~2s
-      # across a real BACKLOG.md's headings for zero benefit in that case.
-      if [ "$block_end" -eq "$start" ]; then
-        heading_block="$heading_line"
-      else
-        heading_block="$(printf '%s\n' "${stripped_lines[@]:$((start - 1)):$((block_end - start + 1))}")"
-      fi
       # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
       # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
       # ⏳ IN FLIGHT while the body says ✅ CLOSED). Any existing tag short-circuits below,
@@ -870,11 +870,12 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       if grep -qE '— (✅|⏳|RETRACTED\b)' <<< "$heading_block"; then
         continue
       fi
-      # Deliberately `start + 1`, NOT `block_end + 1`: an earlier version of this fix started the
+      # Deliberately `start + 1`, NOT the end of the heading block: an earlier version of this fix started the
       # body scan right after the heading block to avoid re-scanning its own continuation lines,
-      # but the block-detection loop above has no way to tell "a wrapped heading's own
-      # continuation line" apart from "real body text with no blank line before it" — both are
-      # just "non-blank line right after the heading" to that loop. /code-review medium's
+      # but the block-detection loop above cannot always tell "a wrapped heading's own
+      # continuation line" apart from "real body text with no blank line before it" (bb_heading_continues
+      # tells them apart only for a heading that already shows its tail; an untagged, tail-less title
+      # still takes the next line). /code-review medium's
       # correctness pass found and reproduced the false negative live: a heading with no tag,
       # immediately followed (no blank line) by its own closure note, got silently absorbed into
       # `heading_block` (which only the TAG regex checks) and then excluded from the body scan

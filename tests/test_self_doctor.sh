@@ -547,6 +547,19 @@ run "$sd" "$d" --quiet
 check_status "stale heading tag is advisory only -> exit 0" 0 "$STATUS"
 check_contains "reports the stale ticket id" "$OUT" "dir #1's heading tag looks stale"
 
+# dir #766 (fold of dir #839): a body line written with NO blank line after a FINISHED, untagged heading is body,
+# not heading — a `— ✅ CLOSED` at its start used to be absorbed into the heading block and read as the heading's
+# own tag, so the staleness check went quiet. MUTATION-PROOF against the old "first blank line" block rule.
+d="$(mk_clean_repo)"
+printf '### dir #3 — some ticket — R2 — → 0.18.0\n— ✅ CLOSED (2026-01-01, PR #3) — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_contains "MUTATION-PROOF: a glued body closure note is not read as the heading's own tag" "$OUT" "dir #3's heading tag looks stale"
+# …while a wrapped title that has NOT reached its tail yet keeps taking the next line, tag and all (dir #255's shape).
+d="$(mk_clean_repo)"
+printf '### dir #4 — a title that wraps onto a second\nline before its tail — R2 — ✅ CLOSED (2026-01-01, PR #4)\n\nCLOSED — done.\n' > "$d/BACKLOG.md"
+run "$sd" "$d" --quiet
+check_absent "a wrapped tag on a continuation line still counts as the heading's own" "$OUT" "dir #4's heading tag looks stale"
+
 # the SAME heading already carrying its own tag (✅/⏳/RETRACTED) is not re-flagged even though the
 # body also says CLOSED — the tag is the thing being checked, not a ban on the word appearing twice.
 d="$(mk_clean_repo)"
