@@ -113,8 +113,10 @@ bb_strip_foreign_citations() {
 # itself being done — so they stay outside this constant on purpose, not by oversight.
 # dir #609: each word is accepted UPPER or Title case (`DONE`, `Done`), and up to two `*`/`_` of emphasis
 # may sit between glyph and word (a peer's form: `✅ **Done 2026-09-20**`). All-lowercase is deliberately
-# NOT a closure: a heading title quoting the glyph before a plain word (`❌ duplicate detection fails`,
-# `✅ built-in check`) is prose, and a case-insensitive match would close that open ticket.
+# NOT a closure: a title quoting the glyph before a plain word (`❌ duplicate detection fails`) is prose.
+# Known limit, accepted: a Title-case or UPPER word right after a glyph in a title (`❌ Duplicate detection
+# fails`, `✅ FIXED-width parser`) still reads as a closure — the peer's own form is Title case, and the
+# UPPER form already behaved so before this change; word such a title without the glyph in front.
 BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
 # bb_closure_word_ok <candidate_marker>
