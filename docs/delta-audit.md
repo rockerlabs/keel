@@ -119,10 +119,11 @@ This is the durable public referent a future run points at instead of re-derivin
    orchestrator's own main checkout. **A leg whose mandate is to apply
    [`FRAMEWORK.md`](../FRAMEWORK.md)'s own mutation-test-the-guard's-own-negative-path rule live gets
    its own dedicated clone — at minimum one per leg with a mutation mandate, never one shared with a
-   clone another leg reads as ground truth.** A clone shared between a reading leg and a mutating one
-   means every quote and `grep` result the reading leg produces is unverifiable for as long as the
-   mutation is live, whether or not the mutating leg restores cleanly afterward — the report would read
-   as confidently grounded regardless (dir #485).
+   clone another leg reads as ground truth — and a leg that both reads and mutates (the verifier's default
+   mutation mandate, §5) keeps a mutation clone used for nothing else, apart from what it reads.** A clone
+   shared between a reading leg and a mutating one means every quote and `grep` result the reading leg
+   produces is unverifiable for as long as the mutation is live, whether or not the mutating leg restores
+   cleanly afterward — the report would read as confidently grounded regardless (dir #485).
    **A mutation leg also carries a size rule** — a build keeps artifacts per mutant, and a leg that keeps
    them all fills the disk (felt: 4–10 GB left by one leg, never deleted, in a session scratchpad no tool
    prunes). So: keep the artifacts of **surviving** mutants only — the leg deletes a killed mutant's
@@ -160,7 +161,11 @@ This is the durable public referent a future run points at instead of re-derivin
      for 7, read `0 / 21` for a run whose true rate was `3 / 10`). Until the tally counts per finding
      and reads the verifier's reconciled marks wherever they sit (`dir #527` owns both), this
      sentence is the compensation;
-   - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly.
+   - `## NOT checked` — anything in scope you skipped or couldn't verify, stated plainly. **A claim that a
+     test cannot fail, or that no test pins a rule, is a finding only with an executed mutant's outcome in
+     its evidence** (run in a mutation clone of your own, rule 5); without one, write it here as a line
+     starting `Mutation candidate:` that names the rule (`file:line`) and the test you expect to pin it —
+     the verifier's sweep runs it (§5).
 7. **Don't trust a plan's snapshot.** Re-derive counts and lists live at pickup — the repo may have
    moved since the plan was written. The anchor stays FIXED even as `origin/main` moves past it
    (§2); list any post-anchor commits your report's scope touches and note whether each is an audit
@@ -179,10 +184,61 @@ and a wrong verdict is the one thing nothing downstream re-checks.
 |---|---|---|---|
 | **Orchestrator** | your own session | top tier, high | phase 0 (the anchor), all arbitration, the verdict record, **all** bookkeeping |
 | **S1 — mechanical baseline** | spawned subagent | mid tier, medium | read-only, plus its own report |
-| **S2…Sn — whole-read + seam auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own report |
-| **Diversity leg** | spawned subagent (different vendor), or a blind same-method pass | mid tier, high (or the vendor's own default) | read-only, plus its own report |
-| **S-final — verifier** | spawned subagent | mid tier, **xhigh** | the ledger's verdict lines, the run's verdict record |
+| **S2…Sn — whole-read + seam auditor** | spawned subagent, many in parallel | mid tier, high | read-only, plus its own report, and a mutation clone of its own (§4 rule 5) |
+| **Diversity leg** | spawned subagent (different vendor), or a blind same-method pass | mid tier, high (or the vendor's own default) | read-only, plus its own report, and a mutation clone of its own (§4 rule 5) |
+| **S-final — verifier** | spawned subagent | mid tier, **xhigh** | the ledger's verdict lines, the run's verdict record, its own mutation clone (§4 rule 5) |
 | **Fixer** | a real, operator-launched session — **never** a subagent | mid tier, medium | one PR's worth of the tree |
+
+**The verifier's default mutation mandate (dir #673).** S-final carries the mandate by default — no brief
+has to name it. Its target is every *qualifying rule* in its range: code that adds or changes a filter,
+threshold, guard or exclusion rule — the same trigger as `/polish`'s mutation pass
+([`commands/polish.md`](../commands/polish.md) step 3), whose mutant shapes and kill rule it follows
+([`commands/polish-guide.md`](../commands/polish-guide.md) § Step 3, "Mutation pass"), in its own mutation
+clone (§4 rule 5). The verifier looks at every file in its range that holds executable code in the project's
+own languages, not only the ledger's `code` class (`tools/delta-audit/derive.sh` assigns that class by shell
+or YAML extension or the executable bit, so most compiled-language source lands in `prose`; `code-invariant`
+rows count too). **Each verifier pass sweeps its own range — the commits no earlier pass swept:** from the
+end of the last `Mutation sweep:` line in the verdict record (from `<prev-rev>` when there is none yet) to
+the SHA it verifies, fixed as `origin/main` resolves when the sweep starts. If the pass then issues GO on a
+later SHA, it also appends `Mutation sweep: <end>..<GO SHA> — unswept (GO moved during the pass)`; a NO-GO
+leaves those commits to the next pass's range. So a fix round's rules are swept by the pass that verifies
+them, and no commit is swept twice. When the sweep ends the verifier appends `Mutation sweep: <from>..<to>`
+to the verdict record, listing each rule swept as `file:line — what it decides` with each mutant's outcome
+(killed, survived or equivalent). The default bound is ≤ 4 mutants per rule and ≤ 40 per pass, and the
+orchestrator may raise either in the brief; within it, the mutants whose survival would let through what the
+rule exists to stop come first, then diff order; what does not fit is recorded `unswept` with its count — a
+disclosed gap in mutation coverage, never carried into a later pass's list. **Outside the bound, two more
+runs:** every `fix-before-tag` pin-gap finding still open in the record — a survivor, or a gap a leg proved
+— has its mutant re-run, and every `Mutation candidate:` line in the reports written since the last
+`Mutation sweep:` line (§4 rule 6) — a pin claim a leg filed as a finding with no executed mutant is read as
+one — gets one mutant, the one its line names or else the verifier's best single choice; a candidate costs
+what re-deriving the finding it replaces would. A rule no test pins is one finding, not one per mutant. A
+survivor is a finding on the rule file's ledger row — for a file the ledger lacks, the verifier records it
+in the verdict record and the orchestrator adds the row — dispositioned like any other: §4 rule 6, and
+[`docs/verification-economics.md`](verification-economics.md)'s filing bar (§4; a survivor in a safety
+guard, for one, is its condition 1) and guard-gap rule (§3) apply to it as written — so it bears on GO only
+as any finding does. An `unswept` count never blocks GO, and neither does a `killed` outcome taken at an
+earlier SHA. A `fix-before-tag` pin gap closes like any `fix-before-tag` finding (§8): the pass that
+verifies its fix re-derives it — its mutant re-run and killed, or, when the fix rewrote the rule so the
+mutant no longer applies, the verifier's own reading of the rewritten rule and its tests, recorded with the
+reason; a re-run that survives again keeps the same finding open, never a new one. Every re-run and
+candidate outcome goes into that pass's `Mutation sweep:` line. A survivor changes no shipped behaviour, so
+it is not a behavioural finding for Clause A; whether it is a new class is judged as for any finding. An
+equivalent mutant (no behavioural difference — read the mutated code) is not a finding; the record notes it
+with that reading. A later commit that weakens the test which killed an earlier-swept rule's mutant does not
+put that rule back on a list: the earlier outcome stands with the SHA it was taken at, and the test edit is
+the fix round's to review. **What the mandate stops filing:** every pin-gap finding of one run dispositioned
+`ticket-next` — a survivor, or a gap a leg proved with its own mutant — is staged in ONE ticket that lists
+each rule, its condition-1 rules marked, and filed `→ pool` like any `ticket-next` finding (§8) — never a
+ticket per rule or per cluster (one run filed three for this one class); a `fix-before-tag` one is fixed in
+the run, a `no-action` one goes to the standing list (§8), and any other disposition takes its own route (§4
+rule 6). A pass with nothing to run — no qualifying rule, no open `fix-before-tag` pin gap, no candidate —
+writes `Mutation sweep: <from>..<to> — nothing to sweep`. When the GO SHA moves with no verifier pass, the
+orchestrator appends `Mutation sweep: <from>..<to> — unswept (GO moved with no verifier pass)`. Skipping the
+mandate is an explicit, recorded operator decision, never the orchestrator's — the diversity leg's rule
+below — written as `Mutation sweep: <from>..<to> — skipped (operator decision, <date>)`; like every
+`Mutation sweep:` line, it ends that range. The verifier reports the mandate's spend in its record; the
+orchestrator lists it apart in the per-leg cost record.
 
 **The diversity leg is required, not optional** — either a different model vendor or a different
 method (blind whole-read, reconciled against the same-family sessions' reports afterward) satisfies
@@ -600,11 +656,14 @@ five ran fresh from the verdict record alone.
 You are the verifier for a delta audit, <prev-rev>..<head-rev>. You were given every S1..Sn and
 diversity-leg report to merge.
 
-Merge every session's verdicts into the ledger — every row must end with exactly one verdict per
-docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of `clean`/
-`mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING` independently
-before accepting it. Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA
-this run started against — and confirm CI is green on that exact SHA, including every platform leg.
+Before you merge verdicts, run the default mutation mandate over your own range (docs/delta-audit.md §5),
+every `Mutation candidate:` line written since the last `Mutation sweep:` line included, and
+file each new survivor as a finding. Merge every session's verdicts into the ledger — every row must end with exactly one verdict
+per docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of
+`clean`/`mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING`
+independently before accepting it.
+Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA this run started against
+— and confirm CI is green on that exact SHA, including every platform leg.
 Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout. Then,
 separately from that coverage bar, confirm Clause A itself — two independent diverse legs, run in
 parallel on the same state, together finding no behavioural findings and no new class — before
@@ -691,6 +750,12 @@ the ticket that owned a review pass, and republished a correctly-scoped count of
 tree-wide" when tree-wide was nine. **Neither was a claim under correction; both were collateral.** A
 disclosure-only round's blast radius is the sentence, not the clause — so the re-derivation duty has to
 cover the sentence too, or the round trades one wrong claim for two.
+
+**A number a correction writes names the source it was derived from, or the correction drops the number** —
+a correction that restates a count induces a new count error far more often than one that cites it. In keel's
+own repo this is mechanical (`tools/self/` is maintainer-only, `docs/reference.md`): before the cut,
+`tools/self/changelog-claims.sh --strict --fragment <each fragment the correction edited>` exits 0; after the cut,
+`tools/self/changelog-claims.sh --section x.y.z --strict` exits 0 (dir #810).
 
 ## 11. The cross-vendor leg — four harness lessons, as classes
 

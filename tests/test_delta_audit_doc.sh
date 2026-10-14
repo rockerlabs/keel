@@ -221,4 +221,121 @@ pin "release-audit.md's cut step: the history entry states only events already o
   "$release_audit" '**The entry states only events already on record.**' \
   "expected the cut step to forbid a history entry that states a waiver, GO or tag not yet recorded"
 
+# --- dir #783: the delta-audit verifier's default mutation mandate (dir #673 (b)) ---------------------
+# S-final carries a mutation mandate by default: one sweep range per verifier pass, GO through the §8
+# dispositions only, one pin-gap ticket per run. Every needle is checked INSIDE the §5 paragraph (its bold
+# heading line to the first blank line, flattened), never file-wide: "operator decision", "filing bar" and
+# `fix-before-tag` already occur elsewhere in the doc, so a file-wide pin would pass on an unchanged doc.
+# A needle that wraps across lines goes through the flattened paragraph, never `pin` (line-mode grep -F).
+polish_md="$REPO_ROOT/commands/polish.md"
+mm_para="$(awk '/^\*\*The verifier'"'"'s default mutation mandate \(dir #673\)\.\*\*/{f=1} f && /^$/{exit} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
+check_ne "the §5 mutation-mandate paragraph exists (dir #783)" "" "$mm_para"
+for needle in \
+  'carries the mandate by default' \
+  'adds or changes a filter, threshold, guard or exclusion rule' \
+  $'not only the ledger\'s `code` class' \
+  'in its own mutation clone (§4 rule 5)' \
+  'Each verifier pass sweeps its own range — the commits no earlier pass swept:' \
+  '(from `<prev-rev>` when there is none yet)' \
+  'from the end of the last `Mutation sweep:` line in the verdict record' \
+  'fixed as `origin/main` resolves when the sweep starts' \
+  '— unswept (GO moved during the pass)' \
+  'no commit is swept twice' \
+  $'listing each rule swept as `file:line — what it decides` with each mutant\'s outcome' \
+  '≤ 4 mutants per rule and ≤ 40 per pass' \
+  'the mutants whose survival would let through what the rule exists to stop come first, then diff order' \
+  'recorded `unswept` with its count' \
+  $'never carried into a later pass\'s list' \
+  'Outside the bound, two more runs:' \
+  'every `fix-before-tag` pin-gap finding still open in the record — a survivor, or a gap a leg proved — has its mutant re-run' \
+  'every `Mutation candidate:` line in the reports written since the last `Mutation sweep:` line' \
+  'a pin claim a leg filed as a finding with no executed mutant is read as one' \
+  'gets one mutant' \
+  'A rule no test pins is one finding, not one per mutant' \
+  'the verifier records it in the verdict record and the orchestrator adds the row' \
+  'a survivor in a safety guard, for one, is its condition 1' \
+  'it bears on GO only as any finding does' \
+  'An `unswept` count never blocks GO, and neither does a `killed` outcome taken at an earlier SHA' \
+  'closes like any `fix-before-tag` finding (§8)' \
+  $'the verifier\'s own reading of the rewritten rule and its tests, recorded with the reason' \
+  'keeps the same finding open, never a new one' \
+  'not a behavioural finding for Clause A' \
+  'equivalent mutant' \
+  'does not put that rule back on a list' \
+  'What the mandate stops filing:' \
+  'every pin-gap finding of one run dispositioned `ticket-next`' \
+  'is staged in ONE ticket' \
+  'filed `→ pool`' \
+  'never a ticket per rule or per cluster' \
+  'a `no-action` one goes to the standing list (§8), and any other disposition takes its own route' \
+  '— nothing to sweep' \
+  '— unswept (GO moved with no verifier pass)' \
+  $'never the orchestrator\'s' \
+  '— skipped (operator decision, <date>)' \
+  'it ends that range' \
+  $'reports the mandate\'s spend in its record' \
+  $'a NO-GO leaves those commits to the next pass\'s range' \
+  $'Every re-run and candidate outcome goes into that pass\'s `Mutation sweep:` line' \
+  'no open `fix-before-tag` pin gap, no candidate' \
+  'a `fix-before-tag` one is fixed in the run'
+do
+  check_contains "mutation mandate paragraph: $needle" "$mm_para" "$needle"
+done
+# A5: retired drafts' phrases must not return to the paragraph.
+for retired in \
+  'only when its brief asks for it' \
+  'once per run' \
+  'every earlier survivor' \
+  'only if' \
+  'candidates come first' \
+  'killing test file' \
+  'at most half' \
+  'as a second line' \
+  '— no qualifying rule`' \
+  "in this pass's reports" \
+  'sees every mutant of the rewritten rule' \
+  'issues its verdict on a later SHA'
+do
+  check_absent "mutation mandate paragraph: retired phrase stays out: $retired" "$mm_para" "$retired"
+done
+# A2: §4 rule 6's `## NOT checked` bullet carries the candidate contract.
+rule6="$(awk '/^6\. \*\*Report contract\*\*/{f=1} f && /^7\. /{exit} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
+for needle in \
+  'is a finding only with an executed mutant' \
+  'outcome in its evidence' \
+  'starting `Mutation candidate:`' \
+  "the verifier's sweep runs it (§5)"
+do
+  check_contains "§4 rule 6: candidate contract: $needle" "$rule6" "$needle"
+done
+# A3: the S-final prompt carries the range-and-candidates sentence and not the retired one-sweep clause.
+sfinal_prompt="$(awk -v m='You are the verifier for a delta audit' -v RS='```' 'index($0, m) { print; exit }' "$doc")"
+sfinal_flat="$(printf '%s' "$sfinal_prompt" | tr '\n' ' ' | tr -s ' ')"
+for needle in \
+  'Before you merge verdicts, run the default mutation mandate over your own range' \
+  'every `Mutation candidate:` line written since the last `Mutation sweep:` line included' \
+  'file each new survivor as a finding'
+do
+  check_contains "S-final prompt: $needle" "$sfinal_flat" "$needle"
+done
+check_absent "S-final prompt: the retired one-sweep-per-run clause is gone" "$sfinal_flat" "already carries this run's sweep"
+# A4: the clone clause, the roles-table cells, and /polish's trigger (both legs pinned, so the two cannot drift).
+pin "§4 rule 5: a leg that both reads and mutates keeps a separate mutation clone (dir #783)" "$doc" \
+  'keeps a mutation clone used for nothing else, apart from what it reads' \
+  "expected rule 5 to separate a leg's mutation clone from the clone it reads as ground truth"
+sfinal_row="$(grep -F '| **S-final — verifier** |' "$doc")"
+s2_row="$(grep -F '| **S2…Sn — whole-read + seam auditor** |' "$doc")"
+div_row="$(grep -F '| **Diversity leg** |' "$doc")"
+check_contains "S-final roles row: may touch its own mutation clone (dir #783)" "$sfinal_row" 'its own mutation clone'
+check_contains "S2…Sn roles row: a mutation clone of its own (dir #783)" "$s2_row" 'a mutation clone of its own (§4 rule 5)'
+check_contains "diversity roles row: a mutation clone of its own (dir #783)" "$div_row" 'a mutation clone of its own (§4 rule 5)'
+pin "polish.md step 3 keeps the trigger phrase delta-audit.md reuses (dir #783)" "$polish_md" \
+  'adds or changes a filter, threshold, guard or exclusion rule' \
+  "expected commands/polish.md's mutation-pass trigger, the definition delta-audit.md's verifier mandate shares"
+
+# --- dir #810: section 10 (the disclosure-only fix round) hands a correction's numbers to the claim lint --------
+sec10="$(awk '/^## 10\. /{p=1; next} /^## 11\. /{p=0} p' "$doc")"
+check_contains "section 10 names tools/self/changelog-claims.sh (dir #810)" "$sec10" "changelog-claims.sh"
+check_contains "section 10 states the pre-cut pass condition (--strict --fragment)" "$sec10" "--strict --fragment"
+
 summary
