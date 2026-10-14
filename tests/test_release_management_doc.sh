@@ -203,13 +203,13 @@ pin "R3 points at the default direction and the hold" "$doc" \
 pin "R9 owes an install block where the build has a daily-use location" "$doc" \
   'installs the build from' \
   "expected R9 to carry the dir #596 install step"
-pin "M8 lists install next to merge, tag, publish" "$cmd" \
-  'merge, tag, publish, and install' \
+pin "M8 lists install next to tag, publish" "$cmd" \
+  'tag, publish, and install' \
   "expected M8's hand-over sentence to name install (dir #596)"
 
 # --- dir #616: the CI-wait rule rides in the worker brief beside the keep-alive contract ---------------------
 pin "R-brief item 4 carries the bounded one-backgrounded-command CI-wait rule" "$doc" \
-  'wait in ONE backgrounded command with a timeout' \
+  'wait in ONE backgrounded command and let its completion notify you' \
   "expected the worker-brief section to carry the CI-wait rule (dir #616)"
 pin "the CI-wait rule names the Claude Code tools it forbids" "$doc" \
   '`ScheduleWakeup` (for loop mode only) and `Monitor`' \
@@ -333,5 +333,123 @@ fi
 pin "release-management.md names tools/self/changelog-claims.sh at the cut (dir #810)" "$doc" \
   'changelog-claims.sh' \
   "expected the Roles brief's figure paragraph to name the claim lint"
+
+# --- dir #811 S1 (A1, A2): R14 — the release train, and the merge; the manager merges where the policy allows --------
+# A section is cut by awk into a variable, then matched with a here-string (no producer piped into a `grep -q`: the
+# dir #280 SIGPIPE race). A needle must sit on ONE line of the doc (`pin` is a line-mode `grep -F`).
+r14="$(awk '/^## R14 /{f=1} /^## What this pattern deliberately is not/{f=0} f' "$doc")"
+r2="$(awk '/^## R2 /{f=1} /^## R3 /{f=0} f' "$doc")"
+r9="$(awk '/^## R9 /{f=1} /^## R10 /{f=0} f' "$doc")"
+operator_row="$(grep -F '| **Operator** |' "$doc" || true)"
+m8="$(awk '/^\*\*M8 /{f=1} /^\*\*M9 /{f=0} f' "$cmd")"
+m7a="$(awk '/^\*\*M7a /{f=1} /^\*\*M8 /{f=0} f' "$cmd")"
+
+pin "R14 anchor: the release train, and the merge" "$doc" '## R14 — the release train, and the merge' \
+  "expected a named R14 section after R13 (dir #811)"
+check_contains "the Operator row exists (the negative pin below is not vacuous)" "$operator_row" '| **Operator** |'
+check_contains "R14 adds the policy line last, after the floor is in place" "$r14" 'only after that floor is in place'
+r14flat="$(tr '\n' ' ' <<< "$r14" | tr -s ' ')"
+check_contains "R14's intake report lists the merge modes in precedence order" "$r14flat" 'the first that applies of `merges: operator (no policy line)`, `merges: operator (deny in place)` or `merges: manager (deny lifted)`'
+check_contains "R14: a gate absent or not wired is a setup defect, never a fallback case" "$r14flat" 'absent or not wired'
+check_contains "R14: a refusal the gate actually issues stays the fallback's case (2)" "$r14flat" "a refusal the gate actually issues stays the fallback's case (2)"
+check_contains "R14: the floor's end-to-end check is stopped by the gate itself, not the harness" "$r14flat" 'is stopped by the gate itself, with the gate'\''s reason, and not by the harness'
+check_contains "R14: the floor's end-to-end check uses a PR number that does not exist" "$r14flat" 'the check must use a PR number that does not exist, since a missing floor lets it merge'
+check_contains "R14: only the manager's own missing --merge or head pin is fixed and retried once" "$r14flat" 'the manager'\''s own missing `--merge` or head pin is not this case: it is fixed and retried once per PR, and a second denial is this case'
+check_contains "R14: the gate's denials include a missing --merge" "$r14flat" '`--merge` is missing, or the head pin is not a full sha'
+check_contains "R14's fallback names the harness denial still in place" "$r14flat" 'a harness denial still in place'
+check_contains "Operator row names the train's review depth" "$operator_row" 'the review depth of a train'
+check_absent "Operator row no longer carries the merge, in any wording (merges, merging, merge queue)" "$operator_row" 'merg'
+check_contains "Operator row states the class rule (a touchpoint is a decision)" "$operator_row" 'a different answer changes what happens next'
+check_contains "R9 hands the merge to the manager under R14" "$r9" "merges are the manager's under R14"
+check_absent "R9 no longer lists the merge queue as an operator hand-over" "$r9" 'a merge queue, the tag'
+check_contains "R9 keeps the paste-ready merge block as R14's fallback" "$r9" "only as R14's fallback"
+check_contains "R2 lands a wave's ready PRs as one train" "$r2" 'land as one train (R14)'
+check_absent "R2 no longer hands the train's merge to the operator" "$r2" 'And the operator merges it with a merge commit'
+for needle in 'no more pushes; ok' '--match-head-commit' 'merge-tree' '--no-ff' 'git merge-base --is-ancestor' \
+  'KEEL-MANAGER-MERGES' 'HELD' 'never force-push'; do
+  check_contains "R14 carries: $needle" "$r14" "$needle"
+done
+for needle in 'MERGED #N as' 'REFUSED #N' 'DIALOG train k' 'ALWAYS opens the dialog' 'update-branch' \
+  'merges: manager (deny lifted)' 'merges: operator (no policy line)' "the operator's standing decision" \
+  'first GitHub refusal' 'never routed around' 'HELD #N' 'resolved by the LATER PR'; do
+  check_contains "R14 carries: $needle" "$r14" "$needle"
+done
+check_absent "R14 names no merge queue (dir #784 closed: keel enables none)" "$r14" 'merge queue'
+check_absent "R14 names no tool script (dir #811 S3 adds it)" "$r14" 'release-train.sh'
+check_contains "manage-release has the M7a step naming R14" "$m7a" 'R14'
+check_contains "M8 hands over tag, publish and install, not the merge" "$m8" 'tag, publish, and install'
+check_absent "M8 no longer lists the merge among the hand-over actions" "$m8" 'merge, tag, publish, and install'
+check_contains "M8 points at R14 for the merge" "$m8" 'R14'
+pin "polish-guide Step 4 points at R14's train dialog carve-out" "$REPO_ROOT/commands/polish-guide.md" \
+  'A release train always asks' "expected Step 4 to carry the one pointer sentence to R14 (dir #811 B8d)"
+
+# --- dir #826 #827 #828 #832 #823: the release-management riders --------------------------------------------------
+check_absent "the CI-wait rule no longer says 'with a timeout' (it invites GNU timeout on macOS; dir #826, dir #828)" "$doc_body" 'ONE backgrounded command with a timeout'
+pin "the CI-wait rule names the missing macOS timeout binary" "$doc" \
+  'never wrap it in `timeout`' \
+  "expected the brief's CI-wait line to say background the watch itself (dir #826 item 6, dir #828 (a))"
+pin "R1 reads a ticket as its whole block" "$doc" \
+  '**A body is the whole block, not the heading line.**' \
+  "expected R1 to name the block read (dir #827 item 3)"
+pin "R3 names the launch gate as who opened the turn" "$doc" \
+  '**The gate keys on who opened the turn' \
+  "expected R3 to say a peer-opened turn is refused even with the operator's decision inside it, and to queue a proposal card (dir #826 item 1)"
+pin "R3 gives the verify's read: the log by branch, quote second, metadata last" "$doc" \
+  "**The verify's read, at the hello and before GO,**" \
+  "expected R3 to carry the single model-verify order (dir #826 item 4, dir #827 item 2, dir #823 items 1-2)"
+pin "the brief carries the same-turn rule beside the CI-wait rule" "$doc" \
+  '**Include the same-turn rule beside them** (dir #832)' \
+  "expected the worker brief to carry the checkpoint-in-the-opening-turn rule (dir #832)"
+pin "the pre-flight checklist is read from the CI workflow at brief time" "$doc" \
+  '**The checklist is read from the CI workflow at brief time' \
+  "expected the fix-round pre-flight to derive from the workflow file (dir #826 item 5)"
+pin "R6's ACK gates a merge" "$doc" \
+  '**The ACK gates a merge too (dir #823):**' \
+  "expected R6 to compare the spec's mtime with the worker's start before a merge is released (dir #823 item 7)"
+pin "R6's manager change re-verifies tooling claims" "$doc" \
+  '**The incoming manager also re-verifies the' \
+  "expected R6 to require a probe of the hand-off's tooling and environment claims (dir #828 (c))"
+pin "R9 points an audit-heavy worker at R11's stop route" "$doc" \
+  '**An audit-heavy worker reaches' \
+  "expected R9 to name the compaction stop at the fix loop and R11's route (dir #828 (b))"
+pin "R9 names the version-identity bump's owner" "$doc" \
+  '**The version-identity bump has a named owner' \
+  "expected R9 to say who carries the bump (dir #823 item 4)"
+pin "R11's observed-state clause names the turn-end-without-deliverable trigger" "$doc" \
+  '**A turn-end note without its deliverable is a probe trigger (dir #832).**' \
+  "expected R11 to make a turn-end note without its deliverable a probe trigger (dir #832)"
+pin "R14's fallback gives every reported PR one of two shapes" "$doc" \
+  '**In the fallback, every PR the manager reports carries exactly one of two shapes' \
+  "expected R14's fallback to carry the ready-block-or-do-not-merge rule (dir #826 item 3, dir #827 item 1)"
+deleg_flat="$(tr '\n' ' ' < "$delegation" | tr -s ' ')"
+check_contains "delegation.md's verify order names the log as the arbiter of a disagreement (dir #826 item 4)" "$deleg_flat" \
+  'a disagreement between them is an observation with two alternatives, settled by the log (find it by branch'
+check_contains "delegation.md's hold step checks the tier by rule (1)'s order" "$deleg_flat" "the launcher checks the tier by rule (1)'s order"
+pin "delta-audit.md's Fixer brief rows carry an executable acceptance check" "$REPO_ROOT/docs/delta-audit.md" \
+  '**A Fixer'"'"'s brief is rows of finding plus an executable acceptance check' \
+  "expected delta-audit.md to carry the fix-batch brief shape (dir #826 item 2)"
+
+# the rules' bodies, not only their headings (a heading pin stays green when the paragraph is rewritten)
+pin "R3's gate paragraph queues a refused launch as a proposal card" "$doc" \
+  'can make on its own is one made on a turn the operator opened' \
+  "expected R3 to say which launches the manager makes itself (dir #826 item 1)"
+pin "R3's verify follows delegation.md's order: running tier, trailer, metadata last" "$doc" \
+  "follows \`docs/delegation.md\`'s order: running-tier evidence" \
+  "expected R3's verify read to point at delegation.md's order, not a third one (dir #826 item 4)"
+pin "R3's verify settles a disagreement by the log, never against the worker" "$doc" \
+  'recorded with both and settled by the log, never a finding against the worker' \
+  "expected R3 to treat a quote/metadata disagreement as an observation (dir #823 item 1)"
+pin "R6's merge ACK is named by R14's precondition (c)" "$doc" \
+  'and so does a spec amendment the worker has not ACKed (R6)' \
+  "expected R14 (c) to carry the amendment-ACK hold (dir #823 item 7)"
+pin "R6's ACK paragraph names R14's precondition (c)" "$doc" \
+  "(R14's precondition (c) names this check)" \
+  "expected R6's ACK clause to point back at R14 (c) (dir #823 item 7)"
+pin "R14's fallback reports a bare status line as neither shape" "$doc" \
+  'neither shape and is not sent' \
+  "expected the fallback to refuse a bare status report (dir #827 item 1)"
+pin "the CI-wait rule says to background the watch itself" "$doc" \
+  'so background the watch itself and never wrap it in' \
+  "expected the CI-wait line to give the portable instruction (dir #828 (a))"
 
 summary

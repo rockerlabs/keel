@@ -4,7 +4,7 @@ argument-hint: <version>
 ---
 You are the **release manager** for `$ARGUMENTS`, per
 [`docs/release-management.md`](../docs/release-management.md) — the procedure. This command is a
-POINTER and an ordered checklist, never a restatement: the roles, the requirements (R1–R13), and the
+POINTER and an ordered checklist, never a restatement: the roles, the requirements (R1–R14), and the
 worker-brief shape stay in the doc and are adopted by reference. Where this checklist's compression
 disagrees with the doc's own text, the doc wins.
 (On an install where the adopter already owns the `/manage-release` name, `install.sh`'s generic
@@ -21,11 +21,16 @@ found → say so and stop; a blank beats a wrong guess.
 
 **M2 — intake (R1).**
 Read every slate ticket's BODY and re-verify its claims and line citations against the live tree
-before briefing anyone — never assign from headings alone.
+before briefing anyone — never assign from headings alone. Read the merge mode (R14: the project's
+`KEEL-MANAGER-MERGES` line, the harness deny on `gh pr merge`) and state it in the intake report.
 
 **M3 — wave plan (R2).**
 Cut waves by file overlap. Assume every PR collides in `CHANGELOG.md` at the `[Unreleased]` anchor,
-unless the project keeps changelog fragments (keel does, dir #744) — merges serialize as a consequence (strict up-to-date still forces it); an integration or train PR is the operator's alternative to serial merging — name each option's price (R2), with R5 on every constituent head. Show the operator the wave plan before wave 1 starts.
+unless the project keeps changelog fragments (keel does, dir #744) —
+merges serialize as a consequence (strict up-to-date still forces it); a train pays that price once per
+wave (R14), and where the project's policy leaves the merge with the operator, a train is the operator's
+alternative to serial merging — name each option's price (R2), with R5 on every constituent head. Show the
+operator the wave plan before wave 1 starts.
 
 **M4 — launch workers (R3), one brief shape (see the doc's worker-brief section), single writer to
 the backlog (R8).**
@@ -52,13 +57,21 @@ Fixed sessions-per-wave at plan time, a budget check before each wave
 ([`docs/delegation.md`](../docs/delegation.md)'s session-limit flow), a numeric bound on every retry
 and review round. Hitting a bound stops the loop and escalates in one line — never silent retries.
 
+**M7a — the train and the merge (R14).**
+Where two or more PRs are ready, cut a train (R14): the composition from the freeze lines, a train worker for
+the build, the verification and the seam review (its `/polish` step-4 dialog is the operator's one decision
+per train), then merge under R14's preconditions — merge commit, head pinned, one health line per merge. A
+lone ready PR merges alone. Where the project's policy leaves the merge with the operator, build the train
+the same way and hand over the merge as R9's block.
+
 **M8 — close checklist (R9).**
 Run your project's release-candidate delta audit — keel's own is `/delta-audit <version>` — before
 cutting the tag; fall back to reading the release-readiness doc directly where the entrypoint doesn't
 exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses. Compose the release
 notes yourself from the `CHANGELOG.md` section at the verified GO SHA, before the tag exists; hand the
-operator every remaining action (merge, tag, publish, and install where the build has a daily-use
-location) as one copy-paste-ready command block, re-derived live. Complete the run's cost line (R7), summed at the weights the groom's
+operator every remaining action (tag, publish, and install where the build has a daily-use
+location) as one copy-paste-ready command block, re-derived live; the merges are yours under R14 where the
+project's policy allows. Complete the run's cost line (R7), summed at the weights the groom's
 estimate names, in your project's releases cross-run record — named by its full path, never the audits'
 record (keel: `private/releases/RUNS.md`); the release is not closed while that row still carries the
 groom's placeholder.

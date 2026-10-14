@@ -346,6 +346,9 @@ Steps, in order:
    - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
      the recommended level pre-selected and a **skip** option always present; let the human override.
 
+   **A release train always asks.** Its review is seam-sized, not diff-sized, so this step opens the dialog
+   for it whatever the bucket, with the manager's level pre-selected (`docs/release-management.md` R14).
+
    **Marker rule, shared by every dialog above that offers a `skip` option (dir #118):** end that dialog's
    own question with the literal line `KEEL-DEPTH-DIALOG` — plain text, no markdown formatting, no
    `level=` suffix, nothing after it but optional trailing whitespace — in the SAME dialog the human sees
