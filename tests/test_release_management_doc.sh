@@ -375,7 +375,9 @@ for needle in 'MERGED #N as' 'REFUSED #N' 'DIALOG train k' 'ALWAYS opens the dia
   check_contains "R14 carries: $needle" "$r14" "$needle"
 done
 check_absent "R14 names no merge queue (dir #784 closed: keel enables none)" "$r14" 'merge queue'
-check_absent "R14 names no tool script (dir #811 S3 adds it)" "$r14" 'release-train.sh'
+for needle in 'release-train.sh build' 'release-train.sh body' 'release-train.sh check' 'build --continue'; do
+  check_contains "R14 names the train tool (dir #811 S3): $needle" "$r14" "$needle"
+done
 check_contains "manage-release has the M7a step naming R14" "$m7a" 'R14'
 check_contains "M8 hands over tag, publish and install, not the merge" "$m8" 'tag, publish, and install'
 check_absent "M8 no longer lists the merge among the hand-over actions" "$m8" 'merge, tag, publish, and install'
