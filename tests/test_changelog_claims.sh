@@ -373,7 +373,7 @@ check_eq "846-1: ...one claim per line, nothing else" "4" "$(count_of "$OUT" '^U
 d="$(one_frag $'- step 5 runs the gate; exit 0 with output; exits 2 on failure; phase 7 said so; line 56 now; steps 1, 2 and 4 are done; status 4 means no\n- item 3, round 2: and lines 5-9 in a.sh\n')"
 run "$ccl" --repo "$d"
 check_contains "846-1: references followed by a verb, a connective or punctuation stay excluded" "$OUT" "changelog-claims: 0 claim(s)"
-d="$(one_frag $'- step 3 added a check\n- phase 2 changed\n- round 2 findings\n- step 5 times out\n- step 2 session\n- see step 4 line 56 of a.sh\n- slice 2 file x.sh\n- round 3 error path\n')"
+d="$(one_frag $'- step 3 added a check\n- phase 2 changed\n- round 2 findings\n- step 5 times out\n- step 2 session\n- see step 4 line 56 of a.sh\n- slice 2 file x.sh\n- round 3 error path\n- see step 1 commit message\n- phase 1 file x.sh\n- round 1 error path\n')"
 run "$ccl" --repo "$d"
 check_contains "846-1: ambiguous nouns and a change verb after a non-lines reference stay references" "$OUT" "changelog-claims: 0 claim(s)"
 d="$(one_frag "$(printf '%s\n' '- it returns 1 value' '- the suite passes 1 test' '- exit 1 file')")"
