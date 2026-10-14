@@ -99,6 +99,12 @@ printf '#!/usr/bin/env bash\nload() {\n  . "$(dirname "$0")/lib.sh" || exit 1\n}
 run bash "$d/run.sh"
 check_status "an indented lib.sh source is still held to a summary line" 1 "$STATUS"
 
+# A comment that merely mentions sourcing lib.sh does not put a lib-less file under the rule.
+d="$(mkfake)"
+printf '#!/usr/bin/env bash\n# we do not source tests/lib.sh here\necho comment-only\nexit 0\n' > "$d/test_comment.sh"
+run bash "$d/run.sh"
+check_status "a comment mentioning lib.sh is not a source line" 0 "$STATUS"
+
 # A file that never sources lib.sh has no summary to owe (the synthetic fixtures of tests/test_run_sh.sh).
 d="$(mkfake)"
 printf '#!/usr/bin/env bash\necho no-lib\nexit 0\n' > "$d/test_nolib.sh"

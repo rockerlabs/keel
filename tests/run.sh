@@ -503,14 +503,16 @@ SHIM
   # dir #772: does test file $1, whose whole log is $2, owe a verdict line it did not print? True only when the log
   # has no `<file>: N passed, M failed` line of its own (anchored: the phrase mid-line, or another file's name, is
   # not a verdict) AND the file sources lib.sh — anywhere, indented or after `&&`, not only at column 0 —
-  # because tests/test_run_sh.sh's synthetic fixtures source nothing and have no summary to owe. The log match
+  # because tests/test_run_sh.sh's synthetic fixtures source nothing and have no summary to owe. A `#` before the
+  # `.`/`source` on its line excludes it (a comment); a string that merely says "source lib.sh" still counts — a
+  # spurious failure for a fixture that mentions it, the fail-closed side. The log match
   # runs first and is pure bash, so the one `grep` forks only for a file whose log lacks the line, never in the
   # all-green case. Not set -e safe on purpose: a plain status.
   guard_summary_owed() {
     local name="$1" log="$2" re nl=$'\n'
     re="(^|$nl)${name//./[.]}: [0-9]+ passed, [0-9]+ failed($|$nl)"
     [[ $log =~ $re ]] && return 1
-    grep -qE '(^|[[:space:];&|(])(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/$name" 2>/dev/null
+    grep -qE '^[^#]*(^|[[:space:];&|(])(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/$name" 2>/dev/null
   }
 
   # Wait for and report every job in active_* whose process has already exited, compacting the
