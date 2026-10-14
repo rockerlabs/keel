@@ -571,33 +571,34 @@
 # segments resolved, a `.json` suffix), and an API write is read as a merge, fail-closed, when its path holds
 # `{branch}` or `:branch` (a branch name is arbitrary text, `/` and `#` included), or a `%` escape, an inner dot
 # segment or a `;` together with `pulls` or `merge` (before or after decoding), or any gh placeholder together with a
-# dot segment (leading or inner) or a `//` that is no `scheme://`, or `{owner}`/`{repo}` where that part could stand
-# for `pulls` or `merge` in the last three segments of the raw or the decoded path, dot segments resolved in either
-# order. For a listed manager in an opted-in project (whose every merge the deny used to block), two more weaken only
-# the flag check: a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`), and a merge aimed at
-# another repository than the event cwd's (`-R`, a `cd` in the command), judged by the cwd's file and policy line.
-# Without jq the whole hook is inert (its documented choice, above), this rule included: lift the deny only where jq
-# is installed. Accepted costs: a segment whose command word is not gh but which holds a gh word followed by unquoted
-# `pr … merge` or `api … <merge endpoint>` is denied to every session (`echo gh pr merge`, `nice git log --grep gh pr
-# merge`, a manager's `timeout 60 gh pr merge …`, a read of the endpoint behind a runner), an API write to a
-# `{branch}` path, or to an irregular path holding `pulls` or `merge`, or to a placeholder path with a dot segment or
-# a `//` that is no `scheme://`, that is no merge is denied as one (`gh api -X PUT
-# repos/{owner}/{repo}/branches/{branch}/protection`, `…/contents/merge-notes/./pulls.md`), behind a runner any word
-# after an unquoted `api` that holds a `{branch}`, or a placeholder together with a dot segment or a `//` that is no
-# `scheme://`, or could be the endpoint, is unread, a flag's value or a read included (`timeout 60 gh pr create
-# --label api --body "see {branch}"`), and an API write to a full URL with a placeholder in its host, or with a `./`
-# or `../` right after the host beside `pulls`/`merge`, is denied as a merge, and so is any gh command holding an
-# unquoted `pr`, then `merge`, that is not a pr merge (`gh pr comment 5 --body merge`, `gh issue create --title fix
-# pr merge`), or a `--` before its subcommand; a word after a `--` that is no flag to gh is still read as one (a
-# manager's `… -- --admin` is denied); a merge behind a runner even when it asks for `--help`, and a merge after a
-# boolean flag gh knows before its subcommand (`gh --version pr merge`) — quote a word merge that is text, or run gh
-# first; a word `xargs` that a wrapper's flag consumes reads as xargs (`env -C xargs gh …`); a second word gh — or a
-# word ending in /gh, such as `-R org/gh` — in a merge segment, quoted or not, makes it unread (`gh pr merge 5
-# --subject gh` — rephrase it); a gh command holding an unquoted `api` and a merge-endpoint path that are not its own
-# is unread (`gh issue comment 5 --body api see/pulls/5/merge`); any CLAUDE.md line carrying the token opts the
-# project in, a sentence that only mentions it included; and a main session started with `--agent` carries
-# `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a release
-# manager without `--agent`.
+# dot segment (leading or inner) or a `//` other than a `scheme://` with a non-slash after it, or `{owner}`/`{repo}`
+# where that part could stand for `pulls` or `merge` in the last three segments of the raw or the decoded path, dot
+# segments resolved in either order. For a listed manager in an opted-in project (whose every merge the deny used to
+# block), two more weaken only the flag check: a flag word the shell assembles at run time (`$FLAGS`,
+# `--admin$(true)`), and a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command),
+# judged by the cwd's file and policy line. Without jq the whole hook is inert (its documented choice, above), this
+# rule included: lift the deny only where jq is installed. Accepted costs: a segment whose command word is not gh but
+# which holds a gh word followed by unquoted `pr … merge` or `api … <merge endpoint>` is denied to every session
+# (`echo gh pr merge`, `nice git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the
+# endpoint behind a runner), an API write to a `{branch}` path, or to an irregular path holding `pulls` or `merge`,
+# or to a placeholder path with a dot segment or a `//` other than a `scheme://` with a non-slash after it, that is
+# no merge is denied as one (`gh api -X PUT repos/{owner}/{repo}/branches/{branch}/protection`,
+# `…/contents/merge-notes/./pulls.md`), behind a runner any word after an unquoted `api` that holds a `{branch}`, or
+# a placeholder together with a dot segment or a `//` other than a `scheme://` with a non-slash after it, or could be
+# the endpoint, is unread, a flag's value or a read included (`timeout 60 gh pr create --label api --body "see
+# {branch}"`, `timeout 60 gh api repos/{owner}/{repo}/issues -f "body=open file:///tmp/{owner}"`), and an API write
+# to a full URL with a placeholder in its host, or with a `./` or `../` right after the host beside `pulls`/`merge`,
+# is denied as a merge, and so is any gh command holding an unquoted `pr`, then `merge`, that is not a pr merge (`gh
+# pr comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--` before its subcommand; a word after
+# a `--` that is no flag to gh is still read as one (a manager's `… -- --admin` is denied); a merge behind a runner
+# even when it asks for `--help`, and a merge after a boolean flag gh knows before its subcommand (`gh --version pr
+# merge`) — quote a word merge that is text, or run gh first; a word `xargs` that a wrapper's flag consumes reads as
+# xargs (`env -C xargs gh …`); a second word gh — or a word ending in /gh, such as `-R org/gh` — in a merge segment,
+# quoted or not, makes it unread (`gh pr merge 5 --subject gh` — rephrase it); a gh command holding an unquoted `api`
+# and a merge-endpoint path that are not its own is unread (`gh issue comment 5 --body api see/pulls/5/merge`); any
+# CLAUDE.md line carrying the token opts the project in, a sentence that only mentions it included; and a main
+# session started with `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a
+# subagent and is denied — start a release manager without `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2571,8 +2572,9 @@ function mg_gh(j,   n) {
 # set (the word may be gh’s own endpoint, not another command’s text) a segment holding a part gh fills in
 # (`{owner}`, `{repo}`, `:owner`, `:repo`) may stand for `pulls` or `merge`, a `{branch}`/`:branch` counts outright
 # (arbitrary text, `/` and `#` included), and a `%` escape, a `;` or an inner dot segment in a word holding `pulls`
-# or `merge`, before or after decoding, counts too, and so does a dot segment (leading or inner) or a `//` that is no
-# `scheme://` in a word holding any part gh fills in — fail-closed where gh’s or GitHub’s reading could differ.
+# or `merge`, before or after decoding, counts too, and so does a dot segment (leading or inner) or a `//` other
+# than a `scheme://` with a non-slash after it in a word holding any part gh fills in — fail-closed where gh’s or
+# GitHub’s reading could differ.
 function mg_hex(h) { return (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1 }
 # mg_dec(s) — s with its `%XX` escapes decoded, lower-cased.
 function mg_dec(s,   n, k, p, h, d) {

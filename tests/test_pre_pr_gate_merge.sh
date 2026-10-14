@@ -342,11 +342,13 @@ done
 deny "(g) a misplaced gh command holding api and pulls//5//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls//5//../merge" "$P" "$OTHER"
 allow "(g) behind a runner, a URL with a placeholder in a value is no endpoint" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\"" "$P" "$OTHER"
 deny "(g) an inner a:// is no scheme: the path keeps its segments" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/merge/a://x/../.." "$P" "$OTHER"
+# The run of b is long on purpose: an unanchored match would cut from a:// on, and only a host part longer than
+# `repos/{owner}` makes the wrong slice of the head read as a placeholder in a host (M138).
 for c in "gh api -X PATCH repos/{owner}/a://bbbbbbbbbbbbbbbb -f x=y" "gh api -X PUT https://pulls/5/merge -f x=y"; do
-  ev_gate "$c" "$P" "$OTHER"
-  check_absent "(f) only a leading scheme://host is cut, and it is cut: [$c]" "$OUT" "merge rule"
+  allow "(f) only a leading scheme://host is cut, and it is cut: [$c]" "$c" "$P" "$OTHER"
 done
 deny "(f) x:/// beside a placeholder keeps its //" "$R_API" "gh api -X PUT repos/{owner}/{repo}/x:///y -f x=y" "$P" "$OTHER"
+deny "accepted cost: behind a runner, a scheme:// with a slash after it beside a placeholder is a //" "$R_UNREAD" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=open file:///tmp/{owner}\"" "$P" "$OTHER"
 deny "accepted cost: a placeholder in a full URL's host" "$R_API" "gh api -X POST https://{owner}.example.com/hooks -f x=y" "$P" "$OTHER"
 deny "(g) an inner a:// leaves the segment before it alone" "$R_UNREAD" "gh pr --x api https://api.github.com/repos/o/r/pulls/5/merge/a://../.." "$P" "$OTHER"
 for c in "gh api -X PUT :branch://api.github.com/repos/o/r/x" "gh api -X PUT x/:branch://api.github.com/repos/o/r/x" \
