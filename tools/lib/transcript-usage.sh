@@ -139,9 +139,11 @@ tu_files_for_branches() {
     # A plain substring grep is a cheap prefilter (a superset of what jq matches, so it assumes nothing about
     # the record's JSON spacing): only a file naming some branch is parsed.
     if [ "$prefilter" -eq 1 ]; then grep -q -F -f "$pat" "$f" 2>/dev/null || continue; fi
-    # A file jq cannot parse is no match, never a crash.
-    jq -n -r --argjson bs "$bs" --arg f "$f" '
-      reduce (inputs | .gitBranch | select(type == "string")) as $b ({}; .[$b] = 1)
+    # Raw lines, parsed one at a time: a line that is not JSON (a truncated last line of a session still being
+    # written) or is JSON but not an object skips only itself, never the whole file (dir #848). A file jq cannot
+    # read at all is no match, never a crash.
+    jq -R -n -r --argjson bs "$bs" --arg f "$f" '
+      reduce (inputs | fromjson? | objects | .gitBranch | strings) as $b ({}; .[$b] = 1)
       | keys[] | select(. as $b | $bs | any(. == $b)) | "\($f)\t\(.)"
     ' "$f" 2>/dev/null || true
   done < <(tu_session_files "$repo_top")
