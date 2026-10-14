@@ -267,6 +267,18 @@ if [ -n "$has_personal" ]; then
   fi
 fi
 
+# --- the printable runs of a binary (dir #830) ----------------------------------------------------
+# emit_blob decodes a binary into text views and also reads its printable runs, one run per line. The old recipe put
+# a newline after EVERY non-printable byte, and incompressible data is ~63 % non-printable: a 20 MiB blob made ~12.6 M
+# tiny lines, and the class-1 grep pays a fixed ~12 µs per line however short it is (measured on macOS BSD grep) —
+# ~3 min of CPU, minutes more on a loaded machine. Class 1 now reads no run view: every class-1 pattern is
+# unanchored printable ASCII, so any match in a run already sits, contiguous, in the NUL-stripped view (a run is a
+# substring of it), and the runs add no class-1 hit. tests/test_secret_guard_binary_cost.sh pins that premise (no
+# `^` or `$` in a class-1 pattern). The personal literals are arbitrary EREs — an anchored one can match a run and
+# nothing else, since the other views keep the junk around it on the line — so their passes read the runs, squeezed
+# to one line per maximal run, in a second file ($personal_more).
+personal_more=""   # the personal passes' second file, the squeezed printable runs (emit_blob sets it around one decode)
+
 # --- gather the hits as records ---------------------------------------------------------------------
 # dir #741 (spec 746 B10): one record is one index into five parallel arrays, so a label never reads as
 # content: the allow channels each read their own field (the filter loop below), and a file name holding
@@ -308,7 +320,7 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
     LC_ALL=C grep -aE $flags -e "${extra:+$extra|}$joined" "$f" 2>/dev/null || rc1=$?
     if [ -n "$has_personal" ]; then
       # shellcheck disable=SC2086
-      LC_ALL=C grep -aiE $flags -f "$personal_pat" "$f" 2>/dev/null || rc2=$?
+      LC_ALL=C grep -aiE $flags ${personal_more:+-h} -f "$personal_pat" "$f" ${personal_more:+"$personal_more"} 2>/dev/null || rc2=$?
       pu_grep "$flags" "$f" || rc3=$?
     fi
     [ "$rc1" -le 1 ] || exit "$rc1"
@@ -322,15 +334,21 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
 # sequence still converts whole (unpadded, iconv exits 1 on macOS/glibc and truncates on musl); the padding
 # adds lines after the last, so `-n` numbers hold. No iconv, or a sanitizer that fails → FILE itself (the
 # pre-746 behaviour), never no pass. Returns grep's status. One copy at a time, overwritten in $SCRATCH:
-# callers run one after another.
+# callers run one after another. A non-empty $personal_more (emit_blob's unfiltered printable runs, dir #830) is a
+# second file the personal passes read after FILE; it joins the converted copy, or is read beside FILE when the
+# conversion fails.
 pu_grep() {
-  local u8="$2"
+  local u8="$2" u8b="$personal_more"
   if command -v iconv >/dev/null 2>&1; then
     u8="$SCRATCH/u8"
-    { cat "$2"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null || u8="$2"
+    if { cat "$2" ${personal_more:+"$personal_more"}; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null; then
+      u8b=""
+    else
+      u8="$2"
+    fi
   fi
   # shellcheck disable=SC2086  # $1 intentionally word-split
-  grep -aiE $1 -f "$personal_pat" "$u8" 2>/dev/null
+  grep -aiE $1 ${u8b:+-h} -f "$personal_pat" "$u8" ${u8b:+"$u8b"} 2>/dev/null
 }
 
 # fast-path hit count for one spooled scan FILE — the shared shape of every --range pre-check (blob
@@ -416,6 +434,10 @@ collect_matches() {
 # non-ASCII literals under UTF-8 (pinning `LC_ALL=C` around the grep instead would fix the miss but
 # lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
 # pass — covers any pass added here later for free, with no line to remember to re-append.
+# The decode file ($dec) holds every decoded view of the blob: ~5.6x its size for incompressible data (a 20 MiB blob
+# made ~113 MB: the NUL-stripped bytes, two UTF-16 and two UTF-32 conversions, which turn random bytes into larger
+# text; before dir #830 it also held a 20 MB printable-runs view, hence the ~133 MB seen). That is inherent to
+# decoding every encoding, and linear. The runs view was the problem (its per-line cost, not its size), see above.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
   # its caller's `||` turns errexit off in here (emit_file), so each read returns its own status
@@ -459,10 +481,18 @@ emit_blob() {  # $1 = record label (path)
         END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
       ' || exit $?; echo
     fi
-    LC_ALL=C tr -c '[:print:]\t\n' '\n' < "$tmp" || exit $?; echo  # raw printable runs
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
+  # the personal passes also read the printable runs, one line per maximal run (the comment above $personal_more).
+  # The set is the printable ASCII range ` -~` plus tab, not `[:print:]`: busybox tr does not take the class (it reads
+  # it as the letters p, r, i, n, t and the brackets), which left the old runs view all but empty on Alpine.
+  personal_more=""
+  if [ -n "$has_personal" ]; then
+    personal_more="$(spool)" || return $?
+    LC_ALL=C tr -cs ' -~\t' '\n' < "$tmp" > "$personal_more" || return $?
+  fi
   collect_matches "$label" "$dec" -o
-  rm -f "$tmp" "$dec"
+  rm -f "$tmp" "$dec" ${personal_more:+"$personal_more"}
+  personal_more=""
 }
 
 # route one unit of content by type: binary → the decode pass, text → line matching with line numbers.
