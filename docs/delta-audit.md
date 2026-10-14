@@ -275,6 +275,15 @@ batching, accepted-findings-only, escalation triggers) apply here unchanged, so 
 Once a fix PR is in review, it is an ordinary PR under
 [`docs/release-audit.md`](release-audit.md) phase 5's own round budget.
 
+**A Fixer's brief is rows of finding plus an executable acceptance check, and a verdict's proposed prose is never its
+premise (dir #826).** Each row is one finding and one command whose result says it is fixed. A sentence a verifier
+proposed as replacement prose is marked "re-derive from the tree, do not copy", and so is every line citation lifted
+from a verdict. One run shows why: a verifier's proposed sentence was false against the code (it called a key the
+rollback key only, where the code falls back to that key as the router key), went into a README, and then, relayed
+verbatim by the manager, into an alert text; two more proposed sentences shipped into a docstring and a comment and were
+findings of the next pass; only the Fixer that re-derived its line citations from the tree found them stale. So a
+manager's amendment relays quote the finding, never a proposed sentence.
+
 ## 6. Read order and incremental writing
 
 **Binding on every whole-read session prompt this procedure generates:**
