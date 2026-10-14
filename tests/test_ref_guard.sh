@@ -139,4 +139,83 @@ else
     "expected this to STILL be exempted (before=[$before_unowned] after=[$after_unowned]) — if this now fails, the scoping logic changed: update this test AND tools/lib/ref-guard.sh's header comment together, don't just silence the assertion"
 fi
 
+# --- guard_refs_unexplained (dir #768): the scoped compare tests/run.sh's canary reports from ------------------------
+# ur ROWS: a repo with main (owned) plus unowned branches, snapshots taken by hand around each change.
+ur="$(new_repo)"
+git -C "$ur" commit -q --allow-empty -m one
+git -C "$ur" commit -q --allow-empty -m two
+ur_main="$(git -C "$ur" branch --show-current)"
+unexplained() { # BEFORE_SNAPSHOT — the rows for the repo's current state, main owned
+  guard_refs_unexplained "$ur" "$ur_main" "$1" "$(guard_refs_snapshot "$ur")"
+}
+
+before="$(guard_refs_snapshot "$ur")"
+check_eq "unexplained: nothing changed -> no rows" "" "$(unexplained "$before")"
+
+git -C "$ur" branch merged-one HEAD~1
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -D merged-one >/dev/null
+check_eq "unexplained: a merged unowned branch deleted -> no rows (its tip is still on main)" "" "$(unexplained "$before")"
+
+git -C "$ur" branch lag HEAD~1
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -f lag HEAD
+check_eq "unexplained: an unowned branch fast-forwarded -> no rows" "" "$(unexplained "$before")"
+git -C "$ur" branch -D lag >/dev/null
+
+git -C "$ur" checkout -q -b own-work
+git -C "$ur" commit -q --allow-empty -m only-here
+git -C "$ur" checkout -q "$ur_main"
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -D own-work >/dev/null
+out="$(unexplained "$before")"
+check_contains "unexplained: an unowned branch with commits no ref reaches, deleted -> a '-' row" "$out" "- own-work "
+
+# empty BEFORE snapshot of unowned branches (only main existed): a new branch is a '+' row. The case an awk
+# FNR==NR join gets wrong, because its first file is empty.
+only_main="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch fresh
+out="$(unexplained "$only_main")"
+check_contains "unexplained: first unowned branch appearing (empty before side) -> a '+' row" "$out" "+ fresh "
+git -C "$ur" branch -D fresh >/dev/null
+
+# empty AFTER side: the only unowned branch is deleted with its commits lost.
+git -C "$ur" checkout -q -b solo
+git -C "$ur" commit -q --allow-empty -m solo-only
+git -C "$ur" checkout -q "$ur_main"
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -D solo >/dev/null
+out="$(unexplained "$before")"
+check_contains "unexplained: the last unowned branch deleted (empty after side) -> a '-' row" "$out" "- solo "
+
+# a rename is a delete plus a create: the old name's tip survives under the new name, so only the '+' shows.
+git -C "$ur" checkout -q -b old-name
+git -C "$ur" commit -q --allow-empty -m renamed-work
+git -C "$ur" checkout -q "$ur_main"
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -m old-name new-name
+out="$(unexplained "$before")"
+check_contains "unexplained: a rename -> the new name is a '+' row" "$out" "+ new-name "
+check_absent "unexplained: a rename -> the old name is not reported lost (its tip lives on under the new name)" "$out" "- old-name"
+git -C "$ur" branch -D new-name >/dev/null
+
+# the same name deleted and re-created elsewhere: the old tip is gone from every ref -> a '~' row.
+git -C "$ur" checkout -q -b recycled
+git -C "$ur" commit -q --allow-empty -m first-life
+git -C "$ur" checkout -q "$ur_main"
+before="$(guard_refs_snapshot "$ur")"
+git -C "$ur" branch -D recycled >/dev/null
+git -C "$ur" branch recycled HEAD
+out="$(unexplained "$before")"
+check_contains "unexplained: a name re-created at a different tip, old tip unreachable -> a '~' row" "$out" "~ recycled "
+
+# an OWNED branch moving (a peer worktree's own commit) is never reported.
+peer_wt="$SANDBOX/ur-peer.$$"
+git -C "$ur" worktree add -q -b peer-owned "$peer_wt"
+owned_b="$(guard_owned_branches "$ur")"
+before="$(guard_refs_snapshot "$ur")"
+git -C "$peer_wt" commit -q --allow-empty -m peer-commit
+check_eq "unexplained: a branch another worktree owns moving -> no rows" "" \
+  "$(guard_refs_unexplained "$ur" "$owned_b" "$before" "$(guard_refs_snapshot "$ur")")"
+
 summary

@@ -459,15 +459,18 @@ git -C "$r14" branch -D t14-unowned-leak >/dev/null
 # false-tripping on a sibling worktree's own ordinary branch churn.
 repo_root_owned_after_self="$(guard_owned_branches "$REPO_ROOT")"
 repo_root_refs_after_self="$(guard_refs_snapshot "$REPO_ROOT")"
-repo_root_refs_before_self_unowned="$(repo_root_self_check_unowned "$repo_root_owned_before_self" "$repo_root_owned_after_self" "$repo_root_refs_before_self")"
-repo_root_refs_after_self_unowned="$(repo_root_self_check_unowned "$repo_root_owned_before_self" "$repo_root_owned_after_self" "$repo_root_refs_after_self")"
-if [ "$repo_root_refs_before_self_unowned" = "$repo_root_refs_after_self_unowned" ]; then
+# dir #768: the same scoped compare tests/run.sh's canary uses (guard_refs_unexplained), not a second copy of the
+# ownership-only filter — a peer's branch-cleanup sweep or a forward move of a branch checked out nowhere, landing
+# while this file runs, is ordinary concurrent work and must not fail it. A NEW unowned branch, or one whose old
+# tip no ref reaches any more, still does.
+repo_root_refs_unexplained="$(guard_refs_unexplained "$REPO_ROOT" "$(guard_union "$repo_root_owned_before_self" "$repo_root_owned_after_self")" "$repo_root_refs_before_self" "$repo_root_refs_after_self")"
+if [ -z "$repo_root_refs_unexplained" ]; then
   pass "self-check: REPO_ROOT's own unowned refs/heads branches are unchanged after every fixture above"
 else
   fail "self-check: REPO_ROOT's own unowned refs/heads branches are unchanged after every fixture above" \
-    "an unowned branch appeared, moved, or disappeared in REPO_ROOT — this is a real leak, not an
-expected fixture refusal, and not explained by any sibling worktree's own branch churn. diff:
-$(diff <(printf '%s\n' "$repo_root_refs_before_self_unowned") <(printf '%s\n' "$repo_root_refs_after_self_unowned"))"
+    "an unowned branch appeared, or lost its commits, in REPO_ROOT — this is a real leak, not an
+expected fixture refusal, and not explained by any sibling worktree's own branch churn. changes:
+$repo_root_refs_unexplained"
 fi
 
 # Having proven that directly, the shared refused-log's entries can only be this file's own

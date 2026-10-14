@@ -72,11 +72,22 @@ main() {
   # entries for this run's own scratch directories. run.sh mints its per-file logdir under $TMPDIR AFTER the
   # before-snapshot, so a $TMPDIR inside the watched checkout (and not ignored) made the run's own logdir — or
   # the untracked parent it sits in — a "change" and failed the run closed. The strip is applied to both
-  # snapshots at the compare, from $guard_run_dirs (set where the logdir is minted). Named residual: a stray
-  # untracked file inside those exact directories is masked; one anywhere else still shows.
+  # snapshots at the compare, from $guard_run_dirs (set where the logdir is minted). Why a strip and not a
+  # reorder (mint the logdir first): git does not list an EMPTY directory, so a logdir minted before the snapshot is
+  # still invisible to it and shows up only once the first log lands. Named residual: a directory that already
+  # held untracked content shows the same collapsed `?? dir/` line before and after whether or not it is stripped,
+  # so a stray file inside it is invisible either way; a stray file anywhere else still shows.
   guard_strip_run_dirs() {
     [ -n "${guard_run_dirs:-}" ] || { printf '%s\n' "$1"; return 0; }
-    awk 'FNR == NR { skip[$0] = 1; next } !($0 in skip)' <(printf '%s\n' "$guard_run_dirs") <(printf '%s\n' "$1")
+    # An entry is dropped when it equals a collapsed `?? dir/` line, or when it is the logdir itself or a path
+    # under it: with status.showUntrackedFiles=all git lists the logdir's files one per line, not collapsed.
+    # Either form may be quoted (a path with a space is). A path git escapes (non-ASCII) does not match and fails
+    # closed, a false trip, never a hidden change.
+    awk -v pre="${guard_run_logdir:-}" '
+      FNR == NR { skip[$0] = 1; next }
+      $0 in skip { next }
+      pre != "" && substr($0, 1, 3) == "?? " { q = substr($0, 4); sub(/^"/, "", q); if (index(q, pre) == 1) next }
+      { print }' <(printf '%s\n' "$guard_run_dirs") <(printf '%s\n' "$1")
   }
 
   # guard_unique_lines A B — the lines found in only one of two snapshots (`comm -3`: POSIX, present on
@@ -428,16 +439,17 @@ main() {
   # untracked directory into its topmost new one). Read by guard_strip_run_dirs at the compare below.
   # Both sides are compared as PHYSICAL paths (`pwd -P`): $TMPDIR is spelled however the caller spelled it
   # (macOS /var vs /private/var, a symlinked checkout), while git's status paths are relative to the real root.
-  guard_run_dirs=""
+  guard_run_dirs="" guard_run_logdir=""
   guard_pl="$(cd "$logdir" 2>/dev/null && pwd -P)" guard_pr="$(cd "$guard_repo_root" 2>/dev/null && pwd -P)"
   case "$guard_pl" in
     "$guard_pr"/*)
       guard_rel="${guard_pl#"$guard_pr"/}" guard_acc=""
       while [ -n "$guard_rel" ]; do
         guard_acc="$guard_acc${guard_rel%%/*}/"
-        guard_run_dirs="$guard_run_dirs?? $guard_acc"$'\n'
+        guard_run_dirs="$guard_run_dirs?? $guard_acc"$'\n'"?? \"$guard_acc\""$'\n'
         case "$guard_rel" in */*) guard_rel="${guard_rel#*/}" ;; *) guard_rel="" ;; esac
       done
+      guard_run_logdir="$guard_acc"
       ;;
   esac
 

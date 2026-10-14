@@ -95,6 +95,24 @@ run env TMPDIR="$tmplink" bash "$d/tests/run.sh"
 check_status "a symlinked TMPDIR that resolves into the checkout -> the canary stays green" 0 "$STATUS"
 check_absent "... no trip block" "$OUT" "$TRIP"
 
+# --- GREEN 8: git told to list untracked files one per line (status.showUntrackedFiles=all) --------------------
+d="$(mkcanary)"
+peer_act "$d" ':'
+mkdir "$d/fresh-tmp-all"
+git -C "$d" config --local status.showUntrackedFiles all
+git -C "$d" add -A; git -C "$d" commit -q -m cfg 2>/dev/null || true
+run env TMPDIR="$d/fresh-tmp-all" bash "$d/tests/run.sh"
+check_status "showUntrackedFiles=all: the run's own log files do not trip the canary" 0 "$STATUS"
+check_absent "... no trip block" "$OUT" "$TRIP"
+
+# --- GREEN 9: an ancestor of the logdir with a space in its name (git quotes the path) -------------------------------
+d="$(mkcanary)"
+peer_act "$d" ':'
+mkdir "$d/my tmp dir"
+run env TMPDIR="$d/my tmp dir" bash "$d/tests/run.sh"
+check_status "a TMPDIR with a space in its path -> the canary stays green" 0 "$STATUS"
+check_absent "... no trip block" "$OUT" "$TRIP"
+
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"
 peer_act "$d" 'git -C "$R" branch stray'

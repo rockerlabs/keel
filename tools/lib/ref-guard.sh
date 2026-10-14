@@ -115,6 +115,9 @@ guard_tip_survives() {
 # NAMED RESIDUAL: an escaped test that deletes, or fast-forwards, an unowned branch whose tip stays reachable
 # elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
 # the file, which is the layer that prevents it. This one detects what slipped past that.
+# A second residual, in the other direction: a squash-merged (or otherwise rewritten) branch deleted on purpose —
+# the branch-cleanup sweep's ASK tier — has no ref reaching its tip, so it IS still reported. No sweep should run
+# while a suite does (docs/release-management.md R11).
 guard_refs_unexplained() {
   local repo="$1" owned="$2" before="$3" after="$4" name old new
   while read -r name old new; do
