@@ -512,9 +512,9 @@
 # included), or `gh api` on a `…/pulls/<n>/merge` endpoint with a method other than GET/HEAD or a field flag and no
 # method; `gh` may be a path ending in `/gh`, and behind a runner word, by basename (`timeout`, `nice`, `nohup`,
 # `sudo`, `env`, `xargs`, `noglob`, … — `mg_runner`), the first `gh` word is the command, whatever flags and values
-# the runner takes. A merge under xargs, `gh pr merge` or the API endpoint, is denied outright (stdin can add words
-# no check reads). The rest are denied unless all three hold,
-# checked in this order and denied with the first that fails:
+# the runner takes. A merge under xargs or parallel, `gh pr merge` or any call of the API merge endpoint, is denied
+# outright (stdin or a file can add words no check reads). The rest are denied unless all three hold, checked in this
+# order and denied with the first that fails:
 #   (ii)  identity — the event is not a subagent's (no non-empty `agent_id`/`agent_type`: a subagent's event carries
 #         its parent's `session_id`, so the id alone cannot tell them apart), its `session_id` is a plain token, the
 #         cwd is a git checkout, and the release-manager file for that repository (`gate_manager_path_for_key`,
@@ -548,21 +548,22 @@
 # subcommand. So for a session that is not the manager, none of these was closed by that deny either, and `main`'s
 # branch protection stays the floor: a `gh api graphql` `mergePullRequest` mutation (inside a quoted argument the
 # reader does not open); a quoted subcommand word (`gh pr "merge"`, `gh "api"`: unquoted only, so a quoted `--title
-# "merge"` stays a create); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper script; `curl` against the
-# REST merge endpoint; a subcommand or an endpoint xargs takes from stdin (`echo merge 5 | xargs gh pr`, `echo
-# repos/o/r/pulls/5/merge | xargs gh api -X PUT`); a runner outside `mg_runner`'s list; and self-listing — any
-# session that calls `Skill(manage-release)` or types `/manage-release x` is listed (PostToolUse fires on the call's
-# success, not on the release it starts: the dir #229 marker-spoof class). For a listed manager in an opted-in
-# project (whose every merge the deny used to block), two more weaken only the flag check: a flag word the shell
-# assembles at run time (`$FLAGS`, `--admin$(true)`), and a merge aimed at another repository than the event cwd's
-# (`-R`, a `cd` in the command), judged by the cwd's file and policy line. Without jq the whole hook is inert (its
-# documented choice, above), this rule included: lift the deny only where jq is installed. Accepted costs: an
-# unquoted `merge` word after `pr` (`gh pr create --title merge`) reads as a merge segment — quote it; a runner word
-# before ANY command whose words hold `gh pr merge` (`nice git log --grep gh pr merge`, `xargs -n1 echo gh pr merge`)
-# reads as a merge — quote them; a word `xargs` before the gh word reads as xargs (`env -C xargs gh …`); any
-# CLAUDE.md line carrying the token opts the project in, a sentence that only mentions it included; and a main
-# session started with `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a
-# subagent and is denied — start a release manager without `--agent`.
+# "merge"` stays a create); any command inside one quoted argument (`sh -c '…'`, `bash -c`, `eval`, `env -S '…'`), a
+# script file, a `gh` alias or wrapper script; `curl` against the REST merge endpoint; a subcommand or an endpoint
+# xargs takes from stdin (`echo merge 5 | xargs gh pr`, `echo repos/o/r/pulls/5/merge | xargs gh api -X PUT`); a
+# runner outside `mg_runner`'s list; and self-listing — any session that calls `Skill(manage-release)` or types
+# `/manage-release x` is listed (PostToolUse fires on the call's success, not on the release it starts: the dir #229
+# marker-spoof class). For a listed manager in an opted-in project (whose every merge the deny used to block), two
+# more weaken only the flag check: a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`), and a
+# merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command), judged by the cwd's file and
+# policy line. Without jq the whole hook is inert (its documented choice, above), this rule included: lift the deny
+# only where jq is installed. Accepted costs: an unquoted `merge` word after `pr` (`gh pr create --title merge`)
+# reads as a merge segment — quote it; a runner word before ANY command whose words hold `gh pr merge` (`nice git log
+# --grep gh pr merge`, `xargs -n1 echo gh pr merge`) reads as a merge — quote them; a word `xargs` or `parallel`
+# before the gh word reads as one (`env -C xargs gh …`); any CLAUDE.md line carrying the token opts the project in, a
+# sentence that only mentions it included; and a main session started with `--agent` carries `agent_type` with no
+# `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a release manager without
+# `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2513,9 +2514,10 @@ function mg_api_word(j,   t, n, k, c, eq, nm, v) {
   }
   return 0
 }
-# mg_gh(j) — word j runs gh: `gh`, or a path ending in `/gh`. mg_runner(b) — a command name (a word’s basename) that
-# runs the command after it, with flags and values of its own cmd_start does not know: every shape the `settings.json`
-# deny on `gh pr merge` caught is behind one of these (measured 2026-10-14: timeout, nice, nohup, env -C, xargs).
+# mg_gh(j) — word j runs gh: `gh`, or a path ending in `/gh`. mg_runner(b) — a command name (a word’s basename, a GNU
+# `g` prefix dropped) that runs the command after it, with flags and values of its own cmd_start does not know: every
+# shape the `settings.json` deny on `gh pr merge` caught is behind one of these (measured 2026-10-14: timeout, nice,
+# nohup, env -C, xargs). xargs and parallel also add words from stdin or a file: the `xargs` code.
 function mg_gh(j) { return w_plain(j) && (tok[j] == "gh" || tok[j] ~ /\/gh$/) }
 function mg_runner(b) {
   return is_wrapper(b) || b == "timeout" || b == "nice" || b == "stdbuf" || b == "sudo" || b == "doas" ||
@@ -2525,12 +2527,17 @@ function mg_runner(b) {
 function check_merge(   i, j, b, p_at, m_at, api, ep, run, t) {
   i = cmd_start()
   # One pass up to the gh word: the command word itself, or behind a runner the first gh word wherever it appears
-  # (`timeout 5 gh …`, `env -C d gh …`, `/usr/bin/xargs -n1 gh …`). Under xargs the command takes more words from
-  # stdin (`echo --admin | xargs gh pr merge …`), which no check can read: such a merge is its own code.
+  # (`timeout 5 gh …`, `env -C d gh …`, `/usr/bin/xargs -n1 gh …`); assignment words are no runners. Under xargs or
+  # parallel the command takes more words from stdin or a file (`echo --admin | xargs gh pr merge …`), which no check
+  # can read: such a merge — or any call of the API merge endpoint — is its own code.
   run = 0; cm_xargs = 0
   for (j = 1; j <= ntok; j++) {
     if (mg_gh(j) && (j == i || (run && j > i))) break
-    if (w_plain(j)) { b = tok[j]; sub(/.*\//, "", b); if (mg_runner(b)) run = 1; if (b == "xargs") cm_xargs = 1 }
+    if (w_plain(j) && !w_assign(j)) {
+      b = tok[j]; sub(/.*\//, "", b); if (b ~ /^g/ && mg_runner(substr(b, 2))) b = substr(b, 2)
+      if (mg_runner(b)) run = 1
+      if (b == "xargs" || b == "parallel") cm_xargs = 1
+    }
     if (j >= i && !run) return
   }
   if (j > ntok) return
@@ -2546,7 +2553,8 @@ function check_merge(   i, j, b, p_at, m_at, api, ep, run, t) {
     else if (api) j += mg_api_word(j)
   }
   if (api) {
-    if (ep && (cm_xargs || (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld))) mg_note("api", "")
+    if (ep && cm_xargs) mg_note("xargs", "")
+    else if (ep && (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld)) mg_note("api", "")
     return
   }
   if (!m_at) return
@@ -3769,7 +3777,7 @@ merge_rule() {
     ok) ;;
     flag) early_deny blocked "$mg_why a merge commit only: drop $mg_tok — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
     pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on." ;;
-    xargs) early_deny blocked "$mg_why run gh pr merge as its own command, not under xargs — xargs adds words from stdin, which the flag check cannot read." ;;
+    xargs) early_deny blocked "$mg_why run the merge as its own command, not under xargs or parallel — they add words from stdin or a file, which no check can read." ;;
     nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
     *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check ($mg_code) — run the merge as its own Bash call, or report it." ;;
   esac

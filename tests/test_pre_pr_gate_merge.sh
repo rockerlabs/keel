@@ -259,13 +259,25 @@ done
 # A manager behind a runner: read through; under xargs, stdin can add flags no check reads — denied.
 allow "(a) manager: timeout 60 + the merge" "timeout 60 $MERGE" "$P" "$MID"
 allow "(a) manager: a path to gh" "/opt/homebrew/bin/gh pr merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
-deny "(d) manager: a merge under a flagless xargs" "not under xargs" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
-deny "(d) manager: a merge under xargs -n1" "not under xargs" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
-deny "(d) manager: a merge under /usr/bin/xargs" "not under xargs" "printf -- '--admin\\n' | /usr/bin/xargs $MERGE" "$P" "$MID"
-deny "(f) the API merge endpoint under xargs (stdin may add the method)" "$R_API" "echo -X PUT | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
+deny "(d) manager: a merge under a flagless xargs" "not under xargs or parallel" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
+deny "(d) manager: a merge under xargs -n1" "not under xargs or parallel" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) manager: a merge under /usr/bin/xargs" "not under xargs or parallel" "printf -- '--admin\\n' | /usr/bin/xargs $MERGE" "$P" "$MID"
+deny "(f) the API merge endpoint under xargs (stdin may add the method)" "not under xargs or parallel" "echo -X PUT | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
 allow "(f) a read under xargs, no merge endpoint" "echo 5 | xargs -n1 gh pr view" "$P" "$OTHER"
 deny "accepted cost: behind a runner, a gh pr merge pattern in another command reads as a merge" "$R_ID" "nice git log --grep gh pr merge" "$P" "$OTHER"
 deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE --squash" "$P" "$MID"
+
+# Every runner name, one shape each (a list entry no fixture holds could be dropped unnoticed): an unlisted session's
+# squash behind it is read as a merge. The GNU `g` prefix reads as the plain name.
+for r in timeout nice stdbuf sudo doas ionice chrt caffeinate taskset setsid flock noglob coproc builtin watch \
+         parallel nohup env exec command time xargs gtimeout gxargs /usr/bin/nice; do
+  deny "(g) runner $r: read through" "$R_ID" "$r gh pr merge 5 --squash" "$P" "$OTHER"
+done
+deny "(d) manager: a merge under parallel (stdin or -a add words)" "not under xargs or parallel" "printf -- '--admin\\n' | parallel $MERGE" "$P" "$MID"
+deny "(d) manager: under gxargs" "not under xargs or parallel" "printf -- '--admin\\n' | gxargs $MERGE" "$P" "$MID"
+allow "(d) manager: an assignment naming xargs is no runner" "X=/opt/bin/xargs $MERGE" "$P" "$MID"
+deny "(f) a read of the merge endpoint under xargs gets the xargs reason (stdin may add the method)" "not under xargs or parallel" "echo 1 | xargs -n1 gh api repos/o/r/pulls/5/merge" "$P" "$MID"
+allow "residual: env -S runs a command from one quoted argument (named in the header)" "env -S 'gh pr merge 5 --squash'" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
 deny "(h) a non-git cwd" "$R_GIT" "$MERGE" "$nd" "$MID"
