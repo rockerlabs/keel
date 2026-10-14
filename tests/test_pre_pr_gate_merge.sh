@@ -233,7 +233,9 @@ for c in "gh api -X PUT repos/o/r/pulls/5/MERGE" "gh api -X PUT repos/o/r/pulls/
          "gh api -X PUT repos/o/r/pulls/5/merge//" "gh api -X PUT repos/o/r/pulls/5/merge?x=1" "gh api -X PUT repos/o/r/pulls/5/merge#x" \
          "gh api -X PUT repos/{owner}/{repo}/pulls/{branch}" "gh api -X PUT :owner/:repo/pulls/:branch" \
          "gh api -X PUT repos/o/r/pulls/5/%6Derge" "gh api -X PUT repos/o/r/pulls/5/{branch}" "gh api -X PUT repos/o/r/{branch}" \
-         "gh api -X PUT repos/o/r/pull%73/5/merge" "gh api -X PUT repos/o/r/pulls/5%2Fmerge"; do
+         "gh api -X PUT repos/o/r/pull%73/5/merge" "gh api -X PUT repos/o/r/pulls/5%2Fmerge" "gh api -X PUT repos/o/r/pulls/5/./merge" \
+         "gh api -X PUT repos/o/r/pulls/5/merg:branch" "gh api -X PUT repos/o/r/{branch}/5/merge" \
+         "gh api -X PUT repos/o/r/pulls/5/mer{branch}ge" "gh api -X PUT repos/o/r/pu{branch}lls/5/merge"; do
   deny "(f) the endpoint read case- and slash-insensitively: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 allow "(f) a separate flag value holding a merge-endpoint path is a value, not the endpoint" "gh api repos/o/r/issues/5/comments -f body=see/pulls/5/merge" "$P" "$OTHER"
@@ -279,6 +281,14 @@ deny "(g) env -C gh -C <pin> -v \"gh\": the pin is env's value — unread" "$R_U
 deny "(d) manager: --merge after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- --merge" "$P" "$MID"
 deny "accepted cost: api and a merge-endpoint path in another gh command are unread" "$R_UNREAD" "gh issue comment 5 --body api see/pulls/5/merge" "$P" "$OTHER"
 allow "(f) a % in the query string is no endpoint" "gh api repos/o/r/pulls/5/comments?x=%40 -f body=hi" "$P" "$OTHER"
+# Endpoint reading is exact after decoding: text with a % or a placeholder that cannot end a merge path is no endpoint.
+for c in "gh pr create --label api --body \"50% faster\" --title x" "gh label create api --description \"100% coverage\"" \
+         "gh api -X PUT repos/o/r/contents/a%20b.txt -f message=x" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" \
+         "gh api -X PUT repos/o/r/pulls/:branch.json" "timeout 30 gh api user --template \"{{printf \\\"%s\\\" .login}}\""; do
+  ev_gate "$c" "$P" "$OTHER"
+  check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
+done
+deny "(d) manager: -m after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- -m" "$P" "$MID"
 deny "(g) env -C gh \"gh\" pr merge: the quoted gh hides the subcommand — unread" "$R_UNREAD" "env -C gh \"gh\" pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(g) the first unread cause is kept" "gh is not the command word" "timeout 5 $MERGE; gh pr --admin merge 6" "$P" "$MID"
 deny "(d) manager: a lone word after a real -- is gh's PR selector, no pin" "$R_PIN" "gh pr merge --merge -- --match-head-commit=$SHA" "$P" "$MID"
