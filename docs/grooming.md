@@ -331,7 +331,8 @@ this rule names the gap rather than asserting an unshipped tool's own rules as s
 these three by hand, and re-derive on every cycle, not once and carry forward. **A backlog whose
 tickets use another uniform heading token (`### B.N`, `### KB.N`) is not that gap:** keel's census takes
 it as `--ticket-token 'B\.[0-9]+'` (dir #605) and prints the captured token under `--list`. A pool kept
-as a `## Pool` section rather than a `→ pool` tag is still not read; derive it from the section.
+as a `## Pool` section rather than a `→ pool` tag is still not read; derive it from the section. Its
+foreign-citation strip also still knows only `dir #N` citations.
 
 **A fourth extraction rule has TWO parts, and the tool ships only one of them.** Matching the closure
 marker at a fixed position (the heading's own tag, not any `✅`/`❌` absorbed from body text) is

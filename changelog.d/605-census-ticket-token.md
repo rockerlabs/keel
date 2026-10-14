@@ -4,5 +4,6 @@
   `--ticket-token 'B\.[0-9]+'`) names the token, replaces the default `dir #N` / `<n>.` for that run, and makes
   `--list` print the captured token (`B.12`). Without the flag nothing changes; an empty or malformed ERE exits 2.
   `backlog_ticket_blocks` in `tools/lib/backlog-blocks.sh` takes the same token as an optional second argument.
-  A pool kept as a `## Pool` section rather than a `→ pool` heading tag is still not read, and
-  `tools/self/pool-report.sh` does not take the flag; `docs/grooming.md` G3 says so.
+  Limits, stated in the tool's header and `docs/grooming.md` G3: a pool kept as a `## Pool` section
+  rather than a `→ pool` heading tag is not read, `tools/self/pool-report.sh` does not take the flag, and the
+  foreign-citation strip still recognises only `dir #N` citations (an adopter's own "Supersedes B.3" is not stripped).
