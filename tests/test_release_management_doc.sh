@@ -323,4 +323,15 @@ pin "R11 settles a stop that waits for the operator at wave-plan time" "$doc" \
   '**A stop that waits for the operator is settled at wave-plan time' \
   "expected R11 to carry the compaction-stop rule (dir #760)"
 
+# --- dir #810: the cut's re-derivation is no longer "an observation no ticket owns yet" --------------------------
+if grep -qF 'an observation no ticket' "$doc"; then
+  fail "release-management.md no longer calls the cut re-derivation an observation no ticket owns (dir #810)" \
+    "the phrase 'an observation no ticket' is still in the doc"
+else
+  pass "release-management.md no longer calls the cut re-derivation an observation no ticket owns (dir #810)"
+fi
+pin "release-management.md names tools/self/changelog-claims.sh at the cut (dir #810)" "$doc" \
+  'changelog-claims.sh' \
+  "expected the Roles brief's figure paragraph to name the claim lint"
+
 summary

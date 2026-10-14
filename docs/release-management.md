@@ -169,8 +169,10 @@ conventions that happen to look similar, it's one convention applied at two poin
    each by a *different* party than the last. Cheap machinery beats a more careful author — confirmed
    again the next release, four more propagated figures caught by three different parties (the
    release's own record carries the list). The cut's verification block is the last artifact every
-   figure passes through, so a re-derivation there would catch the most — an observation no ticket
-   owns yet.
+   figure passes through, so a re-derivation there would catch the most. At the cut,
+   `tools/self/changelog-claims.sh --section` re-derives the `CHANGELOG.md` section's bound numbers and, under
+   `--strict`, makes every other digit number be sourced or dropped (dir #810); the verification block is not,
+   yet, and that is the split-off ticket, dir #844.
 2. **The slate/coupling table.** For a whole-wave brief: ticket, surface, coupling with siblings. For
    a single-worker brief: the ticket plus the neighboring tickets it touches a file or a question with.
    Either way, the point is naming coupling explicitly rather than trusting a worker to notice it from

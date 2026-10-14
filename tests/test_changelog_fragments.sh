@@ -221,4 +221,12 @@ pin "polish-guide Step 3: a changelog.d/ path is never exempt" "$REPO_ROOT/comma
 pin "polish-guide Step 3: a changelog.d/ path takes the full-run branch" "$REPO_ROOT/commands/polish-guide.md" \
   'A `changelog.d/` path takes the full-run branch too' "expected the full-run sentence beside the dir #427 scoping rule (dir #744)"
 
+# --- dir #810 (A12): the README carries the numbers section and the correction clause -----------------------
+pin "A12: README has a '## Numbers' section (dir #810)" "$frag_dir_real/README.md" '## Numbers' \
+  "expected changelog.d/README.md to explain the numeric-claim markers"
+pin "A12: README names the hand marker (dir #810)" "$frag_dir_real/README.md" 'claim: hand' \
+  "expected the README to tell authors how to hand a measured or historical number"
+pin "A12: README lets a MISMATCH on the default branch be fixed in another fragment (dir #810)" "$frag_dir_real/README.md" \
+  'on the default branch' "expected the README's correction clause to cover a MISMATCH shown on the default branch"
+
 summary
