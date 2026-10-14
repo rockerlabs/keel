@@ -325,7 +325,7 @@ for c in "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feat%2Fx" "gh api
          "gh api -X PUT repos/{owner}/{repo}/contents/a\;b.md -f message=x" \
          "gh api -X PATCH https://api.github.com/repos/{owner}/{repo}/git/refs/heads/x -f sha=y" \
          "timeout 60 gh api https://api.github.com/repos/{owner}/{repo}/issues" \
-         "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\""; do
+         "gh api -X PUT repos/{owner}/{repo}/contents/a.md -f \"content=see https://example.com/{owner}\""; do
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) an irregular placeholder path with no pulls or merge is no merge: [$c]" "$OUT" "merge rule"
 done
@@ -340,6 +340,12 @@ for c in "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/./{repo}" "GH_RE
   deny "(f) placeholders read on the resolved and the decoded path: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 deny "(g) a misplaced gh command holding api and pulls//5//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls//5//../merge" "$P" "$OTHER"
+deny "accepted cost: behind a runner, a URL with a placeholder in a value is unread" "$R_UNREAD" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\"" "$P" "$OTHER"
+deny "(g) an inner a:// leaves the segment before it alone" "$R_UNREAD" "gh pr --x api https://api.github.com/repos/o/r/pulls/5/merge/a://../.." "$P" "$OTHER"
+for c in "gh api -X PUT :branch://api.github.com/repos/o/r/x" "gh api -X PUT x/:branch://api.github.com/repos/o/r/x" \
+         "gh api -X PUT https://{owner}.x/5/merge"; do
+  deny "(f) a placeholder before or in a scheme://host counts: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
 deny "(f) a placeholder path starting with ./ fails closed" "$R_API" "gh api -X PUT ./repos/{owner}/{repo}/x" "$P" "$OTHER"
 deny "(f) a full-URL merge endpoint is still read" "$R_API" "gh api -X PUT https://api.github.com/repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(g) a misplaced gh command holding api and pulls/5/x//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/x//../merge" "$P" "$OTHER"

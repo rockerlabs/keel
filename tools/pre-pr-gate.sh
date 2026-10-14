@@ -582,19 +582,20 @@
 # 60 gh pr merge …`, a read of the endpoint behind a runner), an API write to a `{branch}` path, or to an irregular
 # path holding `pulls` or `merge`, or to a placeholder path with an inner dot segment or `//`, that is no merge is
 # denied as one (`gh api -X PUT repos/{owner}/{repo}/branches/{branch}/protection`,
-# `…/contents/merge-notes/./pulls.md`), behind a runner any word after an unquoted `api` that holds a `{branch}` or
-# could be the endpoint is unread, a flag's value or a read included (`timeout 60 gh pr create --label api --body
-# "see {branch}"`), and so is any gh command holding an unquoted `pr`, then `merge`, that is not a pr merge (`gh pr
-# comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--` before its subcommand; a word after a
-# `--` that is no flag to gh is still read as one (a manager's `… -- --admin` is denied); a merge behind a runner
-# even when it asks for `--help`, and a merge after a boolean flag gh knows before its subcommand (`gh --version pr
-# merge`) — quote a word merge that is text, or run gh first; a word `xargs` that a wrapper's flag consumes reads as
-# xargs (`env -C xargs gh …`); a second word gh — or a word ending in /gh, such as `-R org/gh` — in a merge segment,
-# quoted or not, makes it unread (`gh pr merge 5 --subject gh` — rephrase it); a gh command holding an unquoted `api`
-# and a merge-endpoint path that are not its own is unread (`gh issue comment 5 --body api see/pulls/5/merge`); any
-# CLAUDE.md line carrying the token opts the project in, a sentence that only mentions it included; and a main
-# session started with `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a
-# subagent and is denied — start a release manager without `--agent`.
+# `…/contents/merge-notes/./pulls.md`), behind a runner any word after an unquoted `api` that holds a `{branch}`, a
+# placeholder beside `//`, or could be the endpoint is unread, a flag's value or a read included (`timeout 60 gh pr
+# create --label api --body "see {branch}"`, `-f "body=see https://x/{owner}"`), and so is any gh command holding an
+# unquoted `pr`, then `merge`, that is not a pr merge (`gh pr comment 5 --body merge`, `gh issue create --title fix
+# pr merge`), or a `--` before its subcommand; a word after a `--` that is no flag to gh is still read as one (a
+# manager's `… -- --admin` is denied); a merge behind a runner even when it asks for `--help`, and a merge after a
+# boolean flag gh knows before its subcommand (`gh --version pr merge`) — quote a word merge that is text, or run gh
+# first; a word `xargs` that a wrapper's flag consumes reads as xargs (`env -C xargs gh …`); a second word gh — or a
+# word ending in /gh, such as `-R org/gh` — in a merge segment, quoted or not, makes it unread (`gh pr merge 5
+# --subject gh` — rephrase it); a gh command holding an unquoted `api` and a merge-endpoint path that are not its own
+# is unread (`gh issue comment 5 --body api see/pulls/5/merge`); any CLAUDE.md line carrying the token opts the
+# project in, a sentence that only mentions it included; and a main session started with `--agent` carries
+# `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a release
+# manager without `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2560,15 +2561,16 @@ function mg_gh(j,   n) {
   n = length(tok[j])
   return tok[j] == "gh" || (n >= 3 && substr(tok[j], n - 2) == "/gh")
 }
-# mg_ep(t, w) — a positional word that may name the merge endpoint. The query and fragment are cut off the lower-cased
-# word, and a `scheme://host` becomes `/`; then two readings of its path, the raw one and the `%XX`-decoded one, are
-# each read by mg_segs (dot segments resolved in both orders — the w=0 text fallbacks rely on that, the fail-closed
-# rules below already cover an API write) and match when their last three are `pulls`, any segment, `merge` (a
-# `.json` or `;x` suffix allowed). With w set (the word may be gh’s own endpoint, not another command’s text) a segment holding a part
-# gh fills in (`{owner}`, `{repo}`, `:owner`, `:repo`) may stand for `pulls` or `merge`, a `{branch}`/`:branch` counts
-# outright (arbitrary text, `/` and `#` included), and a `%` escape, a `;` or an inner dot segment in a word holding
-# `pulls` or `merge`, before or after decoding, counts too, and so does an inner dot segment or `//` in a word holding
-# any part gh fills in — fail-closed where gh’s or GitHub’s reading could differ.
+# mg_ep(t, w) — a positional word that may name the merge endpoint. The query and fragment are cut off the
+# lower-cased word, and a leading `scheme://host` becomes `/` (a gh placeholder in that host counts when w is set);
+# then two readings of its path, the raw one and the `%XX`-decoded one, are each read by mg_segs (dot segments
+# resolved in both orders — the w=0 text fallbacks rely on that, the fail-closed rules below already cover an API
+# write) and match when their last three are `pulls`, any segment, `merge` (a `.json` or `;x` suffix allowed). With w
+# set (the word may be gh’s own endpoint, not another command’s text) a segment holding a part gh fills in
+# (`{owner}`, `{repo}`, `:owner`, `:repo`) may stand for `pulls` or `merge`, a `{branch}`/`:branch` counts outright
+# (arbitrary text, `/` and `#` included), and a `%` escape, a `;` or an inner dot segment in a word holding `pulls`
+# or `merge`, before or after decoding, counts too, and so does an inner dot segment or `//` in a word holding any
+# part gh fills in — fail-closed where gh’s or GitHub’s reading could differ.
 function mg_hex(h) { return (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1 }
 # mg_dec(s) — s with its `%XX` escapes decoded, lower-cased.
 function mg_dec(s,   n, k, p, h, d) {
@@ -2605,9 +2607,14 @@ function mg_segs(s, w, e,   n, k, p, q, m, f, c) {
 }
 function mg_ep(t, w,   r, d) {
   if (t ~ /^-/) return 0
-  r = tolower(t); sub(/[?#].*/, "", r); gsub(/[a-z][a-z0-9+.-]*:\/\//, "/", r)
+  r = tolower(t); sub(/[?#].*/, "", r)
   if (w && mg_ph(r, 1)) return 1
+  if (match(r, /^[a-z][a-z0-9+.-]*:\/\/[^\/]*/)) {
+    if (w && mg_ph(substr(r, 1, RLENGTH), 0)) return 1
+    r = "/" substr(r, RLENGTH + 2)
+  }
   d = mg_dec(r)
+  # (an inner dot segment only: a leading one is resolved by mg_segs, and `./pulls.json` is a file, not a path)
   if (w && (index(r, "%") || index(r, ";") || r ~ /\/\.\.?(\/|$)/) && (r ~ /pulls|merge/ || d ~ /pulls|merge/)) return 1
   if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))) return 1
   return mg_segs(r, w, 0) || (index(r, "..") && mg_segs(r, w, 1)) ||

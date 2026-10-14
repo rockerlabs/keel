@@ -122,5 +122,7 @@ M132	tools/pre-pr-gate.sh	 ||\n         (d != r && (mg_segs(d, w, 0) || (index(d
 M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))) return 1\n		B6: a placeholder path with a dot segment or // is read only by the model
 M134	tools/pre-pr-gate.sh	  return mg_segs(r, w, 0) || 	  return 	B6: the RFC 3986 order (an empty segment kept for ..) is not tried (pulls/5//../merge)
 M135	tools/pre-pr-gate.sh	  for (k = 1; k <= m; k++) if (q[k] != "") f[++c] = q[k]	  for (k = 1; k <= m; k++) f[++c] = q[k]	B6: empty segments left in before the last-three match (pulls//5//../merge)
-M136	tools/pre-pr-gate.sh	; gsub(/[a-z][a-z0-9+.-]*:\/\//, "/", r)		B6: a scheme:// reads as // (a false deny on a full-URL endpoint)
+M136	tools/pre-pr-gate.sh	    r = "/" substr(r, RLENGTH + 2)\n		B6: a full-URL endpoint is read with its scheme and host (a false deny, the merge endpoint missed)
 M137	tools/pre-pr-gate.sh	(d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))	(d ~ /\/\.\.?(\/|$)/ || index(d, "//"))	B6: a leading ./ in a placeholder path is not irregular
+M138	tools/pre-pr-gate.sh	match(r, /^[a-z][a-z0-9+.-]*:\/\/[^\/]*/)	match(r, /[a-z][a-z0-9+.-]*:\/\/[^\/]*/)	B6: an inner a:// is taken for a scheme (a segment lost)
+M139	tools/pre-pr-gate.sh	    if (w && mg_ph(substr(r, 1, RLENGTH), 0)) return 1\n		B6: a placeholder in the host of a full URL is not read
