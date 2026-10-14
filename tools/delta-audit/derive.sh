@@ -62,7 +62,13 @@
 #   DELTA_CONFIG_EXTENSIONS same, classed config (default: yml yaml json toml plist xcconfig ini cfg
 #                           lock go.mod go.sum requirements.txt)
 #   DELTA_PROSE_EXTENSIONS  same, classed prose and exempt from the fall-through note (default: md txt
-#                           rst adoc LICENSE NOTICE .gitignore .gitattributes)
+#                           rst adoc png jpg jpeg gif svg pdf ico LICENSE NOTICE .gitignore
+#                           .gitattributes). A lockfile (`lock`, go.sum) is config on purpose: it is
+#                           audited with the manifest it pins, not skipped; drop it from
+#                           DELTA_CONFIG_EXTENSIONS (and name it in DELTA_PROSE_EXTENSIONS) to defer it.
+#   An empty knob means the default list (like the neighbouring knobs), so a class cannot be switched
+#   off by emptying it. The executable bit (rule 7) decides only a file NO list names: a +x
+#   .md/.yml is a mode accident and keeps its list's class.
 #   DELTA_SESSION_FILES    files packed into one suggested session (default: 12)
 #
 # Every sort in this script is LC_ALL=C: a locale-dependent collation would make the byte-identical
@@ -292,9 +298,9 @@ is_test() {
 # A set, non-empty variable REPLACES its default list, like DELTA_INVARIANT_PATHS; an empty one is the default.
 read -r -a code_ext <<< "${DELTA_CODE_EXTENSIONS:-sh bash zsh swift m mm c cc cpp h hpp rs go py rb js jsx mjs cjs ts tsx java kt kts gradle cs php sql Makefile Dockerfile Gemfile Rakefile Podfile}"
 read -r -a config_ext <<< "${DELTA_CONFIG_EXTENSIONS:-yml yaml json toml plist xcconfig ini cfg lock go.mod go.sum requirements.txt}"
-read -r -a prose_ext <<< "${DELTA_PROSE_EXTENSIONS:-md txt rst adoc LICENSE NOTICE .gitignore .gitattributes}"
-# `${a[@]+"${a[@]}"}`, not a bare expansion: an EMPTY knob (DELTA_CODE_EXTENSIONS=) leaves an empty array,
-# a hard error under `set -u` on bash < 4.4.
+read -r -a prose_ext <<< "${DELTA_PROSE_EXTENSIONS:-md txt rst adoc png jpg jpeg gif svg pdf ico LICENSE NOTICE .gitignore .gitattributes}"
+# `${a[@]+"${a[@]}"}`, not a bare expansion: a whitespace-only knob leaves an empty array, a hard error
+# under `set -u` on bash < 4.4.
 in_ext_list() {
   local f="${1##*/}" e
   shift

@@ -461,6 +461,23 @@ mix1b="$(cat "$SANDBOX/out-mix1b/ledger.md")"
 check_contains "816: a .md under spec/ stays prose, not test" "$mix1b" "| spec/overview.md | prose |"
 check_contains "816: Dockerfile (by name) classes code; an EMPTY knob is the default list" "$mix1b" "| Dockerfile | code |"
 check_contains "816: go.mod (by name) classes config" "$mix1b" "| go.mod | config |"
+run_in "$rm8" env "DELTA_CONFIG_EXTENSIONS=" "DELTA_PROSE_EXTENSIONS=" "$TOOL" --out "$SANDBOX/out-mix1c" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+check_contains "816: empty config/prose knobs are the default lists too" "$(cat "$SANDBOX/out-mix1c/ledger.md")" "| go.mod | config |"
+# every newly named default, one fixture: classed by name/extension, no fall-through note
+git -C "$rm8" reset -q --hard "$head8"
+git -C "$rm8" checkout -qb prm1d
+for n in a.mjs a.cjs a.kts a.gradle a.sql Gemfile Rakefile Podfile; do printf 'x\n' > "$rm8/$n"; done
+for n in Cargo.lock go.sum; do printf 'x\n' > "$rm8/$n"; done
+printf 'x\n' > "$rm8/logo.png"
+git -C "$rm8" add -A; git -C "$rm8" commit -qm "more defaults"
+git -C "$rm8" checkout -q main
+merge_pr "$rm8" 805 prm1d
+run_in "$rm8" "$TOOL" --out "$SANDBOX/out-mix1d" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+mix1d="$(cat "$SANDBOX/out-mix1d/ledger.md")"
+for n in a.mjs a.cjs a.kts a.gradle a.sql Gemfile Rakefile Podfile; do check_contains "816: $n classes code" "$mix1d" "| $n | code |"; done
+for n in Cargo.lock go.sum; do check_contains "816: $n classes config" "$mix1d" "| $n | config |"; done
+check_contains "816: logo.png classes prose" "$mix1d" "| logo.png | prose |"
+check_absent "816: ...and none of them trips the fall-through note" "$OUT" "unrecognised"
 git -C "$rm8" reset -q --hard "$head8"
 
 # an unknown extension falls to prose AND prints one note naming it; a known one prints none
