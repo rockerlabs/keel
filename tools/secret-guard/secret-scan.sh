@@ -255,10 +255,13 @@ decode_nonascii="$personal_nonascii"
 # must never fail open on its own config. grep exits >=2 only on a bad pattern; 1 (no match) is fine.
 # The probe reads one input line (dir #694, B4): busybox grep compiles a pattern only when it reads input,
 # so over empty input it passed every malformed ERE. It runs in both locales a personal grep runs in.
+# The input is a file, not `printf | grep`: grep exits on a bad pattern before reading, so a piped producer gets
+# SIGPIPE and prints "write error: Broken pipe" ahead of the reason below (dir #849, the dir #280 class).
 if [ -n "$has_personal" ]; then
-  rc=0; printf 'x\n' | LC_ALL=C grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
+  printf 'x\n' > "$SCRATCH/probe-in.txt" || _fail_closed "write the personal-regex probe input" $?
+  rc=0; LC_ALL=C grep -iE -f "$personal_pat" < "$SCRATCH/probe-in.txt" >/dev/null 2>&1 || rc=$?
   if [ "$rc" -lt 2 ]; then
-    printf 'x\n' | grep -iE -f "$personal_pat" >/dev/null 2>&1 || rc=$?
+    grep -iE -f "$personal_pat" < "$SCRATCH/probe-in.txt" >/dev/null 2>&1 || rc=$?
   fi
   if [ "$rc" -ge 2 ]; then
     echo "secret-scan: invalid regex in $PERSONAL_FILE — personal-data detection would be" >&2
@@ -700,7 +703,10 @@ selftest() {
   # on a grep that accepts one instead of failing the whole selftest on an otherwise-working host. The probe
   # reads one input line (dir #694): busybox compiles a pattern only when it reads input, so over empty input
   # it looked lenient and this probe was skipped there.
-  greprc=0; printf 'x\n' | grep -iE -e 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
+  # A file, not `printf | grep`: grep exits on the bad pattern before reading, so a piped producer gets SIGPIPE
+  # and prints "write error: Broken pipe" to stderr (dir #849, the dir #280 class).
+  printf 'x\n' > "$dir/probe-in.txt"
+  greprc=0; grep -iE -e 'unbalanced(paren' < "$dir/probe-in.txt" >/dev/null 2>&1 || greprc=$?
   if [ "$greprc" -ge 2 ]; then
     printf 'unbalanced(paren\n' > "$dir/badre"
     printf 'anything\n' > "$dir/any.txt"
