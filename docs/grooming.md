@@ -344,6 +344,14 @@ mechanized the same way as the third rule above. Checking whether the project's 
 from any count, and no scanner can resolve it. A groom still checks this one by hand, on every cycle,
 regardless of whether the census tool has shipped.
 
+**A count over a file the groom is itself editing is stale the moment the groom writes about it (dir #823).**
+Re-measure every self-referential figure after the groom's last edit, and state the counting rule beside the figure
+(markers or raw grep lines, over which file, at which moment). One adopter's groom measured a marker count of 33,
+then filed a ticket and run notes that themselves named the marker four times, and the live count read 37 when the
+G6 round checked; a module's line count moved the same way. For three grooms running, the review round's top
+finding there was the groom's own number. Running the census twice (above) is this same discipline for tag counts;
+this extends it to any figure the groom's own text changes.
+
 ## G4 — the hygiene sweep
 
 Everything below executes a mechanism another ticket owns; this procedure is the cadence that calls
@@ -547,6 +555,18 @@ mistakes.
 window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
 ticket bodies in scope, read by a swappable cross-vendor client. Run twice on a release plan so far
 (2026-09-16, 2026-09-20), it returned findings the same-family round above had not, both times.
+
+**Run it AFTER the same-family round's fixes are applied, never beside it (dir #823).** The vendor round earns its cost
+on defects in the groom's own fresh edits, the class an earlier reviewer cannot see, having read the file before them.
+In one run its four findings included the two that mattered (two swapped SHA glosses, a pull request missing from a
+count), and both came from the fixes the same-family round had just triggered. **Verify what a vendor says as you
+verify any finding.** Its severities inflate, since it has no tools: two "blocking" grades both fell on verification
+(a prose-versus-table mismatch where the table was the intended artifact, a mis-glossed SHA with the correct range one
+cell over). Its claims about tools are unverified until run: one rejected finding asserted how a generator behaves
+and the tree said otherwise. And a vendor's high finding can be a judgment the same-family round deliberately accepted, and
+right under the operator's own ask, so an accepted-by-design item is shown to the operator rather than silently dropped. Where a
+plan states a decision in prose and again in a table, the brief asks the reviewer to diff every decision against the
+table row it cites; in one session the two drifted apart.
 
 ## G7 — the releases cross-run record
 
