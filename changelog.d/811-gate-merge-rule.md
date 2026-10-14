@@ -11,8 +11,8 @@
   command word, its subcommands right after it, quote such words, and keep a second `gh` out of the text.
   The endpoint is read as GitHub routes it (`%XX` decoded, any case, dot segments resolved, a `.json`
   suffix), and an API write is denied as a merge, fail-closed, when its path holds `{branch}`/`:branch`, or
-  a `%`, a dot segment or a `;` beside `pulls` or `merge` (`{owner}`/`{repo}` only where they could
-  complete the merge path). The
+  a `%`, an inner dot segment or a `;` beside `pulls` or `merge` (`{owner}`/`{repo}` only where they
+  could complete the merge path, read on the raw and the decoded path alike). The
   manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the

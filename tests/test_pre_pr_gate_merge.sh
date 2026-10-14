@@ -329,6 +329,16 @@ done
 for c in "gh api -X PUT repos/o/r/pulls\;x/5/merge" "gh api -X PUT repos/{owner}/{repo}/me%72ge" "gh api -X PUT repos/o/r/{owner}/{repo}/me%72ge"; do
   deny "(f) a ; or an encoded merge word in a write path: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
+for c in "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/./{repo}" "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}/." \
+         "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}/x/.." "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}%2f5%2f{repo}" \
+         "gh api -X PUT repos/o/r/%70ulls;x/5/%6Derge"; do
+  deny "(f) placeholders read on the resolved and the decoded path: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+deny "(g) the same behind a runner is unread" "$R_UNREAD" "GH_REPO=pulls/merge timeout 60 gh api -X PUT repos/o/r/{owner}/5/./{repo}" "$P" "$OTHER"
+for c in "timeout 60 gh api -X POST repos/o/r/issues --input ./pulls.json" "timeout 60 gh api graphql -F owner={owner} -f query=q"; do
+  ev_gate "$c" "$P" "$OTHER"
+  check_absent "(g) behind a runner, no endpoint shape: [$c]" "$OUT" "merge rule"
+done
 deny "accepted cost: behind a runner, a {branch} path is unread even on a read" "$R_UNREAD" "timeout 30 gh api repos/{owner}/{repo}/branches/{branch}" "$P" "$OTHER"
 deny "accepted cost: an API write to a {branch} path is read as a merge" "$R_API" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" "$P" "$OTHER"
 deny "(d) manager: -m after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- -m" "$P" "$MID"
