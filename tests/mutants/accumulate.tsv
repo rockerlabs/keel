@@ -49,3 +49,4 @@ closure-date-unvalidated	tools/self/accumulate.sh	valid_date "$cdate" || cdate="
 date-anywhere-on-line	tools/self/accumulate.sh	'^[^(]*\\(([0-9][0-9][0-9][0-9]-	'^.*\\(([0-9][0-9][0-9][0-9]-	closed: only a parenthesised date counts
 date-borrowed-from-later-tag	tools/self/accumulate.sh	after="${m: -1}${stripped#*"$m"}"; after="${after%%"$NL"*}"	after="${stripped}"	closed: the date belongs to the same tag and the same line as the glyph
 date-from-next-line	tools/self/accumulate.sh	after="${after%%"$NL"*}"	after="${after}"	closed: the date must be on the tag's own line
+heading-rule-first-blank	tools/self/accumulate.sh	elif bb_heading_continues "$block" "$line"; then	elif true; then	closed: a body line glued under a finished heading is not part of its block (dir #847)

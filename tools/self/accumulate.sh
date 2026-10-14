@@ -268,7 +268,8 @@ facts() {
 }
 
 # --- closed: the ticket behind an `Observer-class:` line --------------------------------------------------------------------------------
-# hits_in_file FILE CLASS → one record per tagged heading block, newlines inside the block turned into US
+# hits_in_file FILE CLASS → one record per tagged heading: the heading and the lines after it up to the first blank (cap 50),
+# newlines turned into US; heading_block_of then keeps the lines that belong to the heading
 hits_in_file() {
   local fb
   grep -qF -- "Observer-class: $2" "$1" || return 0
@@ -293,6 +294,20 @@ hits_in_file() {
   }'
 }
 
+# heading_block_of TEXT → the heading line (TEXT's first) plus the following lines bb_heading_continues accepts (dir #839's
+# rule, shared with the census; dir #847). Inline code spans are blanked first, as backlog_ticket_blocks does.
+heading_block_of() {
+  local spans line block="" first=1
+  spans="$(blank_inline_code_spans <<< "$1")"
+  while IFS= read -r line; do
+    if [ "$first" = 1 ]; then block="$line"; first=0
+    elif bb_heading_continues "$block" "$line"; then block+="$NL$line"
+    else break
+    fi
+  done <<< "$spans"
+  printf '%s' "$block"
+}
+
 # closed_state CLASS → prints open | closed <glyph> <date|—> | draft | orphaned
 closed_state() {
   local cls="$1" f d rec block stripped m after glyph cdate own
@@ -300,7 +315,7 @@ closed_state() {
   for f in ${BACKLOGS[@]+"${BACKLOGS[@]}"}; do
     while IFS= read -r rec; do
       [ -n "$rec" ] || continue
-      block="$(blank_inline_code_spans <<< "${rec//$US/$NL}")"
+      block="$(heading_block_of "${rec//$US/$NL}")"
       own="$(bb_own_ticket_num "$block")"
       stripped="$(bb_strip_foreign_citations "$block" "$own" "$BB_CLOSURE_TAG_PATTERN")"
       if [[ "$stripped" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
