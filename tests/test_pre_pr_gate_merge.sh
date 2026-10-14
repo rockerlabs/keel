@@ -304,7 +304,7 @@ done
 for c in "gh api repos/{owner}/{repo}/issues/5/comments -f body=hi" "gh api -X PATCH repos/{owner}/{repo} -f description=x" \
          "gh api -X POST repos/:owner/:repo/labels -f name=x" "gh api -X PUT repos/o/r/contents/notes:repository.md -f message=x" \
          "gh api -X PUT repos/o/r/contents/a:branches.md -f message=x" "echo x | xargs gh api repos/{owner}/{repo}/issues" \
-         "timeout 60 gh pr create --label api --body \"see {branch}\" --title x" "nice gh api graphql -F b={branch} -f query=q"; do
+         "gh pr create --label api --body \"see {branch}\" --title x"; do
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
 done
@@ -315,6 +315,19 @@ for c in "GH_REPO=x/merg gh api -X PUT repos/o/r/pulls/5/:repo%65" "GH_REPO=pul/
          "gh api -X PUT repos/o/r/pulls/5/merge/x%2F../.." "GH_REPO=x/merge gh api -X PUT repos/o/r/pulls/5//{repo}" \
          "GH_REPO=x/pulls gh api -X PUT repos/o/r/{repo}//5/merge"; do
   deny "(f) an irregular or placeholder path that may reach the merge endpoint: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+for c in "timeout 60 gh pr create --label api --body \"see {branch}\" --title x" "nice gh api graphql -F b={branch} -f query=q" \
+         "timeout 60 gh api -X PUT --silent repos/o/r/{branch}" "timeout 60 gh api --method=PUT repos/o/r/{branch}" \
+         "GH_REPO=x/merge timeout 60 gh api -XPUT repos/o/r/pulls/5/{repo}" "timeout 60 gh api -X PUT -- repos/o/r/pulls/5/{repo}"; do
+  deny "behind a runner, any word after api holding a {branch} or a placeholder endpoint is unread: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
+done
+for c in "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feat%2Fx" "gh api -X PUT repos/{owner}/{repo}/contents/my%20notes.md -f message=x" \
+         "gh api -X PATCH repos/{owner}/{repo}/git/refs/heads/a.b/./c -f sha=x"; do
+  ev_gate "$c" "$P" "$OTHER"
+  check_absent "(f) an irregular placeholder path with no pulls or merge is no merge: [$c]" "$OUT" "merge rule"
+done
+for c in "gh api -X PUT repos/o/r/pulls\;x/5/merge" "gh api -X PUT repos/{owner}/{repo}/me%72ge" "gh api -X PUT repos/o/r/{owner}/{repo}/me%72ge"; do
+  deny "(f) a ; or an encoded merge word in a write path: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 deny "accepted cost: behind a runner, a {branch} path is unread even on a read" "$R_UNREAD" "timeout 30 gh api repos/{owner}/{repo}/branches/{branch}" "$P" "$OTHER"
 deny "accepted cost: an API write to a {branch} path is read as a merge" "$R_API" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" "$P" "$OTHER"
