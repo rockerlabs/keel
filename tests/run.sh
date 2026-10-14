@@ -502,6 +502,7 @@ SHIM
   # which this handler lacked.
   on_interrupt() {
     local i pid waited=0 alive=1
+    trap '' INT TERM   # a second signal during the grace must not re-enter: it would reprint every log
     for i in "${!active_pids[@]}"; do
       printf '\n=== %s (interrupted) ===\n' "${active_files[$i]}"
       cat "${active_logs[$i]}" 2>/dev/null

@@ -327,9 +327,11 @@ rpid=$!
 wait_up "$d" stubborn
 t0=$(date +%s)
 kill -TERM "$rpid"
+sleep 1; kill -TERM "$rpid" 2>/dev/null   # a second signal inside the grace must not re-enter the handler
 wait "$rpid"; int_status=$?
 t1=$(date +%s)
 check_status "770-A4 interrupt of a TERM-ignoring file -> exit 130" 130 "$int_status"
+check_eq "770-A4 …a second signal during the grace reprints nothing (one interrupted header)" "1" "$(grep -c '=== test_stubborn.sh (interrupted) ===' "$int_out")"
 if [ "$((t1 - t0))" -le 15 ]; then pass "770-A4 …within 15 s of the signal ($((t1 - t0))s: the grace, then the KILL)"
 else fail "770-A4 …within 15 s of the signal" "took $((t1 - t0))s"; fi
 bgp="$(bgpid_of "$d" stubborn)"
