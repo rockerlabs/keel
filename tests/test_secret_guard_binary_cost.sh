@@ -120,10 +120,11 @@ else
 fi
 
 # --- (C) the bound ---------------------------------------------------------------------------------------------------
-# CEILING — seconds of CPU for the 20 MiB blob below, with two personal literals set. The scan measured ~62 s
-# after the fix (macOS, BSD grep) against ~217 s (~45 s and ~178 s with no personal literals) before it; the ceiling sits between, so it fails on the per-line
-# blow-up and passes on a slower host. KEEL_TEST_SECRET_SCAN_CPU_CEILING and KEEL_TEST_SECRET_SCAN_BLOB_BYTES
-# override the two numbers (the blob size is for a quick look at the scaling; the bound is pinned at the default).
+# CEILING — seconds of CPU for the 20 MiB blob below, with two personal literals set. The scan measured ~62 s after
+# the fix (macOS, BSD grep) against ~217 s before it (~45 s and ~178 s with no personal literals); the ceiling sits
+# between, so it fails on the per-line blow-up and passes on a slower host. KEEL_TEST_SECRET_SCAN_CPU_CEILING and
+# KEEL_TEST_SECRET_SCAN_BLOB_BYTES override the two numbers (the blob size is for a quick look at the scaling; the
+# bound is pinned at the default).
 CEILING="${KEEL_TEST_SECRET_SCAN_CPU_CEILING:-130}"
 mk_blob "${KEEL_TEST_SECRET_SCAN_BLOB_BYTES:-20971520}" ""
 repo="$(blob_repo)"
