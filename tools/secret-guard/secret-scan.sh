@@ -482,11 +482,13 @@ emit_blob() {  # $1 = record label (path)
       ' || exit $?; echo
     fi
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
-  # the personal passes also read the printable runs, one line per maximal run (the comment above $personal_more)
+  # the personal passes also read the printable runs, one line per maximal run (the comment above $personal_more).
+  # The set is the printable ASCII range ` -~` plus tab, not `[:print:]`: busybox tr does not take the class (it reads
+  # it as the letters p, r, i, n, t and the brackets), which left the old runs view all but empty on Alpine.
   personal_more=""
   if [ -n "$has_personal" ]; then
     personal_more="$(spool)" || return $?
-    LC_ALL=C tr -cs '[:print:]\t' '\n' < "$tmp" > "$personal_more" || return $?
+    LC_ALL=C tr -cs ' -~\t' '\n' < "$tmp" > "$personal_more" || return $?
   fi
   collect_matches "$label" "$dec" -o
   rm -f "$tmp" "$dec" ${personal_more:+"$personal_more"}

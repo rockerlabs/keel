@@ -2888,7 +2888,7 @@ recipe746() {  # file start end
         sub(/[[:space:]]+#.*$/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
         # dir #830: the printable-runs read is not an encoding. The twin keeps it in the recipe (every one of its
         # regexes reads one decoded file); emit_blob reads it into a file of its own for the personal passes, after the recipe.
-        if (!(index(l, "tr -cs") && index(l, "[:print:]"))) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
+        if (!(index(l, "tr -cs") && index(l, "-~"))) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
       }
       if (index($0, e)) exit
     }
@@ -2913,10 +2913,10 @@ live_runs_line() {
   ' "$1"
 }
 check_eq "dir #830: public-audit.sh squeezes the printable runs inside its decode recipe" 1 \
-  "$(live_runs_line "$pa746" "LC_ALL=C tr -cs '[:print:]\\t' '\\n' < \"\$src\" || exit \$?; echo  # raw printable runs, squeezed (dir #830)" \
+  "$(live_runs_line "$pa746" "LC_ALL=C tr -cs ' -~\\t' '\\n' < \"\$src\" || exit \$?; echo  # raw printable runs, squeezed (dir #830)" \
     "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
 check_eq "dir #830: secret-scan.sh squeezes the printable runs into the personal passes' file, after its recipe" 1 \
-  "$(live_runs_line "$scan" "LC_ALL=C tr -cs '[:print:]\\t' '\\n' < \"\$tmp\" > \"\$personal_more\" || return \$?" \
+  "$(live_runs_line "$scan" "LC_ALL=C tr -cs ' -~\\t' '\\n' < \"\$tmp\" > \"\$personal_more\" || return \$?" \
     "$blob_end715" "  rm -f \"\$tmp\" \"\$dec\"")"
 for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
   check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds four resuming iconv passes" 4 \
