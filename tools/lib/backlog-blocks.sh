@@ -111,9 +111,11 @@ bb_strip_foreign_citations() {
 # closures: each names an in-flight sub-state of an open ticket (a run underway, a phase reached,
 # a release candidate cut, a decision recorded pending the decided action) rather than the ticket
 # itself being done — so they stay outside this constant on purpose, not by oversight.
-# dir #609: case-folded (bracket pairs — bash 3.2's `=~`, `grep -E` and busybox share no `-i` flag)
-# and up to two `*`/`_` of emphasis may sit between glyph and word (a peer's form: `✅ **Done 2026-09-20**`).
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*([Dd][Oo][Nn][Ee]|[Cc][Ll][Oo][Ss][Ee][Dd]|[Aa][Bb][Ss][Oo][Rr][Bb][Ee][Dd]|[Ee][Xx][Ee][Cc][Uu][Tt][Ee][Dd]|[Ss][Uu][Pp][Ee][Rr][Ss][Ee][Dd][Ee][Dd]|[Dd][Uu][Pp][Ll][Ii][Cc][Aa][Tt][Ee]|[Bb][Uu][Ii][Ll][Tt]|[Ff][Ii][Xx][Ee][Dd])'
+# dir #609: each word is accepted UPPER or Title case (`DONE`, `Done`), and up to two `*`/`_` of emphasis
+# may sit between glyph and word (a peer's form: `✅ **Done 2026-09-20**`). All-lowercase is deliberately
+# NOT a closure: a heading title quoting the glyph before a plain word (`❌ duplicate detection fails`,
+# `✅ built-in check`) is prose, and a case-insensitive match would close that open ticket.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
 # bb_closure_word_ok <candidate_marker>
 #   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
