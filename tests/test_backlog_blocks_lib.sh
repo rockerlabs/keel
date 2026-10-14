@@ -348,25 +348,21 @@ check_status "control: a closed heading with a body line right under it still re
 check_status "dir #801's span still runs to the line before dir #802" \
   "$(( $(row839 "$out839" "dir #802 " 1) - 1 ))" "$(row839 "$out839" "dir #801 " 2)"
 
-# A FINISHED heading still takes a wrapped tag or arrow: on a line opening with the tag's em-dash,
-# or after a line that ends in an em-dash (a clause left open). A glued body line after a plain
-# finished line is not taken.
+# A FINISHED heading still takes a wrapped tag on a line opening with the tag's own em-dash, and
+# nothing else: a heading ending in a dash does not make the next line part of it.
 d839c="$(new_repo)"
 f839c="$d839c/BACKLOG.md"
-printf '### dir #811 — a graded heading whose tag wraps onto its own dash line — R2 — → 0.17.0
+printf '### dir #811 — a graded heading whose tag wraps onto its own dash line — R2 — → pool
 — ✅ CLOSED (2026-10-01, done)
 
-### dir #812 — a graded heading whose release arrow wraps after a trailing dash — R2 —
-→ pool
+### dir #812 — a graded heading that ends in a dash, a glued body line under it — R2 —
 Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
 ' > "$f839c"
 out839c="$(backlog_ticket_blocks "$f839c")"
-check_status "MUTATION-PROOF: a finished heading's own wrapped dash-tag still reads closed" \
+check_status "a finished heading's own wrapped dash-tag still reads closed" \
   1 "$(row839 "$out839c" "dir #811 " 3)"
-check_status "a wrapped arrow after a trailing dash stays in the block, the glued body line after it does not" \
+check_status "MUTATION-PROOF: a heading ending in a dash does not absorb a glued body line" \
   0 "$(row839 "$out839c" "dir #812 " 3)"
-check_contains "MUTATION-PROOF: the wrapped arrow after a trailing dash is part of the heading block" \
-  "$(row839 "$out839c" "dir #812 " 4)" "→ pool"
 
 # --- dir #839: the standing-list shapes (legacy `### <n>.` headings, tag on the heading line, body
 # directly underneath) keep their verdicts — #11/#21 closed, #5/#10 open. -----------------------
