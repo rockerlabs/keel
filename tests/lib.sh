@@ -1108,6 +1108,9 @@ real_handoff_for() { printf '%s/%s' "$(gate_tmp_purpose_dir handoff)" "$(real_ke
 # sentinel/handoff above — see pre-pr-gate.sh's own trace_path_for). Shared by test_pre_pr_gate.sh and
 # test_pipeline_canary.sh, same rationale as repo_key_for/sentinel_for above.
 trace_for() { printf '%s/%s' "$(gate_tmp_purpose_dir trace)" "$(repo_key_for "$1")"; }
+# dir #811: the release-manager file the skill-trace leg writes and the merge rule reads — keyed by repo only,
+# like the trace above.
+manager_for() { printf '%s/%s' "$(gate_tmp_purpose_dir manager)" "$(repo_key_for "$1")"; }
 
 # Build a complete, matching receipt at $1 (repo dir) via the CLI subcommands (run_in so $PWD == $1, since
 # both `init` and `receipt` key the sentinel off basename "$PWD"). $2 = optional step to omit (for the

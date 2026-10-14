@@ -28,8 +28,11 @@
 # NOTHING into settings.json by itself — a hook changes what your sessions can do without asking each
 # time, so wiring it is this separate, explicit, opt-in step. Nothing about your workflow changes until
 # you run this. Once wired: the agent's own `gh pr create` is hard-denied until `/polish` (simplify +
-# tests + a depth-matched review) has run cleanly on the current commit — your own terminal is never
-# gated, only the agent's tool calls (a PreToolUse hook fires on THOSE, not on you typing `gh` yourself).
+# tests + a depth-matched review) has run cleanly on the current commit, and the agent's own `gh pr merge` is
+# denied unless the session is this repository's release manager, the project's CLAUDE.md opts in with a
+# `KEEL-MANAGER-MERGES` line, and the command pins the head as a merge commit (dir #811; the UserPromptExpansion
+# matcher `code-review|manage-release|keel-manage-release` is what lists a typed /manage-release launch) — your own
+# terminal is never gated, only the agent's tool calls (a PreToolUse hook fires on THOSE, not on you typing `gh`).
 #
 # The 5th hook (`SubagentStop`/`keel-polish-reviewer`, dir #70; the matcher moved off `general-purpose` in
 # dir #413's flip) traces the independent-agent-review leg `/polish` step 5 falls back to when `/code-review`
@@ -272,7 +275,7 @@ print_snippet() {
       { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "UserPromptExpansion": [
-      { "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
+      { "matcher": "code-review|manage-release|keel-manage-release", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
     ],
     "SubagentStop": [
       { "matcher": "keel-polish-reviewer", "hooks": [{ "type": "command", "command": "bash $gate_sh skill-trace" }] }
@@ -320,28 +323,39 @@ hook_specs="$(jq -n --arg gate "$gate" '[
   {event: "PreToolUse",         matcher: "Bash",           command: ("bash " + ($gate|@sh))},
   {event: "SessionStart",       matcher: "startup",        command: ("bash " + ($gate|@sh) + " rollout-check")},
   {event: "PostToolUse",        matcher: "Skill",          command: ("bash " + ($gate|@sh) + " skill-trace")},
-  {event: "UserPromptExpansion", matcher: "code-review",   command: ("bash " + ($gate|@sh) + " skill-trace")},
+  {event: "UserPromptExpansion", matcher: "code-review|manage-release|keel-manage-release", command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "SubagentStop",       matcher: "keel-polish-reviewer", command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "PostToolUse",        matcher: "AskUserQuestion", command: ("bash " + ($gate|@sh) + " skill-trace")},
   {event: "SubagentStart",      matcher: "",               command: ("bash " + ($gate|@sh) + " subagent-rails")}
 ]')"
 
-# dir #413 B6: the legacy slot. Specs this installer USED to wire and no longer does: install RETIRES them
+# dir #413 B6: the legacy slots. Specs this installer USED to wire and no longer does: install RETIRES them
 # (hook_install_remove — only our exact {type, command} comes out; a foreign hook on the slot stays, an entry
 # it empties goes) and --uninstall removes them too, so an adopter who never re-ran the installer is cleaned.
+# dir #811: the `code-review` UserPromptExpansion slot widened to `code-review|manage-release|keel-manage-release`
+# (the typed /manage-release lists the release manager). The merge keys on the EXACT matcher, so without the
+# retirement the widened entry lands BESIDE the old one and a typed /code-review fires the hook twice.
+# `why` names what replaced the slot, for the status lines (hook_install_remove reads only event, matcher, command).
 retired_specs="$(jq -n --arg gate "$gate" '[
-  {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace")}
+  {event: "SubagentStop", matcher: "general-purpose", command: ("bash " + ($gate|@sh) + " skill-trace"),
+   why: "replaced by keel-polish-reviewer"},
+  {event: "UserPromptExpansion", matcher: "code-review", command: ("bash " + ($gate|@sh) + " skill-trace"),
+   why: "widened to code-review|manage-release|keel-manage-release"}
 ]')"
 
-# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out and
-# $n_retired to how many came out. Sets globals, never prints: a command substitution would lose n_retired.
+# retire_legacy SETTINGS_JSON — sets $retired_json to SETTINGS_JSON with the retired specs taken out,
+# $retired_slots to one `event/matcher<TAB>why` line per slot that came out, and $n_retired to their count. Sets
+# globals, never prints: a command substitution would lose them.
 # hook_install_remove matches by the lib's `covers`, so our command inside a match-all entry (no matcher, ""
 # or "*") also comes out of that entry; the merge that follows re-wires it under the named matcher, so the
 # end state is the same wiring — one narrow entry — and the "retired" line is the only imprecise part.
 retire_legacy() {
   local removal
   removal="$(hook_install_remove "$retired_specs" "$1")"
-  n_retired="$(jq -r '.report' <<<"$removal" | awk -F'\t' '$1=="REMOVED"{n++} END{print n+0}')"
+  retired_slots="$(jq -r --argjson specs "$retired_specs" '.report | split("\n")[] | split("\t") as $r
+    | select($r[0] == "REMOVED") | $specs[] | select(.event == $r[1] and .matcher == $r[2])
+    | "\(.event)/\(.matcher)\t\(.why)"' <<<"$removal")"
+  n_retired="$(grep -c . <<<"$retired_slots" || true)"
   retired_json="$1"
   if [ "$n_retired" -gt 0 ]; then
     retired_json="$(jq -c '.new' <<<"$removal")"
@@ -400,9 +414,9 @@ if [ "$uninstall" = 1 ]; then
   new_settings="$(jq '.new' <<<"$removal")"
   hook_install_backup_write "$settings" "$new_settings"
   echo "install-pre-pr-gate: backed up settings.json → $(basename "$HOOK_INSTALL_BACKUP")"
-  if [ "$n_retired" -gt 0 ]; then
-    echo "  -    SubagentStop/general-purpose removed (the legacy matcher, replaced by keel-polish-reviewer)"
-  fi
+  while IFS=$'\t' read -r slot why; do
+    [ -n "$slot" ] && echo "  -    $slot removed (a legacy matcher, $why)"
+  done <<<"$retired_slots"
 
   while IFS=$'\t' read -r status event matcher; do
     [ -n "$status" ] || continue
@@ -445,12 +459,26 @@ fi
 # result. Retiring BEFORE the merge (not after, as the design text had it) matters for one shape: our command
 # inside a MATCHER-LESS SubagentStop entry reads SAME for the new matcher (`covers`), and a retirement after the
 # merge would then strip the only copy; retiring first leaves the merge to wire the new slot beside it.
+#
+# dir #811: a retired slot still wired at ANOTHER path (a moved checkout) is STALE for that slot, as a current one
+# would be — the retirement matches our exact command only, so the old-path entry would otherwise stay beside the
+# new one and fire twice. Looked for AFTER the exact retirement (an entry holding both paths must not read SAME),
+# refused below without --force; --force first points it at this checkout, and a second retirement takes it out.
 retire_legacy "$current"
+stale_retired_specs="$(jq -c --argjson specs "$retired_specs" '[.report | split("\n")[] | split("\t")
+  | select(.[0] == "STALE") as $r | $specs[] | select(.event == $r[1] and .matcher == $r[2])]' \
+  <<<"$(hook_install_merge "$retired_specs" "$retired_json")")"
+n_stale="$(jq 'length' <<<"$stale_retired_specs")"
+stale="$(jq -r '[.[] | "\(.event)/\(.matcher)"] | join(", ")' <<<"$stale_retired_specs")"
+if [ "$n_stale" -gt 0 ]; then
+  exact_slots="$retired_slots"
+  retire_legacy "$(jq -c '.new' <<<"$(hook_install_merge "$stale_retired_specs" "$retired_json")")"
+  retired_slots="$(printf '%s\n%s\n' "$exact_slots" "$retired_slots" | awk 'NF && !seen[$0]++')"
+  n_retired="$(grep -c . <<<"$retired_slots" || true)"
+fi
 merged="$(hook_install_merge "$hook_specs" "$retired_json")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
-stale=""
-n_stale=0
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
   if [ "$status" = "STALE" ]; then
@@ -478,7 +506,8 @@ elif { [ "$n_stale" -gt 0 ] || [ "$n_retired" -gt 0 ]; } && [ -f "$settings" ]; 
     backup_why="--force"
   fi
   if [ "$n_retired" -gt 0 ]; then
-    backup_why="${backup_why}${backup_why:+, }retiring the legacy SubagentStop/general-purpose entry"
+    retired_list="$(awk -F'\t' 'NF { printf "%s%s", (n++ ? ", " : ""), $1 }' <<<"$retired_slots")"
+    backup_why="${backup_why}${backup_why:+, }retiring the legacy $retired_list $([ "$n_retired" -gt 1 ] && echo entries || echo entry)"
   fi
   new_settings="$(jq '.new' <<<"$merged")"
   hook_install_backup_write "$settings" "$new_settings"
@@ -488,9 +517,9 @@ else
   hook_install_atomic_write "$settings" "$new_settings"
 fi
 
-if [ "$n_retired" -gt 0 ]; then
-  echo "  -    SubagentStop/general-purpose retired (the legacy matcher — keel-polish-reviewer replaces it; your other hooks untouched)"
-fi
+while IFS=$'\t' read -r slot why; do
+  [ -n "$slot" ] && echo "  -    $slot retired (a legacy matcher — $why; your other hooks untouched)"
+done <<<"$retired_slots"
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
   case "$status" in
