@@ -344,6 +344,7 @@ fi
 # this pattern appears below.
 if [ "${#scan_files[@]}" -gt 0 ]; then
   for f in "${scan_files[@]}"; do
+    [ -f "$repo_root/$f" ] || continue   # tracked but deleted from the working tree (unstaged): nothing to scan
     file_readable "the dead-reference check" "$f" || { dead=$((dead + 1)); continue; }
     scan_refs="$(grep -ohE '/?(tools|commands|templates)/[A-Za-z0-9._/-]+\.(sh|md)' "$repo_root/$f" | sort -u || true)"
     # An optional literal '/' right before the keyword decides nested-vs-bare PER OCCURRENCE, not
@@ -527,8 +528,15 @@ if [ "${#ref_files[@]}" -gt 0 ]; then
   for f in "${ref_files[@]}"; do
     content=""
     # dir #766: an unreadable reference file is a GAP, and blinds the loop below (every tool it alone
-    # referenced would read as unreferenced) — not an abort of the whole run under `set -e`.
-    if file_readable "the tool-wiring check" "$f"; then content="$(cat "$repo_root/$f")"; else ref_blind=1; fi
+    # referenced would read as unreferenced) — not an abort of the whole run under `set -e`. A tracked file
+    # deleted from the working tree but not yet staged is simply absent (empty content), as in check 2b.
+    if [ ! -f "$repo_root/$f" ]; then
+      :
+    elif file_readable "the tool-wiring check" "$f"; then
+      content="$(cat "$repo_root/$f")"
+    else
+      ref_blind=1
+    fi
     ref_contents+=("$content")
     case "$f" in
       tests/*) ref_contents_stripped+=("$(sed -E 's/(^|[[:space:]])#.*$//' <<< "$content")") ;;
@@ -594,10 +602,14 @@ say ""
 changelog_ts=""
 product_ts=""
 staleness_blind=0
-git_value changelog_ts "the CHANGELOG commit time" "the CHANGELOG staleness check" \
-  log -1 --format=%ct -- CHANGELOG.md changelog.d || staleness_blind=1
-git_value product_ts "the product commit time" "the CHANGELOG staleness check" \
-  log -1 --format=%ct -- commands tools install.sh || staleness_blind=1
+# A repo with no commit yet (unborn HEAD) has no log to compare — the old `|| echo 0` read it as "up to date";
+# it stays a non-failure (zeros), distinct from a git that could not read an existing history.
+if git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+  git_value changelog_ts "the CHANGELOG commit time" "the CHANGELOG staleness check" \
+    log -1 --format=%ct -- CHANGELOG.md changelog.d || staleness_blind=1
+  git_value product_ts "the product commit time" "the CHANGELOG staleness check" \
+    log -1 --format=%ct -- commands tools install.sh || staleness_blind=1
+fi
 # `git log -1` exits 0 with EMPTY stdout (not an error) when no commit ever touched the pathspec —
 # the `${…:-0}` below covers an untouched path.
 if [ "$staleness_blind" = 1 ]; then
@@ -1150,7 +1162,9 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # (that bound), so — like `_semver_gt` just above — it lives here beside check 6 rather than with the
 # file's general helpers. Mirrored (not shared — same reasoning as `_semver_gt` above), scanning
 # docs/release-history.md instead of CHANGELOG.md, by `tests/test_release_history.sh`'s own
-# pending-release allowance (dir #299) — check that file too when fixing this one.
+# pending-release allowance (dir #299) — check that file too when fixing this one. (dir #766: this copy now
+# returns 2 on a git failure for the caller to GAP; the mirror in that test still fails open on it — a test
+# helper, not a self-check verdict, and left as is.)
 _pending_release_intro_commit() {
   local heading="## [$1]" heading_re rel sha now before
   rel="${changelog_file#"$repo_root"/}"
@@ -1168,6 +1182,7 @@ _pending_release_intro_commit() {
   # dir #766: the pickaxe is spooled with its status kept. Status 2 = could not walk the history; the caller
   # GAPs (this runs inside `$( )`, where a gap() would be lost with the subshell). Status 0 with empty output
   # stays the designed "heading never appears in tracked history" fail-open.
+  git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1 || return 0   # no commits yet: bound unresolvable
   intro_shas=""
   intro_rc=0
   intro_shas="$(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null)" || intro_rc=$?
@@ -1181,10 +1196,14 @@ _pending_release_intro_commit() {
     # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
     # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
     # live writer process on the other end) tests presence with nothing left to signal.
-    # dir #766: `git show` keeps its status. The file exists at $sha (the pickaxe listed this commit for it), so a
-    # failing show there is a real failure (status 2); at `$sha^` it may not exist (this commit added it, or it
-    # is a root commit), which `cat-file -e` asks explicitly — only a PRESENT blob whose show fails is a failure.
-    now_raw="$(git -C "$repo_root" show "$sha:$rel")" || return 2
+    # dir #766: `git show` keeps its status. The -G pickaxe also lists a commit that REMOVED a matching line (one
+    # that deleted or moved the file), so the blob may be absent at $sha as well as at `$sha^` (this commit added
+    # it, or it is a root commit): `cat-file -e` asks that question explicitly, and only a PRESENT blob whose
+    # show fails is a failure (status 2).
+    now_raw=""
+    if git -C "$repo_root" cat-file -e "$sha:$rel" 2>/dev/null; then
+      now_raw="$(git -C "$repo_root" show "$sha:$rel")" || return 2
+    fi
     before_raw=""
     if git -C "$repo_root" cat-file -e "$sha^:$rel" 2>/dev/null; then
       before_raw="$(git -C "$repo_root" show "$sha^:$rel")" || return 2
@@ -1631,8 +1650,10 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
   fi
   # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
   # (dir #364) — see the check's header comment for the full rationale.
-  git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
-    log "$ct_range" --no-merges --format=%B || ct_blind=1
+  if git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1; then   # unborn HEAD: no commits to read
+    git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
+      log "$ct_range" --no-merges --format=%B || ct_blind=1
+  fi
   ct_commit_tickets="$(_extract_dir_tickets <<< "$ct_log" || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
   # not the whole file, or an already-released section's historical ticket citations would silently
@@ -1682,10 +1703,10 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
     grabbing { print }
   ' <<< "$ct_changelog_blanked")"
   # dir #744 (B5): the effective unreleased text is that body PLUS every changelog.d/ fragment, read
-  # through the one reader (never a second listing of the directory). A reader failure reads as "no
-  # fragments" here — the lint is the PR's own check (tests/test_changelog_fragments.sh), not this
-  # advisory one's. dir #766: a reader that FAILS (exit != 0) is a different thing from an empty
-  # directory: it is a GAP, and the check prints no verdict (it cannot know what the fragments hold).
+  # through the one reader (never a second listing of the directory). dir #766: a reader that FAILS
+  # (exit != 0) is a different thing from an empty directory: it is a GAP, and the check prints no
+  # verdict (it cannot know what the fragments hold). The fragment LINT stays the PR's own check
+  # (tests/test_changelog_fragments.sh).
   ct_frag_rc=0
   ct_fragment_text="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" 2>/dev/null)" || ct_frag_rc=$?
   if [ "$ct_frag_rc" -ne 0 ]; then

@@ -11,7 +11,7 @@
 # (a STALE entry) — so converting a site to a checked form means deleting its register line in the same change.
 #
 # Register format, one site per line inside the heredoc below:  <reason> ## <the site line, trimmed>
-# Duplicate site lines are listed once per occurrence. Keep a reason short and specific: what the status is
+# Identical site lines are listed once. Keep a reason short and specific: what the status is
 # for, and why hiding it is correct HERE.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
@@ -22,7 +22,6 @@ check_file "tools/self/doctor.sh exists" "$doctor"
 # `read -d ''`, not `$(cat <<…)`: bash 3.2 miscounts the unbalanced parentheses in the entries below inside a $( ).
 IFS= read -r -d '' register <<'REGISTER' || true
 output gate for --quiet, not a producer: echo is the output itself ## say()  { [ "$QUIET" = 1 ] || echo "$@"; }
-grep exits 1 on no match, which is valid here (an empty result is a real answer); the file read is guarded by file_readable above (a file with no ship-skip arm is an empty list, check 1) ## | grep -ohE '[A-Za-z0-9._-]+\.md' | sort -u || true)"
 grep exits 1 on no match, which is valid here (an empty result is a real answer); the file read is guarded by file_readable above (a file with no ship-skip arm is an empty list, check 1) ## | grep -ohE '[A-Za-z0-9._-]+\.md' | sort -u || true)"
 grep exits 1 on no match, which is valid here (an empty result is a real answer); the file read is guarded by file_readable above (absence of the core-@import pattern is graded by the caller) ## hit="$(grep -ohE "\(\^\|\[\[:space:\]\]\)@\[\^\[:space:\]\]\*keel/CORE[^']*" "$repo_root/$f" 2>/dev/null | sort -u || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## n_unique="$(printf '%s' "$import_re_found" | sort -u | grep -c . || true)"
@@ -59,9 +58,12 @@ REGISTER
 
 
 # The sites doctor.sh holds now: trimmed non-comment lines carrying a hiding shape.
-sites="$(grep -nE '\|\| true|\|\| echo|< <\(|2>/dev/null\)' "$doctor" \
-  | sed -E 's/^[0-9]+:[[:space:]]*//' | grep -vE '^#|\|\| [A-Za-z_]*rc=\$\?' | LC_ALL=C sort)"
-registered="$(printf '%s\n' "$register" | grep -F ' ## ' | sed -E 's/^.* ## //' | LC_ALL=C sort)"
+# `|| true`, `|| echo` and `< <(` are always sites; `2>/dev/null)` is one only when the same line does not capture
+# the status (`… || x_rc=$?`) — a capture on a line that ALSO carries `|| true` must not exempt that `|| true`.
+sites="$( { grep -E '\|\| true|\|\| echo|< <\(' "$doctor"
+            grep -E '2>/dev/null\)' "$doctor" | grep -vE '\|\| [A-Za-z_]*rc=\$\?' ; } \
+  | sed -E 's/^[[:space:]]*//' | grep -vE '^#' | LC_ALL=C sort -u)"
+registered="$(printf '%s\n' "$register" | grep -F ' ## ' | sed -E 's/^.* ## //' | LC_ALL=C sort -u)"
 
 unregistered="$(LC_ALL=C comm -23 <(printf '%s\n' "$sites") <(printf '%s\n' "$registered"))"
 stale="$(LC_ALL=C comm -13 <(printf '%s\n' "$sites") <(printf '%s\n' "$registered"))"

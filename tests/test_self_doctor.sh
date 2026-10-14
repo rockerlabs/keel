@@ -2420,4 +2420,18 @@ check_status "A44: a failing fragments reader -> exit 1" 1 "$STATUS"
 check_contains "A44: the commit-ticket check names the reader failure" "$OUT" "could not read changelog.d/ fragments (changelog-fragments.sh exit 4) — the commit-ticket check is INCOMPLETE"
 check_absent "A44: no verdict line over fragments it could not read" "$OUT" "OK   every dir #N referenced in commits since"
 
+# A45 — a tracked file deleted from the working tree but not staged is ABSENT, not unreadable: no abort, no GAP.
+d="$(mk_clean_repo)"
+rm "$d/commands/go.md"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d"
+check_contains "A45: a tracked-but-deleted file does not abort the run (later checks ran)" "$OUT" "● PIPESTATUS read in a file that sets pipefail"
+check_absent "A45: …and is not reported as unreadable" "$OUT" "could not read commands/go.md"
+
+# A46 — a repo with no commit yet has no history to read: not a failed git.
+d="$(new_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n' > "$d/CHANGELOG.md"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d"
+check_absent "A46: an unborn HEAD is not 'could not read the CHANGELOG commit time'" "$OUT" "could not read the CHANGELOG commit time"
+check_absent "A46: …nor 'could not read the commit messages'" "$OUT" "could not read the commit messages"
+
 summary
