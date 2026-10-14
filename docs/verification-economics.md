@@ -241,6 +241,14 @@ A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a 
 **In doubt on 1–4 → file**, and say in the body which condition was doubted
 (between 1a and 1b, condition 1's own doubt rule decides).
 
+**A ticket that hardens a guard or a check against an input a model has to produce carries
+`[model-decay]` in its heading** — an agent's or a subagent's command or action; a ticket whose input
+comes from the world (a file's content, a user's setup, a platform, a concurrent process) does not, nor
+does a gap in a procedure a model follows. Such work loses value as models improve, while felt bugs and
+requested capabilities do not, so two steps read the marker: a groom's release row reports the marked
+share of its slate ([`docs/grooming.md`](grooming.md) G5), and a rollout audit lists every marked ticket,
+and every entry in a guard's bypass register, for re-triage ([`docs/rollout-audit.md`](rollout-audit.md)).
+
 A finding that is merely a **new class** — new to the class registry §8 bootstraps — is not on this
 list: retire it as a filing test on its own. Record it in the registry (or a `LEARNINGS.md`-style
 staging file), not as a ticket, unless it also clears one of 1–5 above — a known-class instance on an
