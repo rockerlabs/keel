@@ -156,4 +156,31 @@ check_status "weighted on a manifest with an UNMATCHED line exits 1" "1" "$STATU
 check_contains "weighted repeats the unmatched line" "$OUT" "UNMATCHED"
 check_contains "weighted still prints the partial total" "$OUT" "TOTAL"
 
+# --- dir #848: one bad line skips only itself, never the whole file ------------------------------------------
+# A session still being written ends in a truncated line; a transcript can also carry a line that is valid JSON
+# but not an object. Either used to abort jq for the WHOLE file, so a real worker read as unmatched.
+wt_t="$proj/${slug}--claude-worktrees-w5-tolerant"
+mkdir -p "$wt_t"
+ft="$wt_t/66666666-6666-6666-6666-666666666666.jsonl"
+{
+  printf '"just a string"\n'
+  turn claude/w5-z t1 1 0 1 1
+  printf '42\n[1,2]\nnull\nnot json at all\n'
+  turn claude/w5-z t2 1 0 1 1
+  printf '{"type":"assistant","requestId":"cut","gitBranch":"claude/w5-trunc'
+} > "$ft"
+got="$(tu_files_for_branches "$repo" claude/w5-z)"
+check_contains "a file with non-object and malformed lines still resolves its branch" "$got" "$ft"
+check_eq "...and yields one pair, not one per bad line" "1" "$(printf '%s\n' "$got" | grep -c .)"
+check_eq "a branch that only a truncated last line names is no match" "0" "$(tu_files_for_branches "$repo" claude/w5-trunc | grep -c .)"
+printf 'W5\tR3\tsonnet\tclaude/w5-z\n' > "$ledger"
+run bash "$tool" manifest --repo "$repo" "$ledger"
+check_status "manifest resolves a worker whose transcript has bad lines" "0" "$STATUS"
+check_contains "manifest row names the tolerant file" "$OUT" "$ft"
+printf 'W5\tR3\tsonnet\tclaude/w5-z\n' > "$ledger"
+bash "$tool" manifest --repo "$repo" "$ledger" > "$mf" 2>/dev/null
+run bash "$tool" weighted "$mf"
+check_contains "weighted prices the tolerant file" "$OUT" "W5"
+rm -f "$ft"
+
 summary
