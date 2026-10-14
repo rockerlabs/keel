@@ -10,11 +10,6 @@
 sweep="$REPO_ROOT/tools/self/mutation-sweep.sh"
 check_file "tools/self/mutation-sweep.sh exists" "$sweep"
 
-if ! command -v perl >/dev/null 2>&1; then
-  pass "perl not available — mutation-sweep tests skipped (the sweep's timeout is a perl alarm)"
-  summary; exit $?
-fi
-
 sweeptmp="$SANDBOX/sweeptmp"
 mkdir -p "$sweeptmp"
 
@@ -198,6 +193,60 @@ row m-over over.txt 'aa' 'bb' 'overlapping' >"$SANDBOX/over.tsv"
 sweep_in "$fx" --check "$SANDBOX/over.tsv"
 check_status "--check: a needle matching at two overlapping offsets is not 'exactly once'" 1 "$STATUS"
 check_contains "…it occurs twice" "$OUT" "m-over: needle occurs 2 times in over.txt, want 1"
+
+# --- 7d. dir #782 — a mutant that makes a CHILD spin is TIMEOUT within the bound and leaves no process behind ----------
+# The mutated test file waits on a `$(…)` child that never ends (the gate's awk, in the felt case). A signal to the
+# test file's own bash alone — the old perl alarm — left that child running; the sweep now signals the whole process
+# group. The child records its own pid first so the check can name it; a survivor is killed here so a red run does
+# not leave it behind. Four hangs: a child that dies of TERM; one that ignores it (so it outlives its leader and only
+# the KILL after the leader is reaped removes it); and a test file whose TERM trap exits 1, which must still read as
+# TIMEOUT, not as a failing run that killed the mutant; and a hang after the summary line, which a finished file
+# would not have.
+spin_test() {
+  fixture_test | sed '$d'
+  cat <<'EOS'
+if grep -q 'spin_marker=yes' app.sh; then
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+elif grep -q 'spin_marker=trapexit' app.sh; then
+  trap 'exit 1' TERM
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+elif grep -q 'spin_marker=term' app.sh; then
+  x="$(sh -c 'trap "" TERM; echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+fi
+echo "t.sh: $p passed, $f failed"
+if grep -q 'spin_marker=post' app.sh; then
+  x="$(sh -c 'echo $$ >"$KEEL_SPIN_PIDFILE"; exec sleep 300')"
+fi
+EOS
+}
+fxs="$(mkfixture "$(spin_test)")"
+printf 'spin_marker=no\n' >>"$fxs/app.sh"
+git -C "$fxs" commit -qam 'spin marker'
+# spin_case ID REPLACEMENT KIND [SUMMARY] — sweep one spinning mutant (SUMMARY: the row's third field, default - for no summary line) and check the outcome and that its child is gone
+spin_case() {
+  local id="$1" repl="$2" kind="$3" want_sum="${4:--}" spin_pidfile="$SANDBOX/spin.$1.pid" t0 spent spin_pid waited gone
+  row "$id" app.sh 'spin_marker=no' "$repl" "makes the test wait on $kind" >"$SANDBOX/$id.tsv"
+  rm -f "$spin_pidfile"
+  t0=$SECONDS
+  KEEL_SPIN_PIDFILE="$spin_pidfile" KEEL_SWEEP_TIMEOUT=2 sweep_in "$fxs" "$SANDBOX/$id.tsv" t.sh
+  spent=$((SECONDS - t0))
+  check_contains "782-A1 ($id) a mutant whose child spins is recorded TIMEOUT" "$OUT" "${id}${TAB}TIMEOUT${TAB}${want_sum}"
+  check_status "782-A1 ($id) …and TIMEOUT is not a survivor: exit 0" 0 "$STATUS"
+  check_eq "782-A1 ($id) …with only the mutant line and the total (no shell job-kill noise)" "2" "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')"
+  if [ "$spent" -lt 20 ]; then pass "782-A1 ($id) …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s (took ${spent}s)"
+  else fail "782-A1 ($id) …within KEEL_SWEEP_TIMEOUT (plus the TERM grace), not 300 s" "took ${spent}s"; fi
+  spin_pid="$(cat "$spin_pidfile" 2>/dev/null || true)"
+  check_status "782-A2 ($id) the spinning child recorded its pid" 0 "$([ -n "$spin_pid" ] && echo 0 || echo 1)"
+  waited=0
+  while [ -n "$spin_pid" ] && kill -0 "$spin_pid" 2>/dev/null && [ "$waited" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; waited=$((waited + 1)); done
+  gone=0; [ -z "$spin_pid" ] || ! kill -0 "$spin_pid" 2>/dev/null || gone=1
+  check_status "782-A2 ($id) …and it is gone after the sweep (no process left behind)" 0 "$gone"
+  [ "$gone" = 0 ] || kill -KILL "$spin_pid" 2>/dev/null || true
+}
+spin_case m-spin spin_marker=yes "a child that never ends"
+spin_case m-spin-term spin_marker=term "a child that ignores TERM"
+spin_case m-spin-post spin_marker=post "a child after the summary line is printed (a hang the summary does not excuse)" "t.sh: 3 passed, 0 failed"
+spin_case m-spin-trapexit spin_marker=trapexit "a child while its TERM trap exits 1 (a hang is not a failing run)"
 
 # --- 8. usage, refusals --------------------------------------------------------------------------------------------------
 sweep_in "$fx"

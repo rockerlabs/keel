@@ -53,8 +53,9 @@ prints `unknown (<reason>)` with `verdict: stay`: the answer is only ever "don't
 takes no other option.
 
 A malformed `KEEL_POLISH_COMPACT_TOKENS` is the exception: exit 2, nothing on stdout. That is not `compact`, so
-`/polish` continues. When `verdict: compact`, `/polish` commits, writes a hand-over file and stops so the operator
-can send `/compact`; see the guide's § Step 1 "Compaction stop".
+`/polish` continues. When `verdict: compact`, `/polish` commits, writes a hand-over file and hands the run to a
+fresh-context successor (or, in a managed release, to its manager's clear and resume), falling back to two lines for
+the operator only when the harness refuses; see the guide's § Step 1 "Compaction stop".
 
 One thing was checked when this was built. On the desktop app (entrypoint `claude-desktop`),
 `CLAUDE_CODE_SESSION_ID` is the transcript's own file name. Not yet checked: whether the terminal `claude` CLI sets

@@ -72,8 +72,8 @@ check_status "the clone has a committed 9999.0.0 section dated today (UTC), no f
 
 # --- a signal removes the clone too, AFTER the suite and its descendants are gone ---------------------------
 # The fixture suite starts a descendant that records a marker when it is TERMed, announces itself with a
-# sentinel file, and the suite itself exits on TERM WITHOUT stopping the descendant (as tests/run.sh does for a
-# grandchild a test file spawned). cut-sim must signal the suite's whole process group, wait, and only then
+# sentinel file, and the suite itself exits on TERM WITHOUT stopping the descendant (as tests/run.sh did for
+# a grandchild a test file spawned, before dir #770 gave each file its own process group). cut-sim must signal the suite's whole process group, wait, and only then
 # remove the clone: when the tool has exited the marker exists (the TERM reached the descendant) and the clone
 # is gone. If the signal only reached the suite, no marker ever appears.
 killed="$SANDBOX/sig-killed"; ready="$SANDBOX/sig-ready"

@@ -78,6 +78,22 @@ run "$sc" --threshold 1 "$f"
 check_contains "MUTATION-PROOF (dir #420): a sibling's date does not mask this ticket's own missing one (undated=1)" \
   "$OUT" "undated closures:  1"
 
+# --- dir #609: the dated test reads the same widened tag (case-folded, emphasis between glyph and word)
+# and a bare date after the word — `✅ **Done 2026-09-20**` is dated, `✅ **Done**` is not. ----------
+backlog_emphasis="### dir #12 — closed in the adopter's uniform form — R2 — ✅ **Done 2026-09-20**
+
+body
+
+### dir #13 — closed in the same form, no date — R2 — ✅ **Done**
+
+body
+"
+f="$(mk_backlog "$backlog_emphasis")"
+run "$sc" --threshold 1 "$f"
+check_contains "MUTATION-PROOF (dir #609): both emphasis-form closures are counted closed" "$OUT" "closed tickets:    2"
+check_contains "MUTATION-PROOF (dir #609): the bare date after the word dates dir #12, dir #13 stays undated (1)" \
+  "$OUT" "undated closures:  1"
+
 # --- mutation pair: wrapped-heading trap (dir #255) ---------------------------------------------
 # A heading whose title text wraps across physical lines and carries its closure tag on a
 # CONTINUATION line, not the `### dir #N` line itself — must still be counted as closed.
