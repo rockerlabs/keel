@@ -19,12 +19,13 @@ scan="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 
 # --- (P) the premise -------------------------------------------------------------------------------------------
 # A match in a printable run is a substring of the NUL-stripped view, so the runs add no class-1 hit — unless a
-# pattern is anchored (an `^` or `$` matches at a run's edge, not at the edge of the line the NUL-stripped view keeps).
+# pattern is anchored (an `^` or `$` matches at a run's edge, not at the edge of the line the NUL-stripped view keeps)
+# or tests a word boundary (`\b`, `\<`: the NUL-stripped view joins a run to the bytes before a stripped NUL).
 eval "$(awk '/^PATTERNS=\(/{f=1} f{print} f&&/^\)/{exit}' "$scan")"
 check_ne "P0: the class-1 pattern list was read" 0 "${#PATTERNS[@]}"
 for p in "${PATTERNS[@]}"; do
   case "$p" in
-    *'^'*|*'$'*) fail "P1: the class-1 pattern '$p' is unanchored" "it holds ^ or \$ — the run view must be scanned for class 1 again" ;;
+    *'^'*|*'$'*|*'\\'*) fail "P1: the class-1 pattern '$p' is unanchored" "it holds ^, \$ or a backslash (an anchor or a word boundary) — the run view must be scanned for class 1 again" ;;
     *) pass "P1: the class-1 pattern '$p' is unanchored" ;;
   esac
   case "$(printf '%s' "$p" | LC_ALL=C tr -d ' -~')" in
@@ -83,17 +84,17 @@ check_status "V5: a clean 2 MiB binary → exit 0" 0 "$STATUS"
 # around a run on its line, the run view does not. The personal passes read that view, so a literal of any length is
 # found there, and a UTF-8 literal under a quantifier too.
 pers_anchor="$SANDBOX/personal.anchor"
-printf '^zorbfloor-exact$\n' > "$pers_anchor"
+printf '^zorbanchored$\n' > "$pers_anchor"
 pers_short="$SANDBOX/personal.short"
 printf '^zorbq$\n' > "$pers_short"
 anchored_blob() {  # $1 = the printable run, between non-printable bytes, in a file with a NUL
   printf '\001\002%s\003\004\000tail' "$1" > "$BLOB"
 }
-anchored_blob "zorbfloor-exact"
+anchored_blob "zorbanchored"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_anchor" run_in "$repo" "$scan" --tracked
-check_status "V6: an anchored literal found only in the printable runs (15 chars) → exit 1" 1 "$STATUS"
-check_contains "V6: ...reported as the bare match, no spool file name in front of it (grep -h)" "$OUT" "(binary) zorbfloor-exact"
+check_status "V6: an anchored literal found only in the printable runs → exit 1" 1 "$STATUS"
+check_contains "V6: ...reported as the bare match, no spool file name in front of it (grep -h)" "$OUT" "(binary) zorbanchored"
 anchored_blob "zorbq"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
@@ -104,9 +105,8 @@ repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
 check_status "V8: ...and an anchored literal inside a longer run is not → exit 0" 0 "$STATUS"
 
-# a literal with a multi-byte character under `*`: in a UTF-8 locale `^é*abc$` matches the 3-byte run `abc` (the
-# review of an earlier version, which dropped runs shorter than a byte-wise minimum of 4, found this). Skipped where
-# the host has no UTF-8 locale.
+# a literal with a multi-byte character under `*`: in a UTF-8 locale `^é*abc$` matches the 3-byte run `abc`, though
+# the pattern is 5 bytes long. Skipped where the host has no UTF-8 locale.
 utf8_loc="$(pick_utf8_locale)" || utf8_loc=""
 if [ -n "$utf8_loc" ]; then
   pers_mb="$SANDBOX/personal.mb"
@@ -114,7 +114,7 @@ if [ -n "$utf8_loc" ]; then
   anchored_blob "abc"
   repo="$(blob_repo)"
   SECRET_SCAN_PERSONAL_FILE="$pers_mb" run_in "$repo" env LC_ALL="$utf8_loc" "$scan" --tracked
-  check_status "V9: a multi-byte literal under * matches a run shorter than its byte count → exit 1" 1 "$STATUS"
+  check_status "V9: a multi-byte literal under * matches a run shorter than the pattern → exit 1" 1 "$STATUS"
 else
   pass "V9 skipped (no UTF-8 locale on this host)"
 fi

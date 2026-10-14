@@ -2888,7 +2888,7 @@ recipe746() {  # file start end
         sub(/[[:space:]]+#.*$/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
         # dir #830: the printable-runs read is not an encoding. The twin keeps it in the recipe (every one of its
         # regexes reads one decoded file); emit_blob reads it into a file of its own for the personal passes, after the recipe.
-        if (index(l, "[:print:]") == 0) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
+        if (!(index(l, "tr -cs") && index(l, "[:print:]"))) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
       }
       if (index($0, e)) exit
     }
@@ -2898,6 +2898,12 @@ ss746="$(recipe746 "$scan" "$blob_start715" "$blob_end715")"
 pp746="$(recipe746 "$pa746" "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" \
   "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
 check_block_equal "dir #746 A11 T2: emit_blob's decode recipe equals public-audit.sh's decode_binary" "$ss746" "$pp746"
+# dir #830: the printable-runs read is left out of both recipes above, so each tool's own line is pinned here. A
+# per-byte split (`tr -c … '\n'`, one line per non-printable byte) made a 20 MiB random blob ~12.6 M lines.
+pin_exact "dir #830: public-audit.sh squeezes the printable runs (one line per run)" "$pa746" \
+  "LC_ALL=C tr -cs '[:print:]\\t' '\\n' < \"\$src\" || exit \$?; echo" "the twin's printable-runs line"
+pin_exact "dir #830: secret-scan.sh squeezes the printable runs into the personal passes' file" "$scan" \
+  "LC_ALL=C tr -cs '[:print:]\\t' '\\n' < \"\$tmp\" > \"\$personal_more\" || return \$?" "emit_blob's printable-runs line"
 for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
   check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds four resuming iconv passes" 4 \
     "$(match "${t746#*:}" -c '^iconv -c -f ')"
