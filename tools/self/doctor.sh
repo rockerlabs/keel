@@ -104,9 +104,21 @@ else
 fi
 
 exit_code=0
+gap_count=0   # dir #766: lets a check tell "I skipped by design" from "I skipped because a read GAPped"
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
-gap()  { echo "  GAP  $1"; exit_code=1; }
+gap()  { echo "  GAP  $1"; exit_code=1; gap_count=$((gap_count + 1)); }
 warn() { echo "  WARN $1"; }
+
+# file_readable CHECK REL — dir #766: a tracked file that EXISTS but cannot be read is a GAP naming it and CHECK
+# (status 1), not a silent empty read or an abort of the whole run under `set -e`; absent is the caller's own
+# case (status 0). The caller prints no OK line for CHECK when this returns 1, and later checks still run.
+file_readable() {
+  local check="$1" rel="$2"
+  [ -e "$repo_root/$rel" ] || return 0
+  [ -r "$repo_root/$rel" ] && return 0
+  gap "could not read $rel — $check is INCOMPLETE"
+  return 1
+}
 
 say "● keel self-check ($repo_root)"
 
@@ -124,11 +136,16 @@ say "● keel self-check ($repo_root)"
 # ship-skip line at all is valid — an empty list), and under `set -o pipefail` that would otherwise
 # kill this script outright with no diagnostic.
 skip_arm_re='(^|[^A-Za-z0-9._-])([A-Za-z0-9._-]+\.md)(\|[A-Za-z0-9._-]+\.md)*\) continue'
+skips_ok=1
+file_readable "the ship-skip sync check" install.sh || skips_ok=0
+file_readable "the ship-skip sync check" tools/doctor.sh || skips_ok=0
 install_skips="$(grep -ohE "$skip_arm_re" "$repo_root/install.sh" 2>/dev/null \
   | grep -ohE '[A-Za-z0-9._-]+\.md' | sort -u || true)"
 doctor_skips="$(grep -ohE "$skip_arm_re" "$repo_root/tools/doctor.sh" 2>/dev/null \
   | grep -ohE '[A-Za-z0-9._-]+\.md' | sort -u || true)"
-if [ "$install_skips" != "$doctor_skips" ]; then
+if [ "$skips_ok" = 0 ]; then
+  :   # an unreadable file already GAPped above; comparing a half-read pair would only print noise
+elif [ "$install_skips" != "$doctor_skips" ]; then
   gap "install.sh ship-skip list ({$install_skips}) != doctor.sh --install's mirror ({$doctor_skips}) — keep them in sync"
 else
   say "  OK   install.sh / doctor.sh --install ship-skip lists agree (${install_skips:-none})"
@@ -149,7 +166,9 @@ fi
 import_re_files=(install.sh uninstall.sh tools/doctor.sh)
 import_re_found=""
 import_re_missing=""
+import_re_unreadable=0
 for f in "${import_re_files[@]}"; do
+  file_readable "the core-@import sync check" "$f" || { import_re_unreadable=1; continue; }
   # The pattern as it appears in source, from the opening (^| up to the closing quote.
   hit="$(grep -ohE "\(\^\|\[\[:space:\]\]\)@\[\^\[:space:\]\]\*keel/CORE[^']*" "$repo_root/$f" 2>/dev/null | sort -u || true)"
   if [ -z "$hit" ]; then
@@ -159,7 +178,9 @@ for f in "${import_re_files[@]}"; do
   fi
 done
 n_unique="$(printf '%s' "$import_re_found" | sort -u | grep -c . || true)"
-if [ -z "$import_re_found" ]; then
+if [ "$import_re_unreadable" = 1 ]; then
+  :   # an unreadable file already GAPped above; the verdict on the others would be a half-read comparison
+elif [ -z "$import_re_found" ]; then
   :   # none of the three define it — no rule to keep in sync here
 elif [ -n "$import_re_missing" ]; then
   gap "the core-@import pattern is defined in some of install.sh / uninstall.sh / tools/doctor.sh but missing from: $import_re_missing"
@@ -202,18 +223,23 @@ fi
 advice_re='(^|[^a-z])install\.sh|keel uninstall|doctor\.sh --install'
 marker_re='home_flag|ihome_flag|doctor_arg|advise_install|advise_uninstall|--home'
 advice_bad=""
+advice_unreadable=0
 for f in install.sh uninstall.sh keel tools/doctor.sh tools/install-pre-pr-gate.sh; do
   [ -f "$repo_root/$f" ] || continue
+  file_readable "the advised-command check" "$f" || { advice_unreadable=1; continue; }
+  advice_hits="$(grep -nE '^ *(echo|say|warn|gap|hint) |^ *- ' "$repo_root/$f" \
+             | grep -E "$advice_re" \
+             | grep -vE "$marker_re" || true)"
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     advice_bad="$advice_bad
     $f:$hit"
-  done < <(grep -nE '^ *(echo|say|warn|gap|hint) |^ *- ' "$repo_root/$f" 2>/dev/null \
-             | grep -E "$advice_re" \
-             | grep -vE "$marker_re" || true)
+  done <<< "$advice_hits"
 done
 if [ -n "$advice_bad" ]; then
   gap "advised command(s) cannot reach a retargeted home — add the tool's own home marker (dir #98):$advice_bad"
+elif [ "$advice_unreadable" = 1 ]; then
+  :   # an unreadable file already GAPped above: no OK line for a check that could not read its input
 else
   say "  OK   advised commands all carry the home they are about"
 fi
@@ -240,6 +266,7 @@ say "● FRAMEWORK.md / PRINCIPLES.md identifier leak"
 id_leak=0
 for f in FRAMEWORK.md PRINCIPLES.md; do
   [ -f "$repo_root/$f" ] || continue
+  file_readable "the identifier-leak check" "$f" || { id_leak=$((id_leak + 1)); continue; }
   hit="$(grep -noE "$HOME_RE" "$repo_root/$f" 2>/dev/null | head -1 || true)"
   if [ -n "$hit" ]; then
     gap "$f:$hit — looks like a leaked host path (dir #114)"
@@ -271,6 +298,24 @@ tracked_files() {
   return "$rc"
 }
 
+# git_value VAR WHAT CHECK git-arg… — dir #766: `git -C "$repo_root" arg…` into VAR, status CHECKED (the tracked_files
+# shape, for a git call whose output is a value rather than a path list). A failing git is a GAP naming WHAT and CHECK
+# plus git's first stderr line; VAR is left empty and git's status is returned, so the caller prints no OK for CHECK.
+# `|| echo 0` / `|| true` around such a call would turn a git that will not run into an ordinary-looking answer.
+git_value() {
+  local var="$1" what="$2" check="$3" gv_out gv_rc=0 gv_why
+  shift 3
+  gv_out="$(git -C "$repo_root" "$@" 2>/dev/null)" || gv_rc=$?
+  if [ "$gv_rc" -ne 0 ]; then
+    gv_out=""
+    gap "could not read $what (git exit $gv_rc) — $check is INCOMPLETE"
+    gv_why="$(git -C "$repo_root" "$@" 2>&1 >/dev/null || true)"   # the diagnosis only, on the failure path
+    [ -z "$gv_why" ] || echo "       ${gv_why%%$'\n'*}"
+  fi
+  printf -v "$var" '%s' "$gv_out"
+  return "$gv_rc"
+}
+
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or
@@ -299,6 +344,8 @@ fi
 # this pattern appears below.
 if [ "${#scan_files[@]}" -gt 0 ]; then
   for f in "${scan_files[@]}"; do
+    file_readable "the dead-reference check" "$f" || { dead=$((dead + 1)); continue; }
+    scan_refs="$(grep -ohE '/?(tools|commands|templates)/[A-Za-z0-9._/-]+\.(sh|md)' "$repo_root/$f" | sort -u || true)"
     # An optional literal '/' right before the keyword decides nested-vs-bare PER OCCURRENCE, not
     # per unique ref per file — a file that mentions the same path both nested (e.g. a test's
     # sandbox install target "$HOME/.claude/commands/keel-go.md") and bare (a genuine dead top-level
@@ -310,7 +357,7 @@ if [ "${#scan_files[@]}" -gt 0 ]; then
         *)  ref="$hit" ;;  # no '/' captured — already exactly the candidate reference
       esac
       [ -e "$repo_root/$ref" ] || { gap "dead reference '$ref' in $f"; dead=$((dead + 1)); }
-    done < <(grep -ohE '/?(tools|commands|templates)/[A-Za-z0-9._/-]+\.(sh|md)' "$repo_root/$f" 2>/dev/null | sort -u)
+    done <<< "$scan_refs"
   done
 fi
 [ "$dead" -eq 0 ] && say "  OK   no dead tools/commands/templates references"
@@ -347,7 +394,10 @@ scan_files_cmd=()
 # any one path in its file-operand list is unreadable; check 2's own per-file loop above only loses
 # that ONE file's coverage on the same failure, since each of its grep calls is scoped to one path.
 if tracked_files "the adopter-facing docs" "the slash-command check" "${adopter_docs[@]}"; then
-  while IFS= read -r f; do [ -n "$f" ] && [ -f "$repo_root/$f" ] && scan_files_cmd+=("$f"); done <<< "$LS_OUT"
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$repo_root/$f" ] || continue
+    file_readable "the slash-command check" "$f" && scan_files_cmd+=("$f") || dead_cmd=$((dead_cmd + 1))
+  done <<< "$LS_OUT"
 else
   dead_cmd=$((dead_cmd + 1))
 fi
@@ -361,10 +411,14 @@ not_commands=(tmp setup)
 # on the other end of grep's stdin for grep to signal.
 allow_list="$(printf '%s\n' "${harness_commands[@]}" "${not_commands[@]}")"
 if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
-  # `|| true`: grep exits 1 on zero matches, which under `set -e` would otherwise abort this whole
-  # script at the assignment (unlike the process-substitution loop above, a direct `var=$(cmd)`
-  # DOES propagate a failing exit status through errexit).
-  raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}" 2>/dev/null || true)"
+  # grep exits 1 on zero matches (valid) and 2 on a real error (dir #766: a GAP, not an empty hit list);
+  # a direct `var=$(cmd)` propagates a failing status through errexit, so the status is captured.
+  cmd_rc=0
+  raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}")" || cmd_rc=$?
+  if [ "$cmd_rc" -gt 1 ]; then
+    gap "could not scan the adopter-facing docs (grep exit $cmd_rc) — the slash-command check is INCOMPLETE"
+    dead_cmd=$((dead_cmd + 1))
+  fi
   refs="$(printf '%s\n' "$raw_hits" | cut -d: -f3- | tr -d '`/ ("*' | sort -u)"
   for name in $refs; do
     grep -qxF "$name" <<< "$allow_list" && continue
@@ -471,7 +525,10 @@ ref_contents=()
 ref_contents_stripped=()
 if [ "${#ref_files[@]}" -gt 0 ]; then
   for f in "${ref_files[@]}"; do
-    content="$(cat "$repo_root/$f" 2>/dev/null)"
+    content=""
+    # dir #766: an unreadable reference file is a GAP, and blinds the loop below (every tool it alone
+    # referenced would read as unreferenced) — not an abort of the whole run under `set -e`.
+    if file_readable "the tool-wiring check" "$f"; then content="$(cat "$repo_root/$f")"; else ref_blind=1; fi
     ref_contents+=("$content")
     case "$f" in
       tests/*) ref_contents_stripped+=("$(sed -E 's/(^|[[:space:]])#.*$//' <<< "$content")") ;;
@@ -533,11 +590,19 @@ say ""
 # dir #744 (B5): a PR's changelog entry is a changelog.d/ fragment, so CHANGELOG.md alone stops moving
 # mid-release; the changelog's timestamp is the newest commit touching either. A pathspec naming a
 # directory that does not exist is not an error for `git log`, so a project without fragments is unchanged.
-changelog_ts="$(git -C "$repo_root" log -1 --format=%ct -- CHANGELOG.md changelog.d 2>/dev/null || echo 0)"
-product_ts="$(git -C "$repo_root" log -1 --format=%ct -- commands tools install.sh 2>/dev/null || echo 0)"
+# dir #766: a git that cannot read the log is a GAP (no OK line), not a pair of zeros that reads as "up to date".
+changelog_ts=""
+product_ts=""
+staleness_blind=0
+git_value changelog_ts "the CHANGELOG commit time" "the CHANGELOG staleness check" \
+  log -1 --format=%ct -- CHANGELOG.md changelog.d || staleness_blind=1
+git_value product_ts "the product commit time" "the CHANGELOG staleness check" \
+  log -1 --format=%ct -- commands tools install.sh || staleness_blind=1
 # `git log -1` exits 0 with EMPTY stdout (not an error) when no commit ever touched the pathspec —
-# the `|| echo 0` above only catches a nonzero exit, so an untouched path needs this fallback too.
-if [ "${product_ts:-0}" -gt "${changelog_ts:-0}" ]; then
+# the `${…:-0}` below covers an untouched path.
+if [ "$staleness_blind" = 1 ]; then
+  :   # already GAPped above
+elif [ "${product_ts:-0}" -gt "${changelog_ts:-0}" ]; then
   warn "CHANGELOG.md predates the most recent commands/, tools/, or install.sh change — verify [Unreleased] or changelog.d/ covers it"
 else
   say "  OK   CHANGELOG.md is at least as recent as the last commands/, tools/, or install.sh change"
@@ -979,22 +1044,9 @@ _semver_gt() {
   [ "$a3" -gt "$b3" ]
 }
 
-# _release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver tag (bare `x.y.z`, no `v`),
-# one per line, unsorted-by-version (whatever order `git tag -l` gives). Pure (no shared mutable
-# state), so check 7 below can call it to stand on its own — independent of whether check 6 ran first
-# or its guard changed — without re-deriving the same tag-collection shape by hand (found by
-# /simplify's own reuse pass on dir #237's diff, which shipped the collection loop byte-for-byte
-# duplicated at first). Check 6 keeps its own inline scan rather than calling this: it folds the
-# highest-tag pass together with its `missing_section` scan over the identical `$tags` stream in one
-# loop (see the comment there), so calling this helper too would mean scanning `$tags` twice instead
-# of once for no benefit.
-_release_tag_versions() {
-  git -C "$1" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
-}
-
 # _semver_max — reads bare `x.y.z` versions on stdin, one per line, echoes the highest (or empty for
-# no input). A THIRD `git tag -l` scan for the max alone (on top of `_release_tag_versions` and check
-# 6's own inline one) was flagged independently by three review passes (`/simplify`'s reuse,
+# no input). A THIRD `git tag -l` scan for the max alone (on top of check 7's own and check
+# 6's inline one) was flagged independently by three review passes (`/simplify`'s reuse,
 # simplification, AND efficiency angles all named the same duplication) — folding the reduction into
 # a pipe over an already-fetched list, rather than a second helper that re-fetches, removes it.
 _semver_max() {
@@ -1111,13 +1163,18 @@ _pending_release_intro_commit() {
   # requires an actual heading line; the closing `]` bounds the right edge ([0.9.0] cannot prefix
   # [0.9.01] — the bracket lands on a digit).
   heading_re="^$(printf '%s' "$heading" | sed 's/[][\.*^$/]/\\&/g')"
-  # dir #213 closes via SHAPE, not the trailing `|| true`: a process substitution's exit status is never
-  # checked by the shell (verified live — `done < <(false)` does not trip `set -e`), so a failing `git
-  # log` here could never have aborted the run either way. The actual dir #213 fix is that this function
-  # no longer assigns the pickaxe's raw output to a bare `$( )` variable — THAT construct's failing exit
-  # status DOES propagate through `set -e`, and this `while read < <(...)` loop structurally can't. The
-  # `|| true` stays only because it matches the ticket's own named acceptance criterion, at zero cost.
+  # dir #213 closed this via SHAPE (no bare `$( )` assignment whose failing status aborts the run); dir #766
+  # replaced its trailing `|| true` with the checked status below.
+  # dir #766: the pickaxe is spooled with its status kept (a `< <(…|| true)` here printed a clean "bound not
+  # computed" over a git that could not run). Status 2 = could not walk the history; the caller GAPs (this
+  # function runs inside `$( )`, where a gap() call would be lost with the subshell). Status 0 with empty
+  # output stays the designed "heading never appears in tracked history" fail-open.
+  intro_shas=""
+  intro_rc=0
+  intro_shas="$(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null)" || intro_rc=$?
+  [ "$intro_rc" -eq 0 ] || return 2
   while IFS= read -r sha; do
+    [ -n "$sha" ] || continue
     # Captured into variables, not piped straight into `grep -q` (dir #195's own class, reintroduced
     # here and caught live: `blank_fenced_blocks <(...) | grep -qF ...` SIGPIPEs the awk writer the
     # instant grep finds its match and exits, and under `set -o pipefail` that reads as "not present"
@@ -1125,13 +1182,22 @@ _pending_release_intro_commit() {
     # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
     # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
     # live writer process on the other end) tests presence with nothing left to signal.
-    now="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha:$rel" 2>/dev/null) 2>/dev/null)"
-    before="$(blank_fenced_blocks <(git -C "$repo_root" show "$sha^:$rel" 2>/dev/null) 2>/dev/null)"
+    # dir #766: `git show` runs with its status kept. The file exists at $sha by construction (the pickaxe above
+    # listed this commit for it), so a failing show there is a real failure (status 2, the caller GAPs). At
+    # `$sha^` the file may genuinely not exist (this commit added it, or it is a root commit): `cat-file -e` asks
+    # that question explicitly, and only a PRESENT blob whose show fails is a failure.
+    now_raw="$(git -C "$repo_root" show "$sha:$rel")" || return 2
+    before_raw=""
+    if git -C "$repo_root" cat-file -e "$sha^:$rel" 2>/dev/null; then
+      before_raw="$(git -C "$repo_root" show "$sha^:$rel")" || return 2
+    fi
+    now="$(blank_fenced_blocks /dev/stdin <<< "$now_raw")"
+    before="$(blank_fenced_blocks /dev/stdin <<< "$before_raw")"
     if grep -q "$heading_re" <<< "$now" && ! grep -q "$heading_re" <<< "$before"; then
       printf '%s\n' "$sha"
       return 0
     fi
-  done < <(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null || true)
+  done <<< "$intro_shas"
   # -G (regex pickaxe), not -S: -S counts SUBSTRING occurrences, so a count-neutral commit — one that
   # promotes an existing inline-prose mention into the real heading line, adding one and removing one
   # — never enters the candidate walk and the function silently fails open (bound not computed). The
@@ -1148,15 +1214,21 @@ changelog_file="$repo_root/CHANGELOG.md"
 # tags this check needs even though the working tree itself is complete and correct — flagging that
 # as drift would be a check lying about the repo's own state, so it degrades to a silent skip
 # instead. `rev-parse --is-shallow-repository` prints "false" in a normal checkout and "true" in a
-# shallow one; `|| true` covers a REPO_ARG sandbox dir that isn't a git repo at all (rev-parse then
-# just fails, same treatment as "can't tell, skip" — this check is advisory, not a hard requirement
-# to be inside a full git checkout).
+# shallow one. A rev-parse that FAILS (a REPO_ARG sandbox that isn't a git repo, or a git that will
+# not run) is a GAP naming it (dir #766) — it used to read as "true" and skip without a word.
 # `-r`, not just `-f`: same reason check 5's BACKLOG.md read requires it — an unreadable file
 # (e.g. a stray chmod) would otherwise fail the awk pass below and, under `set -euo pipefail`, abort
 # the ENTIRE doctor.sh run rather than just this check (found by /code-review medium's own
 # line-by-line pass: this condition had only inherited the `-f` half).
-if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
-   && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
+# dir #766: an unreadable CHANGELOG.md and a git that cannot answer (shallow? tag list?) are GAPs now, not a
+# silent "skipping" — the skip below stays for the designed cases only: no CHANGELOG.md, or a shallow checkout.
+cl_gaps_before="$gap_count"
+shallow_state=""; tags_raw=""   # set by git_value's `printf -v`; declared so shellcheck (SC2154) sees the assignment
+if [ -f "$changelog_file" ] && file_readable "the CHANGELOG <-> release-tag check" CHANGELOG.md \
+   && git_value shallow_state "whether the checkout is shallow" "the CHANGELOG <-> release-tag check" \
+        rev-parse --is-shallow-repository \
+   && [ "$shallow_state" = "false" ] \
+   && git_value tags_raw "the release tags" "the CHANGELOG <-> release-tag check" tag -l 'v*'; then
   # `git tag -l` takes a GLOB, not a regex — `*` matches ANY characters, so the naive glob
   # `v[0-9]*.[0-9]*.[0-9]*` also matches a suffixed pre-release tag like `v0.7.0-rc1` (verified: the
   # trailing `*` swallows `-rc1` too), which `sed 's/^v//' ` would then hand to the comparison below
@@ -1169,7 +1241,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # no-match exit 1 ripple through `set -o pipefail` into an assignment's own exit status, which under
   # `set -e` would abort the whole doctor.sh run — `|| true` below on every such assignment, same
   # guard check 4's CHANGELOG-staleness timestamps already use.
-  tags="$(git -C "$repo_root" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -u || true)"
+  tags="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags_raw" | sed 's/^v//' | sort -u || true)"
   # Same `blank_fenced_blocks` fence-blanking as check 5's BACKLOG.md scan, and for the identical
   # reason (found by /polish's own independent review — this check shipped without it at first): a
   # `## [x.y.z]`-shaped line living inside a fenced example — this very file documents its own
@@ -1273,6 +1345,8 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # shallow-clone guard above already downgrades to a silent skip instead of inventing drift.
   pending=""
   pending_dist=""
+  history_blind=0
+  dist=""   # set by git_value's `printf -v` below (SC2154)
   missing_tag=""
   overbound_section=""
   overbound_dist=""
@@ -1290,12 +1364,20 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
       missing_tag="$missing_tag${missing_tag:+, }$s"
       continue
     fi
-    intro_commit="$(_pending_release_intro_commit "$s")"
+    intro_rc=0
+    intro_commit="$(_pending_release_intro_commit "$s")" || intro_rc=$?
+    if [ "$intro_rc" -ne 0 ]; then
+      gap "could not walk CHANGELOG.md's git history for '## [$s]' (status $intro_rc) — the pending-release bound is INCOMPLETE"
+      history_blind=1
+      pending="$s"
+      continue
+    fi
     if [ -z "$intro_commit" ]; then
       pending="$s"   # bound unresolvable -> fail open, per the comment above
       continue
     fi
-    dist="$(git -C "$repo_root" rev-list --count "$intro_commit"..HEAD)"
+    git_value dist "the commit distance since $intro_commit" "the pending-release bound" \
+      rev-list --count "$intro_commit"..HEAD || { history_blind=1; pending="$s"; continue; }
     if [ "$dist" -gt "$pending_max_commits" ]; then
       overbound_section="$s"; overbound_dist="$dist"
       continue
@@ -1309,7 +1391,7 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   pending_count=0
   [ -n "$pending" ] && pending_count=1
 
-  changelog_bad=0
+  changelog_bad="$history_blind"
   if [ -n "$missing_section" ]; then
     gap "release tag(s) with no matching CHANGELOG.md '## [x.y.z]' section: $missing_section"
     changelog_bad=1
@@ -1432,7 +1514,13 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     # dir #744 (B34): once the newest section is cut, changelog.d/ must be empty — the cut deletes every
     # fragment. One that is still listed merged after the cut ran (in the queue, its merge group carries it
     # ahead of the cut PR), and a plain `[Unreleased]`-style check cannot see it: it is in no section.
-    late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null || true)"
+    lf_rc=0
+    late_fragments="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" --list 2>/dev/null)" || lf_rc=$?
+    if [ "$lf_rc" -ne 0 ]; then
+      late_fragments=""
+      gap "could not list changelog.d/ fragments (changelog-fragments.sh exit $lf_rc) — the fragments-after-the-cut check is INCOMPLETE"
+      changelog_bad=1
+    fi
     late_fragments="${late_fragments//$'\n'/ }"
     if [ -n "$late_fragments" ]; then
       gap "fragments merged after the cut ($late_fragments) — move each one's bullets into [$pending] unless already there, then delete the file; 'tools/self/changelog-cut.sh $pending <DATE>' refuses and labels which is which (give it no other version: that would cut for real)"
@@ -1440,8 +1528,8 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
     fi
   fi
   [ "$changelog_bad" -eq 0 ] && say "  OK   every release tag has a CHANGELOG.md section and vice versa ($n_tags tags)"
-else
-  say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping tag reconciliation"
+elif [ "$gap_count" -eq "$cl_gaps_before" ]; then
+  say "  OK   no CHANGELOG.md, or a shallow checkout — skipping tag reconciliation"
 fi
 
 # --- 7. commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237) ---------------------
@@ -1518,17 +1606,21 @@ fi
 # scans.
 say ""
 say "● commit dir #N tickets vs CHANGELOG.md [Unreleased] section (dir #237)"
-if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
-   && [ "$(git -C "$repo_root" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
-  # Same tag-collecting shape as check 6 above (v-prefixed strict-semver tags only), via the shared
-  # `_release_tag_versions` helper rather than check 6's own $tags — those only exist when check 6's
-  # guard above passed, and this check must stand on its own if check 6 is ever reordered or its guard
-  # tightened. The helper is pure (no shared state), so calling it costs one more `git tag` scan but no
-  # coupling. Fetched ONCE here and reused below for both the highest-tag reduction and the awk
-  # membership set — a second, MAX-only helper that re-scanned `git tag` again was flagged
-  # independently by three review passes (dir #237) as the exact duplication `_release_tag_versions`
-  # itself exists to avoid.
-  ct_tag_list="$(_release_tag_versions "$repo_root")"
+ct_gaps_before="$gap_count"
+ct_blind=0   # dir #766: set when a read this check needs GAPped — no verdict line then
+ct_shallow=""; ct_tags_raw=""; ct_log=""   # set by git_value's `printf -v`; declared for shellcheck (SC2154)
+if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG.md \
+   && git_value ct_shallow "whether the checkout is shallow" "the commit-ticket check" \
+        rev-parse --is-shallow-repository \
+   && [ "$ct_shallow" = "false" ] \
+   && git_value ct_tags_raw "the release tags" "the commit-ticket check" tag -l 'v*'; then
+  # Same tag-collecting shape as check 6 above (v-prefixed strict-semver tags only), fetched here rather
+  # than reusing check 6's $tags — those only exist when check 6's guard above passed, and this check must
+  # stand on its own if check 6 is ever reordered or its guard tightened. Fetched ONCE (the guard's
+  # `git_value`, dir #766) and reused below for both the highest-tag reduction and the awk membership set —
+  # a second, MAX-only helper that re-scanned `git tag` again was flagged independently by three review
+  # passes (dir #237) as a duplication.
+  ct_tag_list="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$ct_tags_raw" | sed 's/^v//' || true)"
   ct_highest="$(_semver_max <<< "$ct_tag_list")"
   # `%B` (raw commit message body), `--no-merges` — the exact command dir #237's own body names as
   # what the release audit already used, so this check reproduces a proven-accurate extraction rather
@@ -1541,8 +1633,9 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   fi
   # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
   # (dir #364) — see the check's header comment for the full rationale.
-  ct_commit_tickets="$(git -C "$repo_root" log "$ct_range" --no-merges --format=%B 2>/dev/null \
-    | _extract_dir_tickets || true)"
+  git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
+    log "$ct_range" --no-merges --format=%B || ct_blind=1
+  ct_commit_tickets="$(_extract_dir_tickets <<< "$ct_log" || true)"
   # The [Unreleased] section's body, PLUS any section(s) below it that are cut but not tagged yet —
   # not the whole file, or an already-released section's historical ticket citations would silently
   # vouch for a DIFFERENT, still-open ticket never actually re-entered under [Unreleased]. Reuses
@@ -1593,8 +1686,15 @@ if [ -f "$changelog_file" ] && [ -r "$changelog_file" ] \
   # dir #744 (B5): the effective unreleased text is that body PLUS every changelog.d/ fragment, read
   # through the one reader (never a second listing of the directory). A reader failure reads as "no
   # fragments" here — the lint is the PR's own check (tests/test_changelog_fragments.sh), not this
-  # advisory one's.
-  ct_fragment_text="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" 2>/dev/null || true)"
+  # advisory one's. dir #766: a reader that FAILS (exit != 0) is a different thing from an empty
+  # directory: it is a GAP, and the check prints no verdict (it cannot know what the fragments hold).
+  ct_frag_rc=0
+  ct_fragment_text="$("$self_dir/changelog-fragments.sh" --repo "$repo_root" 2>/dev/null)" || ct_frag_rc=$?
+  if [ "$ct_frag_rc" -ne 0 ]; then
+    ct_fragment_text=""
+    gap "could not read changelog.d/ fragments (changelog-fragments.sh exit $ct_frag_rc) — the commit-ticket check is INCOMPLETE"
+    ct_blind=1
+  fi
   # `_extract_dir_tickets`'s same `(ref)`-stripping applies on this side of the comparison too
   # (dir #273 gap 1) — see the check's header comment for the full rationale.
   ct_unreleased_tickets="$(_extract_dir_tickets <<< "$ct_unreleased_body
@@ -1614,13 +1714,15 @@ $ct_fragment_text" || true)"
   fi
   ct_since="the repo's start"
   [ -n "$ct_highest" ] && ct_since="v$ct_highest"
-  if [ -n "$ct_missing" ]; then
+  if [ "$ct_blind" = 1 ]; then
+    :   # a read already GAPped above: no verdict over half the evidence
+  elif [ -n "$ct_missing" ]; then
     warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section or changelog.d/: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
   else
     say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section or changelog.d/"
   fi
-else
-  say "  OK   no CHANGELOG.md, or a shallow/non-git checkout — skipping commit-ticket reconciliation"
+elif [ "$gap_count" -eq "$ct_gaps_before" ]; then
+  say "  OK   no CHANGELOG.md, or a shallow checkout — skipping commit-ticket reconciliation"
 fi
 
 # --- 8. reading PIPESTATUS in a file that sets pipefail (dir #321) --------------------------------
@@ -1669,7 +1771,8 @@ tracked_files "the tracked shell scripts" "the PIPESTATUS check" '*.sh' 'keel' '
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   [ -f "$repo_root/$rel" ] || continue
-  stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel" 2>/dev/null)"
+  file_readable "the PIPESTATUS check" "$rel" || { ps_hit=1; continue; }
+  stripped="$(sed -E 's/(^|[[:space:]])#.*$//' "$repo_root/$rel")"
   if grep -qE '(^|[[:space:];&|])set[[:space:]].*\bpipefail\b' <<< "$stripped"; then
     ps_lines="$(grep -nE '\$\{?PIPESTATUS' <<< "$stripped" | cut -d: -f1 | paste -sd, - || true)"
     if [ -n "$ps_lines" ]; then
@@ -1729,8 +1832,13 @@ fn_open_re artifact_cksum cksum_def_re
 # file (the file's other git calls — `git tag -l`, `git rev-parse`, `git log` — are never
 # colourised by `color.ui`/`color.grep` in the first place, so widening the fix would change more
 # than the ticket asks for no benefit).
-cksum_defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel' 2>/dev/null || true)"
-if [ -z "$cksum_defs" ]; then
+# dir #766: `git grep` exits 1 on no match (valid: no definition anywhere) and >1 on a real failure — the latter
+# is a GAP naming the search, not an empty answer that reads as "no definition anywhere".
+cksum_rc=0
+cksum_defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$cksum_def_re" -- '*.sh' 'keel')" || cksum_rc=$?
+if [ "$cksum_rc" -gt 1 ]; then
+  gap "could not search the tracked scripts for artifact_cksum() (git grep exit $cksum_rc) — the single-definition check is INCOMPLETE"
+elif [ -z "$cksum_defs" ]; then
   :   # no definition anywhere — no rule to keep in sync here
 elif [ "$cksum_defs" != "tools/lib/artifact-cksum.sh" ]; then
   gap "artifact_cksum() is defined in {$cksum_defs} — expected exactly one definition, in tools/lib/artifact-cksum.sh (dir #362: install.sh/uninstall.sh must source it, never hand-copy it)"
@@ -1765,11 +1873,15 @@ say "● manifest_field/manifest_usable/core-ownership-predicate/core-block-comp
 # Absence graded the same way check 9 grades an absent artifact_cksum: a repo defining FN nowhere
 # simply doesn't have the rule to keep in sync.
 single_def_check() {
-  local fn="$1" home="$2" exempt="${3-}" def_re defs rest note=""
+  local fn="$1" home="$2" exempt="${3-}" def_re defs rest note="" sd_rc=0
   fn_open_re "$fn" def_re
   # `-c color.grep=never` (dir #587): same false-GAP class as check 9's own `cksum_defs` above —
   # see that call site's comment for the full mechanism and why this is per-call, not file-wide.
-  defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/' 2>/dev/null || true)"
+  defs="$(git -c color.grep=never -C "$repo_root" grep -lE "$def_re" -- '*.sh' 'keel' ':!tests/')" || sd_rc=$?
+  if [ "$sd_rc" -gt 1 ]; then   # dir #766: a failing search is a GAP, not "no definition anywhere"
+    gap "could not search the tracked scripts for ${fn}() (git grep exit $sd_rc) — its single-definition check is INCOMPLETE"
+    return
+  fi
   [ -z "$defs" ] && return   # no definition anywhere — no rule to keep in sync here
   rest="$defs"
   if [ -n "$exempt" ]; then

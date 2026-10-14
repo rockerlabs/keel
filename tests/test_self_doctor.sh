@@ -1422,8 +1422,12 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [1.0.0] — 2026-01-01\n- first release\n' > "$d/CHANGELOG.md"
   ( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
   chmod 000 "$d/CHANGELOG.md"
-  run "$sd" "$d" --quiet
-  check_status "an unreadable CHANGELOG.md doesn't abort the whole run -> exit 0" 0 "$STATUS"
+  run "$sd" "$d"
+  # dir #766: unreadable is a GAP naming the file (not a silent skip), and the run still reaches the later checks
+  check_status "an unreadable CHANGELOG.md is a GAP, not an abort -> exit 1" 1 "$STATUS"
+  check_contains "…the GAP names the file and the check" "$OUT" "could not read CHANGELOG.md"
+  check_contains "…and later checks still ran (the PIPESTATUS check's OK line)" "$OUT" "OK   no tracked .sh file both sets pipefail"
+  check_absent "…with no 'skipping' OK over the file it could not read" "$OUT" "skipping tag reconciliation"
   chmod 644 "$d/CHANGELOG.md"
 fi
 
@@ -2359,5 +2363,67 @@ check_contains "A41: that listing is named" "$OUT" "could not list the reference
 check_eq "A41: it is the only 'could not list' GAP" 1 "$(grep -c 'could not list' <<< "$OUT" || true)"
 check_absent "A41: no tool is named an orphan over an unlisted reference set" "$OUT" "orphan tool"
 check_absent "A41: no tool is named a NEW untested script over it" "$OUT" "NEW shipped script"
+
+# --- dir #766: the remaining status-hiding sites — each read the audit could not complete is a GAP naming it, no OK ---
+# A42 — an unreadable tracked file. root reads anything regardless of chmod (the Alpine CI runs as root), so the
+# content assertions are skipped there; the platform-independent half (the register test) runs everywhere.
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  d="$(mk_clean_repo)"
+  chmod 000 "$d/commands/go.md" "$d/tests/test_tools.sh"
+  run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d"
+  check_status "A42: unreadable tracked files -> exit 1, not an abort" 1 "$STATUS"
+  check_contains "A42: the tool-wiring check names the unreadable reference file" "$OUT" "could not read commands/go.md — the tool-wiring check is INCOMPLETE"
+  check_contains "A42: the dead-reference check names the unreadable script" "$OUT" "could not read tests/test_tools.sh — the dead-reference check is INCOMPLETE"
+  check_absent "A42: no OK line for the dead-reference check" "$OUT" "OK   no dead tools/commands/templates references"
+  check_contains "A42: later checks still ran (the PIPESTATUS check)" "$OUT" "● PIPESTATUS read in a file that sets pipefail"
+  chmod 644 "$d/commands/go.md" "$d/tests/test_tools.sh"
+fi
+
+# A43 — a git that fails only one subcommand. The shim execs the real git for everything else.
+mk_git_shim() {   # mk_git_shim DIR CASE-PATTERN — a `git` that refuses any call whose argument string matches
+  mkdir -p "$1"
+  printf '#!/bin/sh\ncase " $* " in %s) echo "fatal: shim refuses this call" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' \
+    "$2" "$(type -P git)" > "$1/git"
+  chmod +x "$1/git"
+}
+d="$(mk_clean_repo)"
+mk_git_shim "$SANDBOX/shim-log" '*" log -1 "*'
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-log:$PATH" "$sd" "$d"
+check_status "A43: a git that fails only 'log -1' -> exit 1" 1 "$STATUS"
+check_contains "A43: the staleness check names what it could not read" "$OUT" "could not read the CHANGELOG commit time (git exit 128) — the CHANGELOG staleness check is INCOMPLETE"
+check_absent "A43: no OK line over a log it could not read" "$OUT" "OK   CHANGELOG.md is at least as recent"
+check_contains "A43: git's own stderr line rides under the GAP" "$OUT" "       fatal: shim refuses this call"
+
+d="$(mk_clean_repo)"
+mk_git_shim "$SANDBOX/shim-tag" '*" tag -l "*'
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-tag:$PATH" "$sd" "$d"
+check_status "A43: a git that fails only 'tag -l' -> exit 1" 1 "$STATUS"
+check_contains "A43: check 6 names the tags it could not read" "$OUT" "could not read the release tags (git exit 128) — the CHANGELOG <-> release-tag check is INCOMPLETE"
+check_contains "A43: check 7 names them too" "$OUT" "could not read the release tags (git exit 128) — the commit-ticket check is INCOMPLETE"
+check_absent "A43: no 'skipping' OK over a failed tag listing" "$OUT" "skipping tag reconciliation"
+
+d="$(mk_clean_repo)"
+mk_git_shim "$SANDBOX/shim-shallow" '*" rev-parse --is-shallow-repository "*'
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-shallow:$PATH" "$sd" "$d"
+check_status "A43: a git that cannot answer 'is it shallow' -> exit 1" 1 "$STATUS"
+check_contains "A43: it is a GAP, not a silent skip" "$OUT" "could not read whether the checkout is shallow (git exit 128)"
+check_absent "A43: no 'skipping' OK stands in for the unanswered question" "$OUT" "skipping commit-ticket reconciliation"
+
+d="$(mk_clean_repo)"
+mk_git_shim "$SANDBOX/shim-grep" '*" grep -lE "*'
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-grep:$PATH" "$sd" "$d"
+check_status "A43: a git whose 'grep' fails -> exit 1" 1 "$STATUS"
+check_contains "A43: check 9 names the search" "$OUT" "could not search the tracked scripts for artifact_cksum() (git grep exit 128)"
+check_contains "A43: check 10 names its searches" "$OUT" "could not search the tracked scripts for manifest_field() (git grep exit 128)"
+check_absent "A43: no OK over a search that failed" "$OUT" "OK   artifact_cksum() has exactly one definition"
+
+# A44 — the changelog-fragments reader failing. Reuses A40's copy of tools/self + tools/lib, swapping the reader.
+d="$(mk_clean_repo)"
+printf '#!/usr/bin/env bash\necho reader-says-no >&2; exit 4\n' > "$sel_root/tools/self/changelog-fragments.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$sel_root/tools/self/shellcheck-targets.sh"
+run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 bash "$sel_root/tools/self/doctor.sh" "$d"
+check_status "A44: a failing fragments reader -> exit 1" 1 "$STATUS"
+check_contains "A44: the commit-ticket check names the reader failure" "$OUT" "could not read changelog.d/ fragments (changelog-fragments.sh exit 4) — the commit-ticket check is INCOMPLETE"
+check_absent "A44: no verdict line over fragments it could not read" "$OUT" "OK   every dir #N referenced in commits since"
 
 summary
