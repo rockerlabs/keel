@@ -13,15 +13,17 @@
 # Text read: by default every fragment (the reader `changelog-fragments.sh --list` names them, in its order),
 # then the body of `CHANGELOG.md`'s `## [Unreleased]`. --section X.Y.Z reads only the body of `## [X.Y.Z]`.
 # --fragment (repeatable, each must be in the reader's list, exclusive with --section; a leading ./ and an
-# absolute path under the repository are accepted) reads only the named fragments: how a PR or a pre-cut correction lints its own text under --strict. Fenced blocks and inline
-# code spans are never read. A line with an odd number of backticks is not code-blanked (its code numbers
-# list as claims).
+# absolute path under the repository are accepted) reads only the named fragments: how a PR or a pre-cut
+# correction lints its own text under --strict. Fenced blocks and inline code spans are never read. A line
+# with an odd number of backticks is not code-blanked (its code numbers list as claims).
 #
-# A claim is a number in the prepared text (ticket and PR ids, versions, dates, identifiers, "step 5"-style
-# structure words, exit statuses and list ordinals are not — except that such a reference followed by a COUNT
-# unit or a change verb is a count again: "passes 12 tests", "lines 120 changed"; and "top-10" / "over-100"
-# carry a count). A unit glued to a number (2x, 40KB, 30s) leaves an integer claim a marker may bind. A marker on the same line binds the nearest
-# claim to its LEFT that no marker has bound yet:
+# A claim is a number in the prepared text. Ticket and PR ids, versions, dates, identifiers, "step 5"-style
+# structure words, exit statuses and list ordinals are not claims. Two exceptions keep a count visible: such a
+# reference followed by a COUNT unit or a change verb ("passes 12 tests", "lines 120 changed"), and a number
+# after a count qualifier ("top-10", "over-100"). A unit glued to a number (2x, 40KB, 30s) leaves an integer
+# claim a marker may bind.
+#
+# A marker on the same line binds the nearest claim to its LEFT that no marker has bound yet:
 #   <!-- claim: words PATH -->            the awk field count of PATH (not `wc -w`, which differs per platform)
 #   <!-- claim: lines PATH -->            `wc -l` of PATH
 #   <!-- claim: matches ERE PATH... -->  the sum of `grep -cE ERE` over the PATHs (ERE: 'single quoted', or
@@ -174,7 +176,7 @@ function counted(pos) { return tolower(substr(s, pos)) ~ units }
 # blank(re, ci, lb, rb): overwrite every match of re with spaces of the same length (positions never shift).
 # ci matches on the lowercase copy (same byte positions under LC_ALL=C); lb requires a non-alphanumeric
 # byte to the match's left; rb keeps a match whose number is counted() (right boundary).
-function blank(re, ci, lb, rb, qual,    t, from, st, ln, w) {
+function blank(re, ci, lb, rb,    t, from, st, ln) {
   from = 1
   while (from <= length(s)) {
     t = substr(ci ? tolower(s) : s, from)
@@ -183,8 +185,19 @@ function blank(re, ci, lb, rb, qual,    t, from, st, ln, w) {
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
     if (rb && counted(st + ln)) { from = st + ln; continue }
-    # qual: "top-10", "over-100" carry a count, so the word-hyphen-number shape is not an identifier then
-    if (qual && match(substr(s, st, ln), /^[A-Za-z]+-[0-9]/) && (tolower(substr(s, st, RLENGTH - 2)) in qset)) { from = st + ln; continue }
+    blank_range(st, ln)
+    from = st + ln
+  }
+}
+# blank_idents(): the identifier shape (A13, S2-9, UTF-8, round-3), except after a count qualifier: "top-10" and
+# "over-100" carry a count, so they are not identifiers.
+function blank_idents(    from, st, ln, w) {
+  from = 1
+  while (from <= length(s)) {
+    if (!match(substr(s, from), "[A-Za-z]+-?[0-9]+(-[0-9]+)?(\\.[0-9]+)*[A-Za-z]*")) return
+    st = from + RSTART - 1; ln = RLENGTH
+    w = substr(s, st, ln)
+    if ((st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) || tolower(w) ~ qre) { from = st + (tolower(w) ~ qre ? ln : 1); continue }
     blank_range(st, ln)
     from = st + ln
   }
@@ -228,8 +241,7 @@ BEGIN {
   re_x6 = "(steps?|slices?|phase|rounds?|spec|lines?|turn|fd|items?|legs?|pass(es)?|part) " list
   re_x6s = sect " ?" list
   re_x7 = "(exit(s|ing|ed)?|exit code|return(s)?|status) " list
-  split("top over under above below around about nearly almost max min first last next only least most", ql, " ")
-  for (i in ql) qset[ql[i]] = 1
+  qre = "^(top|over|under|above|below|around|about|nearly|almost|max|min|first|last|next|only|least|most)-[0-9]"
   units = "^ +(tests?|values?|files?|lines?|words?|rows?|bytes?|tokens?|chars?|characters?|seconds?|minutes?|hours?|days?|times?|cases?|assertions?|entries|entry|findings?|tickets?|commits?|branches|branch|sessions?|mutants?|claims?|numbers?|bullets?|sections?|docs?|pages?|errors?|failures?|changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
   on = (h == "")
 }
@@ -303,7 +315,7 @@ BEGIN {
   blank("[0-9]?[0-9]:[0-9][0-9]Z?", 0, 0)
   blank("[0-9]+(st|nd|rd|th)", 0, 0)
   blank_shas()
-  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?(\\.[0-9]+)*[A-Za-z]*", 0, 1, 0, 1)
+  blank_idents()
   blank(re_x6, 1, 1, 1)
   blank(re_x6s, 0, 0)
   blank(re_x7, 1, 1, 1)
@@ -336,9 +348,9 @@ BEGIN {
     }
     if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*(\.[0-9]+)*/)) {
       tail = substr(s, e, RLENGTH); e += RLENGTH
-      # a glued letter unit (2x, 40KB, 30s) leaves an integer claim; a scale suffix (5k, 3M), %, a digit or a
+      # a glued letter unit (2x, 40KB, 30s) leaves an integer claim; a scale suffix (5k, 3M, 2B), %, a digit or a
       # dot in the tail (1e5, 12h30m, 2v1.5) does not
-      if (tail !~ /^[A-Za-z]+$/ || tail ~ /^[kKM]$/) nonint = 1
+      if (tail !~ /^[A-Za-z]+$/ || tail ~ /^[kKMBGT]$/) nonint = 1
     }
     nc++
     cpos[nc] = st; ctext[nc] = substr(s, ds, e - ds)
