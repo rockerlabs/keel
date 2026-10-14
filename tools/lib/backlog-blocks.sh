@@ -159,17 +159,20 @@ BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|ne
 #   <block_so_far>, or is it the ticket's first body line written with no blank line before it?
 #   Returns 0 (continuation) or 1 (body). A `Log:`, `Draft slug:` or leading `**` opener always ends
 #   the block. A heading already FINISHED (BB_HEADING_TAIL_PATTERN) takes no further line unless it
-#   opens with the tag's own em-dash (`— ✅ CLOSED` wrapped onto its own line); an unfinished title
+#   opens with a tag-shaped em-dash (`— ✅ CLOSED`, `— → pool`, `— R2`: a tail wrapped onto its own
+#   line; a dash followed by prose does not count); an unfinished title
 #   (the dir #255 wrap-before-the-tail shape) keeps taking lines until it finishes or a blank comes.
 #   Residual, accepted (no live instance of either): a prose body line directly under a heading with
 #   no tail at all still reads as the title's continuation, and a tag or arrow wrapped onto a line
-#   that does not open with an em-dash, after a finished first line, is not taken. The cure for the
+#   that does not open with an em-dash (checked against the live backlog on origin/main at the time of
+#   writing), after a finished first line, is not taken: it stays out of the block, and so out of the lane
+#   the pool report reads from it. The cure for the
 #   first is the blank line a writer leaves after every heading. A "previous line ends in a dash"
 #   rule for the second was tried and dropped: it admitted a glued body line after `— R2 —`.
 bb_heading_continues() {
   local so_far="$1" next="$2"
   local body_re='^(Log:|Draft slug:|\*\*)'
-  local dash_re='^[[:space:]]*—'
+  local dash_re='^[[:space:]]*—[[:space:]]*(✅|❌|⏳|→|R[0-9])'
   [[ "$next" =~ $body_re ]] && return 1
   [[ "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]] || return 0
   [[ "$next" =~ $dash_re ]]

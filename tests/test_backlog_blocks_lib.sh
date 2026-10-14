@@ -355,12 +355,22 @@ f839c="$d839c/BACKLOG.md"
 printf '### dir #811 — a graded heading whose tag wraps onto its own dash line — R2 — → pool
 — ✅ CLOSED (2026-10-01, done)
 
+### dir #813 — a graded heading whose arrow wraps onto its own dash line — R2 —
+— → pool
+
+### dir #814 — a finished open heading, a dash-led PROSE line glued under it — R2 — → pool
+— sibling dir #5 was ✅ DONE, this one is not.
+
 ### dir #812 — a graded heading that ends in a dash, a glued body line under it — R2 —
 Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
 ' > "$f839c"
 out839c="$(backlog_ticket_blocks "$f839c")"
 check_status "a finished heading's own wrapped dash-tag still reads closed" \
   1 "$(row839 "$out839c" "dir #811 " 3)"
+check_contains "MUTATION-PROOF: a dash-led wrapped arrow stays in the heading block" \
+  "$(row839 "$out839c" "dir #813 " 4)" "→ pool"
+check_status "MUTATION-PROOF: a dash-led prose line glued under a finished heading is not absorbed" \
+  0 "$(row839 "$out839c" "dir #814 " 3)"
 check_status "MUTATION-PROOF: a heading ending in a dash does not absorb a glued body line" \
   0 "$(row839 "$out839c" "dir #812 " 3)"
 
