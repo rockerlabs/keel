@@ -304,11 +304,20 @@ done
 for c in "gh api repos/{owner}/{repo}/issues/5/comments -f body=hi" "gh api -X PATCH repos/{owner}/{repo} -f description=x" \
          "gh api -X POST repos/:owner/:repo/labels -f name=x" "gh api -X PUT repos/o/r/contents/notes:repository.md -f message=x" \
          "gh api -X PUT repos/o/r/contents/a:branches.md -f message=x" "echo x | xargs gh api repos/{owner}/{repo}/issues" \
-         "gh api -X PUT repos/o/r/pulls/5/merge/.. -f x=y" "gh api -X PUT repos/o/r/contents/merge-notes/./pulls.md -f x=y"; do
+         "timeout 60 gh pr create --label api --body \"see {branch}\" --title x" "nice gh api graphql -F b={branch} -f query=q"; do
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
 done
-deny "accepted cost: an API write to any path holding a part gh fills in is read as a merge" "$R_API" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" "$P" "$OTHER"
+for c in "gh api -X PUT repos/o/r/pulls/5/merge/.. -f x=y" "gh api -X PUT repos/o/r/contents/merge-notes/./pulls.md -f x=y"; do
+  deny "accepted cost: an API write to an irregular path holding pulls or merge is read as a merge: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+for c in "GH_REPO=x/merg gh api -X PUT repos/o/r/pulls/5/:repo%65" "GH_REPO=pul/x gh api -X PUT repos/o/r/:owner%6Cs/5/merge" \
+         "gh api -X PUT repos/o/r/pulls/5/merge/x%2F../.." "GH_REPO=x/merge gh api -X PUT repos/o/r/pulls/5//{repo}" \
+         "GH_REPO=x/pulls gh api -X PUT repos/o/r/{repo}//5/merge"; do
+  deny "(f) an irregular or placeholder path that may reach the merge endpoint: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+deny "accepted cost: behind a runner, a {branch} path is unread even on a read" "$R_UNREAD" "timeout 30 gh api repos/{owner}/{repo}/branches/{branch}" "$P" "$OTHER"
+deny "accepted cost: an API write to a {branch} path is read as a merge" "$R_API" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" "$P" "$OTHER"
 deny "(d) manager: -m after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- -m" "$P" "$MID"
 deny "(g) env -C gh \"gh\" pr merge: the quoted gh hides the subcommand — unread" "$R_UNREAD" "env -C gh \"gh\" pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(g) the first unread cause is kept" "gh is not the command word" "timeout 5 $MERGE; gh pr --admin merge 6" "$P" "$MID"
