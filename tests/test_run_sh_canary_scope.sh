@@ -77,6 +77,14 @@ check_status "TMPDIR inside the checkout -> the run's own logdir does not trip t
 check_absent "... no trip block" "$OUT" "$TRIP"
 check_contains "... and the suite itself ran" "$OUT" "ALL TEST FILES PASSED"
 
+# --- GREEN 6: the same, with a brand-new untracked directory as $TMPDIR (git collapses it into one `?? dir/`) --
+d="$(mkcanary)"
+peer_act "$d" ':'
+mkdir "$d/fresh-tmp"
+run env TMPDIR="$d/fresh-tmp" bash "$d/tests/run.sh"
+check_status "an untracked TMPDIR directory inside the checkout -> the canary stays green" 0 "$STATUS"
+check_absent "... no trip block" "$OUT" "$TRIP"
+
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"
 peer_act "$d" 'git -C "$R" branch stray'
