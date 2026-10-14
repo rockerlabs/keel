@@ -51,6 +51,10 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 export LC_ALL=C
 export GIT_MERGE_AUTOEDIT=no
 
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/repo-top.sh
+. "$self_dir/../lib/repo-top.sh"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -173,11 +177,11 @@ mt_names() {
   esac
 }
 
-# pairwise — over NS/SHAS: sets PW_PAIRS, PW_CONFLICTS (one "#a x #b: files" line each), PW_BAD (merge-tree failures).
-PW_PAIRS=0; PW_CONFLICTS=""; PW_BAD=0
+# pairwise — over NS/SHAS: sets PW_PAIRS and PW_CONFLICTS (one "#a x #b: files" line per conflicting pair).
+PW_PAIRS=0; PW_CONFLICTS=""
 pairwise() {
   local i j rc names
-  PW_PAIRS=0; PW_CONFLICTS=""; PW_BAD=0
+  PW_PAIRS=0; PW_CONFLICTS=""
   i=0
   while [ "$i" -lt "${#SHAS[@]}" ]; do
     j=$((i + 1))
@@ -188,7 +192,6 @@ pairwise() {
       if [ "$rc" -eq 1 ]; then
         PW_CONFLICTS="${PW_CONFLICTS}conflict: #${NS[$i]} x #${NS[$j]}: $(tr '\n' ' ' <<<"$names" | sed 's/ *$//')"$'\n'
       elif [ "$rc" -ne 0 ]; then
-        PW_BAD=$((PW_BAD + 1))
         PW_CONFLICTS="${PW_CONFLICTS}conflict: #${NS[$i]} x #${NS[$j]}: (git merge-tree --write-tree failed: git >= 2.38 is needed, or the histories are unrelated)"$'\n'
       fi
       j=$((j + 1))
@@ -322,7 +325,7 @@ merge_all() {
 }
 
 cmd_build() {
-  local b="${base:-origin/main}" i a main_co name wtabs registered existing cur tip lost names rc out
+  local b="${base:-origin/main}" i a main_co name wtabs registered cur tip lost names rc out
   if [ "$cont" -eq 1 ]; then
     cur="$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)" || refuse "worktree $wt is on a detached HEAD"
     [ -z "$branch" ] || [ "$branch" = "$cur" ] || refuse "--branch $branch is not the branch checked out in $wt ($cur)"
@@ -367,8 +370,7 @@ cmd_build() {
     git -C "$repo" rev-parse --verify --quiet "${b}^{commit}" >/dev/null 2>&1 || refuse "base $b does not exist"
     if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then refuse "branch $branch already exists"; fi
     if [ -z "$wt" ]; then
-      existing="$(git -C "$repo" worktree list --porcelain)"
-      main_co="$(awk 'NR == 1 && $1 == "worktree" { sub(/^worktree /, ""); print; exit }' <<<"$existing")"
+      main_co="$(keel_repo_top "$repo")"
       [ -n "$main_co" ] || refuse "cannot find the main checkout of $repo"
       name="${branch//\//-}"
       wt="$main_co/.claude/worktrees/$name"
