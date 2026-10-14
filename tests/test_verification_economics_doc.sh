@@ -121,8 +121,8 @@ pin "the doc distinguishes the verdict contract's coverage question from Clause 
 pin "filing bar is a disjunctive union: at least one of five conditions" \
   "$doc" 'only if at least one holds' \
   "expected the bar's disjunctive framing — filed if ANY of the five conditions holds"
-pin "filing bar condition 1 — always-file surface, no discretion" \
-  "$doc" '**Always-file surface (no discretion):**' \
+pin "filing bar condition 1 — always-file surface (dir #842: no longer carries 'no discretion' itself; 1a does)" \
+  "$doc" '**Always-file surface:**' \
   "expected condition 1 — secrets, destructive writes, installers, a guard failing open"
 pin "condition 1's scratch-files carve-out points forward to condition 2 by number, not by term" \
   "$doc" 'they qualify only under condition 2, below' \
@@ -140,6 +140,27 @@ pin "filing bar condition 5 — requested" "$doc" '**Requested:**' \
   "expected condition 5, an operator-requested capability"
 pin "the bar keeps 'in doubt on 1-4, file'" "$doc" 'In doubt on 1–4' \
   "expected the doubt clause — narrowing it would loosen a filing guarantee the spec vetted"
+# --- dir #842: condition 1 splits into 1a (a realistic failure) and 1b (a constructed bypass) -------------------------
+# One-line needles, each checked with a COUNT (pin() checks presence only; "exactly once" is what the 1b register
+# naming relies on). The doc's lines are pre-wrapped so every needle sits on one line.
+pin_exact "dir #842 A1: the 1a heading, on one line" "$doc" '**1a — a realistic failure (no discretion):**' "expected the 1a split heading once"
+pin_exact "dir #842 A1: the 1b heading, on one line" "$doc" '**1b — a constructed bypass (no ticket):**' "expected the 1b split heading once"
+check_eq "dir #842 A2: the three branches T1 T2 T3" "3" "$(grep -o -E '\*\*T[123]\*\*' "$doc" | sort -u | wc -l | tr -d ' ')"
+for needle in 'In doubt between 1a and 1b' 'known-bypass register' 'promoted to a ticket when any of T1–T3 holds for it' \
+  'stands in for the standing-list line' 'clears no other condition of' "by T3's actor and target" \
+  'at least two distinct real sessions within the 90 days before the finding' 'a search recorded in that window' \
+  'one real session whose command or action the surface let through is a near-miss' \
+  "condition 1's own doubt rule decides" 'T1–T3 are read before the' 'is judged per input'; do
+  pin_exact "dir #842 A3: the doc carries [$needle] on exactly one line" "$doc" "$needle" \
+    "expected the 1a/1b rule's needle once — a second copy or a wrapped one breaks the pin"
+done
+check_count "dir #842 A4: 'no discretion' moved onto 1a — exactly one line" "$doc" 'no discretion' 1
+check_contains "dir #842 A4: that line is the 1a line" "$(grep 'no discretion' "$doc")" '1a'
+n_1a="$(grep -c 'condition 1a' "$doc")"
+check_eq "dir #842 A5: §3 and §4 name condition 1a at least twice" "ok" "$([ "$n_1a" -ge 2 ] && echo ok || echo "only $n_1a")"
+pin_exact "dir #842 B4 (v): §4's disposition paragraph routes a 1b finding to its guard's register" "$doc" \
+  "A condition-1b finding goes to its guard's register instead" "expected the one-sentence routing after the standing-list sentence"
+
 pin "the bar retires 'new class' as a filing test on its own" \
   "$doc" 'retire it as a filing test on its own' \
   "expected the new-class retirement — a new class alone no longer earns a ticket"
@@ -270,5 +291,51 @@ pin "FRAMEWORK.md still owns the per-round question" \
 pin "the doc carries the self-revision clause" \
   "$doc" 'not a fixed verdict, a checklist to' \
   "expected the closing section to match its siblings' own self-revision wording"
+
+# --- dir #842 A13: the ten standing-list routing sites carry the 1b clause, in place ---------------------------------
+# Count per file (the clause sits on one line), then per anchor: the blank-line-delimited paragraph holding the anchor
+# also holds the clause, AFTER the anchor. A clause put in another paragraph — even one that also says "standing list" —
+# fails its anchor. A site names one anchor, or two that together pick one paragraph.
+clause_after_anchor() {   # FILE ANCHOR [ANCHOR2] — paragraphs where the clause follows the (last) anchor; spaces = any whitespace
+  local f="$1" a1="${2// /[[:space:]]+}" a2="${3:-}"
+  a2="${a2// /[[:space:]]+}"
+  awk -v RS= -v a1="$a1" -v a2="$a2" '
+    $0 ~ a1 && (a2 == "" || $0 ~ a2) {
+      match($0, a1); pos = RSTART
+      if (a2 != "") { match($0, a2); if (RSTART > pos) pos = RSTART }
+      if (index(substr($0, pos), "known-bypass register")) n++
+    }
+    END { print n + 0 }' "$f"
+}
+for site in "docs/delta-audit.md|3" "commands/delta-audit.md|1" "docs/drydock.md|2" "docs/grooming.md|1" "docs/release-audit.md|1" \
+  "docs/release-management.md|1" "commands/polish-guide.md|1" "commands/wrap.md|1"; do
+  check_count "dir #842 A13: ${site%|*} names the known-bypass register ${site#*|} time(s)" "$REPO_ROOT/${site%|*}" 'known-bypass register' "${site#*|}"
+done
+check_eq "dir #842 A13: docs/delta-audit.md report contract — clause after 'Record the reason here'" "1" \
+  "$(clause_after_anchor "$delta" 'Record the reason here')"
+check_eq "dir #842 A13: docs/delta-audit.md close step — clause after 'names a real defect' + 'is moved onto'" "1" \
+  "$(clause_after_anchor "$delta" 'names a real defect' 'is moved onto')"
+check_eq "dir #842 A13: docs/delta-audit.md mutation sweep (an eleventh site, escape 1) — clause after 'a no-action one goes to the standing list'" "1" \
+  "$(clause_after_anchor "$delta" 'a `no-action` one goes to the standing list')"
+check_eq "dir #842 A13: commands/delta-audit.md harvest — clause after 'disposition naming a real defect gets copied'" "1" \
+  "$(clause_after_anchor "$REPO_ROOT/commands/delta-audit.md" 'disposition naming a real defect gets copied')"
+check_eq "dir #842 A13: docs/drydock.md 'Ticketed is not automatic' — clause after 'added to a standing list the project already keeps'" "1" \
+  "$(clause_after_anchor "$drydock" 'added to a standing list the project already keeps')"
+check_eq "dir #842 A13: docs/drydock.md phase 7 ratchet — clause after 'everything below it is'" "1" \
+  "$(clause_after_anchor "$drydock" 'everything below it is')"
+check_eq "dir #842 A13: docs/grooming.md G0 harvest check — clause after 'harvested onto'" "1" \
+  "$(clause_after_anchor "$REPO_ROOT/docs/grooming.md" 'harvested onto')"
+check_eq "dir #842 A13: docs/release-audit.md — clause after 'Everything else is dispositioned'" "1" \
+  "$(clause_after_anchor "$release_audit" 'Everything else is dispositioned')"
+check_eq "dir #842 A13: docs/release-management.md — clause after 'below the bar it's a standing-list line'" "1" \
+  "$(clause_after_anchor "$REPO_ROOT/docs/release-management.md" "below the bar it's a standing-list line")"
+check_eq "dir #842 A13: commands/polish-guide.md — clause after 'else as a standing-list line'" "1" \
+  "$(clause_after_anchor "$REPO_ROOT/commands/polish-guide.md" 'else as a standing-list line')"
+check_eq "dir #842 A13: commands/wrap.md — clause after 'below it, a standing-list line'" "1" \
+  "$(clause_after_anchor "$REPO_ROOT/commands/wrap.md" 'below it, a standing-list line')"
+# The wrong-paragraph mutant: a clause moved to a paragraph that merely says "standing list" must read 0 at the anchor.
+misplaced="$SANDBOX/misplaced-citer.md"
+printf 'Anchor sentence goes here: everything below it is dispositioned.\n\nAnother paragraph about the standing list (a no-action(1b) finding goes to its known-bypass register).\n' > "$misplaced"
+check_eq "dir #842 A13: a clause in another paragraph fails its anchor" "0" "$(clause_after_anchor "$misplaced" 'everything below it is')"
 
 summary

@@ -48,7 +48,8 @@ Fill `run-record.md` and append the run's row to your project's cross-run record
 `private/audit/RUNS.md`, gitignored, main-checkout root — `dir #249` owns this step). Then **harvest**:
 every `no-action(<reason>)` disposition naming a real defect gets copied onto the project's standing
 list (keel's instance: the `## Standing list` section of `BACKLOG.md` — create it per its own shape if
-it doesn't exist yet, rather than a silent no-op). Verify `tickets-staged.md` is empty or filed before
+it doesn't exist yet, rather than a silent no-op)
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — `docs/verification-economics.md` §4). Verify `tickets-staged.md` is empty or filed before
 leaving the run directory behind.
 
 **A7 — you hand the operator the tag commands; you never run them.**

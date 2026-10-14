@@ -781,7 +781,8 @@ gate_head="$(sed -n '1,/^# CLI subcommands/p' "$gate")"
 for kept in "\`sh -c '…'\`" '`eval "…"`' '`gh "pr" create`' "a \`case\` header split over lines" "an array assignment's" '`repeat N cmd`' \
   '`function NAME { … }`' 'a path to `gh`' "bash 3.2's misreading" '`git push {--no-verify,}`' '`--no-verify$(true)`' \
   "a wrapper's own flags" '`noglob`' '`coproc`' '`{cmd}`' 'an env argument whose' '`sudo`' '`timeout`' '`env -C`' '`/usr/bin/env …`' '`exec -a x`' \
-  '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' 'a second PR-opening command' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES'; do
+  '`xargs -r`' '`nohup --`' '`git "push"`' '`gh pr new`' '`gh api graphql`' 'a second PR-opening command' '`env -u HOME`' '`a[$i]=1 git …`' '`if [[ … ]] cmd`' 'a `git config` write' 'a variable exported earlier' 'REFUSES' \
+  'a heredoc- or pipe-fed shell' 'an upper-case command word' 'group inside a' 'a hook started with stdin closed'; do
   check_contains "header: names the residual or rule [$kept]" "$gate_head" "$kept"
 done
 for dropped in "a \`case\` pattern's" 'backslash-newline continuation' 'partly quoted prefix assignment' 'docs/specs/717' 'the lexer fix is dir #745'; do

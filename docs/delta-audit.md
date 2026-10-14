@@ -147,7 +147,8 @@ This is the durable public referent a future run points at instead of re-derivin
      [`docs/verification-economics.md`](verification-economics.md)'s filing bar. Record the reason
      here **and**, if the finding names a real defect, add it to the project's standing list: that
      doc is explicit that a record living only in a report body is unschedulable, so the list is what
-     makes this a persist rather than a discard. Without this disposition a session has only "ticket
+     makes this a persist rather than a discard
+     (a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). Without this disposition a session has only "ticket
      it or lose it", which is how a run files one ticket per residual. **Mark each finding `induced`
      or `original`** per that doc's run-profile field 6: `induced` when it lands in a region an
      earlier wave's fix actually touched *and* you can state the causal path in one sentence,
@@ -235,7 +236,8 @@ the fix round's to review. **What the mandate stops filing:** every pin-gap find
 each rule, its condition-1 rules marked, and filed `→ pool` like any `ticket-next` finding (§8) — never a
 ticket per rule or per cluster (one run filed three for this one class); a `fix-before-tag` one is fixed in
 the run, a `no-action` one goes to the standing list (§8), and any other disposition takes its own route (§4
-rule 6). A pass with nothing to run — no qualifying rule, no open `fix-before-tag` pin gap, no candidate —
+rule 6)
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). A pass with nothing to run — no qualifying rule, no open `fix-before-tag` pin gap, no candidate —
 writes `Mutation sweep: <from>..<to> — nothing to sweep`. When the GO SHA moves with no verifier pass, the
 orchestrator appends `Mutation sweep: <from>..<to> — unswept (GO moved with no verifier pass)`. Skipping the
 mandate is an explicit, recorded operator decision, never the orchestrator's — the diversity leg's rule
@@ -392,7 +394,8 @@ already practises. **Completing means REPLACING the opener's placeholder in plac
 reading "pending" above an appended completion paragraph tells a reader who stops at the row's header
 that the run never tagged (the 0.11.0 row did exactly that a day after its own tag; the next groom's
 G0 is where it surfaced). **(b)** Every `no-action` finding that names a real defect (§4 rule 6) is moved onto
-the project's standing list, and the run's staged-tickets file is empty or filed. *(Call (b) what it
+the project's standing list, and the run's staged-tickets file is empty or filed
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). *(Call (b) what it
 is when you brief it — "**move the `no-action` findings to the standing list**". "Harvest" is already
 the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanically-derivable fields and
 does nothing of the kind; a session told to "harvest" can run that script and believe the duty

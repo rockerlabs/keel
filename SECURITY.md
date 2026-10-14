@@ -32,6 +32,9 @@ Known limits (by design — not vulnerabilities):
   means "no known key shape found," never "no secret here." On push it additionally scans the pushed
   commits' messages and annotated-tag message bodies against all of the above — key shapes, your listed
   personal data, and agent session-metadata trailers (a `Claude-Session`-style line).
+- A bypass that holds only for a constructed input — a step whose only purpose is to get past a guard, or one no
+  supported tool performs — is a known limit, not a vulnerability: the guard's own register lists it (the
+  [threat model by guard](#threat-model-by-guard) names each register). A realistic failure is in scope above.
 - The prose layer (`PRINCIPLES.md`, `FRAMEWORK.md`, the rails) biases an agent; it does not enforce
   anything — the human is the trigger (see the README's *mechanized vs needs-you*).
 - A server-side CI job backs up the local hook: `secret-scan.sh --range` also runs on every pull
@@ -50,8 +53,9 @@ stealing the first through the third. Remove any one leg and the attack collapse
 much of each leg Keel covers — and where it covers none.
 
 Keel's original threat model is the **honestly erring** agent — a careless leak, a wrong push — not the
-hijacked one. The mechanized barriers below happen to hold against both, because they live outside the
-model; nothing here claims more than that.
+hijacked one. The mechanized barriers below hold against both for the inputs they read, because they live
+outside the model; a constructed bypass of a guard's reader is a known limit, listed per guard in
+[Threat model by guard](#threat-model-by-guard); nothing here claims more than that.
 
 | Leg | Keel's coverage |
 |---|---|
@@ -100,6 +104,28 @@ people's data call for different amounts of this. Treat the table as a map of wh
 all-or-nothing bar. A public video treatment of the same threat model, in Russian, reaches the same
 split — defense outside the model, rules as instructions rather than guarantees:
 [Как взламывают вайбкодеров?](https://youtu.be/sl5rGSm3Wmk)
+
+## Threat model by guard
+
+Each guard below is built against an **honest error**, by the rule above; a finding about one is filed as a
+ticket or recorded in the guard's register by [`docs/verification-economics.md`](docs/verification-economics.md)
+§4 (1a / 1b). The "In doubt" column is the doubt class only — what that rule does when it cannot tell a
+realistic failure from a construction: a construction shown, a below-threshold search included, is 1b in every row.
+
+| Guard | Guards against — an honest error | A miss | In doubt | Still catches it | Known-bypass register |
+|---|---|---|---|---|---|
+| secret guard (`tools/secret-guard/`: the hooks, `secret-scan.sh`, the CI re-scan) | a key-shaped secret or a listed personal literal committed or pushed by mistake | data leaves the machine | 1a | the CI re-scan once a PR is open or on `main` (key shapes only, not personal literals) | `SECURITY.md` "Known limits" |
+| `public-audit` | a leak left in tree or history before a private→public flip | data leaves the machine | 1a | — | `SECURITY.md` "Known limits" |
+| installer / uninstaller (`install.sh`, `uninstall.sh`, `tools/lib/safe-write.sh`, the hook installers) | clobbering or mis-wiring a user's files or config on an ordinary setup | destroys user data | 1a | the `.pre-keel.bak` backup where one is made | `tools/lib/safe-write.sh` "Known bypasses (1b" |
+| pre-PR gate — the push-bypass rule (`tools/pre-pr-gate.sh`) | an agent pushing with the pre-push secret scan bypassed, by habit | data leaves the machine | 1a | the CI re-scan once a PR is open (key shapes only); nothing before | `tools/pre-pr-gate.sh` "Named residuals" |
+| pre-PR gate — the PR rule (the same file) | an agent opening a PR without `/polish`, by habit | a workflow step skipped | 1b | the operator's merge | `tools/pre-pr-gate.sh` "Named residuals" |
+| subagent git floor (the same hook, dir #675) | a subagent mutating the session repository by mistake — refs, or the work tree (`checkout`, `reset`, `stash`, `clean`) | uncommitted work destroyed, or refs moved | 1a | the reflog, for refs only; nothing for destroyed uncommitted work | `tools/pre-pr-gate.sh` "Allowed by design" (the floor's block) |
+| test sandbox — outside writes (`tests/lib.sh`, `tests/run.sh`; keel-self-maintenance) | a test writing outside its sandbox (`$HOME`, global git config, the real impact store) by an ordinary mistake | a write outside the sandbox | 1a | the ref canary, for refs only | `tests/lib.sh` "Known bypasses (1b" |
+| test sandbox — false green (the same files) | a red test reading green by an ordinary mistake | a false green | 1b | the other CI legs | `tests/lib.sh` "Known bypasses (1b" |
+
+A register line says what the guard does not catch — a **bypass** — or what it catches today but no test
+pins, so a regression would read green — a **test gap**. A shape a session can show is on the register; one
+that turns out realistic (§4's T1–T3) leaves it as a ticket.
 
 ## Secrets in the working tree
 
