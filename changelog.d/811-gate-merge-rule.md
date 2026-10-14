@@ -4,8 +4,8 @@
   `CLAUDE.md` carries a `KEEL-MANAGER-MERGES` line, and the command carries `--merge` and
   `--match-head-commit <40-hex sha>` with none of `--squash`, `--rebase`, `--auto` or `--admin`. A subagent never
   merges, and `gh api …/pulls/<n>/merge` is denied to every session, since it carries no head pin; so is a merge
-  the hook cannot place — gh not the command word (`timeout 60 gh pr merge …`, `sudo -u x gh …`), or a
-  flag before the subcommand that may take a word as its value (`gh pr --admin merge`) — denied with "this merge cannot be
+  the hook cannot place — gh not the command word (`timeout 60 gh pr merge …`, `sudo -u x gh …`), or a flag before
+  the subcommand that may take a word as its value (`gh pr --admin merge`) — denied with "this merge cannot be
   read", as is a gh command holding unquoted `pr … merge` (or `api` and a merge-endpoint path) that are not its
   own, or a merge segment holding a second word `gh`: run gh as the command word, its subcommands right after it,
   quote such words, and keep a second `gh` out of the text. The endpoint is read as GitHub routes it (`%XX`
