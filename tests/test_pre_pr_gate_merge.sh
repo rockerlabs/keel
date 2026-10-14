@@ -299,7 +299,18 @@ for c in "gh -t pr api -X PUT repos/o/r/pulls/5/merge" "gh --jq pr api -X PUT re
   deny "(f) flags before api: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 allow "(f) gh api … pr merge words after the endpoint of a read" "gh api repos/o/r/commits --jq .x pr merge" "$P" "$OTHER"
-allow "(e) gh pr merge --help behind a runner is a read too" "timeout 5 gh pr merge --help" "$P" "$OTHER"
+# Behind a runner even -h is unread: a runner may rewrite it (`xargs -I -h`), or run gh twice (`find -exec`).
+for c in "timeout 5 gh pr merge --help" "echo 5 | xargs -I -h gh pr merge -h --squash" \
+         "find . -exec gh pr merge -h \\; -exec gh pr merge 5 --squash \\;"; do
+  deny "accepted cost: behind a runner, a help read is unread too: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
+done
+# Flags are read with the subcommand words taken out, as gh reads them: a cluster ending in a value letter before the
+# subcommand takes the word AFTER it.
+deny "(f) gh -it api --jq -X PUT: -t takes --jq, the PUT counts" "$R_API" "gh -it api --jq -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
+deny "(f) gh -iH api -H -X PUT" "$R_API" "gh -iH api -H -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
+deny "(d) manager: gh -mt pr merge -t --admin: -t takes -t, --admin counts" "$R_DROP --admin " "gh -mt pr merge -t --admin --match-head-commit $SHA" "$P" "$MID"
+deny "(d) manager: gh pr -mt merge -t --squash" "$R_DROP --squash " "gh pr -mt merge -t --squash --match-head-commit $SHA" "$P" "$MID"
+allow "(g) a gh command that is no pr command keeps its pr merge words" "gh issue create --title fix pr merge" "$P" "$OTHER"
 deny "(f) env -u takes its value: the API write after it is read exactly" "$R_API" "env -u gh -u -XGET gh api repos/o/r/pulls/5/merge -f merge_method=squash" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
