@@ -4,8 +4,8 @@
 # this file. dir #744 slice 1 (B4a): a PR's changelog entry is a new file `changelog.d/<ticket>-<slug>.md`
 # instead of a bullet under `CHANGELOG.md`'s `## [Unreleased]`, so two PRs stop colliding at that one
 # anchor. Every reader of fragments goes through this script — doctor.sh (check 7), changelog-cut.sh (the
-# cut), the tests that pin a changelog cite, and `changelog.d/README.md`'s examples — so no second
-# listing of the directory exists to drift from this one.
+# cut), changelog-claims.sh (the numeric-claim lint, dir #810), the tests that pin a changelog cite, and
+# `changelog.d/README.md`'s examples — so no second listing of the directory exists to drift from this one.
 #
 # Usage:
 #   tools/self/changelog-fragments.sh [--repo DIR] [--check | --list]

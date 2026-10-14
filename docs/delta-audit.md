@@ -751,6 +751,12 @@ tree-wide" when tree-wide was nine. **Neither was a claim under correction; both
 disclosure-only round's blast radius is the sentence, not the clause — so the re-derivation duty has to
 cover the sentence too, or the round trades one wrong claim for two.
 
+**A number a correction writes names the source it was derived from, or the correction drops the number** —
+a correction that restates a count induces a new count error far more often than one that cites it. In keel's
+own repo this is mechanical (`tools/self/` is maintainer-only, `docs/reference.md`): before the cut,
+`tools/self/changelog-claims.sh --strict --fragment <each fragment the correction edited>` exits 0; after the cut,
+`tools/self/changelog-claims.sh --section x.y.z --strict` exits 0 (dir #810).
+
 ## 11. The cross-vendor leg — four harness lessons, as classes
 
 If your diversity leg uses a different model vendor — via a scriptable client

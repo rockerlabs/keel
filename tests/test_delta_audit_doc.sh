@@ -333,4 +333,9 @@ pin "polish.md step 3 keeps the trigger phrase delta-audit.md reuses (dir #783)"
   'adds or changes a filter, threshold, guard or exclusion rule' \
   "expected commands/polish.md's mutation-pass trigger, the definition delta-audit.md's verifier mandate shares"
 
+# --- dir #810: section 10 (the disclosure-only fix round) hands a correction's numbers to the claim lint --------
+sec10="$(awk '/^## 10\. /{p=1; next} /^## 11\. /{p=0} p' "$doc")"
+check_contains "section 10 names tools/self/changelog-claims.sh (dir #810)" "$sec10" "changelog-claims.sh"
+check_contains "section 10 states the pre-cut pass condition (--strict --fragment)" "$sec10" "--strict --fragment"
+
 summary
