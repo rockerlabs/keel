@@ -114,6 +114,30 @@ repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers" run_in "$repo" "$scan" --tracked
 check_status "V5: a clean 2 MiB binary → exit 0" 0 "$STATUS"
 
+# The printable-run view is the only one an anchored pattern can match in a binary: the raw view keeps the junk
+# around a run on its line, the run view does not. These two pin the floor from both sides on that view — a run of
+# EXACTLY the floor must survive the length filter (a `>` for `>=` loses it), and the floor must count the personal
+# literals, not only class 1 (a literal shorter than every key shape).
+pers_anchor="$SANDBOX/personal.anchor"      # one literal: the floor is 15, class 1's own
+printf '^zorbfloor-exact$\n' > "$pers_anchor"
+pers_short="$SANDBOX/personal.short"       # one literal of 5: the floor is 5
+printf '^zorbq$\n' > "$pers_short"
+anchored_blob() {  # $1 = the printable run, between non-printable bytes, in a file with a NUL
+  printf '\001\002%s\003\004\000tail' "$1" > "$BLOB"
+}
+anchored_blob "zorbfloor-exact"
+repo="$(blob_repo)"
+SECRET_SCAN_PERSONAL_FILE="$pers_anchor" run_in "$repo" "$scan" --tracked
+check_status "V6: an anchored literal whose run is exactly the floor (15) is still found → exit 1" 1 "$STATUS"
+anchored_blob "zorbq"
+repo="$(blob_repo)"
+SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
+check_status "V7: an anchored literal shorter than every key shape is still found → exit 1" 1 "$STATUS"
+anchored_blob "zorbq-not-the-literal"
+repo="$(blob_repo)"
+SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
+check_status "V8: ...and an anchored literal inside a longer run is not → exit 0" 0 "$STATUS"
+
 # --- (C) the bound ---------------------------------------------------------------------------------------------------
 # CEILING — seconds of CPU for the 20 MiB blob below. The scan measured ~30 s of CPU after the fix (macOS, BSD grep,
 # class 1 only) against ~180 s before it; the ceiling sits between, so it fails on the per-line blow-up and passes
