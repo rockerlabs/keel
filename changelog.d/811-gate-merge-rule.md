@@ -8,7 +8,8 @@
   …`), or a flag before the subcommand that may take a word as its value (`gh pr --admin merge`) — denied
   with "this merge cannot be read", as is a gh command holding unquoted `pr … merge` words that are not
   its subcommands, or an API call holding a merge-endpoint path it does not call: run gh as the command
-  word, its subcommands right after it, and quote such words. The
+  word, its subcommands right after it, quote a word `merge` that is text, and keep a merge-endpoint path
+  out of a call that is not a merge. The
   manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the

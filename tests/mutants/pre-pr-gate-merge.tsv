@@ -9,8 +9,7 @@
 # - the reader-side session-id check in merge_rule (`_session_id_ok "$hk_sid"`): with it gone an empty or non-token
 #   id still meets the first-field match, and the writer never writes an empty or non-token first field, so the
 #   mutant is equivalent (the check stays: it names the cause in the deny).
-# - the `?`/`#` tail and the trailing slash of the API endpoint pattern, and the `?` a forging flag prints as: no
-#   observable difference in a decision.
+# - the `?` a forging flag prints as: no observable difference in a decision.
 # - the shell side's "a second merge line is a reader failure" (M51 until removed): the reader prints at most one,
 #   so dropping the check is equivalent (it stays: the reader's output shape is checked like the verdict line's).
 # - M55, M59, M61, M63, M67, M69, M71, M72, M74 and M75 retired with the runner look-pasts and the runner list they
@@ -85,18 +84,23 @@ M68	tools/pre-pr-gate.sh	    else if (cm_xargs) mg_note("xargs", "")	    else if
 M78	tools/pre-pr-gate.sh	    if (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld) mg_note("api", "")\n    else if (cm_xargs)	    if (cm_xargs) mg_note("xargs", "")\n    else if (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld) mg_note("api", "")\n    else if (0)	B6: an API write under xargs gets the xargs reason, not the API one
 M81	tools/pre-pr-gate.sh	  if (w_assign(j)) return 0\n		B6: an assignment ending in /gh reads as a gh word
 M82	tools/pre-pr-gate.sh	(n >= 3 && substr	(n > 3 && substr	B6: a gh binary at /gh (three characters) is not read
-M83	tools/pre-pr-gate.sh	{ if (mg_shape(j)) mg_note("unread", ""); return }	{ if (0) mg_note("unread", ""); return }	B6: a merge whose command word is not gh (timeout 5 gh …) is not noted
-M84	tools/pre-pr-gate.sh	if (mg_gh(j)) { if (mg_shape(i)) mg_note("unread", ""); return }	if (0) { if (mg_shape(i)) mg_note("unread", ""); return }	B6: a second gh word (env -C gh xargs gh …) does not make the merge unread
+M83	tools/pre-pr-gate.sh	{ if (mg_shape(j)) mg_note("unread", "command"); return }	{ if (0) mg_note("unread", "command"); return }	B6: a merge whose command word is not gh (timeout 5 gh …) is not noted
+M84	tools/pre-pr-gate.sh	if (mg_gh(j)) { if (mg_shape(i)) mg_note("unread", "command"); return }	if (0) { if (mg_shape(i)) mg_note("unread", "command"); return }	B6: a second gh word (env -C gh xargs gh …) does not make the merge unread
 M85	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && early_deny	  [ "$mg_code" = unreadX ] && early_deny	B6: the unread code is not acted on
 M86	tools/pre-pr-gate.sh	    else if (p && t == "merge" && w_unquoted(j)) return 1	    else if (p && t == "merge" && w_unquoted(j)) return 0	B6: an unread pr merge shape is missed
 M87	tools/pre-pr-gate.sh	    if (t == "api" && w_unquoted(j)) a = 1	    if (t == "apiX" && w_unquoted(j)) a = 1	B6: an unread API merge-endpoint shape is missed
 M88	tools/pre-pr-gate.sh	if (!index(t, "=") && t != "-h" && t != "--help" && (substr(t, 1, 2) == "--" || length(t) == 2)) j++	if (0) j++	B6: a flag value before the subcommand is read as the subcommand (gh -t api pr merge)
 M89	tools/pre-pr-gate.sh	for (j = i + 1; j <= ntok; j++) if (j != s1 && j != s2) w[++n] = j	for (j = s1 + 1; j <= ntok; j++) if (j != s1 && j != s2) w[++n] = j	B6: flags before the subcommand are not read (gh -X PUT api …)
-M90	tools/pre-pr-gate.sh	{ if (mg_shape(i)) mg_note("unread", ""); return }\n  if (s2 < ntok	{ return }\n  if (s2 < ntok	B6: a merge shape the exact reading cannot place (gh pr --x merge) is allowed
+M90	tools/pre-pr-gate.sh	{ if (mg_shape(i)) mg_note("unread", "words"); return }\n  if (s2 < ntok	{ return }\n  if (s2 < ntok	B6: a merge shape the exact reading cannot place (gh pr --x merge) is allowed
 M92	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api") || 		B6: an earlier segment's flag code outranks an unread merge
 M93	tools/pre-pr-gate.sh	else k += mg_api_word(w[k], (k < n) ? w[k + 1] : 0)	else k += mg_api_word(w[k], w[k] + 1 <= ntok ? w[k] + 1 : 0)	B6: flags read on the raw word list, the subcommand word not taken out (gh -it api --jq -X PUT)
 M96	tools/pre-pr-gate.sh	    if (t == "--") return 0\n		B6: a -- before the subcommand is skipped as a flag (gh -- pr merge read through)
-M98	tools/pre-pr-gate.sh	    if (!ep) { if (mg_shape(i)) mg_note("unread", ""); return }	    if (!ep) return	B6: an API merge shape whose endpoint the reading cannot place is allowed
+M98	tools/pre-pr-gate.sh	    if (!ep) { if (mg_shape(i)) mg_note("unread", "words"); return }	    if (!ep) return	B6: an API merge shape whose endpoint the reading cannot place is allowed
 M99	tools/pre-pr-gate.sh	      if (tok[w[k]] !~ /^-/ && mg_ep(tok[w[k]])) ep = 1	      if (mg_ep(tok[w[k]])) ep = 1	B6: an endpoint-shaped field value read as the endpoint (the field missed)
 M100	tools/pre-pr-gate.sh	function mg_ep(t) { return tolower(t) ~	function mg_ep(t) { return t ~	B6: an upper-case MERGE endpoint is no endpoint
-M101	tools/pre-pr-gate.sh	/(^|\/)pulls\/+[^\/]+\/+merge\/*([?#].*)?$/	/(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/	B6: a doubled slash in the endpoint hides it
+M101	tools/pre-pr-gate.sh	pulls\/+[^\/]+	pulls\/[^\/]+	B6: a doubled slash after pulls hides the endpoint
+M102	tools/pre-pr-gate.sh	[^\/]+\/+merge	[^\/]+\/merge	B6: a doubled slash before merge hides the endpoint
+M103	tools/pre-pr-gate.sh	merge\/*([?#].*)?$/	merge\/?([?#].*)?$/	B6: a doubled trailing slash hides the endpoint
+M104	tools/pre-pr-gate.sh	merge\/*([?#].*)?$/	merge\/*$/	B6: a query string hides the endpoint
+M105	tools/pre-pr-gate.sh	    else if (a && t !~ /^-/ && mg_ep(t)) return 1	    else if (a && mg_ep(t)) return 1	B6: a field value holding an endpoint path makes an API call unread (a false deny)
+M106	tools/pre-pr-gate.sh	[ "$mg_code" = unread ] && [ "$mg_tok" = command ] && early_deny	[ "$mg_code" = unread ] && [ "$mg_tok" = commandX ] && early_deny	B6: the unread deny names the wrong cause

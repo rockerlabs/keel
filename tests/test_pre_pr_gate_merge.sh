@@ -229,9 +229,14 @@ allow "(f) -XGET is a read" "gh api -XGET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -X=GET is a read" "gh api -X=GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -i=false is a boolean's value, not a field" "gh api -i=false repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(f) -X =GET keeps its = (gh's reading: a method that is no GET)" "$R_API" "gh api -X =GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
-for c in "gh api -X PUT repos/o/r/pulls/5/MERGE" "gh api -X PUT repos/o/r/pulls/5//merge" "gh api -X PUT repos/o/r//pulls/5/merge/"; do
+for c in "gh api -X PUT repos/o/r/pulls/5/MERGE" "gh api -X PUT repos/o/r/pulls/5//merge" "gh api -X PUT repos/o/r/pulls//5/merge" \
+         "gh api -X PUT repos/o/r/pulls/5/merge//" "gh api -X PUT repos/o/r/pulls/5/merge?x=1"; do
   deny "(f) the endpoint read case- and slash-insensitively: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
+deny "accepted cost: a separate flag value holding a merge-endpoint path is unread" "cannot be placed" "gh api repos/o/r/issues/5/comments -f body=see/pulls/5/merge" "$P" "$OTHER"
+allow "(f) a glued flag word holding a merge-endpoint path is no endpoint shape" "gh api repos/o/r/issues/5/comments -fbody=see/pulls/5/merge" "$P" "$OTHER"
+deny "(g) unread names its cause: gh not the command word" "gh is not the command word" "timeout 5 $MERGE" "$P" "$MID"
+deny "(g) unread names its cause: a subcommand it cannot place" "cannot be placed" "gh pr --admin merge 5" "$P" "$MID"
 deny "(f) an endpoint-shaped field value is a field, not the endpoint" "$R_API" "gh api repos/o/r/pulls/5/merge -fx=/pulls/5/merge" "$P" "$OTHER"
 deny "accepted cost: an endpoint-shaped --header value is unread too" "$R_UNREAD" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) gh api …/pulls/5/merge (GET: is it merged)" "gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"

@@ -563,25 +563,28 @@
 # the shell assembles at run time (`$GH pr merge`, `gh api -X PUT $EP`) or decodes (`$'\x67h' pr merge`: the reader
 # keeps an ANSI-C escape undecoded — the create rule shares it); and self-listing — any session that calls
 # `Skill(manage-release)` or types `/manage-release x` is listed (PostToolUse fires on the call's success, not on the
-# release it starts: the dir #229 marker-spoof class). Words after a real `--` are read as flags, while gh takes them
-# as extra arguments (`gh api -X PUT …/merge -- -XGET`, a manager's `… -- --match-head-commit <sha>`): gh rejects the
-# extra argument, so neither runs as read. For a listed manager in an opted-in project (whose every merge the deny
-# used to block), two more weaken only the flag check: a flag word the shell assembles at run time (`$FLAGS`,
-# `--admin$(true)`), and a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command),
-# judged by the cwd's file and policy line. Without jq the whole hook is inert (its documented choice, above), this
-# rule included: lift the deny only where jq is installed. Accepted costs: a segment whose command word is not gh but
-# which holds a gh word followed by unquoted `pr … merge` or `api … <merge endpoint>` is denied to every session
-# (`echo gh pr merge`, `nice git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the
-# endpoint behind a runner), and so is any gh command holding an unquoted `pr`, then `merge`, that is not a pr merge
-# (`gh pr comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--` before its subcommand; a word
-# after a `--` is still read as a flag (a manager's `… -- --admin` is denied); an API call whose merge-endpoint word
-# a flag takes as its value is unread (`gh api -H repos/o/r/pulls/5/merge …`), a merge behind a runner even when it
-# asks for `--help`, and a merge after a boolean flag gh knows before its subcommand (`gh --version pr merge`) —
-# quote the words, or run gh first; a word `xargs` that a wrapper's flag consumes reads as xargs (`env -C xargs gh
-# …`); a second word gh in a merge segment makes it unread (`gh pr merge 5 --subject gh`); any CLAUDE.md line
-# carrying the token opts the project in, a sentence that only mentions it included; and a main session started with
-# `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied —
-# start a release manager without `--agent`.
+# release it starts: the dir #229 marker-spoof class). A word after a real `--` is read as a flag, while gh takes it
+# as an argument: as an extra one gh rejects (`gh api -X PUT …/merge -- -XGET`), but a lone one after `gh pr merge`
+# is the PR selector (a manager's `gh pr merge --merge -- --match-head-commit=<sha>` reads as pinned). A path gh
+# builds from its own placeholders (`…/pulls/{branch}` on a branch named `5/merge`), or a path the shell builds from
+# a glob or that GitHub may decode (`…/merg[e]`, `…/%6Derge`, `…/./merge`), is not read as the endpoint. For a listed
+# manager in an opted-in project (whose every merge the deny used to block), two more weaken only the flag check: a
+# flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`), and a merge aimed at another repository
+# than the event cwd's (`-R`, a `cd` in the command), judged by the cwd's file and policy line. Without jq the whole
+# hook is inert (its documented choice, above), this rule included: lift the deny only where jq is installed.
+# Accepted costs: a segment whose command word is not gh but which holds a gh word followed by unquoted `pr … merge`
+# or `api … <merge endpoint>` is denied to every session (`echo gh pr merge`, `nice git log --grep gh pr merge`, a
+# manager's `timeout 60 gh pr merge …`, a read of the endpoint behind a runner), and so is any gh command holding an
+# unquoted `pr`, then `merge`, that is not a pr merge (`gh pr comment 5 --body merge`, `gh issue create --title fix
+# pr merge`), or a `--` before its subcommand; a word after a `--` that is no flag to gh is still read as one (a
+# manager's `… -- --admin` is denied); an API call holding a merge-endpoint path as a separate flag value is unread
+# (`gh api -H repos/o/r/pulls/5/merge …`, `-f body=see/pulls/5/merge`), a merge behind a runner even when it asks for
+# `--help`, and a merge after a boolean flag gh knows before its subcommand (`gh --version pr merge`) — quote a word
+# merge that is text, keep a merge-endpoint path out of a call that is not a merge, or run gh first; a word `xargs`
+# that a wrapper's flag consumes reads as xargs (`env -C xargs gh …`); a second word gh in a merge segment makes it
+# unread (`gh pr merge 5 --subject gh`); any CLAUDE.md line carrying the token opts the project in, a sentence that
+# only mentions it included; and a main session started with `--agent` carries `agent_type` with no `agent_id`
+# (measured 2026-10-14), so it reads as a subagent and is denied — start a release manager without `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2468,7 +2471,7 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
 
 # --- dir #811: the merge rule (a candidate line for the shell side; the rule itself: the merge-rule header section) -
 # Each merge segment gets a code, decided here where the words are: `api` (a write to the API merge endpoint),
-# `unread` (a merge shape this reading cannot place), `xargs` (gh pr merge, or a read of that endpoint, behind a
+# `unread` (a merge shape this reading cannot place; its word says why: `command` or `words`), `xargs` (gh pr merge, or a read of that endpoint, behind a
 # flagless xargs: stdin may add words), `flag` (a forbidden flag, named), `pin`, `nomerge` or `ok`. The command’s ONE
 # `merge` line carries the deciding code: `api` if any segment has it, else `unread` if any has it, else the first
 # segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is a read: no code.
@@ -2553,7 +2556,7 @@ function mg_shape(s,   j, t, a, p) {
     if (t == "api" && w_unquoted(j)) a = 1
     else if (t == "pr" && w_unquoted(j)) p = 1
     else if (p && t == "merge" && w_unquoted(j)) return 1
-    else if (a && mg_ep(t)) return 1
+    else if (a && t !~ /^-/ && mg_ep(t)) return 1
   }
   return 0
 }
@@ -2574,13 +2577,13 @@ function check_merge(   i, j) {
   i = cmd_start()
   if (i <= ntok && mg_gh(i)) {
     # A second gh word after it means a wrapper flag may have taken the first as its value (`env -C gh xargs gh …`).
-    for (j = i + 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(i)) mg_note("unread", ""); return }
+    for (j = i + 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(i)) mg_note("unread", "command"); return }
     cm_xargs = 0
     for (j = 1; j < i; j++) if (tok[j] == "xargs" && w_plain(j)) cm_xargs = 1
     mg_read(i)
     return
   }
-  for (j = 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(j)) mg_note("unread", ""); return }
+  for (j = 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(j)) mg_note("unread", "command"); return }
 }
 # mg_read(i) — read the gh command whose word is i, and note its code. Its subcommand words are found the way gh finds
 # them (mg_pos); its flags are read, as gh reads them, from the words after gh with the subcommand words taken out
@@ -2601,12 +2604,12 @@ function mg_read(i,   j, k, n, w, s1, s2, ep) {
       if (tok[w[k]] !~ /^-/ && mg_ep(tok[w[k]])) ep = 1
       else k += mg_api_word(w[k], (k < n) ? w[k + 1] : 0)
     }
-    if (!ep) { if (mg_shape(i)) mg_note("unread", ""); return }
+    if (!ep) { if (mg_shape(i)) mg_note("unread", "words"); return }
     if (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld) mg_note("api", "")
     else if (cm_xargs) mg_note("xargs", "")
     return
   }
-  if (!(s2 && tok[s2] == "merge" && w_unquoted(s2))) { if (mg_shape(i)) mg_note("unread", ""); return }
+  if (!(s2 && tok[s2] == "merge" && w_unquoted(s2))) { if (mg_shape(i)) mg_note("unread", "words"); return }
   if (s2 < ntok && (tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")) return
   for (k = 1; k <= n; k++) k += mg_pr_word(w[k], (k < n) ? w[k + 1] : 0)
   if (cm_xargs) mg_note("xargs", "")
@@ -3808,7 +3811,8 @@ esac
 merge_rule() {
   local mg_top mg_path mg_why="Pre-PR gate (merge rule, dir #811):"
   # A merge the reader cannot place: denied to every session, a release manager included.
-  [ "$mg_code" = unread ] && early_deny blocked "$mg_why this merge cannot be read — gh is not the command word (timeout, sudo -u, xargs -n1, a \$VAR), a flag, a -- or a value before a subcommand leaves the subcommand unplaced (gh pr --x merge, gh -- pr merge), an unquoted word merge is not the pr subcommand (gh pr comment 5 --body merge), or an API call holds a merge-endpoint word that is no endpoint (gh api -H …/pulls/5/merge …). Run gh as the command word with its subcommands right after it, quote a word merge that is text, and keep a merge-endpoint path out of an API call that is not a merge; until then no session may run it."
+  [ "$mg_code" = unread ] && [ "$mg_tok" = command ] && early_deny blocked "$mg_why this merge cannot be read: gh is not the command word (a runner such as timeout or sudo -u, a wrapper's own flags such as xargs -n1, a \$VAR, or a second word gh). Run gh as the command word; until then no session may run it."
+  [ "$mg_code" = unread ] && early_deny blocked "$mg_why this merge cannot be read: its subcommand or endpoint cannot be placed — a flag, a -- or a value before a subcommand (gh pr --x merge, gh -- pr merge), an unquoted word merge that is not the pr subcommand (gh pr comment 5 --body merge), or a merge-endpoint path the call does not call (gh api -H …/pulls/5/merge …). Put the subcommands right after gh, quote a word merge that is text, keep such a path out of the call; until then no session may run it."
   # The API shape carries no head pin: denied to every session, a release manager included.
   [ "$mg_code" = api ] && early_deny blocked "$mg_why merge with \`gh pr merge --merge --match-head-commit\`, never the API — a \`gh api …/pulls/<n>/merge\` write carries no head pin."
   # (ii) identity: never a subagent, a session id the manager file lists, inside a git checkout.
