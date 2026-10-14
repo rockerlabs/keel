@@ -29,9 +29,9 @@ makes recording it part of every run rather than a one-time study.
 
 | Role | Runs as | Model + effort | May touch |
 |---|---|---|---|
-| **Manager** | your own session, long-lived for the release | top tier, high | every phase, all arbitration, the single channel to the operator, **all** bookkeeping |
+| **Manager** | your own session, long-lived for the release | top tier, high | every phase, all arbitration, the single channel to the operator, **all** bookkeeping, and the merges where the project's policy says so (R14) |
 | **Worker** | a real, gated session (a design session or a `/go` implementation) — **never a subagent** | mid tier, per ticket | one ticket's worth of the tree, through its own gates |
-| **Operator** | human | — | genuine product forks, ticket-filing disputes, merges, the tag, the release, each worker's model/effort selection at launch, and the manager's own launch |
+| **Operator** | human | — | genuine product forks, ticket-filing disputes, the tag and the release publish, each worker's model/effort selection at launch, the manager's own launch, and the review depth of a train (R14) and of the RC audit — every touchpoint here is a decision, one where a different answer changes what happens next; a touchpoint whose answer is always yes is the manager's |
 
 Two things about this table that aren't optional. **Workers are real sessions, not subagents**
 (R3) — `docs/delegation.md`'s Mutator row already states why: a subagent that skips your project's
@@ -77,24 +77,21 @@ wave already in flight.
 
 **Strict up-to-date makes every sequential merge cost an Update-branch and a CI cycle (0.16.0).** With a
 strict base, merging N clean PRs one by one costs N of those cycles, because each merge moves the base under
-the rest. Name that price in the wave plan, and put the alternative to the operator as a choice, never as a
-default.
+the rest. Name that price in the wave plan. Where R14 applies, a wave's ready PRs land as one train (R14): the
+serial cost is paid once per train. Where it does not (the project's policy leaves the merge with the
+operator), put the train to the operator as a choice, never as a default.
 
-**An integration PR or a train lands several clean PRs at once (0.16.0).** Cut one branch from the default
-branch in its own worktree and merge each constituent head into it with `--no-ff`, unmodified; run a pairwise
-conflict check over every pair first, and hand a real conflict to the owner of the earlier PR to resolve on
-the branch. One release landed 19 PRs this way where serial merging was priced at six to seven hours; a train
-is the same shape, built as PRs reach clean one after another. These rules keep it safe. The manager builds the
-branch but does not run it — the pre-PR gate keys its traces off the session's working directory, so a session
-started in that worktree runs the suite, the portability leg and the pre-PR flow, and is started early (R3). **R5 holds for every constituent**: each head merged is the
-head its worker froze and the forge reports, and every head is an ancestor of the branch's tip before the PR
-opens. The branch's own fixes ride as separate commits the PR body names, never as edits inside a constituent.
-And the operator merges it with a merge commit, so the constituents close on their own.
+**An integration PR or a train lands several clean PRs at once (0.16.0).** One release landed 19 PRs this way
+where serial merging was priced at six to seven hours, and R14 owns the procedure: when a train is cut, how it
+is built and reviewed, who merges it. **R5 holds for every constituent**: each head merged is the head its
+worker froze and the forge reports, and every head is an ancestor of the branch's tip before the PR opens. The
+branch's own fixes ride as separate commits the PR body names, never as edits inside a constituent.
 
 **The operator's Update branch and a worker's rebase race (0.15.0).** Both move the PR head, and once a
 worker's `--force-with-lease` replaced a head the button had already merged to an identical tree. So a
 `REBASE` message starts with a fetch and a compare of the PR's head with the worker's own; when the trees are
-already identical, nothing is pushed.
+already identical, nothing is pushed. The manager's own `gh pr update-branch` (R14) moves the head the same way
+and falls under the same rule.
 
 ## R3 — worker launches, soft form
 
@@ -437,18 +434,21 @@ the PR→ticket→surface map, the manager's own seam suspicions marked "leads, 
 [`docs/verification-economics.md`](verification-economics.md) §4's filing bar as a ticket promptly
 rather than only when asked — below the bar it's a standing-list line, not a ticket, and a ticket whose
 defect a standing line already names takes that line with it (§4); the non-delegable
-set is unchanged from [`docs/delegation.md`](delegation.md) — merges, the release itself, and deletions
-stay the operator's.
+set is unchanged from [`docs/delegation.md`](delegation.md) — the release itself (the tag, the publish), the
+install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
+(keel does).
 
-**The cut PR can ride on the last fix PR (0.15.0).** Stacked on the final fix PR's branch, the cut gives the
-operator one merge for the audit's fix round and the cut together. Stacking changes what the audit's GO
+**The cut PR can ride on the last fix PR (0.15.0).** Stacked on the final fix PR's branch, the cut gives one
+merge for the audit's fix round and the cut together. Stacking changes what the audit's GO
 conditions describe: they were established at the fix round's head, so they are restated for the stacked tip
-(the fix head plus the cut commits and nothing else) and re-derived there before the paste block is handed
-over.
+(the fix head plus the cut commits and nothing else) and re-derived there before the merge (or, in R14's
+fallback, before the paste block is handed over).
 
 **"The operator's" means paste-and-run, not re-derivation.** Every operator action the manager hands
-over — a merge queue, the tag, the release — arrives as a copy-paste-ready command block with the
-actual SHAs and versions substituted, re-derived live and never recited from a plan file.
+over — the tag, the release, the install — arrives as a copy-paste-ready command block with the
+actual SHAs and versions substituted, re-derived live and never recited from a plan file. A merge is on that
+list only as R14's fallback (a project without the policy line, a refused merge, a harness denial: R14 names which
+refusals count).
 
 **Where the project has a daily-use location for its build** (an application bundle, a deployed service, a
 device install), **the close hands the operator one more paste-and-run block that installs the build from
@@ -495,9 +495,10 @@ re-creating duplication a sibling ticket had just removed. None of these were vi
 ticket, and none would have been caught by an ordinary per-PR review — a per-PR reviewer sees one
 diff, never the pair. If this doc says nothing else well, it has to say this well.
 
-**A seam plan names its resolution in BOTH merge orders (0.15.0).** The merge order is the operator's, and
-once they merged out of the proposed order, which flipped a seam: the plan said only what the second PR does
-after the first, so the PR that landed first had no instruction. For every seam handed to a worker, write both
+**A seam plan names its resolution in BOTH merge orders (0.15.0).** The proposed merge order does not bind
+whoever merges (the manager's train order, or the operator's in R14's fallback), and once the operator merged
+out of it, which flipped a seam: the plan said only what the second PR does after the first, so the PR that
+landed first had no instruction. For every seam handed to a worker, write both
 branches: if you land first, do this; if the sibling lands first, rebase and re-check that.
 
 **A repo-wide check landing mid-wave is a seam with every in-flight PR (0.16.0).** A new lint over all test
@@ -670,6 +671,173 @@ one event — its kind, then one line naming what fired or was caught and where 
 The scoring tool prints that shape itself (`tools/keel-impact.sh shape`: the kinds and one example line), so the
 fixed line copies it instead of hand-typing it, and the manager's one wrap turns each worker's lines into one
 `add --session <worker id>` call — a score attributed to the session it came from (`dir #732`).
+
+## R14 — the release train, and the merge
+
+Two things in one section, because they are one move: the unit that lands on the default branch, and who lands
+it. In a managed release the operator used to click merge on every PR (one release: 40 merges, another: 32)
+while that click was never a gate: three of keel's 594 closed PRs (counted 2026-10-10) ever closed unmerged,
+each withdrawn by its own author, and every revert was found by a session. Twice the click did harm: a PR merged
+on green CI while the worker's granted review round was still running, and a cut PR merged past a correction
+already in flight. The click is the touchpoint the Operator row's class rule (above) names as the manager's, so
+this section moves it, and the train that cut one release's 29 PRs to six clicks gets a procedure instead of a
+hand-typed table.
+
+**The policy: where the manager merges.** The manager merges every PR of a managed release, the trains below,
+the cut PR, fix-round PRs and the groom PR when still open, **where the project's policy says so**: a line in
+the project's own `CLAUDE.md` carrying the token `KEEL-MANAGER-MERGES` (keel's goes in its "Public repo"
+paragraph). An adopter without the line keeps the hand-over of the fallback below. A manager's merge is the step
+of a documented flow that `CORE.md`'s safety rail forbids pre-authorizing, unless the explicit human decision
+exists, and here it does: the operator's standing decision, recorded as the project's policy, taken once per
+project and not once per merge. The standing decision covers a managed release's manager only. A standalone
+`/go` or any other session never merges: `commands/go.md` and `CORE.md` keep their words. The policy needs a
+mechanical floor, since prose biases an agent rather than binds it (`SECURITY.md`): keel's design is a merge
+rule in its pre-PR gate (a `gh pr merge` is denied when the session is not a listed manager, the project has no
+policy line, `--merge` is missing, or the head pin is not a full sha), with `main`'s branch protection under it.
+**The policy line is added last**, only after that floor is in place and the harness's own permission deny on
+`gh pr merge` lifted (keel's order: the gate rule merged and pulled, the deny lifted, then the line). The line
+is the operator's assertion that the floor is there, and nothing at intake can verify it without trying a real
+merge: a line with a gate that is absent or not wired (nothing refuses anything, so the floor is simply missing)
+is a defect of the setup, to be fixed there (the operator finds it with the floor's end-to-end check, made once
+when adding the line, in which a merge attempt from a session that never ran the manager command, carrying
+`--merge` and a full head pin so that only the identity rule can refuse it, is stopped by the gate itself, with
+the gate's reason, and not by the harness; the gate's own tests do not stand in for it; the check must use a PR
+number that does not exist, since a missing floor lets it merge; it is repeated after any gate re-install),
+never a fallback case; a refusal the gate actually issues stays the fallback's case (2). The manager session
+also runs in a permission mode in which a passed-through `gh pr merge` does not prompt, set by the operator at
+its launch: a merge the operator answers a prompt for is an operator merge in the run record. **The mode is
+known on day one, not discovered at the first denial:** intake reads the policy line, then greps the permission
+settings for `gh pr merge`, and the R1 intake report names one mode, the first that applies, so a second
+obstacle is not reported (re-run intake after each fix): the first that applies of
+`merges: operator (no policy line)`, `merges: operator (deny in place)` or `merges: manager (deny lifted)`.
+Those two checks are the fallback's absent-policy and harness-denial cases below; its case (2) arises at a
+merge, never at intake.
+
+**The preconditions: the manager's own checklist, every merge.** (a) CI green on the exact head: every required
+check `success` on `headRefOid` (`gh pr view <N> --json headRefOid,statusCheckRollup`). (b) The freeze: the PR's
+worker has replied literally `no more pushes; ok` (see the freeze below); for a train, every constituent's
+worker, and every constituent's live `headRefOid` still equals the head merged into the train. (c) No correction
+in flight: a correction the manager sent to a worker on an open PR holds that PR's merge until the worker's new
+freeze. (d) The command is `gh pr merge <N> --merge --match-head-commit <the full 40-hex head from (a)>`: a
+merge commit, the head pinned, and never `--squash`, `--rebase`, `--auto` or `--admin`. The remote branch is
+deleted by the forge at the merge where the repo sets that, and `--delete-branch` is omitted because its local
+half fails on a branch checked out in a worktree. (e) The merge is one health line on the R6 channel, after the
+fact, always a statement and never a question: `MERGED #N as <sha> (train k: #a #b …)`,
+`HELD #N: <why> (rebuild r/2)` when (a)–(c) or the train's head check holds a merge, or
+`REFUSED #N: <gh's reason>` when `gh` exits non-zero (a moved head, a red check). A refusal is never retried
+with `--admin` nor through another command shape (`gh api`, `sh -c`, `curl`, an alias): it is a "no" until the
+operator says otherwise. R11's bound applies: two GitHub refusals on one PR stop and escalate in one line. A
+first GitHub refusal is a rebuild or a wait (below), never a hand-over. A lone ready PR is never held for a
+future train: it merges alone unless a train is open, and when it is BEHIND, the manager runs
+`gh pr update-branch <N>` itself, waits for CI and the worker's new freeze on the new head, then merges.
+
+**The freeze: what a worker does after its PR opens.** It sends its checkpoint, then holds. Once CI is green and
+`gh pr view <n> --json mergeStateStatus` reads CLEAN (or BEHIND only), it sends the literal `no more pushes; ok`
+and pushes nothing more: a push after that line takes the PR out of the train in progress. When the manager
+sends `REBASE`, the worker first runs `git fetch` and compares the PR's head with its own (a head moved by the
+manager's `gh pr update-branch`, or by the operator's Update branch, is not the worker's to overwrite; identical
+trees mean nothing is pushed), then rebases on the default branch, re-runs what the rebase touched, pushes with
+`--force-with-lease` and reports the new head. A worker never merges. The manager puts these lines in every
+worker brief's rules (item 4 of the brief shape), by pointer to this section.
+
+**The train: when.** Two or more PRs are ready (own CI green, review converged, worker frozen) while the base
+requires up-to-date: the manager cuts a train, and one ready PR merges alone. A PR joins at most one train. A PR
+whose own CI is still running joins only when its local suite was green and the body says so, and a red PR
+never. A constituent whose own CI turns red after the cut leaves the train, which is a rebuild. **While a train
+is open it is the merge unit** (R2's serialization applied to the train): no other PR of the release lands
+between the cut and the merge, and a lone ready PR waits for this train or joins the next. A stalled open train
+(a dialog unanswered in its worker's session) is the sweep's (R11): the manager drops the stalled constituent as
+a rebuild, or escalates in one line, so a lone PR's wait ends with the train. If the base moves anyway (a
+hotfix, another release's PR), the manager runs `gh pr update-branch <train>` (a merge commit made on the
+forge), the train worker fetches and fast-forwards its worktree to that head, re-runs the verification there and
+amends the body's sha, and that counts as a rebuild.
+
+**The train: build.** The manager decides the composition (the `<N>=<sha>` list, from the freeze lines) and the
+order (the seam plan's order, R10, else ascending PR number). The manager creates the worktree:
+`git fetch --prune origin`, then `git worktree add <path> -b claude/release-<version>-train<k> origin/main`. It
+launches the train worker with `<path>` as its working directory, and early (R3): the pre-PR gate keys its
+traces off the session's working directory, so the session that runs the pre-PR flow starts in that worktree.
+The worker then owns the worktree end to end, one writer per worktree (R5), every later command `git -C <path>`.
+The manager builds nothing there and runs nothing. Before any merge, run
+`git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict). A
+conflicting pair is resolved by the LATER PR's worker on its own branch (whichever merges second rebases) before
+the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
+integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
+a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation:
+`git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
+integration rule below applies) or that PR leaves the train, and either way it counts as a rebuild. Then merge
+each head AS IS, in order: `git -C <path> merge --no-ff -m "train: #<N> (<sha>)" <sha>`, never rebased or
+re-authored, so that a merge commit on the default branch marks every constituent merged. Then
+`git -C <path> merge-base --is-ancestor <sha> HEAD` for every head. Integration commits are limited to conflict
+resolutions and fixes for failures the integrated run exposes; each is listed in the body and reviewed at medium
+by a fresh context. A simplification finding on a constituent's code goes to the manager (a follow-up for that
+PR's worker, or a ticket), and is never applied in the train.
+
+**The train: verification at its head**, by the train worker: the full suite, the project's lint over every
+changed file, the portability leg where the project has one, and the ancestor check. The body carries each with
+the HEAD sha. The manager never runs the suite in its own context.
+
+**The train: the seam review.** Its read order is the seam list: files touched by two or more constituents (the
+changelog file excluded; read each constituent's `git diff --name-only <base>...<sha>`, three dots, so files the
+base changed since a constituent forked do not flood the list), every integration commit and the pairwise
+result. The per-PR reviews already converged on each PR alone, so the whole diff stays formally in scope but is
+not the point. The depth is the operator's decision (the Operator row): the train worker's `/polish` step-4
+dialog is that touchpoint, once per train, with the manager's recommendation pre-selected and sized from the
+seam. No seam files and no integration commit means `low`, seam files mean `medium`, and an integration commit
+touching code means `high`. **This is a named carve-out of `/polish` step 4**, which sizes from the diff and
+runs `low`, `medium` or `high` automatically on a diff clearly inside one bucket: a train is borderline by
+definition (seam-sized, not diff-sized), so step 4 ALWAYS opens the dialog, with `<level>` pre-selected. The
+brief carries that sentence verbatim, and it is the carve-out's only channel into a worker whose diff sits
+clearly in one bucket: `/polish`'s own step 4 text is not edited (it sits at its word cap), and the guide's §
+Step 4 only points here. The body discloses what the review read and what it did not. The manager posts one
+health line when the worker reaches the dialog, `DIALOG train k: depth, in <worker session>`, so the operator
+knows where the question waits (a release once stalled on exactly this: the dialog waits in the worker's session
+and nothing says so). On a rebuild the review is redone only for the delta: a moved constituent's `old..new`
+diff that touches no seam file and adds no integration commit needs no new dialog (the body says "delta
+reviewed: outside the seam"), and anything else reopens step 4.
+
+**The train: who runs it, and the body.** A train worker session (mid tier, medium), launched by the manager
+(R3) with the five-part brief: (1) state, the base sha and the `<N>=<sha>` list to re-read with `gh pr view`;
+(2) the constituent table; (3) leads, the seam list and the recommended depth; (4) rules by pointer, including
+the integration rule, the carve-out sentence above verbatim, the keep-alive and `WRAP CENTRALIZED (R13)` lines;
+(5) handed to you, the build, the verification and the body's wording. It builds, verifies, runs `/polish` 1–9
+on the train and opens the PR. The body: title "<version> train <k>: land #a–#z as one merge"; the constituent
+table (PR, ticket, frozen head), written from `git log --first-parent` over the `train: #<N> (<sha>)` subjects,
+never retyped; the pairwise result; the integration commits or "none"; the verification block with the sha; the
+review disclosure (level, read, not read); and the line "Merge: create a merge commit — only a merge commit puts
+the constituent heads on the default branch and closes each PR as merged".
+
+**The train: the merge, and what follows it.** The preconditions above apply. Right before the command the
+manager re-reads each constituent's live `headRefOid`. A moved head waits when the new head has the merged one
+as an ancestor (`git merge-base --is-ancestor <old> <new>`, a push on top) and the worker's new freeze arrives
+within the wave: the train worker then appends one more `--no-ff` merge of the new head. Otherwise (a rewritten
+branch, no freeze) that PR leaves the train. Either way it is a rebuild, **and a train is rebuilt at most
+twice** (a dropped constituent, a red integrated run, a moved head): the third stop escalates in one line. A
+rebuild never force-pushes the train branch: it appends merges on the same branch or opens a new branch and a
+new train PR, closing the old one with a comment naming the new. A train with one constituent left merges as
+that PR. After the merge, each constituent reads `MERGED` (`gh pr view <c> --json state`), the ledger and
+backlog markers follow (R8), and one cumulative-seam duty applies (R10): a train that lands a repo-wide lint or
+guard makes every in-flight PR a candidate red. The manager tells each open PR's worker what landed, BEFORE the
+merge when a constituent's report names such a lint or guard, so the worker runs it over its own branch first.
+Then the manager runs `gh pr update-branch <open>` itself on every frozen, conflict-free open PR and re-watches
+its CI. A conflicting PR is its worker's rebase, an unfrozen PR is left to its worker, and the manager's update
+commit does not break a freeze (the merge still waits for the worker's new `no more pushes; ok` on the new
+head). The operator is not asked to click "Update branch", and a lint that fires falsely on an open PR is a
+defect of the lint (a ticket or a fix PR, never a workaround in the open PR).
+
+**The fallback: the operator merges.** Three cases only: (1) a project whose policy line is absent; (2) a merge
+the gate refuses, or one escalated after two GitHub refusals (a gate denial of the manager's own missing
+`--merge` or head pin is not this case: it is fixed and retried once per PR, and a second denial is this case);
+(3) a harness denial still in place (the deny not lifted). In each the manager still cuts, builds and verifies
+the train, and the seam review and the freeze are unchanged; only the merge itself is handed over, as R9's
+copy-paste-ready block with the head sha pinned (`--match-head-commit`) and a merge commit. The preconditions
+and the post-merge checks apply to a handed-over merge exactly as to the manager's own, and the hand-over
+records which of the three cases applied. The fallback is never routed around (through `gh api`, `sh -c`, `curl`
+or an alias): a refusal is a "no" until the operator or the gate says otherwise.
+
+**What stays the operator's, unchanged:** the tag, the release publish, the install block, branch-protection
+settings, deletions, and the review depth of a train and of the RC audit. The run record (R7) carries how many
+merges the operator made, the trains cut, and what each seam review found.
 
 ## What this pattern deliberately is not
 

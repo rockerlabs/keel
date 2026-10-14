@@ -203,8 +203,8 @@ pin "R3 points at the default direction and the hold" "$doc" \
 pin "R9 owes an install block where the build has a daily-use location" "$doc" \
   'installs the build from' \
   "expected R9 to carry the dir #596 install step"
-pin "M8 lists install next to merge, tag, publish" "$cmd" \
-  'merge, tag, publish, and install' \
+pin "M8 lists install next to tag, publish" "$cmd" \
+  'tag, publish, and install' \
   "expected M8's hand-over sentence to name install (dir #596)"
 
 # --- dir #616: the CI-wait rule rides in the worker brief beside the keep-alive contract ---------------------
@@ -333,5 +333,54 @@ fi
 pin "release-management.md names tools/self/changelog-claims.sh at the cut (dir #810)" "$doc" \
   'changelog-claims.sh' \
   "expected the Roles brief's figure paragraph to name the claim lint"
+
+# --- dir #811 S1 (A1, A2): R14 — the release train, and the merge; the manager merges where the policy allows --------
+# A section is cut by awk into a variable, then matched with a here-string (no producer piped into a `grep -q`: the
+# dir #280 SIGPIPE race). A needle must sit on ONE line of the doc (`pin` is a line-mode `grep -F`).
+r14="$(awk '/^## R14 /{f=1} /^## What this pattern deliberately is not/{f=0} f' "$doc")"
+r2="$(awk '/^## R2 /{f=1} /^## R3 /{f=0} f' "$doc")"
+r9="$(awk '/^## R9 /{f=1} /^## R10 /{f=0} f' "$doc")"
+operator_row="$(grep -F '| **Operator** |' "$doc" || true)"
+m8="$(awk '/^\*\*M8 /{f=1} /^\*\*M9 /{f=0} f' "$cmd")"
+m7a="$(awk '/^\*\*M7a /{f=1} /^\*\*M8 /{f=0} f' "$cmd")"
+
+pin "R14 anchor: the release train, and the merge" "$doc" '## R14 — the release train, and the merge' \
+  "expected a named R14 section after R13 (dir #811)"
+check_contains "the Operator row exists (the negative pin below is not vacuous)" "$operator_row" '| **Operator** |'
+check_contains "R14 adds the policy line last, after the floor is in place" "$r14" 'only after that floor is in place'
+r14flat="$(tr '\n' ' ' <<< "$r14" | tr -s ' ')"
+check_contains "R14's intake report lists the merge modes in precedence order" "$r14flat" 'the first that applies of `merges: operator (no policy line)`, `merges: operator (deny in place)` or `merges: manager (deny lifted)`'
+check_contains "R14: a gate absent or not wired is a setup defect, never a fallback case" "$r14flat" 'absent or not wired'
+check_contains "R14: a refusal the gate actually issues stays the fallback's case (2)" "$r14flat" "a refusal the gate actually issues stays the fallback's case (2)"
+check_contains "R14: the floor's end-to-end check is stopped by the gate itself, not the harness" "$r14flat" 'is stopped by the gate itself, with the gate'\''s reason, and not by the harness'
+check_contains "R14: the floor's end-to-end check uses a PR number that does not exist" "$r14flat" 'the check must use a PR number that does not exist, since a missing floor lets it merge'
+check_contains "R14: only the manager's own missing --merge or head pin is fixed and retried once" "$r14flat" 'the manager'\''s own missing `--merge` or head pin is not this case: it is fixed and retried once per PR, and a second denial is this case'
+check_contains "R14: the gate's denials include a missing --merge" "$r14flat" '`--merge` is missing, or the head pin is not a full sha'
+check_contains "R14's fallback names the harness denial still in place" "$r14flat" 'a harness denial still in place'
+check_contains "Operator row names the train's review depth" "$operator_row" 'the review depth of a train'
+check_absent "Operator row no longer carries the merge, in any wording (merges, merging, merge queue)" "$operator_row" 'merg'
+check_contains "Operator row states the class rule (a touchpoint is a decision)" "$operator_row" 'a different answer changes what happens next'
+check_contains "R9 hands the merge to the manager under R14" "$r9" "merges are the manager's under R14"
+check_absent "R9 no longer lists the merge queue as an operator hand-over" "$r9" 'a merge queue, the tag'
+check_contains "R9 keeps the paste-ready merge block as R14's fallback" "$r9" "only as R14's fallback"
+check_contains "R2 lands a wave's ready PRs as one train" "$r2" 'land as one train (R14)'
+check_absent "R2 no longer hands the train's merge to the operator" "$r2" 'And the operator merges it with a merge commit'
+for needle in 'no more pushes; ok' '--match-head-commit' 'merge-tree' '--no-ff' 'git merge-base --is-ancestor' \
+  'KEEL-MANAGER-MERGES' 'HELD' 'never force-push'; do
+  check_contains "R14 carries: $needle" "$r14" "$needle"
+done
+for needle in 'MERGED #N as' 'REFUSED #N' 'DIALOG train k' 'ALWAYS opens the dialog' 'update-branch' \
+  'merges: manager (deny lifted)' 'merges: operator (no policy line)' "the operator's standing decision" \
+  'first GitHub refusal' 'never routed around' 'HELD #N' 'resolved by the LATER PR'; do
+  check_contains "R14 carries: $needle" "$r14" "$needle"
+done
+check_absent "R14 names no merge queue (dir #784 closed: keel enables none)" "$r14" 'merge queue'
+check_absent "R14 names no tool script (dir #811 S3 adds it)" "$r14" 'release-train.sh'
+check_contains "manage-release has the M7a step naming R14" "$m7a" 'R14'
+check_contains "M8 hands over tag, publish and install, not the merge" "$m8" 'tag, publish, and install'
+check_absent "M8 no longer lists the merge among the hand-over actions" "$m8" 'merge, tag, publish, and install'
+check_contains "M8 points at R14 for the merge" "$m8" 'R14'
+pin "polish-guide Step 4 points at R14's train dialog carve-out" "$REPO_ROOT/commands/polish-guide.md" \
+  'A release train always asks' "expected Step 4 to carry the one pointer sentence to R14 (dir #811 B8d)"
 
 summary
