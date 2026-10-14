@@ -6,7 +6,7 @@ argument-hint: [--no-test]
 tools/install-pre-pr-gate.sh <repo>; unwired, only its blocks are inert. -->
 
 The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` wires the gate, it also blocks
-`gh pr create` until this command has run cleanly on the current HEAD, and always `git push --no-verify`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
+`gh pr create` until this command has run cleanly on the current HEAD, and denies `git push --no-verify`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
 

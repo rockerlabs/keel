@@ -14,14 +14,17 @@
 # a pool census has no such exemption — a legacy-numbered ticket still holds real lines and can
 # still sit `→ pool` — so this scanner's heading regex matches both shapes.
 #
-# backlog_ticket_blocks <path>
+# backlog_ticket_blocks <path> [ticket_token_ere]
+#   dir #605: the optional ERE (default `dir #[0-9]+|[0-9]+\.`) names the heading token after `### `; it must
+#   compile and match alike under `grep -E` and bash `=~` (backlog-census.sh --ticket-token validates it).
 #   Emits one line per ticket heading found, TAB-separated:
 #     start_line  end_line  closed(0|1)  heading_block
 #   heading_block is the heading's own text (the `### ...` line plus any wrapped continuation
-#   lines up to the first blank line, dir #255) with internal newlines flattened to spaces so
+#   lines up to the first blank line (dir #255) or the first line bb_heading_continues rejects,
+#   dir #839) with internal newlines flattened to spaces so
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
-#   first), the same boundary rule doctor.sh check 5 uses. closed=1 iff the heading block
+#   first), the same span rule doctor.sh check 5 uses (its heading-block rule is a separate copy). closed=1 iff the heading block
 #   carries its OWN closure tag — `(✅|❌) (DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|
 #   BUILT)`, an em-dash before it optional (dir #432's widened, honestly-enumerated vocabulary —
 #   see the function body's own header comment for the shapes measured live and the ones
@@ -111,7 +114,13 @@ bb_strip_foreign_citations() {
 # closures: each names an in-flight sub-state of an open ticket (a run underway, a phase reached,
 # a release candidate cut, a decision recorded pending the decided action) rather than the ticket
 # itself being done — so they stay outside this constant on purpose, not by oversight.
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT|FIXED)'
+# dir #609: each word is accepted UPPER or Title case (`DONE`, `Done`), and up to two `*`/`_` of emphasis
+# may sit between glyph and word (a peer's form: `✅ **Done 2026-09-20**`). All-lowercase is deliberately
+# NOT a closure: a title quoting the glyph before a plain word (`❌ duplicate detection fails`) is prose.
+# Known limit, accepted: a Title-case or UPPER word right after a glyph in a title (`❌ Duplicate detection
+# fails`, `✅ FIXED-width parser`) still reads as a closure — the peer's own form is Title case, and the
+# UPPER form already behaved so before this change; word such a title without the glyph in front.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
 # bb_closure_word_ok <candidate_marker>
 #   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
@@ -124,7 +133,8 @@ BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPE
 #   why before it aborts).
 bb_closure_word_ok() {
   local candidate="$1"
-  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN} ]]; then
+  # The trailing boundary is the scanner's own (`([^a-zA-Z]|$)`): `✅ FIXEDX` is not `✅ FIXED` (dir #609).
+  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
     return 0
   fi
   printf 'bb_closure_word_ok: %s\n' "$candidate" >&2
@@ -149,8 +159,37 @@ bb_own_ticket_num() {
   printf '%s' "$num"
 }
 
+# dir #839: the shapes that mark a heading as FINISHED — an R grade after a dash, a release/pool/lane
+# arrow, or a status glyph. Every current heading line carries one of the three.
+BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|next|on-demand|[0-9]+\.[0-9]+)|✅|❌|⏳'
+
+# bb_heading_continues <block_so_far> <next_line>
+#   dir #839: does the non-blank <next_line> belong to the heading whose text so far is
+#   <block_so_far>, or is it the ticket's first body line written with no blank line before it?
+#   Returns 0 (continuation) or 1 (body). A `Log:`, `Draft slug:` or leading `**` opener always ends
+#   the block. A heading already FINISHED (BB_HEADING_TAIL_PATTERN) takes no further line, whatever
+#   the line looks like; an unfinished title (the dir #255 wrap-before-the-tail shape) keeps taking
+#   lines until it finishes or a blank comes.
+#   Residuals, accepted (the file's text cannot tell them apart; neither occurs in the maintainers'
+#   BACKLOG.md, measured 2026-10-14): a prose body line directly under a heading with no tail at all
+#   still reads as the title's continuation (the cure is the blank line a writer leaves after every
+#   heading); and a tag, arrow or note wrapped onto the line after a FINISHED first line stays out of
+#   the block: a wrapped closure tag then reads OPEN and a wrapped lane arrow is not read by the pool
+#   report. Two exceptions for a wrapped tag, arrow or
+#   note were tried and dropped, each admitted a glued body line: a continuation opening with an
+#   em-dash (even a tag-shaped one: `— ✅ DONE for the first half`), and one after a line ending in
+#   a dash.
+bb_heading_continues() {
+  local so_far="$1" next="$2"
+  local body_re='^(Log:|Draft slug:|\*\*)'
+  [[ "$next" =~ $body_re ]] && return 1
+  [[ ! "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]]
+}
+
 backlog_ticket_blocks() {
   local file="$1"
+  # dir #605: optional ERE heading token (default = keel's two shapes); see backlog-census.sh --ticket-token.
+  local ticket_re="${2:-dir #[0-9]+|[0-9]+\.}"
   [ -f "$file" ] && [ -r "$file" ] || return 0
 
   local fence_blanked
@@ -166,7 +205,7 @@ backlog_ticket_blocks() {
   # every heading line is already among the boundary lines this pass finds.
   local boundary_raw=()
   while IFS= read -r ln || [ -n "$ln" ]; do boundary_raw+=("$ln"); done \
-    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked")
+    < <(grep -nE "^### (${ticket_re}) |^## " <<< "$fence_blanked")
 
   local heading_lines=() boundary_lines=() entry lnum ltext
   # `[ -gt 0 ]` guard, not a bare `for ... in "${boundary_raw[@]}"`: bash 3.2 (macOS's stock
@@ -179,7 +218,7 @@ backlog_ticket_blocks() {
       lnum="${entry%%:*}"
       ltext="${entry#*:}"
       boundary_lines+=("$lnum")
-      if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
+      if [[ "$ltext" =~ ^###\ (${ticket_re})\  ]]; then
         heading_lines+=("$lnum")
       fi
     done
@@ -189,7 +228,7 @@ backlog_ticket_blocks() {
 
   local bidx=0
   local nb="${#boundary_lines[@]}"
-  local start end heading_line block_end probe block_scan_end heading_block closed flat
+  local start end heading_line probe block_scan_end heading_block closed flat
   local own_num stripped_block
 
   for start in "${heading_lines[@]}"; do
@@ -206,19 +245,18 @@ backlog_ticket_blocks() {
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
     own_num="$(bb_own_ticket_num "$heading_line")"
 
-    block_end="$start"
     probe=$((start + 1))
     block_scan_end="$end"
     [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
-    while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ]; do
-      block_end="$probe"
+    heading_block="$heading_line"
+    # dir #839: a non-blank next line is a continuation only when bb_heading_continues says so —
+    # a bare "first blank line" rule also swallowed a body line written directly under a FINISHED
+    # heading, and a `✅ DONE` in it closed an open ticket.
+    while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ] \
+      && bb_heading_continues "$heading_block" "${stripped_lines[$((probe - 1))]}"; do
+      heading_block+=$'\n'"${stripped_lines[$((probe - 1))]}"
       probe=$((probe + 1))
     done
-    if [ "$block_end" -eq "$start" ]; then
-      heading_block="$heading_line"
-    else
-      heading_block="$(printf '%s\n' "${stripped_lines[@]:$((start - 1)):$((block_end - start + 1))}")"
-    fi
 
     # F-04 (dir #267 fixer brief): a naive `grep -qE '— ✅ ...' <<< "$heading_block"` counts a
     # DIFFERENT ticket's own closure tag too, whenever body text absorbed into the block (no blank
