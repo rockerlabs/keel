@@ -159,14 +159,11 @@ check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
 check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
 check_eq "KEEL_TEST_JOBS=1 under CI=true runs one at a time, not capped at 2 (peak count)" "1" "$(max_peak "$d")"
 
-# --- SIGTERM mid-run: exits 130, kills the still-running children, and — unlike a naive kill-and-
-# exit — still surfaces each interrupted fixture's own buffered output (dir #130). dir #744 B12(b): the
-# fixtures write a marker once they are up (run.sh buffers their stdout until reap, so polling the output
-# could never succeed before the kill — E9), and only kill→exit is timed: never anything from runner start.
 # gone_pid PID — 0 once PID no longer exists (bounded by KEEL_TEST_HANG_BOUND, in 1 s steps); a survivor is killed
 # so a red run leaves nothing behind.
 gone_pid() {
   local p="$1" w=0
+  case "$p" in ''|0|*[!0-9]*) return 1 ;; esac   # never signal pid 0 (the caller's own group): not a recorded pid, so not gone
   while kill -0 "$p" 2>/dev/null && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
   if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; return 1; fi
   return 0
@@ -193,21 +190,24 @@ wait_run() {
   if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; fi
   wait "$p"; RUN_STATUS=$?
 }
+# --- SIGTERM mid-run: exits 130, kills the still-running children, and — unlike a naive kill-and-
+# exit — still surfaces each interrupted fixture's own buffered output (dir #130). dir #744 B12(b): the
+# fixtures write a marker once they are up (run.sh buffers their stdout until reap, so polling the output
+# could never succeed before the kill — E9), and kill→exit is an event, not a timing (dir #592): never anything from runner start.
 # sigterm_case LABEL RUN_SH_DIR — one SIGTERM mid-run scenario against the run.sh in RUN_SH_DIR (dir #592: the
 # kill→exit time is wall-clock, which a loaded machine stretches, so the check is an event — run.sh exits within the
 # suite's hang bound and the sleeps are gone — and the second case runs a runner whose exit is made slow on purpose,
 # so that stretch is reproduced rather than waited for).
 sigterm_case() {
-  local label="$1" d="$2" rpid w int_out int_out_text n
-  printf '#!/usr/bin/env bash\necho hello-from-int-a\necho $$ > "$(dirname "$0")/pid-a"\n: > "$(dirname "$0")/up-a"\nexec sleep 300\n' > "$d/test_a.sh"
-  printf '#!/usr/bin/env bash\necho hello-from-int-b\necho $$ > "$(dirname "$0")/pid-b"\n: > "$(dirname "$0")/up-b"\nexec sleep 300\n' > "$d/test_b.sh"
+  local label="$1" d="$2" rpid int_out int_out_text n
+  printf '#!/usr/bin/env bash\necho hello-from-int-a\necho $$ > "$(dirname "$0")/pid-a"\n: > "$(dirname "$0")/up.a"\nexec sleep 300\n' > "$d/test_a.sh"
+  printf '#!/usr/bin/env bash\necho hello-from-int-b\necho $$ > "$(dirname "$0")/pid-b"\n: > "$(dirname "$0")/up.b"\nexec sleep 300\n' > "$d/test_b.sh"
   int_out="$(mktemp "$SANDBOX/int-out.XXXXXX")"
   env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
   rpid=$!
-  w=0
-  while { [ ! -e "$d/up-a" ] || [ ! -e "$d/up-b" ]; } && [ "$w" -lt 200 ]; do sleep 0.1; w=$((w + 1)); done
-  check_file "$label -> fixture a was up before the kill" "$d/up-a"
-  check_file "$label -> fixture b was up before the kill" "$d/up-b"
+  wait_up "$d" a b
+  check_file "$label -> fixture a was up before the kill" "$d/up.a"
+  check_file "$label -> fixture b was up before the kill" "$d/up.b"
   kill -TERM "$rpid"
   wait_run "$rpid"
   int_out_text="$(cat "$int_out")"
@@ -227,6 +227,7 @@ sigterm_case "SIGTERM mid-run" "$d"
 d="$(mkfakedir)"
 replace_in_line_containing "$d/run.sh" "    exit 130" "exit 130" "sleep 12; exit 130"
 pin "mutation copy: on_interrupt's exit now takes 12 s" "$d/run.sh" "sleep 12; exit 130" "expected the scratch run.sh's on_interrupt to sleep before exiting"
+check_eq "mutation copy: that is run.sh's only 'exit 130' (the stretch sits on the one path SIGTERM takes)" "1" "$(grep -c 'exit 130' "$d/run.sh")"
 sigterm_case "SIGTERM mid-run on a runner stretched by load (12 s exit)" "$d"
 
 # --- dir #744 B10 (A10): the per-file watchdog -----------------------------------------------------
