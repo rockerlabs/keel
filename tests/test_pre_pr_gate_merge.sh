@@ -236,7 +236,10 @@ allow "(f) a PUT on …/pulls/5/mergeable is no merge endpoint" "gh api -X PUT r
 # --- (g) the shapes the create rule reads, for an unlisted session -------------------------------------------------
 for c in "cd /tmp && $MERGE" "GH_TOKEN=x $MERGE" "foo; $MERGE" "env GH_PAGER= $MERGE" \
          "gh --repo o/r pr merge 5 --merge --match-head-commit $SHA" "gh pr -R o/r merge 5 --merge --match-head-commit $SHA" \
-         "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`"; do
+         "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`" \
+         "timeout 60 $MERGE" "nice -n 5 $MERGE" "nohup $MERGE" "env -C /tmp $MERGE" "sudo -u x $MERGE" \
+         "echo 5 | xargs -n1 gh pr merge --squash --admin" "xargs -r -I{} $MERGE" "exec -a x $MERGE" \
+         "/opt/homebrew/bin/gh pr merge 5 --merge --match-head-commit $SHA"; do
   deny "(g) unlisted: [$c]" "$R_ID" "$c" "$P" "$OTHER"
 done
 for c in "echo gh pr merge" "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,mergeStateStatus" \
@@ -248,9 +251,15 @@ for c in "echo gh pr merge" "git commit -m 'wire gh pr merge'" "gh pr view 5 --j
 done
 
 # --- named residuals, pinned so a change to them is a visible decision: a wrapper's own flags, xargs ----------------
-for c in "echo 5 | xargs -n1 gh pr merge --squash --admin" "echo merge 5 | xargs gh pr" "exec -a x $MERGE --admin"; do
+for c in "echo merge 5 | xargs gh pr" "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
   allow "residual: [$c] is not read as a merge (named in the header)" "$c" "$P" "$OTHER"
 done
+# A manager behind a runner: read through; under xargs, stdin can add flags no check reads — denied.
+allow "(a) manager: timeout 60 + the merge" "timeout 60 $MERGE" "$P" "$MID"
+allow "(a) manager: a path to gh" "/opt/homebrew/bin/gh pr merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) manager: a merge under a flagless xargs" "not under xargs" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
+deny "(d) manager: a merge under xargs -n1" "not under xargs" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE --squash" "$P" "$MID"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
 deny "(h) a non-git cwd" "$R_GIT" "$MERGE" "$nd" "$MID"
