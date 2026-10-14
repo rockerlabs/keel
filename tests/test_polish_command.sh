@@ -322,7 +322,7 @@ check_contains "K2 fallbacks: a void quote takes the same route as a missing fin
   "voided for a missing findings list or quote"
 
 # --- dir #745 lines (build A): the intro names the push-bypass deny; the header comment is accurate ----------
-pinf "core intro: the gate also denies a bypassed git push" 'and always `git push --no-verify`'
+pinf "core intro: the gate also denies a bypassed git push" 'and denies `git push --no-verify`'
 pinf "core header comment: unwired, only the gate's blocks are inert" 'only its blocks are inert'
 check_absent "core header comment: the retired 'only the gh pr create block' wording is gone" "$flat" 'only the gh pr create block is inert'
 
@@ -411,5 +411,15 @@ for f in "$guide_head" "$(grep -F '`commands/polish-guide.md`' "$REPO_ROOT/docs/
   "$(grep -F '`polish-guide` is not one either' "$REPO_ROOT/docs/reference.md" || true)"; do
   check_contains "a trigger list names a mutation pass (B12a, A11)" "$f" 'a mutation pass'
 done
+
+# --- dir #825: no shipped command tells the agent to push with --no-verify ------------------------------
+# The gate DENIES such a push; polish.md's preamble once read "...blocks `gh pr create` ..., and always `git
+# push --no-verify`" (the gate's behaviour, parsed as an instruction). A mention is fine only as the gate's
+# denial, so the pin is on the wording, not the flag: no command carries "always `git push --no-verify`" or a
+# push line that uses the flag, and polish.md states the denial.
+no_verify_imperative="$(grep -rnE 'always `?git push --no-verify|git push (-[a-zA-Z-]+ )*--no-verify' "$REPO_ROOT/commands" | grep -vE 'denies|deny|never|denied' || true)"
+check_eq "no shipped command tells the agent to push with --no-verify (dir #825)" "" "$no_verify_imperative"
+pinfn() { check_absent "$1" "$flat" "$2"; }
+pinfn "polish.md no longer says the gate 'always' the push (dir #825)" 'and always `git push --no-verify`'
 
 summary
