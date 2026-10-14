@@ -2,8 +2,8 @@
 
 Most of a working session is read-only analysis — reconcile, reproduce, measure, draft — and none of
 that needs a commit, a PR, a review dialog, or any of the other control points a project keeps a human
-in the loop for. What's actually scarce is the gated mutation path and the operator's own review and
-merge bandwidth. This doc names the pattern that follows from that split: fan the read-only bulk of a
+in the loop for. What's actually scarce is the gated mutation path and the operator's own decision
+bandwidth. This doc names the pattern that follows from that split: fan the read-only bulk of a
 session out to cheap, stateless, parallel workers behind a file contract, and keep every gated control
 point inside one orchestrator session that never delegates it away.
 
@@ -45,7 +45,9 @@ of handing a prompt to the operator to paste — one health-line report per laun
 revoke to manual launching at any time. What this table's "operator-launched" wording actually
 protects is **gatedness** — a Mutator passing through your project's own commit/PR/merge gates — not
 literally who typed the launch command. See [`docs/release-management.md`](release-management.md) R3
-for the full requirement.
+for the full requirement. The same holds for the merge: in a managed release the manager is the orchestrator,
+so its gated merge under R14 (merge commit, head pinned, behind the project's policy line) stays inside the
+orchestrator's own session, while every other session — a Mutator included — never merges.
 
 **A launch-time requirement that follows from the same soft form:** whoever launches a real worker
 session this way can surface a model/effort recommendation. A direct launch (`start_session`) can preset
@@ -119,7 +121,7 @@ how mechanical the surrounding work looks:
 - deletions
 - backlog ticket-number assignment
 - memory / knowledge-base writes
-- the operator's own review and merge bandwidth — the true bottleneck, and the one thing no number of
+- the operator's own decision bandwidth — the true bottleneck, and the one thing no number of
   parallel workers can widen
 
 These exist specifically to **not** be automated away, whichever delegation pattern is doing the work —
