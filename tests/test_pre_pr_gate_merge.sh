@@ -223,13 +223,13 @@ deny "(f) unlisted: the API shape" "$R_API" "gh api -X PUT repos/o/r/pulls/5/mer
 deny "(f) -iXPUT (a cluster)" "$R_API" "gh api -iXPUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(f) -iX PUT (a cluster, the method in the next word)" "$R_API" "gh api -iX PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(f) -ifx=1 (a field in a cluster)" "$R_API" "gh api repos/o/r/pulls/5/merge -ifx=1" "$P" "$OTHER"
-allow "(f) -H takes a value: an endpoint-shaped header is no endpoint" "gh api -H repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
+deny "accepted cost: an endpoint-shaped flag value in an API call is unread" "$R_UNREAD" "gh api -H repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) -iX GET is a read" "gh api -iX GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -XGET is a read" "gh api -XGET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -X=GET is a read" "gh api -X=GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -i=false is a boolean's value, not a field" "gh api -i=false repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(f) -X =GET keeps its = (gh's reading: a method that is no GET)" "$R_API" "gh api -X =GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
-allow "(f) --header takes a value too" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
+deny "accepted cost: an endpoint-shaped --header value is unread too" "$R_UNREAD" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) gh api …/pulls/5/merge (GET: is it merged)" "gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api -X GET …/pulls/5/merge" "gh api -X GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api …/pulls (a list)" "gh api repos/o/r/pulls" "$P" "$OTHER"
@@ -298,7 +298,8 @@ for c in "gh -t pr api -X PUT repos/o/r/pulls/5/merge" "gh --jq pr api -X PUT re
          "gh -f merge_method=squash api repos/o/r/pulls/5/merge"; do
   deny "(f) flags before api: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
-allow "(f) gh api … pr merge words after the endpoint of a read" "gh api repos/o/r/commits --jq .x pr merge" "$P" "$OTHER"
+deny "accepted cost: an API call holding unquoted pr … merge words is unread" "$R_UNREAD" "gh api repos/o/r/commits --jq .x pr merge" "$P" "$OTHER"
+allow "(f) an API read with no merge words stays allowed" "gh api repos/o/r/commits --jq .x" "$P" "$OTHER"
 # Behind a runner even -h is unread: a runner may rewrite it (`xargs -I -h`), or run gh twice (`find -exec`).
 for c in "timeout 5 gh pr merge --help" "echo 5 | xargs -I -h gh pr merge -h --squash" \
          "find . -exec gh pr merge -h \\; -exec gh pr merge 5 --squash \\;"; do
@@ -315,7 +316,14 @@ for c in "gh --version pr merge 5 --admin" "gh --version api -X PUT repos/o/r/pu
   deny "(g) a merge the reading cannot place is unread, never allowed: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
 done
 allow "(f) gh -iX api GET: -X takes GET (the subcommand word taken out), a read with fields" "gh -iX api GET repos/o/r/pulls/5/merge -f a=b" "$P" "$OTHER"
-allow "(d) manager: flags end at --" "$MERGE -- --admin" "$P" "$MID"
+deny "accepted cost: a word after -- is still read as a flag" "$R_DROP --admin " "$MERGE -- --admin" "$P" "$MID"
+for c in "gh api -X PUT -- repos/o/r/pulls/5/merge" "gh -q -- api -X PUT repos/o/r/pulls/5/merge" \
+         "gh api repos/o/r/pulls/5/merge -q -- -X PUT" "gh api repos/o/r/pulls/5/merge --jq -- -f merge_method=squash"; do
+  ev_gate "$c" "$P" "$OTHER"
+  check_contains "(f) a -- in an API write hides nothing: [$c]" "$OUT" "$DENY"
+done
+deny "(d) manager: a -- as --body's value hides no --admin" "$R_DROP --admin " "$MERGE --body -- --admin" "$P" "$MID"
+deny "(d) manager: gh -- x pr merge: a -- before the subcommand is unread" "$R_UNREAD" "gh -- x pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(f) env -u takes its value: the API write after it is read exactly" "$R_API" "env -u gh -u -XGET gh api repos/o/r/pulls/5/merge -f merge_method=squash" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
