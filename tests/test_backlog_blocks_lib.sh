@@ -306,6 +306,95 @@ else
   fail "backlog_ticket_blocks scans legacy numbered headings too (1 row)" "got $row3"
 fi
 
+# --- dir #839: a heading with NO blank line after it must not take its body lines into the heading
+# block. The 0.17.0 groom folded twenty tickets whose first body line sat directly under a finished
+# heading (`— R2 — → 0.17.0`); a body line reading "Builds on item 51 (✅ DONE: …)" then closed the
+# OPEN ticket for the census and the pool report. A heading is FINISHED once it shows its tail (an
+# R grade, a release/pool arrow or a status glyph); after that it takes no further line. Rows are
+# selected by the ticket number inside field 4, never by line. ---------------------------------
+d839="$(new_repo)"
+f839="$d839/BACKLOG.md"
+printf '### dir #881 — an open ticket, prose body right under the heading — R2 — → 0.17.0
+Builds on item 51 (✅ DONE: shipped in PR #5), so this one is unblocked.
+
+### dir #882 — an open ticket, a dashed body line right under the heading — R2 — → pool
+Shipped earlier — ✅ DONE in PR #6, this follow-up is not.
+
+### dir #883 — an open ticket, a Log line right under the heading — R2 — → 0.17.0
+Log: 2026-10-12 — filed after the audit — ✅ DONE for the first half only.
+
+### dir #884 — an open ticket, a bold lead right under the heading — R2 — → 0.17.0
+**Found 2026-10-12 — ✅ DONE earlier by hand**, the rest is still open.
+
+### dir #885 — a heading with no grade yet, a Draft slug line right under it
+Draft slug: `x` — ✅ DONE as a draft, not as a ticket.
+
+### dir #887 — an open lane ticket (the `next` lane arrow, grade R5 shape) — R5 — → next
+Builds on item 51 (✅ DONE: shipped in PR #7), this one is not.
+
+### dir #886 — a genuinely closed control — R2 — ✅ DONE (2026-10-01, done)
+Closed body with no blank line before it.
+' > "$f839"
+out839="$(backlog_ticket_blocks "$f839")"
+row839() { printf '%s\n' "$1" | awk -F'\t' -v n="$2" -v c="$3" 'index($4, n) {print $c; exit}'; }
+for n in 881 882 883 884 885 887; do
+  check_status "MUTATION-PROOF: dir #$n (body line directly under the heading) stays open" \
+    0 "$(row839 "$out839" "dir #$n " 3)"
+done
+check_status "control: a closed heading with a body line right under it still reads closed" \
+  1 "$(row839 "$out839" "dir #886 " 3)"
+
+# The body-span end is unchanged: the ticket still owns its no-blank body lines up to the next heading.
+check_status "dir #881's span still runs to the line before dir #882" \
+  "$(( $(row839 "$out839" "dir #882 " 1) - 1 ))" "$(row839 "$out839" "dir #881 " 2)"
+
+# A FINISHED heading takes no further line, whatever the line looks like: a dash-led line, even one
+# opening with a status glyph, is a glued body line here, and so is the line after a dash-ended heading.
+d839c="$(new_repo)"
+f839c="$d839c/BACKLOG.md"
+printf '### dir #861 — a finished open heading, a dash-led glyph line glued under it — R2 — → pool
+— ✅ DONE for the first half only, the second half is still open.
+
+### dir #862 — a finished open heading, a dash-led R-grade line glued under it — R2 — → pool
+— R20 audit pending (✅ DONE for the survey).
+
+### dir #863 — a graded heading that ends in a dash, a glued body line under it — R2 —
+Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
+
+### dir #864 — a graded heading whose closure tag wraps onto its own line — R2 —
+— ✅ CLOSED (2026-10-01, done)
+' > "$f839c"
+out839c="$(backlog_ticket_blocks "$f839c")"
+# The accepted residual (dir #864 above), recorded: a closure tag wrapped onto the line after a
+# FINISHED first line stays out of the block and reads open (bb_heading_continues' header names it,
+# and this assertion flips with any change that makes it read closed). A title that wraps BEFORE its
+# tail still reads closed (dir #9/#900/#950 above).
+check_status "accepted residual: a closure tag wrapped after a finished first line reads open" \
+  0 "$(row839 "$out839c" "dir #864 " 3)"
+for n in 861 862 863; do
+  check_status "MUTATION-PROOF: dir #$n (finished heading, glued line of any shape) stays open" \
+    0 "$(row839 "$out839c" "dir #$n " 3)"
+done
+
+# --- dir #839: the standing-list shapes (legacy `### <n>.` headings, tag on the heading line, body
+# directly underneath) keep their verdicts — #11/#21 closed, #5/#10 open. -----------------------
+d839b="$(new_repo)"
+f839b="$d839b/BACKLOG.md"
+printf '### 11. First fresh-adopter install feedback (captured 2026-07-11 — ✅ CLOSED same day, PR #61)
+Findings were folded into the install flow.
+### 21. Install-flow redesign — make adoption dead-simple (captured 2026-07-12) ✅ DONE
+Shipped as PR #70.
+### 5. Token-usage tracing mode (captured 2026-07-03) — → 0.13.0
+Earlier attempt (✅ DONE for the feasibility half) — the build itself is still open.
+### 10. Impact-track keel itself (captured 2026-07-10) — R1 — → 0.9.0
+Phase one ✅ DONE; phase two open.
+' > "$f839b"
+out839b="$(backlog_ticket_blocks "$f839b")"
+check_status "legacy #11 (tag on the heading line, body right under it) reads closed" 1 "$(row839 "$out839b" "### 11. " 3)"
+check_status "legacy #21 (dashless tag on the heading line) reads closed" 1 "$(row839 "$out839b" "### 21. " 3)"
+check_status "MUTATION-PROOF: legacy #5 (no tag, body glyph right under it) reads open" 0 "$(row839 "$out839b" "### 5. " 3)"
+check_status "MUTATION-PROOF: legacy #10 (graded, body glyph right under it) reads open" 0 "$(row839 "$out839b" "### 10. " 3)"
+
 # --- no readable file -> silent empty output, not an error --------------------------------------
 out4="$(backlog_ticket_blocks "$d/no-such-file.md")"
 if [ -z "$out4" ]; then

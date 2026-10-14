@@ -212,6 +212,21 @@ check_status "MUTATION-PROOF: both dir #70 (citing) and dir #71 (cited) fall to 
 run "$bc" --list pool "$fcit"
 check_status "MUTATION-PROOF: neither ticket is wrongly counted under the cited 'pool' tag" "" "$OUT"
 
+# --- dir #839: a body line directly under a FINISHED heading (no blank line) must not close the
+# ticket. The 0.17.0 groom lost dir #813 from every count this way: its first body line carried
+# "(✅ DONE: …)" for a DIFFERENT item. MUTATION-PROOF: restoring the bare "first blank line ends the
+# heading block" rule reads both tickets closed, so neither is counted. -------------------------
+glued_backlog="### dir #871 — an open pool ticket, body glued to the heading — R2 — → pool
+Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
+
+### dir #872 — an open scheduled ticket, body glued to the heading — R2 — → 0.17.0
+Shipped earlier — ✅ DONE in PR #6 for the first half only.
+"
+fg="$(mk_backlog "$glued_backlog")"
+run "$bc" "$fg"
+check_contains "MUTATION-PROOF: the glued pool ticket is counted (1)" "$OUT" $'1\tpool'
+check_contains "MUTATION-PROOF: the glued scheduled ticket is counted (1)" "$OUT" $'1\t0.17.0'
+
 # --- smoke against today's real BACKLOG.md: must not crash, must print well-formed rows ---------
 if [ -f "$REPO_ROOT/BACKLOG.md" ]; then
   run "$bc" "$REPO_ROOT/BACKLOG.md"
