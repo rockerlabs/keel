@@ -137,11 +137,15 @@ The match is on the branch the transcript itself recorded, exactly — never the
 get recycled) or the file's modification time (a log touched in the window still carries its whole earlier
 history) — and a ticket restarted on one branch yields every file. The match is **file-level**: a session
 file counts if any record carries the branch, and its whole history is then priced, so a session that ran
-several ledger branches is counted under each (the manifest warns on stderr when one file matches two
-lines; a worker that stayed on its own branch never trips it). A branch no session records is **never
-dropped**: it prints as a `# UNMATCHED:` comment line (which `table` and `weighted` skip), is named on
-stderr, and the exit status is 1. A session path containing a comma is refused (exit 2), since the manifest's
-file column is comma-joined. `--repo` defaults to the current directory's main checkout.
+several ledger branches would be priced under each. That is marked, not hidden: a file matching two ledger
+branches prints as a `# SHARED:` comment line (a worker that stayed on its own branch never trips it), and
+a branch no session records is **never dropped** but prints as a `# UNMATCHED:` line. `table` skips both
+comment lines; both are named on stderr and make `manifest` exit 1, and `weighted` repeats them under its
+total and exits 1 as well, so a pipeline that ignored `manifest`'s status still cannot record the number.
+A branch listed on two ledger lines (a restarted ticket is ONE line: it already gets every file), or a
+comma in a matched session path (the file column is comma-joined), is refused with exit 2 before any row
+prints. The transcripts are scanned once for the whole ledger. `--repo` defaults to the current
+directory's main checkout.
 
 `weighted` sums a manifest at the estimate's weights, the way `keel tokens` prices a session
 ([`docs/token-economy.md`](token-economy.md)): new input × input weight + cache writes × write weight +

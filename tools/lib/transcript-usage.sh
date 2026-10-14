@@ -141,7 +141,8 @@ tu_files_for_branches() {
     if [ "$prefilter" -eq 1 ]; then grep -q -F -f "$pat" "$f" 2>/dev/null || continue; fi
     # A file jq cannot parse is no match, never a crash.
     jq -n -r --argjson bs "$bs" --arg f "$f" '
-      [inputs | .gitBranch | select(type == "string")] | unique | .[] | select(. as $b | $bs | any(. == $b)) | [$f, .] | @tsv
+      reduce (inputs | .gitBranch | select(type == "string")) as $b ({}; .[$b] = 1)
+      | keys[] | select(. as $b | $bs | any(. == $b)) | "\($f)\t\(.)"
     ' "$f" 2>/dev/null || true
   done < <(tu_session_files "$repo_top")
   rm -f "$pat"
@@ -149,7 +150,9 @@ tu_files_for_branches() {
 
 # tu_files_for_branch REPO_TOP BRANCH — tu_files_for_branches for one branch: the file paths alone.
 tu_files_for_branch() {
-  tu_files_for_branches "$1" "$2" | cut -f1
+  local pairs
+  pairs="$(tu_files_for_branches "$1" "$2")" || return 1
+  [ -z "$pairs" ] || cut -f1 <<<"$pairs"
 }
 
 # tu_subagent_files SESSION_JSONL_FILE — every subagent sibling of one primary session file (dir #313

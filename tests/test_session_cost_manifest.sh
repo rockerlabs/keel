@@ -83,23 +83,35 @@ check_status "manifest on a missing ledger exits 2" "2" "$STATUS"
 run bash "$tool" manifest
 check_status "manifest with no ledger exits 2" "2" "$STATUS"
 
-# a file that records BOTH of two ledger branches is counted under both tickets: warned, not silent
+# a file that records BOTH of two ledger branches would be priced under both tickets: marked SHARED, exit 1
 f3="$wt_b/44444444-4444-4444-4444-444444444444.jsonl"
 { turn claude/w2-y z1 1 0 1 1; turn claude/w1-x z2 1 0 1 1; } > "$f3"
 printf 'W1\tR2\tsonnet\tclaude/w1-x\nW2\tR1\tsonnet\tclaude/w2-y\n' > "$ledger"
 run bash "$tool" manifest --repo "$repo" "$ledger"
-check_status "manifest still exits 0 for a shared session file" "0" "$STATUS"
-check_contains "manifest warns that a file is counted under two tickets" "$OUT" "counted under both tickets"
+check_status "manifest exits 1 for a session file shared by two ledger branches" "1" "$STATUS"
+check_contains "manifest marks the shared file" "$OUT" "# SHARED:"
+check_contains "manifest names both branches on the shared file" "$OUT" "claude/w1-x, claude/w2-y"
+bash "$tool" manifest --repo "$repo" "$ledger" > "$mf" 2>/dev/null
+run bash "$tool" weighted "$mf"
+check_status "weighted over a SHARED manifest exits 1 (the total double-counts)" "1" "$STATUS"
+check_contains "weighted repeats the SHARED line" "$OUT" "# SHARED:"
 rm -f "$f3"
 
-# a comma in a session path cannot ride a comma-joined FILE column
+# a branch on two ledger lines would price its files twice: refused before anything prints
+printf 'W1\tR2\tsonnet\tclaude/w1-x\nR1\tR2\tsonnet\tclaude/w1-x\n' > "$ledger"
+run bash "$tool" manifest --repo "$repo" "$ledger"
+check_status "manifest refuses a branch listed twice" "2" "$STATUS"
+check_contains "manifest names the duplicate" "$OUT" "on two ledger lines"
+
+# a comma in a session path cannot ride a comma-joined FILE column; refused before any row prints
 wt_c="$proj/${slug}--claude-worktrees-w3,comma"
 mkdir -p "$wt_c"
 turn claude/w3-c c1 1 0 1 1 > "$wt_c/55555555-5555-5555-5555-555555555555.jsonl"
-printf 'W3\tR1\tsonnet\tclaude/w3-c\n' > "$ledger"
+printf 'W1\tR2\tsonnet\tclaude/w1-x\nW3\tR1\tsonnet\tclaude/w3-c\n' > "$ledger"
 run bash "$tool" manifest --repo "$repo" "$ledger"
 check_status "manifest refuses a session path containing a comma" "2" "$STATUS"
 check_contains "manifest names the comma problem" "$OUT" "contains a comma"
+check_absent "manifest prints no row of a refused ledger (no truncated manifest)" "$OUT" "R2	sonnet"
 rm -f "$wt_c"/*.jsonl
 
 # --- weighted ------------------------------------------------------------------------------------------

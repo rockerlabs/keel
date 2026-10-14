@@ -38,7 +38,7 @@
 #                                                     the window's review cost (B10)
 #   session-cost.sh manifest [--repo DIR] LEDGER     dir #654: a release ledger (TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH)
 #                                                     -> the `table` manifest, session files found by exact gitBranch;
-#                                                     an unmatched branch prints as `# UNMATCHED:` and exits 1
+#                                                     an unmatched branch prints as `# UNMATCHED:` (a session shared by two branches as `# SHARED:`) and exits 1
 #   session-cost.sh weighted [--weights I,W,R] MANIFEST
 #                                                     each ticket summed at the estimate's weights (as `keel tokens`)
 #
@@ -491,8 +491,10 @@ _sc_weights() {
 
 # cmd_manifest [--repo DIR] LEDGER — LEDGER lines: TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH ('#' comments and blank
 # lines skipped). Prints the `table` manifest (TICKET, TIER, MODEL, the matched files comma-joined). A branch no
-# session records is never dropped: it prints as a `# UNMATCHED:` comment line (which `table` skips) and on stderr,
-# and the exit status is 1 once every line has been handled.
+# session records is never dropped: it prints as a `# UNMATCHED:` comment line (which `table` skips) and on stderr;
+# a session file matching two ledger branches prints `# SHARED:` (it would be priced twice); a duplicate branch or a
+# comma in a matched path is refused (exit 2) before any row prints. The exit status is 1 for UNMATCHED or SHARED once
+# every line has been handled.
 cmd_manifest() {
   local repo=""
   while [ $# -gt 0 ]; do
@@ -511,7 +513,7 @@ cmd_manifest() {
 
   # Pass 1: validate the whole ledger and collect its branches, so the transcript corpus is scanned ONCE
   # for all of them (the scan, not the branch count, is the cost) and a malformed ledger fails before it.
-  local ticket tier model branch files list ff claimed="" unmatched=0 rows=0 pairs
+  local ticket tier model branch files list unmatched=0 shared=0 rows=0 pairs seen=$'\n'
   local -a branches=()
   while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
     case "$ticket" in ''|'#'*) continue ;; esac
@@ -520,30 +522,29 @@ cmd_manifest() {
         "$ticket" "$tier" "$model" "$branch" >&2
       exit 2
     }
+    # One line per branch: a ticket restarted on its branch already gets every session file from one line, and a
+    # second line would price the same files twice.
+    case "$seen" in
+      *$'\n'"$branch"$'\n'*) printf 'session-cost.sh: manifest: branch %s is on two ledger lines (ticket %s); list it once\n' "$branch" "$ticket" >&2; exit 2 ;;
+    esac
+    seen="$seen$branch"$'\n'
     rows=$((rows + 1))
     branches+=("$branch")
   done < "$ledger"
   [ "$rows" -gt 0 ] || { printf 'session-cost.sh: ledger carried no ticket rows: %s\n' "$ledger" >&2; exit 2; }
   pairs="$(tu_files_for_branches "$top" "${branches[@]}")" || exit 1
+  # The manifest's FILE column is comma-joined, so a comma inside a matched path would split it into phantom
+  # files. Checked before any row prints, so a refusal never leaves a truncated manifest behind.
+  if grep -q -F ',' <<<"$(cut -f1 <<<"$pairs")"; then
+    printf 'session-cost.sh: manifest: a matched session path contains a comma, which the manifest cannot carry\n' >&2
+    exit 2
+  fi
 
   # Pass 2: one manifest row (or UNMATCHED line) per ledger line.
   while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
     case "$ticket" in ''|'#'*) continue ;; esac
     list="$(B="$branch" awk -F'\t' '$2 == ENVIRON["B"] { print $1 }' <<<"$pairs" | sort)"
-    # The manifest's FILE column is comma-joined, so a comma inside a path would split it into phantom files.
-    case "$list" in
-      *,*) printf 'session-cost.sh: manifest: a session path contains a comma, which the manifest cannot carry: %s\n' "$list" >&2; exit 2 ;;
-    esac
     files="$(printf '%s' "$list" | paste -sd, -)"
-    # A match is file-level (ANY record carries the branch), so one session that worked several ledger branches
-    # is priced whole under each. Say so rather than double-count in silence.
-    while IFS= read -r ff; do
-      [ -n "$ff" ] || continue
-      if [ -n "$claimed" ] && grep -q -F -x -- "$ff" <<<"$claimed"; then
-        printf 'session-cost.sh: manifest: warning — %s also records an earlier ledger branch; its tokens are counted under both tickets\n' "$ff" >&2
-      fi
-      claimed="$claimed$ff"$'\n'
-    done <<<"$list"
     if [ -n "$files" ]; then
       printf '%s\t%s\t%s\t%s\n' "$ticket" "$tier" "$model" "$files"
     else
@@ -552,14 +553,24 @@ cmd_manifest() {
       printf 'session-cost.sh: ticket %s: no session file records branch %s\n' "$ticket" "$branch" >&2
     fi
   done < "$ledger"
-  [ "$unmatched" -eq 0 ] || exit 1
+
+  # The match is file-level (ANY record carries the branch): a session that worked two ledger branches is priced
+  # whole under both, which inflates the total. Marked like an unmatched branch, and the exit says incomplete.
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    shared=$((shared + 1))
+    printf '# SHARED: %s\n' "$line"
+    printf 'session-cost.sh: manifest: shared session — %s (counted under each of those branches)\n' "$line" >&2
+  done < <(awk -F'\t' 'NF >= 2 { n[$1]++; b[$1] = b[$1] (n[$1] > 1 ? ", " : "") $2 } END { for (f in n) if (n[f] > 1) print f " records branches: " b[f] }' <<<"$pairs" | sort)
+  [ "$unmatched" -eq 0 ] && [ "$shared" -eq 0 ] || exit 1
 }
 
 # cmd_weighted [--weights I,W,R] MANIFEST — each ticket's cost at the estimate's weights, as `keel tokens`
 # prices a session: new input x I + cache writes x W + cache reads x R, output tokens unweighted (a ruler, not a
 # price). Primary and subagent are shown apart, then summed per ticket and overall. Weights: --weights, else
-# KEEL_TOKENS_WEIGHTS (malformed -> defaults, said so, as `keel tokens` does), else 1.0,2.0,0.1. `# UNMATCHED:`
-# lines in the manifest are repeated under the total — never dropped on the way to the number.
+# KEEL_TOKENS_WEIGHTS (malformed -> defaults, said so, as `keel tokens` does), else 1.0,2.0,0.1.
+# `# UNMATCHED:`/`# SHARED:` lines in the manifest are repeated under the total and make it exit 1 — never dropped on the way to the number.
 cmd_weighted() {
   local spec=""
   while [ $# -gt 0 ]; do
@@ -607,8 +618,8 @@ cmd_weighted() {
     "$_SC_W_INPUT" "$_SC_W_WRITE" "$_SC_W_READ"
   # A manifest that carries an UNMATCHED line is an incomplete sum: say so and exit 1, so a pipeline that
   # ignored `manifest`'s own exit status still cannot record the number as the release's total.
-  if grep '^# UNMATCHED' "$manifest"; then
-    printf 'session-cost.sh: weighted: the total above OMITS the unmatched ticket(s) listed — incomplete\n' >&2
+  if grep -E '^# (UNMATCHED|SHARED)' "$manifest"; then
+    printf 'session-cost.sh: weighted: the total above is incomplete or double-counts (the marked lines above) — do not record it\n' >&2
     exit 1
   fi
 }
