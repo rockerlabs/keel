@@ -504,4 +504,14 @@ check_status "nonexistent BACKLOG_PATH directory -> exit 0 (advisory skip, not a
 check_contains "prints the same skip line, not raw cd stderr" "$OUT" "no readable BACKLOG.md"
 check_absent "no raw 'No such file or directory' stderr leaks through" "$OUT" "No such file or directory"
 
+# --- dir #839: a body line glued under a finished heading (no blank line) must not close the ticket
+# for the pool figure. MUTATION-PROOF: the bare "first blank line ends the heading block" rule read
+# the "✅ DONE" in the glued line as the ticket's own closure and dropped it from the pool. -------
+fglue="$(mk_backlog "### dir #873 — an open pool ticket, body glued to the heading (found 2026-01-01) — R2 — → pool
+Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
+")"
+run "$pr" --history "$SANDBOX/hist-glue.jsonl" "$fglue"
+check_contains "MUTATION-PROOF: a glued body line does not drop the open ticket from the pool" "$OUT" \
+  "pool size:                     1"
+
 summary

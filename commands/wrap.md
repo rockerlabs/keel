@@ -32,6 +32,7 @@ not provably safe — a recent/off-pattern free branch, or a clean worktree that
 non-disposable gitignored content like `private/` — confirm), **FLAG** (a worktree with LIVE work — either
 uncommitted/untracked files that `git worktree remove` would refuse, or clean but touched within
 `--live-hours`: a worktree merged today can be a parallel session still mid-wrap, not a stale leftover —
+or a running process whose cwd is inside it, a session working elsewhere such as the main checkout —
 surfaced for review, no destructive command, since forcing it could discard that work or race a live
 session); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with
 `--prune-safe`, act on ASK only after a yes, review FLAG by hand.

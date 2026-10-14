@@ -23,7 +23,10 @@
 #          within --live-hours: a worktree merged TODAY can be a parallel session still mid-wrap (ledger/
 #          backlog writes land AFTER the merge), not a stale leftover -- see backlog #51. Reported WITHOUT a
 #          destructive command (forcing it would discard that work, or race a live session); the human
-#          reviews first. This is the genuinely-alive case, not mere presence.
+#          reviews first. This is the genuinely-alive case, not mere presence. A third reason (dir #813): a
+#          RUNNING PROCESS has its cwd inside the worktree -- a session that works elsewhere (a release
+#          manager writes the main checkout) leaves its own worktree clean and untouched, yet is alive.
+#          Seen via /proc, else lsof; positive-only -- no process seen leaves the grading unchanged.
 #   (skip) not merged (unmerged work OR a squash-merge, which is indistinguishable from active work without
 #          gh -- left alone by design: zero-dep buys no false positives at the cost of not cleaning
 #          squash-merged branches), the default branch itself, and the current branch / worktree.
@@ -42,6 +45,9 @@
 # Env: KEEL_CLEANUP_GLOBS overrides the ephemeral-name allowlist (space-separated globs).
 #      KEEL_KEEP_WORKTREE=<path> names the worktree to never touch (defaults to this run's own
 #      worktree); a caller that reconciles from another dir exports it to protect the session's worktree.
+#      KEEL_DEFAULT_BRANCH names the default branch to grade against (dir #814); unset, it is origin/HEAD's
+#      target; with a remote but no origin/HEAD, main; with NO remote, the ONE of init.defaultBranch / main /
+#      master that exists locally (two or more: grades nothing and names them).
 #
 # No bash arrays: macOS ships bash 3.2, where `${arr[@]}` under `set -u` on an empty array is an error;
 # newline/TAB-delimited string accumulation is portable and just as clear at this size.
@@ -71,9 +77,13 @@ ASK  = merged but not provably safe: recent/off-pattern free branch, or a clean 
        recent/off-pattern/holds non-disposable ignored content -> confirm before removing.
 FLAG = merged worktree with live work -> reported for review, no destructive command. Either uncommitted/
        untracked files, or (clean) a file touched within --live-hours (default 6) -- possibly a parallel
-       session still mid-wrap, not a stale leftover.
+       session still mid-wrap, not a stale leftover -- or a running process whose cwd is inside it (a
+       session that works elsewhere, e.g. in the main checkout).
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
+     KEEL_DEFAULT_BRANCH default branch to grade against, used exactly as given (default: origin/HEAD's
+                         target; with a remote but no origin/HEAD, main; with no remote, the one of
+                         init.defaultBranch / main / master that exists -- two or more: grades nothing).
 EOF
 }
 
@@ -109,16 +119,65 @@ require_nonneg_int --live-hours "$LIVE_HOURS"
 
 git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
-# Default branch: origin/HEAD's target, else main. Compare against the REMOTE default when it resolves
-# (authoritative -- the merge lands there), else the local branch (offline / no remote, e.g. the tests).
-# symbolic-ref (not `rev-parse --abbrev-ref origin/HEAD`, which prints the literal "origin/HEAD" + exits
-# 128 with no remote); an absent origin/HEAD just leaves default empty -> main.
-default=""
-if _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then default="${_ref#refs/remotes/origin/}"; fi
-[ -n "$default" ] || default=main
-if git rev-parse --verify -q "origin/$default" >/dev/null 2>&1; then base="origin/$default"; else base="$default"; fi
-git rev-parse --verify -q "$base" >/dev/null 2>&1 \
-  || { printf 'branch-cleanup: no %s to compare against (fetch first?)\n' "$base" >&2; exit 0; }
+# Default branch (dir #814), first match wins:
+#   1. KEEL_DEFAULT_BRANCH -- the operator's explicit word, used EXACTLY as given (no prefix stripping:
+#      every normalization rule was a hole). It must be a plain branch name, else exit 2; a value that names
+#      no local or origin branch (`origin/main`, `refs/heads/main`, `upstream/main`) simply finds nothing to
+#      compare against and grades nothing -- fail closed.
+#   2. origin/HEAD's target (symbolic-ref, not `rev-parse --abbrev-ref origin/HEAD`, which prints the
+#      literal "origin/HEAD" + exits 128 with no remote).
+#   3. A remote exists but origin/HEAD is unset (never fetched): `main`, exactly as before this ticket --
+#      the remote's real default is unknowable offline, and no local guess is added here. (A stray local
+#      `main` still becomes the base in that case; that is the pre-existing behaviour, not widened.)
+#   4. NO remote -- nothing to fetch, so guess from the LOCAL branches: the ONE of init.defaultBranch / main /
+#      master that exists. Two or more existing (a stale `main` beside a live `master`) is ambiguous, and a
+#      wrong base deletes work, so it grades NOTHING and names the candidates; the checked-out HEAD is never
+#      consulted (a main worktree on a feature branch would make live work the base). The guess is announced
+#      on stderr. None exists -> `main` and the "no <x> to compare against" line.
+# Refs are fully qualified below, so a branch named like a remote ref cannot be mistaken for one.
+# Compare against the REMOTE default when it resolves (authoritative -- the merge lands there), else the
+# local branch (offline / no remote, e.g. the tests).
+has_remote=0; [ -z "$(git remote 2>/dev/null || true)" ] || has_remote=1
+default=""; guessed=0
+if [ -n "${KEEL_DEFAULT_BRANCH:-}" ]; then
+  default="$KEEL_DEFAULT_BRANCH"
+  case "$default" in -*|HEAD|@) _bad=1 ;; *) _bad=0 ;; esac   # HEAD/@ are refs, not branches: they would defeat the self-exclusion below
+  { [ "$_bad" -eq 0 ] && git check-ref-format "refs/heads/$default" >/dev/null 2>&1; } \
+    || { printf 'branch-cleanup: KEEL_DEFAULT_BRANCH is not a valid branch name: %s\n' "$KEEL_DEFAULT_BRANCH" >&2; exit 2; }
+elif _ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)"; then
+  default="${_ref#refs/remotes/origin/}"
+elif [ "$has_remote" -eq 1 ]; then
+  default=main
+else
+  _found=""; _n=0
+  for _c in "$(git config --get init.defaultBranch 2>/dev/null || true)" main master; do
+    [ -n "$_c" ] || continue
+    git check-ref-format "refs/heads/$_c" >/dev/null 2>&1 || continue
+    case " $_found " in *" $_c "*) continue ;; esac
+    git rev-parse --verify -q "refs/heads/$_c" >/dev/null 2>&1 || continue
+    _found="$_found $_c"; _n=$((_n + 1)); default="$_c"
+  done
+  if [ "$_n" -gt 1 ]; then
+    printf 'branch-cleanup: ambiguous local default (%s); set KEEL_DEFAULT_BRANCH to the right one\n' "${_found# }" >&2
+    exit 0
+  fi
+  [ "$_n" -eq 0 ] || guessed=1
+  [ -n "$default" ] || default=main
+fi
+if git rev-parse --verify -q "refs/remotes/origin/$default" >/dev/null 2>&1; then
+  base="origin/$default"; base_ref="refs/remotes/origin/$default"
+else
+  base="$default"; base_ref="refs/heads/$default"
+fi
+git rev-parse --verify -q "$base_ref" >/dev/null 2>&1 || {
+  if [ "$has_remote" -eq 1 ]; then
+    printf 'branch-cleanup: no %s to compare against (fetch first? or set KEEL_DEFAULT_BRANCH)\n' "$default" >&2
+  else
+    printf 'branch-cleanup: no %s to compare against (no remote; set KEEL_DEFAULT_BRANCH or init.defaultBranch)\n' "$default" >&2
+  fi
+  exit 0
+}
+[ "$guessed" -eq 0 ] || printf 'branch-cleanup: no remote, so grading against local %s (set KEEL_DEFAULT_BRANCH to override)\n' "$default" >&2
 
 # The one worktree we must never suggest removing: the one this run sits in (you can't `git worktree
 # remove` your own CWD, and at wrap the session usually sits on an already-merged branch). Identify it by
@@ -210,6 +269,40 @@ worktree_live() {
   return 1
 }
 
+# Is a process running with its cwd inside the worktree (dir #813)? A live session is not always one that
+# writes files in its own worktree: a release manager writes the MAIN checkout's BACKLOG.md and a /design
+# session its drafts and specs, so their worktrees stay clean and untouched past --live-hours and look like
+# a dead, merged leftover (a branch with no commits of its own is trivially "merged"). What such a session
+# DOES have is a process whose cwd is the worktree. POSITIVE-ONLY: a process seen means alive; none seen
+# (no /proc and no lsof, or another user's process we cannot read) means no signal, never "dead". All cwds
+# are listed once, lazily (the first non-dirty worktree pays; it runs before the mtime walk), and compared by physical
+# path with a trailing-slash boundary so `wt-a` never matches `wt-a-sibling`.
+proc_cwds=""; proc_cwds_built=0
+_proc_cwds_build() {
+  local l
+  proc_cwds_built=1
+  if [ -d /proc/self ]; then
+    while IFS= read -r l; do
+      [ -n "$l" ] || continue
+      proc_cwds="${proc_cwds}$(readlink "$l" 2>/dev/null || true)"$'\n'
+    done < <(find /proc -maxdepth 2 -name cwd -type l 2>/dev/null || true)
+  elif command -v lsof >/dev/null 2>&1; then
+    # capture, then filter: a producer into an early-exiting reader is the dir #280 SIGPIPE race
+    l="$(lsof -w -a -d cwd -Fn 2>/dev/null || true)"
+    proc_cwds="$(sed -n 's/^n//p' <<<"$l")"$'\n'
+  fi
+}
+worktree_busy() {
+  local wtp c
+  wtp="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  [ "$proc_cwds_built" -eq 1 ] || _proc_cwds_build
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    case "$c/" in "$wtp"/*) return 0 ;; esac
+  done <<<"$proc_cwds"
+  return 1
+}
+
 now="$(date +%s)"
 auto="";   n_auto=0          # free branches safe to delete (also carries worktree autos, see autowt)
 autowt=""                   # worktrees safe to auto-remove: name<TAB>age<TAB>path
@@ -217,7 +310,7 @@ ask="";    n_ask=0           # free branches to confirm
 askwt=""                    # worktrees to confirm: name<TAB>age<TAB>path<TAB>reason
 flag="";   n_flag=0          # worktrees with live work (dirty OR recently-touched-but-clean) — never auto-touched
 
-# --merged="$base" does the "merged" gate in git itself (tip reachable from base — an unmerged or
+# --merged="$base_ref" (the fully-qualified ref, never the short name) does the "merged" gate in git itself (tip reachable from base — an unmerged or
 # squash-merged branch is simply not listed), replacing a per-branch `git merge-base` fork. The committer
 # date rides along free from the same call (a ref name can't contain a space, so `read b cd` splits
 # cleanly) — no per-branch `git log` fork either. (`--merged` needs git >= 2.7, 2016; macOS/Alpine clear it.)
@@ -233,6 +326,8 @@ while read -r b cd; do
     state="$(worktree_state "$wtp")"
     if [ "$state" = dirty ]; then                          # live work -> remove would need --force. Never auto.
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"dirty"$'\n'; n_flag=$((n_flag + 1))
+    elif worktree_busy "$wtp"; then                        # a process runs inside it: a live session that may
+      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"proc"$'\n'; n_flag=$((n_flag + 1))   # write ELSEWHERE (dir #813)
     elif worktree_live "$wtp"; then                        # clean but recently touched -> possibly a live
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"live"$'\n'; n_flag=$((n_flag + 1))   # parallel session, not dead
     elif [ "$state" = clean ] && [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
@@ -252,7 +347,7 @@ while read -r b cd; do
     reason=recent; [ "$age" -ge "$DAYS" ] && reason=off-pattern
     ask="${ask}${b}"$'\t'"${age}"$'\t'"${reason}"$'\n'; n_ask=$((n_ask + 1))
   fi
-done < <(git for-each-ref --merged="$base" --format='%(refname:short) %(committerdate:unix)' refs/heads/)
+done < <(git for-each-ref --merged="$base_ref" --format='%(refname:short) %(committerdate:unix)' refs/heads/)
 
 # --- act + report -------------------------------------------------------------------------------
 # delete_branch NAME — -d first (belt); -D fallback only because -d compares against the current HEAD, not
@@ -303,12 +398,15 @@ while IFS=$'\t' read -r b age wtp reason; do
 done < <(printf '%s' "$askwt")
 
 # FLAG is a worktree with LIVE work — surfaced without a destructive command on purpose: removing it could
-# discard that work or race a live session, so the human reviews first. Two distinct reasons:
+# discard that work or race a live session, so the human reviews first. Three distinct reasons:
 #   dirty — uncommitted/untracked files; `git worktree remove` would refuse without --force.
+#   proc  — a running process has its cwd inside it (dir #813): a session that works elsewhere, e.g. in the main checkout.
 #   live  — clean, but touched within --live-hours; possibly a parallel session still mid-wrap (backlog #51).
 while IFS=$'\t' read -r b path reason; do
   [ -n "$b" ] || continue
-  if [ "$reason" = live ]; then
+  if [ "$reason" = proc ]; then
+    printf 'FLAG  %-40s worktree %s has a running process whose cwd is inside it — possibly a live session working elsewhere; list cwds with `lsof -d cwd` and look for this path, then leave it or close it\n' "$b" "$path"
+  elif [ "$reason" = live ]; then
     printf 'FLAG  %-40s worktree %s merged but recently active — possibly a live parallel session; leave it, re-run cleanup later\n' "$b" "$path"
   else
     printf 'FLAG  %-40s worktree %s has uncommitted/untracked work — review before removing\n' "$b" "$path"

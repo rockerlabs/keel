@@ -190,6 +190,82 @@ check_contains "live-hours 0 lets prune-safe remove the now-idle worktree" \
 run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
 check_status "branch is gone once the probe is disabled" 1 "$STATUS"
 
+# --- dir #813: a LIVE session whose files sit outside its worktree ------------------------------------------
+# A release manager or a /design session writes the MAIN checkout (BACKLOG.md, drafts, specs), so its own
+# worktree stays clean and untouched past --live-hours -- the mtime probe above never sees it, and a branch
+# with no commits of its own is trivially "merged". What it DOES have is a running process whose cwd is the
+# worktree. A process cwd inside a candidate worktree grades it FLAG, never ASK/AUTO. Positive-only: no
+# process seen is today's grading, unchanged.
+procrepo="$(new_repo)"
+git -C "$procrepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$procrepo" commit -q --allow-empty -m c1
+c1pr="$(git -C "$procrepo" rev-parse HEAD)"
+git -C "$procrepo" commit -q --allow-empty -m c2                       # main tip
+git -C "$procrepo" branch claude/wt-proc "$c1pr"                       # zero commits of its own, old, ephemeral
+git -C "$procrepo" worktree add -q "$procrepo.wt-proc" claude/wt-proc >/dev/null
+mkdir -p "$procrepo.wt-proc/sub"
+find "$procrepo.wt-proc" -exec touch -t 202001011200.00 {} + 2>/dev/null   # idle for years: the mtime probe is blind
+# a sibling DIRECTORY sharing the worktree's path as a string prefix, with its own process: must not match
+git -C "$procrepo" branch claude/wt-near "$c1pr"
+git -C "$procrepo" worktree add -q "$procrepo.wt-near" claude/wt-near >/dev/null
+find "$procrepo.wt-near" -exec touch -t 202001011200.00 {} + 2>/dev/null
+mkdir -p "$procrepo.wt-near-sibling"
+
+# start_cwd_proc DIR READY — a background process whose cwd is DIR; sets PROC_PID once READY exists
+start_cwd_proc() {
+  rm -f "$2"
+  ( cd "$1" && : > "$2" && exec sleep 120 ) >/dev/null 2>&1 &
+  PROC_PID=$!
+  local i=0
+  while [ ! -e "$2" ] && [ "$i" -lt 50 ]; do sleep 0.1 2>/dev/null || sleep 1; i=$((i + 1)); done
+  [ -e "$2" ] || fail "the cwd process started inside $1" "no ready file after the wait"
+}
+stop_cwd_proc() { kill "$PROC_PID" 2>/dev/null; wait "$PROC_PID" 2>/dev/null; }
+
+# baseline: no process -> the idle, clean, old, ephemeral worktree is a plain AUTO (today's behaviour)
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "no process in it: an idle clean old worktree is AUTO" "$(line_for claude/wt-proc)" "AUTO"
+
+start_cwd_proc "$procrepo.wt-proc/sub" "$SANDBOX/proc.ready"      # cwd is a SUBDIRECTORY of the worktree
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "a process inside the worktree -> FLAG" "$(line_for claude/wt-proc)" "FLAG"
+check_contains "the process FLAG names the process" "$(line_for claude/wt-proc)" "running process"
+check_absent   "the process FLAG gives NO destructive command" "$(line_for claude/wt-proc)" "git worktree remove"
+check_contains "the sibling dir's prefix-sharing worktree is not caught: stays AUTO" "$(line_for claude/wt-near)" "AUTO"
+run_in "$procrepo" bash "$TOOL" --days 7 --live-hours 0
+check_contains "--live-hours 0 (mtime probe off) does not switch the process signal off" "$(line_for claude/wt-proc)" "FLAG"
+stop_cwd_proc
+
+# a process in the string-prefix sibling directory only (not inside the worktree) is not a signal for it
+start_cwd_proc "$procrepo.wt-near-sibling" "$SANDBOX/proc2.ready"
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "a process in a prefix-sharing sibling directory does not FLAG the worktree" "$(line_for claude/wt-near)" "AUTO"
+stop_cwd_proc
+
+# a worktree that is BOTH recently touched and occupied reports the process (the cheap check runs first)
+git -C "$procrepo" branch claude/wt-both "$c1pr"
+git -C "$procrepo" worktree add -q "$procrepo.wt-both" claude/wt-both >/dev/null   # fresh files: inside --live-hours
+start_cwd_proc "$procrepo.wt-both" "$SANDBOX/proc4.ready"
+run_in "$procrepo" bash "$TOOL" --days 7 --live-hours 6
+check_contains "touched AND occupied: FLAG" "$(line_for claude/wt-both)" "FLAG"
+check_contains "touched AND occupied: the reason is the process" "$(line_for claude/wt-both)" "running process"
+check_absent   "touched AND occupied: not the mtime reason" "$(line_for claude/wt-both)" "recently active"
+stop_cwd_proc
+
+# once the process is gone the worktree is graded as before
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "process gone: back to AUTO" "$(line_for claude/wt-proc)" "AUTO"
+
+# the destructive half, last (it removes the other idle worktree): --prune-safe must not take the occupied one
+start_cwd_proc "$procrepo.wt-proc" "$SANDBOX/proc3.ready"
+run_in "$procrepo" bash "$TOOL" --days 7 --prune-safe
+check_contains "--prune-safe leaves the worktree with a process in it" "$([ -d "$procrepo.wt-proc" ] && echo y)" "y"
+run git -C "$procrepo" rev-parse --verify -q refs/heads/claude/wt-proc
+check_status   "--prune-safe leaves its branch too" 0 "$STATUS"
+stop_cwd_proc
+run_in "$procrepo" bash "$TOOL" --days 7 --prune-safe
+check_contains "process gone: --prune-safe now removes it" "$(line_for claude/wt-proc)" "removed"
+
 # --- current branch is never a candidate, even if otherwise AUTO-eligible ----------------------
 repo2="$(new_repo)"
 git -C "$repo2" symbolic-ref HEAD refs/heads/main
@@ -264,6 +340,138 @@ export KEEL_CLEANUP_GLOBS='experiment/*'
 run_in "$globrepo" bash "$TOOL" --days 0
 unset KEEL_CLEANUP_GLOBS
 check_contains "KEEL_CLEANUP_GLOBS makes the custom name AUTO" "$(line_for experiment/thing)" "AUTO"
+
+# --- dir #814: a repo with NO remote grades against its LOCAL default branch, whatever it is called -----
+# Felt twice on a local-only repo whose default is `master`: the old "origin/HEAD's target, else main"
+# resolution found no `main`, printed "no main to compare against (fetch first?)" and graded nothing.
+nr="$(new_repo)"
+git -C "$nr" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$nr" commit -q --allow-empty -m c1
+git -C "$nr" branch claude/old-merged HEAD           # merged, ephemeral, old   -> AUTO
+git -C "$nr" branch staging HEAD                     # merged, off-pattern, old -> ASK
+git -C "$nr" commit -q --allow-empty -m c2           # master moves on (recent)
+git -C "$nr" checkout -q -b claude/unmerged; git -C "$nr" commit -q --allow-empty -m wip
+git -C "$nr" checkout -q master
+run_in "$nr" bash "$TOOL" --days 7 --live-hours 0
+check_status   "no remote, default master: exits 0" 0 "$STATUS"
+check_absent   "no remote, default master: no 'compare against' error" "$OUT" "to compare against"
+check_contains "no remote, default master: merged old ephemeral -> AUTO" "$(line_for claude/old-merged)" "AUTO"
+check_contains "no remote, default master: off-pattern -> ASK"           "$(line_for staging)" "ASK"
+check_absent   "no remote, default master: unmerged branch left alone"   "$OUT" "claude/unmerged"
+# column-anchored (not a "master " substring): a format change must not turn this into a vacuous pass
+if match "$OUT" -qE '^(AUTO|ASK|FLAG) +master( |$)'; then fail "no remote, default master: the default itself is never listed" "master was graded"
+else pass "no remote, default master: the default itself is never listed"; fi
+# the felt shape: invoked from a LINKED worktree of that repo (the wrap runs from one)
+git -C "$nr" worktree add -q "$nr.wt" -b claude/session HEAD >/dev/null
+run_in "$nr.wt" bash "$TOOL" --days 7 --live-hours 0
+check_contains "no remote, from a linked worktree: still graded (AUTO)" "$(line_for claude/old-merged)" "AUTO"
+# --prune-safe acts on the same grading
+run_in "$nr" bash "$TOOL" --days 7 --live-hours 0 --prune-safe
+check_contains "no remote: --prune-safe deletes the AUTO branch" "$OUT" "deleted  claude/old-merged"
+check_status   "no remote: the AUTO branch is really gone" 1 "$(git -C "$nr" rev-parse --verify -q refs/heads/claude/old-merged >/dev/null; echo $?)"
+
+# the main worktree sitting on a FEATURE branch must not become the base: a false negative here would
+# grade against live work. Local main/master wins over whatever HEAD happens to be.
+fb="$(new_repo)"
+git -C "$fb" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$fb" commit -q --allow-empty -m c1
+git -C "$fb" checkout -q -b claude/feat; git -C "$fb" commit -q --allow-empty -m feat-work
+git -C "$fb" branch claude/on-feat HEAD              # merged into the checked-out feature branch, NOT into master
+git -C "$fb" branch claude/on-master master          # merged into master: the positive control
+run_in "$fb" bash "$TOOL" --days 0 --live-hours 0
+check_contains "HEAD on a feature branch: master is still the base (positive control graded)" "$(line_for claude/on-master)" "AUTO"
+check_absent   "HEAD on a feature branch is not the base: a branch merged only into it is not graded" "$OUT" "claude/on-feat"
+
+# a stale `main` beside the live `master`: ambiguous -> grade NOTHING (a wrong base deletes work), name both
+sm="$(new_repo)"
+git -C "$sm" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-empty -m c1
+git -C "$sm" branch main HEAD                        # stale: stays at c1
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$sm" commit -q --allow-empty -m c2
+git -C "$sm" branch claude/x HEAD                    # merged into master (c2), NOT into the stale main (c1)
+git -C "$sm" commit -q --allow-empty -m c3
+run_in "$sm" bash "$TOOL" --days 7 --live-hours 0
+check_status   "main AND master exist: exits 0" 0 "$STATUS"
+check_contains "main AND master exist: says it is ambiguous" "$OUT" "ambiguous"
+check_contains "main AND master exist: names both candidates" "$OUT" "main master"
+check_absent   "main AND master exist: nothing is graded" "$OUT" "claude/x"
+KEEL_DEFAULT_BRANCH=master run_in "$sm" bash "$TOOL" --days 7 --live-hours 0
+check_contains "the override resolves the ambiguity" "$(line_for claude/x)" "AUTO"
+
+# a remote that was never fetched (no origin/HEAD) keeps the old fail-closed `main` guess: the remote's real
+# default is unknowable offline; the hint names the override, which then grades
+ur="$(new_repo)"
+git -C "$ur" symbolic-ref HEAD refs/heads/master
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$ur" commit -q --allow-empty -m c1
+git -C "$ur" branch claude/old HEAD
+git -C "$ur" commit -q --allow-empty -m c2
+git -C "$ur" remote add origin "$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+run_in "$ur" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unfetched remote: grades nothing, hints at fetch" "$OUT" "fetch first?"
+check_contains "unfetched remote: the hint names the override" "$OUT" "KEEL_DEFAULT_BRANCH"
+check_absent   "unfetched remote: nothing is graded" "$OUT" "claude/old"
+KEEL_DEFAULT_BRANCH=master run_in "$ur" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unfetched remote + KEEL_DEFAULT_BRANCH=master: graded" "$(line_for claude/old)" "AUTO"
+
+# init.defaultBranch names a non-main/master default
+td="$(new_repo)"
+git -C "$td" symbolic-ref HEAD refs/heads/trunk
+git -C "$td" config init.defaultBranch trunk
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$td" commit -q --allow-empty -m c1
+git -C "$td" branch claude/old HEAD
+git -C "$td" commit -q --allow-empty -m c2
+run_in "$td" bash "$TOOL" --days 7 --live-hours 0
+check_contains "init.defaultBranch=trunk is honoured with no remote" "$(line_for claude/old)" "AUTO"
+check_contains "a guessed default is announced" "$OUT" "grading against local trunk"
+
+# KEEL_DEFAULT_BRANCH overrides, and is validated
+tk="$(new_repo)"
+git -C "$tk" symbolic-ref HEAD refs/heads/trunk
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$tk" commit -q --allow-empty -m c1
+git -C "$tk" branch claude/old HEAD
+git -C "$tk" commit -q --allow-empty -m c2
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_contains "unguessable default (trunk, nothing configured): nothing graded" "$OUT" "to compare against"
+check_contains "unguessable default names the override" "$OUT" "KEEL_DEFAULT_BRANCH"
+check_absent   "no remote: the message does not say 'fetch first?'" "$OUT" "fetch first"
+export KEEL_DEFAULT_BRANCH=trunk
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_contains "KEEL_DEFAULT_BRANCH=trunk grades against trunk" "$(line_for claude/old)" "AUTO"
+# the override is used EXACTLY as given: a value naming no branch (remote-qualified, fully-qualified, other
+# remote) finds nothing to compare against and grades nothing -- never a normalized guess
+for v in origin/trunk refs/heads/trunk upstream/trunk; do
+  KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+  check_status   "KEEL_DEFAULT_BRANCH=$v: exits 0" 0 "$STATUS"
+  check_contains "KEEL_DEFAULT_BRANCH=$v: finds nothing to compare against" "$OUT" "to compare against"
+  if match "$OUT" -qE '^(AUTO|ASK|FLAG) '; then fail "KEEL_DEFAULT_BRANCH=$v: grades nothing" "a branch was graded"
+  else pass "KEEL_DEFAULT_BRANCH=$v: grades nothing"; fi
+done
+# control: the same column-anchored pattern DOES match a graded line when the override is right
+KEEL_DEFAULT_BRANCH=trunk run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+if match "$OUT" -qE '^AUTO +claude/old'; then pass "control: the anchored pattern matches a graded line"
+else fail "control: the anchored pattern matches a graded line" "no AUTO line: $OUT"; fi
+for v in '@{-1}' 'a..b' HEAD @; do
+  KEEL_DEFAULT_BRANCH="$v" run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+  check_status   "KEEL_DEFAULT_BRANCH=$v is rejected" 2 "$STATUS"
+  check_contains "KEEL_DEFAULT_BRANCH=$v is rejected by name" "$OUT" "not a valid branch name"
+  if match "$OUT" -qE '^(AUTO|ASK|FLAG) '; then fail "KEEL_DEFAULT_BRANCH=$v is rejected: grades nothing" "a branch was graded"
+  else pass "KEEL_DEFAULT_BRANCH=$v is rejected: grades nothing"; fi
+done
+export KEEL_DEFAULT_BRANCH=nonexistent
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_status   "KEEL_DEFAULT_BRANCH naming no branch: exits 0, nothing graded" 0 "$STATUS"
+check_contains "KEEL_DEFAULT_BRANCH naming no branch: says so" "$OUT" "to compare against"
+export KEEL_DEFAULT_BRANCH=--bogus
+run_in "$tk" bash "$TOOL" --days 7 --live-hours 0
+check_status   "KEEL_DEFAULT_BRANCH that is not a branch name exits 2" 2 "$STATUS"
+check_contains "invalid KEEL_DEFAULT_BRANCH explains itself" "$OUT" "KEEL_DEFAULT_BRANCH"
+unset KEEL_DEFAULT_BRANCH
+
+# the "fetch first?" hint stays for a repo that HAS a remote (origin/HEAD merely not fetched yet)
+wr="$(new_repo)"
+git -C "$wr" remote add origin "$(mktemp -d "$SANDBOX/origin.XXXXXX")"
+run_in "$wr" bash "$TOOL"
+check_contains "remote present, base unresolved: still hints at fetch" "$OUT" "fetch first?"
 
 # --- usage / arg handling / guards -------------------------------------------------------------
 run bash "$TOOL" -h

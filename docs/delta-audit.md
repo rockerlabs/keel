@@ -88,7 +88,10 @@ diff no longer shows (`only_in_map`) — is reported as `transient in range` and
 closure: added and then deleted, edited and then reverted, or any other shape whose touches net to
 zero inside the range, its two endpoints agree by construction, so it says nothing about whether the
 map is complete (dir #288). Read `--help` for the full refusal/exit-code contract and the tuning
-environment variables (`DELTA_HISTORICAL`, `DELTA_INVARIANT_PATHS`, `DELTA_SESSION_FILES`).
+environment variables (`DELTA_HISTORICAL`, `DELTA_INVARIANT_PATHS`, `DELTA_SESSION_FILES`, and the
+three extension lists `DELTA_CODE_EXTENSIONS`, `DELTA_CONFIG_EXTENSIONS`, `DELTA_PROSE_EXTENSIONS`:
+a non-shell product's sources class `code`, its manifests `config`, and a file no list names falls to
+`prose` with one stderr note rather than silently).
 
 ## 4. The Protocol — 8 rules, binding for every session this run spawns
 
@@ -271,6 +274,15 @@ serialized if your project's gate keeps a shared sentinel — the same way
 batching, accepted-findings-only, escalation triggers) apply here unchanged, so they aren't restated.
 Once a fix PR is in review, it is an ordinary PR under
 [`docs/release-audit.md`](release-audit.md) phase 5's own round budget.
+
+**A Fixer's brief is rows of finding plus an executable acceptance check, and a verdict's proposed prose is never its
+premise (dir #826).** Each row is one finding and one command whose result says it is fixed. A sentence a verifier
+proposed as replacement prose is marked "re-derive from the tree, do not copy", and so is every line citation lifted
+from a verdict. One run shows why: a verifier's proposed sentence was false against the code (it called a key the
+rollback key only, where the code falls back to that key as the router key), went into a README, and then, relayed
+verbatim by the manager, into an alert text; two more proposed sentences shipped into a docstring and a comment and were
+findings of the next pass; only the Fixer that re-derived its line citations from the tree found them stale. So a
+manager's amendment relays quote the finding, never a proposed sentence.
 
 ## 6. Read order and incremental writing
 

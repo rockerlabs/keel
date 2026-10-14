@@ -386,9 +386,10 @@ main() {
   # a leading zero, a word) = the default, 600 under $CI (~4.5x the slowest file today) and off locally, where
   # a slow machine must not fail a slow-but-finishing file. The `watchdog:` line below prints the SAME variable
   # the reap enforces, so the two cannot disagree. Per file, from its own launch (bash SECONDS); checked in the
-  # reap poll, no timer process. Past the deadline the file's own process gets TERM, then KILL at least 5 s later
-  # if it is still alive — the same process on_interrupt signals (a grandchild is not reached; its output still goes
-  # to the file's log, never to a pipe the reap waits on).
+  # reap poll, no timer process. Past the deadline the file's whole process group gets TERM (dir #770: each file is
+  # launched as its own group, so a child it started — a holder, a `sleep` — goes with it), then KILL at least 5 s
+  # later if it is still alive, and once more when the file is reaped after a TERM, for a child that ignored it —
+  # the same group on_interrupt signals (its output still goes to the file's log, never to a pipe the reap waits on).
   file_timeout="${KEEL_TEST_FILE_TIMEOUT:-}"
   # Ten or more digits is refused too (it would overflow a later integer test, the dir #196 class).
   case "$file_timeout" in
@@ -478,6 +479,17 @@ SHIM
   active_termed=()   # SECONDS when the watchdog sent TERM, empty while it has not
   durations=""       # "<seconds> <file>" per reaped file, for B11's slowest-files block
 
+  # dir #770 (the same mechanism tools/self/mutation-sweep.sh uses, dir #782): `set -m` around a backgrounded launch
+  # makes the job a process-group leader (pgid = its pid) — pure bash, no setsid (absent on stock macOS) and no perl
+  # (absent on Alpine). signal_job SIGNAL PID [group-only] signals that group; without a group of its own (job control
+  # did not take) it falls back to PID alone, the old reach, except under `group-only`, used once PID may be reaped
+  # and its number someone else's.
+  signal_job() {
+    kill "-$1" -- "-$2" 2>/dev/null && return 0
+    [ "${3:-}" = group-only ] || kill "-$1" "$2" 2>/dev/null || true
+    return 0
+  }
+
   # Concurrency amplifies the blast radius of an interrupt: an orphaned `bash "$t"` leaves its own
   # sandbox HOME (tests/lib.sh) behind uncleaned, AND — unlike the old sequential runner, which
   # streamed each test's output straight to the terminal as it ran — an interrupted test's already-
@@ -485,20 +497,43 @@ SHIM
   # ever cats it, then the EXIT trap deletes $logdir on the way out). Print every still-active test's
   # log before killing it, so an operator interrupting a hung run still gets the same diagnostic
   # trail the old runner gave for free (found by an operator-run /code-review high pass, dir #130).
-  # Doesn't reach a grandchild subprocess a test file itself spawned (no process-group kill) — a
-  # known, currently-unreachable gap: every test's git/gh/curl usage today is local-only or stubbed.
+  # dir #770: signals each file's whole process group, not just its bash (each file is launched as a group leader of
+  # its own, below): TERM, then KILL after a 5 s grace for a file or child that ignores it — dir #744's B10 step,
+  # which this handler lacked.
   on_interrupt() {
-    local i
+    local i pid waited=0 alive=1
+    trap '' INT TERM   # a second signal during the grace must not re-enter: it would reprint every log
     for i in "${!active_pids[@]}"; do
       printf '\n=== %s (interrupted) ===\n' "${active_files[$i]}"
       cat "${active_logs[$i]}" 2>/dev/null
     done
     # ${active_pids[@]+...} guards an empty array under `set -u` (bash 3.2 treats an empty array's
     # [@] expansion as unbound), same idiom reap_finished uses below.
-    kill "${active_pids[@]+"${active_pids[@]}"}" 2>/dev/null
+    for pid in ${active_pids[@]+"${active_pids[@]}"}; do signal_job TERM "$pid"; done
+    while [ "$alive" = 1 ] && [ "$waited" -lt 50 ]; do
+      alive=0
+      for pid in ${active_pids[@]+"${active_pids[@]}"}; do kill -0 "$pid" 2>/dev/null && alive=1; done
+      [ "$alive" = 0 ] || { sleep 0.1; waited=$((waited + 1)); }
+    done
+    for pid in ${active_pids[@]+"${active_pids[@]}"}; do signal_job KILL "$pid" group-only; done
     exit 130
   }
   trap on_interrupt INT TERM
+
+  # dir #772: does test file $1, whose whole log is $2, owe a verdict line it did not print? True only when the log
+  # has no `<file>: N passed, M failed` line of its own (anchored: the phrase mid-line, or another file's name, is
+  # not a verdict) AND the file sources lib.sh — anywhere, indented or after `&&`, not only at column 0 —
+  # because tests/test_run_sh.sh's synthetic fixtures source nothing and have no summary to owe. The log match
+  # runs first and is pure bash, so the one `grep` forks only for a file whose log lacks the line, never in the
+  # all-green case. Not set -e safe on purpose: a plain status. The detection errs to the fail-closed side: a
+  # comment or string that merely says "source lib.sh" puts a lib-less fixture under the rule (a spurious
+  # failure, loud); excluding `#` lines was tried and hid `[ "$#" -ge 0 ] && . lib.sh` (a fail-open, silent).
+  guard_summary_owed() {
+    local name="$1" log="$2" re nl=$'\n'
+    re="(^|$nl)${name//./[.]}: [0-9]+ passed, [0-9]+ failed($|$nl)"
+    [[ $log =~ $re ]] && return 1
+    grep -qE '(^|[[:space:];&|(])(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/$name" 2>/dev/null
+  }
 
   # Wait for and report every job in active_* whose process has already exited, compacting the
   # arrays down to only the ones still running. Prints how many it reaped (as $?) so a caller can
@@ -517,10 +552,10 @@ SHIM
           # `-gt`, not `-ge`: SECONDS counts whole seconds, so a difference of N can be as little as N-1 s of
           # real time; past N guarantees at least N s, so a file is never cut short of its limit.
           if [ -z "$termed" ] && [ $((SECONDS - active_starts[i])) -gt "$file_timeout" ]; then
-            kill -TERM "$pid" 2>/dev/null
+            signal_job TERM "$pid"
             termed="$SECONDS"
           elif [ -n "$termed" ] && [ $((SECONDS - termed)) -gt 5 ]; then
-            kill -KILL "$pid" 2>/dev/null
+            signal_job KILL "$pid"
           fi
         fi
         new_pids+=("$pid")
@@ -532,6 +567,8 @@ SHIM
       fi
       wait "$pid"
       rc=$?
+      # dir #770: a file the watchdog TERMed is gone, but a child that ignored the TERM may not be — KILL its group.
+      [ -z "$termed" ] || signal_job KILL "$pid" group-only
       durations="$durations$((SECONDS - active_starts[i])) ${active_files[$i]}"$'\n'
       # Read the log ONCE into a variable — it's about to be both printed and pattern-matched below,
       # and this loop runs once per completed test file (~83 times a full suite run), so a second read
@@ -571,6 +608,16 @@ SHIM
         rc=1
       elif [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
         printf '!!! %s exited 0 but its log shows "command not found" — an unknown assertion likely vanished silently (dir #627)\n' "${active_files[$i]}"
+        rc=1
+      elif [ "$rc" -eq 0 ] && guard_summary_owed "${active_files[$i]}" "$log_content"; then
+        # dir #772, third fail-open: a file that sources lib.sh owes the run its OWN verdict line, which only
+        # `summary` prints (`<file>: N passed, M failed`, on a line of its own). Without it the exit status is the
+        # last command's — a file ending in `exit 0`, `true` or an echo passes with FAIL lines in its log (the
+        # 0.16.0 alpine leg shipped three red checks green that way). Judged here, from the log, so it holds
+        # whatever the file did with its EXIT trap (a file's own `trap ... EXIT` replaces lib.sh's) and on every
+        # bash. Only an otherwise-green file is escalated: a timed-out or already-failed one is counted under its
+        # own reason, so a killed file never reads as "no summary".
+        printf '!!! %s exited 0 but its log has no "%s: N passed, M failed" line — it never reached summary (dir #772)\n' "${active_files[$i]}" "${active_files[$i]}"
         rc=1
       fi
       [ "$rc" -eq 0 ] || failed=$((failed + 1))
@@ -643,8 +690,12 @@ SHIM
     wait_until_at_most "$launch_cap"
     base="$(basename "$t")"
     log="$logdir/$base.log"
-    bash "$t" >"$log" 2>&1 &
+    # dir #770: its own process group (see signal_job). stdin is /dev/null: a group that is not the terminal's
+    # foreground one is stopped (SIGTTIN) if it reads the tty, and no test file wants run.sh's stdin.
+    set -m
+    bash "$t" >"$log" 2>&1 </dev/null &
     active_pids+=("$!")
+    set +m
     active_files+=("$base")
     active_logs+=("$log")
     active_starts+=("$SECONDS")
