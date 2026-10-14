@@ -93,6 +93,8 @@ refused "a 5-digit sha prefix" build --branch t-short --base main "1=$s1" "2=${s
 gd tag -a -m "an annotated tag" vtag "$s4"
 refused "an annotated tag's object sha (peels to a commit)" build --branch t-tag --base main "1=$s1" "4=$(gd rev-parse vtag)"
 check_contains "...says it is not a commit sha" "$OUT" "is not a commit sha"
+refused "a blob sha" build --branch t-blob --base main "1=$s1" "4=$(gd rev-parse main:README)"
+check_contains "...says it is a blob, not a commit" "$OUT" "is a blob object, not a commit"
 refused "a duplicate N" build --branch t-dup --base main "1=$s1" "1=$s2"
 refused "an existing branch" build --branch b4 --base main "1=$s1" "4=$s4"
 refused "an existing non-empty worktree path" build --branch t-busy --base main --worktree "$SANDBOX/wt-busy" "1=$s1" "4=$s4"
@@ -142,6 +144,7 @@ check_eq "body: the seam list" "seam file: f" "$(match "$OUT" '^seam file: ')"
 wt2="$SANDBOX/wt-t2"
 rt build --branch t2 --base main --worktree "$wt2" --allow-conflicts "2=$s2" "3=$s3" "1=$s1"
 check_status "build --allow-conflicts -> exit 1 after the #3 merge" 1 "$STATUS"
+hint="$(sed -n 's/^  release-train\.sh //p' <<<"$OUT")"   # the resume hint, run verbatim below
 check_contains "...lists UU f" "$OUT" "UU f"
 check_contains "...the resume hint carries the base" "$OUT" "--base main"
 check_contains "...and the quoted worktree path" "$OUT" "build --continue --worktree "
@@ -155,8 +158,8 @@ printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$wt2/f"
 git -C "$wt2" add f
 git -C "$wt2" commit -q --no-edit
 check_eq "a hand-resolved merge keeps the tool's subject" "train: #3 ($s3)" "$(git -C "$wt2" log -1 --format=%s)"
-rt build --continue --worktree "$wt2" --base main "1=$s1"
-check_status_out "build --continue -> exit 0" 0
+OUT="$(cd "$d" && eval "bash '$tool' $hint" 2>&1 </dev/null)"; STATUS=$?   # the printed hint, pasted
+check_status_out "the printed resume hint, run as printed -> exit 0" 0
 check_eq "first-parent order is #2, #3, #1 (not sorted)" "train: #2 ($s2)
 train: #3 ($s3)
 train: #1 ($s1)" "$(fp "$wt2" main)"
@@ -232,6 +235,7 @@ rt build --branch t16 --base main --worktree "$wt16" "1=$s1" "2=$s2"
 check_status "t16 build -> exit 0" 0 "$STATUS"
 before="$(snap)"
 rt build --continue --worktree "$wt16" --base main "2=$s3"
+check_eq "...no stray branch or worktree" "$before" "$(snap)"
 check_status "continue with a head of #2 that does not descend from the merged one -> exit 2" 2 "$STATUS"
 check_contains "...says it does not descend" "$OUT" "does not descend from"
 check_eq "...nothing merged" "train: #1 ($s1)
@@ -292,7 +296,7 @@ train: #4 ($s4)" "$(fp "$wt10" main)"
 
 # --- stacked heads: a head contained in an EARLIER-listed head is refused before any write ------------------------
 refused "a head already contained in an earlier-listed head (stacked PRs)" build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "5=$s2b" "6=$s2"
-check_contains "...says which and what to do" "$OUT" "list the stacked PR first"
+check_contains "...names the PRs and what to do" "$OUT" "list #6 before #5"
 rt build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "6=$s2" "5=$s2b"
 check_status_out "the stacked PRs in the right order -> exit 0" 0
 

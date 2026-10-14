@@ -41,13 +41,19 @@
 #         in the train (B8g's input is the manager's `gh pr view --json headRefOid` read). Without --base the
 #         whole first-parent history is read when `origin/main` does not exist.
 #
+# Constituents are `N=SHA` with the FULL 40-hex commit sha (a `gh` headRefOid; an abbreviation or a tag object is
+# refused). The order is the merge order, except that a head contained in an earlier-listed head (stacked PRs) is
+# refused — list the contained one first or leave it out — and a re-given N must descend from its head already in
+# the train (a rewritten branch leaves the train).
+#
 # `body` and `check` read the LOCAL `--base`: run `git fetch --prune origin` first, or an update-branch merge whose
 # second parent is not yet in the local base reads as an integration commit. `check` is B8g's pre-merge check —
 # once the train is merged into the base its range is empty and every constituent reads as missing.
 #
 # Every run prints each step. Exit codes: 0 done · 1 a conflict, a lost ancestor, a moved head · 2 refused,
-# changing nothing (a bad argument, an existing branch, a non-empty worktree path, a sha not present locally —
-# `git fetch --prune origin` first —, fewer than 2 constituents, a branch that is not a train).
+# changing nothing (a bad argument, a sha that is not a full 40-hex commit sha, an existing branch, a non-empty
+# worktree path, a sha not present locally — `git fetch --prune origin` first —, fewer than 2 constituents,
+# stacked heads in the wrong order, a branch that is not a train).
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -140,7 +146,7 @@ NS=(); SHAS=()
 # add_constituent N=SHA RESOLVE — the sha must be the full 40 hex digits (a `gh` headRefOid): no abbreviation can be
 # shadowed by a ref of the same spelling, and `check` compares strings. RESOLVE=1 also requires that commit locally.
 add_constituent() {
-  local arg="$1" resolve="$2" n s i full
+  local arg="$1" resolve="$2" n s i full kind
   case "$arg" in
     [0-9]*=[0-9a-fA-F]*) ;;
     *) refuse "constituent '$arg' is not N=SHA" ;;
@@ -153,8 +159,11 @@ add_constituent() {
   n=$((10#$n))
   s="$(printf '%s' "$s" | tr 'A-F' 'a-f')"
   if [ "$resolve" -eq 1 ]; then
-    full="$(git -C "$repo" rev-parse --verify --quiet "${s}^{commit}" 2>/dev/null)" ||
+    full="$(git -C "$repo" rev-parse --verify --quiet "${s}^{commit}" 2>/dev/null)" || {
+      kind="$(git -C "$repo" cat-file -t "$s" 2>/dev/null || true)"
+      [ -z "$kind" ] || refuse "#$n: $s is a $kind object, not a commit"
       refuse "#$n: sha $s is not present locally (run 'git fetch --prune origin' first)"
+    }
     [ "$full" = "$s" ] || refuse "#$n: $s is not a commit sha (it peels to $full)"
   fi
   i=0
@@ -214,7 +223,7 @@ check_stacked() {
     j=$((i + 1))
     while [ "$j" -lt "${#SHAS[@]}" ]; do
       if git -C "$repo" merge-base --is-ancestor "${SHAS[$j]}" "${SHAS[$i]}"; then
-        refuse "#${NS[$j]} (${SHAS[$j]}) is already contained in #${NS[$i]}, listed before it — list the stacked PR first or leave it out"
+        refuse "#${NS[$j]} (${SHAS[$j]}) is already contained in #${NS[$i]}, which is listed before it — list #${NS[$j]} before #${NS[$i]}, or leave #${NS[$j]} out"
       fi
       j=$((j + 1))
     done
@@ -226,8 +235,7 @@ check_stacked() {
 seam_files() {
   local b="$1" s; shift
   for s in "$@"; do
-    git -C "$repo" -c core.quotePath=false diff --name-only "$b...$s" ||
-      printf 'release-train: warning: no merge base for %s...%s — its files are missing from the seam list\n' "$b" "$s" >&2
+    git -C "$repo" -c core.quotePath=false diff --name-only "$b...$s" || true   # print_seam warned about a missing merge base
   done | awk '$0 != "CHANGELOG.md"' | sort | uniq -c | awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }'
 }
 
@@ -309,7 +317,11 @@ verify_ancestors() {
 }
 
 print_seam() {   # BASE
-  local f count=0 out
+  local f count=0 out s
+  for s in "${T_SHA[@]}"; do
+    git -C "$repo" merge-base "$1" "$s" >/dev/null 2>&1 ||
+      say "seam warning: no merge base between $1 and $s — its files are missing from the seam list"
+  done
   out="$(seam_files "$1" "${T_SHA[@]}")"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -336,7 +348,7 @@ merge_all() {
         unmerged_paths "$w" | while IFS= read -r line; do say "  $line"; done
         rest=""
         i=$((i + 1))
-        while [ "$i" -lt "${#SHAS[@]}" ]; do rest="$rest #${NS[$i]}=${SHAS[$i]}"; i=$((i + 1)); done
+        while [ "$i" -lt "${#SHAS[@]}" ]; do rest="$rest ${NS[$i]}=${SHAS[$i]}"; i=$((i + 1)); done
         say "resolve and commit it there (git completes it under the subject 'train: #N (sha)'), then:"
         say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")${rest:+ }${rest# }"
         say "(add --allow-conflicts if another of them is expected to conflict)"
