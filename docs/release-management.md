@@ -49,6 +49,14 @@ in two tickets that a headings-only read would have shipped as-is. Citations inv
 intervening merge are not a hypothetical: two ticket bodies in one release had exactly this happen
 between grooming and pickup.
 
+**A body is the whole block, not the heading line.** Resolve a ticket by reading its heading plus every
+continuation line down to the next heading. A grep for the heading line drops the indented continuation lines:
+one release's manager (and the brief it wrote) resolved bodies that way, and two tickets lost the production
+numbers and the absorb list their continuation lines carried, so the design session paid a second fork round
+for a read it should never have had to repeat (caught only by that session's own review leg). The brief's
+"State" item (below) names the block read, and the project's own `/go` resolution should use the same reader
+(keel's is `tools/lib/backlog-blocks.sh`).
+
 **Intake also prices the slate against the budget that actually remains, out loud, before wave 1.**
 State two numbers together at intake — the slate's size and the remaining-window figure R11's
 token-budget check already obtains (that check is [`docs/delegation.md`](delegation.md)'s session-limit
@@ -128,6 +136,20 @@ which way the un-set default falls (the launcher's own tier — a top-tier manag
 top-tier by doing nothing), the order to verify in (running-tier evidence before session metadata), and
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
 nothing. A release's worker brief therefore tells each worker to hello, then stop.
+**The verify's read, at the hello and before GO,** follows `docs/delegation.md`'s order: running-tier evidence
+first, the commit trailer next (the model a commit's own Co-Authored-By line names as its author), session metadata last, because it
+reports what is configured. The running-tier
+evidence has two forms: the worker's session log found by its branch (`jq` over the assistant lines'
+`.message.model` and `.perTurnEffort`, the branch in `.gitBranch`), which names what ran in each turn, and the
+hello's quoted "You are powered by" line, which is true for the turn it was read in and stale after a switch (a
+switch lands from the next turn), so after one the manager reads the next turn's log line or asks for a fresh quote.
+The signals can all be right about different turns, so a disagreement is an
+observation with its two alternatives named (a stale quote, or a configured value that has not taken effect yet),
+recorded with both and settled by the log, never a finding against the worker. Felt: two hellos said Opus while
+metadata said Sonnet, the manager released them on metadata, and the log showed the hold turn really ran on Opus; on
+another release chip workers asked for their actual model quoted the app default they started on, while a metadata
+read a minute later already showed the operator's switch. The brief therefore asks for the quote verbatim and the effort as the
+metadata reads it now, never a paraphrase from memory.
 **This is required, not advisory.** It binds any session that launches a real worker, not only a
 release manager; this section instantiates it for a release with two additions of its own: fold `actual vs. rec` into the same one health-line report the launch already produces, at zero extra messages;
 and **the requirement inherits wherever this R3 soft form is itself adopted by reference** — for
@@ -143,6 +165,14 @@ context (the 0.15.0 audit's fix round did exactly this); and list in the wave pl
 operator's next turn, so they are held on purpose and not stalled unnamed. The refusal is the harness's own
 rate limit on the launches R11 bounds, so it is worked with, not around.
 
+**The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
+or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool
+(felt twice on one day in two projects: an overnight RC audit waited for a morning click). So a launch the manager
+can make on its own is one made on a turn the operator opened. Any other launch is queued at once as a proposal card
+(`initiation: own_initiative`) with one line to the operator, and the next wave's launches are queued BEFORE the
+operator leaves. A second launch tool (a task chip) is no fallback to rely on: it vanished mid-session once, and a
+missing tool is not a missing channel (R6).
+
 ## The worker brief — one shape, whether launched or handed over
 
 Every worker brief (R3) and every close-checklist starting brief (R9) uses the same five-part shape,
@@ -151,7 +181,8 @@ conventions that happen to look similar, it's one convention applied at two poin
 
 1. **State — re-derive, don't reuse.** Every figure in the brief is a sanity check, not a source: name
    the commands the worker re-runs to get its own numbers (`git fetch --prune`, then the project's
-   own log/tag commands), not the numbers themselves as fact. [`docs/parallel-sessions.md`](parallel-sessions.md)'s
+   own log/tag commands), not the numbers themselves as fact; a ticket the brief names is re-read as its whole
+   block, heading plus continuation lines to the next heading (R1), never as the heading line. [`docs/parallel-sessions.md`](parallel-sessions.md)'s
    "a resumed session's picture is stale" rule is this same rule pointed at a brief's own author.
    **The manager's own brief text is a defect surface of its own, independent of staleness.** One
    release produced six text defects from one manager in one run: a PR map missing a PR (which then
@@ -189,11 +220,15 @@ conventions that happen to look similar, it's one convention applied at two poin
    a ping sent to an auditor mid-run set off a full status sweep of its own legs. What this rule adds
    is only *where* the contract has to appear: inline in the brief, verbatim, because the receiving
    session never reads this doc. **Include the CI-wait rule beside it**, the same way — keel's wording: "if you wait on CI or any
-   external state, wait in ONE backgrounded command with a timeout (`gh pr checks <n> --watch`, or an
-   `until` loop) and let its completion notify you — never a scheduled wakeup, a foreground sleep chain or a
-   short-interval monitor; end no turn 'waiting' without a live background task." On Claude Code the tools to
+   external state, wait in ONE backgrounded command and let its completion notify you — `gh pr checks <n> --watch`
+   (it ends on its own) or an `until` loop with an iteration cap; the host may have no `timeout` binary (macOS has
+   none), so background the watch itself and never wrap it in `timeout` — never a scheduled wakeup, a foreground
+   sleep chain or a short-interval monitor; end no turn 'waiting' without a live background task." (Felt in two
+   projects: a `timeout …` wrapper exited 127 at once and the wait silently never happened.) On Claude Code the tools to
    name are `ScheduleWakeup` (for loop mode only) and `Monitor`; the bound is R11's, and the cost reason is
-   [`docs/token-economy.md`](token-economy.md)'s. **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
+   [`docs/token-economy.md`](token-economy.md)'s. **Include the same-turn rule beside them** (dir #832): act on a
+   subagent's hand-back in the same turn, and the checkpoint is part of the turn that opens the PR, so that turn never
+   ends without it (R11's observed-state clause is the manager's side of the same rule). **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
    the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
    convention cannot see a rule that never made it into the brief (see R13's own text for the exact
    line and the incident that named this requirement). **A brief whose workers run simulator- or
@@ -214,6 +249,13 @@ minutes. The fix itself was the same size wherever it was caught; catching it be
 costs one line read, catching it after costs the tail just described. Name the checklist explicitly
 in the fix-round brief itself — a `CHANGELOG.md` entry present and citing the ticket's `dir #<N>` in
 full, uncommented, plus whatever else the project's own pre-push gate independently checks.
+
+**The checklist is read from the CI workflow at brief time, never copied from the last brief.** List every check the
+workflow file runs, each with its local equivalent or an explicit "CI-only" note, and a cheap pre-push grep for that
+check's class where one exists. One release's brief was copied from the one before and listed the linter and the
+tests; the workflow's secret-scan job was missing from it, and a test literal shaped like a key failed CI. That scan
+reads every commit of the PR, so a later fix commit could not clear it and the branch needed a sanctioned
+force-push. The same list serves any brief whose worker opens a PR, not only a fix round's.
 
 Keel's own instance of this shape for a release brief lives at a per-project gitignored path (its own
 audit equivalent is named in R9 below); cite your own project's convention there, never a keel-only
@@ -307,6 +349,11 @@ incidental and has already broken mid-release once.
   this happened twice inside one release's own build of this very requirement, each amendment crossing
   the worker's next report before the worker had seen it. The fix is the same acknowledged-token
   facility named above, applied per amendment rather than per status update: an explicit **per-amendment ACK** — treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or escalate rather than assuming a queued message was read.
+  **The ACK gates a merge too (dir #823):** before a worker's merge is released (R14's precondition (c) names this check), compare the
+  spec's modification time with the worker's start and require an explicit ACK of every amendment since. One worker
+  built a step on the pre-amendment spec while the amendment queued behind its build turn, and the amendment's clauses
+  were missing until a clause-by-clause re-read; launching a build in parallel with a design's last review leg costs a
+  delta commit for the same reason.
 - **Identity at first contact.** The generic rule lives in [`docs/delegation.md`](delegation.md)'s
   launch-time requirements, next to the post-launch model-verify rule it mirrors (same placement as
   R3): every address copied verbatim from the tool's live output, never retyped; the confirmation a
@@ -331,7 +378,11 @@ incidental and has already broken mid-release once.
   session id and task, the open PRs, the operator decisions still in force, and the tooling. The incoming one
   updates the manager's session id in the shared brief, then sends each live worker one line carrying its token
   and the new id, under the same ACK rule as any amendment. Workers report to the id in their brief, so until
-  they are told, they report to a session that no longer reads.
+  they are told, they report to a session that no longer reads. **The incoming manager also re-verifies the
+  hand-off's tooling and environment claims** (keys, access, which tools exist) **with a probe before relying on
+  them**, as it re-derives the hand-off's figures: one hand-off said a restart of the app would hand the agent sessions
+  the new keys, and on that machine desktop sessions never inherit secrets by design. The successor probed first and
+  found the per-command route instead of acting on the claim.
 
 ## R7 — the cost line
 
@@ -437,6 +488,22 @@ defect a standing line already names takes that line with it (§4); the non-dele
 set is unchanged from [`docs/delegation.md`](delegation.md) — the release itself (the tag, the publish), the
 install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
 (keel does).
+
+**An audit-heavy worker reaches `/polish`'s compaction stop at its fix loop (dir #828).** One RC-audit worker stood at
+457k tokens of context at `/polish` step 1 (the threshold then was 250k) after four auditors and a thirteen-commit
+fix loop, and a worker cannot type `/compact`: the pause cost a manager-to-operator round trip and a hand-written
+hand-over file before the PR could open. R11's stop route is the answer (the worker writes its hand-over file and
+sends `COMPACT`, the manager clears it and sends the continuation), so an audit worker's brief says that route
+exists. A project without it runs the audit and its finding lists in one session and the fix loop plus `/polish` in a
+fresh one started from the ledger.
+
+**The version-identity bump has a named owner before wave 1 (dir #823).** The versioning rule hands the bump to "each
+release", and a rule that names no row is carried by nobody: one project found its version key unbumped at the tag
+block's derivation with GO already in hand and paid an extra worker session for it; its next release, run without a
+manager, wrote "rides in the last PR" into the plan row, but a `/go` brief is built from the ticket's Acceptance and
+not from the plan, so the bump went in a PR of its own after the audit. So the groom writes the bump into the last
+build ticket's Acceptance (a standalone `/groom` to `/go` chain has no manager to carry it), and a managed release's
+intake confirms that one ticket's Acceptance, or the cut, carries it.
 
 **The cut PR can ride on the last fix PR (0.15.0).** Stacked on the final fix PR's branch, the cut gives one
 merge for the audit's fix round and the cut together. Stacking changes what the audit's GO
@@ -555,6 +622,13 @@ design worker sat idle-looking for about five hours holding a completed report t
 failure never delivered, and the manager noticed only while answering "what's left?". Sweep every
 open row's live state at a fixed point in each loop iteration — before each wave, before each
 merge — and treat "idle with no report received" as a row to probe, not a row still working.
+
+**A turn-end note without its deliverable is a probe trigger (dir #832).** Compare every worker's turn-end note with
+the deliverable that point in the work owes, and probe at once on a gap: a PR open with no checkpoint, a subagent's
+hand-back with no next action. A worker that ends its turn right after a hand-back, or right after opening its PR, looks
+identical to a working one, and it happened twice in one release (the fixer, both rounds, about 40 and 60 minutes
+idle): the operator noticed the first, the manager's own state sweep the second. The worker's side is the brief's
+same-turn rule in the worker brief's "Rules that bind you" item (dir #832).
 
 **The sweep is load-bearing, because a worker's own "waiting" is never evidence (0.16.0).** One release saw
 five wedges of this shape (a worker idle with no live background task, waiting on a notification no task could
@@ -718,7 +792,7 @@ check `success` on `headRefOid` (`gh pr view <N> --json headRefOid,statusCheckRo
 worker has replied literally `no more pushes; ok` (see the freeze below); for a train, every constituent's
 worker, and every constituent's live `headRefOid` still equals the head merged into the train. (c) No correction
 in flight: a correction the manager sent to a worker on an open PR holds that PR's merge until the worker's new
-freeze. (d) The command is `gh pr merge <N> --merge --match-head-commit <the full 40-hex head from (a)>`: a
+freeze, and so does a spec amendment the worker has not ACKed (R6). (d) The command is `gh pr merge <N> --merge --match-head-commit <the full 40-hex head from (a)>`: a
 merge commit, the head pinned, and never `--squash`, `--rebase`, `--auto` or `--admin`. The remote branch is
 deleted by the forge at the merge where the repo sets that, and `--delete-branch` is omitted because its local
 half fails on a branch checked out in a worktree. (e) The merge is one health line on the R6 channel, after the
@@ -753,19 +827,26 @@ forge), the train worker fetches and fast-forwards its worktree to that head, re
 amends the body's sha, and that counts as a rebuild.
 
 **The train: build.** The manager decides the composition (the `<N>=<sha>` list, from the freeze lines) and the
-order (the seam plan's order, R10, else ascending PR number). The manager creates the worktree:
-`git fetch --prune origin`, then `git worktree add <path> -b claude/release-<version>-train<k> origin/main`. It
-launches the train worker with `<path>` as its working directory, and early (R3): the pre-PR gate keys its
-traces off the session's working directory, so the session that runs the pre-PR flow starts in that worktree.
-The worker then owns the worktree end to end, one writer per worktree (R5), every later command `git -C <path>`.
-The manager builds nothing there and runs nothing. Before any merge, run
-`git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict). A
+order (the seam plan's order, R10, else ascending PR number). The manager creates the worktree and builds the
+train with one tool, `git fetch --prune origin`, then
+`tools/self/release-train.sh build --branch claude/release-<version>-train<k> <N>=<sha>…` (it cuts the worktree
+off `origin/main` under `.claude/worktrees/`, or at `--worktree <path>`, prints the path first and each step it
+takes, and never touches the manager's checkout). It launches the train worker with that path as its working
+directory, and early (R3): the pre-PR gate keys its traces off the session's working directory, so the session
+that runs the pre-PR flow starts in that worktree. The worker then owns the worktree end to end, one writer per
+worktree (R5), every later command `git -C <path>`. The manager builds nothing there and runs nothing else. The
+tool does what the next sentences require, and they stay as the by-hand fallback. Before any merge, run
+`git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict; the
+tool exits 1 naming the pair and its files and creates nothing). A
 conflicting pair is resolved by the LATER PR's worker on its own branch (whichever merges second rebases) before
 the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
 integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
-a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation:
+a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation
+(the tool leaves that merge in progress, exit 1, the unmerged paths printed):
 `git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
-integration rule below applies) or that PR leaves the train, and either way it counts as a rebuild. Then merge
+integration rule below applies; committing the resolution keeps the tool's `train:` subject, and
+`release-train.sh build --continue --worktree <path> <N>=<sha>…` merges the heads still to go) or that PR leaves
+the train, and either way it counts as a rebuild. Then merge
 each head AS IS, in order: `git -C <path> merge --no-ff -m "train: #<N> (<sha>)" <sha>`, never rebased or
 re-authored, so that a merge commit on the default branch marks every constituent merged. Then
 `git -C <path> merge-base --is-ancestor <sha> HEAD` for every head. Integration commits are limited to conflict
@@ -803,12 +884,14 @@ the integration rule, the carve-out sentence above verbatim, the keep-alive and 
 (5) handed to you, the build, the verification and the body's wording. It builds, verifies, runs `/polish` 1–9
 on the train and opens the PR. The body: title "<version> train <k>: land #a–#z as one merge"; the constituent
 table (PR, ticket, frozen head), written from `git log --first-parent` over the `train: #<N> (<sha>)` subjects,
-never retyped; the pairwise result; the integration commits or "none"; the verification block with the sha; the
+never retyped (`release-train.sh body --branch <name>` prints the whole skeleton from that walk, the seam list
+and the integration commits included, with `<fill>` where the worker states the rest); the pairwise result; the integration commits or "none"; the verification block with the sha; the
 review disclosure (level, read, not read); and the line "Merge: create a merge commit — only a merge commit puts
 the constituent heads on the default branch and closes each PR as merged".
 
 **The train: the merge, and what follows it.** The preconditions above apply. Right before the command the
-manager re-reads each constituent's live `headRefOid`. A moved head waits when the new head has the merged one
+manager re-reads each constituent's live `headRefOid` (`release-train.sh check --branch <name> <N>=<sha>…` names
+each one that differs from the train's last merge of it). A moved head waits when the new head has the merged one
 as an ancestor (`git merge-base --is-ancestor <old> <new>`, a push on top) and the worker's new freeze arrives
 within the wave: the train worker then appends one more `--no-ff` merge of the new head. Otherwise (a rewritten
 branch, no freeze) that PR leaves the train. Either way it is a rebuild, **and a train is rebuilt at most
@@ -834,6 +917,15 @@ copy-paste-ready block with the head sha pinned (`--match-head-commit`) and a me
 and the post-merge checks apply to a handed-over merge exactly as to the manager's own, and the hand-over
 records which of the three cases applied. The fallback is never routed around (through `gh api`, `sh -c`, `curl`
 or an alias): a refusal is a "no" until the operator or the gate says otherwise.
+
+**In the fallback, every PR the manager reports carries exactly one of two shapes (dir #826, dir #827).** Either a ready
+block (R9's paste-and-run), which lists the sibling PRs that must NOT be merged yet, by number, with the event each
+waits for; or the literal line `do not merge — waiting on <named event>`. A bare status line ("PR #N is up") is
+neither shape and is not sent. A hold has to ride inside the merge message itself: twice an operator merged a PR the
+manager had said to hold, once because the hold was a separate sentence and the next message, a worker's "finished",
+read as the gate that lifted it, so the verdict arrived after the merge. And a merge command handed while the PR that
+had to take it in still owed an amendment put that amendment into a follow-up PR. Where the manager merges, the
+`HELD #N: <why>` line of (e) is the same hold.
 
 **What stays the operator's, unchanged:** the tag, the release publish, the install block, branch-protection
 settings, deletions, and the review depth of a train and of the RC audit. The run record (R7) carries how many

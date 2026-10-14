@@ -1,6 +1,8 @@
 # tests/mutants/accumulate.tsv — single-clause mutants of tools/self/accumulate.sh (dir #838 slice 1a, spec A13).
 # keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_accumulate.sh) and checked for
 # staleness by tests/test_mutation_lists.sh. Rows 1-10 are the spec's ten; the rest are this tool's own.
+# Retired as equivalent (2026-10-14, dir #847): date-borrowed-from-later-tag and date-from-next-line. Since dir #839 a closure
+# tag finishes its heading, so no line follows the tag's own line inside the block and the code they mutate cannot see one.
 # Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
 window-le	tools/self/accumulate.sh	if (Dn - dn($1) >= win[id]) next	if (Dn - dn($1) > win[id]) next	A13 1: the window edge — a 60-day-old sighting must not count
 future-accepted	tools/self/accumulate.sh	date_gt "$s_date" "$ASOF" && die	date_gt "$s_date" "9999-99-99" && die	A13 2: add rejects a date after --as-of
@@ -47,5 +49,6 @@ help-guard-dropped	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]
 arity-check-after-dir	tools/self/accumulate.sh	cmd="${pos[0]}"	cmd="${pos[0]}"; [ -n "$DIR" ] || die "--dir is required"	the subcommand/arity check comes before --dir
 closure-date-unvalidated	tools/self/accumulate.sh	valid_date "$cdate" || cdate="—"	true	closed: an impossible date is undated
 date-anywhere-on-line	tools/self/accumulate.sh	'^[^(]*\\(([0-9][0-9][0-9][0-9]-	'^.*\\(([0-9][0-9][0-9][0-9]-	closed: only a parenthesised date counts
-date-borrowed-from-later-tag	tools/self/accumulate.sh	after="${m: -1}${stripped#*"$m"}"; after="${after%%"$NL"*}"	after="${stripped}"	closed: the date belongs to the same tag and the same line as the glyph
-date-from-next-line	tools/self/accumulate.sh	after="${after%%"$NL"*}"	after="${after}"	closed: the date must be on the tag's own line
+heading-rule-first-blank	tools/self/accumulate.sh	elif [ -n "$line" ] && bb_heading_continues "$block" "$line"; then	elif true; then	closed: a body line glued under a finished heading is not part of its block (dir #847)
+span-only-line-continues	tools/self/accumulate.sh	elif [ -n "$line" ] && bb_heading_continues	elif bb_heading_continues	closed: a line that is only a code span ends the block, as in the census
+next-heading-absorbed	tools/self/accumulate.sh	line[j] != "" && line[j] !~ /^##+ / && n <= 50	line[j] != "" && n <= 50	closed: the next ticket's heading is never part of this heading's block

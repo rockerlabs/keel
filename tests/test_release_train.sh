@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+# tools/self/release-train.sh (dir #811 slice S3, B9): the release train's build / body / check tool.
+# One fixture repo (base `main`; b1 and b2 disjoint except the shared file `f` and CHANGELOG.md, which both
+# edit on disjoint lines; b3 conflicts with b2 on `f`; b4 is disjoint from all; b2b descends from b2; after
+# the branches are cut `main` advances by one commit, so a two-dot seam or an unexcluded CHANGELOG.md would
+# show in the seam list). Covers: the clean build, the pairwise conflict exit with nothing created, the
+# --allow-conflicts in-progress merge and the hand resolution, build --continue (order kept, not sorted),
+# body (table, hand-resolved merges, integration commits between and after train merges, update-branch,
+# placeholders, non-train refusal), check (a moved head, a missing N, the LAST line of a twice-merged N), and
+# every refusal leaving the branch list, the worktree list and the caller's checkout exactly as they were.
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
+
+tool="$REPO_ROOT/tools/self/release-train.sh"
+
+# --- the fixture ---------------------------------------------------------------------------------
+d="$(new_repo)"
+gd() { git -C "$d" "$@"; }
+printf '%s\n' l1 l2 l3 l4 l5 l6 l7 l8 l9 l10 > "$d/f"
+printf '%s\n' '# Changelog' '' '- c1' '' '- c2' '' '- c3' '' '- c4' '' '- c5' '' '- c6' > "$d/CHANGELOG.md"
+printf 'x\n' > "$d/README"
+gd add -A
+gd commit -q -m base
+
+cut_branch() { gd checkout -q -b "$1" main; }
+cut_branch b1
+sed 's/^l2$/b1-l2/' "$d/f" > "$d/f.new"; cat "$d/f.new" > "$d/f"; rm "$d/f.new"
+sed 's/^- c1$/- c1 by b1/' "$d/CHANGELOG.md" > "$d/c.new"; cat "$d/c.new" > "$d/CHANGELOG.md"; rm "$d/c.new"
+printf 'one\n' > "$d/one.txt"
+gd add -A; gd commit -q -m "b1: f, changelog, one"
+cut_branch b2
+sed 's/^l8$/b2-l8/' "$d/f" > "$d/f.new"; cat "$d/f.new" > "$d/f"; rm "$d/f.new"
+sed 's/^- c6$/- c6 by b2/' "$d/CHANGELOG.md" > "$d/c.new"; cat "$d/c.new" > "$d/CHANGELOG.md"; rm "$d/c.new"
+printf 'two\n' > "$d/two.txt"
+gd add -A; gd commit -q -m "b2: f, changelog, two"
+cut_branch b3
+sed 's/^l8$/b3-l8/' "$d/f" > "$d/f.new"; cat "$d/f.new" > "$d/f"; rm "$d/f.new"
+printf 'three\n' > "$d/three.txt"
+gd add -A; gd commit -q -m "b3: f (conflicts with b2), three"
+cut_branch b4
+printf 'four\n' > "$d/four.txt"
+gd add -A; gd commit -q -m "b4: four"
+gd checkout -q b2
+gd checkout -q -b b2b
+printf 'two more\n' > "$d/two-more.txt"
+gd add -A; gd commit -q -m "b2b: on top of b2"
+gd checkout -q main
+printf 'later\n' > "$d/later.txt"
+gd add -A; gd commit -q -m "main moves on"
+
+s1="$(gd rev-parse b1)"; s2="$(gd rev-parse b2)"; s3="$(gd rev-parse b3)"; s4="$(gd rev-parse b4)"; s2b="$(gd rev-parse b2b)"
+
+# rt ARGS… → OUT/STATUS, run from the caller's checkout (the manager's cwd is the main checkout on `main`).
+rt() { OUT="$(cd "$d" && bash "$tool" "$@" 2>&1 </dev/null)"; STATUS=$?; }
+# fp WT BASE → the first-parent subjects past BASE, oldest first.
+fp() { git -C "$1" log --first-parent --reverse --format=%s "$2..HEAD"; }
+# caller_state — everything a build must not touch in the caller's checkout.
+caller_state() { printf '%s|%s|%s|%s\n' "$(gd symbolic-ref HEAD)" "$(gd rev-parse HEAD)" "$(gd write-tree)" "$(gd status --porcelain --untracked-files=no)"; }
+snap() { printf '%s\n--\n%s\n' "$(gd branch --list)" "$(gd worktree list)"; }
+caller0="$(caller_state)"
+
+# --- --help / bad arguments ----------------------------------------------------------------------
+rt --help
+check_status "--help -> exit 0" 0 "$STATUS"
+check_contains "--help prints usage" "$OUT" "Usage:"
+rt
+check_status "no arguments -> exit 2" 2 "$STATUS"
+rt bogus
+check_status "unknown command -> exit 2" 2 "$STATUS"
+rt build --bogus --branch x "1=$s1" "2=$s2"
+check_status "unknown flag -> exit 2" 2 "$STATUS"
+rt body
+check_status "body without --branch -> exit 2" 2 "$STATUS"
+rt check --branch b1
+check_status "check without constituents -> exit 2" 2 "$STATUS"
+
+# --- refusals: exit 2, and nothing written (the E30 case among them) --------------------------------
+mkdir -p "$SANDBOX/wt-busy"; printf 'x\n' > "$SANDBOX/wt-busy/file"
+refused() {   # refused LABEL ARGS… — exit 2 with the branch list, the worktree list and the caller untouched
+  local label="$1" before after; shift
+  before="$(snap)"
+  rt "$@"
+  check_status "$label -> exit 2" 2 "$STATUS"
+  after="$(snap)"
+  check_eq "$label: branch list and worktree list identical" "$before" "$after"
+  check_eq "$label: the caller's checkout untouched" "$caller0" "$(caller_state)"
+}
+refused "one constituent" build --branch t-one --base main "1=$s1"
+refused "no constituent" build --branch t-none --base main
+refused "an unknown sha" build --branch t-unk --base main "1=$s1" "2=0123456789abcdef0123456789abcdef01234567"
+refused "a malformed constituent" build --branch t-bad --base main "1=$s1" "two"
+refused "a 5-digit sha prefix" build --branch t-short --base main "1=$s1" "2=${s2:0:5}"
+gd tag -a -m "an annotated tag" vtag "$s4"
+refused "an annotated tag's object sha (peels to a commit)" build --branch t-tag --base main "1=$s1" "4=$(gd rev-parse vtag)"
+check_contains "...says it is not a commit sha" "$OUT" "is not a commit sha"
+refused "a blob sha" build --branch t-blob --base main "1=$s1" "4=$(gd rev-parse main:README)"
+check_contains "...says it is a blob, not a commit" "$OUT" "is a blob object, not a commit"
+refused "a tree sha" build --branch t-tree --base main "1=$s1" "4=$(gd rev-parse 'main^{tree}')"
+check_contains "...says it is a tree, not a commit" "$OUT" "is a tree object, not a commit"
+refused "a duplicate N" build --branch t-dup --base main "1=$s1" "1=$s2"
+refused "an existing branch" build --branch b4 --base main "1=$s1" "4=$s4"
+refused "an existing non-empty worktree path" build --branch t-busy --base main --worktree "$SANDBOX/wt-busy" "1=$s1" "4=$s4"
+refused "an unknown base" build --branch t-nobase --base no-such-ref "1=$s1" "4=$s4"
+refused "a constituent already on the base" build --branch t-onbase --base main "1=$(gd rev-parse main)" "4=$s4"
+refused "build without --branch" build --base main "1=$s1" "4=$s4"
+check_absent "the busy path's branch was not left behind" "$(gd branch --list)" "t-busy"
+
+# --- a conflicting pair: exit 1 naming the pair and the file, nothing created ---------------------------
+before="$(snap)"
+rt build --branch t-conf --base main "2=$s2" "3=$s3"
+check_status "build of a conflicting pair -> exit 1" 1 "$STATUS"
+check_contains "...names the pair" "$OUT" "#2 x #3"
+check_contains "...and the file" "$OUT" " f"
+check_eq "...no branch and no worktree created" "$before" "$(snap)"
+check_eq "...the caller's checkout untouched" "$caller0" "$(caller_state)"
+
+# --- the clean build (default worktree path) ------------------------------------------------------------
+rt build --branch t1 --base main "1=$s1" "2=$s2"
+check_status_out "build b1 b2 -> exit 0" 0
+case "$OUT" in "worktree: "*) pass "the worktree path is the first line" ;; *) fail "the worktree path is the first line" "got: $(head -1 <<<"$OUT")" ;; esac
+wt1="$(sed -n '1s/^worktree: //p' <<<"$OUT")"
+case "$wt1" in */.claude/worktrees/t1) pass "the default worktree path is under .claude/worktrees/" ;; *) fail "the default worktree path is under .claude/worktrees/" "got $wt1" ;; esac
+check_dir "...and the worktree exists" "$wt1"
+check_eq "two first-parent merges named train: #N (sha)" "train: #1 ($s1)
+train: #2 ($s2)" "$(fp "$wt1" main)"
+gd merge-base --is-ancestor "$s1" t1 && gd merge-base --is-ancestor "$s2" t1 && pass "both heads are ancestors" || fail "both heads are ancestors" "lost"
+check_eq "the seam list is exactly the shared file (no CHANGELOG.md, no main-only file)" "seam file: f" "$(match "$OUT" '^seam file: ')"
+check_contains "integration count printed (0 at build)" "$OUT" "integration commits: 0"
+check_eq "the new branch does not track origin/main (no upstream)" "" "$(gd config --get branch.t1.merge || true)"
+check_eq "the caller's checkout untouched after a build" "$caller0" "$(caller_state)"
+refused "build again on the existing branch" build --branch t1 --base main "1=$s1" "2=$s2"
+
+# --- body of a clean train ----------------------------------------------------------------------------
+rt body --branch t1 --base main
+check_status_out "body -> exit 0" 0
+check_contains "body: the table carries #1 and its sha verbatim" "$OUT" "| #1 | <fill> | $s1 |"
+check_contains "body: the table carries #2 and its sha verbatim" "$OUT" "| #2 | <fill> | $s2 |"
+check_contains "body: verification placeholder" "$OUT" "<fill>"
+check_contains "body: integration commits none" "$OUT" "integration commits: 0"
+check_absent "body: nothing resolved by hand" "$OUT" "resolved by hand"
+check_contains "body: the merge-commit line" "$OUT" "Merge: create a merge commit"
+check_contains "body: the title line" "$OUT" "land #1–#2 as one merge"
+check_eq "body: the seam list" "seam file: f" "$(match "$OUT" '^seam file: ')"
+
+# --- --allow-conflicts: stop IN PROGRESS at the first conflicting merge ---------------------------------
+wt2="$SANDBOX/wt-t2"
+rt build --branch t2 --base main --worktree "$wt2" --allow-conflicts "2=$s2" "3=$s3" "1=$s1"
+check_status "build --allow-conflicts -> exit 1 after the #3 merge" 1 "$STATUS"
+hint="$(sed -n 's/^  release-train\.sh //p' <<<"$OUT")"   # the resume hint, run verbatim below
+check_contains "...lists UU f" "$OUT" "UU f"
+check_contains "...the resume hint carries the base" "$OUT" "--base main"
+check_contains "...and --allow-conflicts, since the build ran with it" "$OUT" "--allow-conflicts 1="
+check_contains "...and the quoted worktree path" "$OUT" "build --continue --worktree "
+git -C "$wt2" rev-parse -q --verify MERGE_HEAD >/dev/null && pass "...MERGE_HEAD present in the worktree" || fail "...MERGE_HEAD present in the worktree" "no merge in progress"
+check_eq "...the branch holds only train: #2" "train: #2 ($s2)" "$(fp "$wt2" main)"
+rt build --continue --worktree "$wt2" --base main "1=$s1"
+check_status "build --continue with an unresolved UU path -> exit 2" 2 "$STATUS"
+check_eq "...nothing merged by the refusal" "train: #2 ($s2)" "$(fp "$wt2" main)"
+# hand resolution: the later PR's conflict, resolved and committed under git's own message
+printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$wt2/f"
+git -C "$wt2" add f
+git -C "$wt2" commit -q --no-edit
+check_eq "a hand-resolved merge keeps the tool's subject" "train: #3 ($s3)" "$(git -C "$wt2" log -1 --format=%s)"
+OUT="$(cd "$d" && eval "bash '$tool' $hint" 2>&1 </dev/null)"; STATUS=$?   # the printed hint, pasted
+check_status_out "the printed resume hint, run as printed -> exit 0" 0
+check_eq "first-parent order is #2, #3, #1 (not sorted)" "train: #2 ($s2)
+train: #3 ($s3)
+train: #1 ($s1)" "$(fp "$wt2" main)"
+check_eq "the printed seam list is still exactly the shared file" "seam file: f" "$(match "$OUT" '^seam file: ')"
+check_contains "continue: the hand-resolved merge counts as an integration commit" "$OUT" "integration commits: 1"
+rt body --branch t2 --base main
+check_status_out "body of a hand-resolved train -> exit 0" 0
+check_contains "body lists the #3 merge as resolved by hand" "$OUT" "resolved by hand: #3"
+check_contains "...with its conflicting file" "$OUT" "conflicted files: f"
+check_contains "body: integration count 1" "$OUT" "integration commits: 1"
+check_contains "body: the pairwise result names the conflicting pair" "$OUT" "#2 x #3"
+check_eq "body: three table rows" "3" "$(grep -c '^| #[0-9]* | <fill> | ' <<<"$OUT")"
+
+# --- build --continue refusals ---------------------------------------------------------------------------
+plain="$SANDBOX/wt-plain"
+gd worktree add -q --no-track -b plain "$plain" main
+rt build --continue --worktree "$plain" --base main "1=$s1"
+check_status "build --continue on a plain-branch worktree (no train merge) -> exit 2" 2 "$STATUS"
+check_eq "...and nothing was merged" "" "$(fp "$plain" main)"
+rt build --continue --worktree "$SANDBOX/no-such-wt" --base main "1=$s1"
+check_status "build --continue on a missing worktree -> exit 2" 2 "$STATUS"
+rt build --continue --worktree "$wt1" --base main
+check_status "build --continue with nothing to merge -> exit 2" 2 "$STATUS"
+rt build --continue --worktree "$wt1" --base main "1=$s1"
+check_status "build --continue of a head already in the train -> exit 2" 2 "$STATUS"
+
+# --- integration commits: between two train merges, and trailing ----------------------------------------
+wt3="$SANDBOX/wt-t3"
+rt build --branch t3 --base main --worktree "$wt3" "1=$s1" "2=$s2"
+check_status "t3 build -> exit 0" 0 "$STATUS"
+printf 'fix\n' > "$wt3/fix.txt"; git -C "$wt3" add fix.txt; git -C "$wt3" commit -q -m "integration: fix the seam"
+rt build --continue --worktree "$wt3" --base main "4=$s4"
+check_status_out "continue after an integration commit -> exit 0" 0
+rt body --branch t3 --base main
+check_status_out "body with an integration commit between two train merges -> exit 0" 0
+check_contains "...lists it" "$OUT" "integration: fix the seam"
+check_contains "...counts it" "$OUT" "integration commits: 1"
+printf 'tail\n' > "$wt3/tail.txt"; git -C "$wt3" add tail.txt; git -C "$wt3" commit -q -m "integration: trailing"
+rt body --branch t3 --base main
+check_status_out "body with a trailing non-train commit -> exit 0" 0
+check_contains "...lists the trailing commit" "$OUT" "integration: trailing"
+check_contains "...count 2" "$OUT" "integration commits: 2"
+
+# --- a constituent merged twice (a B8g append): the LAST line decides ------------------------------------
+rt build --continue --worktree "$wt3" --base main "2=$s2b"
+check_status_out "appending a new head of #2 -> exit 0" 0
+rt body --branch t3 --base main
+check_contains "body: #2 carries its LAST sha" "$OUT" "| #2 | <fill> | $s2b |"
+check_absent "body: #2's first sha is gone from the table" "$OUT" "| #2 | <fill> | $s2 |"
+check_eq "body: one row per PR (#1, #2, #4)" "3" "$(grep -c '^| #[0-9]* | <fill> | ' <<<"$OUT")"
+rt check --branch t3 "2=$s2b" "1=$s1" "4=$s4"
+check_status_out "check with the live shas -> exit 0" 0
+rt check --branch t3 "2=$s2"
+check_status "check with a moved head (the first sha of #2) -> exit 1" 1 "$STATUS"
+check_contains "...naming #2 as moved" "$OUT" "moved: #2"
+rt check --branch t3 "9=$s1"
+check_status "check with an N not in the train -> exit 1" 1 "$STATUS"
+check_contains "...naming #9 as missing" "$OUT" "missing: #9"
+rt check --branch t3 "2=${s2b:0:7}"
+check_status "check with an abbreviated sha -> exit 2" 2 "$STATUS"
+gd checkout -q --orphan unrelated
+printf 'u\n' > "$d/u.txt"; gd add u.txt; gd commit -q -m "unrelated history"
+gd checkout -q main
+rt check --branch unrelated --base main "1=$s1"
+check_status "check on a branch with no merge base to the base -> exit 2" 2 "$STATUS"
+check_contains "...says so" "$OUT" "no merge base"
+rt check --branch no-such-branch "1=$s1"
+check_status "check on an unknown branch -> exit 2" 2 "$STATUS"
+
+# --- a rewritten branch (a new head that does not descend from the merged one) is refused -------------------------
+wt16="$SANDBOX/wt-t16"
+rt build --branch t16 --base main --worktree "$wt16" "1=$s1" "2=$s2"
+check_status "t16 build -> exit 0" 0 "$STATUS"
+before="$(snap)"
+rt build --continue --worktree "$wt16" --base main "2=$s3"
+check_eq "...no stray branch or worktree" "$before" "$(snap)"
+check_status "continue with a head of #2 that does not descend from the merged one -> exit 2" 2 "$STATUS"
+check_contains "...says it does not descend" "$OUT" "does not descend from"
+check_eq "...nothing merged" "train: #1 ($s1)
+train: #2 ($s2)" "$(fp "$wt16" main)"
+
+# --- update-branch: a merge of `main` is listed, not counted --------------------------------------------
+wt5="$SANDBOX/wt-t5"
+rt build --branch t5 --base main --worktree "$wt5" "1=$s1" "4=$s4"
+check_status "t5 build -> exit 0" 0 "$STATUS"
+printf 'later2\n' > "$d/later2.txt"; gd add later2.txt; gd commit -q -m "main moves again"
+caller0="$(caller_state)"   # the fixture itself moved main; the baseline moves with it
+git -C "$wt5" merge -q --no-ff -m "Merge branch 'main' into t5" main
+rt body --branch t5 --base main
+check_status_out "body of a train with an update-branch merge -> exit 0" 0
+check_contains "...lists it as update-branch (not reviewed)" "$OUT" "update-branch (not reviewed)"
+check_contains "...and does not count it as an integration commit" "$OUT" "integration commits: 0"
+
+# --- build --continue against a head that conflicts with the train ---------------------------------------
+wt7="$SANDBOX/wt-t7"
+rt build --branch t7 --base main --worktree "$wt7" "2=$s2" "4=$s4"
+check_status "t7 build -> exit 0" 0 "$STATUS"
+rt build --continue --worktree "$wt7" --base main "3=$s3"
+check_status "continue with a head that conflicts with the train head -> exit 1" 1 "$STATUS"
+check_contains "...names the head and the file" "$OUT" "#3: f"
+check_eq "...nothing merged, no merge in progress" "train: #2 ($s2)
+train: #4 ($s4)" "$(fp "$wt7" main)"
+git -C "$wt7" rev-parse -q --verify MERGE_HEAD >/dev/null && fail "...no merge in progress" "MERGE_HEAD present" || pass "...no merge in progress"
+rt build --continue --worktree "$wt7" --base main --allow-conflicts "3=$s3"
+check_status "continue --allow-conflicts -> exit 1, left in progress" 1 "$STATUS"
+check_contains "...lists UU f" "$OUT" "UU f"
+git -C "$wt7" rev-parse -q --verify MERGE_HEAD >/dev/null && pass "...MERGE_HEAD present" || fail "...MERGE_HEAD present" "no merge in progress"
+rt build --continue --worktree "$wt7" --base main "1=$s1"
+check_status "continue while a merge is in progress -> exit 2" 2 "$STATUS"
+
+# --- the default base is origin/main, and the new branch does not track it ----------------------------------
+gd remote add origin "$SANDBOX/no-such-origin"
+gd config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+gd update-ref refs/remotes/origin/main main
+wt8="$SANDBOX/wt-t8"
+rt build --branch t8 --worktree "$wt8" "1=$s1" "4=$s4"
+check_status_out "build with the default base (origin/main) -> exit 0" 0
+check_eq "a branch cut from a remote-tracking base has no upstream" "" "$(gd config --get branch.t8.merge || true)"
+rt body --branch t8
+check_status_out "body with the default base -> exit 0" 0
+rt check --branch t8 "1=$s1" "4=$s4"
+check_status_out "check with the default base -> exit 0" 0
+
+# --- a merge that would fast-forward still gets a merge commit (--no-ff) ----------------------------------
+gd checkout -q -b bff main
+printf 'ff\n' > "$d/ff.txt"; gd add ff.txt; gd commit -q -m "bff: fast-forwardable"
+gd checkout -q main
+sff="$(gd rev-parse bff)"
+wt10="$SANDBOX/wt-t10"
+rt build --branch t10 --base main --worktree "$wt10" "5=$sff" "4=$s4"
+check_status_out "build whose first head fast-forwards -> exit 0" 0
+check_eq "...both are merge commits named train: #N" "train: #5 ($sff)
+train: #4 ($s4)" "$(fp "$wt10" main)"
+
+# --- stacked heads: a head contained in an EARLIER-listed head is refused before any write ------------------------
+refused "a head already contained in an earlier-listed head (stacked PRs)" build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "5=$s2b" "6=$s2"
+check_contains "...names the PRs and what to do" "$OUT" "list #6 before #5"
+rt build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "6=$s2" "5=$s2b"
+check_status_out "the stacked PRs in the right order -> exit 0" 0
+
+# --- build --continue: an uncommitted resolved merge, and unmerged paths with no merge in progress ----------------
+wt12="$SANDBOX/wt-t12"
+rt build --branch t12 --base main --worktree "$wt12" --allow-conflicts "2=$s2" "3=$s3"
+check_status "t12 build stops in progress -> exit 1" 1 "$STATUS"
+printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$wt12/f"
+git -C "$wt12" add f
+rt build --continue --worktree "$wt12" --base main "4=$s4"
+check_status "continue with a resolved but uncommitted merge -> exit 2" 2 "$STATUS"
+check_contains "...says a merge is still in progress" "$OUT" "merge is still in progress"
+git -C "$wt12" commit -q --no-edit
+wt13="$SANDBOX/wt-t13"
+rt build --branch t13 --base main --worktree "$wt13" "2=$s2" "4=$s4"
+check_status "t13 build -> exit 0" 0 "$STATUS"
+git -C "$wt13" cherry-pick "$s3" >/dev/null 2>&1 || true
+check_contains "precondition: a cherry-pick conflict leaves UU f" "$(git -C "$wt13" status --porcelain)" "UU f"
+git -C "$wt13" rev-parse -q --verify MERGE_HEAD >/dev/null && fail "precondition: no merge in progress" "MERGE_HEAD present" || pass "precondition: no merge in progress"
+rt build --continue --worktree "$wt13" --base main "1=$s1"
+check_status "continue with unmerged paths and no merge in progress -> exit 2" 2 "$STATUS"
+check_contains "...names the unresolved paths" "$OUT" "unresolved paths"
+
+# --- a registered worktree whose directory is gone: refused before any git write -------------------------------
+wt14="$SANDBOX/wt-t14"
+rt build --branch t14 --base main --worktree "$wt14" "1=$s1" "4=$s4"
+check_status "t14 build -> exit 0" 0 "$STATUS"
+mv "$wt14" "$wt14.gone"
+before="$(snap)"
+rt build --branch t14b --base main --worktree "$wt14" "1=$s1" "4=$s4"
+check_status "build into a registered-but-missing worktree path -> exit 2" 2 "$STATUS"
+check_eq "...no stray branch" "$before" "$(snap)"
+
+# --- a forged train subject (names a sha that is not the second parent) is an integration commit ----------------
+wt15="$SANDBOX/wt-t15"
+rt build --branch t15 --base main --worktree "$wt15" "1=$s1" "2=$s2"
+check_status "t15 build -> exit 0" 0 "$STATUS"
+git -C "$wt15" merge -q --no-ff -m "train: #7 ($s3)" "$s4"
+rt body --branch t15 --base main
+check_status_out "body of a train with a forged subject -> exit 0" 0
+check_eq "...the forged #7 is not a table row" "2" "$(grep -c '^| #[0-9]* | <fill> | ' <<<"$OUT")"
+check_contains "...it is listed as an integration commit" "$OUT" "train: #7 ($s3)"
+check_contains "...and counted" "$OUT" "integration commits: 1"
+
+# --- the resume hint when the conflicting merge was the LAST constituent -------------------------------------------
+rt build --branch t18 --base main --worktree "$SANDBOX/wt-t18" --allow-conflicts "1=$s1" "2=$s2" "3=$s3"
+check_status "a conflict on the last constituent -> exit 1" 1 "$STATUS"
+check_contains "...says it was the last one" "$OUT" "that was the last constituent"
+check_absent "...and prints no runnable --continue hint with nothing to merge" "$OUT" "release-train.sh build --continue"
+bhint="$(sed -n 's/^  release-train\.sh //p' <<<"$OUT")"
+git -C "$SANDBOX/wt-t18" add f 2>/dev/null; printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$SANDBOX/wt-t18/f"
+git -C "$SANDBOX/wt-t18" add f; git -C "$SANDBOX/wt-t18" commit -q --no-edit
+OUT="$(cd "$d" && eval "bash '$tool' $bhint" 2>&1 </dev/null)"; STATUS=$?   # the printed body line, pasted
+check_status_out "the printed body line, run as printed after the resolution -> exit 0" 0
+check_contains "...and it lists the hand-resolved last merge" "$OUT" "resolved by hand: #3"
+
+# --- a constituent with no merge base to the base: named on stdout, exit 0 -----------------------------------------
+rt body --branch t1 --base main
+check_absent "a normal body carries no seam warning" "$OUT" "seam warning"
+sorph="$(gd commit-tree -m "an unrelated root commit" "$(gd mktree </dev/null)")"
+wt17="$SANDBOX/wt-t17"
+rt build --branch t17 --base main --worktree "$wt17" "1=$s1" "4=$s4"
+check_status "t17 build -> exit 0" 0 "$STATUS"
+git -C "$wt17" merge -q --no-ff --allow-unrelated-histories -m "train: #9 ($sorph)" "$sorph"
+rt body --branch t17 --base main
+check_status_out "body of a train holding an unrelated-history head -> exit 0" 0
+check_eq "...exactly one seam warning, naming the sha" "1" "$(grep -c "^seam warning: .*$sorph" <<<"$OUT")"
+
+# --- body of a non-train branch ----------------------------------------------------------------------------
+rt body --branch b1 --base main
+check_status "body on a non-train branch -> exit 2" 2 "$STATUS"
+rt body --branch plain --base main
+check_status "body on a branch with no commits past the base -> exit 2" 2 "$STATUS"
+rt body --branch no-such-branch --base main
+check_status "body on an unknown branch -> exit 2" 2 "$STATUS"
+
+# --- an existing EMPTY directory is accepted (git does), a non-empty one was refused above -----------------
+mkdir -p "$SANDBOX/wt-empty"
+rt build --branch t6 --base main --worktree "$SANDBOX/wt-empty" "1=$s1" "4=$s4"
+check_status_out "build into an existing empty directory -> exit 0" 0
+
+check_eq "the caller's checkout untouched through the rest of the run (HEAD, branch, index)" "$caller0" "$(caller_state)"
+summary
