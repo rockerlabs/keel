@@ -172,8 +172,8 @@ function blank_range(st, ln,    sp) {
 # counted(pos, lines): the text from pos on starts with a COUNT unit ("12 tests") or, after "lines" only, a change
 # verb ("lines 120 changed"): the number just before it is a count, not a reference (dir #846). A reference is
 # followed by a verb, a connective or punctuation ("step 5 runs the gate", "step 3 added a check"), which are
-# the overwhelming majority in real sections; the lists are closed on purpose, so a noun that can also name
-# the thing a step or round produced ("round 2 findings") is not in them.
+# the overwhelming majority in real sections. The lists are closed on purpose and plural-only: a singular
+# ("step 4 line 56") or a noun that can name what a step or round produced ("round 2 findings") is a reference.
 function counted(pos, lines,    r) {
   r = tolower(substr(s, pos))
   return r ~ units || (lines && r ~ verbs)
@@ -247,9 +247,9 @@ BEGIN {
   re_x6s = sect " ?" list
   re_x7 = "(exit(s|ing|ed)?|exit code|return(s)?|status) " list
   qre = "^(top|over|under|above|below|around|about|nearly|almost|max|min|first|last|next|only|least|most)-[0-9]"
-  units = "^ +(tests?|values?|files?|lines?|words?|rows?|bytes?|tokens?|chars?|characters?|seconds?|minutes?|hours?|days?|assertions?|mutants?|commits?|errors?|failures?)([^a-z0-9]|$)"
+  units = "^ +(tests|values|files|lines|words|rows|bytes|tokens|chars|characters|seconds|minutes|hours|days|assertions|mutants|commits|errors|failures)([^a-z0-9]|$)"
   verbs = "^ +(changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
-  unitre = "^(x|s|ms|us|ns|sec|secs|min|mins|h|hr|hrs|d|w|px|pt|[kKMGT][bB]|[kKMGT]iB)$"
+  unitre = "^(x|s|ms|us|ns|sec|secs|min|mins|h|hr|hrs|d|w|px|pt|[kKmMgGtT][bB]|[kKmMgGtT]iB)$"
   on = (h == "")
 }
 {
