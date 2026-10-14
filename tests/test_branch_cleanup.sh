@@ -190,6 +190,71 @@ check_contains "live-hours 0 lets prune-safe remove the now-idle worktree" \
 run git -C "$oldliverepo" rev-parse --verify -q refs/heads/claude/wt-old-touched
 check_status "branch is gone once the probe is disabled" 1 "$STATUS"
 
+# --- dir #813: a LIVE session whose files sit outside its worktree ------------------------------------------
+# A release manager or a /design session writes the MAIN checkout (BACKLOG.md, drafts, specs), so its own
+# worktree stays clean and untouched past --live-hours -- the mtime probe above never sees it, and a branch
+# with no commits of its own is trivially "merged". What it DOES have is a running process whose cwd is the
+# worktree. A process cwd inside a candidate worktree grades it FLAG, never ASK/AUTO. Positive-only: no
+# process seen is today's grading, unchanged.
+procrepo="$(new_repo)"
+git -C "$procrepo" symbolic-ref HEAD refs/heads/main
+GIT_AUTHOR_DATE="$OLD" GIT_COMMITTER_DATE="$OLD" git -C "$procrepo" commit -q --allow-empty -m c1
+c1pr="$(git -C "$procrepo" rev-parse HEAD)"
+git -C "$procrepo" commit -q --allow-empty -m c2                       # main tip
+git -C "$procrepo" branch claude/wt-proc "$c1pr"                       # zero commits of its own, old, ephemeral
+git -C "$procrepo" worktree add -q "$procrepo.wt-proc" claude/wt-proc >/dev/null
+mkdir -p "$procrepo.wt-proc/sub"
+find "$procrepo.wt-proc" -exec touch -t 202001011200.00 {} + 2>/dev/null   # idle for years: the mtime probe is blind
+# a sibling DIRECTORY sharing the worktree's path as a string prefix, with its own process: must not match
+git -C "$procrepo" branch claude/wt-near "$c1pr"
+git -C "$procrepo" worktree add -q "$procrepo.wt-near" claude/wt-near >/dev/null
+find "$procrepo.wt-near" -exec touch -t 202001011200.00 {} + 2>/dev/null
+mkdir -p "$procrepo.wt-near-sibling"
+
+# start_cwd_proc DIR READY — a background process whose cwd is DIR; sets PROC_PID once READY exists
+start_cwd_proc() {
+  rm -f "$2"
+  ( cd "$1" && : > "$2" && exec sleep 120 ) >/dev/null 2>&1 &
+  PROC_PID=$!
+  local i=0
+  while [ ! -e "$2" ] && [ "$i" -lt 50 ]; do sleep 0.1 2>/dev/null || sleep 1; i=$((i + 1)); done
+}
+stop_cwd_proc() { kill "$PROC_PID" 2>/dev/null; wait "$PROC_PID" 2>/dev/null; }
+
+# baseline: no process -> the idle, clean, old, ephemeral worktree is a plain AUTO (today's behaviour)
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "no process in it: an idle clean old worktree is AUTO" "$(line_for claude/wt-proc)" "AUTO"
+
+start_cwd_proc "$procrepo.wt-proc/sub" "$SANDBOX/proc.ready"      # cwd is a SUBDIRECTORY of the worktree
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "a process inside the worktree -> FLAG" "$(line_for claude/wt-proc)" "FLAG"
+check_contains "the process FLAG names the process" "$(line_for claude/wt-proc)" "running process"
+check_absent   "the process FLAG gives NO destructive command" "$(line_for claude/wt-proc)" "git worktree remove"
+check_contains "the sibling dir's prefix-sharing worktree is not caught: stays AUTO" "$(line_for claude/wt-near)" "AUTO"
+run_in "$procrepo" bash "$TOOL" --days 7 --live-hours 0
+check_contains "--live-hours 0 (mtime probe off) does not switch the process signal off" "$(line_for claude/wt-proc)" "FLAG"
+stop_cwd_proc
+
+# a process in the string-prefix sibling directory only (not inside the worktree) is not a signal for it
+start_cwd_proc "$procrepo.wt-near-sibling" "$SANDBOX/proc2.ready"
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "a process in a prefix-sharing sibling directory does not FLAG the worktree" "$(line_for claude/wt-near)" "AUTO"
+stop_cwd_proc
+
+# once the process is gone the worktree is graded as before
+run_in "$procrepo" bash "$TOOL" --days 7
+check_contains "process gone: back to AUTO" "$(line_for claude/wt-proc)" "AUTO"
+
+# the destructive half, last (it removes the other idle worktree): --prune-safe must not take the occupied one
+start_cwd_proc "$procrepo.wt-proc" "$SANDBOX/proc3.ready"
+run_in "$procrepo" bash "$TOOL" --days 7 --prune-safe
+check_contains "--prune-safe leaves the worktree with a process in it" "$([ -d "$procrepo.wt-proc" ] && echo y)" "y"
+run git -C "$procrepo" rev-parse --verify -q refs/heads/claude/wt-proc
+check_status   "--prune-safe leaves its branch too" 0 "$STATUS"
+stop_cwd_proc
+run_in "$procrepo" bash "$TOOL" --days 7 --prune-safe
+check_contains "process gone: --prune-safe now removes it" "$(line_for claude/wt-proc)" "removed"
+
 # --- current branch is never a candidate, even if otherwise AUTO-eligible ----------------------
 repo2="$(new_repo)"
 git -C "$repo2" symbolic-ref HEAD refs/heads/main

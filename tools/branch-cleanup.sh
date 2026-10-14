@@ -23,7 +23,10 @@
 #          within --live-hours: a worktree merged TODAY can be a parallel session still mid-wrap (ledger/
 #          backlog writes land AFTER the merge), not a stale leftover -- see backlog #51. Reported WITHOUT a
 #          destructive command (forcing it would discard that work, or race a live session); the human
-#          reviews first. This is the genuinely-alive case, not mere presence.
+#          reviews first. This is the genuinely-alive case, not mere presence. A third reason (dir #813): a
+#          RUNNING PROCESS has its cwd inside the worktree -- a session that works elsewhere (a release
+#          manager writes the main checkout) leaves its own worktree clean and untouched, yet is alive.
+#          Seen via /proc, else lsof; positive-only -- no process seen leaves the grading unchanged.
 #   (skip) not merged (unmerged work OR a squash-merge, which is indistinguishable from active work without
 #          gh -- left alone by design: zero-dep buys no false positives at the cost of not cleaning
 #          squash-merged branches), the default branch itself, and the current branch / worktree.
@@ -71,7 +74,8 @@ ASK  = merged but not provably safe: recent/off-pattern free branch, or a clean 
        recent/off-pattern/holds non-disposable ignored content -> confirm before removing.
 FLAG = merged worktree with live work -> reported for review, no destructive command. Either uncommitted/
        untracked files, or (clean) a file touched within --live-hours (default 6) -- possibly a parallel
-       session still mid-wrap, not a stale leftover.
+       session still mid-wrap, not a stale leftover -- or a running process whose cwd is inside it (a
+       session that works elsewhere, e.g. in the main checkout).
 Env: KEEL_CLEANUP_GLOBS  overrides the ephemeral-name allowlist (space-separated globs).
      KEEL_KEEP_WORKTREE  path of the worktree to never touch (default: this run's own worktree).
 EOF
@@ -210,6 +214,40 @@ worktree_live() {
   return 1
 }
 
+# Is a process running with its cwd inside the worktree (dir #813)? A live session is not always one that
+# writes files in its own worktree: a release manager writes the MAIN checkout's BACKLOG.md and a /design
+# session its drafts and specs, so their worktrees stay clean and untouched past --live-hours and look like
+# a dead, merged leftover (a branch with no commits of its own is trivially "merged"). What such a session
+# DOES have is a process whose cwd is the worktree. POSITIVE-ONLY: a process seen means alive; none seen
+# (no /proc and no lsof, or another user's process we cannot read) means no signal, never "dead". All cwds
+# are listed once, lazily (only a worktree that survives the cheaper checks pays), and compared by physical
+# path with a trailing-slash boundary so `wt-a` never matches `wt-a-sibling`.
+proc_cwds=""; proc_cwds_built=0
+_proc_cwds_build() {
+  local l
+  proc_cwds_built=1
+  if [ -d /proc/self ]; then
+    while IFS= read -r l; do
+      [ -n "$l" ] || continue
+      proc_cwds="${proc_cwds}$(readlink "$l" 2>/dev/null || true)"$'\n'
+    done < <(find /proc -maxdepth 2 -name cwd -type l 2>/dev/null || true)
+  elif command -v lsof >/dev/null 2>&1; then
+    # capture, then filter: a producer into an early-exiting reader is the dir #280 SIGPIPE race
+    l="$(lsof -w -a -d cwd -Fn 2>/dev/null || true)"
+    proc_cwds="$(sed -n 's/^n//p' <<<"$l")"$'\n'
+  fi
+}
+worktree_busy() {
+  local wtp c
+  wtp="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  [ "$proc_cwds_built" -eq 1 ] || _proc_cwds_build
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    case "$c/" in "$wtp"/*) return 0 ;; esac
+  done <<<"$proc_cwds"
+  return 1
+}
+
 now="$(date +%s)"
 auto="";   n_auto=0          # free branches safe to delete (also carries worktree autos, see autowt)
 autowt=""                   # worktrees safe to auto-remove: name<TAB>age<TAB>path
@@ -235,6 +273,8 @@ while read -r b cd; do
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"dirty"$'\n'; n_flag=$((n_flag + 1))
     elif worktree_live "$wtp"; then                        # clean but recently touched -> possibly a live
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"live"$'\n'; n_flag=$((n_flag + 1))   # parallel session, not dead
+    elif worktree_busy "$wtp"; then                        # a process runs inside it: a live session that may
+      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"proc"$'\n'; n_flag=$((n_flag + 1))   # write ELSEWHERE (dir #813)
     elif [ "$state" = clean ] && [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
       # provably safe: idle, ephemeral name, nothing of value on disk -> auto-remove like a confident branch
       autowt="${autowt}${b}"$'\t'"${age}"$'\t'"${wtp}"$'\n'; n_auto=$((n_auto + 1))
@@ -303,12 +343,15 @@ while IFS=$'\t' read -r b age wtp reason; do
 done < <(printf '%s' "$askwt")
 
 # FLAG is a worktree with LIVE work — surfaced without a destructive command on purpose: removing it could
-# discard that work or race a live session, so the human reviews first. Two distinct reasons:
+# discard that work or race a live session, so the human reviews first. Three distinct reasons:
 #   dirty — uncommitted/untracked files; `git worktree remove` would refuse without --force.
+#   proc  — a running process has its cwd inside it (dir #813): a session that works elsewhere, e.g. in the main checkout.
 #   live  — clean, but touched within --live-hours; possibly a parallel session still mid-wrap (backlog #51).
 while IFS=$'\t' read -r b path reason; do
   [ -n "$b" ] || continue
-  if [ "$reason" = live ]; then
+  if [ "$reason" = proc ]; then
+    printf 'FLAG  %-40s worktree %s has a running process inside it (its cwd) — a live session may be working here or from it; leave it\n' "$b" "$path"
+  elif [ "$reason" = live ]; then
     printf 'FLAG  %-40s worktree %s merged but recently active — possibly a live parallel session; leave it, re-run cleanup later\n' "$b" "$path"
   else
     printf 'FLAG  %-40s worktree %s has uncommitted/untracked work — review before removing\n' "$b" "$path"
