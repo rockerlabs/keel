@@ -303,7 +303,7 @@ for c in "timeout 5 gh api -X PUT repos/o/r/pulls/5/{branch}" "nice gh api -X PU
 done
 for c in "gh api repos/{owner}/{repo}/issues/5/comments -f body=hi" "gh api -X PATCH repos/{owner}/{repo} -f description=x" \
          "gh api -X POST repos/:owner/:repo/labels -f name=x" "gh api -X PUT repos/o/r/contents/notes:repository.md -f message=x" \
-         "gh api -X PUT repos/o/r/contents/a:branches.md -f message=x" "echo x | xargs gh api repos/{owner}/{repo}/issues" \
+         "gh api -X PUT repos/o/r/pulls/5/notes:repository -f x=y" "gh api -X PUT repos/o/r/contents/a:branches.md -f message=x" "echo x | xargs gh api repos/{owner}/{repo}/issues" \
          "gh pr create --label api --body \"see {branch}\" --title x"; do
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
