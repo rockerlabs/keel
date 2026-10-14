@@ -561,6 +561,9 @@ heading_dir_id() {
 # close?"); doctor.sh does not currently source backlog-blocks.sh at all, and wiring that
 # dependency for one shared literal is out of this ticket's scope (KEEL-0.11.0-W3-ee9f amendment
 # A1 also asks this ticket to stay off that file's L110-130, where the constant lives).
+# dir #609 case-folded the heading-tag constant and left THIS one case-sensitive on purpose: its `.*`
+# gap spans prose, so folding would match any later "done"/"closed" on a line that merely carries a
+# glyph (seven new hits on the maintainers' BACKLOG.md when measured, 2026-10-14, none a close).
 BODY_CLOSURE_RE='✅.*\b(CLOSED|DONE|FIXED)\b|\bRETRACTED\b'
 
 # strip_dir_citation <regex> <ticket-capture-index> <own-id>

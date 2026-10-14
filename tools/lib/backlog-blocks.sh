@@ -111,7 +111,14 @@ bb_strip_foreign_citations() {
 # closures: each names an in-flight sub-state of an open ticket (a run underway, a phase reached,
 # a release candidate cut, a decision recorded pending the decided action) rather than the ticket
 # itself being done — so they stay outside this constant on purpose, not by oversight.
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT|FIXED)'
+# dir #609: the word is case-folded and up to two `*`/`_` of markdown emphasis may sit between the
+# glyph and the word — a peer project's uniform closure form is `✅ **Done 2026-09-20**`, and
+# `bb_closure_word_ok` refused it. The vocabulary is DONE CLOSED ABSORBED EXECUTED SUPERSEDED
+# DUPLICATE BUILT FIXED, spelled as bracket pairs (`[Dd][Oo][Nn][Ee]`) because bash 3.2's `=~`,
+# `grep -E` and busybox share no case-insensitive flag. Widening the vocabulary = adding its
+# bracket-paired spelling here, and nowhere else.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*([Dd][Oo][Nn][Ee]|[Cc][Ll][Oo][Ss][Ee][Dd]|[Aa][Bb][Ss][Oo][Rr][Bb][Ee][Dd]|[Ee][Xx][Ee][Cc][Uu][Tt][Ee][Dd]|[Ss][Uu][Pp][Ee][Rr][Ss][Ee][Dd][Ee][Dd]|[Dd][Uu][Pp][Ll][Ii][Cc][Aa][Tt][Ee]|[Bb][Uu][Ii][Ll][Tt]|[Ff][Ii][Xx][Ee][Dd])'
+
 
 # bb_closure_word_ok <candidate_marker>
 #   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
@@ -124,7 +131,8 @@ BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPE
 #   why before it aborts).
 bb_closure_word_ok() {
   local candidate="$1"
-  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN} ]]; then
+  # The trailing boundary is the scanner's own (`([^a-zA-Z]|$)`): `✅ FIXEDX` is not `✅ FIXED` (dir #609).
+  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
     return 0
   fi
   printf 'bb_closure_word_ok: %s\n' "$candidate" >&2

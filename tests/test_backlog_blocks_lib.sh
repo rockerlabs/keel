@@ -235,6 +235,43 @@ check_status "bb_closure_word_ok: an unlisted word ('✅ SHIPPED') exits 1" 1 "$
 err="$(bb_closure_word_ok '✅ SHIPPED' 2>&1 >/dev/null)"
 check_contains "bb_closure_word_ok: the refusal names the rejected candidate" "$err" 'SHIPPED'
 
+# --- dir #609: the word is case-folded and markdown emphasis may sit between the glyph and the word
+# (a peer project's uniform closure form is `✅ **Done 2026-09-20**`), and the word ends at a
+# boundary — `✅ FIXEDX` is not `✅ FIXED`. The writer-side check and the scanner share the one
+# constant, so each case is asserted on both. -------------------------------------------------
+for cand in '✅ **Done 2026-09-20**' '✅ done' '✅ Closed (2026-09-20)' '✅ __Fixed__' '❌ *Duplicate*' '✅ ** Done'; do
+  bb_closure_word_ok "$cand" >/dev/null 2>&1
+  check_status "MUTATION-PROOF: bb_closure_word_ok accepts '$cand'" 0 "$?"
+done
+for cand in '✅ FIXEDX (x)' '✅ **Donezo**' '✅ **SHIPPED**' '✅ Doing'; do
+  bb_closure_word_ok "$cand" >/dev/null 2>&1
+  check_status "MUTATION-PROOF: bb_closure_word_ok refuses '$cand'" 1 "$?"
+done
+d609="$(new_repo)"
+f609="$d609/BACKLOG.md"
+printf '### dir #601 — emphasis between glyph and word — R2 — ✅ **Done 2026-09-20**
+
+body
+
+### dir #602 — lower-case word — R2 — ✅ closed (2026-09-20)
+
+body
+
+### dir #603 — a word that only starts like a closure word — R2 — ✅ **Donezo**
+
+body
+
+### dir #604 — a sub-status stays open — R2 — ✅ RUN 1 EXECUTED
+
+body
+' > "$f609"
+out609="$(backlog_ticket_blocks "$f609")"
+row609() { printf '%s\n' "$out609" | awk -F'\t' -v n="dir #$1 " 'index($4, n) {print $3; exit}'; }
+check_status "MUTATION-PROOF: '✅ **Done 2026-09-20**' reads closed" 1 "$(row609 601)"
+check_status "MUTATION-PROOF: '✅ closed (…)' reads closed" 1 "$(row609 602)"
+check_status "'✅ **Donezo**' stays open" 0 "$(row609 603)"
+check_status "control: '✅ RUN 1 EXECUTED' stays open" 0 "$(row609 604)"
+
 # --- bb_strip_foreign_citations(): the dir #426 shared helper, tested directly (dir #142's
 # coverage ratchet requires a new exported function to be pinned on its own, not only exercised
 # indirectly through backlog_ticket_blocks) --------------------------------------------------------
