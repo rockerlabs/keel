@@ -267,8 +267,8 @@ run "$bc" --ticket-token 'B\.[0-9]+' "$fc"
 check_contains "MUTATION-PROOF: token mode strips the cited arrow (B.5 stays under pool)" "$OUT" $'1\tpool'
 check_absent "token mode: the closed B.6 and the cited arrow never reach 0.9.0" "$OUT" "0.9.0"
 # The named limit, pinned so the prose cannot drift from the code: an adopter's OWN citation form is not
-# stripped, so its arrow is read as the heading's tag. This assertion flips when the strip learns the token.
-own_cite="### B.7 — open, supersedes B.3 → 0.9.0 — R2 — → pool
+# stripped, so a cited arrow AFTER the heading's own arrow is read as the heading's tag. This assertion flips when the strip learns the token.
+own_cite="### B.7 — open — R2 — → pool, supersedes B.3 → 0.9.0
 
 body
 "
