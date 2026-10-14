@@ -248,6 +248,9 @@ for c in "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,merge
   allow "(g) unlisted: [$c] is no merge" "$c" "$P" "$OTHER"
 done
 deny "(g) a bare gh pr merge is a merge" "$R_ID" "gh pr merge" "$P" "$OTHER"
+deny "(g) a gh binary at /gh" "$R_ID" "/gh pr merge 5 --squash" "$P" "$OTHER"
+allow "(g) an assignment ending in /gh is no gh word (the shell runs pr)" "X=/opt/bin/gh pr merge 5" "$P" "$OTHER"
+allow "(a) manager: a later 'gh pr merge' in a flag value is no second command" "$MERGE --subject gh pr merge" "$P" "$MID"
 # shellcheck disable=SC2088  # the tilde is the command TEXT the hook reads, on purpose
 deny "(g) a path to gh behind a tilde" "$R_ID" "~/bin/gh pr merge 5 --squash" "$P" "$OTHER"
 deny "(g) a path to gh behind \$HOME" "$R_API" "\$HOME/bin/gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
@@ -255,6 +258,7 @@ deny "(g) a path to gh behind \$HOME" "$R_API" "\$HOME/bin/gh api -X PUT repos/o
 # --- named residuals, pinned so a change to them is a visible decision — a change that closes one flips its line to a
 # deny: words stdin supplies, a command inside one quoted argument, a quoted subcommand word ------------------------
 for c in "echo merge 5 | xargs gh pr" "echo repos/o/r/pulls/5/merge | xargs gh api -X PUT" "\$GH pr merge 5 --squash" \
+         "\$'\\x67h' pr merge 5 --squash" \
          "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
   allow "residual: [$c] is not read as a merge (named in the header)" "$c" "$P" "$OTHER"
 done
@@ -272,7 +276,8 @@ deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE
 
 # Whatever runs gh — every gh word in the segment is read as a command, so no runner needs a list: an unlisted
 # session's squash behind one with flags, a run-time word, a path, zsh's `-`, or one whose own argument is `gh api`.
-for r in "nice -n 5" '$R' /usr/bin/nice - "sudo -u gh -g api"; do
+for r in "nice -n 5" '$R' /usr/bin/nice - "sudo -u gh -g api" coproc "exec -a x" noglob '"$(command -v timeout)" 5' \
+         xargs gxargs "parallel -j2"; do
   deny "(g) runner $r: read through" "$R_ID" "$r gh pr merge 5 --squash" "$P" "$OTHER"
 done
 deny "(d) manager: a merge under parallel (stdin or -a add words)" "not under xargs or parallel" "printf -- '--admin\\n' | parallel $MERGE" "$P" "$MID"
