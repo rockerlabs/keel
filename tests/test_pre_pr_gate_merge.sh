@@ -34,6 +34,8 @@ R_NOMERGE="a merge commit only: add --merge"
 R_DROP="a merge commit only: drop"
 R_API="never the API"
 R_SUB="a subagent never merges"
+R_UNREAD="run gh as the command word"
+R_XARGS="not under xargs or parallel"
 
 mkrepo() {
   local d; d="$(new_repo)"
@@ -237,11 +239,18 @@ allow "(f) a PUT on …/pulls/5/mergeable is no merge endpoint" "gh api -X PUT r
 for c in "cd /tmp && $MERGE" "GH_TOKEN=x $MERGE" "foo; $MERGE" "env GH_PAGER= $MERGE" \
          "gh --repo o/r pr merge 5 --merge --match-head-commit $SHA" "gh pr -R o/r merge 5 --merge --match-head-commit $SHA" \
          "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`" \
-         "timeout 60 $MERGE" "nice -n 5 $MERGE" "nohup $MERGE" "env -C /tmp $MERGE" "sudo -u x $MERGE" \
-         "echo 5 | xargs -n1 gh pr merge --squash --admin" "xargs -r -I{} $MERGE" "exec -a x $MERGE" \
-         "/opt/homebrew/bin/gh pr merge 5 --merge --match-head-commit $SHA" "/usr/bin/env gh pr merge 5 --squash" \
-         "noglob $MERGE" "watch -n5 $MERGE" "coproc $MERGE" "parallel $MERGE ::: 5" "builtin command $MERGE"; do
+         "nohup $MERGE" "command $MERGE" "/opt/homebrew/bin/gh pr merge 5 --merge --match-head-commit $SHA"; do
   deny "(g) unlisted: [$c]" "$R_ID" "$c" "$P" "$OTHER"
+done
+# A command word that is not gh: the reader cannot tell which word runs, so a merge there is denied to everyone. These
+# include every shape the old settings deny caught (timeout, nice, env -C) and a manager's own.
+for c in "timeout 60 $MERGE" "nice -n 5 $MERGE" "env -C /tmp $MERGE" "sudo -u x $MERGE" "/usr/bin/env gh pr merge 5" \
+         "echo 5 | xargs -n1 gh pr merge --squash --admin" "xargs -r -I{} $MERGE" "exec -a x $MERGE" "noglob $MERGE" \
+         "watch -n5 $MERGE" "coproc $MERGE" "parallel $MERGE ::: 5" "builtin command $MERGE" "\$R $MERGE" "- $MERGE" \
+         "sudo -u gh -g api gh pr merge 5 --squash" "\"\$(command -v timeout)\" 5 $MERGE" "gxargs $MERGE" \
+         "env -C gh xargs gh pr merge 5 --merge --match-head-commit $SHA"; do
+  deny "(g) not gh as the command word: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
+  deny "(g) ...a manager too: [$c]" "$R_UNREAD" "$c" "$P" "$MID"
 done
 for c in "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,mergeStateStatus" \
          "gh pr list --state merged" "grep -c 'gh pr merge' f"; do
@@ -250,7 +259,8 @@ done
 deny "(g) a bare gh pr merge is a merge" "$R_ID" "gh pr merge" "$P" "$OTHER"
 deny "(g) a gh binary at /gh" "$R_ID" "/gh pr merge 5 --squash" "$P" "$OTHER"
 allow "(g) an assignment ending in /gh is no gh word (the shell runs pr)" "X=/opt/bin/gh pr merge 5" "$P" "$OTHER"
-allow "(a) manager: a later 'gh pr merge' in a flag value is no second command" "$MERGE --subject gh pr merge" "$P" "$MID"
+deny "(d) an unread merge outranks an earlier segment's flag code" "$R_UNREAD" "$MERGE --squash; timeout 5 $MERGE" "$P" "$MID"
+deny "accepted cost: a second word gh in a merge segment makes it unread" "$R_UNREAD" "$MERGE --subject gh pr merge" "$P" "$MID"
 # shellcheck disable=SC2088  # the tilde is the command TEXT the hook reads, on purpose
 deny "(g) a path to gh behind a tilde" "$R_ID" "~/bin/gh pr merge 5 --squash" "$P" "$OTHER"
 deny "(g) a path to gh behind \$HOME" "$R_API" "\$HOME/bin/gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
@@ -262,31 +272,23 @@ for c in "echo merge 5 | xargs gh pr" "echo repos/o/r/pulls/5/merge | xargs gh a
          "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
   allow "residual: [$c] is not read as a merge (named in the header)" "$c" "$P" "$OTHER"
 done
-# A manager behind a runner: read through; under xargs, stdin can add flags no check reads — denied.
-allow "(a) manager: timeout 60 + the merge" "timeout 60 $MERGE" "$P" "$MID"
+# Under a flagless xargs (a wrapper the command start skips), stdin can add flags no check reads — denied.
 allow "(a) manager: a path to gh" "/opt/homebrew/bin/gh pr merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
-deny "(d) manager: a merge under a flagless xargs" "not under xargs or parallel" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
-deny "(d) manager: a merge under xargs -n1" "not under xargs or parallel" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
-deny "(d) manager: a merge under /usr/bin/xargs" "not under xargs or parallel" "printf -- '--admin\\n' | /usr/bin/xargs $MERGE" "$P" "$MID"
-deny "(f) the API merge endpoint under xargs (stdin may add the method)" "not under xargs or parallel" "echo -X PUT | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
+deny "(d) manager: a merge under a flagless xargs" "$R_XARGS" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
+deny "(f) the API merge endpoint under a flagless xargs (stdin may add the method)" "$R_XARGS" "echo -X PUT | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
 allow "(f) a read under xargs, no merge endpoint" "echo 5 | xargs -n1 gh pr view" "$P" "$OTHER"
-deny "accepted cost: another command whose unquoted words hold gh pr merge reads as a merge" "$R_ID" "nice git log --grep gh pr merge" "$P" "$OTHER"
-deny "accepted cost: echo gh pr merge, unquoted, reads as a merge" "$R_ID" "echo gh pr merge" "$P" "$OTHER"
-deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE --squash" "$P" "$MID"
+deny "accepted cost: another command whose unquoted words hold gh pr merge" "$R_UNREAD" "nice git log --grep gh pr merge" "$P" "$OTHER"
+deny "accepted cost: echo gh pr merge, unquoted" "$R_UNREAD" "echo gh pr merge" "$P" "$OTHER"
+deny "accepted cost: a read of the merge endpoint behind a runner" "$R_UNREAD" "timeout 5 gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"
+allow "(g) behind a runner, a gh command that is no merge stays allowed" "timeout 5 gh pr view 5" "$P" "$OTHER"
 
-# Whatever runs gh — every gh word in the segment is read as a command, so no runner needs a list: an unlisted
-# session's squash behind one with flags, a run-time word, a path, zsh's `-`, or one whose own argument is `gh api`.
-for r in "nice -n 5" '$R' /usr/bin/nice - "sudo -u gh -g api" coproc "exec -a x" noglob '"$(command -v timeout)" 5' \
-         xargs gxargs "parallel -j2"; do
-  deny "(g) runner $r: read through" "$R_ID" "$r gh pr merge 5 --squash" "$P" "$OTHER"
-done
-deny "(d) manager: a merge under parallel (stdin or -a add words)" "not under xargs or parallel" "printf -- '--admin\\n' | parallel $MERGE" "$P" "$MID"
-deny "(d) manager: under gxargs" "not under xargs or parallel" "printf -- '--admin\\n' | gxargs $MERGE" "$P" "$MID"
 allow "(d) manager: an assignment naming xargs is no runner" "X=/opt/bin/xargs $MERGE" "$P" "$MID"
-deny "accepted cost: a word whose basename is parallel reads as parallel" "not under xargs or parallel" "flock /tmp/parallel $MERGE" "$P" "$MID"
-deny "(f) a read of the merge endpoint under xargs gets the xargs reason (stdin may add the method)" "not under xargs or parallel" "echo 1 | xargs -n1 gh api repos/o/r/pulls/5/merge" "$P" "$MID"
+deny "accepted cost: a word xargs a wrapper's flag consumes reads as xargs" "$R_XARGS" "env -C xargs $MERGE" "$P" "$MID"
+deny "(f) a read of the merge endpoint under a flagless xargs gets the xargs reason" "$R_XARGS" "echo 1 | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
 deny "(f) an API write under xargs keeps the API reason" "$R_API" "echo 1 | xargs gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$MID"
 allow "residual: env -S runs a command from one quoted argument (named in the header)" "env -S 'gh pr merge 5 --squash'" "$P" "$OTHER"
+
+deny "(f) env -u takes its value: the API write after it is read exactly" "$R_API" "env -u gh -u -XGET gh api repos/o/r/pulls/5/merge -f merge_method=squash" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
 deny "(h) a non-git cwd" "$R_GIT" "$MERGE" "$nd" "$MID"
