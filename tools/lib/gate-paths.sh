@@ -2,10 +2,11 @@
 # tools/lib/gate-paths.sh (dir #182, extended by dir #398/#399) — the ONE shared answer to three
 # questions: where does the /polish pre-PR gate's PROJECT-SCOPE settings.json live for a given repo
 # top (`gate_project_settings_path`); where does keel's own ephemeral state — this gate's
-# sentinel/trace/handoff/rollout rendezvous files, keel-check.sh's counters, pipeline-canary.sh's
+# sentinel/trace/handoff/rollout/manager rendezvous files, keel-check.sh's counters, pipeline-canary.sh's
 # sandbox record, and `/go`'s per-ticket handoff notes under `go-handoff/` (tools/go-handoff.sh, dir #401) —
 # live on this machine (`gate_state_root`, `gate_pre_pr_gate_root`,
-# `gate_sentinel_path_for_key`/`gate_prev_sentinel_path_for_key`/`gate_trace_path_for_key`); and how
+# `gate_sentinel_path_for_key`/`gate_prev_sentinel_path_for_key`/`gate_trace_path_for_key`/
+# `gate_manager_path_for_key`); and how
 # a caller makes one of those state directories exist, owner-only (`gate_ensure_owner_dir`).
 #
 # Before this file, the literal path family `<repo>/.claude/settings.json` was independently
@@ -135,6 +136,13 @@ gate_prev_sentinel_path_for_key() {
 gate_trace_path_for_key() {
   local root; root="$(gate_pre_pr_gate_root)" || return 1
   printf '%s/trace/%s' "$root" "$1"
+}
+# gate_manager_path_for_key — dir #811: the release-manager file, keyed per repo like the trace (the
+# skill-trace leg appends a `<session_id>\t<UTC time>` line when a session launches /manage-release; the
+# hook's merge rule reads it). Same failure contract as the three above.
+gate_manager_path_for_key() {
+  local root; root="$(gate_pre_pr_gate_root)" || return 1
+  printf '%s/manager/%s' "$root" "$1"
 }
 
 # gate_ensure_owner_dir DIR — mkdir -p DIR, then chmod it owner-only, both best-effort

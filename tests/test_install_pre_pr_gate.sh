@@ -56,7 +56,7 @@ check_contains "PostToolUse/UserPromptExpansion/SubagentStop hooks are skill-tra
 check_contains "PreToolUse matcher is Bash" "$sj" '"matcher": "Bash"'
 check_contains "SessionStart matcher is startup" "$sj" '"matcher": "startup"'
 check_contains "PostToolUse matcher is Skill" "$sj" '"matcher": "Skill"'
-check_contains "UserPromptExpansion matcher is code-review" "$sj" '"matcher": "code-review"'
+check_contains "UserPromptExpansion matcher is code-review|manage-release|keel-manage-release (dir #811)" "$sj" '"matcher": "code-review|manage-release|keel-manage-release"'
 check_contains "SubagentStop matcher is keel-polish-reviewer (dir #413 slice 2)" "$sj" '"matcher": "keel-polish-reviewer"'
 check_absent "A6(a): a fresh install wires no general-purpose matcher" "$sj" '"matcher": "general-purpose"'
 check_contains "PostToolUse matcher includes AskUserQuestion (dir #88)" "$sj" '"matcher": "AskUserQuestion"'
@@ -814,10 +814,12 @@ jq -n --arg gate "$gate" '
     SubagentStop:[{matcher:"keel-polish-reviewer",hooks:[c(" skill-trace")]}]}}' > "$s6_repo/.claude/settings.json"
 run "$installer" "$s6_repo"
 check_status "A2(c): a six-hook install, re-run -> exit 0" 0 "$STATUS"
-check_status "A2(c): the six read SAME" 6 "$(grep -c 'already wired (up to date)' <<<"$OUT" || true)"
-check_contains "A2(c): SubagentStart is the one that is added" "$OUT" "+    SubagentStart/ wired"
+# dir #811: the six-hook shape still carries the old `code-review` UserPromptExpansion matcher, so five read SAME and
+# that one is retired and re-wired under the widened matcher (A7(l) below covers it on its own).
+check_status "A2(c): five read SAME" 5 "$(grep -c 'already wired (up to date)' <<<"$OUT" || true)"
+check_contains "A2(c): SubagentStart is added" "$OUT" "+    SubagentStart/ wired"
 check_status "A2(c): 7 hook entries after" 7 "$(jq '[.hooks[][] | .hooks[]] | length' "$s6_repo/.claude/settings.json")"
-check_eq "A2(c): no backup was made" "0" "$(find "$s6_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+check_eq "A2(c): one backup was made (the retirement writes)" "1" "$(find "$s6_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
 
 # (d) --uninstall after (a) removes all seven and leaves no SubagentStart key behind.
 run "$installer" --uninstall "$s7_repo"
@@ -832,5 +834,75 @@ check_contains "A2(e): the no-jq snippet has the SubagentStart event" "$OUT" '"S
 check_contains "A2(e): ...wired to subagent-rails" "$OUT" "subagent-rails"
 run env PATH="$s7_farm" "$installer" --uninstall "$s6_repo"
 check_contains "A2(e): the no-jq uninstall hint names SubagentStart" "$OUT" "SubagentStart"
+
+# --- dir #811 A7(l): the UserPromptExpansion matcher widens to code-review|manage-release|keel-manage-release, and the
+# old `code-review` entry is RETIRED first (the merge keys on the exact matcher: without the retirement the widened
+# entry lands beside the old one and a typed /code-review fires the hook twice) ----------------------------------------
+UPE_NEW='code-review|manage-release|keel-manage-release'
+l_repo="$(new_repo)"; mkdir -p "$l_repo/.claude"
+jq -n --arg gate "$gate" '
+  def c($sub): {type:"command", command: ("bash " + ($gate|@sh) + $sub)};
+  {hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[c(" skill-trace")]}]}}' > "$l_repo/.claude/settings.json"
+l_sj="$l_repo/.claude/settings.json"
+run "$installer" "$l_repo"
+check_status "A7(l): install over the old code-review entry -> exit 0" 0 "$STATUS"
+check_status "A7(l): exactly ONE UserPromptExpansion entry after" 1 "$(jq '.hooks.UserPromptExpansion | length' "$l_sj")"
+check_eq "A7(l): ...its matcher is the widened one" "$UPE_NEW" "$(jq -r '.hooks.UserPromptExpansion[0].matcher' "$l_sj")"
+check_eq "A7(l): ...running skill-trace, once" "bash '$gate' skill-trace" "$(jq -r '[.hooks.UserPromptExpansion[].hooks[].command] | join(",")' "$l_sj")"
+check_contains "A7(l): the run names the retired slot" "$OUT" "UserPromptExpansion/code-review retired"
+check_contains "A7(l): ...and the backup's reason" "$OUT" "retiring the legacy UserPromptExpansion/code-review entry"
+run "$installer" "$l_repo"
+check_status "A7(l): a re-run reads all seven SAME" 7 "$(grep -c 'already wired (up to date)' <<<"$OUT" || true)"
+check_absent "A7(l): ...and retires nothing" "$OUT" "retired"
+check_status "A7(l): ...still ONE UserPromptExpansion entry" 1 "$(jq '.hooks.UserPromptExpansion | length' "$l_sj")"
+run "$installer" --uninstall "$l_repo"
+check_status "A7(l): --uninstall -> exit 0" 0 "$STATUS"
+check_contains "A7(l): --uninstall removes all seven" "$OUT" "7 of 7 hook(s) removed"
+check_status "A7(l): no UserPromptExpansion key is left" "false" "$(jq '.hooks | has("UserPromptExpansion")' "$l_sj")"
+# The retirement takes only OUR command: a foreign hook on the old slot stays, beside the new entry.
+l2_repo="$(new_repo)"; mkdir -p "$l2_repo/.claude"
+jq -n --arg gate "$gate" '
+  def c($sub): {type:"command", command: ("bash " + ($gate|@sh) + $sub)};
+  {hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[c(" skill-trace"),{type:"command",command:"echo mine"}]}]}}' > "$l2_repo/.claude/settings.json"
+run "$installer" "$l2_repo"
+check_status "A7(l): over a shared old entry -> exit 0" 0 "$STATUS"
+check_eq "A7(l): ...the foreign command stays on the old matcher" "echo mine" \
+  "$(jq -r '[.hooks.UserPromptExpansion[] | select(.matcher == "code-review") | .hooks[].command] | join(",")' "$l2_repo/.claude/settings.json")"
+check_eq "A7(l): ...and ours sits only on the widened one" "bash '$gate' skill-trace" \
+  "$(jq -r --arg m "$UPE_NEW" '[.hooks.UserPromptExpansion[] | select(.matcher == $m) | .hooks[].command] | join(",")' "$l2_repo/.claude/settings.json")"
+# A moved checkout: the old entry runs our command at ANOTHER path. It is STALE for its slot — refused without --force
+# (nothing written), and --force points it here so the retirement takes it out: one entry, never two.
+l4_repo="$(new_repo)"; mkdir -p "$l4_repo/.claude"
+jq -n '{hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[{type:"command",command:"bash '"'"'/old/keel/tools/pre-pr-gate.sh'"'"' skill-trace"}]}]}}' > "$l4_repo/.claude/settings.json"
+l4_before="$(cat "$l4_repo/.claude/settings.json")"
+run "$installer" "$l4_repo"
+check_status "A7(l): a moved checkout's old entry -> exit 3 (refused without --force)" 3 "$STATUS"
+check_contains "A7(l): ...naming the retired slot" "$OUT" "UserPromptExpansion/code-review"
+check_eq "A7(l): ...and settings.json untouched" "$l4_before" "$(cat "$l4_repo/.claude/settings.json")"
+run "$installer" --force "$l4_repo"
+check_status "A7(l): --force -> exit 0" 0 "$STATUS"
+check_status "A7(l): ...exactly ONE UserPromptExpansion entry" 1 "$(jq '.hooks.UserPromptExpansion | length' "$l4_repo/.claude/settings.json")"
+check_eq "A7(l): ...the widened matcher, this checkout's gate, once" "$UPE_NEW bash '$gate' skill-trace" \
+  "$(jq -r '.hooks.UserPromptExpansion[0] | .matcher + " " + ([.hooks[].command] | join(","))' "$l4_repo/.claude/settings.json")"
+check_absent "A7(l): ...no old path left" "$(cat "$l4_repo/.claude/settings.json")" "/old/keel"
+# The old entry holding BOTH this checkout's command and an old-path one: still STALE (it is looked for after the exact
+# retirement), and --force leaves one entry.
+l5_repo="$(new_repo)"; mkdir -p "$l5_repo/.claude"
+jq -n --arg gate "$gate" '{hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[{type:"command",command:("bash " + ($gate|@sh) + " skill-trace")},{type:"command",command:"bash '"'"'/old/keel/tools/pre-pr-gate.sh'"'"' skill-trace"}]}]}}' > "$l5_repo/.claude/settings.json"
+run "$installer" "$l5_repo"
+check_status "A7(l): an old entry holding both paths -> exit 3 (refused without --force)" 3 "$STATUS"
+run "$installer" --force "$l5_repo"
+check_status "A7(l): ...--force -> exit 0" 0 "$STATUS"
+check_eq "A7(l): ...one entry, the widened matcher, this checkout's gate once" "1 $UPE_NEW bash '$gate' skill-trace" \
+  "$(jq -r '.hooks.UserPromptExpansion | "\(length) " + .[0].matcher + " " + ([.[0].hooks[].command] | join(","))' "$l5_repo/.claude/settings.json")"
+# An uninstall over the OLD entry alone (an adopter who never re-ran the installer) removes it too.
+l3_repo="$(new_repo)"; mkdir -p "$l3_repo/.claude"
+jq -n --arg gate "$gate" '
+  def c($sub): {type:"command", command: ("bash " + ($gate|@sh) + $sub)};
+  {hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[c(" skill-trace")]}]}}' > "$l3_repo/.claude/settings.json"
+run "$installer" --uninstall "$l3_repo"
+check_status "A7(l): --uninstall over the old entry alone -> exit 0" 0 "$STATUS"
+check_contains "A7(l): ...names it removed" "$OUT" "UserPromptExpansion/code-review removed"
+check_status "A7(l): ...and leaves no UserPromptExpansion key" "false" "$(jq '.hooks | has("UserPromptExpansion")' "$l3_repo/.claude/settings.json")"
 
 summary

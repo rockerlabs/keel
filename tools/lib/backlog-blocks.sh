@@ -24,7 +24,7 @@
 #   dir #839) with internal newlines flattened to spaces so
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
-#   first), the same span rule doctor.sh check 5 uses (its heading-block rule is a separate copy). closed=1 iff the heading block
+#   first), the same span rule doctor.sh check 5 uses. closed=1 iff the heading block
 #   carries its OWN closure tag — `(✅|❌) (DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|
 #   BUILT)`, an em-dash before it optional (dir #432's widened, honestly-enumerated vocabulary —
 #   see the function body's own header comment for the shapes measured live and the ones

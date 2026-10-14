@@ -135,4 +135,21 @@ pin "groom.md G5 carries the estimate-weights rule" "$cmd" \
   'names its weights' \
   "expected the command's G5 to point at the doc's weighting rule (dir #760)"
 
+# --- dir #823 items 3 and 5: the vendor round's order, vendor claims verified, self-referential counts -------------
+pin "G3 re-measures a self-referential count after the groom's last edit" "$doc" \
+  '**A count over a file the groom is itself editing is stale the moment the groom writes about it (dir #823).**' \
+  "expected G3 to carry the re-measure-after-the-last-edit rule and its counting-rule clause (dir #823 item 5)"
+pin "G3 states the counting rule beside the figure" "$doc" \
+  'and state the counting rule beside the figure' \
+  "expected G3 to require the counting rule next to the figure (dir #823 item 5)"
+pin "G6 runs the vendor round AFTER the same-family round's fixes" "$doc" \
+  "**Run it AFTER the same-family round's fixes are applied, never beside it (dir #823).**" \
+  "expected G6 to order the vendor round after the same-family round (dir #823 item 3)"
+pin "G6 verifies a vendor's severities and tool claims" "$doc" \
+  '**Verify what a vendor says as you' \
+  "expected G6 to require verifying vendor severities and claims about tools (dir #823 item 3)"
+pin "G6 has the reviewer diff each decision against its table row" "$doc" \
+  'diff every decision against the' \
+  "expected G6 to carry the prose-versus-table check (dir #823 item 3)"
+
 summary
