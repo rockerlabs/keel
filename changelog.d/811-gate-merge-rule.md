@@ -7,9 +7,8 @@
   is a merge the hook cannot place — gh not the command word (`timeout 60 gh pr merge …`, `sudo -u x gh
   …`), or a flag before the subcommand that may take a word as its value (`gh pr --admin merge`) — denied
   with "this merge cannot be read", as is a gh command holding unquoted `pr … merge` words that are not
-  its subcommands, or an API call holding a merge-endpoint path it does not call: run gh as the command
-  word, its subcommands right after it, quote a word `merge` that is text, and keep a merge-endpoint path
-  out of a call that is not a merge. The
+  its subcommands: run gh as the command word, its subcommands right after it, and quote a word `merge`
+  (or a second `gh`) that is text. The
   manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the
