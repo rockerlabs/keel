@@ -60,14 +60,13 @@ census_accepts_decay() {
   [ "$rc" = 0 ]
 }
 
-wired() { if "$@"; then return 0; else return 1; fi; }
 assert_wired() {
   local label="$1"; shift
-  if wired "$@"; then pass "$label"; else fail "$label" "not wired: $* — the reader, or a consumer that names it, is missing or misplaced"; fi
+  if "$@"; then pass "$label"; else fail "$label" "not wired: $* — the reader, or a consumer that names it, is missing or misplaced"; fi
 }
 assert_unwired() {
   local label="$1"; shift
-  if wired "$@"; then fail "$label" "predicate still passes on the broken sample: $*"; else pass "$label"; fi
+  if "$@"; then fail "$label" "predicate still passes on the broken sample: $*"; else pass "$label"; fi
 }
 
 check_file "docs/verification-economics.md exists" "$ve"
