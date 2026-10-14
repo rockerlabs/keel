@@ -264,7 +264,17 @@ body
 "
 fc="$(mk_backlog "$cite_backlog")"
 run "$bc" --ticket-token 'B\.[0-9]+' "$fc"
-check_status "MUTATION-PROOF: token mode strips the cited arrow and skips the closed B.6 (exactly one pool line)" "$(printf '1\tpool')" "$OUT"
+check_contains "MUTATION-PROOF: token mode strips the cited arrow (B.5 stays under pool)" "$OUT" $'1\tpool'
+check_absent "token mode: the closed B.6 and the cited arrow never reach 0.9.0" "$OUT" "0.9.0"
+# The named limit, pinned so the prose cannot drift from the code: an adopter's OWN citation form is not
+# stripped, so its arrow is read as the heading's tag. This assertion flips when the strip learns the token.
+own_cite="### B.7 — open, supersedes B.3 → 0.9.0 — R2 — → pool
+
+body
+"
+fo="$(mk_backlog "$own_cite")"
+run "$bc" --ticket-token 'B\.[0-9]+' --list 0.9.0 "$fo"
+check_status "accepted limit: an adopter's own 'supersedes B.3' arrow is not stripped (B.7 lands under 0.9.0 — wrong)" "B.7" "$OUT"
 run "$bc" --ticket-token 'KB\.[0-9]+|RL\.[0-9]+' --list next "$fk"
 check_status "an alternation names two tokens, both captured" "$(printf 'KB.7\nRL.4')" "$OUT"
 run "$bc" --ticket-token 'dir #[0-9]+|[0-9]+\.' --list next "$fk"
