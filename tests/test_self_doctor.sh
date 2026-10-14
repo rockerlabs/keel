@@ -2380,38 +2380,32 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 
 # A43 — a git that fails only one subcommand. The shim execs the real git for everything else.
-mk_git_shim() {   # mk_git_shim DIR CASE-PATTERN — a `git` that refuses any call whose argument string matches
-  mkdir -p "$1"
+run_shimmed() {   # run_shimmed NAME CASE-PATTERN — a fresh clean sandbox audited with a `git` refusing matching calls
+  mkdir -p "$SANDBOX/shim-$1"
   printf '#!/bin/sh\ncase " $* " in %s) echo "fatal: shim refuses this call" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' \
-    "$2" "$(type -P git)" > "$1/git"
-  chmod +x "$1/git"
+    "$2" "$(type -P git)" > "$SANDBOX/shim-$1/git"
+  chmod +x "$SANDBOX/shim-$1/git"
+  d="$(mk_clean_repo)"
+  run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-$1:$PATH" "$sd" "$d"
 }
-d="$(mk_clean_repo)"
-mk_git_shim "$SANDBOX/shim-log" '*" log -1 "*'
-run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-log:$PATH" "$sd" "$d"
+run_shimmed log '*" log -1 "*'
 check_status "A43: a git that fails only 'log -1' -> exit 1" 1 "$STATUS"
 check_contains "A43: the staleness check names what it could not read" "$OUT" "could not read the CHANGELOG commit time (git exit 128) — the CHANGELOG staleness check is INCOMPLETE"
 check_absent "A43: no OK line over a log it could not read" "$OUT" "OK   CHANGELOG.md is at least as recent"
 check_contains "A43: git's own stderr line rides under the GAP" "$OUT" "       fatal: shim refuses this call"
 
-d="$(mk_clean_repo)"
-mk_git_shim "$SANDBOX/shim-tag" '*" tag -l "*'
-run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-tag:$PATH" "$sd" "$d"
+run_shimmed tag '*" tag -l "*'
 check_status "A43: a git that fails only 'tag -l' -> exit 1" 1 "$STATUS"
 check_contains "A43: check 6 names the tags it could not read" "$OUT" "could not read the release tags (git exit 128) — the CHANGELOG <-> release-tag check is INCOMPLETE"
 check_contains "A43: check 7 names them too" "$OUT" "could not read the release tags (git exit 128) — the commit-ticket check is INCOMPLETE"
 check_absent "A43: no 'skipping' OK over a failed tag listing" "$OUT" "skipping tag reconciliation"
 
-d="$(mk_clean_repo)"
-mk_git_shim "$SANDBOX/shim-shallow" '*" rev-parse --is-shallow-repository "*'
-run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-shallow:$PATH" "$sd" "$d"
+run_shimmed shallow '*" rev-parse --is-shallow-repository "*'
 check_status "A43: a git that cannot answer 'is it shallow' -> exit 1" 1 "$STATUS"
 check_contains "A43: it is a GAP, not a silent skip" "$OUT" "could not read whether the checkout is shallow (git exit 128)"
 check_absent "A43: no 'skipping' OK stands in for the unanswered question" "$OUT" "skipping commit-ticket reconciliation"
 
-d="$(mk_clean_repo)"
-mk_git_shim "$SANDBOX/shim-grep" '*" grep -lE "*'
-run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-grep:$PATH" "$sd" "$d"
+run_shimmed grep '*" grep -lE "*'
 check_status "A43: a git whose 'grep' fails -> exit 1" 1 "$STATUS"
 check_contains "A43: check 9 names the search" "$OUT" "could not search the tracked scripts for artifact_cksum() (git grep exit 128)"
 check_contains "A43: check 10 names its searches" "$OUT" "could not search the tracked scripts for manifest_field() (git grep exit 128)"

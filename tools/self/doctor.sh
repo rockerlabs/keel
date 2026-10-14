@@ -1165,10 +1165,9 @@ _pending_release_intro_commit() {
   heading_re="^$(printf '%s' "$heading" | sed 's/[][\.*^$/]/\\&/g')"
   # dir #213 closed this via SHAPE (no bare `$( )` assignment whose failing status aborts the run); dir #766
   # replaced its trailing `|| true` with the checked status below.
-  # dir #766: the pickaxe is spooled with its status kept (a `< <(…|| true)` here printed a clean "bound not
-  # computed" over a git that could not run). Status 2 = could not walk the history; the caller GAPs (this
-  # function runs inside `$( )`, where a gap() call would be lost with the subshell). Status 0 with empty
-  # output stays the designed "heading never appears in tracked history" fail-open.
+  # dir #766: the pickaxe is spooled with its status kept. Status 2 = could not walk the history; the caller
+  # GAPs (this runs inside `$( )`, where a gap() would be lost with the subshell). Status 0 with empty output
+  # stays the designed "heading never appears in tracked history" fail-open.
   intro_shas=""
   intro_rc=0
   intro_shas="$(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null)" || intro_rc=$?
@@ -1182,10 +1181,9 @@ _pending_release_intro_commit() {
     # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
     # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
     # live writer process on the other end) tests presence with nothing left to signal.
-    # dir #766: `git show` runs with its status kept. The file exists at $sha by construction (the pickaxe above
-    # listed this commit for it), so a failing show there is a real failure (status 2, the caller GAPs). At
-    # `$sha^` the file may genuinely not exist (this commit added it, or it is a root commit): `cat-file -e` asks
-    # that question explicitly, and only a PRESENT blob whose show fails is a failure.
+    # dir #766: `git show` keeps its status. The file exists at $sha (the pickaxe listed this commit for it), so a
+    # failing show there is a real failure (status 2); at `$sha^` it may not exist (this commit added it, or it
+    # is a root commit), which `cat-file -e` asks explicitly — only a PRESENT blob whose show fails is a failure.
     now_raw="$(git -C "$repo_root" show "$sha:$rel")" || return 2
     before_raw=""
     if git -C "$repo_root" cat-file -e "$sha^:$rel" 2>/dev/null; then
