@@ -25,7 +25,7 @@ eval "$(awk '/^PATTERNS=\(/{f=1} f{print} f&&/^\)/{exit}' "$scan")"
 check_ne "P0: the class-1 pattern list was read" 0 "${#PATTERNS[@]}"
 for p in "${PATTERNS[@]}"; do
   case "$p" in
-    *'^'*|*'$'*|*'\\'*) fail "P1: the class-1 pattern '$p' is unanchored" "it holds ^, \$ or a backslash (an anchor or a word boundary) — the run view must be scanned for class 1 again" ;;
+    *'^'*|*'$'*|*'\'*) fail "P1: the class-1 pattern '$p' is unanchored" "it holds ^, \$ or a backslash (an anchor or a word boundary) — the run view must be scanned for class 1 again" ;;
     *) pass "P1: the class-1 pattern '$p' is unanchored" ;;
   esac
   case "$(printf '%s' "$p" | LC_ALL=C tr -d ' -~')" in
