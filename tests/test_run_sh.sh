@@ -159,37 +159,76 @@ check_status "KEEL_TEST_JOBS=1 under CI=true still runs -> exit 0" 0 "$STATUS"
 check_contains "KEEL_TEST_JOBS=1 under CI=true still passes all fixtures" "$OUT" "ALL TEST FILES PASSED"
 check_eq "KEEL_TEST_JOBS=1 under CI=true runs one at a time, not capped at 2 (peak count)" "1" "$(max_peak "$d")"
 
+# gone_pid PID — 0 once PID no longer exists (bounded by KEEL_TEST_HANG_BOUND, in 1 s steps); a survivor is killed
+# so a red run leaves nothing behind.
+gone_pid() {
+  local p="$1" w=0
+  case "$p" in ''|0|*[!0-9]*) return 1 ;; esac   # never signal pid 0 (the caller's own group): not a recorded pid, so not gone
+  while kill -0 "$p" 2>/dev/null && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
+  if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; return 1; fi
+  return 0
+}
+# bg_fixture DIR NAME [PRELUDE] — a test file that starts a background `sleep 300`, records its pid in DIR/bgpid.NAME,
+# touches DIR/up.NAME, then hangs. PRELUDE (e.g. `trap "" TERM`) is the file's first line.
+bg_fixture() {
+  printf '#!/usr/bin/env bash\n%s\nsleep 300 &\necho $! > "$(dirname "$0")/bgpid.%s"\n: > "$(dirname "$0")/up.%s"\nwait\n' "${3:-:}" "$2" "$2" > "$1/test_$2.sh"
+}
+# wait_up DIR NAME… — until every DIR/up.NAME exists (bounded)
+wait_up() {
+  local d="$1" n w=0; shift
+  for n in "$@"; do
+    while [ ! -e "$d/up.$n" ] && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
+  done
+}
+bgpid_of() { cat "$1/bgpid.$2" 2>/dev/null || true; }
+# wait_run PID — wait for the background run.sh PID to exit, bounded by KEEL_TEST_HANG_BOUND in 1 s steps: an EVENT
+# (it exited, or it did not within the suite's own hang bound), never a wall-clock assertion on how long it took
+# (dir #592 — a loaded machine stretches that). Sets RUN_STATUS (a runner that never exited is KILLed: status 137).
+wait_run() {
+  local p="$1" w=0
+  while kill -0 "$p" 2>/dev/null && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
+  if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; fi
+  wait "$p"; RUN_STATUS=$?
+}
 # --- SIGTERM mid-run: exits 130, kills the still-running children, and — unlike a naive kill-and-
 # exit — still surfaces each interrupted fixture's own buffered output (dir #130). dir #744 B12(b): the
 # fixtures write a marker once they are up (run.sh buffers their stdout until reap, so polling the output
-# could never succeed before the kill — E9), and only kill→exit is timed: never anything from runner start.
+# could never succeed before the kill — E9), and kill→exit is an event, not a timing (dir #592): never anything from runner start.
+# sigterm_case LABEL RUN_SH_DIR — one SIGTERM mid-run scenario against the run.sh in RUN_SH_DIR (dir #592: the
+# kill→exit time is wall-clock, which a loaded machine stretches, so the check is an event — run.sh exits within the
+# suite's hang bound and the sleeps are gone — and the second case runs a runner whose exit is made slow on purpose,
+# so that stretch is reproduced rather than waited for).
+sigterm_case() {
+  local label="$1" d="$2" rpid int_out int_out_text n
+  printf '#!/usr/bin/env bash\necho hello-from-int-a\necho $$ > "$(dirname "$0")/pid-a"\n: > "$(dirname "$0")/up.a"\nexec sleep 300\n' > "$d/test_a.sh"
+  printf '#!/usr/bin/env bash\necho hello-from-int-b\necho $$ > "$(dirname "$0")/pid-b"\n: > "$(dirname "$0")/up.b"\nexec sleep 300\n' > "$d/test_b.sh"
+  int_out="$(mktemp "$SANDBOX/int-out.XXXXXX")"
+  env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
+  rpid=$!
+  wait_up "$d" a b
+  check_file "$label -> fixture a was up before the kill" "$d/up.a"
+  check_file "$label -> fixture b was up before the kill" "$d/up.b"
+  kill -TERM "$rpid"
+  wait_run "$rpid"
+  int_out_text="$(cat "$int_out")"
+  check_status "$label -> exit 130 (it exited within the hang bound)" 130 "$RUN_STATUS"
+  check_contains "$label -> test_a's output survives the kill" "$int_out_text" "hello-from-int-a"
+  check_contains "$label -> test_b's output survives the kill" "$int_out_text" "hello-from-int-b"
+  check_contains "$label -> names test_a as interrupted" "$int_out_text" "=== test_a.sh (interrupted) ==="
+  check_contains "$label -> names test_b as interrupted" "$int_out_text" "=== test_b.sh (interrupted) ==="
+  # killed, not waited out: the 300 s sleeps are gone now (a runner that waited them out would not have returned)
+  for n in a b; do
+    gone_pid "$(cat "$d/pid-$n" 2>/dev/null || echo 0)"; check_status "$label -> the 300 s sleep of test_$n was killed" 0 "$?"
+  done
+  rm -f "$int_out"
+}
 d="$(mkfakedir)"
-printf '#!/usr/bin/env bash\necho hello-from-int-a\n: > "$(dirname "$0")/up-a"\nexec sleep 30\n' > "$d/test_a.sh"
-printf '#!/usr/bin/env bash\necho hello-from-int-b\n: > "$(dirname "$0")/up-b"\nexec sleep 30\n' > "$d/test_b.sh"
-int_out="$(mktemp "$SANDBOX/int-out.XXXXXX")"
-env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
-rpid=$!
-w=0
-while { [ ! -e "$d/up-a" ] || [ ! -e "$d/up-b" ]; } && [ "$w" -lt 200 ]; do sleep 0.1; w=$((w + 1)); done
-check_file "SIGTERM mid-run -> fixture a was up before the kill" "$d/up-a"
-check_file "SIGTERM mid-run -> fixture b was up before the kill" "$d/up-b"
-t0=$(date +%s)
-kill -TERM "$rpid"
-wait "$rpid"
-int_status=$?
-t1=$(date +%s)
-int_out_text="$(cat "$int_out")"
-check_status "SIGTERM mid-run -> exit 130" 130 "$int_status"
-check_contains "SIGTERM mid-run -> test_a's output survives the kill" "$int_out_text" "hello-from-int-a"
-check_contains "SIGTERM mid-run -> test_b's output survives the kill" "$int_out_text" "hello-from-int-b"
-check_contains "SIGTERM mid-run -> names test_a as interrupted" "$int_out_text" "=== test_a.sh (interrupted) ==="
-check_contains "SIGTERM mid-run -> names test_b as interrupted" "$int_out_text" "=== test_b.sh (interrupted) ==="
-if [ "$((t1 - t0))" -le 10 ]; then
-  pass "SIGTERM mid-run -> kill to exit within 10s, the 30s sleeps were killed, not waited out ($((t1 - t0))s)"
-else
-  fail "SIGTERM mid-run -> kill to exit within 10s" "took $((t1 - t0))s from the kill"
-fi
-rm -f "$int_out"
+sigterm_case "SIGTERM mid-run" "$d"
+d="$(mkfakedir)"
+replace_in_line_containing "$d/run.sh" "    exit 130" "exit 130" "sleep 12; exit 130"
+pin "mutation copy: on_interrupt's exit now takes 12 s" "$d/run.sh" "sleep 12; exit 130" "expected the scratch run.sh's on_interrupt to sleep before exiting"
+check_eq "mutation copy: that is run.sh's only 'exit 130' (the stretch sits on the one path SIGTERM takes)" "1" "$(grep -c 'exit 130' "$d/run.sh")"
+sigterm_case "SIGTERM mid-run on a runner stretched by load (12 s exit)" "$d"
 
 # --- dir #744 B10 (A10): the per-file watchdog -----------------------------------------------------
 # A hanging file is TERMed past KEEL_TEST_FILE_TIMEOUT, reported with its pre-hang output, counted once.
@@ -250,27 +289,6 @@ check_nofile "watchdog: ...cut short (its finished marker is absent)" "$d/finish
 # holder, a `head`. Each file now runs in its own group (`set -m` around the launch — the mechanism
 # tools/self/mutation-sweep.sh shares, dir #782) and the watchdog, on_interrupt and the reap signal the group.
 # Fixtures record the pid of a BACKGROUND `sleep 300` they start; the proof is that pid gone once run.sh is back.
-# gone_pid PID — 0 once PID no longer exists (bounded by KEEL_TEST_HANG_BOUND, in 1 s steps); a survivor is killed
-# so a red run leaves nothing behind.
-gone_pid() {
-  local p="$1" w=0
-  while kill -0 "$p" 2>/dev/null && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
-  if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; return 1; fi
-  return 0
-}
-# bg_fixture DIR NAME [PRELUDE] — a test file that starts a background `sleep 300`, records its pid in DIR/bgpid.NAME,
-# touches DIR/up.NAME, then hangs. PRELUDE (e.g. `trap "" TERM`) is the file's first line.
-bg_fixture() {
-  printf '#!/usr/bin/env bash\n%s\nsleep 300 &\necho $! > "$(dirname "$0")/bgpid.%s"\n: > "$(dirname "$0")/up.%s"\nwait\n' "${3:-:}" "$2" "$2" > "$1/test_$2.sh"
-}
-# wait_up DIR NAME… — until every DIR/up.NAME exists (bounded)
-wait_up() {
-  local d="$1" n w=0; shift
-  for n in "$@"; do
-    while [ ! -e "$d/up.$n" ] && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
-  done
-}
-bgpid_of() { cat "$1/bgpid.$2" 2>/dev/null || true; }
 
 d="$(mkfakedir)"
 bg_fixture "$d" hang
@@ -308,7 +326,7 @@ for sig in TERM INT; do
   set +m
   wait_up "$d" a b
   kill -"$sig" "$rpid"
-  wait "$rpid"; int_status=$?
+  wait_run "$rpid"; int_status=$RUN_STATUS
   check_status "770-A3 $sig mid-run -> exit 130" 130 "$int_status"
   check_contains "770-A3 $sig mid-run -> test_a still reads as interrupted" "$(cat "$int_out")" "=== test_a.sh (interrupted) ==="
   for n in a b; do
@@ -325,15 +343,11 @@ int_out="$(mktemp "$SANDBOX/int770-out.XXXXXX")"
 env KEEL_TEST_JOBS=1 bash "$d/run.sh" >"$int_out" 2>&1 &
 rpid=$!
 wait_up "$d" stubborn
-t0=$(date +%s)
 kill -TERM "$rpid"
 sleep 1; kill -TERM "$rpid" 2>/dev/null   # a second signal inside the grace must not re-enter the handler
-wait "$rpid"; int_status=$?
-t1=$(date +%s)
-check_status "770-A4 interrupt of a TERM-ignoring file -> exit 130" 130 "$int_status"
+wait_run "$rpid"
+check_status "770-A4 interrupt of a TERM-ignoring file -> exit 130 (within the hang bound)" 130 "$RUN_STATUS"
 check_eq "770-A4 …a second signal during the grace reprints nothing (one interrupted header)" "1" "$(grep -c '=== test_stubborn.sh (interrupted) ===' "$int_out")"
-if [ "$((t1 - t0))" -le 15 ]; then pass "770-A4 …within 15 s of the signal ($((t1 - t0))s: the grace, then the KILL)"
-else fail "770-A4 …within 15 s of the signal" "took $((t1 - t0))s"; fi
 bgp="$(bgpid_of "$d" stubborn)"
 gone_pid "${bgp:-0}"; check_status "770-A4 …and its TERM-ignoring child is gone (on_interrupt KILLed the group)" 0 "$?"
 rm -f "$int_out"
