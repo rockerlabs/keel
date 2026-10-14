@@ -242,6 +242,16 @@ run_in "$procrepo" bash "$TOOL" --days 7
 check_contains "a process in a prefix-sharing sibling directory does not FLAG the worktree" "$(line_for claude/wt-near)" "AUTO"
 stop_cwd_proc
 
+# a worktree that is BOTH recently touched and occupied reports the process (the cheap check runs first)
+git -C "$procrepo" branch claude/wt-both "$c1pr"
+git -C "$procrepo" worktree add -q "$procrepo.wt-both" claude/wt-both >/dev/null   # fresh files: inside --live-hours
+start_cwd_proc "$procrepo.wt-both" "$SANDBOX/proc4.ready"
+run_in "$procrepo" bash "$TOOL" --days 7 --live-hours 6
+check_contains "touched AND occupied: FLAG" "$(line_for claude/wt-both)" "FLAG"
+check_contains "touched AND occupied: the reason is the process" "$(line_for claude/wt-both)" "running process"
+check_absent   "touched AND occupied: not the mtime reason" "$(line_for claude/wt-both)" "recently active"
+stop_cwd_proc
+
 # once the process is gone the worktree is graded as before
 run_in "$procrepo" bash "$TOOL" --days 7
 check_contains "process gone: back to AUTO" "$(line_for claude/wt-proc)" "AUTO"

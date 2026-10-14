@@ -220,7 +220,7 @@ worktree_live() {
 # a dead, merged leftover (a branch with no commits of its own is trivially "merged"). What such a session
 # DOES have is a process whose cwd is the worktree. POSITIVE-ONLY: a process seen means alive; none seen
 # (no /proc and no lsof, or another user's process we cannot read) means no signal, never "dead". All cwds
-# are listed once, lazily (only a worktree that survives the cheaper checks pays), and compared by physical
+# are listed once, lazily (the first non-dirty worktree pays; it runs before the mtime walk), and compared by physical
 # path with a trailing-slash boundary so `wt-a` never matches `wt-a-sibling`.
 proc_cwds=""; proc_cwds_built=0
 _proc_cwds_build() {
@@ -350,7 +350,7 @@ done < <(printf '%s' "$askwt")
 while IFS=$'\t' read -r b path reason; do
   [ -n "$b" ] || continue
   if [ "$reason" = proc ]; then
-    printf 'FLAG  %-40s worktree %s has a running process whose cwd is inside it — possibly a live session working elsewhere; find it with lsof +d, then leave it or close it\n' "$b" "$path"
+    printf 'FLAG  %-40s worktree %s has a running process whose cwd is inside it — possibly a live session working elsewhere; list cwds with `lsof -d cwd` and look for this path, then leave it or close it\n' "$b" "$path"
   elif [ "$reason" = live ]; then
     printf 'FLAG  %-40s worktree %s merged but recently active — possibly a live parallel session; leave it, re-run cleanup later\n' "$b" "$path"
   else
