@@ -36,13 +36,17 @@
 #   session-cost.sh tail [--json] FILE...            dir #670: the per-PR tail of each session file — one row per
 #                                                     /polish window (B9), plus one row per subagent inside it and
 #                                                     the window's review cost (B10)
+#   session-cost.sh manifest [--repo DIR] LEDGER     dir #654: a release ledger (TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH)
+#                                                     -> the `table` manifest, session files found by exact gitBranch;
+#                                                     an unmatched branch prints as `# UNMATCHED:` (a session shared by two branches as `# SHARED:`) and exits 1
+#   session-cost.sh weighted [--weights I,W,R] MANIFEST
+#                                                     each ticket summed at the estimate's weights (as `keel tokens`)
 #
 # Manifest format (one ticket per line, tab-separated, '#'-prefixed comment lines and blank lines
 # skipped): TICKET<TAB>TIER<TAB>MODEL<TAB>FILE1[,FILE2,...]
 #   dir#298	R1	sonnet	/Users/x/.claude/projects/.../3a0efd0c....jsonl
-# A ticket's FILEs are its own session transcripts (comma-joined, no spaces) — resolve them with
-# tools/lib/transcript-usage.sh's tu_session_files against gitBranch, or by hand the way dir #313's own
-# body did before gitBranch attribution was found (see that ticket's "Session-file mapping" table).
+# A ticket's FILEs are its own session transcripts (comma-joined, no spaces) — `manifest` (above) writes the
+# manifest from a ledger of branches (dir #654); tu_files_for_branches (one scan for all branches) is the lookup it uses.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -61,6 +65,8 @@ Usage:
   session-cost.sh ticket TIER MODEL FILE...
   session-cost.sh table MANIFEST
   session-cost.sh tail [--json] FILE...
+  session-cost.sh manifest [--repo DIR] LEDGER     LEDGER lines: TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH (dir #654)
+  session-cost.sh weighted [--weights I,W,R] MANIFEST
   session-cost.sh -h | --help
 EOF
 }
@@ -90,6 +96,7 @@ _sc_ticket_cost() {
   result="$(jq -c -s --arg tier "$tier" --arg model "$model" --arg ticket "$ticket" --argjson nfiles "$#" '
     def sum_kind($xs): {
       turns: ([$xs[].turns] | add // 0),
+      input_tokens: ([$xs[].input_tokens] | add // 0),
       cache_read_input_tokens: ([$xs[].cache_read_input_tokens] | add // 0),
       cache_creation_input_tokens: ([$xs[].cache_creation_input_tokens] | add // 0),
       output_tokens: ([$xs[].output_tokens] | add // 0),
@@ -182,15 +189,11 @@ cmd_ticket() {
   _sc_ticket_cost "$tier" "$model" "" "$@"
 }
 
-# cmd_table MANIFEST — the cross-ticket view: one row per ticket (from _sc_ticket_cost), then one row
-# per (tier, model) cell with the MEDIAN cost_tokens across its tickets (SPEC §1: median, not mean — n
-# is small and a single long session must not dominate a cell).
-cmd_table() {
-  local manifest="${1:-}"
-  [ -n "$manifest" ] || { printf 'session-cost.sh: table needs a MANIFEST file\n' >&2; exit 2; }
-  [ -f "$manifest" ] || { printf 'session-cost.sh: no such manifest: %s\n' "$manifest" >&2; exit 2; }
-
-  local tmp; tmp="$(mktemp)" || exit 1
+# _sc_manifest_rows MANIFEST TMP — read a table manifest (see the header) into TMP, one _sc_ticket_cost JSON row
+# per ticket; shared by `table` and `weighted` (dir #654). Exits 2 on a malformed line or no rows, 1 on an unreadable
+# session file, removing TMP first.
+_sc_manifest_rows() {
+  local manifest="$1" tmp="$2"
   # dir #313 review: every error path below cleans up "$tmp" explicitly before exiting, rather than a
   # `trap ... EXIT` — tried and reverted (see _sc_ticket_cost's own comment, tools/self/session-cost.sh,
   # and tu_session_totals', tools/lib/transcript-usage.sh): bash RETURN traps proved to be a single
@@ -226,6 +229,19 @@ cmd_table() {
     printf 'session-cost.sh: manifest carried no ticket rows: %s\n' "$manifest" >&2
     rm -f "$tmp"; exit 2
   fi
+}
+
+
+# cmd_table MANIFEST — the cross-ticket view: one row per ticket (from _sc_ticket_cost), then one row
+# per (tier, model) cell with the MEDIAN cost_tokens across its tickets (SPEC §1: median, not mean — n
+# is small and a single long session must not dominate a cell).
+cmd_table() {
+  local manifest="${1:-}"
+  [ -n "$manifest" ] || { printf 'session-cost.sh: table needs a MANIFEST file\n' >&2; exit 2; }
+  [ -f "$manifest" ] || { printf 'session-cost.sh: no such manifest: %s\n' "$manifest" >&2; exit 2; }
+
+  local tmp; tmp="$(mktemp)" || exit 1
+  _sc_manifest_rows "$manifest" "$tmp"
 
   # dir #313 review: one format string per table, used for both its header and its data rows, so the
   # two can never silently drift out of column alignment the way two hand-typed copies could.
@@ -458,6 +474,156 @@ cmd_tail() {
   [ "$ok" -eq 0 ] || exit 1
 }
 
+# --- manifest / weighted (dir #654) -------------------------------------------------------------------
+# A release ledger names each worker's branch, not its session files; R7's close needs the files. `manifest`
+# is that lookup (tu_files_for_branches, an exact `gitBranch` match), `weighted` the sum at the estimate's
+# weights — the same vector `keel tokens` uses (tools/token-report.sh; docs/token-economy.md).
+
+# _sc_weights SPEC — set _SC_W_INPUT/_SC_W_WRITE/_SC_W_READ from "input,write,read" (numbers); return 1 when
+# malformed. Mirrors tools/token-report.sh's KEEL_TOKENS_WEIGHTS parsing — keep the two in step.
+_SC_W_INPUT=1.0 _SC_W_WRITE=2.0 _SC_W_READ=0.1
+_sc_weights() {
+  local wi ww wr
+  IFS=',' read -r wi ww wr <<<"$1"
+  [[ "$wi" =~ ^[0-9]+(\.[0-9]+)?$ && "$ww" =~ ^[0-9]+(\.[0-9]+)?$ && "$wr" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
+  _SC_W_INPUT="$wi"; _SC_W_WRITE="$ww"; _SC_W_READ="$wr"
+}
+
+# cmd_manifest [--repo DIR] LEDGER — LEDGER lines: TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH ('#' comments and blank
+# lines skipped). Prints the `table` manifest (TICKET, TIER, MODEL, the matched files comma-joined). A branch no
+# session records is never dropped: it prints as a `# UNMATCHED:` comment line (which `table` skips) and on stderr;
+# a session file matching two ledger branches prints `# SHARED:` (it would be priced twice); a duplicate branch or a
+# comma in a matched path is refused (exit 2) before any row prints. The exit status is 1 for UNMATCHED or SHARED once
+# every line has been handled.
+cmd_manifest() {
+  local repo=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo) [ $# -ge 2 ] || { printf 'session-cost.sh: manifest: --repo needs a DIR\n' >&2; exit 2; }; repo="$2"; shift 2 ;;
+      --) shift; break ;;
+      -*) printf 'session-cost.sh: manifest: unknown option %s\n' "$1" >&2; exit 2 ;;
+      *) break ;;
+    esac
+  done
+  local ledger="${1:-}"
+  [ -n "$ledger" ] || { printf 'session-cost.sh: manifest needs a LEDGER file\n' >&2; exit 2; }
+  [ -f "$ledger" ] || { printf 'session-cost.sh: no such ledger: %s\n' "$ledger" >&2; exit 2; }
+  local top
+  top="$(tu_repo_top "${repo:-.}")" || exit 1
+
+  # Pass 1: validate the whole ledger and collect its branches, so the transcript corpus is scanned ONCE
+  # for all of them (the scan, not the branch count, is the cost) and a malformed ledger fails before it.
+  local ticket tier model branch files list unmatched=0 shared=0 rows=0 pairs seen=$'\n'
+  local -a branches=()
+  while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
+    case "$ticket" in ''|'#'*) continue ;; esac
+    [ -n "$tier" ] && [ -n "$model" ] && [ -n "$branch" ] || {
+      printf 'session-cost.sh: malformed ledger line (want TICKET\\tTIER\\tMODEL\\tBRANCH): %s\\t%s\\t%s\\t%s\n' \
+        "$ticket" "$tier" "$model" "$branch" >&2
+      exit 2
+    }
+    # One line per branch: a ticket restarted on its branch already gets every session file from one line, and a
+    # second line would price the same files twice.
+    case "$seen" in
+      *$'\n'"$branch"$'\n'*) printf 'session-cost.sh: manifest: branch %s is on two ledger lines (ticket %s); list it once\n' "$branch" "$ticket" >&2; exit 2 ;;
+    esac
+    seen="$seen$branch"$'\n'
+    rows=$((rows + 1))
+    branches+=("$branch")
+  done < "$ledger"
+  [ "$rows" -gt 0 ] || { printf 'session-cost.sh: ledger carried no ticket rows: %s\n' "$ledger" >&2; exit 2; }
+  pairs="$(tu_files_for_branches "$top" "${branches[@]}")" || exit 1
+  # The manifest's FILE column is comma-joined, so a comma inside a matched path would split it into phantom
+  # files. Checked before any row prints, so a refusal never leaves a truncated manifest behind.
+  if grep -q -F ',' <<<"$(cut -f1 <<<"$pairs")"; then
+    printf 'session-cost.sh: manifest: a matched session path contains a comma, which the manifest cannot carry\n' >&2
+    exit 2
+  fi
+
+  # Pass 2: one manifest row (or UNMATCHED line) per ledger line.
+  while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
+    case "$ticket" in ''|'#'*) continue ;; esac
+    list="$(awk -v b="$branch" -F'\t' '$2 == b { print $1 }' <<<"$pairs" | sort)"
+    files="$(printf '%s' "$list" | paste -sd, -)"
+    if [ -n "$files" ]; then
+      printf '%s\t%s\t%s\t%s\n' "$ticket" "$tier" "$model" "$files"
+    else
+      unmatched=$((unmatched + 1))
+      printf '# UNMATCHED: %s %s %s %s (no session records this branch)\n' "$ticket" "$tier" "$model" "$branch"
+      printf 'session-cost.sh: ticket %s: no session file records branch %s\n' "$ticket" "$branch" >&2
+    fi
+  done < "$ledger"
+
+  # The match is file-level (ANY record carries the branch): a session that worked two ledger branches is priced
+  # whole under both, which inflates the total. Marked like an unmatched branch, and the exit says incomplete.
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    shared=$((shared + 1))
+    printf '# SHARED: %s\n' "$line"
+    printf 'session-cost.sh: manifest: shared session — %s (counted under each of those branches)\n' "$line" >&2
+  done < <(awk -F'\t' 'NF >= 2 { n[$1]++; b[$1] = b[$1] (n[$1] > 1 ? ", " : "") $2 } END { for (f in n) if (n[f] > 1) print f " records branches: " b[f] }' <<<"$pairs" | sort)
+  [ "$unmatched" -eq 0 ] && [ "$shared" -eq 0 ] || exit 1
+}
+
+# cmd_weighted [--weights I,W,R] MANIFEST — each ticket's cost at the estimate's weights, as `keel tokens`
+# prices a session: new input x I + cache writes x W + cache reads x R, output tokens unweighted (a ruler, not a
+# price). Primary and subagent are shown apart, then summed per ticket and overall. Weights: --weights, else
+# KEEL_TOKENS_WEIGHTS (malformed -> defaults, said so, as `keel tokens` does), else 1.0,2.0,0.1.
+# `# UNMATCHED:`/`# SHARED:` lines in the manifest are repeated under the total and make it exit 1 — never dropped on the way to the number.
+cmd_weighted() {
+  local spec=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --weights) [ $# -ge 2 ] || { printf 'session-cost.sh: weighted: --weights needs I,W,R\n' >&2; exit 2; }; spec="$2"; shift 2 ;;
+      --) shift; break ;;
+      -*) printf 'session-cost.sh: weighted: unknown option %s\n' "$1" >&2; exit 2 ;;
+      *) break ;;
+    esac
+  done
+  local manifest="${1:-}"
+  [ -n "$manifest" ] || { printf 'session-cost.sh: weighted needs a MANIFEST file\n' >&2; exit 2; }
+  [ -f "$manifest" ] || { printf 'session-cost.sh: no such manifest: %s\n' "$manifest" >&2; exit 2; }
+  if [ -n "$spec" ]; then
+    _sc_weights "$spec" || { printf 'session-cost.sh: weighted: --weights malformed (want input,write,read numbers): %s\n' "$spec" >&2; exit 2; }
+  elif [ -n "${KEEL_TOKENS_WEIGHTS:-}" ]; then
+    _sc_weights "$KEEL_TOKENS_WEIGHTS" \
+      || printf 'session-cost.sh: KEEL_TOKENS_WEIGHTS malformed (want input,write,read numbers) — using defaults 1.0,2.0,0.1\n' >&2
+  fi
+
+  local tmp; tmp="$(mktemp)" || exit 1
+  _sc_manifest_rows "$manifest" "$tmp"
+
+  local fmt='%-10s %-6s %-8s %16s %16s %16s\n'
+  # shellcheck disable=SC2059  # $fmt is a fixed local format, not user input
+  printf "$fmt" ticket tier model primary subagent total
+  # The weights go in as the strings that were validated (and are echoed below), converted by jq itself —
+  # no printf/awk round trip that would reformat them. Each row is rounded once and TOTAL sums the rounded
+  # rows, so a reader re-adding the printed column gets the printed total.
+  local lines
+  lines="$(jq -s -r --arg wi "$_SC_W_INPUT" --arg ww "$_SC_W_WRITE" --arg wr "$_SC_W_READ" '
+    def w(k): (k.input_tokens // 0) * ($wi | tonumber) + (k.cache_creation_input_tokens // 0) * ($ww | tonumber)
+              + (k.cache_read_input_tokens // 0) * ($wr | tonumber);
+    def rnd: (. + 0.5) | floor;
+    map({ticket, tier, model, p: (w(.primary) | rnd), s: (if .subagent then (w(.subagent) | rnd) else 0 end)}) as $rows
+    | ($rows[] | "\(.ticket)|\(.tier)|\(.model)|\(.p)|\(.s)|\(.p + .s)"),
+      "TOTAL|||\([$rows[].p] | add)|\([$rows[].s] | add)|\([$rows[] | .p + .s] | add)"
+  ' "$tmp")" || { printf 'session-cost.sh: weighted: could not sum %s\n' "$manifest" >&2; rm -f "$tmp"; exit 1; }
+  rm -f "$tmp"
+  while IFS='|' read -r t tier model p s tot; do
+    # shellcheck disable=SC2059
+    printf "$fmt" "$t" "$tier" "$model" "$p" "$s" "$tot"
+  done <<<"$lines"
+  printf 'weights: input=%s write=%s read=%s (new input, cache writes, cache reads; output tokens unweighted — a ruler, not a price)\n' \
+    "$_SC_W_INPUT" "$_SC_W_WRITE" "$_SC_W_READ"
+  # A manifest that carries an UNMATCHED line is an incomplete sum: say so and exit 1, so a pipeline that
+  # ignored `manifest`'s own exit status still cannot record the number as the release's total.
+  if grep -E '^# (UNMATCHED|SHARED)' "$manifest"; then
+    printf 'session-cost.sh: weighted: the total above is incomplete or double-counts (the marked lines above) — do not record it\n' >&2
+    exit 1
+  fi
+}
+
 main() {
   tu_require_jq || exit 1
   local cmd="${1:-}"; shift || true
@@ -467,6 +633,8 @@ main() {
     ticket)    cmd_ticket "$@" ;;
     table)     cmd_table "$@" ;;
     tail)      cmd_tail "$@" ;;
+    manifest)  cmd_manifest "$@" ;;
+    weighted)  cmd_weighted "$@" ;;
     -h|--help|'') usage ;;
     *) printf 'session-cost.sh: unknown command %s\n' "$cmd" >&2; usage >&2; exit 2 ;;
   esac

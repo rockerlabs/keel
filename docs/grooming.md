@@ -465,8 +465,8 @@ the manager expensive ([`docs/release-management.md`](release-management.md) R7)
 measured total, orchestrator and legs together, at the estimate's weights. Subtract that total from the
 release total before the per-unit division above, or the audit is counted twice. How far the audit
 grows with a larger slate has not been measured; the estimate cell names the scaling it used as a
-judgement. A rule of the procedure; summing a session at those weights is a hand step today, a
-compensation whose remover is `dir #654`.
+judgement. A rule of the procedure; `tools/self/session-cost.sh weighted` sums sessions at those
+weights ([`docs/session-cost.md`](session-cost.md)).
 
 **When the operator's binding limit is a subscription window, state the estimate in window points
 too, as the gauge's start and end, and name the ratio it was converted at (the same groom; the form,
