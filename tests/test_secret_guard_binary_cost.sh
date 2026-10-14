@@ -12,6 +12,8 @@
 #       scan and its children), with personal literals set, the operator's configuration. CPU, not wall-clock: a
 #       wall-clock ceiling measures the machine's load, which varies by an order of magnitude between a quiet laptop
 #       and nine sessions sharing eight cores.
+#       On a busybox grep (Alpine) the leg is a sanity bound: 4 MiB, class 1 alone, ceiling 150 s — busybox grep costs
+#       ~10x as much per personal pass, so the personal passes' timing is pinned on the macOS and GNU-grep legs only.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
