@@ -753,19 +753,26 @@ forge), the train worker fetches and fast-forwards its worktree to that head, re
 amends the body's sha, and that counts as a rebuild.
 
 **The train: build.** The manager decides the composition (the `<N>=<sha>` list, from the freeze lines) and the
-order (the seam plan's order, R10, else ascending PR number). The manager creates the worktree:
-`git fetch --prune origin`, then `git worktree add <path> -b claude/release-<version>-train<k> origin/main`. It
-launches the train worker with `<path>` as its working directory, and early (R3): the pre-PR gate keys its
-traces off the session's working directory, so the session that runs the pre-PR flow starts in that worktree.
-The worker then owns the worktree end to end, one writer per worktree (R5), every later command `git -C <path>`.
-The manager builds nothing there and runs nothing. Before any merge, run
-`git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict). A
+order (the seam plan's order, R10, else ascending PR number). The manager creates the worktree and builds the
+train with one tool, `git fetch --prune origin`, then
+`tools/self/release-train.sh build --branch claude/release-<version>-train<k> <N>=<sha>…` (it cuts the worktree
+off `origin/main` under `.claude/worktrees/`, or at `--worktree <path>`, prints the path first and each step it
+takes, and never touches the manager's checkout). It launches the train worker with that path as its working
+directory, and early (R3): the pre-PR gate keys its traces off the session's working directory, so the session
+that runs the pre-PR flow starts in that worktree. The worker then owns the worktree end to end, one writer per
+worktree (R5), every later command `git -C <path>`. The manager builds nothing there and runs nothing else. The
+tool does what the next sentences require, and they stay as the by-hand fallback. Before any merge, run
+`git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict; the
+tool exits 1 naming the pair and its files and creates nothing). A
 conflicting pair is resolved by the LATER PR's worker on its own branch (whichever merges second rebases) before
 the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
 integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
-a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation:
+a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation
+(the tool leaves that merge in progress, exit 1, the unmerged paths printed):
 `git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
-integration rule below applies) or that PR leaves the train, and either way it counts as a rebuild. Then merge
+integration rule below applies; committing the resolution keeps the tool's `train:` subject, and
+`release-train.sh build --continue --worktree <path> <N>=<sha>…` merges the heads still to go) or that PR leaves
+the train, and either way it counts as a rebuild. Then merge
 each head AS IS, in order: `git -C <path> merge --no-ff -m "train: #<N> (<sha>)" <sha>`, never rebased or
 re-authored, so that a merge commit on the default branch marks every constituent merged. Then
 `git -C <path> merge-base --is-ancestor <sha> HEAD` for every head. Integration commits are limited to conflict
@@ -803,12 +810,14 @@ the integration rule, the carve-out sentence above verbatim, the keep-alive and 
 (5) handed to you, the build, the verification and the body's wording. It builds, verifies, runs `/polish` 1–9
 on the train and opens the PR. The body: title "<version> train <k>: land #a–#z as one merge"; the constituent
 table (PR, ticket, frozen head), written from `git log --first-parent` over the `train: #<N> (<sha>)` subjects,
-never retyped; the pairwise result; the integration commits or "none"; the verification block with the sha; the
+never retyped (`release-train.sh body --branch <name>` prints the whole skeleton from that walk, the seam list
+and the integration commits included, with `<fill>` where the worker states the rest); the pairwise result; the integration commits or "none"; the verification block with the sha; the
 review disclosure (level, read, not read); and the line "Merge: create a merge commit — only a merge commit puts
 the constituent heads on the default branch and closes each PR as merged".
 
 **The train: the merge, and what follows it.** The preconditions above apply. Right before the command the
-manager re-reads each constituent's live `headRefOid`. A moved head waits when the new head has the merged one
+manager re-reads each constituent's live `headRefOid` (`release-train.sh check --branch <name> <N>=<sha>…` names
+each one that differs from the train's last merge of it). A moved head waits when the new head has the merged one
 as an ancestor (`git merge-base --is-ancestor <old> <new>`, a push on top) and the worker's new freeze arrives
 within the wave: the train worker then appends one more `--no-ff` merge of the new head. Otherwise (a rewritten
 branch, no freeze) that PR leaves the train. Either way it is a rebuild, **and a train is rebuilt at most

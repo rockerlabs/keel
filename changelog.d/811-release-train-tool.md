@@ -5,4 +5,5 @@
   `train: #N (sha)` in the given order and prints the seam list; `build --continue` appends the rest after
   a hand-resolved conflict or a moved head; `body` prints the train PR body from the branch's own
   first-parent walk (table never retyped, hand-resolved merges and integration commits listed wherever
-  they sit); `check` names every constituent whose live head moved. `tests/test_release_train.sh` pins it.
+  they sit); `check` names every constituent whose live head moved. The release-management doc's train
+  procedure (R14) now builds, writes and checks a train with it; `tests/test_release_train.sh` pins both.
