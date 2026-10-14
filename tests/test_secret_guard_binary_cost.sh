@@ -127,22 +127,28 @@ fi
 # bound is pinned at the default).
 CEILING="${KEEL_TEST_SECRET_SCAN_CPU_CEILING:-130}"
 pers_c="$pers"
-# busybox grep spends ~10x the BSD/GNU CPU on each personal pass over this blob (two literals: ~700 s of CPU, measured
-# on Alpine 3.21), so there the bound is pinned with class 1 alone, and the ceiling is the class-1-only one.
+BLOB_BYTES="${KEEL_TEST_SECRET_SCAN_BLOB_BYTES:-20971520}"
+# busybox grep is ~10x slower than BSD/GNU grep here (Alpine 3.21: 258 s of CPU for the 20 MiB blob with NO personal
+# literal, ~700 s with two), so there the bound is a sanity check on a smaller blob with class 1 alone; the 20 MiB
+# bound binds on the macOS legs.
 case "$(grep --help 2>&1)" in
-  *BusyBox*) pers_c=/dev/null; CEILING="${KEEL_TEST_SECRET_SCAN_CPU_CEILING:-CEIL_BB}" ;;
+  *BusyBox*)
+    pers_c=/dev/null
+    BLOB_BYTES="${KEEL_TEST_SECRET_SCAN_BLOB_BYTES:-4194304}"
+    CEILING="${KEEL_TEST_SECRET_SCAN_CPU_CEILING:-150}" ;;
 esac
-mk_blob "${KEEL_TEST_SECRET_SCAN_BLOB_BYTES:-20971520}" ""
+MIB=$((BLOB_BYTES / 1048576))
+mk_blob "$BLOB_BYTES" ""
 repo="$(blob_repo)"
 TIMEFORMAT='%U %S'
 out="$( { time env SECRET_SCAN_PERSONAL_FILE="$pers_c" bash -c 'cd "$1" && "$2" --tracked >/dev/null 2>&1; echo "rc=$?" >&2' _ "$repo" "$scan"; } 2>&1 )"
 rc_c="$(printf '%s\n' "$out" | sed -n 's/^rc=//p')"
 cpu_c="$(printf '%s\n' "$out" | awk 'NF == 2 && $1 ~ /^[0-9.]+$/ { printf "%d", $1 + $2 + 0.999 }')"
-check_eq "C1: a clean generated 20 MiB incompressible blob → exit 0" 0 "${rc_c:-missing}"
+check_eq "C1: a clean generated ${MIB} MiB incompressible blob → exit 0" 0 "${rc_c:-missing}"
 if [ -n "$cpu_c" ] && [ "$cpu_c" -le "$CEILING" ]; then
-  pass "C2: the 20 MiB blob scans in ${cpu_c} s of CPU (ceiling ${CEILING} s)"
+  pass "C2: the ${MIB} MiB blob scans in ${cpu_c} s of CPU (ceiling ${CEILING} s)"
 else
-  fail "C2: the 20 MiB blob scans within ${CEILING} s of CPU" "took ${cpu_c:-unmeasured} s (output: $out)"
+  fail "C2: the ${MIB} MiB blob scans within ${CEILING} s of CPU" "took ${cpu_c:-unmeasured} s (output: $out)"
 fi
 
 summary
