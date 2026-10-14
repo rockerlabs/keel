@@ -46,7 +46,7 @@
 # skipped): TICKET<TAB>TIER<TAB>MODEL<TAB>FILE1[,FILE2,...]
 #   dir#298	R1	sonnet	/Users/x/.claude/projects/.../3a0efd0c....jsonl
 # A ticket's FILEs are its own session transcripts (comma-joined, no spaces) — `manifest` (above) writes the
-# manifest from a ledger of branches (dir #654); tu_files_for_branch is the lookup it uses.
+# manifest from a ledger of branches (dir #654); tu_files_for_branches (one scan for all branches) is the lookup it uses.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -476,7 +476,7 @@ cmd_tail() {
 
 # --- manifest / weighted (dir #654) -------------------------------------------------------------------
 # A release ledger names each worker's branch, not its session files; R7's close needs the files. `manifest`
-# is that lookup (tu_files_for_branch, an exact `gitBranch` match), `weighted` the sum at the estimate's
+# is that lookup (tu_files_for_branches, an exact `gitBranch` match), `weighted` the sum at the estimate's
 # weights — the same vector `keel tokens` uses (tools/token-report.sh; docs/token-economy.md).
 
 # _sc_weights SPEC — set _SC_W_INPUT/_SC_W_WRITE/_SC_W_READ from "input,write,read" (numbers); return 1 when

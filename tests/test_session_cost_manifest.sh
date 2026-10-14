@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/test_session_cost_manifest.sh — dir #654: a release ledger's worker branches -> the `table`
-# manifest (tu_files_for_branch + `session-cost.sh manifest`), and the sum at the estimate's weights
+# manifest (tu_files_for_branches, tu_files_for_branch + `session-cost.sh manifest`), and the sum at the estimate's weights
 # (`session-cost.sh weighted`). Every transcript here is synthetic and carries `gitBranch` the way a
 # real one does; the layout mirrors the harness's (main dir + `--claude-worktrees-*` dirs).
 set -uo pipefail
