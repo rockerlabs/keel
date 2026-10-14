@@ -563,8 +563,7 @@ count), and both came from the fixes the same-family round had just triggered. *
 verify any finding.** Its severities inflate, since it has no tools: two "blocking" grades both fell on verification
 (a prose-versus-table mismatch where the table was the intended artifact, a mis-glossed SHA with the correct range one
 cell over). Its claims about tools are unverified until run: one rejected finding asserted how a generator behaves
-and the tree said otherwise. And a vendor's high finding can be a judgment the same-family round deliberately accepted, and
-right under the operator's own ask, so an accepted-by-design item is shown to the operator rather than silently dropped. Where a
+and the tree said otherwise. Where a
 plan states a decision in prose and again in a table, the brief asks the reviewer to diff every decision against the
 table row it cites; in one session the two drifted apart.
 
