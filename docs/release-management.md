@@ -583,9 +583,15 @@ re-run only after naming the ref that moved.
 
 **A stop that waits for the operator is settled at wave-plan time (0.16.0).** Any step that blocks on the
 operator is asked once per wave, and the answer is recorded in the shared brief with its date. Keel's example is
-`/polish`'s compaction stop (dir #739), which asks for `/compact`: every worker of one wave reached it at step
-one within the same hour, and three idled until the operator returned. The threshold and any override are the
-operator's decision, never raised on the manager's own authority.
+`/polish`'s compaction stop (dir #739), which used to ask the operator for `/compact`: every worker of one wave
+reached it at step one within the same hour, and three idled until the operator returned. It no longer waits
+(dir #845): the worker commits, writes its hand-over file and sends the manager `COMPACT <token> <absolute
+hand-over file>`, then ends its turn; the manager clears that session once it reads idle and sends one self-contained
+continuation message — the worker id, its overlay paths, and the call to invoke the `polish` skill with args
+`after a compaction stop (dir #739): read <file> first` — which is the continued run. A clear the harness refuses
+(a session pinned or open on screen) falls back to the two paste-ready lines for the operator, and the manager
+reports the refusal. The threshold and any override are the operator's decision, never raised on the manager's
+own authority.
 
 ## R12 — portability
 
