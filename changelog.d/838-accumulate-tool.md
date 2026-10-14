@@ -6,5 +6,5 @@
   recurrence only from the ticket's closure date, and a class quiet for its whole window retires. It reads a backlog
   to find out whether a promoted class's ticket has closed, through the closure vocabulary in
   `tools/lib/backlog-blocks.sh`. It never files or edits a ticket, and its day arithmetic is awk, not `date`.
-  `tests/test_accumulate.sh` covers it and `tests/mutants/accumulate.tsv` lists 34 single-clause edits that suite must
-  turn red. The command observers of dir #838 and the guard register of dir #842 are its first consumers.
+  `tests/test_accumulate.sh` covers it, and `tests/mutants/accumulate.tsv` lists the single-clause edits of the tool
+  that suite must turn red. The command observers of dir #838 and the guard register of dir #842 are its first consumers.
