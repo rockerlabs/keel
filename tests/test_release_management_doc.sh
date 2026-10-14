@@ -395,7 +395,7 @@ pin "R3 names the launch gate as who opened the turn" "$doc" \
   '**The gate keys on who opened the turn' \
   "expected R3 to say a peer-opened turn is refused even with the operator's decision inside it, and to queue a proposal card (dir #826 item 1)"
 pin "R3 gives the verify's read: the log by branch, quote second, metadata last" "$doc" \
-  "**The verify's read, at the hello and before GO:**" \
+  "**The verify's read, at the hello and before GO,**" \
   "expected R3 to carry the single model-verify order (dir #826 item 4, dir #827 item 2, dir #823 items 1-2)"
 pin "the brief carries the same-turn rule beside the CI-wait rule" "$doc" \
   '**Include the same-turn rule beside them** (dir #832)' \
@@ -427,5 +427,25 @@ pin "delegation.md's verify order says the signals can differ by turn" "$delegat
 pin "delta-audit.md's Fixer brief rows carry an executable acceptance check" "$REPO_ROOT/docs/delta-audit.md" \
   '**A Fixer'"'"'s brief is rows of finding plus an executable acceptance check' \
   "expected delta-audit.md to carry the fix-batch brief shape (dir #826 item 2)"
+
+# the rules' bodies, not only their headings (a heading pin stays green when the paragraph is rewritten)
+pin "R3's gate paragraph queues a refused launch as a proposal card" "$doc" \
+  'can make on its own is one made on a turn the operator opened' \
+  "expected R3 to say which launches the manager makes itself (dir #826 item 1)"
+pin "R3's verify follows delegation.md's order: running tier, trailer, metadata last" "$doc" \
+  "follows \`docs/delegation.md\`'s order: running-tier evidence" \
+  "expected R3's verify read to point at delegation.md's order, not a third one (dir #826 item 4)"
+pin "R3's verify settles a disagreement by the log, never against the worker" "$doc" \
+  'recorded with both and settled by the log, never a finding against the worker' \
+  "expected R3 to treat a quote/metadata disagreement as an observation (dir #823 item 1)"
+pin "R6's merge ACK is named by R14's precondition (c)" "$doc" \
+  'and so does a spec amendment the worker has not ACKed (R6)' \
+  "expected R14 (c) to carry the amendment-ACK hold (dir #823 item 7)"
+pin "R14's fallback reports a bare status line as neither shape" "$doc" \
+  'neither shape and is not sent' \
+  "expected the fallback to refuse a bare status report (dir #827 item 1)"
+pin "the CI-wait rule says to background the watch itself" "$doc" \
+  'so background the watch itself and never wrap it in' \
+  "expected the CI-wait line to give the portable instruction (dir #828 (a))"
 
 summary

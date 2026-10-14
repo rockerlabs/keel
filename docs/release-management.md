@@ -136,11 +136,12 @@ which way the un-set default falls (the launcher's own tier — a top-tier manag
 top-tier by doing nothing), the order to verify in (running-tier evidence before session metadata), and
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
 nothing. A release's worker brief therefore tells each worker to hello, then stop.
-**The verify's read, at the hello and before GO:** the worker's session log found by its branch (`jq` over the
-assistant lines' `.message.model` and `.perTurnEffort`, the branch in `.gitBranch`) names what ran; the hello's quoted
-"You are powered by" line is true for the turn it was read in and stale after a switch (a switch lands from the next
-turn), so after one the manager reads the next turn's log line or asks for a fresh quote; session metadata comes last,
-because it reports what is configured. The three can all be right about different turns, so a disagreement is an
+**The verify's read, at the hello and before GO,** follows `docs/delegation.md`'s order: running-tier evidence
+first, the commit trailer next, session metadata last, because it reports what is configured. The running-tier
+evidence has two forms: the worker's session log found by its branch (`jq` over the assistant lines'
+`.message.model` and `.perTurnEffort`, the branch in `.gitBranch`), which names what ran in each turn, and the
+hello's quoted "You are powered by" line, which is true for the turn it was read in and stale after a switch (a
+switch lands from the next turn), so after one the manager reads the next turn's log line or asks for a fresh quote. The signals can all be right about different turns, so a disagreement is an
 observation with its two alternatives named (a stale quote, or a configured value that has not taken effect yet),
 recorded with both and settled by the log, never a finding against the worker. Felt: two hellos said Opus while
 metadata said Sonnet, the manager released them on metadata, and the log showed the hold turn really ran on Opus; on
@@ -346,7 +347,7 @@ incidental and has already broken mid-release once.
   this happened twice inside one release's own build of this very requirement, each amendment crossing
   the worker's next report before the worker had seen it. The fix is the same acknowledged-token
   facility named above, applied per amendment rather than per status update: an explicit **per-amendment ACK** — treat any brief amendment without an acknowledgment from its recipient as undelivered, and re-send or escalate rather than assuming a queued message was read.
-  **The ACK gates a merge too (dir #823):** before a worker's merge is released (R14's precondition (c)), compare the
+  **The ACK gates a merge too (dir #823):** before a worker's merge is released (R14's precondition (c) names this check), compare the
   spec's modification time with the worker's start and require an explicit ACK of every amendment since. One worker
   built a step on the pre-amendment spec while the amendment queued behind its build turn, and the amendment's clauses
   were missing until a clause-by-clause re-read; launching a build in parallel with a design's last review leg costs a
@@ -625,7 +626,7 @@ the deliverable that point in the work owes, and probe at once on a gap: a PR op
 hand-back with no next action. A worker that ends its turn right after a hand-back, or right after opening its PR, looks
 identical to a working one, and it happened twice in one release (the fixer, both rounds, about 40 and 60 minutes
 idle): the operator noticed the first, the manager's own state sweep the second. The worker's side is the brief's
-same-turn rule (item 4 of the worker brief above).
+same-turn rule in the worker brief's "Rules that bind you" item (dir #832).
 
 **The sweep is load-bearing, because a worker's own "waiting" is never evidence (0.16.0).** One release saw
 five wedges of this shape (a worker idle with no live background task, waiting on a notification no task could
@@ -789,7 +790,7 @@ check `success` on `headRefOid` (`gh pr view <N> --json headRefOid,statusCheckRo
 worker has replied literally `no more pushes; ok` (see the freeze below); for a train, every constituent's
 worker, and every constituent's live `headRefOid` still equals the head merged into the train. (c) No correction
 in flight: a correction the manager sent to a worker on an open PR holds that PR's merge until the worker's new
-freeze. (d) The command is `gh pr merge <N> --merge --match-head-commit <the full 40-hex head from (a)>`: a
+freeze, and so does a spec amendment the worker has not ACKed (R6). (d) The command is `gh pr merge <N> --merge --match-head-commit <the full 40-hex head from (a)>`: a
 merge commit, the head pinned, and never `--squash`, `--rebase`, `--auto` or `--admin`. The remote branch is
 deleted by the forge at the merge where the repo sets that, and `--delete-branch` is omitted because its local
 half fails on a branch checked out in a worktree. (e) The merge is one health line on the R6 channel, after the
