@@ -209,7 +209,7 @@ pin "M8 lists install next to tag, publish" "$cmd" \
 
 # --- dir #616: the CI-wait rule rides in the worker brief beside the keep-alive contract ---------------------
 pin "R-brief item 4 carries the bounded one-backgrounded-command CI-wait rule" "$doc" \
-  'wait in ONE backgrounded command with a timeout' \
+  'wait in ONE backgrounded command and let its completion notify you' \
   "expected the worker-brief section to carry the CI-wait rule (dir #616)"
 pin "the CI-wait rule names the Claude Code tools it forbids" "$doc" \
   '`ScheduleWakeup` (for loop mode only) and `Monitor`' \
@@ -382,5 +382,50 @@ check_absent "M8 no longer lists the merge among the hand-over actions" "$m8" 'm
 check_contains "M8 points at R14 for the merge" "$m8" 'R14'
 pin "polish-guide Step 4 points at R14's train dialog carve-out" "$REPO_ROOT/commands/polish-guide.md" \
   'A release train always asks' "expected Step 4 to carry the one pointer sentence to R14 (dir #811 B8d)"
+
+# --- dir #826 #827 #828 #832 #823: the release-management riders --------------------------------------------------
+check_absent "the CI-wait rule no longer says 'with a timeout' (it invites GNU timeout on macOS; dir #826, dir #828)" "$doc_body" 'ONE backgrounded command with a timeout'
+pin "the CI-wait rule names the missing macOS timeout binary" "$doc" \
+  'never wrap it in `timeout`' \
+  "expected the brief's CI-wait line to say background the watch itself (dir #826 item 6, dir #828 (a))"
+pin "R1 reads a ticket as its whole block" "$doc" \
+  '**A body is the whole block, not the heading line.**' \
+  "expected R1 to name the block read (dir #827 item 3)"
+pin "R3 names the launch gate as who opened the turn" "$doc" \
+  '**The gate keys on who opened the turn' \
+  "expected R3 to say a peer-opened turn is refused even with the operator's decision inside it, and to queue a proposal card (dir #826 item 1)"
+pin "R3 gives the verify's read: the log by branch, quote second, metadata last" "$doc" \
+  "**The verify's read, at the hello and before GO:**" \
+  "expected R3 to carry the single model-verify order (dir #826 item 4, dir #827 item 2, dir #823 items 1-2)"
+pin "the brief carries the same-turn rule beside the CI-wait rule" "$doc" \
+  '**Include the same-turn rule beside them** (dir #832)' \
+  "expected the worker brief to carry the checkpoint-in-the-opening-turn rule (dir #832)"
+pin "the pre-flight checklist is read from the CI workflow at brief time" "$doc" \
+  '**The checklist is read from the CI workflow at brief time' \
+  "expected the fix-round pre-flight to derive from the workflow file (dir #826 item 5)"
+pin "R6's ACK gates a merge" "$doc" \
+  '**The ACK gates a merge too (dir #823):**' \
+  "expected R6 to compare the spec's mtime with the worker's start before a merge is released (dir #823 item 7)"
+pin "R6's manager change re-verifies tooling claims" "$doc" \
+  '**The incoming manager also re-verifies the' \
+  "expected R6 to require a probe of the hand-off's tooling and environment claims (dir #828 (c))"
+pin "R9 points an audit-heavy worker at R11's stop route" "$doc" \
+  '**An audit-heavy worker reaches' \
+  "expected R9 to name the compaction stop at the fix loop and R11's route (dir #828 (b))"
+pin "R9 names the version-identity bump's owner" "$doc" \
+  '**The version-identity bump has a named owner' \
+  "expected R9 to say who carries the bump (dir #823 item 4)"
+pin "R11's observed-state clause names the turn-end-without-deliverable trigger" "$doc" \
+  '**A turn-end note without its deliverable is a probe trigger (dir #832).**' \
+  "expected R11 to make a turn-end note without its deliverable a probe trigger (dir #832)"
+pin "R14's fallback gives every reported PR one of two shapes" "$doc" \
+  '**In the fallback, every PR the manager reports carries exactly one of two shapes' \
+  "expected R14's fallback to carry the ready-block-or-do-not-merge rule (dir #826 item 3, dir #827 item 1)"
+pin "delegation.md's verify order says the signals can differ by turn" "$delegation" \
+  'settled by the log (find it by branch' \
+  "expected delegation.md's order to name the log as the arbiter (dir #826 item 4)"
+pin "delta-audit.md's Fixer brief rows carry an executable acceptance check" "$REPO_ROOT/docs/delta-audit.md" \
+  '**A Fixer'"'"'s brief is rows of finding plus an executable acceptance check' \
+  "expected delta-audit.md to carry the fix-batch brief shape (dir #826 item 2)"
 
 summary
