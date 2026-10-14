@@ -247,6 +247,15 @@ for cand in '✅ FIXEDX (x)' '✅ **Donezo**' '✅ **SHIPPED**' '✅ Doing'; do
   bb_closure_word_ok "$cand" >/dev/null 2>&1
   check_status "MUTATION-PROOF: bb_closure_word_ok refuses '$cand'" 1 "$?"
 done
+# The bracket-paired spelling is hand-written: every plain word must match in upper, lower and title case.
+for w in DONE CLOSED ABSORBED EXECUTED SUPERSEDED DUPLICATE BUILT FIXED; do
+  lower="$(printf '%s' "$w" | tr 'A-Z' 'a-z')"
+  title="$(printf '%s' "${w:0:1}")$(printf '%s' "${lower:1}")"
+  for form in "$w" "$lower" "$title"; do
+    bb_closure_word_ok "✅ $form (x)" >/dev/null 2>&1
+    check_status "bb_closure_word_ok accepts the vocabulary word '$form'" 0 "$?"
+  done
+done
 d609="$(new_repo)"
 f609="$d609/BACKLOG.md"
 printf '### dir #601 — emphasis between glyph and word — R2 — ✅ **Done 2026-09-20**
