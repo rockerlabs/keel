@@ -293,6 +293,21 @@ for c in "gh pr create --label api --body \"50% faster\" --title x" "gh label cr
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
 done
+for c in "gh api -X PUT repos/o/r/x%3F/../pulls/5/merge" "gh api -X PUT repos/o/r/x%23/../pulls/5/merge" \
+         "gh api -X PUT repos/o/r/pulls/5/merge.json" "gh api -X PUT repos/o/r/pulls/5/{repo}" "gh api -X PUT repos/o/r/{owner}/5/merge"; do
+  deny "(f) an API merge endpoint, read as GitHub routes it: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+for c in "timeout 5 gh api -X PUT repos/o/r/pulls/5/{branch}" "nice gh api -X PUT repos/o/r/pulls/5/:branch" \
+         "GH_REPO=x/merge timeout 5 gh api -X PUT repos/o/r/pulls/5/{repo}" "gh api -X PUT repos/o/r/pulls/5/{branch} -H X-a:/gh"; do
+  deny "(g) a placeholder endpoint behind a runner or a second gh is unread: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
+done
+for c in "gh api repos/{owner}/{repo}/issues/5/comments -f body=hi" "gh api -X PATCH repos/{owner}/{repo} -f description=x" \
+         "gh api -X POST repos/:owner/:repo/labels -f name=x" "gh api -X PUT repos/o/r/contents/notes:repository.md -f message=x" \
+         "gh api -X PUT repos/o/r/contents/a:branches.md -f message=x" "echo x | xargs gh api repos/{owner}/{repo}/issues" \
+         "gh api -X PUT repos/o/r/pulls/5/merge/.. -f x=y" "gh api -X PUT repos/o/r/contents/merge-notes/./pulls.md -f x=y"; do
+  ev_gate "$c" "$P" "$OTHER"
+  check_absent "(f) no merge read in [$c]" "$OUT" "merge rule"
+done
 deny "accepted cost: an API write to any path holding a part gh fills in is read as a merge" "$R_API" "gh api -X PUT repos/o/r/branches/{branch}/protection -f x=y" "$P" "$OTHER"
 deny "(d) manager: -m after a real -- is an argument, no merge flag" "$R_NOMERGE" "gh pr merge 5 --match-head-commit=$SHA -- -m" "$P" "$MID"
 deny "(g) env -C gh \"gh\" pr merge: the quoted gh hides the subcommand — unread" "$R_UNREAD" "env -C gh \"gh\" pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"

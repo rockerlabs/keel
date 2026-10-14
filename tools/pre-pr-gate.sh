@@ -566,16 +566,18 @@
 # release it starts: the dir #229 marker-spoof class). A word after a real `--` is read as a flag, while gh takes it
 # as an argument: as an extra one gh rejects (`gh api -X PUT …/merge -- -XGET`), and a lone one after `gh pr merge`
 # is its PR selector, so a pin after a real `--` counts as none. A path the shell builds from a glob (`…/merg[e]`) is
-# not read as the endpoint; a `%XX` escape is decoded, a path holding `pulls`, `merge` and a dot segment counts, and
-# an API write to any path holding a part gh fills in (`{owner}`, `{repo}`, `{branch}`, `:owner`, `:repo`, `:branch`)
-# is read as a merge (fail-closed: such a value is arbitrary text, `#` included). For a listed manager in an opted-in
-# project (whose every merge the deny used to block), two more weaken only the flag check: a flag word the shell
-# assembles at run time (`$FLAGS`, `--admin$(true)`), and a merge aimed at another repository than the event cwd's
-# (`-R`, a `cd` in the command), judged by the cwd's file and policy line. Without jq the whole hook is inert (its
-# documented choice, above), this rule included: lift the deny only where jq is installed. Accepted costs: a segment
-# whose command word is not gh but which holds a gh word followed by unquoted `pr … merge` or `api … <merge
-# endpoint>` is denied to every session (`echo gh pr merge`, `nice git log --grep gh pr merge`, a manager's `timeout
-# 60 gh pr merge …`, a read of the endpoint behind a runner), and so is any gh command holding an unquoted `pr`, then
+# not read as the endpoint; the endpoint is read as GitHub routes it (`%XX` decoded, dot segments resolved, a `.json`
+# suffix); an API write to a path holding `{branch}` or `:branch` is read as a merge, whatever the rest (fail-closed:
+# a branch name is arbitrary text, `/` and `#` included), and one holding `{owner}`/`{repo}` when that part could
+# complete `pulls/<n>/merge`. For a listed manager in an opted-in project (whose every merge the deny used to block),
+# two more weaken only the flag check: a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`), and
+# a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command), judged by the cwd's file
+# and policy line. Without jq the whole hook is inert (its documented choice, above), this rule included: lift the
+# deny only where jq is installed. Accepted costs: a segment whose command word is not gh but which holds a gh word
+# followed by unquoted `pr … merge` or `api … <merge endpoint>` is denied to every session (`echo gh pr merge`, `nice
+# git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the endpoint behind a runner), an
+# API write to a `{branch}` path that is no merge is denied as one (`gh api -X PUT
+# repos/{owner}/{repo}/branches/{branch}/protection`), and so is any gh command holding an unquoted `pr`, then
 # `merge`, that is not a pr merge (`gh pr comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--`
 # before its subcommand; a word after a `--` that is no flag to gh is still read as one (a manager's `… -- --admin`
 # is denied); a merge behind a runner even when it asks for `--help`, and a merge after a boolean flag gh knows
@@ -2551,37 +2553,52 @@ function mg_gh(j,   n) {
   n = length(tok[j])
   return tok[j] == "gh" || (n >= 3 && substr(tok[j], n - 2) == "/gh")
 }
-# mg_ep(t, w) — a positional word that may name the merge endpoint, read the way it reaches GitHub: `%XX` escapes
-# decoded, then lower-cased, the query and fragment cut off, matched with repeated slashes; a path holding `pulls`,
-# `merge` and a dot segment (`./`, `../`) counts too. With w set (the word is an API call’s own positional word) any
-# part gh fills in (`{owner}`, `{repo}`, `{branch}`, `:owner`, `:repo`, `:branch`, looked for on the raw word) counts
-# as well — its value is arbitrary text, so no reading of the rest can rule a merge out (fail-closed).
+# mg_ep(t, w) — a positional word that may name the merge endpoint, read the way it reaches GitHub: the query and
+# fragment cut off the raw word, `%XX` escapes decoded, lower-cased, dot segments resolved, then one match for
+# `pulls/<n>/merge` (repeated slashes, a `.json` or `;x` suffix). With w set (the word may be gh’s own endpoint, not
+# text) a part gh fills in counts too, judged on the raw word: `{branch}`/`:branch` always (its value is arbitrary text,
+# `/` and `#` included: fail-closed), `{owner}`/`{repo}`/`:owner`/`:repo` (one segment, no `/` or `#`) when a segment
+# holding one could make the last three `pulls/<n>/merge` (`…/pulls/5/{repo}`, never `repos/{owner}/{repo}/issues`).
 function mg_hex(h) { return (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1 }
-function mg_ep(t, w,   d, n, k, p, h) {
+function mg_ph(s) { return s ~ /\{(owner|repo|branch)\}|:(owner|repo|branch)([^a-z0-9_]|$)/ }
+function mg_ep(t, w,   r, d, n, k, p, h, q, m, out) {
   if (t ~ /^-/) return 0
-  if (w && tolower(t) ~ /\{(owner|repo|branch)\}|:(owner|repo|branch)/) return 1
-  d = t
-  if (index(t, "%")) {
-    n = split(t, p, "%"); d = p[1]
+  r = tolower(t); sub(/[?#].*/, "", r)
+  if (w && r ~ /\{branch\}|:branch([^a-z0-9_]|$)/) return 1
+  d = r
+  if (index(r, "%")) {
+    n = split(r, p, "%"); d = p[1]
     for (k = 2; k <= n; k++) {
-      h = tolower(substr(p[k], 1, 2))
+      h = substr(p[k], 1, 2)
       if (h ~ /^[0-9a-f][0-9a-f]$/) d = d sprintf("%c", mg_hex(h)) substr(p[k], 3)
       else d = d "%" p[k]
     }
+    d = tolower(d)
   }
-  d = tolower(d); sub(/[?#].*/, "", d)
-  if (d ~ /(^|\/)pulls\/+[^\/]+\/+merge\/*$/) return 1
-  return d ~ /pulls/ && d ~ /merge/ && d ~ /(^|\/)\.\.?(\/|$)/
+  n = split(d, p, "/"); m = 0
+  for (k = 1; k <= n; k++) {
+    if (p[k] == ".") continue
+    if (p[k] == "..") { if (m > 0) m--; continue }
+    q[++m] = p[k]
+  }
+  out = ""
+  for (k = 1; k <= m; k++) out = out (k > 1 ? "/" : "") q[k]
+  if (out ~ /(^|\/)pulls\/+[^\/]+\/+merge([.;][^\/]*)?\/*$/) return 1
+  if (!w) return 0
+  while (m > 0 && q[m] == "") m--
+  return m >= 3 && (q[m - 2] == "pulls" || mg_ph(q[m - 2])) && q[m - 1] != "" &&
+         (q[m] ~ /^merge([.;]|$)/ || mg_ph(q[m])) && (mg_ph(q[m - 2]) || mg_ph(q[m - 1]) || mg_ph(q[m]))
 }
-# mg_shape(s, ep) — the words after word s hold `pr` then `merge`, or (ep set) `api` then a merge endpoint word.
-function mg_shape(s, ep,   j, t, a, p) {
+# mg_shape(s, ep, w) — the words after word s hold `pr` then `merge`, or (ep set) `api` then a merge endpoint word
+# (w: the words may be gh’s own, so a part gh fills in counts; unset where they are another command’s text).
+function mg_shape(s, ep, w,   j, t, a, p) {
   a = 0; p = 0
   for (j = s + 1; j <= ntok; j++) {
     t = tok[j]
     if (t == "api" && w_unquoted(j)) a = 1
     else if (t == "pr" && w_unquoted(j)) p = 1
     else if (p && t == "merge" && w_unquoted(j)) return 1
-    else if (a && ep && mg_ep(t, 0)) return 1
+    else if (a && ep && mg_ep(t, w)) return 1
   }
   return 0
 }
@@ -2603,13 +2620,13 @@ function check_merge(   i, j) {
   if (i <= ntok && mg_gh(i)) {
     # A second gh word, quoted or not, means a wrapper flag may have taken the first as its value (`env -C gh xargs gh …`,
     # `env -C gh -v "gh" pr merge …`): unread.
-    for (j = i + 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }
+    for (j = i + 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(i, 1, 1)) mg_note("unread", "words"); return }
     cm_xargs = 0
     for (j = 1; j < i; j++) if (tok[j] == "xargs" && w_plain(j)) cm_xargs = 1
     mg_read(i)
     return
   }
-  for (j = 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(j, 1)) mg_note("unread", "command"); return }
+  for (j = 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(j, 1, 1)) mg_note("unread", "command"); return }
 }
 # mg_read(i) — read the gh command whose word is i, and note its code. Its subcommand words are found the way gh finds
 # them (mg_pos); its flags are read, as gh reads them, from the words after gh with the subcommand words taken out
@@ -2630,12 +2647,12 @@ function mg_read(i,   j, k, n, w, s1, s2, ep) {
       if (mg_ep(tok[w[k]], 1)) ep = 1
       else k += mg_api_word(w[k], (k < n) ? w[k + 1] : 0)
     }
-    if (!ep) { if (mg_shape(i, 0)) mg_note("unread", "words"); return }
+    if (!ep) { if (mg_shape(i, 0, 0)) mg_note("unread", "words"); return }
     if (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld) mg_note("api", "")
     else if (cm_xargs) mg_note("xargs", "")
     return
   }
-  if (!(s2 && tok[s2] == "merge" && w_unquoted(s2))) { if (mg_shape(i, 1)) mg_note("unread", "words"); return }
+  if (!(s2 && tok[s2] == "merge" && w_unquoted(s2))) { if (mg_shape(i, 1, 0)) mg_note("unread", "words"); return }
   if (s2 < ntok && (tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")) return
   cm_dd = 0
   for (k = 1; k <= n; k++) {
