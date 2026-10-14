@@ -120,6 +120,9 @@ pin "branch-cleanup.sh's dirty-worktree FLAG reason" "$cleanup" \
 pin "branch-cleanup.sh's live-worktree FLAG reason" "$cleanup" \
   'merged but recently active — possibly a live parallel session; leave it, re-run cleanup later' \
   "expected the tool's clean-but-recently-touched FLAG message to still read this way"
+pin "branch-cleanup.sh's running-process FLAG reason (dir #813)" "$cleanup" \
+  'has a running process whose cwd is inside it' \
+  "expected the tool's running-process FLAG message to still read this way (wrap.md's FLAG description pins its counterpart)"
 pin "wrap.md's FLAG description covers the uncommitted/untracked reason" "$wrap" \
   'uncommitted/untracked files that `git worktree remove` would refuse' \
   "expected wrap.md's FLAG parenthetical to keep naming the dirty-worktree reason"
