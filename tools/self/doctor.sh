@@ -321,13 +321,15 @@ git_value() {
 # HEAD that does not resolve and >1 for a fatal error, so the two are told apart by status, not lumped together.
 HEAD_STATE=""
 head_state() {
-  local hs_rc=0
+  local hs_rc=0 hs_why
   git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1 || hs_rc=$?
   case "$hs_rc" in
     0) HEAD_STATE=commits ;;
     1) HEAD_STATE=unborn ;;
     *) HEAD_STATE=failed
-       gap "could not read HEAD (git exit $hs_rc) — the checks that read the commit history are INCOMPLETE" ;;
+       gap "could not read HEAD (git exit $hs_rc) — the checks that read the commit history are INCOMPLETE"
+       hs_why="$(git -C "$repo_root" rev-parse -q --verify HEAD 2>&1 >/dev/null || true)"   # the diagnosis only, on the failure path
+       [ -z "$hs_why" ] || echo "       ${hs_why%%$'\n'*}" ;;
   esac
 }
 
@@ -1143,6 +1145,23 @@ pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
 # operator-run `/code-review high` pass, reproduced live).
 pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 
+# _blob_text VAR REV REL — dir #766: VAR = REL's text at REV, "" when REV or REL is absent there (a root commit's
+# parent; a commit that has no such file), status 2 when git itself fails. Absence is asked of git by status
+# (`rev-parse -q --verify` exits 1 for an unresolvable rev) and by listing (`ls-tree` prints nothing for an absent
+# path), not inferred from any nonzero exit — so a git that errors reads as a failure. Limit: a parent object that
+# is genuinely missing (a partial clone) still reads as an unresolvable rev, i.e. absent; a SHALLOW clone is
+# skipped upstream by check 6's guard.
+_blob_text() {
+  local var="$1" rev="$2" rel="$3" bt_rc=0 entry text
+  git -C "$repo_root" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || bt_rc=$?
+  if [ "$bt_rc" -eq 1 ]; then printf -v "$var" ''; return 0; fi
+  [ "$bt_rc" -eq 0 ] || return 2
+  entry="$(git -C "$repo_root" ls-tree "$rev" -- "$rel")" || return 2
+  if [ -z "$entry" ]; then printf -v "$var" ''; return 0; fi
+  text="$(git -C "$repo_root" show "$rev:$rel")" || return 2
+  printf -v "$var" '%s' "$text"
+}
+
 # _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
 # the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history, OUTSIDE any fenced code
 # block — i.e. how long the section AS IT CURRENTLY STANDS has existed, which is what the
@@ -1188,20 +1207,6 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # pending-release allowance (dir #299) — check that file too when fixing this one. (dir #766: this copy now
 # returns 2 on a git failure for the caller to GAP; the mirror in that test still fails open on it — a test
 # helper, not a self-check verdict, and left as is.)
-# _blob_text VAR REV REL — dir #766: VAR = REL's text at REV, "" when REV or REL is absent there (a root commit's
-# parent; a commit that has no such file), status 2 when git itself fails. Absence is asked of git by status
-# (`rev-parse -q --verify` exits 1 for an unresolvable rev) and by listing (`ls-tree` prints nothing for an absent
-# path), never inferred from a nonzero exit, so a damaged object store cannot read as "absent".
-_blob_text() {
-  local var="$1" rev="$2" rel="$3" bt_rc=0 entry text
-  git -C "$repo_root" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || bt_rc=$?
-  if [ "$bt_rc" -eq 1 ]; then printf -v "$var" ''; return 0; fi
-  [ "$bt_rc" -eq 0 ] || return 2
-  entry="$(git -C "$repo_root" ls-tree "$rev" -- "$rel")" || return 2
-  if [ -z "$entry" ]; then printf -v "$var" ''; return 0; fi
-  text="$(git -C "$repo_root" show "$rev:$rel")" || return 2
-  printf -v "$var" '%s' "$text"
-}
 _pending_release_intro_commit() {
   local heading="## [$1]" heading_re rel sha now before
   rel="${changelog_file#"$repo_root"/}"
@@ -1393,7 +1398,9 @@ if [ -f "$changelog_file" ] && file_readable "the CHANGELOG <-> release-tag chec
   # shallow-clone guard above already downgrades to a silent skip instead of inventing drift.
   pending=""
   pending_dist=""
+  [ -n "$HEAD_STATE" ] || head_state   # stands on its own: not dependent on check 4 having run
   history_blind=0
+  [ "$HEAD_STATE" = failed ] && history_blind=1   # GAPped by head_state: no verdict over a history it could not read
   dist=""   # set by git_value's `printf -v` below (SC2154)
   missing_tag=""
   overbound_section=""
@@ -1681,7 +1688,8 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
   fi
   # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
   # (dir #364) — see the check's header comment for the full rationale.
-  [ "$HEAD_STATE" = failed ] && ct_blind=1   # already GAPped by head_state at check 4
+  [ -n "$HEAD_STATE" ] || head_state   # stands on its own: not dependent on check 4 having run
+  [ "$HEAD_STATE" = failed ] && ct_blind=1   # GAPped by head_state
   if [ "$HEAD_STATE" = commits ]; then   # unborn HEAD: no commits to read
     git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
       log "$ct_range" --no-merges --format=%B || ct_blind=1

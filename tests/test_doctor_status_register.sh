@@ -53,6 +53,8 @@ restores the glob options set above; best-effort, same advisory check ## shopt -
 the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## sc_why="$(bash "$self_dir/shellcheck-targets.sh" "$repo_root" 2>&1 >/dev/null || true)"
 the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## [ -z "$sc_why" ] || echo "       ${sc_why%%$'\n'*}"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the tag list was read by git_value, status checked) ## grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
+the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## hs_why="$(git -C "$repo_root" rev-parse -q --verify HEAD 2>&1 >/dev/null || true)"   # the diagnosis only, on the failure path
+the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## [ -z "$hs_why" ] || echo "       ${hs_why%%$'\n'*}" ;;
 REGISTER
 
 
@@ -76,6 +78,12 @@ if [ -z "$stale" ]; then
   pass "no register entry names a site doctor.sh no longer has"
 else
   fail "no register entry names a site doctor.sh no longer has" "stale: $stale"
+fi
+bad_sep="$(printf '%s\n' "$register" | awk 'NF { n = gsub(/ ## /, "&"); if (n != 1) print }')"
+if [ -z "$bad_sep" ]; then
+  pass "every register line has exactly one ' ## ' separator"
+else
+  fail "every register line has exactly one ' ## ' separator" "malformed: $bad_sep"
 fi
 no_reason="$(printf '%s\n' "$register" | grep -F ' ## ' | awk -F' ## ' 'length($1) < 12 {print}')"
 if [ -z "$no_reason" ]; then

@@ -2380,12 +2380,13 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 
 # A43 — a git that fails only one subcommand. The shim execs the real git for everything else.
-run_shimmed() {   # run_shimmed NAME CASE-PATTERN — a fresh clean sandbox audited with a `git` refusing matching calls
+run_shimmed() {   # run_shimmed NAME CASE-PATTERN [HOOK] — a fresh clean sandbox audited with a `git` refusing matching calls
   mkdir -p "$SANDBOX/shim-$1"
   printf '#!/bin/sh\ncase " $* " in %s) echo "fatal: shim refuses this call" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' \
     "$2" "$(type -P git)" > "$SANDBOX/shim-$1/git"
   chmod +x "$SANDBOX/shim-$1/git"
   d="$(mk_clean_repo)"
+  [ -z "${3:-}" ] || "$3" "$d"   # optional fixture hook, called with the sandbox dir
   run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 PATH="$SANDBOX/shim-$1:$PATH" "$sd" "$d"
 }
 run_shimmed log '*" log -1 "*'
@@ -2440,5 +2441,17 @@ run_shimmed head '*" rev-parse -q --verify HEAD "*'
 check_status "A48: a git that cannot resolve HEAD at all -> exit 1" 1 "$STATUS"
 check_contains "A48: it is a GAP naming HEAD" "$OUT" "could not read HEAD (git exit 128)"
 check_absent "A48: no OK line over a history it could not read" "$OUT" "OK   CHANGELOG.md is at least as recent"
+
+# A49 — _blob_text's failure paths: an untagged newest CHANGELOG section sends check 6 into the pickaxe walk, and a git
+# that fails only 'ls-tree' (or 'show') must be a GAP naming the walk, not "blob absent".
+fixture_untagged_section() {
+  printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [9.9.9] — 2026-01-01\n- pending\n' > "$1/CHANGELOG.md"
+  ( cd "$1" && git add -A && git commit -qm "cut 9.9.9" )
+}
+run_shimmed lstree '*" ls-tree "*' fixture_untagged_section
+check_status "A49: a git that fails only 'ls-tree' -> exit 1" 1 "$STATUS"
+check_contains "A49: the pending-release walk is a GAP naming the history" "$OUT" "could not walk CHANGELOG.md's git history for '## [9.9.9]' (status 2)"
+run_shimmed show '*" show "*' fixture_untagged_section
+check_contains "A49: a git that fails only 'show' is the same GAP" "$OUT" "could not walk CHANGELOG.md's git history for '## [9.9.9]' (status 2)"
 
 summary
