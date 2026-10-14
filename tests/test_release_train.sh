@@ -140,6 +140,8 @@ wt2="$SANDBOX/wt-t2"
 rt build --branch t2 --base main --worktree "$wt2" --allow-conflicts "2=$s2" "3=$s3" "1=$s1"
 check_status "build --allow-conflicts -> exit 1 after the #3 merge" 1 "$STATUS"
 check_contains "...lists UU f" "$OUT" "UU f"
+check_contains "...the resume hint carries the base" "$OUT" "--base main"
+check_contains "...and the quoted worktree path" "$OUT" "build --continue --worktree "
 git -C "$wt2" rev-parse -q --verify MERGE_HEAD >/dev/null && pass "...MERGE_HEAD present in the worktree" || fail "...MERGE_HEAD present in the worktree" "no merge in progress"
 check_eq "...the branch holds only train: #2" "train: #2 ($s2)" "$(fp "$wt2" main)"
 rt build --continue --worktree "$wt2" --base main "1=$s1"
@@ -210,8 +212,21 @@ check_contains "...naming #2 as moved" "$OUT" "moved: #2"
 rt check --branch t3 "9=$s1"
 check_status "check with an N not in the train -> exit 1" 1 "$STATUS"
 check_contains "...naming #9 as missing" "$OUT" "missing: #9"
+rt check --branch t3 "2=${s2b:0:7}"
+check_status "check with an abbreviated sha -> exit 2" 2 "$STATUS"
 rt check --branch no-such-branch "1=$s1"
 check_status "check on an unknown branch -> exit 2" 2 "$STATUS"
+
+# --- a rewritten branch (a new head that does not descend from the merged one) is refused -------------------------
+wt16="$SANDBOX/wt-t16"
+rt build --branch t16 --base main --worktree "$wt16" "1=$s1" "2=$s2"
+check_status "t16 build -> exit 0" 0 "$STATUS"
+before="$(snap)"
+rt build --continue --worktree "$wt16" --base main "2=$s3"
+check_status "continue with a head of #2 that does not descend from the merged one -> exit 2" 2 "$STATUS"
+check_contains "...says it does not descend" "$OUT" "does not descend from"
+check_eq "...nothing merged" "train: #1 ($s1)
+train: #2 ($s2)" "$(fp "$wt16" main)"
 
 # --- update-branch: a merge of `main` is listed, not counted --------------------------------------------
 wt5="$SANDBOX/wt-t5"
@@ -266,10 +281,11 @@ check_status_out "build whose first head fast-forwards -> exit 0" 0
 check_eq "...both are merge commits named train: #N" "train: #5 ($sff)
 train: #4 ($s4)" "$(fp "$wt10" main)"
 
-# --- stacked heads: the second is already contained in the first -> exit 1, named ---------------------------
-rt build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "5=$s2b" "6=$s2"
-check_status "a head already contained in an earlier merge -> exit 1" 1 "$STATUS"
-check_contains "...says the merge made no merge commit" "$OUT" "made no merge commit"
+# --- stacked heads: a head contained in an EARLIER-listed head is refused before any write ------------------------
+refused "a head already contained in an earlier-listed head (stacked PRs)" build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "5=$s2b" "6=$s2"
+check_contains "...says which and what to do" "$OUT" "list the stacked PR first"
+rt build --branch t11 --base main --worktree "$SANDBOX/wt-t11" "6=$s2" "5=$s2b"
+check_status_out "the stacked PRs in the right order -> exit 0" 0
 
 # --- build --continue: an uncommitted resolved merge, and unmerged paths with no merge in progress ----------------
 wt12="$SANDBOX/wt-t12"

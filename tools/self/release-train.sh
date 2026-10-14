@@ -41,6 +41,10 @@
 #         in the train (B8g's input is the manager's `gh pr view --json headRefOid` read). Without --base the
 #         whole first-parent history is read when `origin/main` does not exist.
 #
+# `body` and `check` read the LOCAL `--base`: run `git fetch --prune origin` first, or an update-branch merge whose
+# second parent is not yet in the local base reads as an integration commit. `check` is B8g's pre-merge check —
+# once the train is merged into the base its range is empty and every constituent reads as missing.
+#
 # Every run prints each step. Exit codes: 0 done · 1 a conflict, a lost ancestor, a moved head · 2 refused,
 # changing nothing (a bad argument, an existing branch, a non-empty worktree path, a sha not present locally —
 # `git fetch --prune origin` first —, fewer than 2 constituents, a branch that is not a train).
@@ -133,7 +137,8 @@ git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || refuse "$repo is not a git
 
 # --- constituents --------------------------------------------------------------------------------------------
 NS=(); SHAS=()
-# add_constituent N=SHA RESOLVE — RESOLVE=1: the sha must be a commit present locally (full name stored).
+# add_constituent N=SHA RESOLVE — the sha must be the full 40 hex digits (a `gh` headRefOid): no abbreviation can be
+# shadowed by a ref of the same spelling, and `check` compares strings. RESOLVE=1 also requires that commit locally.
 add_constituent() {
   local arg="$1" resolve="$2" n s i full
   case "$arg" in
@@ -144,16 +149,13 @@ add_constituent() {
   case "$n" in *[!0-9]*) refuse "constituent '$arg': N is not a number" ;; esac
   case "$s" in *[!0-9a-fA-F]*) refuse "constituent '$arg': SHA is not hex" ;; esac
   [ "${#n}" -le 9 ] || refuse "constituent '$arg': N is too long"
-  [ "${#s}" -ge 7 ] && [ "${#s}" -le 40 ] || refuse "constituent '$arg': SHA must be 7 to 40 hex digits"
+  [ "${#s}" -eq 40 ] || refuse "constituent '$arg': SHA must be the full 40 hex digits"
   n=$((10#$n))
   s="$(printf '%s' "$s" | tr 'A-F' 'a-f')"
   if [ "$resolve" -eq 1 ]; then
     full="$(git -C "$repo" rev-parse --verify --quiet "${s}^{commit}" 2>/dev/null)" ||
       refuse "#$n: sha $s is not present locally (run 'git fetch --prune origin' first)"
-    s="$full"
-  else
-    full="$(git -C "$repo" rev-parse --verify --quiet "${s}^{commit}" 2>/dev/null)" || full=""
-    [ -z "$full" ] || s="$full"
+    [ "$full" = "$s" ] || refuse "#$n: $s is not a commit sha (it peels to $full)"
   fi
   i=0
   while [ "$i" -lt "${#NS[@]}" ]; do
@@ -166,10 +168,13 @@ add_constituent() {
 }
 
 # --- git helpers ---------------------------------------------------------------------------------------------
+# join_names — stdin lines joined by ", " (a path with a space stays one item).
+join_names() { awk '{ printf "%s%s", (NR > 1 ? ", " : ""), $0 } END { print "" }'; }
+
 # mt_names A B — prints the conflicting paths of merging A and B; rc 0 clean, 1 conflict, 2 merge-tree failed.
 mt_names() {
   local out rc=0
-  out="$(git -C "$repo" merge-tree --write-tree --name-only "$1" "$2" 2>/dev/null)" || rc=$?
+  out="$(git -C "$repo" -c core.quotePath=false merge-tree --write-tree --name-only "$1" "$2" 2>/dev/null)" || rc=$?
   case "$rc" in
     0) return 0 ;;
     1) awk 'NR == 1 { next } $0 == "" { exit } { print }' <<<"$out"; return 1 ;;
@@ -190,9 +195,26 @@ pairwise() {
       rc=0
       names="$(mt_names "${SHAS[$i]}" "${SHAS[$j]}")" || rc=$?
       if [ "$rc" -eq 1 ]; then
-        PW_CONFLICTS="${PW_CONFLICTS}conflict: #${NS[$i]} x #${NS[$j]}: $(tr '\n' ' ' <<<"$names" | sed 's/ *$//')"$'\n'
+        PW_CONFLICTS="${PW_CONFLICTS}conflict: #${NS[$i]} x #${NS[$j]}: $(join_names <<<"$names")"$'\n'
       elif [ "$rc" -ne 0 ]; then
         PW_CONFLICTS="${PW_CONFLICTS}conflict: #${NS[$i]} x #${NS[$j]}: (git merge-tree --write-tree failed: git >= 2.38 is needed, or the histories are unrelated)"$'\n'
+      fi
+      j=$((j + 1))
+    done
+    i=$((i + 1))
+  done
+}
+
+# check_stacked — over NS/SHAS: refuses (exit 2) a head already contained in an EARLIER-listed head (stacked PRs):
+# its merge would make no commit, after the earlier merges were already written.
+check_stacked() {
+  local i j
+  i=0
+  while [ "$i" -lt "${#SHAS[@]}" ]; do
+    j=$((i + 1))
+    while [ "$j" -lt "${#SHAS[@]}" ]; do
+      if git -C "$repo" merge-base --is-ancestor "${SHAS[$j]}" "${SHAS[$i]}"; then
+        refuse "#${NS[$j]} (${SHAS[$j]}) is already contained in #${NS[$i]}, listed before it — list the stacked PR first or leave it out"
       fi
       j=$((j + 1))
     done
@@ -204,7 +226,8 @@ pairwise() {
 seam_files() {
   local b="$1" s; shift
   for s in "$@"; do
-    git -C "$repo" -c core.quotePath=false diff --name-only "$b...$s"
+    git -C "$repo" -c core.quotePath=false diff --name-only "$b...$s" ||
+      printf 'release-train: warning: no merge base for %s...%s — its files are missing from the seam list\n' "$b" "$s" >&2
   done | awk '$0 != "CHANGELOG.md"' | sort | uniq -c | awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }'
 }
 
@@ -254,7 +277,7 @@ analyze() {
       rc=0
       names="$(mt_names "$p1" "$p2")" || rc=$?
       if [ "$rc" -eq 1 ]; then
-        I_LINES+=("resolved by hand: #$n ($s) — conflicted files: $(tr '\n' ' ' <<<"$names" | sed 's/ *$//')")
+        I_LINES+=("resolved by hand: #$n ($s) — conflicted files: $(join_names <<<"$names")")
         I_COUNT=$((I_COUNT + 1))
       elif [ "$rc" -ne 0 ]; then
         I_LINES+=("train merge #$n ($s): git merge-tree failed on its parents — treated as an integration commit")
@@ -297,6 +320,7 @@ print_seam() {   # BASE
 }
 
 # --- build ---------------------------------------------------------------------------------------------------
+HINT_BASE=""
 # merge_all WT — merge NS/SHAS into the worktree in order; on a conflict leave it in progress and exit 1.
 merge_all() {
   local w="$1" i=0 msg out rest
@@ -314,7 +338,8 @@ merge_all() {
         i=$((i + 1))
         while [ "$i" -lt "${#SHAS[@]}" ]; do rest="$rest #${NS[$i]}=${SHAS[$i]}"; i=$((i + 1)); done
         say "resolve and commit it there (git completes it under the subject 'train: #N (sha)'), then:"
-        say "  release-train.sh build --continue --worktree $w${rest:+ }${rest# }"
+        say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")${rest:+ }${rest# }"
+        say "(add --allow-conflicts if another of them is expected to conflict)"
         exit 1
       fi
       say "release-train: git merge of #${NS[$i]} failed without a conflict: $out"
@@ -325,7 +350,7 @@ merge_all() {
 }
 
 cmd_build() {
-  local b="${base:-origin/main}" i a main_co name wtabs registered cur tip lost names rc out
+  local b="${base:-origin/main}" i j a main_co name wtabs registered cur tip lost names rc out
   if [ "$cont" -eq 1 ]; then
     cur="$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)" || refuse "worktree $wt is on a detached HEAD"
     [ -z "$branch" ] || [ "$branch" = "$cur" ] || refuse "--branch $branch is not the branch checked out in $wt ($cur)"
@@ -336,6 +361,18 @@ cmd_build() {
     merge_in_progress "$wt" && refuse "a merge is still in progress in $wt — resolve and commit it first"
     [ -z "$(unmerged_paths "$wt")" ] || refuse "unresolved paths in $wt: $(unmerged_paths "$wt" | tr '\n' ';')"
     analyze "$b" "$branch"   # refuses a branch with no train merge
+    i=0
+    while [ "$i" -lt "${#SHAS[@]}" ]; do
+      j=0
+      while [ "$j" -lt "${#T_N[@]}" ]; do
+        if [ "${T_N[$j]}" = "${NS[$i]}" ] && ! git -C "$repo" merge-base --is-ancestor "${T_SHA[$j]}" "${SHAS[$i]}"; then
+          refuse "#${NS[$i]}: ${SHAS[$i]} does not descend from ${T_SHA[$j]}, the head already in the train (a rewritten branch leaves the train: rebuild)"
+        fi
+        j=$((j + 1))
+      done
+      i=$((i + 1))
+    done
+    check_stacked
     i=0
     while [ "$i" -lt "${#SHAS[@]}" ]; do
       git -C "$repo" merge-base --is-ancestor "${SHAS[$i]}" HEAD 2>/dev/null &&
@@ -355,12 +392,13 @@ cmd_build() {
       names=""; rc=0
       names="$(mt_names HEAD "${SHAS[$i]}")" || rc=$?
       if [ "$rc" -eq 1 ] && [ "$allow" -eq 0 ]; then
-        say "conflict: train head x #${NS[$i]}: $(tr '\n' ' ' <<<"$names" | sed 's/ *$//')"
+        say "conflict: train head x #${NS[$i]}: $(join_names <<<"$names")"
         say "release-train: #${NS[$i]} conflicts with the train head — nothing merged (--allow-conflicts to go on)"
         exit 1
       fi
       i=$((i + 1))
     done
+    HINT_BASE="$b"
     merge_all "$wt"
   else
     [ -n "$branch" ] || refuse "build needs --branch NAME"
@@ -388,6 +426,7 @@ cmd_build() {
         refuse "#${NS[$i]} (${SHAS[$i]}) is already an ancestor of $b — it needs no train"
       i=$((i + 1))
     done
+    check_stacked
     say "worktree: $wtabs"
     say "train: $branch off $b with ${#NS[@]} constituents"
     pairwise
@@ -407,6 +446,7 @@ cmd_build() {
     fi
     say "created: branch $branch at $(git -C "$wtabs" rev-parse --short HEAD) in $wtabs"
     wt="$wtabs"
+    HINT_BASE="$b"
     merge_all "$wt"
   fi
   say "merges done: ${#NS[@]}"
@@ -493,14 +533,15 @@ cmd_body() {
 
 # --- check ---------------------------------------------------------------------------------------------------
 cmd_check() {
-  local b="${base:-origin/main}" range walk h parents subj re n s i j a seen bad=0 want have
+  local b="${base:-origin/main}" mb range walk h parents subj re n s i j a seen bad=0 want have
   [ -n "$branch" ] || refuse "check needs --branch NAME"
   for a in ${ARGS[@]+"${ARGS[@]}"}; do add_constituent "$a" 0; done
   [ "${#NS[@]}" -ge 1 ] || refuse "check needs at least one N=SHA"
   git -C "$repo" rev-parse --verify --quiet "${branch}^{commit}" >/dev/null 2>&1 || refuse "branch $branch does not exist"
   range="$branch"
   if git -C "$repo" rev-parse --verify --quiet "${b}^{commit}" >/dev/null 2>&1; then
-    range="$(git -C "$repo" merge-base "$b" "$branch")..$branch"
+    mb="$(git -C "$repo" merge-base "$b" "$branch" 2>/dev/null)" || refuse "no merge base between $b and $branch"
+    range="$mb..$branch"
   elif [ -n "$base" ]; then
     refuse "base $b does not exist"
   fi
