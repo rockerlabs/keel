@@ -165,13 +165,16 @@ so no test may pin their text: an assertion on a changelog cite reads `CHANGELOG
 turns the cut PR's own CI red. Before the cut PR is opened, run `tools/self/cut-sim.sh` (CI's non-required `cut-simulation` job runs it on every PR): it
 cuts a throwaway clone of `HEAD` as `9999.0.0`, commits it there and runs the suite on that shape, so a pin the cut
 breaks is red before the release is (dir #722). It reads committed content only, so commit first; a `FAIL` usually means a
-test pins the pre-cut shape, or the cut refused — read the lines above the verdict. After the cut and the curation, run
+test pins the pre-cut shape, or the cut refused — read the lines above the verdict. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
+outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
+prepares everything up to "tag ready to cut," names the exact SHA, and stops. **Numbers:** after the cut and the
+curation, run
 `tools/self/changelog-claims.sh --section x.y.z --strict` until it exits 0: bind each number in the section to its
 source with a `<!-- claim: … -->` marker (`changelog.d/README.md` § Numbers), `hand` it with its as-of, or drop it
-(dir #810). Run it again after every later edit to that section, and once more on the exact commit handed over for
-the tag: a fix that lands after the cut can change a re-derived file without touching the section. Only after that PR lands does a human tag the merge commit and publish the release. A tag is
-outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
-prepares everything up to "tag ready to cut," names the exact SHA, and stops.
+(dir #810). A number whose source is gitignored (a ticket body, a spec, `RELEASES.md`) or changes after the cut is
+`claim: hand`, with the date or commit it was true at: a marker cannot re-derive what the tag does not contain. Run
+it again after every later edit to that section, and once more on the exact commit handed over for the tag: a fix
+that lands after the cut can change a re-derived file without touching the section (dir #846).
 
 **In that same cut-and-land PR, add the entry to [`docs/release-history.md`](release-history.md),
 following the house form described at the top of that file** — a digest of the `CHANGELOG.md` section
