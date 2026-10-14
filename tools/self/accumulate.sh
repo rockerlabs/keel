@@ -269,7 +269,8 @@ facts() {
 }
 
 # --- closed: the ticket behind an `Observer-class:` line --------------------------------------------------------------------------------
-# hits_in_file FILE CLASS → one record per tagged heading: the heading and the lines after it up to the first blank (cap 50),
+# hits_in_file FILE CLASS → one record per tagged heading: the heading and up to 50 lines after it, ending at the first blank
+# line or the next `##`/`###` heading (the census bounds a block there too),
 # newlines turned into US; heading_block_of then keeps the lines that belong to the heading
 hits_in_file() {
   local fb
@@ -287,7 +288,7 @@ hits_in_file() {
         t = line[i]; sub(/[ \t]+$/, "", t)
         if (t == tag) {
           done[h] = 1; rec = line[h]; n = 1
-          for (j = h + 1; j <= NR && line[j] != "" && n <= 50; j++) { rec = rec "\037" line[j]; n++ }
+          for (j = h + 1; j <= NR && line[j] != "" && line[j] !~ /^##+ / && n <= 50; j++) { rec = rec "\037" line[j]; n++ }
           print rec
         }
       }
