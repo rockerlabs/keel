@@ -78,6 +78,15 @@ printf '#!/usr/bin/env bash\n%s\necho "see test_embed.sh: 1 passed, 0 failed"\ne
 run bash "$d/run.sh"
 check_status "a summary-shaped phrase embedded mid-line does not count" 1 "$STATUS"
 
+# A file that already failed on its own (non-zero exit, no summary) is counted once, under its own reason: the
+# missing-summary message is for the green-looking file only.
+d="$(mkfake)"
+printf '#!/usr/bin/env bash\n%s\necho crashed-midway\nexit 3\n' "$SRC" > "$d/test_crash.sh"
+run bash "$d/run.sh"
+check_status "a lib-sourcing file that exits non-zero without summary fails the run" 1 "$STATUS"
+check_absent "... and is not also blamed for a missing summary" "$OUT" "log has no"
+check_contains "... counted once" "$OUT" "1 TEST FILE(S) FAILED"
+
 # A file that never sources lib.sh has no summary to owe (the synthetic fixtures of tests/test_run_sh.sh).
 d="$(mkfake)"
 printf '#!/usr/bin/env bash\necho no-lib\nexit 0\n' > "$d/test_nolib.sh"
