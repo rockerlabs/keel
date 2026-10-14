@@ -287,7 +287,7 @@ hits_in_file() {
         t = line[i]; sub(/[ \t]+$/, "", t)
         if (t == tag) {
           done[h] = 1; rec = line[h]; n = 1
-          for (j = h + 1; j <= NR && line[j] != "" && n < 50; j++) { rec = rec "\037" line[j]; n++ }
+          for (j = h + 1; j <= NR && line[j] != "" && n <= 50; j++) { rec = rec "\037" line[j]; n++ }
           print rec
         }
       }
@@ -302,7 +302,7 @@ heading_block_of() {
   spans="$(blank_inline_code_spans <<< "$1")"
   while IFS= read -r line; do
     if [ "$first" = 1 ]; then block="$line"; first=0
-    elif bb_heading_continues "$block" "$line"; then block+="$NL$line"
+    elif [ -n "$line" ] && bb_heading_continues "$block" "$line"; then block+="$NL$line"
     else break
     fi
   done <<< "$spans"
