@@ -130,10 +130,18 @@ check_absent "... no trip block" "$OUT" "$TRIP"
 # --- NOTE: the watched checkout's own ref-guard.sh predates guard_refs_unexplained: skipped with a NOTE, not silent --
 d="$(mkcanary)"
 peer_act "$d" 'git -C "$R" branch stray'
-git -C "$REPO_ROOT" show HEAD:tools/lib/ref-guard.sh | awk '/^# guard_tip_survives REPO SHA/ { exit } { print }' > "$d/tools/lib/ref-guard.sh"
+# An "older" lib: the working-tree one cut before the dir #768 functions (everything from guard_tip_survives on).
+awk '/^# guard_tip_survives REPO SHA/ { exit } { print }' "$REPO_ROOT/tools/lib/ref-guard.sh" > "$d/tools/lib/ref-guard.sh"
+check_eq "the stale-lib fixture really lacks the new function" "0" "$(grep -c '^guard_refs_unexplained()' "$d/tools/lib/ref-guard.sh")"
 run bash "$d/tests/run.sh"
 check_contains "an older ref-guard.sh -> a NOTE names the missing function" "$OUT" "predates guard_refs_unexplained"
 check_absent "... and no 'command not found' leaks into the run" "$OUT" "command not found"
+# The skip is of the refs half only: the branch/HEAD/status compare of dir #318 still runs and trips.
+d="$(mkcanary)"
+peer_act "$d" 'git -C "$R" commit -q --allow-empty -m own-commit'
+awk '/^# guard_tip_survives REPO SHA/ { exit } { print }' "$REPO_ROOT/tools/lib/ref-guard.sh" > "$d/tools/lib/ref-guard.sh"
+run bash "$d/tests/run.sh"
+check_status "an older ref-guard.sh -> the HEAD compare still trips on the run's own commit" 1 "$STATUS"
 
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"

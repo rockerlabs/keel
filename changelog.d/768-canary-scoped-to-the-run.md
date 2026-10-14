@@ -9,4 +9,7 @@
     per-branch tracking like any other. Only a branch name without a dot was treated that way before.
   - **`TMPDIR` inside the watched checkout** no longer trips the run on its own log directory. The old
     "TMPDIR inside the checkout self-trips" pin is reversed.
+  - A watched root that is a **subdirectory of a larger repo** is handled the same way. A checkout whose
+    own `tools/lib/ref-guard.sh` is older than this runner (the symlinked-adopter shape) now gets a NOTE and
+    skips the branch half of the canary, instead of a silent "command not found".
   - An own-branch move, a changed `.git/config` key and a stray file elsewhere still trip it.

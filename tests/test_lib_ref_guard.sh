@@ -66,11 +66,11 @@ check_file "tools/lib/ref-guard.sh exists" "$guard_lib"
 . "$guard_lib" || { echo "tools/lib/ref-guard.sh failed to source — refusing (S-fix-1's self-check needs its ownership-scoping helpers, and a silent 'command not found' here would make the self-check vacuously pass)" >&2; exit 1; }
 
 # repo_root_self_check_unowned OWNED_BEFORE OWNED_AFTER REFS_SNAPSHOT — the ownership-scoped filter
-# T14's fixture-driven proof (below) applies. (The self-check at the bottom used to go through this seam too;
-# dir #768 moved it to guard_refs_unexplained, whose own scoping is pinned in tests/test_ref_guard.sh, so a
-# mutation of this wrapper no longer reaches it.) The seam: swapping this body from guard_union+guard_filter_unowned back to a bare passthrough
+# T14's fixture-driven proof (below) applies. The seam: swapping this body from guard_union+guard_filter_unowned back to a bare passthrough
 # (`printf '%s\n' "$3"` — the pre-S-fix-1 whole-namespace-equivalent shape for the refs/heads channel)
-# is exactly the mutation T14(a)'s sibling-activity assertion exists to catch red. A named local
+# is exactly the mutation T14(a)'s sibling-activity assertion exists to catch red.
+# (dir #768: the self-check at the bottom used to go through this seam too. It now calls guard_refs_unexplained,
+# whose own scoping is pinned in tests/test_ref_guard.sh, so mutating this wrapper no longer reaches it.) A named local
 # wrapper, not a direct guard_union/guard_filter_unowned call at each site, so that one mutation
 # catches every caller without also affecting tools/lib/ref-guard.sh's own coverage in
 # test_ref_guard.sh. Takes OWNED_BEFORE/OWNED_AFTER rather than a pre-unioned single argument, so a
@@ -413,8 +413,7 @@ check_block_equal "T13: foreign13's own refs are unchanged — the ambient GIT_D
 # real REPO_ROOT, which this file cannot safely leak-simulate against). tools/lib/ref-guard.sh's own
 # test_ref_guard.sh already covers guard_owned_branches/guard_refs_snapshot/guard_filter_unowned/
 # guard_union in isolation; this scenario instead pins repo_root_self_check_unowned() above — the
-# ownership seam the self-check's compare is built on (it applies guard_refs_unexplained on top since dir #768) —
-# via a fixture repo standing in for REPO_ROOT.
+# ownership seam, via a fixture repo standing in for REPO_ROOT.
 # ============================================================================================
 r14="$(new_repo)"
 git -C "$r14" commit -q --allow-empty -m init

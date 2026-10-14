@@ -338,8 +338,8 @@ main() {
       # not be reported as if it were that ordinary case.
       printf 'NOTE: %s exists but failed to source — the refs/heads + reflog half of the corruption\n' "$guard_lib" >&2
       printf '      canary (dir #333) is skipped; the branch/HEAD/status compare (dir #318) still runs.\n' >&2
-    elif ! declare -F guard_refs_unexplained >/dev/null; then
-      # dir #768: a watched checkout whose own tools/lib/ref-guard.sh predates guard_refs_unexplained (the adopter
+    elif ! declare -F guard_refs_unexplained >/dev/null || ! declare -F guard_tip_survives >/dev/null; then
+      # dir #768: a watched checkout whose own tools/lib/ref-guard.sh predates guard_refs_unexplained or its helper (the adopter
       # symlink shape, dir #627, can pair this runner with an older lib). Calling the missing function would print
       # "command not found" and leave the compare empty, i.e. silently green — say so and skip, like the cases above.
       printf 'NOTE: %s predates guard_refs_unexplained (dir #768) — the refs/heads + reflog half of the corruption\n' "$guard_lib" >&2
@@ -450,7 +450,9 @@ main() {
   case "$guard_pl" in
     "$guard_pr"/*)
       # git prints porcelain paths relative to the repository's TOP level, not to the watched root: when the root is a
-      # subdirectory of a bigger repo (a monorepo adopter) the entries start with that prefix.
+      # subdirectory of a bigger repo (a monorepo adopter) the entries start with that prefix. If this rev-parse fails the
+      # same git is failing the status compare too (a dubious-ownership checkout: see the NOTE above), which is its own
+      # loud, fail-closed case.
       guard_rel="${guard_pl#"$guard_pr"/}" guard_acc="$(git -C "$guard_repo_root" rev-parse --show-prefix 2>/dev/null)"
       while [ -n "$guard_rel" ]; do
         guard_acc="$guard_acc${guard_rel%%/*}/"
