@@ -12,14 +12,18 @@
 #
 # Text read: by default every fragment (the reader `changelog-fragments.sh --list` names them, in its order),
 # then the body of `CHANGELOG.md`'s `## [Unreleased]`. --section X.Y.Z reads only the body of `## [X.Y.Z]`.
-# --fragment (repeatable, each must be in the reader's list, exclusive with --section) reads only the named
-# fragments: how a PR or a pre-cut correction lints its own text under --strict. Fenced blocks and inline
-# code spans are never read. A line with an odd number of backticks is not code-blanked (its code numbers
-# list as claims).
+# --fragment (repeatable, each must be in the reader's list, exclusive with --section; a leading ./ and an
+# absolute path under the repository are accepted) reads only the named fragments: how a PR or a pre-cut
+# correction lints its own text under --strict. Fenced blocks and inline code spans are never read. A line
+# with an odd number of backticks is not code-blanked (its code numbers list as claims).
 #
-# A claim is a number in the prepared text (ticket and PR ids, versions, dates, identifiers, "step 5"-style
-# structure words, exit statuses and list ordinals are not). A marker on the same line binds the nearest
-# claim to its LEFT that no marker has bound yet:
+# A claim is a number in the prepared text. Ticket and PR ids, versions, dates, identifiers, "step 5"-style
+# structure words, exit statuses and list ordinals are not claims. Two exceptions keep a count visible: such a
+# reference followed by a COUNT unit or a change verb ("passes 12 tests", "lines 120 changed"), and a number
+# after a count qualifier ("top-10", "over-100"). A unit glued to a number (2x, 40KB, 30s) leaves an integer
+# claim a marker may bind.
+#
+# A marker on the same line binds the nearest claim to its LEFT that no marker has bound yet:
 #   <!-- claim: words PATH -->            the awk field count of PATH (not `wc -w`, which differs per platform)
 #   <!-- claim: lines PATH -->            `wc -l` of PATH
 #   <!-- claim: matches ERE PATH... -->  the sum of `grep -cE ERE` over the PATHs (ERE: 'single quoted', or
@@ -165,10 +169,20 @@ function blank_range(st, ln,    sp) {
   sp = sprintf("%" ln "s", "")
   s = substr(s, 1, st - 1) sp substr(s, st + ln)
 }
-# blank(re, ci, lb): overwrite every match of re with spaces of the same length (positions never shift).
+# counted(pos, lines): the text from pos on starts with a COUNT unit ("12 tests") or, after "lines" only, a change
+# verb ("lines 120 changed"): the number just before it is a count, not a reference (dir #846). A reference is
+# followed by a verb, a connective or punctuation ("step 5 runs the gate", "step 3 added a check"), which are
+# the overwhelming majority in real sections. The lists are closed on purpose and plural-only, except after
+# exactly 1 after an exit/return/status/passes word ("returns 1 value"): a singular after another number ("step 4 line 56") or a noun that can name
+# what a step or round produced ("round 2 findings") is a reference.
+function counted(pos, lines, one,    r) {
+  r = tolower(substr(s, pos))
+  return r ~ units || (one && r ~ unit1) || (lines && r ~ verbs)
+}
+# blank(re, ci, lb, rb): overwrite every match of re with spaces of the same length (positions never shift).
 # ci matches on the lowercase copy (same byte positions under LC_ALL=C); lb requires a non-alphanumeric
-# byte to the match's left.
-function blank(re, ci, lb,    t, from, st, ln) {
+# byte to the match's left; rb keeps a match whose number is counted() (right boundary).
+function blank(re, ci, lb, rb,    t, from, st, ln) {
   from = 1
   while (from <= length(s)) {
     t = substr(ci ? tolower(s) : s, from)
@@ -176,6 +190,20 @@ function blank(re, ci, lb,    t, from, st, ln) {
     st = from + RSTART - 1; ln = RLENGTH
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
+    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /, tolower(substr(s, st, ln)) ~ /^(exit|return|status|passes)[a-z ]*[^0-9,.]1$/)) { from = st + ln; continue }
+    blank_range(st, ln)
+    from = st + ln
+  }
+}
+# blank_idents(): the identifier shape (A13, S2-9, UTF-8, round-3), except after a count qualifier: "top-10" and
+# "over-100" carry a count, so they are not identifiers.
+function blank_idents(    from, st, ln, w) {
+  from = 1
+  while (from <= length(s)) {
+    if (!match(substr(s, from), "[A-Za-z]+-?[0-9]+(-[0-9]+)?(\\.[0-9]+)*[A-Za-z]*")) return
+    st = from + RSTART - 1; ln = RLENGTH
+    w = substr(s, st, ln)
+    if ((st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) || tolower(w) ~ qre) { from = st + (tolower(w) ~ qre ? ln : 1); continue }
     blank_range(st, ln)
     from = st + ln
   }
@@ -219,6 +247,11 @@ BEGIN {
   re_x6 = "(steps?|slices?|phase|rounds?|spec|lines?|turn|fd|items?|legs?|pass(es)?|part) " list
   re_x6s = sect " ?" list
   re_x7 = "(exit(s|ing|ed)?|exit code|return(s)?|status) " list
+  qre = "^(top|over|under|above|below|around|about|nearly|almost|max|min|first|last|next|only|least|most)-[0-9]"
+  units = "^ +(tests|values|files|lines|words|rows|bytes|tokens|chars|characters|seconds|minutes|hours|days|assertions|mutants|commits|errors|failures)([^a-z0-9]|$)"
+  unit1 = "^ +(test|value|file|line|word|row|byte|token|char|character|second|minute|hour|day|assertion|mutant|commit|error|failure)([^a-z0-9]|$)"   # the singular, after exactly 1
+  verbs = "^ +(changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
+  unitre = "^(x|s|ms|us|ns|sec|secs|min|mins|h|hr|hrs|d|w|px|pt|[kKmMgGtT][bB]|[kKmMgGtT]iB)$"
   on = (h == "")
 }
 {
@@ -291,10 +324,10 @@ BEGIN {
   blank("[0-9]?[0-9]:[0-9][0-9]Z?", 0, 0)
   blank("[0-9]+(st|nd|rd|th)", 0, 0)
   blank_shas()
-  blank("[A-Za-z]+-?[0-9]+(-[0-9]+)?(\\.[0-9]+)*[A-Za-z]*", 0, 1)
-  blank(re_x6, 1, 1)
+  blank_idents()
+  blank(re_x6, 1, 1, 1)
   blank(re_x6s, 0, 0)
-  blank(re_x7, 1, 1)
+  blank(re_x7, 1, 1, 1)
   blank("\\([0-9]+\\)", 0, 0)
   if (match(s, "^(- )?[0-9]+\\. ")) blank_range(RSTART, RLENGTH)
   blank("(mode|umask) [0-9]+", 1, 1)
@@ -322,7 +355,12 @@ BEGIN {
     } else if (substr(s, e, 1) == "-" && substr(s, e + 1, 1) ~ /[A-Za-z]/) {
       match(substr(s, e + 1), /^[A-Za-z]+/); e += 1 + RLENGTH; nword = 1
     }
-    if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*(\.[0-9]+)*/)) { e += RLENGTH; nonint = 1 }
+    if (!nword && match(substr(s, e), /^[A-Za-z%][A-Za-z0-9%]*(\.[0-9]+)*/)) {
+      tail = substr(s, e, RLENGTH); e += RLENGTH
+      # a glued unit from a closed list (2x, 40KB, 30s) leaves an integer claim; a scale suffix (5k, 3M, 2B), %,
+      # any other letters (0xff, 3D, 2FA), a digit or a dot in the tail (1e5, 12h30m, 2v1.5) do not
+      if (tail !~ unitre) nonint = 1
+    }
     nc++
     cpos[nc] = st; ctext[nc] = substr(s, ds, e - ds)
     v = digits; gsub(/,/, "", v); cval[nc] = nonint ? "-" : v
@@ -476,6 +514,19 @@ scan() {
   done <<< "$recs"
 }
 
+# normalise_fragment_path P — P as the reader lists it: a leading ./ dropped, and an absolute path under the
+# repository (as given or physical) made repo-relative; an absolute path elsewhere fails (dir #846).
+normalise_fragment_path() {
+  local p="$1"
+  while :; do case "$p" in ./*) p="${p#./}" ;; *) break ;; esac; done
+  case "$p" in
+    "$repo_dir"/*) p="${p#"$repo_dir"/}" ;;
+    "$repo_real"/*) p="${p#"$repo_real"/}" ;;
+    /*) printf '%s' "$p"; return 1 ;;
+  esac
+  printf '%s' "$p"
+}
+
 # fence_parity FILE LABEL — refuse (exit 2) a file with an odd number of fence markers: the blanking would
 # stay "in fence" to the end and --strict would pass numbers it never saw.
 fence_parity() {
@@ -498,6 +549,7 @@ if [ "$read_changelog" = 1 ]; then
     if [ -n "$section" ]; then
       sec_count="$(grep -c "^## \[${section//./\\.}\]" <<< "$blanked" || true)"
       [ "$sec_count" -ge 1 ] || die "no section '## [$section]' in CHANGELOG.md"
+      [ "$sec_count" -le 1 ] || die "CHANGELOG.md has $sec_count '## [$section]' headings, expected exactly 1"
     fi
   elif [ -n "$section" ]; then
     die "--section needs a CHANGELOG.md in $repo_dir"
@@ -510,8 +562,9 @@ if [ "$read_frags" = 1 ]; then
     chosen=""
     while IFS= read -r f; do
       [ -n "$f" ] || continue
+      f="$(normalise_fragment_path "$f")" || die_args "--fragment '$f' is outside the repository"
       grep -qxF -- "$f" <<< "$listing" || die_args "--fragment '$f' is not a fragment the reader lists (changelog-fragments.sh --list)"
-      chosen="$chosen$f"$'\n'
+      grep -qxF -- "$f" <<< "$chosen" || chosen="$chosen$f"$'\n'
     done <<< "$frag_args"
     listing="$chosen"
   fi
