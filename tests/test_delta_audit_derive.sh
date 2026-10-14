@@ -447,6 +447,22 @@ check_eq "816: config reads before prose (project.yml above aa-notes.md)" 1 \
   "$([ "$(mix_line '| ios/project.yml |')" -lt "$(mix_line '| aa-notes.md |')" ] && echo 1 || echo 0)"
 check_absent "816: no fall-through note when every extension is known" "$OUT" "unrecognised"
 
+# review findings: spec/ prose stays prose, Go/Docker names class by name, an empty knob is the default
+git -C "$rm8" checkout -qb prm1b
+mkdir -p "$rm8/spec"
+printf 'p\n' > "$rm8/spec/overview.md"
+printf 'x\n' > "$rm8/Dockerfile"
+printf 'x\n' > "$rm8/go.mod"
+git -C "$rm8" add -A; git -C "$rm8" commit -qm "spec prose, Dockerfile, go.mod"
+git -C "$rm8" checkout -q main
+merge_pr "$rm8" 804 prm1b
+run_in "$rm8" env "DELTA_CODE_EXTENSIONS=" "$TOOL" --out "$SANDBOX/out-mix1b" "$head8" "$(git -C "$rm8" rev-parse HEAD)"
+mix1b="$(cat "$SANDBOX/out-mix1b/ledger.md")"
+check_contains "816: a .md under spec/ stays prose, not test" "$mix1b" "| spec/overview.md | prose |"
+check_contains "816: Dockerfile (by name) classes code; an EMPTY knob is the default list" "$mix1b" "| Dockerfile | code |"
+check_contains "816: go.mod (by name) classes config" "$mix1b" "| go.mod | config |"
+git -C "$rm8" reset -q --hard "$head8"
+
 # an unknown extension falls to prose AND prints one note naming it; a known one prints none
 git -C "$rm8" checkout -qb prm2
 printf 'x\n' > "$rm8/blob.zzz"

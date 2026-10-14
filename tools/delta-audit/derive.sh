@@ -56,10 +56,11 @@
 #   DELTA_INVARIANT_PATHS  substrings marking behaviour-with-a-rail code (default: "pre-pr-gate
 #                           secret-guard install.sh uninstall.sh .github/workflows/")
 #   DELTA_CODE_EXTENSIONS   space-separated extensions or exact basenames classed code (default: sh bash
-#                           zsh swift m mm c cc cpp h hpp rs go py rb js jsx ts tsx java kt cs php
-#                           Makefile Package.swift). A set value REPLACES the default.
+#                           zsh swift m mm c cc cpp h hpp rs go py rb js jsx mjs cjs ts tsx java kt kts
+#                           gradle cs php sql Makefile Dockerfile Gemfile Rakefile Podfile). A set,
+#                           non-empty value REPLACES the default; matching is case-sensitive.
 #   DELTA_CONFIG_EXTENSIONS same, classed config (default: yml yaml json toml plist xcconfig ini cfg
-#                           requirements.txt)
+#                           lock go.mod go.sum requirements.txt)
 #   DELTA_PROSE_EXTENSIONS  same, classed prose and exempt from the fall-through note (default: md txt
 #                           rst adoc LICENSE NOTICE .gitignore .gitattributes)
 #   DELTA_SESSION_FILES    files packed into one suggested session (default: 12)
@@ -288,10 +289,10 @@ is_test() {
   return 1
 }
 # dir #816: each knob is a list of extensions (no dot) or exact basenames; $1 is the path, $2.. the list.
-# A set variable REPLACES its default list, like DELTA_INVARIANT_PATHS.
-read -r -a code_ext <<< "${DELTA_CODE_EXTENSIONS-sh bash zsh swift m mm c cc cpp h hpp rs go py rb js jsx ts tsx java kt cs php Makefile Package.swift}"
-read -r -a config_ext <<< "${DELTA_CONFIG_EXTENSIONS-yml yaml json toml plist xcconfig ini cfg requirements.txt}"
-read -r -a prose_ext <<< "${DELTA_PROSE_EXTENSIONS-md txt rst adoc LICENSE NOTICE .gitignore .gitattributes}"
+# A set, non-empty variable REPLACES its default list, like DELTA_INVARIANT_PATHS; an empty one is the default.
+read -r -a code_ext <<< "${DELTA_CODE_EXTENSIONS:-sh bash zsh swift m mm c cc cpp h hpp rs go py rb js jsx mjs cjs ts tsx java kt kts gradle cs php sql Makefile Dockerfile Gemfile Rakefile Podfile}"
+read -r -a config_ext <<< "${DELTA_CONFIG_EXTENSIONS:-yml yaml json toml plist xcconfig ini cfg lock go.mod go.sum requirements.txt}"
+read -r -a prose_ext <<< "${DELTA_PROSE_EXTENSIONS:-md txt rst adoc LICENSE NOTICE .gitignore .gitattributes}"
 # `${a[@]+"${a[@]}"}`, not a bare expansion: an EMPTY knob (DELTA_CODE_EXTENSIONS=) leaves an empty array,
 # a hard error under `set -u` on bash < 4.4.
 in_ext_list() {
@@ -308,12 +309,12 @@ in_ext_list() {
 classify() {
   if is_historical "$1"; then printf 'prose-historical'
   elif is_invariant "$1"; then printf 'code-invariant'
-  elif is_test "$1"; then printf 'test'
+  elif is_test "$1" && ! in_ext_list "$1" ${prose_ext[@]+"${prose_ext[@]}"}; then printf 'test'
   elif in_ext_list "$1" ${code_ext[@]+"${code_ext[@]}"}; then printf 'code'
   elif in_ext_list "$1" ${config_ext[@]+"${config_ext[@]}"}; then printf 'config'
   elif in_ext_list "$1" ${prose_ext[@]+"${prose_ext[@]}"}; then printf 'prose'
   elif [ "$2" = 1 ]; then printf 'code'
-  else printf 'prose'
+  else printf 'default'   # no list named it: the caller reports it and treats it as prose
   fi
 }
 
@@ -372,10 +373,11 @@ unknown_n=0; unknown_eg=""
 while IFS="$TAB" read -r f n exe prs; do
   [ -n "$f" ] || continue
   class="$(classify "$f" "$exe")"
-  # dir #816: a plain-prose row that matched NO list is a default, not a verdict — surface it below.
-  if [ "$class" = prose ] && [ "$exe" != 1 ] && ! in_ext_list "$f" ${prose_ext[@]+"${prose_ext[@]}"}; then
+  # dir #816: a file no list named is a default, not a verdict — surface it below.
+  if [ "$class" = default ]; then
+    class=prose
     unknown_n=$((unknown_n + 1))
-    [ "$unknown_n" -le 5 ] && unknown_eg="$unknown_eg${unknown_eg:+, }$f"
+    if [ "$unknown_n" -le 5 ]; then unknown_eg="$unknown_eg${unknown_eg:+, }$f"; fi
   fi
   if [ "$class" = prose-historical ]; then
     case "$f" in
@@ -405,8 +407,10 @@ if [ "$frag_files" -gt 0 ]; then
   bucket3+=("changelog.d/ ($frag_files files)${TAB}prose-historical${TAB}${frag_n}${TAB}${frag_prs}")
 fi
 if [ "$unknown_n" -gt 0 ]; then
+  unknown_more=""
+  if [ "$unknown_n" -gt 5 ]; then unknown_more=", ..."; fi
   printf 'derive.sh: %s file(s) have an unrecognised extension and fell to the default class prose (%s%s) —\n' \
-    "$unknown_n" "$unknown_eg" "$([ "$unknown_n" -gt 5 ] && printf ', ...')" >&2
+    "$unknown_n" "$unknown_eg" "$unknown_more" >&2
   printf '  set DELTA_CODE_EXTENSIONS / DELTA_CONFIG_EXTENSIONS / DELTA_PROSE_EXTENSIONS to classify them.\n' >&2
 fi
 
