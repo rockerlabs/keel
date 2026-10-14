@@ -118,6 +118,9 @@ M128	tools/pre-pr-gate.sh	 || index(r, ";")		B6: a ; in a write path holding pul
 M129	tools/pre-pr-gate.sh	 || d ~ /pulls|merge/)) return 1	)) return 1	B6: an encoded merge word (me%72ge) in an irregular path is not seen
 M130	tools/pre-pr-gate.sh	  if (b) return s ~ /\{branch\}|:branch([^a-z0-9_]|$)/	  if (b) return s ~ /\{branch\}|:branch/	B6: :branches reads as the :branch placeholder (a false deny)
 M131	tools/pre-pr-gate.sh	(f[c] ~ /^merge([.;]|$)/ || (w && mg_ph(f[c], 0)))	(f[c] ~ /^merge([.;]|$)/)	B6: an owner/repo placeholder standing for merge (pulls/5/{repo}) is not read
-M132	tools/pre-pr-gate.sh	 || (d != r && (mg_segs(d, w, 0) || mg_segs(d, w, 1)))		B6: the decoded path is not read by segments ({owner}%2f5%2f{repo})
-M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /\/\.\.?(\/|$)/ || index(d, "//"))) return 1\n		B6: a placeholder path with an inner dot segment or // is read only by the model
+M132	tools/pre-pr-gate.sh	 ||\n         (d != r && (mg_segs(d, w, 0) || (index(d, "..") && mg_segs(d, w, 1))))		B6: the decoded path is not read by segments ({owner}%2f5%2f{repo})
+M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))) return 1\n		B6: a placeholder path with a dot segment or // is read only by the model
 M134	tools/pre-pr-gate.sh	  return mg_segs(r, w, 0) || 	  return 	B6: the RFC 3986 order (an empty segment kept for ..) is not tried (pulls/5//../merge)
+M135	tools/pre-pr-gate.sh	  for (k = 1; k <= m; k++) if (q[k] != "") f[++c] = q[k]	  for (k = 1; k <= m; k++) f[++c] = q[k]	B6: empty segments left in before the last-three match (pulls//5//../merge)
+M136	tools/pre-pr-gate.sh	; gsub(/[a-z][a-z0-9+.-]*:\/\//, "/", r)		B6: a scheme:// reads as // (a false deny on a full-URL endpoint)
+M137	tools/pre-pr-gate.sh	(d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))	(d ~ /\/\.\.?(\/|$)/ || index(d, "//"))	B6: a leading ./ in a placeholder path is not irregular

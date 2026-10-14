@@ -2561,9 +2561,10 @@ function mg_gh(j,   n) {
   return tok[j] == "gh" || (n >= 3 && substr(tok[j], n - 2) == "/gh")
 }
 # mg_ep(t, w) — a positional word that may name the merge endpoint. The query and fragment are cut off the lower-cased
-# word; then two readings of its path, the raw one and the `%XX`-decoded one, are each split into segments (empty ones
-# dropped, dot segments resolved) and match when their last three are `pulls`, any segment, `merge` (a `.json` or `;x`
-# suffix allowed). With w set (the word may be gh’s own endpoint, not another command’s text) a segment holding a part
+# word, and a `scheme://host` becomes `/`; then two readings of its path, the raw one and the `%XX`-decoded one, are
+# each read by mg_segs (dot segments resolved in both orders — the w=0 text fallbacks rely on that, the fail-closed
+# rules below already cover an API write) and match when their last three are `pulls`, any segment, `merge` (a
+# `.json` or `;x` suffix allowed). With w set (the word may be gh’s own endpoint, not another command’s text) a segment holding a part
 # gh fills in (`{owner}`, `{repo}`, `:owner`, `:repo`) may stand for `pulls` or `merge`, a `{branch}`/`:branch` counts
 # outright (arbitrary text, `/` and `#` included), and a `%` escape, a `;` or an inner dot segment in a word holding
 # `pulls` or `merge`, before or after decoding, counts too, and so does an inner dot segment or `//` in a word holding
@@ -2604,12 +2605,13 @@ function mg_segs(s, w, e,   n, k, p, q, m, f, c) {
 }
 function mg_ep(t, w,   r, d) {
   if (t ~ /^-/) return 0
-  r = tolower(t); sub(/[?#].*/, "", r)
+  r = tolower(t); sub(/[?#].*/, "", r); gsub(/[a-z][a-z0-9+.-]*:\/\//, "/", r)
   if (w && mg_ph(r, 1)) return 1
   d = mg_dec(r)
   if (w && (index(r, "%") || index(r, ";") || r ~ /\/\.\.?(\/|$)/) && (r ~ /pulls|merge/ || d ~ /pulls|merge/)) return 1
-  if (w && mg_ph(r, 0) && (d ~ /\/\.\.?(\/|$)/ || index(d, "//"))) return 1
-  return mg_segs(r, w, 0) || mg_segs(r, w, 1) || (d != r && (mg_segs(d, w, 0) || mg_segs(d, w, 1)))
+  if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))) return 1
+  return mg_segs(r, w, 0) || (index(r, "..") && mg_segs(r, w, 1)) ||
+         (d != r && (mg_segs(d, w, 0) || (index(d, "..") && mg_segs(d, w, 1))))
 }
 # mg_shape(s, ep, w) — the words after word s hold `pr` then `merge`, or (ep set) `api` then a merge endpoint word
 # (w: the words may be gh’s own, so a part gh fills in counts, in every word — behind a runner no flag’s value can be
