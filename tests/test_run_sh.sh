@@ -245,6 +245,97 @@ check_contains "watchdog: ...with its output" "$OUT" "ignores-term"
 check_contains "watchdog: ...counted once" "$OUT" "1 TEST FILE(S) FAILED"
 check_nofile "watchdog: ...cut short (its finished marker is absent)" "$d/finished"
 
+# --- dir #770: the watchdog and on_interrupt signal the file's whole PROCESS GROUP -----------------------
+# A signal to the file's own bash left whatever it had started running: the `sleep 300` of a hung fixture, a
+# holder, a `head`. Each file now runs in its own group (`set -m` around the launch — the mechanism
+# tools/self/mutation-sweep.sh shares, dir #782) and the watchdog, on_interrupt and the reap signal the group.
+# Fixtures record the pid of a BACKGROUND `sleep 300` they start; the proof is that pid gone once run.sh is back.
+# gone_pid PID — 0 once PID no longer exists (bounded by KEEL_TEST_HANG_BOUND, in 1 s steps); a survivor is killed
+# so a red run leaves nothing behind.
+gone_pid() {
+  local p="$1" w=0
+  while kill -0 "$p" 2>/dev/null && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
+  if kill -0 "$p" 2>/dev/null; then kill -KILL "$p" 2>/dev/null; return 1; fi
+  return 0
+}
+# bg_fixture DIR NAME [PRELUDE] — a test file that starts a background `sleep 300`, records its pid in DIR/bgpid.NAME,
+# touches DIR/up.NAME, then hangs. PRELUDE (e.g. `trap "" TERM`) is the file's first line.
+bg_fixture() {
+  printf '#!/usr/bin/env bash\n%s\nsleep 300 &\necho $! > "$(dirname "$0")/bgpid.%s"\n: > "$(dirname "$0")/up.%s"\nwait\n' "${3:-:}" "$2" "$2" > "$1/test_$2.sh"
+}
+# wait_up DIR NAME… — until every DIR/up.NAME exists (bounded)
+wait_up() {
+  local d="$1" n w=0; shift
+  for n in "$@"; do
+    while [ ! -e "$d/up.$n" ] && [ "$w" -lt "${KEEL_TEST_HANG_BOUND:-120}" ]; do sleep 1; w=$((w + 1)); done
+  done
+}
+bgpid_of() { cat "$1/bgpid.$2" 2>/dev/null || true; }
+
+d="$(mkfakedir)"
+bg_fixture "$d" hang
+run env -u CI KEEL_TEST_FILE_TIMEOUT=2 bash "$d/run.sh"
+check_contains "770-A1 watchdog: the hung file is reported timed out" "$OUT" "=== test_hang.sh (timed out after 2s) ==="
+bgp="$(bgpid_of "$d" hang)"
+check_status "770-A1 …its background child recorded a pid" 0 "$([ -n "$bgp" ] && echo 0 || echo 1)"
+gone_pid "${bgp:-0}"; check_status "770-A1 …and that child is gone when run.sh returns (the watchdog TERMed the whole group)" 0 "$?"
+
+d="$(mkfakedir)"
+bg_fixture "$d" stubborn 'trap "" TERM'
+run env -u CI KEEL_TEST_FILE_TIMEOUT=1 bash "$d/run.sh"
+check_contains "770-A2 watchdog: a file and child that ignore TERM are reported timed out" "$OUT" "=== test_stubborn.sh (timed out after 1s) ==="
+bgp="$(bgpid_of "$d" stubborn)"
+gone_pid "${bgp:-0}"; check_status "770-A2 …and the TERM-ignoring child is gone too (the group got the KILL)" 0 "$?"
+
+# The file dies of TERM but its child ignores it: only the KILL at the reap, after the file is gone, removes the child.
+d="$(mkfakedir)"
+printf '#!/usr/bin/env bash\n(trap "" TERM; exec sleep 300) &\necho $! > "$(dirname "$0")/bgpid.kid"\nwait\n' > "$d/test_kid.sh"
+run env -u CI KEEL_TEST_FILE_TIMEOUT=1 bash "$d/run.sh"
+check_contains "770-A2b watchdog: a file that dies of TERM is reported timed out" "$OUT" "=== test_kid.sh (timed out after 1s) ==="
+bgp="$(bgpid_of "$d" kid)"
+gone_pid "${bgp:-0}"; check_status "770-A2b …and its TERM-ignoring child is gone (the reap KILLed the group)" 0 "$?"
+
+# on_interrupt: TERM (as `kill` sends it) and INT (Ctrl-C). INT needs run.sh to be a group leader of its own with
+# the default disposition — a plain `&` from a non-interactive shell would start it with SIGINT ignored — hence `set -m`.
+for sig in TERM INT; do
+  d="$(mkfakedir)"
+  bg_fixture "$d" a
+  bg_fixture "$d" b
+  int_out="$(mktemp "$SANDBOX/int770-out.XXXXXX")"
+  set -m
+  env KEEL_TEST_JOBS=2 bash "$d/run.sh" >"$int_out" 2>&1 &
+  rpid=$!
+  set +m
+  wait_up "$d" a b
+  kill -"$sig" "$rpid"
+  wait "$rpid"; int_status=$?
+  check_status "770-A3 $sig mid-run -> exit 130" 130 "$int_status"
+  check_contains "770-A3 $sig mid-run -> test_a still reads as interrupted" "$(cat "$int_out")" "=== test_a.sh (interrupted) ==="
+  for n in a b; do
+    bgp="$(bgpid_of "$d" $n)"
+    gone_pid "${bgp:-0}"; check_status "770-A3 $sig mid-run -> test_$n's background child is gone" 0 "$?"
+  done
+  rm -f "$int_out"
+done
+
+# on_interrupt's KILL step: a file whose bash and child both ignore TERM is KILLed after the grace, run.sh still exits 130.
+d="$(mkfakedir)"
+bg_fixture "$d" stubborn 'trap "" TERM'
+int_out="$(mktemp "$SANDBOX/int770-out.XXXXXX")"
+env KEEL_TEST_JOBS=1 bash "$d/run.sh" >"$int_out" 2>&1 &
+rpid=$!
+wait_up "$d" stubborn
+t0=$(date +%s)
+kill -TERM "$rpid"
+wait "$rpid"; int_status=$?
+t1=$(date +%s)
+check_status "770-A4 interrupt of a TERM-ignoring file -> exit 130" 130 "$int_status"
+if [ "$((t1 - t0))" -le 15 ]; then pass "770-A4 …within 15 s of the signal ($((t1 - t0))s: the grace, then the KILL)"
+else fail "770-A4 …within 15 s of the signal" "took $((t1 - t0))s"; fi
+bgp="$(bgpid_of "$d" stubborn)"
+gone_pid "${bgp:-0}"; check_status "770-A4 …and its TERM-ignoring child is gone (on_interrupt KILLed the group)" 0 "$?"
+rm -f "$int_out"
+
 # The default ENFORCES (not only announces): a scratch run.sh whose default literal is 3, run under CI with
 # the variable unset, kills the 30 s file.
 d="$(mkfakedir)"
