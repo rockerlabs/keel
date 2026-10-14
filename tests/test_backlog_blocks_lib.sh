@@ -314,65 +314,58 @@ fi
 # own em-dash continues it. Rows are selected by the ticket number inside field 4, never by line. -
 d839="$(new_repo)"
 f839="$d839/BACKLOG.md"
-printf '### dir #801 — an open ticket, prose body right under the heading — R2 — → 0.17.0
+printf '### dir #881 — an open ticket, prose body right under the heading — R2 — → 0.17.0
 Builds on item 51 (✅ DONE: shipped in PR #5), so this one is unblocked.
 
-### dir #802 — an open ticket, a dashed body line right under the heading — R2 — → pool
+### dir #882 — an open ticket, a dashed body line right under the heading — R2 — → pool
 Shipped earlier — ✅ DONE in PR #6, this follow-up is not.
 
-### dir #803 — an open ticket, a Log line right under the heading — R2 — → 0.17.0
+### dir #883 — an open ticket, a Log line right under the heading — R2 — → 0.17.0
 Log: 2026-10-12 — filed after the audit — ✅ DONE for the first half only.
 
-### dir #804 — an open ticket, a bold lead right under the heading — R2 — → 0.17.0
+### dir #884 — an open ticket, a bold lead right under the heading — R2 — → 0.17.0
 **Found 2026-10-12 — ✅ DONE earlier by hand**, the rest is still open.
 
-### dir #805 — a heading with no grade yet, a Draft slug line right under it
+### dir #885 — a heading with no grade yet, a Draft slug line right under it
 Draft slug: `x` — ✅ DONE as a draft, not as a ticket.
 
-### dir #807 — an open lane ticket (the `next` lane arrow, grade R5 shape) — R5 — → next
+### dir #887 — an open lane ticket (the `next` lane arrow, grade R5 shape) — R5 — → next
 Builds on item 51 (✅ DONE: shipped in PR #7), this one is not.
 
-### dir #806 — a genuinely closed control — R2 — ✅ DONE (2026-10-01, done)
+### dir #886 — a genuinely closed control — R2 — ✅ DONE (2026-10-01, done)
 Closed body with no blank line before it.
 ' > "$f839"
 out839="$(backlog_ticket_blocks "$f839")"
 row839() { printf '%s\n' "$1" | awk -F'\t' -v n="$2" -v c="$3" 'index($4, n) {print $c; exit}'; }
-for n in 801 802 803 804 805 807; do
+for n in 881 882 883 884 885 887; do
   check_status "MUTATION-PROOF: dir #$n (body line directly under the heading) stays open" \
     0 "$(row839 "$out839" "dir #$n " 3)"
 done
 check_status "control: a closed heading with a body line right under it still reads closed" \
-  1 "$(row839 "$out839" "dir #806 " 3)"
+  1 "$(row839 "$out839" "dir #886 " 3)"
 
 # The body-span end is unchanged: the ticket still owns its no-blank body lines up to the next heading.
-check_status "dir #801's span still runs to the line before dir #802" \
-  "$(( $(row839 "$out839" "dir #802 " 1) - 1 ))" "$(row839 "$out839" "dir #801 " 2)"
+check_status "dir #881's span still runs to the line before dir #882" \
+  "$(( $(row839 "$out839" "dir #882 " 1) - 1 ))" "$(row839 "$out839" "dir #881 " 2)"
 
-# A FINISHED heading still takes a wrapped tag on a line opening with the tag's own em-dash, and
-# nothing else: a heading ending in a dash does not make the next line part of it.
+# A FINISHED heading takes no further line, whatever the line looks like: a dash-led line, even one
+# opening with a status glyph, is a glued body line here, and so is the line after a dash-ended heading.
 d839c="$(new_repo)"
 f839c="$d839c/BACKLOG.md"
-printf '### dir #811 — a graded heading whose tag wraps onto its own dash line — R2 — → pool
-— ✅ CLOSED (2026-10-01, done)
+printf '### dir #861 — a finished open heading, a dash-led glyph line glued under it — R2 — → pool
+— ✅ DONE for the first half only, the second half is still open.
 
-### dir #813 — a graded heading whose arrow wraps onto its own dash line — R2 —
-— → pool
+### dir #862 — a finished open heading, a dash-led R-grade line glued under it — R2 — → pool
+— R20 audit pending (✅ DONE for the survey).
 
-### dir #814 — a finished open heading, a dash-led PROSE line glued under it — R2 — → pool
-— sibling dir #5 was ✅ DONE, this one is not.
-
-### dir #812 — a graded heading that ends in a dash, a glued body line under it — R2 —
+### dir #863 — a graded heading that ends in a dash, a glued body line under it — R2 —
 Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
 ' > "$f839c"
 out839c="$(backlog_ticket_blocks "$f839c")"
-check_status "a finished heading's own wrapped dash-tag still reads closed" \
-  1 "$(row839 "$out839c" "dir #811 " 3)"
-check_contains "MUTATION-PROOF: a dash-led wrapped arrow stays in the heading block" \
-  "$(row839 "$out839c" "dir #813 " 4)" "→ pool"
-check_status "MUTATION-PROOF: a dash-led prose line glued under a finished heading is not absorbed" \
-  0 "$(row839 "$out839c" "dir #814 " 3)"
-check_status "MUTATION-PROOF: a heading ending in a dash does not absorb a glued body line" \
-  0 "$(row839 "$out839c" "dir #812 " 3)"
+for n in 861 862 863; do
+  check_status "MUTATION-PROOF: dir #$n (finished heading, glued line of any shape) stays open" \
+    0 "$(row839 "$out839c" "dir #$n " 3)"
+done
 
 # --- dir #839: the standing-list shapes (legacy `### <n>.` headings, tag on the heading line, body
 # directly underneath) keep their verdicts — #11/#21 closed, #5/#10 open. -----------------------

@@ -216,10 +216,10 @@ check_status "MUTATION-PROOF: neither ticket is wrongly counted under the cited 
 # ticket. The 0.17.0 groom lost dir #813 from every count this way: its first body line carried
 # "(✅ DONE: …)" for a DIFFERENT item. MUTATION-PROOF: restoring the bare "first blank line ends the
 # heading block" rule reads both tickets closed, so neither is counted. -------------------------
-glued_backlog="### dir #830 — an open pool ticket, body glued to the heading — R2 — → pool
+glued_backlog="### dir #871 — an open pool ticket, body glued to the heading — R2 — → pool
 Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
 
-### dir #831 — an open scheduled ticket, body glued to the heading — R2 — → 0.17.0
+### dir #872 — an open scheduled ticket, body glued to the heading — R2 — → 0.17.0
 Shipped earlier — ✅ DONE in PR #6 for the first half only.
 "
 fg="$(mk_backlog "$glued_backlog")"

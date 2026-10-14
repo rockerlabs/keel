@@ -158,24 +158,22 @@ BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|ne
 #   dir #839: does the non-blank <next_line> belong to the heading whose text so far is
 #   <block_so_far>, or is it the ticket's first body line written with no blank line before it?
 #   Returns 0 (continuation) or 1 (body). A `Log:`, `Draft slug:` or leading `**` opener always ends
-#   the block. A heading already FINISHED (BB_HEADING_TAIL_PATTERN) takes no further line unless it
-#   opens with a tag-shaped em-dash (`— ✅ CLOSED`, `— → pool`, `— R2`: a tail wrapped onto its own
-#   line; a dash followed by prose does not count); an unfinished title
-#   (the dir #255 wrap-before-the-tail shape) keeps taking lines until it finishes or a blank comes.
-#   Two residuals, accepted (neither has an instance in the maintainers' BACKLOG.md, measured
-#   2026-10-14): a prose body line directly under a heading with no tail at all still reads as the
-#   title's continuation (the cure is the blank line a writer leaves after every heading); and a tag
-#   or arrow wrapped onto a line that does not open with a tag-shaped em-dash, after a finished first
-#   line, stays out of the block, so out of the lane the pool report reads from it. A "previous line
-#   ends in a dash" rule for the second was tried and dropped: it admitted a glued body line after
-#   `— R2 —`.
+#   the block. A heading already FINISHED (BB_HEADING_TAIL_PATTERN) takes no further line, whatever
+#   the line looks like; an unfinished title (the dir #255 wrap-before-the-tail shape) keeps taking
+#   lines until it finishes or a blank comes.
+#   Residuals, accepted (the file's text cannot tell them apart; neither occurs in the maintainers'
+#   BACKLOG.md, measured 2026-10-14): a prose body line directly under a heading with no tail at all
+#   still reads as the title's continuation (the cure is the blank line a writer leaves after every
+#   heading); and a tag, arrow or note wrapped onto the line after a FINISHED first line stays out of
+#   the block, so out of the lane the pool report reads from it. Two exceptions for that second case
+#   were tried and dropped, each admitted a glued body line: a continuation opening with an em-dash
+#   (even a tag-shaped one: `— ✅ DONE for the first half`), and one after a line ending in a dash.
 bb_heading_continues() {
   local so_far="$1" next="$2"
   local body_re='^(Log:|Draft slug:|\*\*)'
-  local dash_re='^[[:space:]]*—[[:space:]]*(✅|❌|⏳|→|R[0-9])'
   [[ "$next" =~ $body_re ]] && return 1
   [[ "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]] || return 0
-  [[ "$next" =~ $dash_re ]]
+  return 1
 }
 
 backlog_ticket_blocks() {
