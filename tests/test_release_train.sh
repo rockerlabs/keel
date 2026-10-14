@@ -349,6 +349,12 @@ rt build --branch t18 --base main --worktree "$SANDBOX/wt-t18" --allow-conflicts
 check_status "a conflict on the last constituent -> exit 1" 1 "$STATUS"
 check_contains "...says it was the last one" "$OUT" "that was the last constituent"
 check_absent "...and prints no runnable --continue hint with nothing to merge" "$OUT" "release-train.sh build --continue"
+bhint="$(sed -n 's/^  release-train\.sh //p' <<<"$OUT")"
+git -C "$SANDBOX/wt-t18" add f 2>/dev/null; printf '%s\n' l1 l2 l3 l4 l5 l6 l7 resolved-l8 l9 l10 > "$SANDBOX/wt-t18/f"
+git -C "$SANDBOX/wt-t18" add f; git -C "$SANDBOX/wt-t18" commit -q --no-edit
+OUT="$(cd "$d" && eval "bash '$tool' $bhint" 2>&1 </dev/null)"; STATUS=$?   # the printed body line, pasted
+check_status_out "the printed body line, run as printed after the resolution -> exit 0" 0
+check_contains "...and it lists the hand-resolved last merge" "$OUT" "resolved by hand: #3"
 
 # --- a constituent with no merge base to the base: named on stdout, exit 0 -----------------------------------------
 rt body --branch t1 --base main
