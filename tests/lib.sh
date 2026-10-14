@@ -800,7 +800,7 @@ STRICT_SEMVER_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 # release_tag_versions REPO_ROOT — echoes every v-prefixed strict-semver release tag (`v<x.y.z>`, the
 # `v` kept), one per line, `git tag -l`'s own order. Third independent copy of this exact regex found
-# by /code-review medium on dir #232's own diff (tools/self/doctor.sh's `_tag_versions()` (then `_release_tag_versions()`) — not
+# by /code-review medium on dir #232's own diff (tools/self/doctor.sh's `_tag_versions()` — not
 # sourceable, doctor.sh runs its own audit on load — plus test_changelog_section.sh and
 # test_release_history.sh, both of which DO already source this file): promoted here so the two test
 # files share one copy instead of three total. doctor.sh keeps its own private copy (bare version, `v`

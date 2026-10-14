@@ -1398,7 +1398,7 @@ if [ -f "$changelog_file" ] && file_readable "the CHANGELOG <-> release-tag chec
   # shallow-clone guard above already downgrades to a silent skip instead of inventing drift.
   pending=""
   pending_dist=""
-  [ -n "$HEAD_STATE" ] || head_state   # stands on its own: not dependent on check 4 having run
+  [ -n "$HEAD_STATE" ] || head_state   # defensive: check 4 already ran head_state; this keeps the check correct if that call is ever made conditional
   history_blind=0
   [ "$HEAD_STATE" = failed ] && history_blind=1   # GAPped by head_state: no verdict over a history it could not read
   dist=""   # set by git_value's `printf -v` below (SC2154)
@@ -1688,7 +1688,7 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
   fi
   # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
   # (dir #364) — see the check's header comment for the full rationale.
-  [ -n "$HEAD_STATE" ] || head_state   # stands on its own: not dependent on check 4 having run
+  [ -n "$HEAD_STATE" ] || head_state   # defensive: check 4 already ran head_state; this keeps the check correct if that call is ever made conditional
   [ "$HEAD_STATE" = failed ] && ct_blind=1   # GAPped by head_state
   if [ "$HEAD_STATE" = commits ]; then   # unborn HEAD: no commits to read
     git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
