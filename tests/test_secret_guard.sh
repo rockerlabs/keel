@@ -860,6 +860,20 @@ if command -v iconv >/dev/null 2>&1; then
 fi
 check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
 
+# dir #849: the fail-closed probe feeds grep a FILE, not a pipe — grep exits on the malformed ERE before reading,
+# so a `printf | grep` producer gets SIGPIPE and prints "printf: write error: Broken pipe" to stderr (the dir #280
+# class; it failed tests/test_tour_transcript.sh 8–17% of runs). Structural pin: no pipe on the probe's grep line.
+probe_line="$(grep -F -e "grep -iE -e 'unbalanced(paren'" "$scan" || true)"
+check_eq "dir #849: exactly one malformed-ERE probe line in secret-scan.sh" "1" "$(printf '%s\n' "$probe_line" | grep -c . || true)"
+check_absent "dir #849: ...and no printf producer feeds it" "$probe_line" "printf"
+check_contains "dir #849: ...it reads a file (< redirect)" "$probe_line" "< \"\$dir/"
+# Behavioural pin: --selftest writes no producer/pipe error to stderr. The race is probabilistic and a selftest
+# costs ~12 s under load, so three repeats only sample it — the structural pin above is the deterministic one.
+sp_err="$SANDBOX/selftest-stderr"; : > "$sp_err"
+for _ in 1 2 3; do "$scan" --selftest >/dev/null 2>>"$sp_err" </dev/null || true; done
+check_absent "dir #849: 3 --selftest runs write no 'Broken pipe' to stderr" "$(cat "$sp_err")" "Broken pipe"
+check_absent "dir #849: ...nor a 'write error'" "$(cat "$sp_err")" "write error"
+
 # --- install verifies the vendored SOURCE via selftest before touching the destination (a
 # wired-but-broken gate must fail the install, but never leave it half-wired — see below) ----------
 repo="$(new_repo)"

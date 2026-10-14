@@ -670,7 +670,10 @@ selftest() {
   # on a grep that accepts one instead of failing the whole selftest on an otherwise-working host. The probe
   # reads one input line (dir #694): busybox compiles a pattern only when it reads input, so over empty input
   # it looked lenient and this probe was skipped there.
-  greprc=0; printf 'x\n' | grep -iE -e 'unbalanced(paren' >/dev/null 2>&1 || greprc=$?
+  # A file, not `printf | grep`: grep exits on the bad pattern before reading, so a piped producer gets SIGPIPE
+  # and prints "write error: Broken pipe" to stderr (dir #849, the dir #280 class).
+  printf 'x\n' > "$dir/probe-in.txt"
+  greprc=0; grep -iE -e 'unbalanced(paren' < "$dir/probe-in.txt" >/dev/null 2>&1 || greprc=$?
   if [ "$greprc" -ge 2 ]; then
     printf 'unbalanced(paren\n' > "$dir/badre"
     printf 'anything\n' > "$dir/any.txt"
