@@ -3,8 +3,9 @@
 # views and greps every view. One view is the raw printable runs; it used to put a newline after EVERY non-printable
 # byte, so a 20 MiB incompressible blob became ~12.6 M tiny lines, and the class-1 grep pays a fixed ~12 µs per line
 # however short it is (it measured 8–10 s of CPU per MiB, ~3 min for the blob; on a machine under load the scan never
-# seemed to end — every `kb-doctor.sh` run hung on it). The view is now squeezed to maximal printable runs and drops
-# every run shorter than the shortest string any pattern can match (`run_floor`, derived from the patterns themselves).
+# seemed to end — every `kb-doctor.sh` run hung on it). The view is now squeezed to maximal printable runs; class 1
+# reads it with every run shorter than the shortest string any class-1 pattern can match dropped (`run_floor`, derived
+# from the patterns themselves), and the personal passes read it whole (their EREs are arbitrary, no floor is derived).
 #   (F) the floor derivation: the smallest match length of an ERE subset, 1 (no filtering) for anything it cannot parse
 #   (V) the verdict does not move: a key or a personal literal inside a binary is still found
 #   (C) the bound: a generated, incompressible 20 MiB blob scans in under CEILING seconds of CPU (user+sys of the
@@ -97,7 +98,7 @@ check_contains "V1: … in data.bin" "$OUT" "data.bin"
 mk_blob 2097152 "$(key 'xox' 'b-1234567890')"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers" run_in "$repo" "$scan" --tracked
-check_status "V2: the shortest key shape (15 chars) inside a binary is still found → exit 1" 1 "$STATUS"
+check_status "V2: the shortest key shape (15 chars) inside a binary is still found (raw views) → exit 1" 1 "$STATUS"
 
 mk_blob 2097152 "name = zorbquux-alpha"
 repo="$(blob_repo)"
@@ -115,12 +116,12 @@ SECRET_SCAN_PERSONAL_FILE="$pers" run_in "$repo" "$scan" --tracked
 check_status "V5: a clean 2 MiB binary → exit 0" 0 "$STATUS"
 
 # The printable-run view is the only one an anchored pattern can match in a binary: the raw view keeps the junk
-# around a run on its line, the run view does not. These two pin the floor from both sides on that view — a run of
-# EXACTLY the floor must survive the length filter (a `>` for `>=` loses it), and the floor must count the personal
-# literals, not only class 1 (a literal shorter than every key shape).
-pers_anchor="$SANDBOX/personal.anchor"      # one literal: the floor is 15, class 1's own
+# around a run on its line, the run view does not. The personal passes read that view whole, so a literal of any
+# length is found there — in particular one SHORTER than every key shape, which a floor taken from class 1 alone
+# would have dropped — and a UTF-8 literal the byte-wise floor calculator would have mis-counted.
+pers_anchor="$SANDBOX/personal.anchor"
 printf '^zorbfloor-exact$\n' > "$pers_anchor"
-pers_short="$SANDBOX/personal.short"       # one literal of 5: the floor is 5
+pers_short="$SANDBOX/personal.short"
 printf '^zorbq$\n' > "$pers_short"
 anchored_blob() {  # $1 = the printable run, between non-printable bytes, in a file with a NUL
   printf '\001\002%s\003\004\000tail' "$1" > "$BLOB"
@@ -128,19 +129,35 @@ anchored_blob() {  # $1 = the printable run, between non-printable bytes, in a f
 anchored_blob "zorbfloor-exact"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_anchor" run_in "$repo" "$scan" --tracked
-check_status "V6: an anchored literal whose run is exactly the floor (15) is still found → exit 1" 1 "$STATUS"
+check_status "V6: an anchored literal found only in the printable runs (15 chars) → exit 1" 1 "$STATUS"
+check_contains "V6: ...reported as the bare match, no spool file name in front of it (grep -h)" "$OUT" "(binary) zorbfloor-exact"
 anchored_blob "zorbq"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
 check_status "V7: an anchored literal shorter than every key shape is still found → exit 1" 1 "$STATUS"
+check_contains "V7: ...reported as the bare match" "$OUT" "(binary) zorbq"
 anchored_blob "zorbq-not-the-literal"
 repo="$(blob_repo)"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --tracked
 check_status "V8: ...and an anchored literal inside a longer run is not → exit 0" 0 "$STATUS"
 
+# a literal with a multi-byte character under `*`: in a UTF-8 locale `^é*abc$` matches the 3-byte run `abc`, which a
+# byte-wise minimum (4) would have dropped. Skipped where the host has no UTF-8 locale.
+utf8_loc="$(pick_utf8_locale)" || utf8_loc=""
+if [ -n "$utf8_loc" ]; then
+  pers_mb="$SANDBOX/personal.mb"
+  printf '^\303\251*abc$\n' > "$pers_mb"
+  anchored_blob "abc"
+  repo="$(blob_repo)"
+  SECRET_SCAN_PERSONAL_FILE="$pers_mb" run_in "$repo" env LC_ALL="$utf8_loc" "$scan" --tracked
+  check_status "V9: a multi-byte literal under * matches a run shorter than its byte count → exit 1" 1 "$STATUS"
+else
+  pass "V9 skipped (no UTF-8 locale on this host)"
+fi
+
 # --- (C) the bound ---------------------------------------------------------------------------------------------------
-# CEILING — seconds of CPU for the 20 MiB blob below. The scan measured ~30 s of CPU after the fix (macOS, BSD grep,
-# class 1 only) against ~180 s before it; the ceiling sits between, so it fails on the per-line blow-up and passes
+# CEILING — seconds of CPU for the 20 MiB blob below. The scan measured ~47 s of CPU after the fix (macOS, BSD grep,
+# class 1 only) against ~190 s before it; the ceiling sits between, so it fails on the per-line blow-up and passes
 # on a slower host. KEEL_TEST_SECRET_SCAN_CPU_CEILING and KEEL_TEST_SECRET_SCAN_BLOB_BYTES override the two numbers
 # (the blob size is for a quick look at the scaling; the bound is pinned at the default).
 CEILING="${KEEL_TEST_SECRET_SCAN_CPU_CEILING:-100}"

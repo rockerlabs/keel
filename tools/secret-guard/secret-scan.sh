@@ -268,16 +268,18 @@ if [ -n "$has_personal" ]; then
 fi
 
 # --- the decode's run floor (dir #830) --------------------------------------------------------------
-# emit_blob's last view is the raw printable runs of a binary, one run per line. Every line costs the class-1 grep a
-# fixed ~12 µs however short it is (measured on macOS BSD grep), and incompressible data is ~63 %
-# non-printable: a 20 MiB blob made ~12.6 M lines and ~3 min of CPU, minutes more on a loaded machine. A run shorter
-# than the shortest string any pattern can match holds no hit, so it is dropped, and the floor is derived from the
-# patterns themselves — class 1 and every personal literal — so a new pattern moves it. `_min_match_len` reads one
-# ERE per line and prints the smallest length in bytes any of them can match; an ERE outside the subset it parses
-# (literals, escapes, `.`, brackets, groups, alternation, `* + ? {n} {n,} {n,m}`, anchors) makes it print 1, which
-# keeps every run: never guess a floor. A backslash before a letter, a digit, `<`, `>`, a backtick or a quote may
-# be zero-width or a back-reference (`\b`, `\<`, `\1`), so it counts 0: a floor too high would drop a run that holds
-# a hit. Pinned by tests/test_secret_guard_binary_cost.sh.
+# emit_blob decodes a binary into several text views, one of them its printable runs, one run per line. Every line
+# costs the class-1 grep a fixed ~12 µs however short it is (measured on macOS BSD grep), and incompressible data
+# is ~63 % non-printable: a 20 MiB blob made ~12.6 M lines and ~3 min of CPU, minutes more on a loaded machine.
+# Class 1 therefore reads the runs squeezed and floored: a run shorter than the shortest string any class-1 pattern
+# can match holds no hit, so it is dropped. The floor is derived from the patterns themselves, so a new pattern
+# moves it. `_min_match_len` reads one ERE per line and prints the smallest length in bytes any of them can match;
+# an ERE outside the subset it parses (literals, escapes, `.`, brackets, groups, alternation, `* + ? {n} {n,}
+# {n,m}`, anchors) makes it print 1, which keeps every run: never guess a floor. A backslash before a letter, a
+# digit, `<`, `>`, a backtick or a quote may be zero-width or a back-reference (`\b`, `\<`, `\1`), so it counts 0:
+# a floor too high would drop a run that holds a hit. The personal literals get no floor: they are arbitrary EREs
+# (multi-byte characters, case folding across encodings), so their passes read the runs whole, squeezed only.
+# Pinned by tests/test_secret_guard_binary_cost.sh.
 # run-floor:begin
 _min_match_len() {
   LC_ALL=C awk '
@@ -344,6 +346,7 @@ _min_match_len() {
 }
 # run-floor:end
 run_floor=""   # derived by emit_blob on the first binary it decodes, so a scan with no binary never runs awk for it
+personal_more=""   # a second file the personal passes read (emit_blob sets it around one decode, dir #830)
 
 # --- gather the hits as records ---------------------------------------------------------------------
 # dir #741 (spec 746 B10): one record is one index into five parallel arrays, so a label never reads as
@@ -386,7 +389,7 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
     LC_ALL=C grep -aE $flags -e "${extra:+$extra|}$joined" "$f" 2>/dev/null || rc1=$?
     if [ -n "$has_personal" ]; then
       # shellcheck disable=SC2086
-      LC_ALL=C grep -aiE $flags -f "$personal_pat" "$f" 2>/dev/null || rc2=$?
+      LC_ALL=C grep -aiE $flags ${personal_more:+-h} -f "$personal_pat" "$f" ${personal_more:+"$personal_more"} 2>/dev/null || rc2=$?
       pu_grep "$flags" "$f" || rc3=$?
     fi
     [ "$rc1" -le 1 ] || exit "$rc1"
@@ -400,15 +403,21 @@ match_text() {  # $1 = extra grep flags ('' for none), $2 = file to scan, $3 = e
 # sequence still converts whole (unpadded, iconv exits 1 on macOS/glibc and truncates on musl); the padding
 # adds lines after the last, so `-n` numbers hold. No iconv, or a sanitizer that fails → FILE itself (the
 # pre-746 behaviour), never no pass. Returns grep's status. One copy at a time, overwritten in $SCRATCH:
-# callers run one after another.
+# callers run one after another. A non-empty $personal_more (emit_blob's unfiltered printable runs, dir #830) is a
+# second file the personal passes read after FILE; it joins the converted copy, or is read beside FILE when the
+# conversion fails.
 pu_grep() {
-  local u8="$2"
+  local u8="$2" u8b="$personal_more"
   if command -v iconv >/dev/null 2>&1; then
     u8="$SCRATCH/u8"
-    { cat "$2"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null || u8="$2"
+    if { cat "$2" ${personal_more:+"$personal_more"}; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$u8" 2>/dev/null; then
+      u8b=""
+    else
+      u8="$2"
+    fi
   fi
   # shellcheck disable=SC2086  # $1 intentionally word-split
-  grep -aiE $1 -f "$personal_pat" "$u8" 2>/dev/null
+  grep -aiE $1 ${u8b:+-h} -f "$personal_pat" "$u8" ${u8b:+"$u8b"} 2>/dev/null
 }
 
 # fast-path hit count for one spooled scan FILE — the shared shape of every --range pre-check (blob
@@ -494,11 +503,14 @@ collect_matches() {
 # non-ASCII literals under UTF-8 (pinning `LC_ALL=C` around the grep instead would fix the miss but
 # lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
 # pass — covers any pass added here later for free, with no line to remember to re-append.
+# The decode file ($dec) holds every view of the blob: ~6.6x its size for incompressible data (a 20 MiB blob made
+# ~133 MB: the NUL-stripped bytes, two UTF-16 and two UTF-32 conversions, which turn random bytes into larger
+# text, and the printable runs). That is inherent to decoding every encoding, and linear; only the runs view
+# was the problem (dir #830: its per-line cost, not its size), see the run floor above.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
   # its caller's `||` turns errexit off in here (emit_file), so each read returns its own status
-  # the floor over everything a decoded view is grepped for: the joined class-1 patterns and each personal literal
-  [ -n "$run_floor" ] || run_floor="$({ printf '%s\n' "$joined"; [ -z "$has_personal" ] || cat "$personal_pat"; } | _min_match_len)" || return $?
+  [ -n "$run_floor" ] || run_floor="$(printf '%s\n' "$joined" | _min_match_len)" || return $?
   tmp="$(spool)" || return $?
   dec="$(spool)" || return $?
   cat > "$tmp" || return $?
@@ -541,8 +553,16 @@ emit_blob() {  # $1 = record label (path)
     fi
     LC_ALL=C tr -cs '[:print:]\t' '\n' < "$tmp" | LC_ALL=C awk -v n="${run_floor:-1}" 'length($0) >= n' || exit $?; echo  # raw printable runs, short ones dropped (dir #830)
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
+  # the personal passes read the printable runs whole (squeezed, none dropped): their EREs are arbitrary, so no floor
+  # is derived for them, and a run is the only view an anchored literal can match in a binary
+  personal_more=""
+  if [ -n "$has_personal" ]; then
+    personal_more="$(spool)" || return $?
+    LC_ALL=C tr -cs '[:print:]\t' '\n' < "$tmp" > "$personal_more" || return $?
+  fi
   collect_matches "$label" "$dec" -o
-  rm -f "$tmp" "$dec"
+  rm -f "$tmp" "$dec" ${personal_more:+"$personal_more"}
+  personal_more=""
 }
 
 # route one unit of content by type: binary → the decode pass, text → line matching with line numbers.
