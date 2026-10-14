@@ -343,7 +343,7 @@ check_status "status without --owner -> exit 2" 2 "$STATUS"
 
 # --- closed: three heading forms, a draft, an orphan -------------------------------------------------------------------------------------------
 d="$(mk)"
-for c in two-parens tie tie-rev wrapped-date pr-number later-date bad-date dash-wrap glyph-date paren-next-line by-construction glued-paren open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
+for c in glued-body unfinished-wrap span-only-line log-opener glued-neighbour two-parens tie tie-rev wrapped-date pr-number later-date bad-date dash-wrap glyph-date paren-next-line by-construction glued-paren open-one kb-closed b-superseded wrapped foreign-citation body-closed-word recurred drafted nowhere fenced-only midline-only parked-one odd-word two-closed two-closed-rev glued; do cls "$d" "$c"; done
 bl="$SANDBOX/bl.md"
 cat > "$bl" <<'EOF'
 # Backlog
@@ -433,6 +433,31 @@ Observer-class: bad-date
 
 Observer-class: glyph-date
 
+### dir #80 — a finished open heading with a body line glued under it — R3 — → pool
+✅ DONE for the first half of the work (a body line, written with no blank line before it)
+
+Observer-class: glued-body
+
+### dir #81 — a title still unfinished when it wraps
+sits on the next line and closes there — ✅ DONE (2026-10-02)
+
+Observer-class: unfinished-wrap
+
+### dir #82 — an unfinished title, then a line that is only a code span
+`dir #5`
+sits here and closes — ✅ DONE (2026-10-03)
+
+Observer-class: span-only-line
+
+### dir #83 — an unfinished title, then a Log opener
+Log: 2026-10-01 — ✅ DONE is only a note in the body
+
+Observer-class: log-opener
+
+### dir #84 — an unfinished title with its tag line right under it
+Observer-class: glued-neighbour
+### dir #85 — the next ticket, written with no blank line before it — ✅ DONE (2026-10-01)
+
 ### dir #79 — a first parenthesis that is not a date — ✅ CLOSED (see dir #9) (2026-10-07)
 
 Observer-class: two-parens
@@ -494,6 +519,11 @@ A "$d" closed pr-number --backlog "$bl" --drafts "$dr";       check_eq "closed: 
 A "$d" closed by-construction --backlog "$bl" --drafts "$dr"; check_eq "closed: ✅ CLOSED BY CONSTRUCTION (date …) reads its date" "closed ✅ 2026-09-30" "$OUT"
 A "$d" closed glued-paren --backlog "$bl" --drafts "$dr";     check_eq "closed: a parenthesis glued to the tag still opens the date" "closed ✅ 2026-10-06" "$OUT"
 A "$d" closed glyph-date --backlog "$bl" --drafts "$dr";      check_eq "closed: the glyph and the date come from the same tag (a later tag's date is not borrowed)" "closed ❌ —" "$OUT"
+A "$d" closed glued-body --backlog "$bl" --drafts "$dr";      check_eq "closed: a glued body line with a closure tag under a FINISHED open heading stays OPEN (dir #847)" "open" "$OUT"
+A "$d" closed unfinished-wrap --backlog "$bl" --drafts "$dr"; check_eq "closed: an unfinished title still takes its wrapped continuation (dir #255 shape)" "closed ✅ 2026-10-02" "$OUT"
+A "$d" closed span-only-line --backlog "$bl" --drafts "$dr";  check_eq "closed: a line that is only a code span ends the block, as in the census" "open" "$OUT"
+A "$d" closed log-opener --backlog "$bl" --drafts "$dr";      check_eq "closed: a Log: line is never part of the heading block" "open" "$OUT"
+A "$d" closed glued-neighbour --backlog "$bl" --drafts "$dr"; check_eq "closed: the next ticket's heading is never part of this heading's block" "open" "$OUT"
 A "$d" closed two-parens --backlog "$bl" --drafts "$dr";      check_eq "closed: a first parenthesis that does not open a date -> undated" "closed ✅ —" "$OUT"
 A "$d" closed paren-next-line --backlog "$bl" --drafts "$dr"; check_eq "closed: a parenthesis on the next line is not the tag's date" "closed ✅ —" "$OUT"
 A "$d" closed later-date --backlog "$bl" --drafts "$dr";      check_eq "closed: a later unrelated date on the line is not the closure date" "closed ✅ —" "$OUT"
