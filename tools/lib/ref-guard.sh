@@ -18,6 +18,10 @@
 # .git/worktrees/<name>, never the common dir — so tests/run.sh compares it directly, via
 # guard_reflog_count below.)
 #
+# dir #768 narrowed that further: ownership alone still let a peer's branch-cleanup sweep, or a peer's branch moving
+# while checked out nowhere (a rebase), trip a whole suite run. guard_refs_unexplained (end of this file) reports,
+# among the unowned branches, only a NEW one, or one whose old tip no ref reaches any more.
+#
 # NAMED RESIDUAL LIMIT (found by an independent /code-review high pass on this ticket's own diff,
 # empirically reproduced): this scoping trusts CURRENT ownership, not the PROVENANCE of a ref's
 # movement — it has no way to tell "a sibling worktree legitimately owns this branch" apart from "a
@@ -86,4 +90,50 @@ guard_reflog_count() {
 guard_filter_unowned() {
   [ -z "$2" ] && return 0
   awk 'FNR==NR{owned[$1]=1; next} !($1 in owned)' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
+}
+
+# guard_tip_survives REPO SHA (dir #768)
+# True when some ref in REPO (a branch, a remote-tracking ref or a tag) still reaches SHA — so no commit was
+# lost by whatever moved or deleted the ref that used to point there. `--count=1` only caps the output; git still
+# walks every ref, which is why the caller asks this for the refs that CHANGED, never for every ref.
+guard_tip_survives() {
+  [ -n "$(git -C "$1" for-each-ref --count=1 --contains "$2" --format='%(refname)' refs/heads refs/remotes refs/tags 2>/dev/null)" ]
+}
+
+# guard_refs_unexplained REPO OWNED_LIST BEFORE_REFS AFTER_REFS (dir #768)
+# The refs/heads changes the canary still reports, one line each, from two guard_refs_snapshot outputs and the
+# union of owned branches (guard_union). Ownership scoping alone (guard_filter_unowned) left two kinds of
+# ordinary concurrent work tripping a whole suite run: a peer's branch-cleanup sweep deleting merged branches, and
+# a peer's branch moving while no worktree had it checked out (a rebase shows the branch as detached for its
+# duration). Both are explained by one fact: nothing was lost — the old tip is still reachable from some
+# ref. What stays reported, on branches no worktree owns:
+#   + NAME SHA            a branch that did not exist before the run (dir #320's stray fixture branch)
+#   - NAME OLDSHA         a branch gone whose old tip no ref reaches any more (commits lost)
+#   ~ NAME OLD -> NEW     a branch moved so that its old tip no ref reaches any more (a rewrite, a reset)
+# One awk pass joins the two snapshots by name and prints only the rows that differ (`-` stands for "absent on
+# that side"; a ref name holds no space), so a quiet run costs two awk passes and no git call at all.
+# NAMED RESIDUAL: an escaped test that deletes, or fast-forwards, an unowned branch whose tip stays reachable
+# elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
+# the file, which is the layer that prevents it. This one detects what slipped past that.
+# A second residual, in the other direction: a squash-merged (or otherwise rewritten) branch deleted on purpose —
+# the branch-cleanup sweep's ASK tier — has no ref reaching its tip, so it IS still reported. No sweep should run
+# while a suite does (docs/release-management.md R11).
+guard_refs_unexplained() {
+  local repo="$1" owned="$2" before="$3" after="$4" name old new
+  while read -r name old new; do
+    [ -n "$name" ] || continue
+    if [ "$old" = - ]; then
+      printf -- '+ %s %s\n' "$name" "$new"
+    elif ! guard_tip_survives "$repo" "$old"; then
+      if [ "$new" = - ]; then printf -- '- %s %s\n' "$name" "$old"
+      else printf -- '~ %s %s -> %s\n' "$name" "$old" "$new"; fi
+    fi
+  done < <(awk '
+      FILENAME == ARGV[1] { b[$1] = $2; next }   # not FNR == NR: an empty first file would turn the second into it
+      { a[$1] = $2 }
+      END {
+        for (k in b) if (!(k in a)) print k, b[k], "-"; else if (a[k] != b[k]) print k, b[k], a[k]
+        for (k in a) if (!(k in b)) print k, "-", a[k]
+      }' \
+      <(guard_filter_unowned "$owned" "$before") <(guard_filter_unowned "$owned" "$after") | LC_ALL=C sort)
 }
