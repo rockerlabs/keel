@@ -509,7 +509,10 @@ cmd_manifest() {
   local top
   top="$(tu_repo_top "${repo:-.}")" || exit 1
 
-  local ticket tier model branch files unmatched=0 rows=0
+  # Pass 1: validate the whole ledger and collect its branches, so the transcript corpus is scanned ONCE
+  # for all of them (the scan, not the branch count, is the cost) and a malformed ledger fails before it.
+  local ticket tier model branch files list ff claimed="" unmatched=0 rows=0 pairs
+  local -a branches=()
   while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
     case "$ticket" in ''|'#'*) continue ;; esac
     [ -n "$tier" ] && [ -n "$model" ] && [ -n "$branch" ] || {
@@ -518,7 +521,29 @@ cmd_manifest() {
       exit 2
     }
     rows=$((rows + 1))
-    files="$(tu_files_for_branch "$top" "$branch" | sort | paste -sd, -)" || exit 1
+    branches+=("$branch")
+  done < "$ledger"
+  [ "$rows" -gt 0 ] || { printf 'session-cost.sh: ledger carried no ticket rows: %s\n' "$ledger" >&2; exit 2; }
+  pairs="$(tu_files_for_branches "$top" "${branches[@]}")" || exit 1
+
+  # Pass 2: one manifest row (or UNMATCHED line) per ledger line.
+  while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
+    case "$ticket" in ''|'#'*) continue ;; esac
+    list="$(B="$branch" awk -F'\t' '$2 == ENVIRON["B"] { print $1 }' <<<"$pairs" | sort)"
+    # The manifest's FILE column is comma-joined, so a comma inside a path would split it into phantom files.
+    case "$list" in
+      *,*) printf 'session-cost.sh: manifest: a session path contains a comma, which the manifest cannot carry: %s\n' "$list" >&2; exit 2 ;;
+    esac
+    files="$(printf '%s' "$list" | paste -sd, -)"
+    # A match is file-level (ANY record carries the branch), so one session that worked several ledger branches
+    # is priced whole under each. Say so rather than double-count in silence.
+    while IFS= read -r ff; do
+      [ -n "$ff" ] || continue
+      if [ -n "$claimed" ] && grep -q -F -x -- "$ff" <<<"$claimed"; then
+        printf 'session-cost.sh: manifest: warning — %s also records an earlier ledger branch; its tokens are counted under both tickets\n' "$ff" >&2
+      fi
+      claimed="$claimed$ff"$'\n'
+    done <<<"$list"
     if [ -n "$files" ]; then
       printf '%s\t%s\t%s\t%s\n' "$ticket" "$tier" "$model" "$files"
     else
@@ -527,7 +552,6 @@ cmd_manifest() {
       printf 'session-cost.sh: ticket %s: no session file records branch %s\n' "$ticket" "$branch" >&2
     fi
   done < "$ledger"
-  [ "$rows" -gt 0 ] || { printf 'session-cost.sh: ledger carried no ticket rows: %s\n' "$ledger" >&2; exit 2; }
   [ "$unmatched" -eq 0 ] || exit 1
 }
 
@@ -555,10 +579,6 @@ cmd_weighted() {
     _sc_weights "$KEEL_TOKENS_WEIGHTS" \
       || printf 'session-cost.sh: KEEL_TOKENS_WEIGHTS malformed (want input,write,read numbers) — using defaults 1.0,2.0,0.1\n' >&2
   fi
-  local wi ww wr
-  wi="$(awk -v x="$_SC_W_INPUT" 'BEGIN{print x+0}')"
-  ww="$(awk -v x="$_SC_W_WRITE" 'BEGIN{print x+0}')"
-  wr="$(awk -v x="$_SC_W_READ" 'BEGIN{print x+0}')"
 
   local tmp; tmp="$(mktemp)" || exit 1
   _sc_manifest_rows "$manifest" "$tmp"
@@ -566,20 +586,31 @@ cmd_weighted() {
   local fmt='%-10s %-6s %-8s %16s %16s %16s\n'
   # shellcheck disable=SC2059  # $fmt is a fixed local format, not user input
   printf "$fmt" ticket tier model primary subagent total
-  jq -s -r --argjson wi "$wi" --argjson ww "$ww" --argjson wr "$wr" '
-    def w(k): (k.input_tokens // 0) * $wi + (k.cache_creation_input_tokens // 0) * $ww + (k.cache_read_input_tokens // 0) * $wr;
+  # The weights go in as the strings that were validated (and are echoed below), converted by jq itself —
+  # no printf/awk round trip that would reformat them. Each row is rounded once and TOTAL sums the rounded
+  # rows, so a reader re-adding the printed column gets the printed total.
+  local lines
+  lines="$(jq -s -r --arg wi "$_SC_W_INPUT" --arg ww "$_SC_W_WRITE" --arg wr "$_SC_W_READ" '
+    def w(k): (k.input_tokens // 0) * ($wi | tonumber) + (k.cache_creation_input_tokens // 0) * ($ww | tonumber)
+              + (k.cache_read_input_tokens // 0) * ($wr | tonumber);
     def rnd: (. + 0.5) | floor;
-    map(. + {p: w(.primary), s: (if .subagent then w(.subagent) else 0 end)}) as $rows
-    | ($rows[] | "\(.ticket)|\(.tier)|\(.model)|\(.p | rnd)|\(.s | rnd)|\((.p + .s) | rnd)"),
-      "TOTAL|||\(([$rows[].p] | add) | rnd)|\(([$rows[].s] | add) | rnd)|\(([$rows[] | .p + .s] | add) | rnd)"
-  ' "$tmp" | while IFS='|' read -r t tier model p s tot; do
+    map({ticket, tier, model, p: (w(.primary) | rnd), s: (if .subagent then (w(.subagent) | rnd) else 0 end)}) as $rows
+    | ($rows[] | "\(.ticket)|\(.tier)|\(.model)|\(.p)|\(.s)|\(.p + .s)"),
+      "TOTAL|||\([$rows[].p] | add)|\([$rows[].s] | add)|\([$rows[] | .p + .s] | add)"
+  ' "$tmp")" || { printf 'session-cost.sh: weighted: could not sum %s\n' "$manifest" >&2; rm -f "$tmp"; exit 1; }
+  rm -f "$tmp"
+  while IFS='|' read -r t tier model p s tot; do
     # shellcheck disable=SC2059
     printf "$fmt" "$t" "$tier" "$model" "$p" "$s" "$tot"
-  done
+  done <<<"$lines"
   printf 'weights: input=%s write=%s read=%s (new input, cache writes, cache reads; output tokens unweighted — a ruler, not a price)\n' \
-    "$wi" "$ww" "$wr"
-  grep '^# UNMATCHED' "$manifest" || true
-  rm -f "$tmp"
+    "$_SC_W_INPUT" "$_SC_W_WRITE" "$_SC_W_READ"
+  # A manifest that carries an UNMATCHED line is an incomplete sum: say so and exit 1, so a pipeline that
+  # ignored `manifest`'s own exit status still cannot record the number as the release's total.
+  if grep '^# UNMATCHED' "$manifest"; then
+    printf 'session-cost.sh: weighted: the total above OMITS the unmatched ticket(s) listed — incomplete\n' >&2
+    exit 1
+  fi
 }
 
 main() {

@@ -83,24 +83,44 @@ check_status "manifest on a missing ledger exits 2" "2" "$STATUS"
 run bash "$tool" manifest
 check_status "manifest with no ledger exits 2" "2" "$STATUS"
 
+# a file that records BOTH of two ledger branches is counted under both tickets: warned, not silent
+f3="$wt_b/44444444-4444-4444-4444-444444444444.jsonl"
+{ turn claude/w2-y z1 1 0 1 1; turn claude/w1-x z2 1 0 1 1; } > "$f3"
+printf 'W1\tR2\tsonnet\tclaude/w1-x\nW2\tR1\tsonnet\tclaude/w2-y\n' > "$ledger"
+run bash "$tool" manifest --repo "$repo" "$ledger"
+check_status "manifest still exits 0 for a shared session file" "0" "$STATUS"
+check_contains "manifest warns that a file is counted under two tickets" "$OUT" "counted under both tickets"
+rm -f "$f3"
+
+# a comma in a session path cannot ride a comma-joined FILE column
+wt_c="$proj/${slug}--claude-worktrees-w3,comma"
+mkdir -p "$wt_c"
+turn claude/w3-c c1 1 0 1 1 > "$wt_c/55555555-5555-5555-5555-555555555555.jsonl"
+printf 'W3\tR1\tsonnet\tclaude/w3-c\n' > "$ledger"
+run bash "$tool" manifest --repo "$repo" "$ledger"
+check_status "manifest refuses a session path containing a comma" "2" "$STATUS"
+check_contains "manifest names the comma problem" "$OUT" "contains a comma"
+rm -f "$wt_c"/*.jsonl
+
 # --- weighted ------------------------------------------------------------------------------------------
-printf 'W1\tR2\tsonnet\tclaude/w1-x\nW2\tR1\tsonnet\tclaude/w2-y\nW9\tR1\tsonnet\tclaude/ghost\n' > "$ledger"
-bash "$tool" manifest --repo "$repo" "$ledger" > "$mf" 2>/dev/null
+printf 'W1\tR2\tsonnet\tclaude/w1-x\nW2\tR1\tsonnet\tclaude/w2-y\n' > "$ledger"
+bash "$tool" manifest --repo "$repo" "$ledger" > "$mf"
 # W1 primary: input 10+20+1=31, write 100+0+1=101, read 1000+2000+100=3100; subagent: 5,10,500
 #   at 1,2,0.1: primary 31+202+310=543; subagent 5+20+50=75; total 618.  W2: 100+0+1=101.  grand 719.
 run bash "$tool" weighted "$mf"
-check_status "weighted exits 0" "0" "$STATUS"
+check_status "weighted exits 0 on a complete manifest" "0" "$STATUS"
 check_contains "weighted prices W1 primary at the default 1,2,0.1 (543)" "$OUT" "543"
 check_contains "weighted prices W1's subagent separately (75)" "$OUT" "75"
 check_contains "weighted totals W1 = primary + subagent (618)" "$OUT" "618"
 check_contains "weighted grand total (719)" "$OUT" "719"
-check_contains "weighted states its weights" "$OUT" "weights: input=1 write=2 read=0.1"
-check_contains "weighted carries the unmatched line through" "$OUT" "UNMATCHED"
+check_contains "weighted states its weights as given" "$OUT" "weights: input=1.0 write=2.0 read=0.1"
 
 run bash "$tool" weighted --weights 1,1,1 "$mf"
 # W1 primary 31+101+3100=3232; subagent 515; total 3747; W2 110; grand 3857
 check_contains "weighted --weights overrides (grand 3857)" "$OUT" "3857"
 check_contains "weighted echoes the overriding weights" "$OUT" "weights: input=1 write=1 read=1"
+run bash "$tool" weighted --weights 1,2,0.1234567 "$mf"
+check_contains "weighted echoes a long weight unchanged (no reformatting)" "$OUT" "read=0.1234567"
 
 run env KEEL_TOKENS_WEIGHTS=1,1,1 bash "$tool" weighted "$mf"
 check_contains "weighted honours KEEL_TOKENS_WEIGHTS like keel tokens" "$OUT" "3857"
@@ -110,5 +130,18 @@ run env KEEL_TOKENS_WEIGHTS=garbage bash "$tool" weighted "$mf"
 check_status "weighted falls back to defaults on a malformed env var, as keel tokens does" "0" "$STATUS"
 check_contains "weighted names the fallback" "$OUT" "malformed"
 check_contains "weighted fallback uses the defaults (719)" "$OUT" "719"
+
+# TOTAL is the sum of the printed (rounded) rows: with read weight 0.5, W1 primary 3100*0.5+... rounds per row
+run bash "$tool" weighted --weights 1,1,0.55 "$mf"
+# W1 primary 31+101+1705=1837 ; subagent 5+10+275=290 ; W2 100+0+5.5=105.5 -> 106 ; total column 1837+290+106=2233
+check_contains "weighted TOTAL sums the rounded rows (2233)" "$OUT" "2233"
+
+# an incomplete manifest: the total is printed, the unmatched line repeated, and the exit says incomplete
+printf 'W1\tR2\tsonnet\tclaude/w1-x\nW9\tR1\tsonnet\tclaude/ghost\n' > "$ledger"
+bash "$tool" manifest --repo "$repo" "$ledger" > "$mf" 2>/dev/null
+run bash "$tool" weighted "$mf"
+check_status "weighted on a manifest with an UNMATCHED line exits 1" "1" "$STATUS"
+check_contains "weighted repeats the unmatched line" "$OUT" "UNMATCHED"
+check_contains "weighted still prints the partial total" "$OUT" "TOTAL"
 
 summary

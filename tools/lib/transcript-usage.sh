@@ -113,28 +113,43 @@ tu_session_files() {
   done
 }
 
-# tu_files_for_branch REPO_TOP BRANCH — the primary session files of REPO_TOP (tu_session_files) in which
-# at least one record carries `gitBranch == BRANCH` (dir #654): how a release ledger's worker branch finds
-# its session logs. Matched on the branch name the transcript itself records — never on the worktree
-# directory (names get recycled) or mtime (a touched log still carries its whole history) — and exactly,
-# so `claude/w1-x` never matches `claude/w1-x-extra`. A ticket restarted on the same branch yields every
-# file. Empty output (not an error) when none matches; a subagent sibling is not listed, because
-# tu_session_totals folds it in from its parent file.
-tu_files_for_branch() {
-  local repo_top="$1" branch="$2" f
+# tu_files_for_branches REPO_TOP BRANCH... — the primary session files of REPO_TOP (tu_session_files) in which
+# at least one record carries `gitBranch == <one of BRANCH...>` (dir #654): how a release ledger's worker
+# branches find their session logs. One output line per (file, branch) pair, `FILE<TAB>BRANCH`. Matched on the
+# branch name the transcript itself records — never on the worktree directory (names get recycled) or mtime (a
+# touched log still carries its whole history) — and exactly, so `claude/w1-x` never matches
+# `claude/w1-x-extra`. The match is file-level: ANY record carrying the branch puts the file on the list. A
+# ticket restarted on one branch yields every file. Empty output (not an error) when nothing matches; a
+# subagent sibling is not listed, because tu_session_totals folds it in from its parent file. Takes every
+# branch in ONE call because the cost is the scan of the (multi-GB) transcript corpus, not the branch count.
+tu_files_for_branches() {
+  local repo_top="$1" f pat prefilter=1 b bs
+  shift
   tu_require_jq || return 1
-  [ -n "$branch" ] || return 1
+  [ "$#" -gt 0 ] || return 1
+  for b in "$@"; do
+    [ -n "$b" ] || return 1
+    # A branch with a JSON-escaped char cannot be pre-grepped as plain text: jq alone decides then.
+    case "$b" in *'"'*|*'\'*) prefilter=0 ;; esac
+  done
+  bs="$(jq -n -c '$ARGS.positional' --args "$@")" || return 1
+  pat="$(mktemp)" || return 1
+  printf '%s\n' "$@" > "$pat"
   while IFS= read -r f; do
-    # grep -F is a cheap prefilter for the common case; a branch with a JSON-escaped char skips it and jq decides.
-    case "$branch" in
-      *'"'*|*'\'*) ;;
-      *) grep -q -F -- "\"gitBranch\":\"$branch\"" "$f" 2>/dev/null || continue ;;
-    esac
-    # `any(inputs; …)` stops at the first match; a file jq cannot parse is no match, never a crash.
-    if jq -n -e --arg b "$branch" 'any(inputs; .gitBranch == $b)' "$f" >/dev/null 2>&1; then
-      printf '%s\n' "$f"
-    fi
+    # A plain substring grep is a cheap prefilter (a superset of what jq matches, so it assumes nothing about
+    # the record's JSON spacing): only a file naming some branch is parsed.
+    if [ "$prefilter" -eq 1 ]; then grep -q -F -f "$pat" "$f" 2>/dev/null || continue; fi
+    # A file jq cannot parse is no match, never a crash.
+    jq -n -r --argjson bs "$bs" --arg f "$f" '
+      [inputs | .gitBranch | select(type == "string")] | unique | .[] | select(. as $b | $bs | any(. == $b)) | [$f, .] | @tsv
+    ' "$f" 2>/dev/null || true
   done < <(tu_session_files "$repo_top")
+  rm -f "$pat"
+}
+
+# tu_files_for_branch REPO_TOP BRANCH — tu_files_for_branches for one branch: the file paths alone.
+tu_files_for_branch() {
+  tu_files_for_branches "$1" "$2" | cut -f1
 }
 
 # tu_subagent_files SESSION_JSONL_FILE — every subagent sibling of one primary session file (dir #313

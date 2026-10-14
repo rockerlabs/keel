@@ -135,16 +135,21 @@ line it lists the repo's primary session files (`tu_session_files`: the checkout
 worktree's) in which a record carries `gitBranch` equal to that branch, and prints the `table` manifest.
 The match is on the branch the transcript itself recorded, exactly — never the worktree directory (names
 get recycled) or the file's modification time (a log touched in the window still carries its whole earlier
-history) — and a ticket restarted on one branch yields every file. A branch no session records is **never
-dropped**: it prints as a `# UNMATCHED:` comment line (which `table` and `weighted` skip, and `weighted`
-repeats under its total), is named on stderr, and the exit status is 1. `--repo` defaults to the current
-directory's main checkout.
+history) — and a ticket restarted on one branch yields every file. The match is **file-level**: a session
+file counts if any record carries the branch, and its whole history is then priced, so a session that ran
+several ledger branches is counted under each (the manifest warns on stderr when one file matches two
+lines; a worker that stayed on its own branch never trips it). A branch no session records is **never
+dropped**: it prints as a `# UNMATCHED:` comment line (which `table` and `weighted` skip), is named on
+stderr, and the exit status is 1. A session path containing a comma is refused (exit 2), since the manifest's
+file column is comma-joined. `--repo` defaults to the current directory's main checkout.
 
 `weighted` sums a manifest at the estimate's weights, the way `keel tokens` prices a session
 ([`docs/token-economy.md`](token-economy.md)): new input × input weight + cache writes × write weight +
 cache reads × read weight, output tokens unweighted, primary and subagent shown apart and then summed.
 The weights are `--weights input,write,read`, else `KEEL_TOKENS_WEIGHTS` (malformed: the defaults, said
-so), else `1.0,2.0,0.1`; the output ends with the weights it used, so the figure can be re-summed later.
+so), else `1.0,2.0,0.1`; the output ends with the weights it used, exactly as given, so the figure can be
+re-summed later. Each row is rounded once and TOTAL sums the rounded rows. A manifest carrying `# UNMATCHED:`
+lines is an incomplete sum: `weighted` still prints it, repeats those lines under the total, and exits 1.
 It is a ruler, not a price. A release close is one pipeline:
 
 ```
