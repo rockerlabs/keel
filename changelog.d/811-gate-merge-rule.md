@@ -9,16 +9,15 @@
   with "this merge cannot be read", as is a gh command holding unquoted `pr … merge` (or `api` and a
   merge-endpoint path) that are not its own, or a merge segment holding a second word `gh`: run gh as the
   command word, its subcommands right after it, quote such words, and keep a second `gh` out of the text.
-  The endpoint is read as GitHub routes it (`%XX` decoded, any case, dot segments resolved, a `.json`
-  suffix), and an API write is denied as a merge, fail-closed, when its path holds `{branch}`/`:branch`, or
-  a `%`, an inner dot segment or a `;` beside `pulls` or `merge`, or an inner dot segment or `//` beside
-  any gh placeholder (`{owner}`/`{repo}` otherwise only where they could complete the merge path, read on
-  the raw and the decoded path alike), or a placeholder in a full URL's host. The
-  manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
-  typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
-  `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the
-  installer and restart your sessions. A `settings.json` deny on `gh pr merge` still fires before any hook,
-  so the rule takes over only where that deny is lifted, and only with jq installed (without jq the whole
-  hook is inert). Fixtures:
+  The endpoint is read as GitHub routes it (`%XX` decoded, any case, dot segments resolved, a `.json` suffix), and
+  an API write is denied as a merge, fail-closed, when its path holds `{branch}`/`:branch`, or a `%`, an inner dot
+  segment or a `;` beside `pulls` or `merge`, or a dot segment or a `//` that is no `scheme://` beside any gh
+  placeholder (`{owner}`/`{repo}` otherwise only where they could complete the merge path, read on the raw and the
+  decoded path alike), or a placeholder in a full URL's host. The manager file lists a session when it launches
+  `/manage-release` (Claude's `Skill` call, or the operator's typed command), so `tools/install-pre-pr-gate.sh`
+  widens the `UserPromptExpansion` matcher to `code-review|manage-release|keel-manage-release` and retires the old
+  `code-review` entry first: re-run the installer and restart your sessions. A `settings.json` deny on `gh pr
+  merge` still fires before any hook, so the rule takes over only where that deny is lifted, and only with jq
+  installed (without jq the whole hook is inert). Fixtures:
   [`tests/test_pre_pr_gate_merge.sh`](/tests/test_pre_pr_gate_merge.sh); mutants:
   [`tests/mutants/pre-pr-gate-merge.tsv`](/tests/mutants/pre-pr-gate-merge.tsv). `SECURITY.md` names the rule.
