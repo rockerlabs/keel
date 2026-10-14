@@ -69,15 +69,16 @@ launched from an Opus manager reported Opus in their first system prompt. Three 
 and the session metadata said Sonnet for all seven wave-1 workers, yet the session log's per-message
 `model` field showed six of the seven still on Opus. Read, in this order: the worker's *latest* in-context
 "You are powered by" line or the log's per-message model field (what is running); the commit trailer;
-session metadata last (it reports what is configured). (2) **A switch applies from the next turn on**, so
+session metadata last (it reports what is configured). Each signal can be right about a different turn: a quote
+goes stale once the operator switches the session, and metadata moves ahead of the first turn that runs on the
+switched tier. So a disagreement between them is an observation with two alternatives, settled by the log (find it
+by branch; `.message.model` and `.perTurnEffort` on the assistant lines), never a finding against the worker and never
+settled by metadata alone. (2) **A switch applies from the next turn on**, so
 one made after the work turn has started re-prices an already-large cached context, while one made during
 a hello-only first turn costs nothing. (3) **So the launch holds:** the worker's first turn is only to
 read its brief and send a hello line naming its running model, then end the turn; the launcher checks
 the tier, has it corrected while the context is still tiny, and only then releases the worker with an
-explicit go message. The signals in rule (1) can each be right about a different turn: a quote is stale after a
-switch, and metadata moves ahead of the first turn that runs on the switched tier. So a disagreement is an
-observation with two alternatives, settled by the log (find it by branch; `.message.model` and `.perTurnEffort` on
-the assistant lines), never a finding against the worker and never settled by metadata alone.
+explicit go message.
 
 **A second launch-time requirement, same soft form: identity at first contact.** Nothing above says
 how a launched worker knows the session claiming to be its launcher IS its launcher, and a real run

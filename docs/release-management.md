@@ -137,11 +137,13 @@ top-tier by doing nothing), the order to verify in (running-tier evidence before
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
 nothing. A release's worker brief therefore tells each worker to hello, then stop.
 **The verify's read, at the hello and before GO,** follows `docs/delegation.md`'s order: running-tier evidence
-first, the commit trailer next, session metadata last, because it reports what is configured. The running-tier
+first, the commit trailer next (what a commit's own model line says wrote it), session metadata last, because it
+reports what is configured. The running-tier
 evidence has two forms: the worker's session log found by its branch (`jq` over the assistant lines'
 `.message.model` and `.perTurnEffort`, the branch in `.gitBranch`), which names what ran in each turn, and the
 hello's quoted "You are powered by" line, which is true for the turn it was read in and stale after a switch (a
-switch lands from the next turn), so after one the manager reads the next turn's log line or asks for a fresh quote. The signals can all be right about different turns, so a disagreement is an
+switch lands from the next turn), so after one the manager reads the next turn's log line or asks for a fresh quote.
+The signals can all be right about different turns, so a disagreement is an
 observation with its two alternatives named (a stale quote, or a configured value that has not taken effect yet),
 recorded with both and settled by the log, never a finding against the worker. Felt: two hellos said Opus while
 metadata said Sonnet, the manager released them on metadata, and the log showed the hold turn really ran on Opus; on

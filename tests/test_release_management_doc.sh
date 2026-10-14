@@ -422,7 +422,7 @@ pin "R14's fallback gives every reported PR one of two shapes" "$doc" \
   '**In the fallback, every PR the manager reports carries exactly one of two shapes' \
   "expected R14's fallback to carry the ready-block-or-do-not-merge rule (dir #826 item 3, dir #827 item 1)"
 pin "delegation.md's verify order says the signals can differ by turn" "$delegation" \
-  'settled by the log (find it by branch' \
+  'switched tier. So a disagreement between them is an observation with two alternatives' \
   "expected delegation.md's order to name the log as the arbiter (dir #826 item 4)"
 pin "delta-audit.md's Fixer brief rows carry an executable acceptance check" "$REPO_ROOT/docs/delta-audit.md" \
   '**A Fixer'"'"'s brief is rows of finding plus an executable acceptance check' \
@@ -441,6 +441,9 @@ pin "R3's verify settles a disagreement by the log, never against the worker" "$
 pin "R6's merge ACK is named by R14's precondition (c)" "$doc" \
   'and so does a spec amendment the worker has not ACKed (R6)' \
   "expected R14 (c) to carry the amendment-ACK hold (dir #823 item 7)"
+pin "R6's ACK paragraph names R14's precondition (c)" "$doc" \
+  "(R14's precondition (c) names this check)" \
+  "expected R6's ACK clause to point back at R14 (c) (dir #823 item 7)"
 pin "R14's fallback reports a bare status line as neither shape" "$doc" \
   'neither shape and is not sent' \
   "expected the fallback to refuse a bare status report (dir #827 item 1)"
