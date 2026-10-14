@@ -87,6 +87,18 @@ check_status "a lib-sourcing file that exits non-zero without summary fails the 
 check_absent "... and is not also blamed for a missing summary" "$OUT" "log has no"
 check_contains "... counted once" "$OUT" "1 TEST FILE(S) FAILED"
 
+# The phrase spread over TWO lines (a loose glob would stitch them) is not a verdict either.
+d="$(mkfake)"
+printf '#!/usr/bin/env bash\n%s\necho "test_stitch.sh: 3 stuff"\necho "  ok x passed, 2 times failed"\nexit 0\n' "$SRC" > "$d/test_stitch.sh"
+run bash "$d/run.sh"
+check_status "a verdict stitched together from two lines does not count" 1 "$STATUS"
+
+# A lib.sh source that is not at column 0 (inside a function, after &&) still puts the file under the rule.
+d="$(mkfake)"
+printf '#!/usr/bin/env bash\nload() {\n  . "$(dirname "$0")/lib.sh" || exit 1\n}\nload\nfail "red"\nexit 0\n' > "$d/test_indented.sh"
+run bash "$d/run.sh"
+check_status "an indented lib.sh source is still held to a summary line" 1 "$STATUS"
+
 # A file that never sources lib.sh has no summary to owe (the synthetic fixtures of tests/test_run_sh.sh).
 d="$(mkfake)"
 printf '#!/usr/bin/env bash\necho no-lib\nexit 0\n' > "$d/test_nolib.sh"
@@ -95,18 +107,19 @@ check_status "a file that does not source lib.sh is not held to a summary line" 
 
 # --- semantics with the watchdog (W5's region): a timed-out file reads as timed out, never "no summary" ----
 d="$(mkfake)"
-printf '#!/usr/bin/env bash\n%s\nsleep 30\n' "$SRC" > "$d/test_hang.sh"
+printf '#!/usr/bin/env bash\n%s\nexec sleep 30\n' "$SRC" > "$d/test_hang.sh"
 run env KEEL_TEST_FILE_TIMEOUT=1 bash "$d/run.sh"
 check_status "a watchdog-killed lib-sourcing file fails the run" 1 "$STATUS"
 check_contains "... reported as timed out" "$OUT" "(timed out after 1s)"
 check_absent "... not as a missing summary" "$OUT" "log has no"
 
-# --- the contract the gate relies on: every real test file sources lib.sh at top level and calls summary ----
+# --- the contract the gate relies on: every real test file ends in `summary` (the sourcing half is pinned by
+# tests/test_lib_source_guard.sh layer 1, which asserts every file carries the lib.sh source line) ---------------
 bad=""
 for f in "$REPO_ROOT"/tests/test_*.sh; do
-  grep -qE '^(\.|source)[[:space:]]+[^#]*lib\.sh' "$f" || bad="$bad $(basename "$f")(no-lib)"
-  grep -qE '^[[:space:]]*summary([[:space:]]|$)' "$f" || bad="$bad $(basename "$f")(no-summary)"
+  last="$(awk 'NF { l = $0 } END { print l }' "$f")"
+  [ "$last" = "summary" ] || bad="$bad $(basename "$f")"
 done
-check_eq "every tests/test_*.sh sources lib.sh and calls summary" "" "$bad"
+check_eq "every tests/test_*.sh ends in summary" "" "$bad"
 
 summary

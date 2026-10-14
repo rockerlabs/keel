@@ -500,6 +500,19 @@ SHIM
   }
   trap on_interrupt INT TERM
 
+  # dir #772: does test file $1, whose whole log is $2, owe a verdict line it did not print? True only when the log
+  # has no `<file>: N passed, M failed` line of its own (anchored: the phrase mid-line, or another file's name, is
+  # not a verdict) AND the file sources lib.sh — anywhere, indented or after `&&`, not only at column 0 —
+  # because tests/test_run_sh.sh's synthetic fixtures source nothing and have no summary to owe. The log match
+  # runs first and is pure bash, so the one `grep` forks only for a file whose log lacks the line, never in the
+  # all-green case. Not set -e safe on purpose: a plain status.
+  guard_summary_owed() {
+    local name="$1" log="$2" re nl=$'\n'
+    re="(^|$nl)${name//./[.]}: [0-9]+ passed, [0-9]+ failed($|$nl)"
+    [[ $log =~ $re ]] && return 1
+    grep -qE '(^|[[:space:];&|(])(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/$name" 2>/dev/null
+  }
+
   # Wait for and report every job in active_* whose process has already exited, compacting the
   # arrays down to only the ones still running. Prints how many it reaped (as $?) so a caller can
   # skip the poll sleep on a pass that just freed a slot instead of idling out the rest of it.
@@ -572,17 +585,14 @@ SHIM
       elif [ "$rc" -eq 0 ] && { [[ "$log_content" == *': command not found'$'\n'* ]] || [[ "$log_content" == *': command not found' ]]; }; then
         printf '!!! %s exited 0 but its log shows "command not found" — an unknown assertion likely vanished silently (dir #627)\n' "${active_files[$i]}"
         rc=1
-      elif [ "$rc" -eq 0 ] && [[ $'\n'"$log_content"$'\n' != *$'\n'"${active_files[$i]}: "[0-9]*" passed, "[0-9]*" failed"$'\n'* ]] \
-          && grep -qE '^(\.|source)[[:space:]]+[^#]*lib\.sh' "$here/${active_files[$i]}" 2>/dev/null; then
+      elif [ "$rc" -eq 0 ] && guard_summary_owed "${active_files[$i]}" "$log_content"; then
         # dir #772, third fail-open: a file that sources lib.sh owes the run its OWN verdict line, which only
-        # `summary` prints (`<file>: N passed, M failed`, preceded by a newline). Without it the exit status is the
+        # `summary` prints (`<file>: N passed, M failed`, on a line of its own). Without it the exit status is the
         # last command's — a file ending in `exit 0`, `true` or an echo passes with FAIL lines in its log (the
         # 0.16.0 alpine leg shipped three red checks green that way). Judged here, from the log, so it holds
         # whatever the file did with its EXIT trap (a file's own `trap ... EXIT` replaces lib.sh's) and on every
-        # bash. Gated on the file sourcing lib.sh: tests/test_run_sh.sh's synthetic fixtures do not, and have no
-        # summary to owe. Only an otherwise-green file is escalated: a timed-out or already-failed one is counted
-        # under its own reason, so a killed file never reads as "no summary". The log match runs first and is pure
-        # bash; the one `grep` forks only for a file whose log lacks the line, never in the all-green case.
+        # bash. Only an otherwise-green file is escalated: a timed-out or already-failed one is counted under its
+        # own reason, so a killed file never reads as "no summary".
         printf '!!! %s exited 0 but its log has no "%s: N passed, M failed" line — it never reached summary (dir #772)\n' "${active_files[$i]}" "${active_files[$i]}"
         rc=1
       fi
