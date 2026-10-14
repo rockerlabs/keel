@@ -112,7 +112,13 @@ bb_strip_foreign_citations() {
 # closures: each names an in-flight sub-state of an open ticket (a run underway, a phase reached,
 # a release candidate cut, a decision recorded pending the decided action) rather than the ticket
 # itself being done — so they stay outside this constant on purpose, not by oversight.
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|BUILT|FIXED)'
+# dir #609: each word is accepted UPPER or Title case (`DONE`, `Done`), and up to two `*`/`_` of emphasis
+# may sit between glyph and word (a peer's form: `✅ **Done 2026-09-20**`). All-lowercase is deliberately
+# NOT a closure: a title quoting the glyph before a plain word (`❌ duplicate detection fails`) is prose.
+# Known limit, accepted: a Title-case or UPPER word right after a glyph in a title (`❌ Duplicate detection
+# fails`, `✅ FIXED-width parser`) still reads as a closure — the peer's own form is Title case, and the
+# UPPER form already behaved so before this change; word such a title without the glyph in front.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
 # bb_closure_word_ok <candidate_marker>
 #   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
@@ -125,7 +131,8 @@ BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*(DONE|CLOSED|ABSORBED|EXECUTED|SUPE
 #   why before it aborts).
 bb_closure_word_ok() {
   local candidate="$1"
-  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN} ]]; then
+  # The trailing boundary is the scanner's own (`([^a-zA-Z]|$)`): `✅ FIXEDX` is not `✅ FIXED` (dir #609).
+  if [[ "$candidate" =~ ^${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
     return 0
   fi
   printf 'bb_closure_word_ok: %s\n' "$candidate" >&2
