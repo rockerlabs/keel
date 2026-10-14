@@ -119,10 +119,11 @@ M129	tools/pre-pr-gate.sh	 || d ~ /pulls|merge/)) return 1	)) return 1	B6: an en
 M130	tools/pre-pr-gate.sh	  if (b) return s ~ /\{branch\}|:branch([^a-z0-9_]|$)/	  if (b) return s ~ /\{branch\}|:branch/	B6: :branches reads as the :branch placeholder (a false deny)
 M131	tools/pre-pr-gate.sh	(f[c] ~ /^merge([.;]|$)/ || (w && mg_ph(f[c], 0)))	(f[c] ~ /^merge([.;]|$)/)	B6: an owner/repo placeholder standing for merge (pulls/5/{repo}) is not read
 M132	tools/pre-pr-gate.sh	 ||\n         (d != r && (mg_segs(d, w, 0) || (index(d, "..") && mg_segs(d, w, 1))))		B6: the decoded path is not read by segments ({owner}%2f5%2f{repo})
-M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))) return 1\n		B6: a placeholder path with a dot segment or // is read only by the model
+M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /(^|\/)\.\.?(\/|$)/ || index(u, "//"))) return 1\n		B6: a placeholder path with a dot segment or // is read only by the model
 M134	tools/pre-pr-gate.sh	  return mg_segs(r, w, 0) || 	  return 	B6: the RFC 3986 order (an empty segment kept for ..) is not tried (pulls/5//../merge)
 M135	tools/pre-pr-gate.sh	  for (k = 1; k <= m; k++) if (q[k] != "") f[++c] = q[k]	  for (k = 1; k <= m; k++) f[++c] = q[k]	B6: empty segments left in before the last-three match (pulls//5//../merge)
-M136	tools/pre-pr-gate.sh	    r = "/" substr(r, RLENGTH + 2)\n		B6: a full-URL endpoint is read with its scheme and host (a false deny, the merge endpoint missed)
-M137	tools/pre-pr-gate.sh	(d ~ /(^|\/)\.\.?(\/|$)/ || index(d, "//"))	(d ~ /\/\.\.?(\/|$)/ || index(d, "//"))	B6: a leading ./ in a placeholder path is not irregular
-M138	tools/pre-pr-gate.sh	match(r, /^[a-z][a-z0-9+.-]*:\/\/[^\/]*/)	match(r, /[a-z][a-z0-9+.-]*:\/\/[^\/]*/)	B6: an inner a:// is taken for a scheme (a segment lost)
+M136	tools/pre-pr-gate.sh	    sub(/^[a-z][a-z0-9+.-]*:\/\/[^\/]*\/?/, "/", r)\n		B6: a full-URL endpoint keeps its scheme and host (a false deny on its //)
+M137	tools/pre-pr-gate.sh	(d ~ /(^|\/)\.\.?(\/|$)/ || index(u, "//"))	(d ~ /\/\.\.?(\/|$)/ || index(u, "//"))	B6: a leading ./ in a placeholder path is not irregular
+M138	tools/pre-pr-gate.sh	sub(/^[a-z][a-z0-9+.-]*:\/\/[^\/]*\/?/, "/", r)	sub(/[a-z][a-z0-9+.-]*:\/\/[^\/]*\/?/, "/", r)	B6: an inner a:// is cut as a scheme (a segment lost)
 M139	tools/pre-pr-gate.sh	    if (w && mg_ph(substr(r, 1, RLENGTH), 0)) return 1\n		B6: a placeholder in the host of a full URL is not read
+M140	tools/pre-pr-gate.sh	u = d; gsub(/[a-z][a-z0-9+.-]*:\/\//, ":", u)	u = d	B6: a URL in a value behind a runner reads as // (a false deny)

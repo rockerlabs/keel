@@ -340,7 +340,9 @@ for c in "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/./{repo}" "GH_RE
   deny "(f) placeholders read on the resolved and the decoded path: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 deny "(g) a misplaced gh command holding api and pulls//5//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls//5//../merge" "$P" "$OTHER"
-deny "accepted cost: behind a runner, a URL with a placeholder in a value is unread" "$R_UNREAD" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\"" "$P" "$OTHER"
+allow "(g) behind a runner, a URL with a placeholder in a value is no endpoint" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\"" "$P" "$OTHER"
+deny "(g) an inner a:// is no scheme: the path keeps its segments" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/merge/a://x/../.." "$P" "$OTHER"
+deny "accepted cost: a placeholder in a full URL's host" "$R_API" "gh api -X POST https://{owner}.example.com/hooks -f x=y" "$P" "$OTHER"
 deny "(g) an inner a:// leaves the segment before it alone" "$R_UNREAD" "gh pr --x api https://api.github.com/repos/o/r/pulls/5/merge/a://../.." "$P" "$OTHER"
 for c in "gh api -X PUT :branch://api.github.com/repos/o/r/x" "gh api -X PUT x/:branch://api.github.com/repos/o/r/x" \
          "gh api -X PUT https://{owner}.x/5/merge"; do

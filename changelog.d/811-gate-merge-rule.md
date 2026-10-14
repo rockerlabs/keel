@@ -13,7 +13,7 @@
   suffix), and an API write is denied as a merge, fail-closed, when its path holds `{branch}`/`:branch`, or
   a `%`, an inner dot segment or a `;` beside `pulls` or `merge`, or an inner dot segment or `//` beside
   any gh placeholder (`{owner}`/`{repo}` otherwise only where they could complete the merge path, read on
-  the raw and the decoded path alike). The
+  the raw and the decoded path alike), or a placeholder in a full URL's host. The
   manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the
