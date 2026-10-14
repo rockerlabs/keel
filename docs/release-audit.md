@@ -67,7 +67,8 @@ way v0.6.0's ~20-ticket tail needed.
 Everything else is dispositioned
 `no action — <reason>` in the audit report and, if it names a real defect, added to the project's
 standing list — never a ticket of its own; filing one for every sub-bar finding is how a synthesis
-pass reproduces dir #85's snowball at a different layer. The blocker-vs-tail ranking above stays this
+pass reproduces dir #85's snowball at a different layer
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). The blocker-vs-tail ranking above stays this
 phase's own step; the doctrine's per-release debt budget is why the tail should also stay small — its
 own corollary states the mechanics, not restated here.
 

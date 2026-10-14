@@ -99,7 +99,7 @@ The **one-leg** form is field-tested. The **two-leg** form required above is rea
 and you should know which is which.
 
 **A guard-gap finding does not reset the clock.** §4's filing bar and this rule are deliberately not
-the same test: a known-class instance on an always-file surface (§4 condition 1 — a safety guard could
+the same test: a known-class instance on an always-file surface (§4 condition 1a — a safety guard could
 fail open, including a gap in the guard's own tests) earns a ticket under that bar while leaving the
 stop condition satisfied. That condition exists to catch *placement* risk, not novelty.
 
@@ -181,12 +181,55 @@ the same thing.
 A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a worker — earns a
 **ticket** only if at least one holds:
 
-1. **Always-file surface (no discretion):** it could expose a secret or credential; it could write,
+1. **Always-file surface:** it could expose a secret or credential; it could write,
    overwrite or delete something outside the repository (user files,
    `$HOME`, machine-global config such as git config or hooks — leftover scratch files alone are not
    this; they qualify only under condition 2, below); it could destroy git history or refs; it is in
    the installer / uninstaller; or a safety guard (secret guard, pre-PR gate, test sandbox) could fail
-   open — including a gap in the guard's own tests that would let a fail-open regress unnoticed.
+   open — including a gap in the guard's own tests that would let a fail-open regress unnoticed. It
+   splits by the input that makes the surface fail, judged from the finding's own text and any
+   transcript search recorded with it:
+   - **1a — a realistic failure (no discretion):** any of these holds (T1–T3 are read before the
+     doubt rule). **T1** — it happened in real work (the date and the session or project named), or
+     a real leak, real damage or a near-miss — for a miss that would send data off the machine or
+     destroy data, one real session whose command or action the surface let through is a near-miss;
+     a reproduction a review, an audit or a test built is not this. **T2** — it needs no special
+     input: the surface is off, or reads clean, on a setup this project supports, or a gap in a
+     guard's own tests leaves unpinned a rule that protects a 1a input. **T3** — the input is
+     attested in ordinary use: for a guard that reads commands, the
+     guarded action — by the actor the guard watches, against the target it protects — written in
+     that shape appears in at least two distinct real sessions within the 90 days before the finding,
+     or a shipped doc or command tells a session to write it (probe, audit and test-fixture commands, and
+     setup aimed at a scratch repository, attest nothing); for file content or a machine state, the
+     finding names a real-world source of it (a file format, a tool, a platform default, a documented
+     setup).
+   - **1b — a constructed bypass (no ticket):** none of T1–T3 holds and a construction is shown — a
+     step whose only purpose is to get past the surface, a step no supported harness or tool performs,
+     or a shape searched for in real session transcripts and found, by T3's actor and target, in
+     fewer than two distinct real sessions within the 90 days before the finding (those sightings are
+     counted; a search recorded in that window — on the register entry, its closed ticket or the
+     project's accumulator — serves, so a re-reported shape needs no new search). A shape a guard's doc
+     already names as a limit is not thereby 1b; this test judges it like any other. It goes into that
+     guard's **known-bypass register** (the guard's own doc names it;
+     [`SECURITY.md`](../SECURITY.md) "Threat model by guard" lists them all), dispositioned
+     `no-action(1b — <register>)`; the register entry stands in for the standing-list line, and a
+     second construction of the same shape promotes nothing. A 1b input clears no other condition of
+     1–4 (a felt one is T1, so 1a). The disposition names the T-branch that failed and the line of
+     the guard's stated threat model it rests on, and writes that line where none exists yet (§3's
+     obligation for its own carve-out, applied here).
+     A register entry is promoted to a ticket when any of T1–T3 holds for it, T3's session count
+     included; a sighting 90 days old or older stops counting, so a shape the current model no longer
+     writes retires on its own. Whoever files that ticket adds its id to the entry, which stays while
+     the bypass is open; the fix that closes it deletes the entry and its test pins.
+   - **In doubt between 1a and 1b** (none of T1–T3 holds, and no construction, a below-threshold
+     search included, is shown): a miss that would send data off the machine or destroy data is 1a — the
+     secret guard, `public-audit`, the pre-PR gate's push-bypass rule, the subagent git floor, a
+     write outside the test sandbox, the installer / uninstaller, and any other tool under this
+     condition's secret, outside-the-repository or history clause; a workflow miss is 1b — the
+     pre-PR gate's PR rule, a test that reads green while it is red.
+   - **Per input:** a finding with several failing inputs is judged per input; a gap in a guard's own
+     tests takes the class of the input its unpinned rule protects; a part that is not condition 1 at
+     all (a false deny, wording) is a standing-list line.
 2. **Felt:** it actually happened in real work — the finding names the date and the session or
    project where it hurt. Reproducing it in a sandbox during an audit or review is not "felt".
 3. **Beyond this project:** it blocks or degrades work in a project that consumes this one, or an
@@ -195,12 +238,13 @@ A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a 
    workflow.
 5. **Requested:** a capability the operator asked for.
 
-**In doubt on 1–4 → file**, and say in the body which condition was doubted.
+**In doubt on 1–4 → file**, and say in the body which condition was doubted
+(between 1a and 1b, condition 1's own doubt rule decides).
 
 A finding that is merely a **new class** — new to the class registry §8 bootstraps — is not on this
 list: retire it as a filing test on its own. Record it in the registry (or a `LEARNINGS.md`-style
 staging file), not as a ticket, unless it also clears one of 1–5 above — a known-class instance on an
-always-file surface still files under condition 1 regardless (§3's guard-gap carve-out is this case).
+always-file surface still files under condition 1a regardless (§3's guard-gap carve-out is this case).
 
 **The bar's other half is disposition, not detection.** Saying what earns a ticket is only useful
 alongside saying where everything *else* lands — because "recorded in a body" reads as persisted while
@@ -215,8 +259,8 @@ session re-derived the problem at full cost while none could act on it.
 So: a finding that does not clear the bar is **not a ticket** — fix it inside the diff you are already
 touching if it is trivial there; otherwise it is dispositioned "no action — <reason>" in the report
 *and*, ONLY IF it names a real defect, goes onto **a named line in the project's standing list**
-(date · line · source · which of 1–5 failed) — never a ticket of its own. **That distinction is the
-whole point.** A sub-bar finding that may open its own ticket means the bar restricts nothing, and an
+(date · line · source · which of 1–5 failed) — never a ticket of its own. A condition-1b finding goes to its guard's register instead.
+**That distinction is the whole point.** A sub-bar finding that may open its own ticket means the bar restricts nothing, and an
 engineer reading both sentences either violates the bar to save the defect or obeys it and loses the
 defect. The standing list is what makes "no action" a persist. An aside in an unrelated ticket's body
 is neither a list nor a ticket. **A second independent sighting promotes a standing-list line to a

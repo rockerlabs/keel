@@ -39,6 +39,11 @@
 # Whether a path may be replaced at all (a symlink Keel did not make, a user's own file) is the caller's
 # decision, made before it calls here.
 #
+# Known bypasses (1b, docs/verification-economics.md §4): this lib's register — a shape no ordinary run produces,
+# kept here instead of a ticket; SECURITY.md "Threat model by guard" lists it. A test gap, not a bypass: A38's
+# post-check against a link planted at the claimed temp path between the claim and the write is unpinned (its test
+# never plants the link) — dir #796. The fix that pins it deletes this entry.
+#
 # The temp name `<target>.keeltmp.<pid>` is Keel's own scratch name, CLAIMED before use, never followed:
 # whatever is already there (a stale temp, or a link someone planted) is removed with `rm -f`, which never
 # follows a link, and the name is claimed by a noclobber create that must leave a regular, non-link file.

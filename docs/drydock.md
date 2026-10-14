@@ -450,7 +450,8 @@ new prose that can be audited.
 ([`docs/verification-economics.md`](verification-economics.md) §4, never restated here): a finding
 earns a ticket only when that bar's own conditions are met. Anything else is recorded as
 "no action — <reason>" in the run's summary and, if it names a real defect, added to a standing list
-the project already keeps. "Recorded, ticketed" otherwise reads as *ticket everything*, and a run that
+the project already keeps
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). "Recorded, ticketed" otherwise reads as *ticket everything*, and a run that
 files one ticket per residual buries its own class tickets in one-off instances. (The bar applies again
 at phase 7's ratchet, over a different population: these are this run's re-check residuals, those are
 the run-wide demotions.)
@@ -477,7 +478,8 @@ justified demoting the class rather than fixing it a fifth time.
    tickets at all** is the filing bar in
    [`docs/verification-economics.md`](verification-economics.md); everything below it is
    dispositioned "no action — <reason>" in the run's report and, if it names a real defect, added to
-   a standing list — not filed. Apply that bar here, or the ratchet's ticket-per-class discipline
+   a standing list — not filed
+   (a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). Apply that bar here, or the ratchet's ticket-per-class discipline
    drowns in one-off instances.
 3. **Procedure deltas back into this document** — including deviations you *took* and decided were
    right, not only mistakes. Every rail above got here that way.

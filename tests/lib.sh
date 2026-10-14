@@ -14,6 +14,11 @@
 # git clone "$REPO_ROOT" into $SANDBOX and write in the clone. The guard armed below (ref_guard_arm)
 # refuses the rest and fails the file.
 #
+# Known bypasses (1b, docs/verification-economics.md §4): the harness's register — a shape no honest test writes,
+# kept here instead of a ticket; SECURITY.md "Threat model by guard" lists it. A test gap, not a bypass: `run.sh`'s
+# `termed` branch is unpinned — a test file that traps TERM and exits 0 is caught today (rc 1), but a regression
+# there would read ALL TEST FILES PASSED — dir #799. The fix that pins it deletes this entry.
+#
 # A draft test section (a scratch file sourced to try a fixture) must load this file first, then source
 # tests/section-guard.sh: a section that never loaded lib.sh has no guard at all and its `git -C ""` writes
 # the repo the shell stands in (dir #758; docs/delegation.md "Draft test sections").

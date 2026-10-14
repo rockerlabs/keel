@@ -215,7 +215,8 @@ deliverable, not a description of one.
 **The just-closed audit run's harvest confirmation happens here too.** This is G4(c) below, restated in
 this phase because a doc author compressing G0 from a shorter read of this section alone must not drop
 it: confirm that the just-closed delta-audit run's `no-action` leads and findings were harvested onto
-the standing list (G4(a)) and that its own staged-tickets file is empty or filed. Older, already-closed
+the standing list (G4(a)) and that its own staged-tickets file is empty or filed
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). Older, already-closed
 audit-run directories get one catch-up harvest the first time this procedure runs on a project, then
 are archive, not backlog — no groom re-opens them a second time. **Check it; do not assume a closed run
 did it.** A groom found two of the previous run's `no-action` findings unharvested a full cycle after

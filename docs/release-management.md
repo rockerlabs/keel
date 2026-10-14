@@ -484,7 +484,8 @@ the PR→ticket→surface map, the manager's own seam suspicions marked "leads, 
 "Handed to you" line below which every judgment is the auditor's own. File a finding that clears
 [`docs/verification-economics.md`](verification-economics.md) §4's filing bar as a ticket promptly
 rather than only when asked — below the bar it's a standing-list line, not a ticket, and a ticket whose
-defect a standing line already names takes that line with it (§4); the non-delegable
+defect a standing line already names takes that line with it (§4)
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4); the non-delegable
 set is unchanged from [`docs/delegation.md`](delegation.md) — the release itself (the tag, the publish), the
 install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
 (keel does).
