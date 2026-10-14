@@ -218,6 +218,7 @@ start_cwd_proc() {
   PROC_PID=$!
   local i=0
   while [ ! -e "$2" ] && [ "$i" -lt 50 ]; do sleep 0.1 2>/dev/null || sleep 1; i=$((i + 1)); done
+  [ -e "$2" ] || fail "the cwd process started inside $1" "no ready file after the wait"
 }
 stop_cwd_proc() { kill "$PROC_PID" 2>/dev/null; wait "$PROC_PID" 2>/dev/null; }
 

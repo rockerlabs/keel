@@ -271,10 +271,10 @@ while read -r b cd; do
     state="$(worktree_state "$wtp")"
     if [ "$state" = dirty ]; then                          # live work -> remove would need --force. Never auto.
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"dirty"$'\n'; n_flag=$((n_flag + 1))
-    elif worktree_live "$wtp"; then                        # clean but recently touched -> possibly a live
-      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"live"$'\n'; n_flag=$((n_flag + 1))   # parallel session, not dead
     elif worktree_busy "$wtp"; then                        # a process runs inside it: a live session that may
       flag="${flag}${b}"$'\t'"${wtp}"$'\t'"proc"$'\n'; n_flag=$((n_flag + 1))   # write ELSEWHERE (dir #813)
+    elif worktree_live "$wtp"; then                        # clean but recently touched -> possibly a live
+      flag="${flag}${b}"$'\t'"${wtp}"$'\t'"live"$'\n'; n_flag=$((n_flag + 1))   # parallel session, not dead
     elif [ "$state" = clean ] && [ "$age" -ge "$DAYS" ] && [ "$match" -eq 1 ]; then
       # provably safe: idle, ephemeral name, nothing of value on disk -> auto-remove like a confident branch
       autowt="${autowt}${b}"$'\t'"${age}"$'\t'"${wtp}"$'\n'; n_auto=$((n_auto + 1))
@@ -350,7 +350,7 @@ done < <(printf '%s' "$askwt")
 while IFS=$'\t' read -r b path reason; do
   [ -n "$b" ] || continue
   if [ "$reason" = proc ]; then
-    printf 'FLAG  %-40s worktree %s has a running process inside it (its cwd) — a live session may be working here or from it; leave it\n' "$b" "$path"
+    printf 'FLAG  %-40s worktree %s has a running process whose cwd is inside it — possibly a live session working elsewhere; find it with lsof +d, then leave it or close it\n' "$b" "$path"
   elif [ "$reason" = live ]; then
     printf 'FLAG  %-40s worktree %s merged but recently active — possibly a live parallel session; leave it, re-run cleanup later\n' "$b" "$path"
   else
