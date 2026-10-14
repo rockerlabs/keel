@@ -564,6 +564,7 @@ heading_dir_id() {
 # dir #609 widened the heading-tag constant to UPPER/Title case and left THIS one UPPER-only on purpose:
 # its `.*` gap spans prose, so folding would match any later "done"/"closed" on a line that merely carries
 # a glyph (seven new hits on the maintainers' BACKLOG.md when measured, 2026-10-14, none a close).
+# Consequence, accepted: a body note in the peer's form `✅ **Done 2026-09-20**` is read by the scanner but not here.
 BODY_CLOSURE_RE='✅.*\b(CLOSED|DONE|FIXED)\b|\bRETRACTED\b'
 
 # strip_dir_citation <regex> <ticket-capture-index> <own-id>
