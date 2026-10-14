@@ -43,7 +43,7 @@
 #
 # Constituents are `N=SHA` with the FULL 40-hex commit sha (a `gh` headRefOid; an abbreviation or a tag object is
 # refused). The order is the merge order, except that a head contained in an earlier-listed head (stacked PRs) is
-# refused — list the contained one first or leave it out — and a re-given N must descend from its head already in
+# refused (among the heads given in one call) — list the contained one first or leave it out — and a re-given N must descend from its head already in
 # the train (a rewritten branch leaves the train).
 #
 # `body` and `check` read the LOCAL `--base`: run `git fetch --prune origin` first, or an update-branch merge whose
@@ -60,6 +60,7 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 
 export LC_ALL=C
 export GIT_MERGE_AUTOEDIT=no
+export GIT_NO_LAZY_FETCH=1   # a local tool: an object lookup never goes to the network
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/repo-top.sh
@@ -223,20 +224,12 @@ check_stacked() {
     j=$((i + 1))
     while [ "$j" -lt "${#SHAS[@]}" ]; do
       if git -C "$repo" merge-base --is-ancestor "${SHAS[$j]}" "${SHAS[$i]}"; then
-        refuse "#${NS[$j]} (${SHAS[$j]}) is already contained in #${NS[$i]}, which is listed before it — list #${NS[$j]} before #${NS[$i]}, or leave #${NS[$j]} out"
+        refuse "#${NS[$j]} (${SHAS[$j]}) is already contained in #${NS[$i]}, which is listed before it in this call — list #${NS[$j]} before #${NS[$i]}, or leave #${NS[$j]} out"
       fi
       j=$((j + 1))
     done
     i=$((i + 1))
   done
-}
-
-# seam_files BASE SHA… — paths in at least two constituents' `BASE...SHA` name sets, CHANGELOG.md excluded.
-seam_files() {
-  local b="$1" s; shift
-  for s in "$@"; do
-    git -C "$repo" -c core.quotePath=false diff --name-only "$b...$s" || true   # print_seam warned about a missing merge base
-  done | awk '$0 != "CHANGELOG.md"' | sort | uniq -c | awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }'
 }
 
 # unmerged_paths DIR — `git status --porcelain` lines of unresolved paths (UU, AA, DD, AU, UA, DU, UD).
@@ -316,13 +309,19 @@ verify_ancestors() {
   return "$lost"
 }
 
-print_seam() {   # BASE
-  local f count=0 out s
+# print_seam BASE — the files in at least two constituents' `BASE...SHA` name sets (the three-dot form, so files
+# BASE changed since a constituent forked do not flood the list), CHANGELOG.md excluded. A constituent whose diff
+# fails (no merge base) is named on stdout: its files are missing from the list.
+print_seam() {
+  local f count=0 out s names all=""
   for s in "${T_SHA[@]}"; do
-    git -C "$repo" merge-base "$1" "$s" >/dev/null 2>&1 ||
-      say "seam warning: no merge base between $1 and $s — its files are missing from the seam list"
+    if names="$(git -C "$repo" -c core.quotePath=false diff --name-only "$1...$s" 2>/dev/null)"; then
+      all="$all$names"$'\n'
+    else
+      say "seam warning: git diff $1...$s failed (no merge base?) — its files are missing from the seam list"
+    fi
   done
-  out="$(seam_files "$1" "${T_SHA[@]}")"
+  out="$(awk 'NF && $0 != "CHANGELOG.md"' <<<"$all" | sort | uniq -c | awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     say "seam file: $f"
@@ -349,9 +348,13 @@ merge_all() {
         rest=""
         i=$((i + 1))
         while [ "$i" -lt "${#SHAS[@]}" ]; do rest="$rest ${NS[$i]}=${SHAS[$i]}"; i=$((i + 1)); done
-        say "resolve and commit it there (git completes it under the subject 'train: #N (sha)'), then:"
-        say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")${rest:+ }${rest# }"
-        say "(add --allow-conflicts if another of them is expected to conflict)"
+        say "resolve and commit it there (git completes it under the subject 'train: #N (sha)')"
+        if [ -z "$rest" ]; then
+          say "that was the last constituent: once it is committed the train is complete (run body, then check)"
+        else
+          say "then:"
+          say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")$([ "$allow" -eq 1 ] && printf ' --allow-conflicts')${rest:+ }${rest# }"
+        fi
         exit 1
       fi
       say "release-train: git merge of #${NS[$i]} failed without a conflict: $out"

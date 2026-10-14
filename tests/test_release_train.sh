@@ -95,6 +95,8 @@ refused "an annotated tag's object sha (peels to a commit)" build --branch t-tag
 check_contains "...says it is not a commit sha" "$OUT" "is not a commit sha"
 refused "a blob sha" build --branch t-blob --base main "1=$s1" "4=$(gd rev-parse main:README)"
 check_contains "...says it is a blob, not a commit" "$OUT" "is a blob object, not a commit"
+refused "a tree sha" build --branch t-tree --base main "1=$s1" "4=$(gd rev-parse 'main^{tree}')"
+check_contains "...says it is a tree, not a commit" "$OUT" "is a tree object, not a commit"
 refused "a duplicate N" build --branch t-dup --base main "1=$s1" "1=$s2"
 refused "an existing branch" build --branch b4 --base main "1=$s1" "4=$s4"
 refused "an existing non-empty worktree path" build --branch t-busy --base main --worktree "$SANDBOX/wt-busy" "1=$s1" "4=$s4"
@@ -147,6 +149,7 @@ check_status "build --allow-conflicts -> exit 1 after the #3 merge" 1 "$STATUS"
 hint="$(sed -n 's/^  release-train\.sh //p' <<<"$OUT")"   # the resume hint, run verbatim below
 check_contains "...lists UU f" "$OUT" "UU f"
 check_contains "...the resume hint carries the base" "$OUT" "--base main"
+check_contains "...and --allow-conflicts, since the build ran with it" "$OUT" "--allow-conflicts 1="
 check_contains "...and the quoted worktree path" "$OUT" "build --continue --worktree "
 git -C "$wt2" rev-parse -q --verify MERGE_HEAD >/dev/null && pass "...MERGE_HEAD present in the worktree" || fail "...MERGE_HEAD present in the worktree" "no merge in progress"
 check_eq "...the branch holds only train: #2" "train: #2 ($s2)" "$(fp "$wt2" main)"
@@ -340,6 +343,24 @@ check_status_out "body of a train with a forged subject -> exit 0" 0
 check_eq "...the forged #7 is not a table row" "2" "$(grep -c '^| #[0-9]* | <fill> | ' <<<"$OUT")"
 check_contains "...it is listed as an integration commit" "$OUT" "train: #7 ($s3)"
 check_contains "...and counted" "$OUT" "integration commits: 1"
+
+# --- the resume hint when the conflicting merge was the LAST constituent -------------------------------------------
+rt build --branch t18 --base main --worktree "$SANDBOX/wt-t18" --allow-conflicts "1=$s1" "2=$s2" "3=$s3"
+check_status "a conflict on the last constituent -> exit 1" 1 "$STATUS"
+check_contains "...says it was the last one" "$OUT" "that was the last constituent"
+check_absent "...and prints no runnable --continue hint with nothing to merge" "$OUT" "release-train.sh build --continue"
+
+# --- a constituent with no merge base to the base: named on stdout, exit 0 -----------------------------------------
+rt body --branch t1 --base main
+check_absent "a normal body carries no seam warning" "$OUT" "seam warning"
+sorph="$(gd commit-tree -m "an unrelated root commit" "$(gd mktree </dev/null)")"
+wt17="$SANDBOX/wt-t17"
+rt build --branch t17 --base main --worktree "$wt17" "1=$s1" "4=$s4"
+check_status "t17 build -> exit 0" 0 "$STATUS"
+git -C "$wt17" merge -q --no-ff --allow-unrelated-histories -m "train: #9 ($sorph)" "$sorph"
+rt body --branch t17 --base main
+check_status_out "body of a train holding an unrelated-history head -> exit 0" 0
+check_eq "...exactly one seam warning, naming the sha" "1" "$(grep -c "^seam warning: .*$sorph" <<<"$OUT")"
 
 # --- body of a non-train branch ----------------------------------------------------------------------------
 rt body --branch b1 --base main
