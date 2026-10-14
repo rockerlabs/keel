@@ -47,8 +47,8 @@
 # --ticket-token ERE (dir #605): the heading token an adopter's backlog uses, as an ERE matched right
 # after `### ` and before a space — `B\.[0-9]+` for `### B.N`, `KB\.[0-9]+|RL\.[0-9]+` for two forms.
 # It REPLACES the default (`dir #N` and `<n>.`), which stays unchanged without the flag; an empty or
-# invalid ERE exits 2. With it, --list prints each ticket's captured token (`B.12`), not a bare number.
-# A pool kept as a `## Pool` SECTION (not a `→ pool` tag) is not read.
+# invalid ERE exits 2; keep to POSIX ERE (no `\d`, `\w`, `\b`: grep and bash read them differently). With it, --list prints each ticket's captured token (`B.12`), not a bare number.
+# A pool kept as a `## Pool` SECTION (not a `→ pool` tag) is not read, and pool-report.sh has no such flag.
 #
 # With no --list, prints one line per tag, `count<TAB>tag`, descending by count (ties broken by
 # tag, ascending). With --list TAG, prints the ticket number of every open block under that tag,
@@ -108,16 +108,19 @@ EOF
 done
 
 # dir #605: validate the token under BOTH engines that will run it (grep -E in the scanner's heading
-# pass, bash's own `=~` right after); status 2 is a malformed ERE. One input line, not none: busybox
-# grep only compiles the pattern when it reads input (secret-scan.sh, dir #694 B4).
+# pass, bash's own `=~` right after), bare AND as the wrapped pattern they actually receive — a stray `)`
+# is literal to GNU grep but changes the wrapped group. Status 2 is a malformed ERE. One input line,
+# not none: busybox grep only compiles a pattern when it reads input (secret-scan.sh, dir #694 B4).
 if [ -n "$ticket_token" ]; then
-  grep_rc=0
-  printf 'x\n' | grep -E -- "$ticket_token" >/dev/null 2>&1 || grep_rc=$?
-  bash_rc="$([[ "" =~ $ticket_token ]]; echo $?)"
-  if [ "$grep_rc" -ge 2 ] || [ "$bash_rc" -ge 2 ]; then
-    echo "backlog-census: --ticket-token is not a valid extended regex: $ticket_token" >&2
-    exit 2
-  fi
+  for probe in "$ticket_token" "^### (${ticket_token}) "; do
+    grep_rc=0
+    printf 'x\n' | grep -E -- "$probe" >/dev/null 2>&1 || grep_rc=$?
+    bash_rc="$([[ "" =~ $probe ]]; echo $?)"
+    if [ "$grep_rc" -ge 2 ] || [ "$bash_rc" -ge 2 ]; then
+      echo "backlog-census: --ticket-token is not a valid extended regex: $ticket_token" >&2
+      exit 2
+    fi
+  done
 fi
 
 if [ -n "$backlog_arg" ]; then

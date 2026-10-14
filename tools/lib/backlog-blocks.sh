@@ -14,7 +14,9 @@
 # a pool census has no such exemption — a legacy-numbered ticket still holds real lines and can
 # still sit `→ pool` — so this scanner's heading regex matches both shapes.
 #
-# backlog_ticket_blocks <path>
+# backlog_ticket_blocks <path> [ticket_token_ere]
+#   dir #605: the optional ERE (default `dir #[0-9]+|[0-9]+\.`) names the heading token after `### `; it must
+#   compile and match alike under `grep -E` and bash `=~` (backlog-census.sh --ticket-token validates it).
 #   Emits one line per ticket heading found, TAB-separated:
 #     start_line  end_line  closed(0|1)  heading_block
 #   heading_block is the heading's own text (the `### ...` line plus any wrapped continuation
