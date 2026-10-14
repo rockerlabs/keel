@@ -68,6 +68,17 @@ main() {
     done < <(git --no-optional-locks -C "$repo" diff --name-only --no-renames -z HEAD -- 2>/dev/null) | LC_ALL=C sort
   }
 
+  # guard_strip_run_dirs STATUS — dir #768: STATUS (a `git status --porcelain` snapshot) without the untracked
+  # entries for this run's own scratch directories. run.sh mints its per-file logdir under $TMPDIR AFTER the
+  # before-snapshot, so a $TMPDIR inside the watched checkout (and not ignored) made the run's own logdir — or
+  # the untracked parent it sits in — a "change" and failed the run closed. The strip is applied to both
+  # snapshots at the compare, from $guard_run_dirs (set where the logdir is minted). Named residual: a stray
+  # untracked file inside those exact directories is masked; one anywhere else still shows.
+  guard_strip_run_dirs() {
+    [ -n "${guard_run_dirs:-}" ] || { printf '%s\n' "$1"; return 0; }
+    awk 'FNR == NR { skip[$0] = 1; next } !($0 in skip)' <(printf '%s\n' "$guard_run_dirs") <(printf '%s\n' "$1")
+  }
+
   # guard_unique_lines A B — the lines found in only one of two snapshots (`comm -3`: POSIX, present on
   # alpine's busybox), its column-2 TAB indent and blank lines removed.
   guard_unique_lines() {
@@ -204,13 +215,13 @@ main() {
   # trailing `LC_ALL=C sort` keeps their relative order stable regardless of git's own listing order.
   # The per-branch-tracking exclusion above (dir #630 T1's own rationale: `.merge`/`.remote` churn on
   # every ordinary `git push -u`) is now applied to the KEY NAME directly instead of a `key=` line
-  # prefix — same exact shape as before, exactly THREE dot-separated segments
-  # (`branch.<name>.<subkey>`; a bare top-level `branch.autoSetupMerge` still trips, pinned by
-  # tests/test_run_sh.sh). Pure bash — no `sed -E`/`-r`, and deliberately NOT `awk` with `RS="\0"`
+  # prefix — the same shape as before, `branch.<name>.<subkey>` with <name> free to hold dots (dir #768; it was
+  # exactly three segments, which tripped on `release-0.17.0-train1`); a bare top-level
+  # `branch.autoSetupMerge` still trips, pinned by tests/test_run_sh.sh). Pure bash — no `sed -E`/`-r`, and deliberately NOT `awk` with `RS="\0"`
   # (a known trap in this repo: busybox awk splits NULs into newlines, and BSD awk is unreliable on NUL
   # too) — verified on macOS bash 3.2 and the alpine leg's bash.
   guard_config_snapshot() {
-    local repo="$1" rec key value rest fp lines=()
+    local repo="$1" rec key value fp lines=()
     while IFS= read -r -d '' rec; do
       key="${rec%%$'\n'*}"
       if [ "$rec" = "$key" ]; then
@@ -219,13 +230,12 @@ main() {
         value="${rec#*$'\n'}"
       fi
       case "$key" in
-        branch.*.*)
-          rest="${key#branch.}"
-          case "$rest" in
-            *.*.*) ;;                  # 3+ segments after "branch." — a real key, not per-branch tracking
-            *) continue ;;             # exactly "name.subkey" — branch.<name>.<merge|remote|...>, excluded
-          esac
-          ;;
+        # dir #768: git config's key grammar is section.subsection.name, and a branch name is the subsection, so
+        # it may hold dots (`rel/1.2`, `release-0.17.0-train1`): ANY `branch.<something>.<subkey>` is per-branch
+        # tracking. The old exactly-three-segments rule read `branch.rel/1.2.merge` as "a real key" and tripped
+        # the canary on a peer's `git push -u`. A bare top-level `branch.autoSetupMerge` has no second dot and
+        # still trips.
+        branch.*.*) continue ;;
       esac
       fp="$(printf '%s' "$value" | cksum)"
       lines+=("$key $fp")
@@ -415,6 +425,21 @@ main() {
     exit 1
   fi
   trap 'rm -rf "$logdir"' EXIT
+
+  # dir #768: the untracked-directory status lines this run's own logdir produces when $TMPDIR is inside the
+  # watched checkout — the logdir itself and every directory above it up to the checkout root (git collapses an
+  # untracked directory into its topmost new one). Read by guard_strip_run_dirs at the compare below.
+  guard_run_dirs=""
+  case "$logdir" in
+    "$guard_repo_root"/*)
+      guard_rel="${logdir#"$guard_repo_root"/}" guard_acc=""
+      while [ -n "$guard_rel" ]; do
+        guard_acc="$guard_acc${guard_rel%%/*}/"
+        guard_run_dirs="$guard_run_dirs?? $guard_acc"$'\n'
+        case "$guard_rel" in */*) guard_rel="${guard_rel#*/}" ;; *) guard_rel="" ;; esac
+      done
+      ;;
+  esac
 
   # dir #663 (b): the residue gate. The grep census (tests/test_no_bare_mktemp.sh) sees one call shape in
   # the test files; it did not see a bare logdir, a `trap - EXIT` that strands a sandbox, or a scratch
@@ -712,9 +737,11 @@ SHIM
     guard_after_branch="$(git -C "$guard_repo_root" branch --show-current 2>/dev/null || true)"
     guard_after_head="$(git -C "$guard_repo_root" rev-parse HEAD 2>/dev/null || true)"
     guard_after_status="$(git -C "$guard_repo_root" status --porcelain 2>/dev/null || true)"
+    guard_before_status="$(guard_strip_run_dirs "$guard_before_status")"   # dir #768
+    guard_after_status="$(guard_strip_run_dirs "$guard_after_status")"
     guard_after_fp="$(guard_dirty_fingerprint "$guard_repo_root")"   # dir #664
     guard_after_config="$(guard_config_snapshot "$guard_repo_root")"
-    guard_before_refs_unowned="" guard_after_refs_unowned="" guard_after_reflog=""
+    guard_refs_unexplained_out="" guard_after_reflog=""
     if [ "$guard_ref_scope_available" = 1 ]; then
       guard_after_owned="$(guard_owned_branches "$guard_repo_root")"
       guard_after_refs="$(guard_refs_snapshot "$guard_repo_root")"
@@ -723,14 +750,15 @@ SHIM
       # Union of both snapshots' owned branches: one that stopped (or started) being owned mid-run is
       # still explained by that peer's own worktree lifecycle, not by this suite's fixtures.
       guard_owned_union="$(guard_union "$guard_before_owned" "$guard_after_owned")"
-      guard_before_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_before_refs")"
-      guard_after_refs_unowned="$(guard_filter_unowned "$guard_owned_union" "$guard_after_refs")"
+      # dir #768: only the changes ownership does not explain AND that lost or invented a branch — see
+      # guard_refs_unexplained for the three shapes and the named residual.
+      guard_refs_unexplained_out="$(guard_refs_unexplained "$guard_repo_root" "$guard_owned_union" "$guard_before_refs" "$guard_after_refs")"
     fi
 
     if [ "$guard_after_branch" != "$guard_before_branch" ] || [ "$guard_after_head" != "$guard_before_head" ] \
         || [ "$guard_after_status" != "$guard_before_status" ] \
         || [ "$guard_after_fp" != "$guard_before_fp" ] \
-        || [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ] \
+        || [ -n "$guard_refs_unexplained_out" ] \
         || [ "$guard_after_reflog" != "$guard_before_reflog" ] \
         || [ "$guard_after_config" != "$guard_before_config" ]; then
       printf '\n!!! TEST-SUITE SELF-CORRUPTION GUARD TRIPPED (dir #318) !!!\n'
@@ -775,10 +803,10 @@ SHIM
           printf '  edit a checkout while its own suite run is still alive). Reconcile by hand either way.\n'
         fi
       fi
-      if [ "$guard_before_refs_unowned" != "$guard_after_refs_unowned" ]; then
-        printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared, moved, or\n'
-        printf '  disappeared during the run (dir #333):\n%s\n' \
-          "$(diff <(printf '%s\n' "$guard_before_refs_unowned") <(printf '%s\n' "$guard_after_refs_unowned"))"
+      if [ -n "$guard_refs_unexplained_out" ]; then
+        printf '  an unowned branch (in refs/heads, checked out by no worktree) appeared (+), or was lost (-)\n'
+        printf '  or rewritten (~) so that no ref reaches its old tip any more, during the run (dir #333, dir #768):\n%s\n' \
+          "$guard_refs_unexplained_out"
         printf '  an ordinary test file cannot have done this on its own — tests/lib.sh guard (dir #318) refuses every test ref write it makes — so look outside the suite first (dir #318 residual N8, an inherited GIT_DIR+GIT_COMMON_DIR pair, was the one narrow exception; dir #644 closed it, so this trip has no known exception left to hedge for).\n'
       fi
       if [ "$guard_after_reflog" != "$guard_before_reflog" ]; then

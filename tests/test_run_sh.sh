@@ -694,21 +694,19 @@ check_status "T1: a bare top-level branch.* setting still trips the canary -> ex
 check_contains "T1: the trip names the bare branch.* key" "$OUT" "branch.autosetupmerge"
 check_absent "T1: the trip withholds the bare branch.* key's value" "$OUT" "always"
 
-# --- F4b (found live by this ticket's own /code-review high pass): a FOUR-segment branch.* key
-# (a branch literally named "foo.bar" — dots are valid in git branch names — makes
-# `branch.foo.bar.remote`, section=branch/subsection="foo.bar"/key=remote) still trips: the new
-# case-glob exclusion in guard_config_snapshot is scoped to exactly THREE segments
-# (branch.<name>.<subkey>), same as the old regex's `[^.=]+\.[^.=]+=` could only ever match two
-# single-segment captures. Mutation proof (run manually, not committed): widening the inner
-# `case "$rest" in *.*.*) ;; *) continue ;; esac` to match ANY multi-dot rest (i.e. excluding this
-# shape too) turns this assertion RED.
+# --- F4b, REVERSED by dir #768: a FOUR-segment branch.* key (a branch literally named "foo.bar" — dots are valid
+# in git branch names — makes `branch.foo.bar.remote`, section=branch/subsection="foo.bar"/key=remote) IS
+# per-branch tracking, so it no longer trips: the old exactly-three-segments rule read it as "a real key" and
+# tripped the canary on a peer's `git push -u` of a dotted branch (`release-0.17.0-train1`). The bare top-level
+# `branch.autoSetupMerge` (T1 above) still trips. Mutation proof: restoring the old inner
+# `case "$rest" in *.*.*) ;; *) continue ;; esac` turns this assertion RED. The wider scoping rows live in
+# tests/test_run_sh_canary_scope.sh.
 br4_root="$(new_run_sh_fixture)"
 printf '#!/usr/bin/env bash\ngit -C "$(dirname "$0")/.." config --local branch.foo.bar.remote origin\nexit 0\n' \
   > "$br4_root/tests/test_br4_leak.sh"
 run bash "$br4_root/tests/run.sh"
-check_status "F4b: a four-segment branch.<name>.<a>.<b> key still trips the canary -> exit 1" 1 "$STATUS"
-check_contains "F4b: the trip names the four-segment key" "$OUT" "branch.foo.bar.remote"
-check_absent "F4b: the trip withholds the four-segment key's value" "$OUT" "origin"
+check_status "dir #768: a dotted branch name's tracking key (branch.foo.bar.remote) does NOT trip the canary -> exit 0" 0 "$STATUS"
+check_absent "dir #768: ... and is not named as a corruption trip" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED"
 
 # --- T1 (manager-flagged, delta-audit 0.11.0-0.12.0 fix round): a changed key whose VALUE is
 # credential-shaped (a token embedded in a URL, the exact actions/checkout http.*.extraHeader shape)
@@ -816,15 +814,17 @@ check_status "dir #656 half 2: a leak into a clean tracked file trips -> exit 1"
 check_contains "dir #656 half 2: ... and the names block lists it" "$OUT" "  f.txt"
 check_absent "dir #656 half 2: ... but not the bystander" "$OUT" "g.txt"
 
-# dir #656 half 2 / R3-1: a TMPDIR INSIDE the watched checkout makes run.sh's own logdir an untracked path the
-# after-snapshot sees — the trip is the known self-trip (R3-1, not fixed here), and the names block now says WHICH
-# path moved: the `?? <dir>/` entry of the status compare, not a bare "status changed".
+# dir #656 half 2 / R3-1, CLOSED by dir #768: a TMPDIR INSIDE the watched checkout makes run.sh's own logdir (and
+# the untracked directory above it) an untracked path the after-snapshot sees. That used to be the known self-trip
+# (this row pinned exit 1 and the names block naming `scratch-tmp/`); the canary now strips the run's own scratch
+# directories from both status snapshots, so the run stays green. A stray file elsewhere is still named
+# (tests/test_run_sh_canary_scope.sh, RED 5).
 tmpin_root="$(new_run_sh_fixture)"
 mkdir "$tmpin_root/scratch-tmp"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$tmpin_root/tests/test_clean.sh"
 run env TMPDIR="$tmpin_root/scratch-tmp" bash "$tmpin_root/tests/run.sh"
-check_status "R3-1: a TMPDIR inside the watched checkout self-trips (the standing line, unchanged) -> exit 1" 1 "$STATUS"
-check_contains "dir #656 half 2: the names block names the untracked directory the logdir created" "$OUT" "  scratch-tmp/"
+check_status "dir #768 (closes R3-1): a TMPDIR inside the watched checkout no longer self-trips -> exit 0" 0 "$STATUS"
+check_absent "dir #768: ... and prints no trip block" "$OUT" "TEST-SUITE SELF-CORRUPTION GUARD TRIPPED"
 
 # --- dir #505 (b'): the HEAD-moved hint (dir #333's amendment) had no pin, and named its benign cause
 # without the one command that tells own-commit from leak. A fixture test that commits against the

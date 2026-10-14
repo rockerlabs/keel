@@ -18,6 +18,10 @@
 # .git/worktrees/<name>, never the common dir — so tests/run.sh compares it directly, via
 # guard_reflog_count below.)
 #
+# dir #768 narrowed that further: ownership alone still let a peer's branch-cleanup sweep, or a peer's branch moving
+# while checked out nowhere (a rebase), trip a whole suite run. guard_refs_unexplained (end of this file) reports,
+# among the unowned branches, only a NEW one, or one whose old tip no ref reaches any more.
+#
 # NAMED RESIDUAL LIMIT (found by an independent /code-review high pass on this ticket's own diff,
 # empirically reproduced): this scoping trusts CURRENT ownership, not the PROVENANCE of a ref's
 # movement — it has no way to tell "a sibling worktree legitimately owns this branch" apart from "a
@@ -86,4 +90,46 @@ guard_reflog_count() {
 guard_filter_unowned() {
   [ -z "$2" ] && return 0
   awk 'FNR==NR{owned[$1]=1; next} !($1 in owned)' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
+}
+
+# guard_tip_survives REPO SHA (dir #768)
+# True when some ref in REPO (a branch, a remote-tracking ref or a tag) still reaches SHA — so no commit was
+# lost by whatever moved or deleted the ref that used to point there. `--count=1` stops at the first hit.
+guard_tip_survives() {
+  local hit
+  hit="$(git -C "$1" for-each-ref --count=1 --contains "$2" --format='%(refname)' refs/heads refs/remotes refs/tags 2>/dev/null)" || return 1
+  [ -n "$hit" ]
+}
+
+# guard_refs_unexplained REPO OWNED_LIST BEFORE_REFS AFTER_REFS (dir #768)
+# The refs/heads changes the canary still reports, one line each, from two guard_refs_snapshot outputs and the
+# union of owned branches (guard_union). Ownership scoping alone (guard_filter_unowned) left two kinds of
+# ordinary concurrent work tripping a whole suite run: a peer's branch-cleanup sweep deleting merged branches, and
+# a peer's branch moving while no worktree had it checked out (a rebase shows the branch as detached for its
+# duration). Both are explained by one fact: nothing was lost — the old tip is still reachable from some
+# ref. What stays reported, on branches no worktree owns:
+#   + NAME SHA            a branch that did not exist before the run (dir #320's stray fixture branch)
+#   - NAME OLDSHA         a branch gone whose old tip no ref reaches any more (commits lost)
+#   ~ NAME OLD -> NEW     a branch moved so that its old tip no ref reaches any more (a rewrite, a reset)
+# NAMED RESIDUAL: an escaped test that deletes, or fast-forwards, an unowned branch whose tip stays reachable
+# elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
+# the file, which is the layer that prevents it. This one detects what slipped past that.
+guard_refs_unexplained() {
+  local repo="$1" owned="$2" before="$3" after="$4" name sha old new bu au
+  bu="$(guard_filter_unowned "$owned" "$before")"
+  au="$(guard_filter_unowned "$owned" "$after")"
+  while IFS=' ' read -r name sha; do
+    [ -n "$name" ] || continue
+    new="$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$au")"
+    if [ -z "$new" ]; then
+      guard_tip_survives "$repo" "$sha" || printf -- '- %s %s\n' "$name" "$sha"
+    elif [ "$new" != "$sha" ]; then
+      guard_tip_survives "$repo" "$sha" || printf -- '~ %s %s -> %s\n' "$name" "$sha" "$new"
+    fi
+  done <<< "$bu"
+  while IFS=' ' read -r name sha; do
+    [ -n "$name" ] || continue
+    old="$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$bu")"
+    [ -n "$old" ] || printf -- '+ %s %s\n' "$name" "$sha"
+  done <<< "$au"
 }
