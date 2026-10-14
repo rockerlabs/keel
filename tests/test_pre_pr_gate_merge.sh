@@ -244,16 +244,17 @@ for c in "cd /tmp && $MERGE" "GH_TOKEN=x $MERGE" "foo; $MERGE" "env GH_PAGER= $M
   deny "(g) unlisted: [$c]" "$R_ID" "$c" "$P" "$OTHER"
 done
 for c in "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,mergeStateStatus" \
-         "gh pr list --state merged" "grep -c 'gh pr merge' f" "gh pr merge" ; do
-  case "$c" in
-    "gh pr merge") deny "(g) a bare gh pr merge is a merge" "$R_ID" "$c" "$P" "$OTHER" ;;
-    *) allow "(g) unlisted: [$c] is no merge" "$c" "$P" "$OTHER" ;;
-  esac
+         "gh pr list --state merged" "grep -c 'gh pr merge' f"; do
+  allow "(g) unlisted: [$c] is no merge" "$c" "$P" "$OTHER"
 done
+deny "(g) a bare gh pr merge is a merge" "$R_ID" "gh pr merge" "$P" "$OTHER"
+# shellcheck disable=SC2088  # the tilde is the command TEXT the hook reads, on purpose
+deny "(g) a path to gh behind a tilde" "$R_ID" "~/bin/gh pr merge 5 --squash" "$P" "$OTHER"
+deny "(g) a path to gh behind \$HOME" "$R_API" "\$HOME/bin/gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
 
 # --- named residuals, pinned so a change to them is a visible decision — a change that closes one flips its line to a
 # deny: words stdin supplies, a command inside one quoted argument, a quoted subcommand word ------------------------
-for c in "echo merge 5 | xargs gh pr" "echo repos/o/r/pulls/5/merge | xargs gh api -X PUT" \
+for c in "echo merge 5 | xargs gh pr" "echo repos/o/r/pulls/5/merge | xargs gh api -X PUT" "\$GH pr merge 5 --squash" \
          "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
   allow "residual: [$c] is not read as a merge (named in the header)" "$c" "$P" "$OTHER"
 done
@@ -269,16 +270,15 @@ deny "accepted cost: another command whose unquoted words hold gh pr merge reads
 deny "accepted cost: echo gh pr merge, unquoted, reads as a merge" "$R_ID" "echo gh pr merge" "$P" "$OTHER"
 deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE --squash" "$P" "$MID"
 
-# Whatever runs gh — the first gh word in the segment is the command, so no runner needs a list: an unlisted session's
-# squash behind each of these is read as a merge.
-for r in timeout nice stdbuf sudo doas ionice chrt caffeinate taskset setsid flock noglob coproc builtin watch \
-         parallel nohup env exec command time xargs gtimeout gxargs /usr/bin/nice nocorrect - "arch -arm64" \
-         unbuffer chronic '$R' '"$(command -v timeout)" 5'; do
+# Whatever runs gh — every gh word in the segment is read as a command, so no runner needs a list: an unlisted
+# session's squash behind one with flags, a run-time word, a path, zsh's `-`, or one whose own argument is `gh api`.
+for r in "nice -n 5" '$R' /usr/bin/nice - "sudo -u gh -g api"; do
   deny "(g) runner $r: read through" "$R_ID" "$r gh pr merge 5 --squash" "$P" "$OTHER"
 done
 deny "(d) manager: a merge under parallel (stdin or -a add words)" "not under xargs or parallel" "printf -- '--admin\\n' | parallel $MERGE" "$P" "$MID"
 deny "(d) manager: under gxargs" "not under xargs or parallel" "printf -- '--admin\\n' | gxargs $MERGE" "$P" "$MID"
 allow "(d) manager: an assignment naming xargs is no runner" "X=/opt/bin/xargs $MERGE" "$P" "$MID"
+deny "accepted cost: a word whose basename is parallel reads as parallel" "not under xargs or parallel" "flock /tmp/parallel $MERGE" "$P" "$MID"
 deny "(f) a read of the merge endpoint under xargs gets the xargs reason (stdin may add the method)" "not under xargs or parallel" "echo 1 | xargs -n1 gh api repos/o/r/pulls/5/merge" "$P" "$MID"
 deny "(f) an API write under xargs keeps the API reason" "$R_API" "echo 1 | xargs gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$MID"
 allow "residual: env -S runs a command from one quoted argument (named in the header)" "env -S 'gh pr merge 5 --squash'" "$P" "$OTHER"
