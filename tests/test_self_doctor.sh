@@ -2434,4 +2434,11 @@ run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" "$d"
 check_absent "A46: an unborn HEAD is not 'could not read the CHANGELOG commit time'" "$OUT" "could not read the CHANGELOG commit time"
 check_absent "A46: …nor 'could not read the commit messages'" "$OUT" "could not read the commit messages"
 
+# A48 — a git that cannot answer 'is there a HEAD' is a GAP, never the "no commits yet" quiet path (which stays a
+# non-failure: A46). The shim refuses only the quiet-verify call.
+run_shimmed head '*" rev-parse -q --verify HEAD "*'
+check_status "A48: a git that cannot resolve HEAD at all -> exit 1" 1 "$STATUS"
+check_contains "A48: it is a GAP naming HEAD" "$OUT" "could not read HEAD (git exit 128)"
+check_absent "A48: no OK line over a history it could not read" "$OUT" "OK   CHANGELOG.md is at least as recent"
+
 summary

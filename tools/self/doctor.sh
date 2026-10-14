@@ -316,6 +316,21 @@ git_value() {
   return "$gv_rc"
 }
 
+# head_state — dir #766: HEAD_STATE is "commits" or "unborn" (a repo with no commit yet has no history to read, which is
+# not a failed git), or "failed" after a GAP when git could not answer at all. `rev-parse -q --verify` exits 1 for a
+# HEAD that does not resolve and >1 for a fatal error, so the two are told apart by status, not lumped together.
+HEAD_STATE=""
+head_state() {
+  local hs_rc=0
+  git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1 || hs_rc=$?
+  case "$hs_rc" in
+    0) HEAD_STATE=commits ;;
+    1) HEAD_STATE=unborn ;;
+    *) HEAD_STATE=failed
+       gap "could not read HEAD (git exit $hs_rc) — the checks that read the commit history are INCOMPLETE" ;;
+  esac
+}
+
 # --- 2. dead internal references ----------------------------------------------------------------
 # Every tools/<x>.sh, commands/<x>.md, templates/<x> mentioned in CURRENT-state docs/scripts must
 # resolve on disk. CHANGELOG.md is deliberately excluded — it documents history, and a renamed or
@@ -415,7 +430,7 @@ if [ "${#scan_files_cmd[@]}" -gt 0 ]; then
   # grep exits 1 on zero matches (valid) and 2 on a real error (dir #766: a GAP, not an empty hit list);
   # a direct `var=$(cmd)` propagates a failing status through errexit, so the status is captured.
   cmd_rc=0
-  raw_hits="$(cd "$repo_root" && grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}")" || cmd_rc=$?
+  raw_hits="$( (cd "$repo_root" || exit 2; grep -rnoE '(^|[[:space:]("*/])`/[a-z][a-z0-9-]+[` ]' "${scan_files_cmd[@]}") )" || cmd_rc=$?
   if [ "$cmd_rc" -gt 1 ]; then
     gap "could not scan the adopter-facing docs (grep exit $cmd_rc) — the slash-command check is INCOMPLETE"
     dead_cmd=$((dead_cmd + 1))
@@ -604,7 +619,9 @@ product_ts=""
 staleness_blind=0
 # A repo with no commit yet (unborn HEAD) has no log to compare — the old `|| echo 0` read it as "up to date";
 # it stays a non-failure (zeros), distinct from a git that could not read an existing history.
-if git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+head_state
+[ "$HEAD_STATE" = failed ] && staleness_blind=1
+if [ "$HEAD_STATE" = commits ]; then
   git_value changelog_ts "the CHANGELOG commit time" "the CHANGELOG staleness check" \
     log -1 --format=%ct -- CHANGELOG.md changelog.d || staleness_blind=1
   git_value product_ts "the product commit time" "the CHANGELOG staleness check" \
@@ -1056,6 +1073,12 @@ _semver_gt() {
   [ "$a3" -gt "$b3" ]
 }
 
+# _tag_versions — reads `git tag -l 'v*'` output on stdin, echoes the strict-semver ones as bare `x.y.z` (a pure
+# filter: zero matches is a valid empty answer, so the status is normalised). One copy for checks 6 and 7 (dir #766).
+_tag_versions() {
+  grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
+}
+
 # _semver_max — reads bare `x.y.z` versions on stdin, one per line, echoes the highest (or empty for
 # no input). A THIRD `git tag -l` scan for the max alone (on top of check 7's own and check
 # 6's inline one) was flagged independently by three review passes (`/simplify`'s reuse,
@@ -1165,6 +1188,20 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # pending-release allowance (dir #299) — check that file too when fixing this one. (dir #766: this copy now
 # returns 2 on a git failure for the caller to GAP; the mirror in that test still fails open on it — a test
 # helper, not a self-check verdict, and left as is.)
+# _blob_text VAR REV REL — dir #766: VAR = REL's text at REV, "" when REV or REL is absent there (a root commit's
+# parent; a commit that has no such file), status 2 when git itself fails. Absence is asked of git by status
+# (`rev-parse -q --verify` exits 1 for an unresolvable rev) and by listing (`ls-tree` prints nothing for an absent
+# path), never inferred from a nonzero exit, so a damaged object store cannot read as "absent".
+_blob_text() {
+  local var="$1" rev="$2" rel="$3" bt_rc=0 entry text
+  git -C "$repo_root" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || bt_rc=$?
+  if [ "$bt_rc" -eq 1 ]; then printf -v "$var" ''; return 0; fi
+  [ "$bt_rc" -eq 0 ] || return 2
+  entry="$(git -C "$repo_root" ls-tree "$rev" -- "$rel")" || return 2
+  if [ -z "$entry" ]; then printf -v "$var" ''; return 0; fi
+  text="$(git -C "$repo_root" show "$rev:$rel")" || return 2
+  printf -v "$var" '%s' "$text"
+}
 _pending_release_intro_commit() {
   local heading="## [$1]" heading_re rel sha now before
   rel="${changelog_file#"$repo_root"/}"
@@ -1182,7 +1219,7 @@ _pending_release_intro_commit() {
   # dir #766: the pickaxe is spooled with its status kept. Status 2 = could not walk the history; the caller
   # GAPs (this runs inside `$( )`, where a gap() would be lost with the subshell). Status 0 with empty output
   # stays the designed "heading never appears in tracked history" fail-open.
-  git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1 || return 0   # no commits yet: bound unresolvable
+  [ "$HEAD_STATE" = commits ] || return 0   # no commits yet: bound unresolvable (a failed HEAD GAPped at check 4)
   intro_shas=""
   intro_rc=0
   intro_shas="$(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null)" || intro_rc=$?
@@ -1196,18 +1233,12 @@ _pending_release_intro_commit() {
     # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
     # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
     # live writer process on the other end) tests presence with nothing left to signal.
-    # dir #766: `git show` keeps its status. The -G pickaxe also lists a commit that REMOVED a matching line (one
-    # that deleted or moved the file), so the blob may be absent at $sha as well as at `$sha^` (this commit added
-    # it, or it is a root commit): `cat-file -e` asks that question explicitly, and only a PRESENT blob whose
-    # show fails is a failure (status 2).
-    now_raw=""
-    if git -C "$repo_root" cat-file -e "$sha:$rel" 2>/dev/null; then
-      now_raw="$(git -C "$repo_root" show "$sha:$rel")" || return 2
-    fi
-    before_raw=""
-    if git -C "$repo_root" cat-file -e "$sha^:$rel" 2>/dev/null; then
-      before_raw="$(git -C "$repo_root" show "$sha^:$rel")" || return 2
-    fi
+    # dir #766: the blob is read with its status kept. The -G pickaxe also lists a commit that REMOVED a matching
+    # line (one that deleted or moved the file), so the blob may be absent at $sha as well as at `$sha^` (this
+    # commit added it, or it is a root commit); _blob_text tells absent from a failing git. Status 2 = failure.
+    now_raw=""; before_raw=""   # set by _blob_text's `printf -v` (declared for shellcheck SC2154)
+    _blob_text now_raw "$sha" "$rel" || return 2
+    _blob_text before_raw "$sha^" "$rel" || return 2
     now="$(blank_fenced_blocks /dev/stdin <<< "$now_raw")"
     before="$(blank_fenced_blocks /dev/stdin <<< "$before_raw")"
     if grep -q "$heading_re" <<< "$now" && ! grep -q "$heading_re" <<< "$before"; then
@@ -1258,7 +1289,7 @@ if [ -f "$changelog_file" ] && file_readable "the CHANGELOG <-> release-tag chec
   # no-match exit 1 ripple through `set -o pipefail` into an assignment's own exit status, which under
   # `set -e` would abort the whole doctor.sh run — `|| true` below on every such assignment, same
   # guard check 4's CHANGELOG-staleness timestamps already use.
-  tags="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags_raw" | sed 's/^v//' | sort -u || true)"
+  tags="$(_tag_versions <<< "$tags_raw" | sort -u)"
   # Same `blank_fenced_blocks` fence-blanking as check 5's BACKLOG.md scan, and for the identical
   # reason (found by /polish's own independent review — this check shipped without it at first): a
   # `## [x.y.z]`-shaped line living inside a fenced example — this very file documents its own
@@ -1637,7 +1668,7 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
   # `git_value`, dir #766) and reused below for both the highest-tag reduction and the awk membership set —
   # a second, MAX-only helper that re-scanned `git tag` again was flagged independently by three review
   # passes (dir #237) as a duplication.
-  ct_tag_list="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$ct_tags_raw" | sed 's/^v//' || true)"
+  ct_tag_list="$(_tag_versions <<< "$ct_tags_raw")"
   ct_highest="$(_semver_max <<< "$ct_tag_list")"
   # `%B` (raw commit message body), `--no-merges` — the exact command dir #237's own body names as
   # what the release audit already used, so this check reproduces a proven-accurate extraction rather
@@ -1650,7 +1681,8 @@ if [ -f "$changelog_file" ] && file_readable "the commit-ticket check" CHANGELOG
   fi
   # `_extract_dir_tickets` already strips `dir #N (ref)`-marked cross-references before extracting
   # (dir #364) — see the check's header comment for the full rationale.
-  if git -C "$repo_root" rev-parse -q --verify HEAD >/dev/null 2>&1; then   # unborn HEAD: no commits to read
+  [ "$HEAD_STATE" = failed ] && ct_blind=1   # already GAPped by head_state at check 4
+  if [ "$HEAD_STATE" = commits ]; then   # unborn HEAD: no commits to read
     git_value ct_log "the commit messages since $ct_range" "the commit-ticket check" \
       log "$ct_range" --no-merges --format=%B || ct_blind=1
   fi

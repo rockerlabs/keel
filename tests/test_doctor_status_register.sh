@@ -38,13 +38,11 @@ a pure filter over in-memory text: no producer to fail, and no-match is a valid 
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/sed over the fence-blanked BACKLOG text) ## < <(grep -nE '^### dir #[0-9]+ |^## ' <<< "$fence_blanked" | cut -d: -f1)
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/sed over the fence-blanked BACKLOG text) ## < <(sed -E 's/`[^`]*`//g' <<< "$fence_blanked")
 best-effort by design: no gh, offline or unauthenticated is the documented degrade, and that check's OK line says so (needs gh) ## pr_state="$(cd "$repo_root" && gh pr view "$pr_num" --json state -q .state 2>/dev/null)" || continue
-a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the tag list was read by git_value, status checked) ## tags="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$tags_raw" | sed 's/^v//' | sort -u || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## total_sections="$(grep -cE '^## (\[Unreleased\]|\[[0-9]+\.[0-9]+\.[0-9]+\])' <<< "$changelog_blanked" || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## n_tags="$(printf '%s\n' "$tags" | grep -c . || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## ur_subheadings="$(grep -oE '^### (Added|Changed|Fixed)\b' <<< "$unreleased_body" | sed -E 's/^### //' || true)"
-a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the tag list was read by git_value, status checked) ## ct_tag_list="$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$ct_tags_raw" | sed 's/^v//' || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the commit log was read by git_value, status checked) ## ct_commit_tickets="$(_extract_dir_tickets <<< "$ct_log" || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the fragment text was read with its status checked) ## $ct_fragment_text" || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## ps_lines="$(grep -nE '\$\{?PIPESTATUS' <<< "$stripped" | cut -d: -f1 | paste -sd, - || true)"
@@ -54,6 +52,7 @@ advisory size estimate: du failing on one unreadable subpath only leaves that st
 restores the glob options set above; best-effort, same advisory check ## shopt -u nullglob nocaseglob 2>/dev/null || true
 the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## sc_why="$(bash "$self_dir/shellcheck-targets.sh" "$repo_root" 2>&1 >/dev/null || true)"
 the failure-path diagnosis only: the GAP naming the failure is already printed, this adds git's first stderr line ## [ -z "$sc_why" ] || echo "       ${sc_why%%$'\n'*}"
+a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (the tag list was read by git_value, status checked) ## grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
 REGISTER
 
 
@@ -63,7 +62,7 @@ REGISTER
 sites="$( { grep -E '\|\| true|\|\| echo|< <\(' "$doctor"
             grep -E '2>/dev/null\)' "$doctor" | grep -vE '\|\| [A-Za-z_]*rc=\$\?' ; } \
   | sed -E 's/^[[:space:]]*//' | grep -vE '^#' | LC_ALL=C sort -u)"
-registered="$(printf '%s\n' "$register" | grep -F ' ## ' | sed -E 's/^.* ## //' | LC_ALL=C sort -u)"
+registered="$(printf '%s\n' "$register" | awk '{ i = index($0, " ## "); if (i) print substr($0, i + 4) }' | LC_ALL=C sort -u)"
 
 unregistered="$(LC_ALL=C comm -23 <(printf '%s\n' "$sites") <(printf '%s\n' "$registered"))"
 stale="$(LC_ALL=C comm -13 <(printf '%s\n' "$sites") <(printf '%s\n' "$registered"))"
