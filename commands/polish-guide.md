@@ -81,14 +81,15 @@ Steps, in order:
   always the same skill call, `<call>`: invoke the `polish` skill with args `<--no-test if this run had it> after a
   compaction stop (dir #739): read <absolute hand-over file> first` (the skill call works wherever a leading `/polish`
   might not run as a command).
-  - (1) **A turn the operator started** (a standalone `/go` or `/polish` they typed): launch a successor with
+  - (1) **A turn the operator started** (a standalone `/go` or `/polish` they typed; a turn whose last instruction
+    came in a cross-session message is not one): once (d) and (e) are complete, launch a successor with
     `start_session` — `initiation: user_asked`, `context: fresh`, `use_worktree: false` (the same worktree, the
     committed branch), a `prompt` that is `<call>`, a `background` naming the ticket, the branch and the hand-over
     file — then end the turn with one line linking the successor. The successor is the continued run (g).
   - (2) **A managed-release worker** (its turn started by its manager's message, so `start_session` is refused
     there; the release's brief names this line): send the manager `COMPACT <token> <absolute hand-over file>` —
-    `<token>` is the worker's own, from its overlay — and end the turn. The manager clears this session (it is idle
-    by then) and sends one self-contained continuation message: the worker id, the overlay paths and `<call>`.
+    `<token>` is the worker's own, from its overlay — and end the turn. The manager clears this session once it
+    reads idle, and sends one self-contained continuation message: the worker id, the overlay paths and `<call>`.
     A manager reading this without the release's overlay does exactly that.
   - (3) **Fallback — the harness refused** (a launch refused; a turn that no operator and no manager started;
     `clear_session` refused because the session is pinned or open on screen, which the manager reports): end the

@@ -369,13 +369,16 @@ check_contains "compaction stop (f): the continued run is one skill call (works 
 check_contains "compaction stop (f) route 1: an operator-started turn launches a successor with start_session" "$g1f" 'launch a successor with `start_session`'
 check_contains "compaction stop (f) route 1: the successor runs in the same worktree" "$g1f" '`use_worktree: false`'
 check_contains "compaction stop (f) route 2: a managed worker sends the manager COMPACT <token> <file>" "$g1f" 'send the manager `COMPACT <token> <absolute hand-over file>`'
-check_contains "compaction stop (f) route 2: the manager clears the idle session and sends a continuation" "$g1f" 'The manager clears this session'
+check_contains "compaction stop (f) route 2: the manager clears the session once idle and sends a continuation" "$g1f" 'The manager clears this session once it reads idle'
+check_contains "compaction stop (f) route 1: a cross-session instruction does not make a turn the operator's" "$g1f" 'a turn whose last instruction came in a cross-session message is not one'
+check_contains "compaction stop (f) route 1: the launch waits for (d) and (e)" "$g1f" 'once (d) and (e) are complete, launch a successor'
 check_contains "compaction stop (f) route 3: the two lines are the fallback, naming the refusal" "$g1f" 'Fallback — the harness refused'
 check_contains "compaction stop (f) route 3: ... and the turn names the refusal" "$g1f" 'naming the refusal'
 check_contains "compaction stop (g): the continued run runs init anew, the gate keyed by repo and branch" "$g1f" 'keyed by repository and branch, not by session'
 f_head="${g1f%%'(1) **A turn the operator started**'*}"
+check_contains "compaction stop (f): the route-1 heading the paste-ready-lines pin splits on exists" "$g1f" '(1) **A turn the operator started**'
 f_two="${g1f#*'Fallback — the harness refused'}"
-check_eq "compaction stop (f): the paste-ready lines sit under route 3 only" "0" "$(grep -c '/compact' <<< "$f_head" || true)"
+check_absent "compaction stop (f): the paste-ready lines sit under route 3 only" "$f_head" '/compact'
 check_contains "compaction stop (f): route 3 carries the /compact line" "$f_two" '/compact'
 check_contains "compaction stop (g): the continued run's conformance mandate reads the hand-over file" "$g1" 'conformance mandate'
 check_contains "compaction stop (g): a missing hand-over file is recomposed" "$g1" 'recompose it from'
@@ -398,7 +401,7 @@ check_eq "compaction stop (f): exactly one fenced block is the verbatim /polish 
 rm_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/release-management.md" | tr -s ' ')"
 te_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/token-economy.md" | tr -s ' ')"
 check_contains "R11: the compaction stop sends the manager COMPACT <token> <file> (dir #845)" "$rm_flat" 'sends the manager `COMPACT <token> <absolute hand-over file>`'
-check_contains "R11: the manager clears the idle session and sends a continuation message" "$rm_flat" 'the manager clears that idle session'
+check_contains "R11: the manager clears the session once it reads idle and sends a continuation message" "$rm_flat" 'the manager clears that session once it reads idle'
 check_absent "R11: no longer says the stop asks for /compact" "$rm_flat" 'which asks for `/compact`'
 check_contains "token-economy: the stop hands the run on, the operator's lines only on a refusal" "$te_flat" 'only when the harness refuses'
 check_absent "token-economy: no longer says the stop waits for the operator's /compact" "$te_flat" 'stops so the operator can send `/compact`'
