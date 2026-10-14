@@ -2471,10 +2471,11 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
 
 # --- dir #811: the merge rule (a candidate line for the shell side; the rule itself: the merge-rule header section) -
 # Each merge segment gets a code, decided here where the words are: `api` (a write to the API merge endpoint),
-# `unread` (a merge shape this reading cannot place; its word says why: `command` or `words`), `xargs` (gh pr merge, or a read of that endpoint, behind a
-# flagless xargs: stdin may add words), `flag` (a forbidden flag, named), `pin`, `nomerge` or `ok`. The command’s ONE
-# `merge` line carries the deciding code: `api` if any segment has it, else `unread` if any has it, else the first
-# segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is a read: no code.
+# `unread` (a merge shape this reading cannot place; its word says why: `command` or `words`), `xargs` (gh pr merge,
+# or a read of that endpoint, behind a flagless xargs: stdin may add words), `flag` (a forbidden flag, named), `pin`,
+# `nomerge` or `ok`. The command’s ONE `merge` line carries the deciding code: `api` if any segment has it, else
+# `unread` if any has it, else the first segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is
+# a read: no code.
 function mg_bool(v) { return v == "" || v == "true" }
 function mg_note(c, t) {
   if (c == "api" || (c == "unread" && mg_code != "api") || mg_code == "" || mg_code == "ok") { mg_code = c; mg_tok = t }
