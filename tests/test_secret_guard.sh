@@ -2875,7 +2875,7 @@ check_block_equal "dir #746 A11 T1: SESSION_META equals public-audit.sh's sessio
   "$(sed -n "s/^SESSION_META='\(.*\)'\$/\1/p" "$scan")" "$(sed -n "s/^session_re='\(.*\)'\$/\1/p" "$pa746")"
 # T2: the decode recipe, emit_blob ↔ decode_binary — from the anchor START through END (fixed strings, so
 # index(), not a BRE range), comment-only lines dropped, a trailing ` # …` comment and the outer whitespace
-# stripped, the two tools' variable names unified.
+# stripped, the two tools' variable names unified, the printable-runs line (dir #830) left out of both.
 recipe746() {  # file start end
   S="$2" E="$3" awk '
     function rep(s, f, r,   i) { while ((i = index(s, f)) > 0) s = substr(s, 1, i - 1) r substr(s, i + length(f)); return s }
@@ -2886,7 +2886,9 @@ recipe746() {  # file start end
       l = $0
       if (l !~ /^[[:space:]]*#/) {
         sub(/[[:space:]]+#.*$/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
-        print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
+        # dir #830: the printable-runs read is not an encoding. The twin keeps it in the recipe (every one of its
+        # regexes reads one decoded file); emit_blob reads it into a file of its own for the personal passes, after the recipe.
+        if (index(l, "[:print:]") == 0) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
       }
       if (index($0, e)) exit
     }
