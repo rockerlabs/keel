@@ -252,7 +252,8 @@ body
 body
 "
 fk="$(mk_backlog "$kb_backlog")"
-# token mode keeps the shared helpers: a foreign citation's arrow is stripped, a closed heading is skipped
+# token mode keeps the shared helpers for a `dir #N` citation (an adopter's own `Supersedes B.3` form is a
+# named limit, not covered): its arrow is stripped, a closed heading is skipped
 cite_backlog="### B.5 — an open ticket citing a sibling, superseding dir #9 → 0.9.0 — R2 — → pool
 
 body
@@ -263,8 +264,7 @@ body
 "
 fc="$(mk_backlog "$cite_backlog")"
 run "$bc" --ticket-token 'B\.[0-9]+' "$fc"
-check_contains "MUTATION-PROOF: token mode strips the foreign citation's arrow (B.5 stays under pool)" "$OUT" $'1\tpool'
-check_absent "token mode: the closed B.6 and the cited arrow never reach 0.9.0" "$OUT" "0.9.0"
+check_status "MUTATION-PROOF: token mode strips the cited arrow and skips the closed B.6 (exactly one pool line)" "$(printf '1\tpool')" "$OUT"
 run "$bc" --ticket-token 'KB\.[0-9]+|RL\.[0-9]+' --list next "$fk"
 check_status "an alternation names two tokens, both captured" "$(printf 'KB.7\nRL.4')" "$OUT"
 run "$bc" --ticket-token 'dir #[0-9]+|[0-9]+\.' --list next "$fk"

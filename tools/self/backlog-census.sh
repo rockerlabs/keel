@@ -46,9 +46,11 @@
 #
 # --ticket-token ERE (dir #605): the heading token an adopter's backlog uses, as an ERE matched right
 # after `### ` and before a space — `B\.[0-9]+` for `### B.N`, `KB\.[0-9]+|RL\.[0-9]+` for two forms.
-# It REPLACES the default (`dir #N` and `<n>.`), which stays unchanged without the flag; an empty or
-# invalid ERE exits 2; keep to POSIX ERE (no `\d`, `\w`, `\b`: grep and bash read them differently). With it, --list prints each ticket's captured token (`B.12`), not a bare number.
-# A pool kept as a `## Pool` SECTION (not a `→ pool` tag) is not read, and pool-report.sh has no such flag.
+# It REPLACES the default (`dir #N` and `<n>.`), which stays unchanged without the flag. An empty or
+# invalid ERE exits 2. Keep to POSIX ERE: no `\d`, `\w`, `\b` — grep and bash read them differently, and
+# a heading bash cannot match prints as `?`. With the flag, --list prints each ticket's captured token
+# (`B.12`). Known limits: the foreign-citation strip still recognises only `dir #N` citations, so an
+# adopter's own "Supersedes B.3" is not stripped; a `## Pool` SECTION is not read; pool-report.sh has no flag.
 #
 # With no --list, prints one line per tag, `count<TAB>tag`, descending by count (ties broken by
 # tag, ascending). With --list TAG, prints the ticket number of every open block under that tag,
@@ -95,8 +97,8 @@ Prints one line per release tag, `count<TAB>tag`, descending by count — the la
 block with no qualifying arrow. With --list TAG, prints the ticket number of every open block
 under that tag, one per line, in file order.
 
---ticket-token ERE names an adopter's heading token (`B\.[0-9]+` for `### B.N`); it replaces the
-default `dir #N` / `<n>.`, and --list then prints the captured token.
+--ticket-token ERE names an adopter's heading token (`B\.[0-9]+` for `### B.N`; POSIX ERE only, no
+`\d \w \b`); it replaces the default `dir #N` / `<n>.`, and --list then prints the captured token.
 EOF
       exit 0 ;;
     -*)
