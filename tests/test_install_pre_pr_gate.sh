@@ -870,6 +870,21 @@ check_eq "A7(l): ...the foreign command stays on the old matcher" "echo mine" \
   "$(jq -r '[.hooks.UserPromptExpansion[] | select(.matcher == "code-review") | .hooks[].command] | join(",")' "$l2_repo/.claude/settings.json")"
 check_eq "A7(l): ...and ours sits only on the widened one" "bash '$gate' skill-trace" \
   "$(jq -r --arg m "$UPE_NEW" '[.hooks.UserPromptExpansion[] | select(.matcher == $m) | .hooks[].command] | join(",")' "$l2_repo/.claude/settings.json")"
+# A moved checkout: the old entry runs our command at ANOTHER path. It is STALE for its slot — refused without --force
+# (nothing written), and --force points it here so the retirement takes it out: one entry, never two.
+l4_repo="$(new_repo)"; mkdir -p "$l4_repo/.claude"
+jq -n '{hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[{type:"command",command:"bash '"'"'/old/keel/tools/pre-pr-gate.sh'"'"' skill-trace"}]}]}}' > "$l4_repo/.claude/settings.json"
+l4_before="$(cat "$l4_repo/.claude/settings.json")"
+run "$installer" "$l4_repo"
+check_status "A7(l): a moved checkout's old entry -> exit 3 (refused without --force)" 3 "$STATUS"
+check_contains "A7(l): ...naming the retired slot" "$OUT" "UserPromptExpansion/code-review"
+check_eq "A7(l): ...and settings.json untouched" "$l4_before" "$(cat "$l4_repo/.claude/settings.json")"
+run "$installer" --force "$l4_repo"
+check_status "A7(l): --force -> exit 0" 0 "$STATUS"
+check_status "A7(l): ...exactly ONE UserPromptExpansion entry" 1 "$(jq '.hooks.UserPromptExpansion | length' "$l4_repo/.claude/settings.json")"
+check_eq "A7(l): ...the widened matcher, this checkout's gate, once" "$UPE_NEW bash '$gate' skill-trace" \
+  "$(jq -r '.hooks.UserPromptExpansion[0] | .matcher + " " + ([.hooks[].command] | join(","))' "$l4_repo/.claude/settings.json")"
+check_absent "A7(l): ...no old path left" "$(cat "$l4_repo/.claude/settings.json")" "/old/keel"
 # An uninstall over the OLD entry alone (an adopter who never re-ran the installer) removes it too.
 l3_repo="$(new_repo)"; mkdir -p "$l3_repo/.claude"
 jq -n --arg gate "$gate" '

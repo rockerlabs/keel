@@ -8,6 +8,7 @@
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the
   installer and restart your sessions. A `settings.json` deny on `gh pr merge` still fires before any hook,
-  so the rule takes over only where that deny is lifted. Fixtures:
+  so the rule takes over only where that deny is lifted, and only with jq installed (without jq the whole
+  hook is inert). Fixtures:
   [`tests/test_pre_pr_gate_merge.sh`](/tests/test_pre_pr_gate_merge.sh); mutants:
   [`tests/mutants/pre-pr-gate-merge.tsv`](/tests/mutants/pre-pr-gate-merge.tsv). `SECURITY.md` names the rule.

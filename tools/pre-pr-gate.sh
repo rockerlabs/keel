@@ -104,7 +104,7 @@
 # than getting one self-report right, though not literally unfakeable (the model still has Bash; see the
 # residual limit below):
 #   "PostToolUse":         [{ "matcher": "Skill",       "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
-#   "UserPromptExpansion": [{ "matcher": "code-review", "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
+#   "UserPromptExpansion": [{ "matcher": "code-review|manage-release|keel-manage-release", "hooks": [{ "type": "command", "command": "bash <checkout>/tools/pre-pr-gate.sh skill-trace" }] }]
 # The PostToolUse leg fires when Claude itself calls Skill(code-review) — PostToolUse only fires after
 # a tool call SUCCEEDS (a refused/unavailable call never reaches it, so an unavailable-skill run leaves
 # no trace by construction — see the residual limit below). The UserPromptExpansion leg fires when the
@@ -520,7 +520,9 @@
 #         own opt-in; without it a manager's merge is still the operator's).
 #   (i)   flags — `--merge` (or `-m`, or a short cluster holding m) and `--match-head-commit <sha>` (space or `=`
 #         form; exactly 40 lower-case hex), and none of `--squash`/`-s`, `--rebase`/`-r`, `--auto`, `--admin`, bare
-#         or with `=…`, nor a short cluster holding s or r. Every flag is read from the whole segment.
+#         or with `=…`, nor a short cluster holding s or r. Every flag is read from the whole segment, the way gh's
+#         parser reads it: a value flag (`-t`/`--subject`, `-b`, `-F`, `-A`, `-R`) takes the next word as its value,
+#         so `-t --match-head-commit=<sha>` pins nothing. A wrapper's own flags (`xargs -n1 gh …`) are looked past.
 # The `gh api` merge shape is denied to every session, a manager included: it can carry no head pin. `--help`/`-h`
 # as the first word after `merge` is a read, for any session; anywhere else it may be a flag's value (gh takes the
 # next word as `--subject`'s value even when it starts with `-`), so the segment is a merge. When all three hold the
@@ -529,8 +531,9 @@
 # Claude's `Skill` call (PostToolUse) or the operator's typed `/manage-release` (UserPromptExpansion; the installer
 # wires that matcher as `code-review|manage-release|keel-manage-release`) — in the shapes `manage-release`,
 # `<plugin>:manage-release`, `/manage-release` and the same three for `keel-manage-release`. A subagent's call lists
-# nobody. Lines are never removed and the file is not pruned: a gone session's id is inert, and two managers in one
-# repository are both listed. Hooks load at session start, so a session started before the installer wired the
+# nobody. Lines are never removed and the file is not pruned, so two managers in one repository are both listed —
+# and, since a resumed session keeps its id, a session that once launched /manage-release stays listed for as long
+# as it can be resumed (the policy line and the pin still apply to it). Hooks load at session start, so a session started before the installer wired the
 # typed-launch matcher is never listed by a typed launch. Measured 2026-10-14 (dir #118's dump technique, a headless
 # session in a scratch directory, Claude Code 2.1.296): a resumed session keeps its `session_id`; a subagent's Bash
 # event carries the parent's `session_id` plus `agent_id` and `agent_type`; a typed command's UserPromptExpansion
@@ -543,8 +546,12 @@
 # a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command) — judged by the cwd's
 # file and policy line; and self-listing — any session that calls `Skill(manage-release)` or types
 # `/manage-release x` is listed (PostToolUse fires on the call's success, not on the release it starts: the dir
-# #229 marker-spoof class). Accepted cost: an unquoted `merge` word after `pr` (`gh pr create --title merge`) reads
-# as a merge segment — quote it.
+# #229 marker-spoof class). Without jq the whole hook is inert (its documented choice, above), this rule included:
+# lift the `settings.json` deny only where jq is installed. Accepted costs: an unquoted `merge` word after `pr`
+# (`gh pr create --title merge`) reads as a merge segment — quote it; any CLAUDE.md line carrying the token opts the
+# project in, a sentence that only mentions it included; and a main session started with `--agent` carries
+# `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a
+# release manager without `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2437,49 +2444,89 @@ function mg_bool(v) { return v == "" || v == "true" }
 function mg_note(c, t) {
   if (c == "api" || mg_code == "" || mg_code == "ok") { mg_code = c; mg_tok = t }
 }
-function check_merge(   i, j, t, nm, eq, v, p_at, m_at, api, ep, meth, fld, bad, pins, pinbad, hasm) {
+# The words read the way gh’s flag parser reads them: a short cluster (`-dm`, `-iXPUT`) is one flag per letter, a
+# value flag takes the rest of its word or the NEXT word as its value (`-t -h`, `--subject --match-head-commit=…`),
+# and a value is never read as a flag. Value letters and long value flags: those `gh pr merge` / `gh api` take.
+# mg_pr_word(j) reads word j of a merge segment into cm_bad (the first forbidden flag), cm_hasm, cm_pins and
+# cm_pinbad; mg_api_word(j) reads word j of an API segment into cm_meth and cm_fld. Each returns how many FOLLOWING
+# words it consumed as a value (0 or 1).
+function mg_pr_word(j,   t, n, k, c, eq, nm, v) {
+  t = tok[j]
+  if (substr(t, 1, 2) == "--") {
+    eq = index(t, "="); nm = eq ? substr(t, 1, eq - 1) : t; v = eq ? substr(t, eq + 1) : ""
+    if (nm == "--squash" || nm == "--rebase" || nm == "--auto" || nm == "--admin") { if (cm_bad == "") cm_bad = t; return 0 }
+    if (nm == "--merge") { if (mg_bool(v)) cm_hasm = 1; return 0 }
+    if (nm == "--match-head-commit") {
+      if (!eq) v = (j < ntok) ? tok[j + 1] : ""
+      cm_pins++
+      if (length(v) != 40 || v !~ /^[0-9a-f]+$/) cm_pinbad = 1
+      return (eq || j >= ntok) ? 0 : 1
+    }
+    if (!eq && (nm == "--subject" || nm == "--body" || nm == "--body-file" || nm == "--author-email" || nm == "--repo")) return (j < ntok) ? 1 : 0
+    return 0
+  }
+  if (t !~ /^-[^-]/) return 0
+  n = length(t)
+  for (k = 2; k <= n; k++) {
+    c = substr(t, k, 1)
+    v = ""; eq = (substr(t, k + 1, 1) == "=")
+    if (eq) v = substr(t, k + 2)
+    if (c == "s" || c == "r") { if (cm_bad == "") cm_bad = t }
+    else if (c == "m") { if (mg_bool(v)) cm_hasm = 1 }
+    else if (index("AbFtR", c)) return (k == n && j < ntok) ? 1 : 0
+    if (eq) return 0
+  }
+  return 0
+}
+function mg_api_word(j,   t, n, k, c, eq, nm) {
+  t = tok[j]
+  if (substr(t, 1, 2) == "--") {
+    eq = index(t, "="); nm = eq ? substr(t, 1, eq - 1) : t
+    if (nm == "--method") { cm_meth = toupper(eq ? substr(t, eq + 1) : (j < ntok ? tok[j + 1] : "")) }
+    else if (nm == "--field" || nm == "--raw-field" || nm == "--input") cm_fld = 1
+    else if (!(nm == "--header" || nm == "--jq" || nm == "--template" || nm == "--preview" || nm == "--hostname" || nm == "--cache")) return 0
+    return (eq || j >= ntok) ? 0 : 1
+  }
+  if (t !~ /^-[^-]/) return 0
+  n = length(t)
+  for (k = 2; k <= n; k++) {
+    c = substr(t, k, 1)
+    if (index("XfFHpqt", c)) {
+      if (c == "X") cm_meth = toupper(k < n ? substr(t, k + 1) : (j < ntok ? tok[j + 1] : ""))
+      else if (c == "f" || c == "F") cm_fld = 1
+      return (k == n && j < ntok) ? 1 : 0
+    }
+  }
+  return 0
+}
+function check_merge(   i, j, t, p_at, m_at, api, ep) {
   i = cmd_start()
+  # A wrapper’s own flags (`xargs -n1 gh …`, `exec -a x gh …`) stop cmd_start before the command word: look past them.
+  if (i > 1 && i <= ntok && tok[i] ~ /^-/ && is_wrapper(tok[i - 1])) { while (i <= ntok && !(tok[i] == "gh" && w_plain(i))) i++ }
   if (i > ntok || !w_plain(i) || tok[i] != "gh") return
-  api = 0; ep = 0; meth = ""; fld = 0; p_at = 0; m_at = 0
+  api = 0; ep = 0; p_at = 0; m_at = 0
+  cm_meth = ""; cm_fld = 0; cm_bad = ""; cm_pins = 0; cm_pinbad = 0; cm_hasm = 0
   for (j = i + 1; j <= ntok; j++) {
     t = tok[j]
     if (!api && !p_at && t == "api" && w_unquoted(j)) api = j
     else if (!api && !p_at && t == "pr" && w_unquoted(j)) p_at = j
     else if (p_at && !m_at && t == "merge" && w_unquoted(j)) m_at = j
-    if (api && j > api) {
-      if (t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/) ep = 1
-      else if (t == "-X" || t == "--method") { if (j < ntok) meth = toupper(tok[j + 1]) }
-      else if (t ~ /^-X./) meth = toupper(substr(t, 3))
-      else if (t ~ /^--method=/) meth = toupper(substr(t, 10))
-      else if (t ~ /^-[fF]/ || t ~ /^--(field|raw-field|input)(=|$)/) fld = 1
-    }
+    else if (api && t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/) ep = 1
+    else if (api) j += mg_api_word(j)
   }
   if (api) {
-    if (ep && (meth != "" ? (meth != "GET" && meth != "HEAD") : fld)) mg_note("api", "")
+    if (ep && (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld)) mg_note("api", "")
     return
   }
   if (!m_at) return
   if (m_at < ntok && (tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h")) return
-  bad = ""; pins = 0; pinbad = 0; hasm = 0
   for (j = i + 1; j <= ntok; j++) {
     if (j == p_at || j == m_at) continue
-    t = tok[j]; eq = index(t, "=")
-    nm = eq ? substr(t, 1, eq - 1) : t; v = eq ? substr(t, eq + 1) : ""
-    if (nm == "--squash" || nm == "--rebase" || nm == "--auto" || nm == "--admin") { if (bad == "") bad = t }
-    else if (nm ~ /^-[A-Za-z]+$/) {
-      if (nm ~ /[sr]/) { if (bad == "") bad = t }
-      if (index(nm, "m") && mg_bool(v)) hasm = 1
-    }
-    else if (nm == "--merge") { if (mg_bool(v)) hasm = 1 }
-    else if (nm == "--match-head-commit") {
-      if (!eq) { v = (j < ntok) ? tok[++j] : "" }
-      pins++
-      if (length(v) != 40 || v !~ /^[0-9a-f]+$/) pinbad = 1
-    }
+    j += mg_pr_word(j)
   }
-  if (bad != "") mg_note("flag", bad)
-  else if (!pins || pinbad) mg_note("pin", "")
-  else if (!hasm) mg_note("nomerge", "")
+  if (cm_bad != "") mg_note("flag", cm_bad)
+  else if (!cm_pins || cm_pinbad) mg_note("pin", "")
+  else if (!cm_hasm) mg_note("nomerge", "")
   else mg_note("ok", "")
 }
 # mg_out() — prints the merge line, if any; a named flag that could forge a field (a newline, a separator) prints as `?`.
@@ -3082,7 +3129,8 @@ case "${1:-}" in
     exit 1
     ;;
   skill-trace)
-    # PostToolUse(Skill), UserPromptExpansion(code-review) — dir #63 — SubagentStop(keel-polish-reviewer)
+    # PostToolUse(Skill), UserPromptExpansion(code-review|manage-release|keel-manage-release) — dir #63, dir #811's
+    # manager leg — SubagentStop(keel-polish-reviewer)
     # — dir #70, the independent-agent-review leg — or PostToolUse(AskUserQuestion) — dir #88, the
     # § Step 5 (a) review-reminder-dialog leg — hook. Never blocks or alters anything: silently no-ops
     # (exit 0) on anything it can't parse or that isn't a code-review invocation/review/dialog, since a
@@ -3688,7 +3736,7 @@ merge_rule() {
   case "$mg_code" in
     ok) ;;
     flag) early_deny blocked "$mg_why a merge commit only: drop $mg_tok — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
-    pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on (B3(a))." ;;
+    pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on." ;;
     nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
     *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check ($mg_code) — run the merge as its own Bash call, or report it." ;;
   esac

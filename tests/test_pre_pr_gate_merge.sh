@@ -175,6 +175,18 @@ deny "(d) a 41-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-head-commit ${
 deny "(d) an upper-case 40-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-head-commit $(printf '%s' "$SHA" | tr a-f A-F)" "$P" "$MID"
 deny "(d) 40 characters, not all hex" "$R_PIN" "gh pr merge 597 --merge --match-head-commit ${SHA%?}g" "$P" "$MID"
 deny "(d) a valid pin beside a bad one" "$R_PIN" "$MERGE --match-head-commit 04d11f" "$P" "$MID"
+# The words read as gh reads them: a value flag takes the next word, so a pin there pins nothing, and a flag-shaped
+# value is no flag.
+deny "(d) -t eats the =-form pin" "$R_PIN" "gh pr merge 5 --merge -t --match-head-commit=$SHA" "$P" "$MID"
+deny "(d) --subject eats the pin flag" "$R_PIN" "gh pr merge 5 --merge --subject --match-head-commit $SHA" "$P" "$MID"
+deny "(d) a cluster ending in t (-dt) eats the pin" "$R_PIN" "gh pr merge 5 --merge -dt --match-head-commit=$SHA" "$P" "$MID"
+deny "(d) --body eats --merge" "$R_NOMERGE" "gh pr merge 5 --body --merge --match-head-commit $SHA" "$P" "$MID"
+allow "(d) -tX: a glued value, the pin after it counts" "gh pr merge 5 --merge -tX --match-head-commit $SHA" "$P" "$MID"
+allow "(d) --subject -s: a value, not --squash" "$MERGE --subject -s" "$P" "$MID"
+allow "(d) -b --admin: a value, not --admin" "$MERGE -b --admin" "$P" "$MID"
+allow "(d) -R o/r before the pin" "gh pr merge 5 -R o/r --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) a flag-shaped pin value is the pin, not a flag" "$R_PIN" "gh pr merge 5 --merge --match-head-commit --squash" "$P" "$MID"
+deny "(d) -m=false is no --merge" "$R_NOMERGE" "gh pr merge 5 -m=false --match-head-commit $SHA" "$P" "$MID"
 deny "(d) a forbidden flag wins over a missing pin" "$R_DROP --squash " "gh pr merge 597 --squash" "$P" "$MID"
 # Two merges in one command: the first failing one decides, and the API shape outranks every other code.
 allow "(d) two merges, both right" "$MERGE && gh pr merge 598 --merge --match-head-commit $SHA" "$P" "$MID"
@@ -205,6 +217,14 @@ for c in "gh api -X PUT repos/o/r/pulls/5/merge" "gh api --method PUT repos/o/r/
   deny "(f) manager: $c" "$R_API" "$c" "$P" "$MID"
 done
 deny "(f) unlisted: the API shape" "$R_API" "gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
+# Short clusters, as gh reads them: -iXPUT and -iX PUT are -i plus -X PUT; -ifx=1 is -i plus a field.
+deny "(f) -iXPUT (a cluster)" "$R_API" "gh api -iXPUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
+deny "(f) -iX PUT (a cluster, the method in the next word)" "$R_API" "gh api -iX PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
+deny "(f) -ifx=1 (a field in a cluster)" "$R_API" "gh api repos/o/r/pulls/5/merge -ifx=1" "$P" "$OTHER"
+allow "(f) -H takes a value: an endpoint-shaped header is no endpoint" "gh api -H repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
+allow "(f) -iX GET is a read" "gh api -iX GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
+allow "(f) -XGET is a read" "gh api -XGET repos/o/r/pulls/5/merge" "$P" "$OTHER"
+allow "(f) --header takes a value too" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) gh api …/pulls/5/merge (GET: is it merged)" "gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api -X GET …/pulls/5/merge" "gh api -X GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api …/pulls (a list)" "gh api repos/o/r/pulls" "$P" "$OTHER"
@@ -213,7 +233,8 @@ allow "(f) a PUT on …/pulls/5/mergeable is no merge endpoint" "gh api -X PUT r
 # --- (g) the shapes the create rule reads, for an unlisted session -------------------------------------------------
 for c in "cd /tmp && $MERGE" "GH_TOKEN=x $MERGE" "foo; $MERGE" "env GH_PAGER= $MERGE" \
          "gh --repo o/r pr merge 5 --merge --match-head-commit $SHA" "gh pr -R o/r merge 5 --merge --match-head-commit $SHA" \
-         "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`"; do
+         "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`" \
+         "echo 5 | xargs -n1 gh pr merge --squash --admin" "xargs -r -I{} $MERGE" "exec -a x $MERGE"; do
   deny "(g) unlisted: [$c]" "$R_ID" "$c" "$P" "$OTHER"
 done
 for c in "echo gh pr merge" "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,mergeStateStatus" \
