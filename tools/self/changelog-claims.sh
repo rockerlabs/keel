@@ -172,11 +172,12 @@ function blank_range(st, ln,    sp) {
 # counted(pos, lines): the text from pos on starts with a COUNT unit ("12 tests") or, after "lines" only, a change
 # verb ("lines 120 changed"): the number just before it is a count, not a reference (dir #846). A reference is
 # followed by a verb, a connective or punctuation ("step 5 runs the gate", "step 3 added a check"), which are
-# the overwhelming majority in real sections. The lists are closed on purpose and plural-only: a singular
-# ("step 4 line 56") or a noun that can name what a step or round produced ("round 2 findings") is a reference.
-function counted(pos, lines,    r) {
+# the overwhelming majority in real sections. The lists are closed on purpose and plural-only, except after
+# exactly 1 ("returns 1 value"): a singular after another number ("step 4 line 56") or a noun that can name
+# what a step or round produced ("round 2 findings") is a reference.
+function counted(pos, lines, one,    r) {
   r = tolower(substr(s, pos))
-  return r ~ units || (lines && r ~ verbs)
+  return r ~ units || (one && r ~ unit1) || (lines && r ~ verbs)
 }
 # blank(re, ci, lb, rb): overwrite every match of re with spaces of the same length (positions never shift).
 # ci matches on the lowercase copy (same byte positions under LC_ALL=C); lb requires a non-alphanumeric
@@ -189,7 +190,7 @@ function blank(re, ci, lb, rb,    t, from, st, ln) {
     st = from + RSTART - 1; ln = RLENGTH
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
-    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /)) { from = st + ln; continue }
+    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /, substr(s, st, ln) ~ /(^|[^0-9,.])1$/)) { from = st + ln; continue }
     blank_range(st, ln)
     from = st + ln
   }
@@ -248,6 +249,7 @@ BEGIN {
   re_x7 = "(exit(s|ing|ed)?|exit code|return(s)?|status) " list
   qre = "^(top|over|under|above|below|around|about|nearly|almost|max|min|first|last|next|only|least|most)-[0-9]"
   units = "^ +(tests|values|files|lines|words|rows|bytes|tokens|chars|characters|seconds|minutes|hours|days|assertions|mutants|commits|errors|failures)([^a-z0-9]|$)"
+  unit1 = "^ +(test|value|file|line|word|row|byte|token|char|character|second|minute|hour|day|assertion|mutant|commit|error|failure)([^a-z0-9]|$)"   # the singular, after exactly 1
   verbs = "^ +(changed|added|removed|deleted|modified|touched)([^a-z0-9]|$)"
   unitre = "^(x|s|ms|us|ns|sec|secs|min|mins|h|hr|hrs|d|w|px|pt|[kKmMgGtT][bB]|[kKmMgGtT]iB)$"
   on = (h == "")

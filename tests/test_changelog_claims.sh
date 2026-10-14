@@ -376,6 +376,9 @@ check_contains "846-1: references followed by a verb, a connective or punctuatio
 d="$(one_frag $'- step 3 added a check\n- phase 2 changed\n- round 2 findings\n- step 5 times out\n- step 2 session\n- see step 4 line 56 of a.sh\n- slice 2 file x.sh\n- round 3 error path\n')"
 run "$ccl" --repo "$d"
 check_contains "846-1: ambiguous nouns and a change verb after a non-lines reference stay references" "$OUT" "changelog-claims: 0 claim(s)"
+d="$(one_frag "$(printf '%s\n' '- it returns 1 value' '- the suite passes 1 test' '- exit 1 file')")"
+run "$ccl" --repo "$d"
+check_eq "846-1: after exactly 1 the singular unit is a count (three claims)" "3" "$(count_of "$OUT" '^UNBOUND')"
 # 846-2: "top-10" / "over-100" carry a count (a count qualifier before the hyphen); other word-number shapes stay identifiers.
 d="$(one_frag $'- A top-10 list, over-100 files, UTF-8 and PR-22 and SHA-256 and x86-64 and S2-9 and round-3 and exit-0 and Latin-1 and check-10\n')"
 run "$ccl" --repo "$d"
