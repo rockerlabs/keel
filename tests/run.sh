@@ -215,9 +215,11 @@ main() {
   # trailing `LC_ALL=C sort` keeps their relative order stable regardless of git's own listing order.
   # The per-branch-tracking exclusion above (dir #630 T1's own rationale: `.merge`/`.remote` churn on
   # every ordinary `git push -u`) is now applied to the KEY NAME directly instead of a `key=` line
-  # prefix — the same shape as before, `branch.<name>.<subkey>` with <name> free to hold dots (dir #768; it was
-  # exactly three segments, which tripped on `release-0.17.0-train1`); a bare top-level
-  # `branch.autoSetupMerge` still trips, pinned by tests/test_run_sh.sh). Pure bash — no `sed -E`/`-r`, and deliberately NOT `awk` with `RS="\0"`
+  # prefix — the same shape as before, `branch.<name>.<subkey>`. git config's key grammar is
+  # section.subsection.name and a branch name is the subsection, so it may hold dots (`rel/1.2`,
+  # `release-0.17.0-train1`; dir #768 — the exactly-three-segments rule read `branch.rel/1.2.merge` as "a real
+  # key" and tripped on a peer's `git push -u`). A bare top-level `branch.autoSetupMerge` has no second dot and
+  # still trips, pinned by tests/test_run_sh.sh). Pure bash — no `sed -E`/`-r`, and deliberately NOT `awk` with `RS="\0"`
   # (a known trap in this repo: busybox awk splits NULs into newlines, and BSD awk is unreliable on NUL
   # too) — verified on macOS bash 3.2 and the alpine leg's bash.
   guard_config_snapshot() {
@@ -230,12 +232,7 @@ main() {
         value="${rec#*$'\n'}"
       fi
       case "$key" in
-        # dir #768: git config's key grammar is section.subsection.name, and a branch name is the subsection, so
-        # it may hold dots (`rel/1.2`, `release-0.17.0-train1`): ANY `branch.<something>.<subkey>` is per-branch
-        # tracking. The old exactly-three-segments rule read `branch.rel/1.2.merge` as "a real key" and tripped
-        # the canary on a peer's `git push -u`. A bare top-level `branch.autoSetupMerge` has no second dot and
-        # still trips.
-        branch.*.*) continue ;;
+        branch.*.*) continue ;;       # per-branch tracking, the branch name may hold dots (dir #768, see above)
       esac
       fp="$(printf '%s' "$value" | cksum)"
       lines+=("$key $fp")
@@ -429,10 +426,13 @@ main() {
   # dir #768: the untracked-directory status lines this run's own logdir produces when $TMPDIR is inside the
   # watched checkout — the logdir itself and every directory above it up to the checkout root (git collapses an
   # untracked directory into its topmost new one). Read by guard_strip_run_dirs at the compare below.
+  # Both sides are compared as PHYSICAL paths (`pwd -P`): $TMPDIR is spelled however the caller spelled it
+  # (macOS /var vs /private/var, a symlinked checkout), while git's status paths are relative to the real root.
   guard_run_dirs=""
-  case "$logdir" in
-    "$guard_repo_root"/*)
-      guard_rel="${logdir#"$guard_repo_root"/}" guard_acc=""
+  guard_pl="$(cd "$logdir" 2>/dev/null && pwd -P)" guard_pr="$(cd "$guard_repo_root" 2>/dev/null && pwd -P)"
+  case "$guard_pl" in
+    "$guard_pr"/*)
+      guard_rel="${guard_pl#"$guard_pr"/}" guard_acc=""
       while [ -n "$guard_rel" ]; do
         guard_acc="$guard_acc${guard_rel%%/*}/"
         guard_run_dirs="$guard_run_dirs?? $guard_acc"$'\n'

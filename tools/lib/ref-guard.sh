@@ -94,11 +94,10 @@ guard_filter_unowned() {
 
 # guard_tip_survives REPO SHA (dir #768)
 # True when some ref in REPO (a branch, a remote-tracking ref or a tag) still reaches SHA — so no commit was
-# lost by whatever moved or deleted the ref that used to point there. `--count=1` stops at the first hit.
+# lost by whatever moved or deleted the ref that used to point there. `--count=1` only caps the output; git still
+# walks every ref, which is why the caller asks this for the refs that CHANGED, never for every ref.
 guard_tip_survives() {
-  local hit
-  hit="$(git -C "$1" for-each-ref --count=1 --contains "$2" --format='%(refname)' refs/heads refs/remotes refs/tags 2>/dev/null)" || return 1
-  [ -n "$hit" ]
+  [ -n "$(git -C "$1" for-each-ref --count=1 --contains "$2" --format='%(refname)' refs/heads refs/remotes refs/tags 2>/dev/null)" ]
 }
 
 # guard_refs_unexplained REPO OWNED_LIST BEFORE_REFS AFTER_REFS (dir #768)
@@ -111,25 +110,27 @@ guard_tip_survives() {
 #   + NAME SHA            a branch that did not exist before the run (dir #320's stray fixture branch)
 #   - NAME OLDSHA         a branch gone whose old tip no ref reaches any more (commits lost)
 #   ~ NAME OLD -> NEW     a branch moved so that its old tip no ref reaches any more (a rewrite, a reset)
+# One awk pass joins the two snapshots by name and prints only the rows that differ (`-` stands for "absent on
+# that side"; a ref name holds no space), so a quiet run costs two awk passes and no git call at all.
 # NAMED RESIDUAL: an escaped test that deletes, or fast-forwards, an unowned branch whose tip stays reachable
 # elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
 # the file, which is the layer that prevents it. This one detects what slipped past that.
 guard_refs_unexplained() {
-  local repo="$1" owned="$2" before="$3" after="$4" name sha old new bu au
-  bu="$(guard_filter_unowned "$owned" "$before")"
-  au="$(guard_filter_unowned "$owned" "$after")"
-  while IFS=' ' read -r name sha; do
+  local repo="$1" owned="$2" before="$3" after="$4" name old new
+  while read -r name old new; do
     [ -n "$name" ] || continue
-    new="$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$au")"
-    if [ -z "$new" ]; then
-      guard_tip_survives "$repo" "$sha" || printf -- '- %s %s\n' "$name" "$sha"
-    elif [ "$new" != "$sha" ]; then
-      guard_tip_survives "$repo" "$sha" || printf -- '~ %s %s -> %s\n' "$name" "$sha" "$new"
+    if [ "$old" = - ]; then
+      printf -- '+ %s %s\n' "$name" "$new"
+    elif ! guard_tip_survives "$repo" "$old"; then
+      if [ "$new" = - ]; then printf -- '- %s %s\n' "$name" "$old"
+      else printf -- '~ %s %s -> %s\n' "$name" "$old" "$new"; fi
     fi
-  done <<< "$bu"
-  while IFS=' ' read -r name sha; do
-    [ -n "$name" ] || continue
-    old="$(awk -v n="$name" '$1 == n { print $2; exit }' <<< "$bu")"
-    [ -n "$old" ] || printf -- '+ %s %s\n' "$name" "$sha"
-  done <<< "$au"
+  done < <(awk '
+      FILENAME == ARGV[1] { b[$1] = $2; next }   # not FNR == NR: an empty first file would turn the second into it
+      { a[$1] = $2 }
+      END {
+        for (k in b) if (!(k in a)) print k, b[k], "-"; else if (a[k] != b[k]) print k, b[k], a[k]
+        for (k in a) if (!(k in b)) print k, "-", a[k]
+      }' \
+      <(guard_filter_unowned "$owned" "$before") <(guard_filter_unowned "$owned" "$after") | LC_ALL=C sort)
 }

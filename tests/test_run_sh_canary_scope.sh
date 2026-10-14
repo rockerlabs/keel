@@ -85,6 +85,16 @@ run env TMPDIR="$d/fresh-tmp" bash "$d/tests/run.sh"
 check_status "an untracked TMPDIR directory inside the checkout -> the canary stays green" 0 "$STATUS"
 check_absent "... no trip block" "$OUT" "$TRIP"
 
+# --- GREEN 7: $TMPDIR spelled through a symlink (macOS /var -> /private/var shape) that resolves into the checkout -
+d="$(mkcanary)"
+peer_act "$d" ':'
+mkdir "$d/linked-tmp"
+tmplink="$SANDBOX/tmplink.$$"
+ln -s "$d/linked-tmp" "$tmplink"
+run env TMPDIR="$tmplink" bash "$d/tests/run.sh"
+check_status "a symlinked TMPDIR that resolves into the checkout -> the canary stays green" 0 "$STATUS"
+check_absent "... no trip block" "$OUT" "$TRIP"
+
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"
 peer_act "$d" 'git -C "$R" branch stray'
