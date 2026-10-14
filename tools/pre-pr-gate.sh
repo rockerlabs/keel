@@ -49,8 +49,8 @@
 # `cat <<'X' | bash`) — dir #792; an upper-case command word (`GIT push`, `GH pr create` on a case-insensitive
 # volume) — dir #792; a `case` inside a `( … )` group inside a `$(…)` that is double-quoted or in a heredoc body,
 # or inside an unquoted `${v:-$(…)}` — dir #792; a missing jq, another harness, the operator's own terminal. dir #731.
-# Not a CI-scan case, and a test gap of the hook itself rather than a command shape: a hook started with stdin closed
-# hangs to the harness timeout (Claude Code delivers hook input on stdin; `subagent-rails` has the same shape) — dir #781.
+# Not a command shape, so not a CI-scan case either: a hook started with stdin closed hangs to the harness timeout
+# (Claude Code delivers hook input on stdin; `subagent-rails` has the same shape) — dir #781.
 #
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
@@ -499,8 +499,8 @@
 # `cd "$S"`), `sh -c`/`bash -c`/`eval` text, a script FILE that runs git (the command text is all this reads — a
 # probe file holding `git push` is invisible; treating every `bash <file>` as a deny would stop every legitimate
 # test run), an alias or `git-<x>` external command, a wrapper outside the reader's skip set (`timeout`, `nice`,
-# `sudo`, `env -C`), a non-literal verb (`git $v`), an upper-case command word (`GIT checkout`: the verb match is exact-case — dir #792), a
-# `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
+# `sudo`, `env -C`), a non-literal verb (`git $v`), an upper-case command word
+# (`GIT checkout`: the verb match is exact-case — dir #792), a `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
 # `cd X || git …` whose cd fails although X exists (every cd is replayed as if it ran, so `false && cd X; git …`
 # and a backgrounded `cd X &` count too), `cd -`, a cd in one pipeline stage taken as applying to the next, a write
 # aimed at the session repository as a plain argument (`git -C <scratch> push <session repo> main`: only where git

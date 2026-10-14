@@ -109,6 +109,12 @@ check_contains "mutant: the PR-rule row's doubt cell swapped to 1a → (c) fails
 fresh_copy; delete_line_containing "$copy/SECURITY.md" 'holds only for a constructed input'
 check_contains "mutant: the Scope clause deleted → (e) fails" "$(regcheck "$copy")" 'fail:e:'
 
+fresh_copy; replace_in_line_containing "$copy/tools/pre-pr-gate.sh" 'a non-literal verb (`git $v`)' 'an upper-case command word' 'a cased verb'
+check_contains "mutant: the floor block loses its upper-case entry (the header still has the phrase) → (d) fails" "$(regcheck "$copy")" "fail:d:the floor's Allowed by design"
+
+fresh_copy; delete_line_containing "$copy/tools/pre-pr-gate.sh" 'a heredoc- or pipe-fed shell'
+check_contains "mutant: Named residuals loses its heredoc entry → (d) fails" "$(regcheck "$copy")" "fail:d:Named residuals lacks 'a heredoc- or pipe-fed shell'"
+
 fresh_copy; delete_line_containing "$copy/tools/lib/safe-write.sh" 'planted at the claimed temp path'
 check_contains "mutant: safe-write.sh loses its test-gap entry → (d) fails" "$(regcheck "$copy")" 'fail:d:tools/lib/safe-write.sh'
 

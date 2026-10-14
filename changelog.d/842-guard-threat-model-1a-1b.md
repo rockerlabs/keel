@@ -2,9 +2,9 @@
   threat model it is built against.** The always-file condition of
   [`docs/verification-economics.md`](/docs/verification-economics.md) §4 splits by the input that makes the
   surface fail. A **realistic failure** (it happened, or it needs no special input, or the input is attested in
-  ordinary use) is filed with no discretion, as before. A **constructed bypass** that real sessions were
-  searched for and not found goes into the guard's known-bypass register instead of a ticket, and is promoted
-  only when a realistic sighting turns up. When the branches cannot be told apart, the guard's miss decides: a miss
+  ordinary use) is filed with no discretion, as before. A **constructed bypass** — a step whose only purpose is to get past
+  the guard, or a shape searched for in real sessions and not found — goes into the guard's known-bypass
+  register instead of a ticket, and is promoted only when a realistic sighting turns up. When the branches cannot be told apart, the guard's miss decides: a miss
   that would send data off the machine or destroy data is filed (the secret guard, `public-audit`, the
   pre-PR gate's push rule, the subagent git floor, a write outside the test sandbox, the installer), and a
   workflow miss goes to the register. Every procedure doc that restates "below the bar, a standing-list line"

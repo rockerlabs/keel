@@ -307,7 +307,7 @@ clause_after_anchor() {   # FILE ANCHOR [ANCHOR2] — paragraphs where the claus
     }
     END { print n + 0 }' "$f"
 }
-for site in "docs/delta-audit.md|2" "commands/delta-audit.md|1" "docs/drydock.md|2" "docs/grooming.md|1" "docs/release-audit.md|1" \
+for site in "docs/delta-audit.md|3" "commands/delta-audit.md|1" "docs/drydock.md|2" "docs/grooming.md|1" "docs/release-audit.md|1" \
   "docs/release-management.md|1" "commands/polish-guide.md|1" "commands/wrap.md|1"; do
   check_count "dir #842 A13: ${site%|*} names the known-bypass register ${site#*|} time(s)" "$REPO_ROOT/${site%|*}" 'known-bypass register' "${site#*|}"
 done
@@ -315,6 +315,8 @@ check_eq "dir #842 A13: docs/delta-audit.md report contract — clause after 'Re
   "$(clause_after_anchor "$delta" 'Record the reason here')"
 check_eq "dir #842 A13: docs/delta-audit.md close step — clause after 'names a real defect' + 'is moved onto'" "1" \
   "$(clause_after_anchor "$delta" 'names a real defect' 'is moved onto')"
+check_eq "dir #842 A13: docs/delta-audit.md mutation sweep (an eleventh site, escape 1) — clause after 'a no-action one goes to the standing list'" "1" \
+  "$(clause_after_anchor "$delta" 'a `no-action` one goes to the standing list')"
 check_eq "dir #842 A13: commands/delta-audit.md harvest — clause after 'disposition naming a real defect gets copied'" "1" \
   "$(clause_after_anchor "$REPO_ROOT/commands/delta-audit.md" 'disposition naming a real defect gets copied')"
 check_eq "dir #842 A13: docs/drydock.md 'Ticketed is not automatic' — clause after 'added to a standing list the project already keeps'" "1" \

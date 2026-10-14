@@ -235,7 +235,8 @@ the fix round's to review. **What the mandate stops filing:** every pin-gap find
 `ticket-next` — a survivor, or a gap a leg proved with its own mutant — is staged in ONE ticket that lists
 each rule, its condition-1 rules marked, and filed `→ pool` like any `ticket-next` finding (§8) — never a
 ticket per rule or per cluster (one run filed three for this one class); a `fix-before-tag` one is fixed in
-the run, a `no-action` one goes to the standing list (§8), and any other disposition takes its own route (§4
+the run, a `no-action` one goes to the standing list (§8)
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4), and any other disposition takes its own route (§4
 rule 6). A pass with nothing to run — no qualifying rule, no open `fix-before-tag` pin gap, no candidate —
 writes `Mutation sweep: <from>..<to> — nothing to sweep`. When the GO SHA moves with no verifier pass, the
 orchestrator appends `Mutation sweep: <from>..<to> — unswept (GO moved with no verifier pass)`. Skipping the
