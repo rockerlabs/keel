@@ -302,6 +302,78 @@ run "$bc" --ticket-token 'B\.(' "$ft"
 check_status "an invalid --ticket-token regex -> exit 2" 2 "$STATUS"
 check_contains "the invalid regex is named in the refusal" "$OUT" "ticket-token"
 
+# --- dir #842 slice 3 (A15): --decay reads the `[model-decay]` heading marker (docs/verification-economics.md
+# §4). One fixture, five headings: (i) an OPEN 0.17.0 heading carrying the token on its WRAPPED second
+# heading line; (ii) an open 0.17.0 heading without it whose BODY mentions the token; (iii) a CLOSED heading
+# carrying it; (iv) an open 0.17.0 heading whose only token sits in a foreign citation; (v) an open pool
+# heading carrying it twice. -------------------------------------------------------------------------
+decay_backlog="### dir #901 — a subagent command slips past a guard and the title is long enough that the heading
+wraps onto a second line carrying [model-decay] — R2 — → 0.17.0
+
+body
+
+### dir #902 — open, no token in the heading — R2 — → 0.17.0
+
+body mentions [model-decay] but a body is not a heading.
+
+### dir #903 — closed and marked [model-decay] — R1 — ✅ DONE (2026-01-01) — → 0.17.0
+
+body
+
+### dir #904 — open, cites a sibling: Supersedes dir #905 — [model-decay] — R2 — → 0.17.0
+
+body
+
+### dir #906 — [model-decay] twice [model-decay] — R2 — → pool
+
+body
+"
+fd="$(mk_backlog "$decay_backlog")"
+run "$bc" --decay "$fd"
+check_status "--decay -> exit 0" 0 "$STATUS"
+check_status "A15: --decay counts the open marked blocks per tag, once each (closed, body-only and cited excluded)" \
+  "$(printf '1\t0.17.0\n1\tpool')" "$OUT"
+run "$bc" --list 0.17.0 --decay "$fd"
+check_status "A15: --list 0.17.0 --decay prints only the wrapped-heading ticket (i)" "901" "$OUT"
+run "$bc" --decay --list 0.17.0 "$fd"
+check_status "A15: flag order does not matter" "901" "$OUT"
+run "$bc" --list all --decay "$fd"
+check_status "A15: --list all --decay prints (i) and (v), each once, in file order" "$(printf '901\n906')" "$OUT"
+run "$bc" --list all "$fd"
+check_status "A15: --list all prints every open block whatever its tag" "$(printf '901\n902\n904\n906')" "$OUT"
+run "$bc" "$fd"
+check_status "A15: the run without --decay is unchanged" "$(printf '3\t0.17.0\n1\tpool')" "$OUT"
+run "$bc" --list 0.17.0 "$fd"
+check_status "A15: --list TAG without --decay is unchanged" "$(printf '901\n902\n904')" "$OUT"
+# A token reached only through a citation of another ticket is never this ticket's own, in --ticket-token mode too.
+dtok_backlog="### B.1 — adopter heading [model-decay] — R2 — → pool
+
+body
+
+### B.2 — adopter heading citing: Supersedes dir #5 — [model-decay] — R2 — → pool
+
+body
+"
+fdt="$(mk_backlog "$dtok_backlog")"
+run "$bc" --ticket-token 'B\.[0-9]+' --list pool --decay "$fdt"
+check_status "A15: --ticket-token mode reads the marker the same way (B.1 only)" "B.1" "$OUT"
+# the second fixture: no marked block at all -> empty output, exit 0; also under macOS /bin/bash 3.2, where an
+# empty array under `set -u` is the classic trap
+run "$bc" --decay "$f"
+check_status "A15: --decay on a backlog with no marked block -> exit 0" 0 "$STATUS"
+check_status "A15: --decay on a backlog with no marked block prints nothing" "" "$OUT"
+run "$bc" --list all --decay "$f"
+check_status "A15: --list all --decay with no marked block prints nothing" "" "$OUT"
+if [ -x /bin/bash ]; then
+  run /bin/bash "$bc" --decay "$f"
+  check_status "A15: no marked block under /bin/bash -> exit 0 (empty-array trap)" 0 "$STATUS"
+  check_status "A15: no marked block under /bin/bash prints nothing" "" "$OUT"
+  run /bin/bash "$bc" --decay "$fd"
+  check_status "A15: marked blocks under /bin/bash" "$(printf '1\t0.17.0\n1\tpool')" "$OUT"
+fi
+run "$bc" --help
+check_contains "--help documents --decay" "$OUT" "--decay"
+
 # --- smoke against today's real BACKLOG.md: must not crash, must print well-formed rows ---------
 if [ -f "$REPO_ROOT/BACKLOG.md" ]; then
   run "$bc" "$REPO_ROOT/BACKLOG.md"

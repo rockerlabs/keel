@@ -517,6 +517,17 @@ This is a rule of the procedure, not a compensation for a defect — no ticket r
 none of this rule's forms (a `Subject set:` clause, a `Residue:` clause, `no claim`, or
 `no subject set — <why>`), so the reviewer's budget goes to what a lint cannot see.
 
+**Every release row also reports its decay-exposed share (`dir #842`).** Work that hardens a guard or a
+check against an input a model has to produce loses value as models improve, while a felt bug or a
+requested capability does not, so such a ticket carries `[model-decay]` in its heading
+([`docs/verification-economics.md`](verification-economics.md) §4 defines the test). The row states the
+**decay-exposed share** — the marked tickets of its slate over the slate's size — derived, never
+hand-counted (keel's own: `tools/self/backlog-census.sh --list <tag> --decay`, against `tools/self/backlog-census.sh --list <tag>`
+for the slate's size). It is a report field, like design economics: it has no cap and changes no
+slate by itself; a ceiling on the share would be a scheduling rule, which this field is not. The
+marker's second reader is the rollout audit ([`docs/rollout-audit.md`](rollout-audit.md)). A rule of
+the procedure, not a compensation.
+
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that
 the operator wants one. Neither held there, and the honest answers are worth stating rather than

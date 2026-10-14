@@ -62,7 +62,9 @@ estimate names its weights, and the release's actual is summed at the same ones;
 limit is a subscription window, also in window points quoted as the gauge's live start and end, with
 the date the window, or the plan that sizes it, ends), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
-against spec-return rate) is a report field, not a role — record it, judge it next cycle.
+against spec-return rate) is a report field, not a role — record it, judge it next cycle. Every row also
+reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,
+derived (keel's own: `backlog-census.sh --list <tag> --decay` against `backlog-census.sh --list <tag>`).
 
 **G6 — fresh-reviewer adjudication is MANDATORY.**
 Hand the produced plan to a reviewer with no shared context, told to read ticket bodies. Re-verify every

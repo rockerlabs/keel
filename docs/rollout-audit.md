@@ -86,6 +86,16 @@ finish the sweep, then let the fixes queue normally like any other finding. Log,
 baseline the *next* rollout's audit diffs against; a sweep that doesn't name its surfaces reads as "checked
 everything" even when it only checked a few.
 
+Hardening against an input a model has to produce loses value as models improve, so the audit also
+re-triages that work. Before the layers, **list** every open ticket that carries the `[model-decay]`
+marker ([`docs/verification-economics.md`](verification-economics.md) §4) and every entry in a guard's
+known-bypass register, each with its live sighting count where the project keeps an accumulator. After the
+layers, re-triage each against the new model — still worth keeping, retired, or its guard re-tightened —
+and queue the outcomes as findings like any other. Both lists come from their sources, never from
+memory (keel's own: `tools/self/backlog-census.sh --list all --decay` for the tickets; the register
+files that [`SECURITY.md`](../SECURITY.md) "Threat model by guard" names for the entries). This sits here,
+not in Layer 0, which stays free of model behaviour.
+
 See also: [`FRAMEWORK.md`](../FRAMEWORK.md)'s "Verify gates" section for the mechanism behind a pipeline's
 own done-claim enforcement (the thing Layer 0's guard-probe is checking), and its "Enforcement mechanics"
 section for why a guard's own error text should never teach the way around it.
