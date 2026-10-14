@@ -654,8 +654,8 @@ heading_dir_id() {
 # from tools/lib/backlog-blocks.sh's `BB_CLOSURE_TAG_PATTERN` (dir #432/#581): that constant
 # covers the WHOLE closure vocabulary (ABSORBED/SUPERSEDED/etc.) for a heading's own tag, a wider
 # question than this test asks ("does this ticket's BODY read like prose that already recorded a
-# close?"); doctor.sh does not currently source backlog-blocks.sh at all, and wiring that
-# dependency for one shared literal is out of this ticket's scope (KEEL-0.11.0-W3-ee9f amendment
+# close?"); sharing the constant would widen what a body-prose test accepts, and wiring one shared
+# literal across two different questions is out of scope (KEEL-0.11.0-W3-ee9f amendment
 # A1 also asks this ticket to stay off that file's L110-130, where the constant lives).
 # dir #609 widened the heading-tag constant to UPPER/Title case and left THIS one UPPER-only on purpose:
 # its `.*` gap spans prose, so folding would match any later "done"/"closed" on a line that merely carries
@@ -831,7 +831,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # three live false positives (dirs #192, #205, #251) whose tag sat on the 3rd/7th/6th
       # physical line of their own heading. Build the whole heading BLOCK instead — the heading
       # line plus continuation lines up to the first blank line (the natural end of a heading's
-      # own text) — and check THAT for the tag.
+      # own text) or the first line bb_heading_continues rejects (dir #766) — and check THAT for the tag.
       # Scanned to a small fixed cap, not to `end`: `end` is this ticket's full body-span
       # boundary, which dir #352 just widened (some real tickets run past 1,900 lines) — a
       # wrapped TITLE realistically never runs past a handful of physical lines even at this
