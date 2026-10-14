@@ -48,8 +48,9 @@
 #                                                                duplicates, statuses
 #   --selftest | --help
 # `closed` finds the `Observer-class: CLASS` line (anchored, outside code fences), takes the nearest `### ` heading above
-# it (any id form: `dir #N`, `KB.N`, `B.N`, `H.N`), and tests that heading block — the heading line plus its wrapped
-# continuation lines up to the first blank — against BB_CLOSURE_TAG_PATTERN; the date it prints is `—` unless the tag
+# it (any id form: `dir #N`, `KB.N`, `B.N`, `H.N`), and tests that heading block — the heading line plus the continuation
+# lines bb_heading_continues accepts, up to the first blank (dir #839's rule, shared with the census) — against
+# BB_CLOSURE_TAG_PATTERN; the date it prints is `—` unless the tag
 # carries one (rule at closed_state; deliberately wider than tools/self/archive-sweep-check.sh's). Several tags for one class (an old closed
 # ticket and a recurrence): any open ticket -> `open`, else a draft -> `draft`, else the latest closed one, else `orphaned`.
 # Every write runs under the lock: one the caller already holds (a `lock` earlier in the run), else one taken and released
