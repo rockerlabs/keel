@@ -2892,7 +2892,7 @@ check_block_equal "dir #746 A11 T1: SESSION_META equals public-audit.sh's sessio
   "$(sed -n "s/^SESSION_META='\(.*\)'\$/\1/p" "$scan")" "$(sed -n "s/^session_re='\(.*\)'\$/\1/p" "$pa746")"
 # T2: the decode recipe, emit_blob ↔ decode_binary — from the anchor START through END (fixed strings, so
 # index(), not a BRE range), comment-only lines dropped, a trailing ` # …` comment and the outer whitespace
-# stripped, the two tools' variable names unified.
+# stripped, the two tools' variable names unified, the printable-runs line (dir #830) left out of both.
 recipe746() {  # file start end
   S="$2" E="$3" awk '
     function rep(s, f, r,   i) { while ((i = index(s, f)) > 0) s = substr(s, 1, i - 1) r substr(s, i + length(f)); return s }
@@ -2903,7 +2903,9 @@ recipe746() {  # file start end
       l = $0
       if (l !~ /^[[:space:]]*#/) {
         sub(/[[:space:]]+#.*$/, "", l); sub(/^[[:space:]]+/, "", l); sub(/[[:space:]]+$/, "", l)
-        print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
+        # dir #830: the printable-runs read is not an encoding. The twin keeps it in the recipe (every one of its
+        # regexes reads one decoded file); emit_blob reads it into a file of its own for the personal passes, after the recipe.
+        if (!(index(l, "tr -cs") && index(l, "-~"))) print rep(rep(l, "\"$tmp\"", "\"$src\""), "\"$dec\"", "\"$dst\"")
       }
       if (index($0, e)) exit
     }
@@ -2913,6 +2915,26 @@ ss746="$(recipe746 "$scan" "$blob_start715" "$blob_end715")"
 pp746="$(recipe746 "$pa746" "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" \
   "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
 check_block_equal "dir #746 A11 T2: emit_blob's decode recipe equals public-audit.sh's decode_binary" "$ss746" "$pp746"
+# dir #830: the printable-runs read is left out of both recipes above, so each tool's own line is pinned here. A
+# per-byte split (`tr -c … '\n'`, one line per non-printable byte) made a 20 MiB random blob ~12.6 M lines.
+# live_runs_line FILE LINE START END — how many times LINE is a whole code line (leading blanks aside, so a `# `
+# in front of it does not count) between the first line holding START and the next line holding END
+live_runs_line() {
+  L="$2" S="$3" E="$4" awk '
+    BEGIN { l = ENVIRON["L"]; s = ENVIRON["S"]; e = ENVIRON["E"] }
+    !p && index($0, s) { p = 1 }
+    !p { next }
+    { t = $0; sub(/^[[:space:]]+/, "", t); if (t == l) c++ }
+    index($0, e) { exit }
+    END { print c + 0 }
+  ' "$1"
+}
+check_eq "dir #830: public-audit.sh squeezes the printable runs inside its decode recipe" 1 \
+  "$(live_runs_line "$pa746" "LC_ALL=C tr -cs ' -~\\t' '\\n' < \"\$src\" || exit \$?; echo  # raw printable runs, squeezed (dir #830)" \
+    "LC_ALL=C tr -d '\\000' < \"\$src\" || exit \$?; echo" "} | LC_ALL=C tr -d '\\000' > \"\$dst\" || return \$?")"
+check_eq "dir #830: secret-scan.sh squeezes the printable runs into the personal passes' file, after its recipe" 1 \
+  "$(live_runs_line "$scan" "LC_ALL=C tr -cs ' -~\\t' '\\n' < \"\$tmp\" > \"\$personal_more\" || return \$?" \
+    "$blob_end715" "  rm -f \"\$tmp\" \"\$dec\"")"
 for t746 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
   check_eq "dir #746 A11 T2: ${t746%%:*}'s recipe holds four resuming iconv passes" 4 \
     "$(match "${t746#*:}" -c '^iconv -c -f ')"

@@ -14,7 +14,7 @@
 #
 # Tag collection uses lib.sh's own `all_release_tag_versions()` (dir #318) — local `release_tag_versions()`
 # (promoted there, dir #232's own /code-review medium pass, once a THIRD copy of doctor.sh's own
-# `_release_tag_versions()` regex turned up here on top of test_changelog_section.sh's) UNIONED with a
+# strict-semver tag-filter regex turned up here on top of test_changelog_section.sh's) UNIONED with a
 # read-only `git ls-remote`, since local tags alone go empty on a shallow/tagless CI checkout — this
 # file used to be rescued only by test_changelog_section.sh's own (now-removed) fetch populating real
 # tags for every test in the same run. doctor.sh keeps its own private copy (bare version, `v`
