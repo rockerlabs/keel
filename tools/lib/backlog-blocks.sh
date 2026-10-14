@@ -162,13 +162,13 @@ BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|ne
 #   opens with a tag-shaped em-dash (`— ✅ CLOSED`, `— → pool`, `— R2`: a tail wrapped onto its own
 #   line; a dash followed by prose does not count); an unfinished title
 #   (the dir #255 wrap-before-the-tail shape) keeps taking lines until it finishes or a blank comes.
-#   Residual, accepted (no live instance of either): a prose body line directly under a heading with
-#   no tail at all still reads as the title's continuation, and a tag or arrow wrapped onto a line
-#   that does not open with an em-dash (checked against the live backlog on origin/main at the time of
-#   writing), after a finished first line, is not taken: it stays out of the block, and so out of the lane
-#   the pool report reads from it. The cure for the
-#   first is the blank line a writer leaves after every heading. A "previous line ends in a dash"
-#   rule for the second was tried and dropped: it admitted a glued body line after `— R2 —`.
+#   Two residuals, accepted (neither has an instance in the maintainers' BACKLOG.md, measured
+#   2026-10-14): a prose body line directly under a heading with no tail at all still reads as the
+#   title's continuation (the cure is the blank line a writer leaves after every heading); and a tag
+#   or arrow wrapped onto a line that does not open with a tag-shaped em-dash, after a finished first
+#   line, stays out of the block, so out of the lane the pool report reads from it. A "previous line
+#   ends in a dash" rule for the second was tried and dropped: it admitted a glued body line after
+#   `— R2 —`.
 bb_heading_continues() {
   local so_far="$1" next="$2"
   local body_re='^(Log:|Draft slug:|\*\*)'
