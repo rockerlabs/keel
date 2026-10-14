@@ -585,20 +585,22 @@
 # no merge is denied as one (`gh api -X PUT repos/{owner}/{repo}/branches/{branch}/protection`,
 # `…/contents/merge-notes/./pulls.md`), behind a runner any word after an unquoted `api` that holds a `{branch}`, or
 # a placeholder together with a dot segment or a `//` other than a `scheme://` with a non-slash after it, or could be
-# the endpoint, is unread, a flag's value or a read included (`timeout 60 gh pr create --label api --body "see
-# {branch}"`, `timeout 60 gh api repos/{owner}/{repo}/issues -f "body=open file:///tmp/{owner}"`), and an API write
-# to a full URL with a placeholder in its host, or with a `./` or `../` right after the host beside `pulls`/`merge`,
-# is denied as a merge, and so is any gh command holding an unquoted `pr`, then `merge`, that is not a pr merge (`gh
-# pr comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--` before its subcommand; a word after
-# a `--` that is no flag to gh is still read as one (a manager's `… -- --admin` is denied); a merge behind a runner
-# even when it asks for `--help`, and a merge after a boolean flag gh knows before its subcommand (`gh --version pr
-# merge`) — quote a word merge that is text, or run gh first; a word `xargs` that a wrapper's flag consumes reads as
-# xargs (`env -C xargs gh …`); a second word gh — or a word ending in /gh, such as `-R org/gh` — in a merge segment,
-# quoted or not, makes it unread (`gh pr merge 5 --subject gh` — rephrase it); a gh command holding an unquoted `api`
-# and a merge-endpoint path that are not its own is unread (`gh issue comment 5 --body api see/pulls/5/merge`); any
-# CLAUDE.md line carrying the token opts the project in, a sentence that only mentions it included; and a main
-# session started with `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a
-# subagent and is denied — start a release manager without `--agent`.
+# the endpoint, is unread, a flag's value or a read included
+# (`timeout 60 gh pr create --label api --body "see {branch}"`,
+# `timeout 60 gh api repos/{owner}/{repo}/issues -f "body=open file:///tmp/{owner}"`), and an API write to a full URL
+# with a placeholder in its host, or with a `./` or `../` right after the host beside `pulls`/`merge`, is denied as a
+# merge, and so is any gh command holding an unquoted `pr`, then `merge`, that is not a pr merge
+# (`gh pr comment 5 --body merge`, `gh issue create --title fix pr merge`), or a `--` before its subcommand; a word
+# after a `--` that is no flag to gh is still read as one (a manager's `… -- --admin` is denied); a merge behind a
+# runner even when it asks for `--help`, and a merge after a boolean flag gh knows before its subcommand
+# (`gh --version pr merge`) — quote a word merge that is text, or run gh first; a word `xargs` that a wrapper's flag
+# consumes reads as xargs (`env -C xargs gh …`); a second word gh — or a word ending in /gh, such as `-R org/gh` — in
+# a merge segment, quoted or not, makes it unread (`gh pr merge 5 --subject gh` — rephrase it); a gh command holding
+# an unquoted `api` and a merge-endpoint path that are not its own is unread
+# (`gh issue comment 5 --body api see/pulls/5/merge`); any CLAUDE.md line carrying the token opts the project in, a
+# sentence that only mentions it included; and a main session started with `--agent` carries `agent_type` with no
+# `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a release manager without
+# `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).

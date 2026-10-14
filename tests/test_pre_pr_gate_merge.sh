@@ -342,8 +342,9 @@ done
 deny "(g) a misplaced gh command holding api and pulls//5//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls//5//../merge" "$P" "$OTHER"
 allow "(g) behind a runner, a URL with a placeholder in a value is no endpoint" "timeout 60 gh api repos/{owner}/{repo}/issues -f \"body=see https://example.com/{owner}\"" "$P" "$OTHER"
 deny "(g) an inner a:// is no scheme: the path keeps its segments" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/merge/a://x/../.." "$P" "$OTHER"
-# The run of b is long on purpose: an unanchored match would cut from a:// on, and only a host part longer than
-# `repos/{owner}` makes the wrong slice of the head read as a placeholder in a host (M138).
+# The run of b is long on purpose: an unanchored match (M138) finds `a://b…` inside the word and then takes the
+# word's first RLENGTH characters for the scheme and host; only a matched span at least as long as `repos/{owner}`
+# (13 characters) brings the placeholder into that slice, where it reads as a placeholder in a host.
 for c in "gh api -X PATCH repos/{owner}/a://bbbbbbbbbbbbbbbb -f x=y" "gh api -X PUT https://pulls/5/merge -f x=y"; do
   allow "(f) only a leading scheme://host is cut, and it is cut: [$c]" "$c" "$P" "$OTHER"
 done
