@@ -223,4 +223,11 @@ pin "delegation.md names the floor's kill switch (dir #675)" "$doc" 'KEEL_SUBAGE
 pin "delegation.md names the kill switch for the injection" "$doc" 'KEEL_SUBAGENT_RAILS=off' "expected the kill switch next to the injection (dir #674 F3)"
 check_absent "delegation.md no longer points at a closed ticket as K2's possible future floor (dir #676)" "$(cat "$doc")" 'dir #676 is its possible future floor'
 
+# --- dir #811 S1 (A3): the operator's bandwidth that no worker can widen is DECISIONS, not merges ---------------------
+pin "delegation.md names the operator's decision bandwidth" "$doc" "the operator's own decision bandwidth" \
+  "expected the non-delegable set to name decision bandwidth, now that a release manager merges (dir #811)"
+check_absent "delegation.md no longer says merge bandwidth (either wrapped site)" "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'merge bandwidth'
+pin "delegation.md Mutator paragraph points at the manager's gated merge under R14" "$doc" 'its gated merge under R14' \
+  "expected the Mutator paragraph to point at the release manager's gated merge (dir #811)"
+
 summary

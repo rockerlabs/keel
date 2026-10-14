@@ -88,8 +88,9 @@ and a crafted issue *title* driving Cline's AI triage workflow toward its releas
 `secret-guard` git hooks block secret-shaped and personal-literal content at commit and push whatever the
 model decided — the one model-independent floor ([`ADAPTING.md`](ADAPTING.md) records why), subject to the
 known limits above (a prefix backstop, not DLP). CI re-scans server-side. The human-in-the-loop rails —
-never merge autonomously, confirm irreversible or outward-facing actions — gate a coding agent's main
-outbound channels, but as prose they bias the agent rather than enforce; on Claude Code the pre-PR gate
+never merge autonomously outside a release manager's gated merge (`docs/release-management.md` R14),
+confirm irreversible or outward-facing actions — gate a coding agent's main outbound channels, but as
+prose they bias the agent rather than enforce; on Claude Code the pre-PR gate
 mechanically denies the agent's own `gh pr create` until `/polish` has run, and denies `gh pr merge` to any
 session that is not a release manager or that does not pin the head it verified, which covers those two steps
 and nothing wider. A channel Keel does not watch (a network call from a tool, a package install) stays open.

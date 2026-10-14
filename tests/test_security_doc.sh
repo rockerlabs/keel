@@ -19,4 +19,9 @@ else
   fail "SECURITY.md hardcodes a release version — drifts stale on the next release" "$hit"
 fi
 
+# --- dir #811 S1 (A4): the merge rail names its one exception, the release manager's gated merge ------------------------
+body="$(cat "$doc")"
+check_absent "SECURITY.md no longer says the unqualified 'never merge autonomously, confirm'" "$body" 'never merge autonomously, confirm'
+check_contains "SECURITY.md scopes the merge rail to outside a release manager's gated merge" "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'outside a release manager'
+
 summary
