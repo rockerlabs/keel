@@ -421,9 +421,10 @@ pin "R11's observed-state clause names the turn-end-without-deliverable trigger"
 pin "R14's fallback gives every reported PR one of two shapes" "$doc" \
   '**In the fallback, every PR the manager reports carries exactly one of two shapes' \
   "expected R14's fallback to carry the ready-block-or-do-not-merge rule (dir #826 item 3, dir #827 item 1)"
-pin "delegation.md's verify order says the signals can differ by turn" "$delegation" \
-  'switched tier. So a disagreement between them is an observation with two alternatives' \
-  "expected delegation.md's order to name the log as the arbiter (dir #826 item 4)"
+deleg_flat="$(tr '\n' ' ' < "$delegation" | tr -s ' ')"
+check_contains "delegation.md's verify order names the log as the arbiter of a disagreement (dir #826 item 4)" "$deleg_flat" \
+  'a disagreement between them is an observation with two alternatives, settled by the log (find it by branch'
+check_contains "delegation.md's hold step checks the tier by rule (1)'s order" "$deleg_flat" "the launcher checks the tier by rule (1)'s order"
 pin "delta-audit.md's Fixer brief rows carry an executable acceptance check" "$REPO_ROOT/docs/delta-audit.md" \
   '**A Fixer'"'"'s brief is rows of finding plus an executable acceptance check' \
   "expected delta-audit.md to carry the fix-batch brief shape (dir #826 item 2)"

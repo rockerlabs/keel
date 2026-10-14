@@ -137,7 +137,7 @@ top-tier by doing nothing), the order to verify in (running-tier evidence before
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
 nothing. A release's worker brief therefore tells each worker to hello, then stop.
 **The verify's read, at the hello and before GO,** follows `docs/delegation.md`'s order: running-tier evidence
-first, the commit trailer next (what a commit's own model line says wrote it), session metadata last, because it
+first, the commit trailer next (the model a commit's own Co-Authored-By line names as its author), session metadata last, because it
 reports what is configured. The running-tier
 evidence has two forms: the worker's session log found by its branch (`jq` over the assistant lines'
 `.message.model` and `.perTurnEffort`, the branch in `.gitBranch`), which names what ran in each turn, and the

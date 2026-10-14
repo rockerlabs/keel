@@ -77,7 +77,7 @@ settled by metadata alone. (2) **A switch applies from the next turn on**, so
 one made after the work turn has started re-prices an already-large cached context, while one made during
 a hello-only first turn costs nothing. (3) **So the launch holds:** the worker's first turn is only to
 read its brief and send a hello line naming its running model, then end the turn; the launcher checks
-the tier, has it corrected while the context is still tiny, and only then releases the worker with an
+the tier by rule (1)'s order, has it corrected while the context is still tiny, and only then releases the worker with an
 explicit go message.
 
 **A second launch-time requirement, same soft form: identity at first contact.** Nothing above says
