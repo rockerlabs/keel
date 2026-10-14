@@ -543,7 +543,7 @@ cmd_manifest() {
   # Pass 2: one manifest row (or UNMATCHED line) per ledger line.
   while IFS=$'\t' read -r ticket tier model branch || [ -n "$ticket" ]; do
     case "$ticket" in ''|'#'*) continue ;; esac
-    list="$(B="$branch" awk -F'\t' '$2 == ENVIRON["B"] { print $1 }' <<<"$pairs" | sort)"
+    list="$(awk -v b="$branch" -F'\t' '$2 == b { print $1 }' <<<"$pairs" | sort)"
     files="$(printf '%s' "$list" | paste -sd, -)"
     if [ -n "$files" ]; then
       printf '%s\t%s\t%s\t%s\n' "$ticket" "$tier" "$model" "$files"
