@@ -126,6 +126,9 @@ pin "wrap.md's FLAG description covers the uncommitted/untracked reason" "$wrap"
 pin "wrap.md's FLAG description covers the --live-hours reason" "$wrap" \
   '--live-hours' \
   "expected wrap.md's FLAG parenthetical to name the flag governing the clean-but-recently-touched reason"
+pin "wrap.md's FLAG description covers the running-process reason (dir #813)" "$wrap" \
+  'a running process whose cwd is inside it' \
+  "expected wrap.md's FLAG parenthetical to name the running-process reason the tool grades FLAG"
 pin "wrap.md's FLAG description explains why a recently-touched clean worktree is flagged" "$wrap" \
   'a worktree merged today can be a parallel session still mid-wrap, not a stale leftover' \
   "expected wrap.md to state the reasoning, not just gesture at the tool's -h"
