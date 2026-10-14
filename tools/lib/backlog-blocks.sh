@@ -151,6 +151,10 @@ bb_own_ticket_num() {
 
 backlog_ticket_blocks() {
   local file="$1"
+  # dir #605: the ticket-heading token is a parameter. Default = the two shapes keel's own backlog
+  # uses; an adopter's uniform token (`B\.[0-9]+`, `KB\.[0-9]+`) arrives as an ERE alternation that
+  # replaces it (backlog-census.sh --ticket-token). Callers that pass nothing see no change.
+  local ticket_re="${2:-dir #[0-9]+|[0-9]+\.}"
   [ -f "$file" ] && [ -r "$file" ] || return 0
 
   local fence_blanked
@@ -166,7 +170,7 @@ backlog_ticket_blocks() {
   # every heading line is already among the boundary lines this pass finds.
   local boundary_raw=()
   while IFS= read -r ln || [ -n "$ln" ]; do boundary_raw+=("$ln"); done \
-    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked")
+    < <(grep -nE "^### (${ticket_re}) |^## " <<< "$fence_blanked")
 
   local heading_lines=() boundary_lines=() entry lnum ltext
   # `[ -gt 0 ]` guard, not a bare `for ... in "${boundary_raw[@]}"`: bash 3.2 (macOS's stock
@@ -179,7 +183,7 @@ backlog_ticket_blocks() {
       lnum="${entry%%:*}"
       ltext="${entry#*:}"
       boundary_lines+=("$lnum")
-      if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
+      if [[ "$ltext" =~ ^###\ (${ticket_re})\  ]]; then
         heading_lines+=("$lnum")
       fi
     done
