@@ -310,7 +310,8 @@ fi
 # block. The 0.17.0 groom folded twenty tickets whose first body line sat directly under a finished
 # heading (`— R2 — → 0.17.0`); a body line reading "Builds on item 51 (✅ DONE: …)" then closed the
 # OPEN ticket for the census and the pool report. A heading is FINISHED once it shows its tail (an
-# R grade, a release/pool arrow or a status glyph); after that it takes no further line. Rows are selected by the ticket number inside field 4, never by line. -
+# R grade, a release/pool arrow or a status glyph); after that it takes no further line. Rows are
+# selected by the ticket number inside field 4, never by line. ---------------------------------
 d839="$(new_repo)"
 f839="$d839/BACKLOG.md"
 printf '### dir #881 — an open ticket, prose body right under the heading — R2 — → 0.17.0
@@ -359,15 +360,15 @@ printf '### dir #861 — a finished open heading, a dash-led glyph line glued un
 
 ### dir #863 — a graded heading that ends in a dash, a glued body line under it — R2 —
 Builds on item 51 (✅ DONE: shipped in PR #5), this one is not.
+
+### dir #864 — a graded heading whose closure tag wraps onto its own line — R2 —
+— ✅ CLOSED (2026-10-01, done)
 ' > "$f839c"
 out839c="$(backlog_ticket_blocks "$f839c")"
-# The accepted residual, recorded: a closure tag wrapped onto the line after a FINISHED first line
-# stays out of the block and reads open (bb_heading_continues' header names it). A title that wraps
-# BEFORE its tail still reads closed (dir #9/#900/#950 above).
-printf '### dir #864 — a graded heading whose closure tag wraps onto its own line — R2 —
-— ✅ CLOSED (2026-10-01, done)
-' >> "$f839c"
-out839c="$(backlog_ticket_blocks "$f839c")"
+# The accepted residual (dir #864 above), recorded: a closure tag wrapped onto the line after a
+# FINISHED first line stays out of the block and reads open (bb_heading_continues' header names it,
+# and this assertion flips with any change that makes it read closed). A title that wraps BEFORE its
+# tail still reads closed (dir #9/#900/#950 above).
 check_status "accepted residual: a closure tag wrapped after a finished first line reads open" \
   0 "$(row839 "$out839c" "dir #864 " 3)"
 for n in 861 862 863; do

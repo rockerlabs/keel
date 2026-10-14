@@ -166,9 +166,10 @@ BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|ne
 #   still reads as the title's continuation (the cure is the blank line a writer leaves after every
 #   heading); and a tag, arrow or note wrapped onto the line after a FINISHED first line stays out of
 #   the block: a wrapped closure tag then reads OPEN and a wrapped lane arrow is not read by the pool
-#   report. Two exceptions for that second case
-#   were tried and dropped, each admitted a glued body line: a continuation opening with an em-dash
-#   (even a tag-shaped one: `— ✅ DONE for the first half`), and one after a line ending in a dash.
+#   report. Two exceptions for a wrapped tag, arrow or
+#   note were tried and dropped, each admitted a glued body line: a continuation opening with an
+#   em-dash (even a tag-shaped one: `— ✅ DONE for the first half`), and one after a line ending in
+#   a dash.
 bb_heading_continues() {
   local so_far="$1" next="$2"
   local body_re='^(Log:|Draft slug:|\*\*)'
