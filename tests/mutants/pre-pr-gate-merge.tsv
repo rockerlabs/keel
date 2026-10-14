@@ -97,3 +97,6 @@ M92	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api") || 		B6: an earlier
 M93	tools/pre-pr-gate.sh	else k += mg_api_word(w[k], (k < n) ? w[k + 1] : 0)	else k += mg_api_word(w[k], w[k] + 1 <= ntok ? w[k] + 1 : 0)	B6: flags read on the raw word list, the subcommand word not taken out (gh -it api --jq -X PUT)
 M96	tools/pre-pr-gate.sh	    if (t == "--") return 0\n		B6: a -- before the subcommand is skipped as a flag (gh -- pr merge read through)
 M98	tools/pre-pr-gate.sh	    if (!ep) { if (mg_shape(i)) mg_note("unread", ""); return }	    if (!ep) return	B6: an API merge shape whose endpoint the reading cannot place is allowed
+M99	tools/pre-pr-gate.sh	      if (tok[w[k]] !~ /^-/ && mg_ep(tok[w[k]])) ep = 1	      if (mg_ep(tok[w[k]])) ep = 1	B6: an endpoint-shaped field value read as the endpoint (the field missed)
+M100	tools/pre-pr-gate.sh	function mg_ep(t) { return tolower(t) ~	function mg_ep(t) { return t ~	B6: an upper-case MERGE endpoint is no endpoint
+M101	tools/pre-pr-gate.sh	/(^|\/)pulls\/+[^\/]+\/+merge\/*([?#].*)?$/	/(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/	B6: a doubled slash in the endpoint hides it

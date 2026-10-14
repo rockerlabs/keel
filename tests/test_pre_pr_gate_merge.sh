@@ -229,6 +229,10 @@ allow "(f) -XGET is a read" "gh api -XGET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -X=GET is a read" "gh api -X=GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -i=false is a boolean's value, not a field" "gh api -i=false repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(f) -X =GET keeps its = (gh's reading: a method that is no GET)" "$R_API" "gh api -X =GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
+for c in "gh api -X PUT repos/o/r/pulls/5/MERGE" "gh api -X PUT repos/o/r/pulls/5//merge" "gh api -X PUT repos/o/r//pulls/5/merge/"; do
+  deny "(f) the endpoint read case- and slash-insensitively: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+deny "(f) an endpoint-shaped field value is a field, not the endpoint" "$R_API" "gh api repos/o/r/pulls/5/merge -fx=/pulls/5/merge" "$P" "$OTHER"
 deny "accepted cost: an endpoint-shaped --header value is unread too" "$R_UNREAD" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) gh api …/pulls/5/merge (GET: is it merged)" "gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api -X GET …/pulls/5/merge" "gh api -X GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
@@ -319,8 +323,7 @@ allow "(f) gh -iX api GET: -X takes GET (the subcommand word taken out), a read 
 deny "accepted cost: a word after -- is still read as a flag" "$R_DROP --admin " "$MERGE -- --admin" "$P" "$MID"
 for c in "gh api -X PUT -- repos/o/r/pulls/5/merge" "gh -q -- api -X PUT repos/o/r/pulls/5/merge" \
          "gh api repos/o/r/pulls/5/merge -q -- -X PUT" "gh api repos/o/r/pulls/5/merge --jq -- -f merge_method=squash"; do
-  ev_gate "$c" "$P" "$OTHER"
-  check_contains "(f) a -- in an API write hides nothing: [$c]" "$OUT" "$DENY"
+  deny "(f) a -- in an API write hides nothing: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
 deny "(d) manager: a -- as --body's value hides no --admin" "$R_DROP --admin " "$MERGE --body -- --admin" "$P" "$MID"
 deny "(d) manager: gh -- x pr merge: a -- before the subcommand is unread" "$R_UNREAD" "gh -- x pr merge 5 --merge --match-head-commit $SHA" "$P" "$MID"
