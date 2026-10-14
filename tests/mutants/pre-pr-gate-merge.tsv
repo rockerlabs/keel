@@ -13,7 +13,9 @@
 #   observable difference in a decision.
 # - the shell side's "a second merge line is a reader failure" (M51 until removed): the reader prints at most one,
 #   so dropping the check is equivalent (it stays: the reader's output shape is checked like the verdict line's).
-# - M55, M59 and M61 retired with the first wrapper look-past; the runner scan and the xargs code are M63–M68.
+# - M55, M59 and M61 retired with the first wrapper look-past; the runner scan and the xargs code are M63–M72.
+# - one mutant per runner name: the list is pinned by fixtures (one shape per name in tests/test_pre_pr_gate_merge.sh
+#   (g)); timeout and noglob also carry a mutant each.
 M01	tools/pre-pr-gate.sh	  _manager_listed "$mg_path" "$hk_sid" || early_deny	  true || early_deny	B6 (ii): drop the session check
 M02	tools/pre-pr-gate.sh	if (nm == "--squash" || nm == "--rebase"	if (nm == "--squashX" || nm == "--rebase"	B6 (i): accept --squash
 M03	tools/pre-pr-gate.sh	if (c == "s" || c == "r") { if (cm_bad == "") cm_bad = t }	if (c == "r") { if (cm_bad == "") cm_bad = t }	B6 (i): accept -s (a short cluster holding s)
@@ -26,7 +28,7 @@ M09	tools/pre-pr-gate.sh	else if (p_at && !m_at && t == "merge" && w_unquoted(j)
 M10	tools/pre-pr-gate.sh	if (nm == "--method") { cm_meth = toupper(eq ? substr(t, eq + 1) : (j < ntok ? tok[j + 1] : "")) }	if (nm == "--method") { cm_meth = toupper(eq ? "" : (j < ntok ? tok[j + 1] : "")) }	B6: miss --method=PUT
 M11	tools/pre-pr-gate.sh	if (m_at < ntok && (tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h")) return	for (j = m_at + 1; j <= ntok; j++) if (tok[j] == "--help" || tok[j] == "-h") return	B6: treat --subject -h (a -h anywhere) as a read
 M12	tools/pre-pr-gate.sh	  # (ii) identity: never a subagent	  [ "$mg_code" = pin ] && early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> (flags first)"\n  # (ii) identity: never a subagent	B6: check the flags before the session
-M13	tools/pre-pr-gate.sh	if (ep && (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld))	if (ep && (cm_meth != "" ? (cm_meth == "POST") : cm_fld))	B6: miss the gh api PUT
+M13	tools/pre-pr-gate.sh	(cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld)	(cm_meth != "" ? (cm_meth == "POST") : cm_fld)	B6: miss the gh api PUT
 M14	tools/pre-pr-gate.sh	eq = index(t, "="); nm = eq ? substr(t, 1, eq - 1) : t; v = eq ? substr(t, eq + 1) : ""	eq = 0; nm = t; v = ""	B6 (i): miss every long =-form (the pin, --admin=true)
 M15	tools/pre-pr-gate.sh	def is_sub: (.agent_id | . != null and . != "") or (.agent_type | . != null and . != "");	def is_sub: (.agent_id | . != null and . != "");	B6 (ii) + the writer: ignore agent_type
 M16	tools/pre-pr-gate.sh	def is_sub: (.agent_id | . != null and . != "") or (.agent_type | . != null and . != "");	def is_sub: (.agent_type | . != null and . != "");	B6 (ii) + the writer: ignore agent_id
@@ -72,8 +74,13 @@ M57	tools/pre-pr-gate.sh	else if (c == "f" || c == "F") cm_fld = 1	else if (c ==
 M58	tools/pre-pr-gate.sh	    if (eq) return 0\n  }\n  return 0\n}\nfunction mg_api_word	  }\n  return 0\n}\nfunction mg_api_word	B6 (i): the letters after a cluster's = are read as flags
 M60	tools/pre-pr-gate.sh	substr(t, k + 1 + eq)	substr(t, k + 1)	B6: -X=GET read as the method =GET (a false deny)
 M62	tools/pre-pr-gate.sh	    if (eq) return 0\n  }\n  return 0\n}\n# mg_gh(j)	  }\n  return 0\n}\n# mg_gh(j)	B6: the letters after an API cluster's = are read as flags (-i=false)
-M63	tools/pre-pr-gate.sh	  if (run) { while (i <= ntok && !mg_gh(i)) i++ }	  if (0) { while (i <= ntok && !mg_gh(i)) i++ }	B6: a merge behind a runner word (timeout, nice, env -C, xargs -n1) is not read
+M63	tools/pre-pr-gate.sh	if (mg_gh(j) && (j == i || (run && j > i))) break	if (mg_gh(j) && j == i) break	B6: a merge behind a runner word (timeout, nice, env -C, xargs -n1) is not read
 M64	tools/pre-pr-gate.sh	tok[j] == "gh" || tok[j] ~ /\/gh$/	tok[j] == "gh"	B6: a path to gh is not read as gh
-M65	tools/pre-pr-gate.sh	for (j = 1; j < i; j++) if (w_plain(j) && tok[j] == "xargs") cm_xargs = 1	for (j = 1; j < i; j++) if (w_plain(j) && tok[j] == "xargsX") cm_xargs = 1	B6 (i): a merge under xargs (stdin adds flags) is read as complete
+M65	tools/pre-pr-gate.sh	if (b == "xargs") cm_xargs = 1	if (b == "xargsX") cm_xargs = 1	B6 (i): a merge under xargs (stdin adds flags) is read as complete
 M66	tools/pre-pr-gate.sh	    xargs) early_deny blocked	    xargsX) early_deny blocked	B6 (i): the xargs code is not acted on
-M67	tools/pre-pr-gate.sh	t == "timeout" || t == "nice" ||	t == "timeoutX" || t == "nice" ||	B6: timeout is no runner (the old deny caught it)
+M67	tools/pre-pr-gate.sh	|| b == "timeout" || b == "nice" ||	|| b == "timeoutX" || b == "nice" ||	B6: timeout is no runner (the old deny caught it)
+M68	tools/pre-pr-gate.sh	if (ep && (cm_xargs || (cm_meth	if (ep && (0 || (cm_meth	B6: the API merge endpoint under xargs is read as a GET
+M69	tools/pre-pr-gate.sh	  return is_wrapper(b) || b == "timeout"	  return b == "timeout"	B6: exec -a x / xargs -n1 (is_wrapper words with flags) are no runners
+M70	tools/pre-pr-gate.sh	sub(/.*\//, "", b); if (mg_runner(b))	if (mg_runner(b))	B6: a runner given by path (/usr/bin/xargs) is no runner
+M71	tools/pre-pr-gate.sh	    if (j >= i && !run) return\n		B6: no runner, yet a later gh word is read as the command (echo gh pr merge)
+M72	tools/pre-pr-gate.sh	b == "noglob" ||	b == "noglobX" ||	B6: zsh noglob is no runner

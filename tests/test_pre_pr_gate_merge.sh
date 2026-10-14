@@ -239,7 +239,8 @@ for c in "cd /tmp && $MERGE" "GH_TOKEN=x $MERGE" "foo; $MERGE" "env GH_PAGER= $M
          "cat <<EOF && $MERGE" "$(printf 'git status\n%s' "$MERGE")" "echo \$($MERGE)" "x=\`$MERGE\`" \
          "timeout 60 $MERGE" "nice -n 5 $MERGE" "nohup $MERGE" "env -C /tmp $MERGE" "sudo -u x $MERGE" \
          "echo 5 | xargs -n1 gh pr merge --squash --admin" "xargs -r -I{} $MERGE" "exec -a x $MERGE" \
-         "/opt/homebrew/bin/gh pr merge 5 --merge --match-head-commit $SHA"; do
+         "/opt/homebrew/bin/gh pr merge 5 --merge --match-head-commit $SHA" "/usr/bin/env gh pr merge 5 --squash" \
+         "noglob $MERGE" "watch -n5 $MERGE" "coproc $MERGE" "parallel $MERGE ::: 5" "builtin command $MERGE"; do
   deny "(g) unlisted: [$c]" "$R_ID" "$c" "$P" "$OTHER"
 done
 for c in "echo gh pr merge" "git commit -m 'wire gh pr merge'" "gh pr view 5 --json mergeable,mergeStateStatus" \
@@ -250,8 +251,9 @@ for c in "echo gh pr merge" "git commit -m 'wire gh pr merge'" "gh pr view 5 --j
   esac
 done
 
-# --- named residuals, pinned so a change to them is a visible decision: a wrapper's own flags, xargs ----------------
-for c in "echo merge 5 | xargs gh pr" "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
+# --- named residuals, pinned so a change to them is a visible decision: words stdin supplies, sh -c, a quoted word --
+for c in "echo merge 5 | xargs gh pr" "echo repos/o/r/pulls/5/merge | xargs gh api -X PUT" \
+         "sh -c 'gh pr merge 5 --squash'" "gh pr \"merge\" 5 --squash"; do
   allow "residual: [$c] is not read as a merge (named in the header)" "$c" "$P" "$OTHER"
 done
 # A manager behind a runner: read through; under xargs, stdin can add flags no check reads — denied.
@@ -259,6 +261,10 @@ allow "(a) manager: timeout 60 + the merge" "timeout 60 $MERGE" "$P" "$MID"
 allow "(a) manager: a path to gh" "/opt/homebrew/bin/gh pr merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(d) manager: a merge under a flagless xargs" "not under xargs" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
 deny "(d) manager: a merge under xargs -n1" "not under xargs" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) manager: a merge under /usr/bin/xargs" "not under xargs" "printf -- '--admin\\n' | /usr/bin/xargs $MERGE" "$P" "$MID"
+deny "(f) the API merge endpoint under xargs (stdin may add the method)" "$R_API" "echo -X PUT | xargs gh api repos/o/r/pulls/5/merge" "$P" "$MID"
+allow "(f) a read under xargs, no merge endpoint" "echo 5 | xargs -n1 gh pr view" "$P" "$OTHER"
+deny "accepted cost: behind a runner, a gh pr merge pattern in another command reads as a merge" "$R_ID" "nice git log --grep gh pr merge" "$P" "$OTHER"
 deny "(d) manager: timeout 60 + --squash" "$R_DROP --squash " "timeout 60 $MERGE --squash" "$P" "$MID"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------
