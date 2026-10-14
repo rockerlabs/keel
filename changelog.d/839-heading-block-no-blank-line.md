@@ -7,5 +7,6 @@
   opener always ends the block. A title that wraps before its tail still reads as before; a note wrapped onto the
   line after a finished heading's tail (the old dir #207 heading's parenthetical) is no longer part of its block, and
   no `closed` verdict on the maintainers' backlog changes. Residual, named in the function's header: a prose body
-  line directly under a heading with no tail at all, and a lane arrow wrapped onto its own line after a finished
-  first line, which leaves the block and so is no longer read by the pool report (no known heading has one).
+  line directly under a heading with no tail at all, and a closure tag, arrow or note wrapped onto the line after a
+  finished first line, which leaves the block (a wrapped `— ✅ CLOSED` then reads open and a wrapped lane arrow is no
+  longer read by the pool report; no known heading has one).

@@ -22,7 +22,7 @@
 #   dir #839) with internal newlines flattened to spaces so
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
-#   first), the same boundary rule doctor.sh check 5 uses. closed=1 iff the heading block
+#   first), the same span rule doctor.sh check 5 uses (its heading-block rule is a separate copy). closed=1 iff the heading block
 #   carries its OWN closure tag — `(✅|❌) (DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|
 #   BUILT)`, an em-dash before it optional (dir #432's widened, honestly-enumerated vocabulary —
 #   see the function body's own header comment for the shapes measured live and the ones
@@ -165,15 +165,15 @@ BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|ne
 #   BACKLOG.md, measured 2026-10-14): a prose body line directly under a heading with no tail at all
 #   still reads as the title's continuation (the cure is the blank line a writer leaves after every
 #   heading); and a tag, arrow or note wrapped onto the line after a FINISHED first line stays out of
-#   the block, so out of the lane the pool report reads from it. Two exceptions for that second case
+#   the block: a wrapped closure tag then reads OPEN and a wrapped lane arrow is not read by the pool
+#   report. Two exceptions for that second case
 #   were tried and dropped, each admitted a glued body line: a continuation opening with an em-dash
 #   (even a tag-shaped one: `— ✅ DONE for the first half`), and one after a line ending in a dash.
 bb_heading_continues() {
   local so_far="$1" next="$2"
   local body_re='^(Log:|Draft slug:|\*\*)'
   [[ "$next" =~ $body_re ]] && return 1
-  [[ "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]] || return 0
-  return 1
+  [[ ! "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]]
 }
 
 backlog_ticket_blocks() {
