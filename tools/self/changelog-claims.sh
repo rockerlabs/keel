@@ -173,7 +173,7 @@ function blank_range(st, ln,    sp) {
 # verb ("lines 120 changed"): the number just before it is a count, not a reference (dir #846). A reference is
 # followed by a verb, a connective or punctuation ("step 5 runs the gate", "step 3 added a check"), which are
 # the overwhelming majority in real sections. The lists are closed on purpose and plural-only, except after
-# exactly 1 after an exit/return/status/pass word ("returns 1 value"): a singular after another number ("step 4 line 56") or a noun that can name
+# exactly 1 after an exit/return/status/passes word ("returns 1 value"): a singular after another number ("step 4 line 56") or a noun that can name
 # what a step or round produced ("round 2 findings") is a reference.
 function counted(pos, lines, one,    r) {
   r = tolower(substr(s, pos))
@@ -190,7 +190,7 @@ function blank(re, ci, lb, rb,    t, from, st, ln) {
     st = from + RSTART - 1; ln = RLENGTH
     if (ln <= 0) { from = st + 1; continue }
     if (lb && st > 1 && substr(s, st - 1, 1) ~ /[A-Za-z0-9]/) { from = st + 1; continue }
-    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /, tolower(substr(s, st, ln)) ~ /^(exit|return|status|pass)[a-z ]*[^0-9,.]1$/)) { from = st + ln; continue }
+    if (rb && counted(st + ln, tolower(substr(s, st, 6)) ~ /^lines? /, tolower(substr(s, st, ln)) ~ /^(exit|return|status|passes)[a-z ]*[^0-9,.]1$/)) { from = st + ln; continue }
     blank_range(st, ln)
     from = st + ln
   }
