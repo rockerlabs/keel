@@ -113,6 +113,28 @@ run env TMPDIR="$d/my tmp dir" bash "$d/tests/run.sh"
 check_status "a TMPDIR with a space in its path -> the canary stays green" 0 "$STATUS"
 check_absent "... no trip block" "$OUT" "$TRIP"
 
+# --- GREEN 10: the watched root is a SUBDIRECTORY of a bigger repo (git's status paths carry the prefix) ---------
+d="$(new_repo)"
+git -C "$d" commit -q --allow-empty -m base
+mkdir -p "$d/proj/tests" "$d/proj/tools/lib" "$d/proj/keep"
+cp "$runner" "$d/proj/tests/run.sh"
+cp "$REPO_ROOT/tools/lib/ref-guard.sh" "$d/proj/tools/lib/ref-guard.sh"
+: > "$d/proj/tests/lib.sh"; : > "$d/proj/keep/tracked"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$d/proj/tests/test_peer.sh"
+git -C "$d" add -A; git -C "$d" commit -q -m proj
+mkdir "$d/proj/fresh-tmp-sub"
+run env TMPDIR="$d/proj/fresh-tmp-sub" bash "$d/proj/tests/run.sh"
+check_status "a watched root that is a subdirectory of the repo -> the canary stays green" 0 "$STATUS"
+check_absent "... no trip block" "$OUT" "$TRIP"
+
+# --- NOTE: the watched checkout's own ref-guard.sh predates guard_refs_unexplained: skipped with a NOTE, not silent --
+d="$(mkcanary)"
+peer_act "$d" 'git -C "$R" branch stray'
+git -C "$REPO_ROOT" show HEAD:tools/lib/ref-guard.sh | awk '/^# guard_tip_survives REPO SHA/ { exit } { print }' > "$d/tools/lib/ref-guard.sh"
+run bash "$d/tests/run.sh"
+check_contains "an older ref-guard.sh -> a NOTE names the missing function" "$OUT" "predates guard_refs_unexplained"
+check_absent "... and no 'command not found' leaks into the run" "$OUT" "command not found"
+
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"
 peer_act "$d" 'git -C "$R" branch stray'
@@ -164,5 +186,12 @@ peer_act "$d" 'printf x > "$R/leaked-file"'
 run env TMPDIR="$d/keep" bash "$d/tests/run.sh"
 check_status "TMPDIR inside the checkout does not hide a stray file elsewhere" 1 "$STATUS"
 check_contains "... naming it" "$OUT" "leaked-file"
+
+# --- RED 6: a stray file INSIDE the TMPDIR directory itself (tracked dir) is still named ----------------------------
+d="$(mkcanary)"
+peer_act "$d" 'printf x > "$R/keep/leaked-in-tmp"'
+run env TMPDIR="$d/keep" bash "$d/tests/run.sh"
+check_status "a stray file inside the TMPDIR directory -> the canary trips" 1 "$STATUS"
+check_contains "... naming it" "$OUT" "keep/leaked-in-tmp"
 
 summary
