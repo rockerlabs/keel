@@ -7,7 +7,7 @@
 # guard rows, each in its doubt family, and the "In doubt column is the doubt class only" sentence; (d) the
 # register entries dir #842's slice 1 wrote (one phrase each, where it must sit); (e) SECURITY.md's "Scope"
 # carries the 1b clause. The checker is one function over a root directory, so the same rules read a scratch
-# copy: three deliberately broken copies must each turn it red, or a green real run would prove nothing.
+# copy: deliberately broken copies must each turn it red, or a green real run would prove nothing.
 #
 # Keel-self-maintenance: it reads keel's own register files (tools/pre-pr-gate.sh, tests/lib.sh,
 # tools/lib/safe-write.sh), which an adopter does not carry.
@@ -36,7 +36,7 @@ regcheck() {
 
   n="$(grep -c -x '## Threat model by guard' "$sec")"
   [ "$n" = 1 ] || echo "fail:a:heading found $n times"
-  section="$(awk '$0 == "## Threat model by guard" { f = 1; next } /^## / { f = 0 } f' "$sec")"
+  section="$(section_body '## Threat model by guard' "$sec")"
   outside="$(awk '$0 == "## Threat model by guard" { f = 1; next } /^## / { f = 0 } !f' "$sec")"
 
   # (b) every row: register file exists, its heading phrase is held outside the section, the doubt cell is 1a or 1b.
@@ -63,7 +63,11 @@ regcheck() {
 
   # (c) the eight rows, each in its family; the column-is-the-doubt-class sentence.
   while IFS='|' read -r exp want; do
-    row="$(awk -F'|' -v e="$exp" '{ g = $2; gsub(/^ +| +$/, "", g); gsub(/`/, "", g); if (index(g, e) == 1) { print; exit } }' <<<"$rows")"
+    row=""
+    while IFS= read -r line; do
+      guard="$(cell "$line" 2)"; guard="${guard//\`/}"
+      case "$guard" in "$exp"*) row="$line"; break ;; esac
+    done <<<"$rows"
     if [ -z "$row" ]; then echo "fail:c:no row for [$exp]"; continue; fi
     got="$(cell "$row" 5)"
     [ "$got" = "$want" ] || echo "fail:c:[$exp] In doubt reads '$got', want $want"
@@ -92,10 +96,8 @@ check_eq "the real tree: every register rule holds" "" "$(regcheck "$REPO_ROOT")
 copy="$SANDBOX/registers-copy"
 mkdir -p "$copy/tools/lib" "$copy/tests"
 fresh_copy() {
-  cp "$REPO_ROOT/SECURITY.md" "$copy/SECURITY.md"
-  cp "$REPO_ROOT/tools/pre-pr-gate.sh" "$copy/tools/pre-pr-gate.sh"
-  cp "$REPO_ROOT/tools/lib/safe-write.sh" "$copy/tools/lib/safe-write.sh"
-  cp "$REPO_ROOT/tests/lib.sh" "$copy/tests/lib.sh"
+  local f
+  for f in SECURITY.md tools/pre-pr-gate.sh tools/lib/safe-write.sh tests/lib.sh; do cp "$REPO_ROOT/$f" "$copy/$f"; done
 }
 
 fresh_copy; delete_line_containing "$copy/tests/lib.sh" 'Known bypasses (1b'

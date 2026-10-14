@@ -143,8 +143,8 @@ pin "the bar keeps 'in doubt on 1-4, file'" "$doc" 'In doubt on 1–4' \
 # --- dir #842: condition 1 splits into 1a (a realistic failure) and 1b (a constructed bypass) -------------------------
 # One-line needles, each checked with a COUNT (pin() checks presence only; "exactly once" is what the 1b register
 # naming relies on). The doc's lines are pre-wrapped so every needle sits on one line.
-check_eq "dir #842 A1: both split headings, each on one line" "2" \
-  "$(grep -c -F -e '**1a — a realistic failure (no discretion):**' -e '**1b — a constructed bypass (no ticket):**' "$doc")"
+pin_exact "dir #842 A1: the 1a heading, on one line" "$doc" '**1a — a realistic failure (no discretion):**' "expected the 1a split heading once"
+pin_exact "dir #842 A1: the 1b heading, on one line" "$doc" '**1b — a constructed bypass (no ticket):**' "expected the 1b split heading once"
 check_eq "dir #842 A2: the three branches T1 T2 T3" "3" "$(grep -o -E '\*\*T[123]\*\*' "$doc" | sort -u | wc -l | tr -d ' ')"
 for needle in 'In doubt between 1a and 1b' 'known-bypass register' 'promoted to a ticket when any of T1–T3 holds for it' \
   'stands in for the standing-list line' 'clears no other condition of' "by T3's actor and target" \
@@ -154,11 +154,10 @@ for needle in 'In doubt between 1a and 1b' 'known-bypass register' 'promoted to 
   pin_exact "dir #842 A3: the doc carries [$needle] on exactly one line" "$doc" "$needle" \
     "expected the 1a/1b rule's needle once — a second copy or a wrapped one breaks the pin"
 done
-no_disc="$(grep 'no discretion' "$doc")"
-check_eq "dir #842 A4: 'no discretion' moved onto 1a — one line, naming 1a" "1" "$(grep -c 'no discretion' "$doc")"
-check_contains "dir #842 A4: that line is the 1a line" "$no_disc" '1a'
-check_eq "dir #842 A5: §3 and §4 name condition 1a at least twice" "ok" \
-  "$([ "$(grep -c 'condition 1a' "$doc")" -ge 2 ] && echo ok || echo "only $(grep -c 'condition 1a' "$doc")")"
+check_count "dir #842 A4: 'no discretion' moved onto 1a — exactly one line" "$doc" 'no discretion' 1
+check_contains "dir #842 A4: that line is the 1a line" "$(grep 'no discretion' "$doc")" '1a'
+n_1a="$(grep -c 'condition 1a' "$doc")"
+check_eq "dir #842 A5: §3 and §4 name condition 1a at least twice" "ok" "$([ "$n_1a" -ge 2 ] && echo ok || echo "only $n_1a")"
 pin_exact "dir #842 B4 (v): §4's disposition paragraph routes a 1b finding to its guard's register" "$doc" \
   "A condition-1b finding goes to its guard's register instead" "expected the one-sentence routing after the standing-list sentence"
 
@@ -310,8 +309,7 @@ clause_after_anchor() {   # FILE ANCHOR [ANCHOR2] — paragraphs where the claus
 }
 for site in "docs/delta-audit.md|2" "commands/delta-audit.md|1" "docs/drydock.md|2" "docs/grooming.md|1" "docs/release-audit.md|1" \
   "docs/release-management.md|1" "commands/polish-guide.md|1" "commands/wrap.md|1"; do
-  check_eq "dir #842 A13: ${site%|*} names the known-bypass register ${site#*|} time(s)" "${site#*|}" \
-    "$(grep -c -F 'known-bypass register' "$REPO_ROOT/${site%|*}")"
+  check_count "dir #842 A13: ${site%|*} names the known-bypass register ${site#*|} time(s)" "$REPO_ROOT/${site%|*}" 'known-bypass register' "${site#*|}"
 done
 check_eq "dir #842 A13: docs/delta-audit.md report contract — clause after 'Record the reason here'" "1" \
   "$(clause_after_anchor "$delta" 'Record the reason here')"
