@@ -310,7 +310,12 @@ deny "(f) gh -it api --jq -X PUT: -t takes --jq, the PUT counts" "$R_API" "gh -i
 deny "(f) gh -iH api -H -X PUT" "$R_API" "gh -iH api -H -X PUT repos/o/r/pulls/5/merge" "$P" "$OTHER"
 deny "(d) manager: gh -mt pr merge -t --admin: -t takes -t, --admin counts" "$R_DROP --admin " "gh -mt pr merge -t --admin --match-head-commit $SHA" "$P" "$MID"
 deny "(d) manager: gh pr -mt merge -t --squash" "$R_DROP --squash " "gh pr -mt merge -t --squash --match-head-commit $SHA" "$P" "$MID"
-allow "(g) a gh command that is no pr command keeps its pr merge words" "gh issue create --title fix pr merge" "$P" "$OTHER"
+deny "accepted cost: any gh command holding unquoted pr … merge is unread" "$R_UNREAD" "gh issue create --title fix pr merge" "$P" "$OTHER"
+for c in "gh --version pr merge 5 --admin" "gh --version api -X PUT repos/o/r/pulls/5/merge" "gh -- pr merge 5 --admin" "gh pr --admin merge"; do
+  deny "(g) a merge the reading cannot place is unread, never allowed: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
+done
+allow "(f) gh -iX api GET: -X takes GET (the subcommand word taken out), a read with fields" "gh -iX api GET repos/o/r/pulls/5/merge -f a=b" "$P" "$OTHER"
+allow "(d) manager: flags end at --" "$MERGE -- --admin" "$P" "$MID"
 deny "(f) env -u takes its value: the API write after it is read exactly" "$R_API" "env -u gh -u -XGET gh api repos/o/r/pulls/5/merge -f merge_method=squash" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------

@@ -14,8 +14,11 @@
 # - the shell side's "a second merge line is a reader failure" (M51 until removed): the reader prints at most one,
 #   so dropping the check is equivalent (it stays: the reader's output shape is checked like the verdict line's).
 # - M55, M59, M61, M63, M67, M69, M71, M72, M74 and M75 retired with the runner look-pasts and the runner list they
-#   pinned; M70, M73, M76, M77 and M80 with the round-9 reading. The two readings (exact when the command word runs gh,
-#   unread otherwise) are M83–M95 (M91 retired: behind a runner no help read is exempt); M64 pins the path to gh; the xargs code is M65, M68, M78.
+#   pinned; M70, M73, M76, M77 and M80 with the round-9 reading; M91 (a help read behind a runner) and M95 (the pr-only
+#   fallback) with the code they pinned. The two readings: M83–M90, M92, M96; the flag read on the word list minus the
+#   subcommand words: M89, M93, M97; M64 pins the path to gh; the xargs code is M65, M68, M78.
+# - M94 (the pr flag read on the raw word list): equivalent — mg_pr_word reads its next word only for a pin, and a long
+#   flag never sits right before a subcommand (mg_pos would have taken the subcommand as its value).
 M01	tools/pre-pr-gate.sh	  _manager_listed "$mg_path" "$hk_sid" || early_deny	  true || early_deny	B6 (ii): drop the session check
 M02	tools/pre-pr-gate.sh	if (nm == "--squash" || nm == "--rebase"	if (nm == "--squashX" || nm == "--rebase"	B6 (i): accept --squash
 M03	tools/pre-pr-gate.sh	if (c == "s" || c == "r") { if (cm_bad == "") cm_bad = t }	if (c == "r") { if (cm_bad == "") cm_bad = t }	B6 (i): accept -s (a short cluster holding s)
@@ -24,7 +27,7 @@ M05	tools/pre-pr-gate.sh	if (length(v) != 40 ||	if (length(v) < 39 ||	B6 (i): ac
 M06	tools/pre-pr-gate.sh	else if (!cm_pins || cm_pinbad) mg_note("pin", "")	else if (cm_pinbad) mg_note("pin", "")	B6 (i): accept a missing --match-head-commit
 M07	tools/pre-pr-gate.sh	if (nm == "--squash" || nm == "--rebase" || nm == "--auto" || nm == "--admin")	if (t == "--squash" || t == "--rebase" || t == "--auto" || t == "--admin")	B6 (i): accept the =-form (--admin=true)
 M08	tools/pre-pr-gate.sh	_manager_listed() { [ -f "$1" ] && awk	_manager_listed() { [ ! -f "$1" ] || awk	B6 (ii): allow when the manager file is absent
-M09	tools/pre-pr-gate.sh	if (!(tok[s2] == "merge" && w_unquoted(s2)))	if (!(s2 == s1 + 1 && tok[s2] == "merge" && w_unquoted(s2)))	B6: require merge right after pr (gh pr -R o/r merge read as unread)
+M09	tools/pre-pr-gate.sh	if (!(s2 && tok[s2] == "merge" && w_unquoted(s2)))	if (!(s2 && s2 == s1 + 1 && tok[s2] == "merge" && w_unquoted(s2)))	B6: require merge right after pr (gh pr -R o/r merge read as unread)
 M10	tools/pre-pr-gate.sh	cm_meth = toupper(eq ? substr(t, eq + 1) : (nx ? tok[nx] : ""))	cm_meth = toupper(eq ? "" : (nx ? tok[nx] : ""))	B6: miss --method=PUT
 M11	tools/pre-pr-gate.sh	if (s2 < ntok && (tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")) return	for (j = s2 + 1; j <= ntok; j++) if (tok[j] == "--help" || tok[j] == "-h") return	B6: treat --subject -h (a -h anywhere) as a read
 M12	tools/pre-pr-gate.sh	  # (ii) identity: never a subagent	  [ "$mg_code" = pin ] && early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> (flags first)"\n  # (ii) identity: never a subagent	B6: check the flags before the session
@@ -87,9 +90,9 @@ M85	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && early_deny	  [ "$mg_code" 
 M86	tools/pre-pr-gate.sh	    else if (p && t == "merge" && w_unquoted(j)) return 1	    else if (p && t == "merge" && w_unquoted(j)) return 0	B6: an unread pr merge shape is missed
 M87	tools/pre-pr-gate.sh	    if (t == "api" && w_unquoted(j)) a = 1	    if (t == "apiX" && w_unquoted(j)) a = 1	B6: an unread API merge-endpoint shape is missed
 M88	tools/pre-pr-gate.sh	if (!index(t, "=") && t != "-h" && t != "--help" && (substr(t, 1, 2) == "--" || length(t) == 2)) j++	if (0) j++	B6: a flag value before the subcommand is read as the subcommand (gh -t api pr merge)
-M89	tools/pre-pr-gate.sh	for (j = i + 1; j <= ntok; j++) if (j != s1 && j != s2) w[++n] = j	for (j = s1 + 1; j <= ntok; j++) if (j != s1 && j != s2) w[++n] = j	B6: flags before the subcommand are not read (gh -X PUT api …)
+M89	tools/pre-pr-gate.sh	for (j = i + 1; j <= ntok && tok[j] != "--"; j++) if (j != s1 && j != s2) w[++n] = j	for (j = s1 + 1; j <= ntok && tok[j] != "--"; j++) if (j != s1 && j != s2) w[++n] = j	B6: flags before the subcommand are not read (gh -X PUT api …)
 M90	tools/pre-pr-gate.sh	{ if (mg_shape(i)) mg_note("unread", ""); return }\n  if (s2 < ntok	{ return }\n  if (s2 < ntok	B6: a merge shape the exact reading cannot place (gh pr --x merge) is allowed
 M92	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api") || 		B6: an earlier segment's flag code outranks an unread merge
 M93	tools/pre-pr-gate.sh	else k += mg_api_word(w[k], (k < n) ? w[k + 1] : 0)	else k += mg_api_word(w[k], w[k] + 1 <= ntok ? w[k] + 1 : 0)	B6: flags read on the raw word list, the subcommand word not taken out (gh -it api --jq -X PUT)
-M94	tools/pre-pr-gate.sh	for (k = 1; k <= n; k++) k += mg_pr_word(w[k], (k < n) ? w[k + 1] : 0)	for (k = 1; k <= n; k++) k += mg_pr_word(w[k], w[k] + 1 <= ntok ? w[k] + 1 : 0)	B6 (i): flags read on the raw word list (gh -mt pr merge -t --admin)
-M95	tools/pre-pr-gate.sh	  if (!s2) return\n		B6: a gh command that is no pr command is checked for an unread merge shape (gh issue create … pr merge)
+M96	tools/pre-pr-gate.sh	    if (t == "--") return 0\n		B6: a -- before the subcommand is skipped as a flag (gh -- pr merge read through)
+M97	tools/pre-pr-gate.sh	for (j = i + 1; j <= ntok && tok[j] != "--"; j++)	for (j = i + 1; j <= ntok; j++)	B6 (i): flags read past -- (a manager's `-- --admin` argument read as --admin)
