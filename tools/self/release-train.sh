@@ -41,10 +41,16 @@
 #         in the train (B8g's input is the manager's `gh pr view --json headRefOid` read). Without --base the
 #         whole first-parent history is read when `origin/main` does not exist.
 #
-# Constituents are `N=SHA` with the FULL 40-hex commit sha (a `gh` headRefOid; an abbreviation or a tag object is
-# refused). The order is the merge order, except that a head contained in an earlier-listed head (stacked PRs) is
-# refused (among the heads given in one call) — list the contained one first or leave it out — and a re-given N must descend from its head already in
-# the train (a rewritten branch leaves the train).
+# Constituents are `N=SHA` with the FULL 40-hex commit sha (a `gh` headRefOid; an abbreviation, a tag object or a
+# blob is refused). The order is the merge order, except that a head contained in an earlier-listed head (stacked
+# PRs) is refused among the heads given in one call — list the contained one first or leave it out — and a
+# re-given N must descend from its head already in the train (a rewritten branch leaves the train).
+#
+# Output worth knowing: a conflict leaves exit 1 and, while constituents remain, a resume line to paste (it
+# carries --base, and --allow-conflicts when the build had it); when the conflicting merge was the LAST one it says
+# so instead, and `body` (which re-lists the table and re-checks the ancestors) is the next command. `body` and
+# `build` print `seam warning: …` on stdout, once per constituent whose `git diff BASE...SHA` failed: its files
+# are missing from the seam list and the recommended review depth may be too low.
 #
 # `body` and `check` read the LOCAL `--base`: run `git fetch --prune origin` first, or an update-branch merge whose
 # second parent is not yet in the local base reads as an integration commit. `check` is B8g's pre-merge check —
@@ -60,7 +66,6 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 
 export LC_ALL=C
 export GIT_MERGE_AUTOEDIT=no
-export GIT_NO_LAZY_FETCH=1   # a local tool: an object lookup never goes to the network
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/repo-top.sh
@@ -318,10 +323,11 @@ print_seam() {
     if names="$(git -C "$repo" -c core.quotePath=false diff --name-only "$1...$s" 2>/dev/null)"; then
       all="$all$names"$'\n'
     else
-      say "seam warning: git diff $1...$s failed (no merge base?) — its files are missing from the seam list"
+      say "seam warning: git diff $1...$s failed (no merge base, or the object is not local) — its files are missing from the seam list"
     fi
   done
-  out="$(awk 'NF && $0 != "CHANGELOG.md"' <<<"$all" | sort | uniq -c | awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }')"
+  out="$(awk 'NF && $0 != "CHANGELOG.md"' <<<"$all" | sort | uniq -c |
+    awk '$1 >= 2 { sub(/^ *[0-9]+ /, ""); print }')"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     say "seam file: $f"
@@ -334,7 +340,7 @@ print_seam() {
 HINT_BASE=""
 # merge_all WT — merge NS/SHAS into the worktree in order; on a conflict leave it in progress and exit 1.
 merge_all() {
-  local w="$1" i=0 msg out rest
+  local w="$1" i=0 msg out rest ac
   while [ "$i" -lt "${#SHAS[@]}" ]; do
     msg="train: #${NS[$i]} (${SHAS[$i]})"
     say "merge: #${NS[$i]} (${SHAS[$i]})"
@@ -350,10 +356,15 @@ merge_all() {
         while [ "$i" -lt "${#SHAS[@]}" ]; do rest="$rest ${NS[$i]}=${SHAS[$i]}"; i=$((i + 1)); done
         say "resolve and commit it there (git completes it under the subject 'train: #N (sha)')"
         if [ -z "$rest" ]; then
-          say "that was the last constituent: once it is committed the train is complete (run body, then check)"
+          say "that was the last constituent: once it is committed, run"
+          say "  release-train.sh body --branch $(git -C "$w" symbolic-ref -q --short HEAD) --base $(printf '%q' "$HINT_BASE")"
+          say "(it re-lists the table, the integration commits and the ancestor check; then check the live heads)"
         else
           say "then:"
-          say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")$([ "$allow" -eq 1 ] && printf ' --allow-conflicts')${rest:+ }${rest# }"
+          ac=""
+          [ "$allow" -eq 0 ] || ac=" --allow-conflicts"
+          say "  release-train.sh build --continue --worktree $(printf '%q' "$w") --base $(printf '%q' "$HINT_BASE")$ac ${rest# }"
+          [ "$allow" -eq 1 ] || say "(add --allow-conflicts if another of them is expected to conflict)"
         fi
         exit 1
       fi
