@@ -214,6 +214,12 @@ check_status "check with an N not in the train -> exit 1" 1 "$STATUS"
 check_contains "...naming #9 as missing" "$OUT" "missing: #9"
 rt check --branch t3 "2=${s2b:0:7}"
 check_status "check with an abbreviated sha -> exit 2" 2 "$STATUS"
+gd checkout -q --orphan unrelated
+printf 'u\n' > "$d/u.txt"; gd add u.txt; gd commit -q -m "unrelated history"
+gd checkout -q main
+rt check --branch unrelated --base main "1=$s1"
+check_status "check on a branch with no merge base to the base -> exit 2" 2 "$STATUS"
+check_contains "...says so" "$OUT" "no merge base"
 rt check --branch no-such-branch "1=$s1"
 check_status "check on an unknown branch -> exit 2" 2 "$STATUS"
 
