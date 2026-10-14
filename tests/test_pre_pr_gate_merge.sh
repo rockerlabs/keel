@@ -322,7 +322,7 @@ for c in "timeout 60 gh pr create --label api --body \"see {branch}\" --title x"
   deny "behind a runner, any word after api holding a {branch} or a placeholder endpoint is unread: [$c]" "$R_UNREAD" "$c" "$P" "$OTHER"
 done
 for c in "gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/feat%2Fx" "gh api -X PUT repos/{owner}/{repo}/contents/my%20notes.md -f message=x" \
-         "gh api -X PATCH repos/{owner}/{repo}/git/refs/heads/a.b/./c -f sha=x"; do
+         "gh api -X PUT repos/{owner}/{repo}/git/refs/heads/feat%2Fy -f sha=x"; do
   ev_gate "$c" "$P" "$OTHER"
   check_absent "(f) an irregular placeholder path with no pulls or merge is no merge: [$c]" "$OUT" "merge rule"
 done
@@ -331,9 +331,14 @@ for c in "gh api -X PUT repos/o/r/pulls\;x/5/merge" "gh api -X PUT repos/{owner}
 done
 for c in "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/./{repo}" "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}/." \
          "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}/x/.." "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}%2f5%2f{repo}" \
-         "gh api -X PUT repos/o/r/%70ulls;x/5/%6Derge"; do
+         "gh api -X PUT repos/o/r/%70ulls;x/5/%6Derge" "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}//.." \
+         "GH_REPO=pulls/merge gh api -X PUT repos/o/r/{owner}/5/{repo}/%2f%2e%2e" \
+         "gh api -X PATCH repos/{owner}/{repo}/git/refs/heads/a.b/./c -f sha=x"; do
   deny "(f) placeholders read on the resolved and the decoded path: [$c]" "$R_API" "$c" "$P" "$OTHER"
 done
+deny "(g) a misplaced gh command holding api and pulls/5/x//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/x//../merge" "$P" "$OTHER"
+deny "(g) a misplaced gh command holding api and pulls/5/./merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5/./merge" "$P" "$OTHER"
+deny "(g) a misplaced gh command holding api and pulls/5//../merge is unread" "$R_UNREAD" "gh pr --x api repos/o/r/pulls/5//../merge" "$P" "$OTHER"
 deny "(g) the same behind a runner is unread" "$R_UNREAD" "GH_REPO=pulls/merge timeout 60 gh api -X PUT repos/o/r/{owner}/5/./{repo}" "$P" "$OTHER"
 for c in "timeout 60 gh api -X POST repos/o/r/issues --input ./pulls.json" "timeout 60 gh api graphql -F owner={owner} -f query=q"; do
   ev_gate "$c" "$P" "$OTHER"

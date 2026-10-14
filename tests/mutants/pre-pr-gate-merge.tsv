@@ -98,7 +98,7 @@ M96	tools/pre-pr-gate.sh	    if (t == "--") return 0\n		B6: a -- before the subc
 M98	tools/pre-pr-gate.sh	    if (!ep) { if (mg_shape(i, 0, 0)) mg_note("unread", "words"); return }	    if (!ep) return	B6: an API call holding pr … merge words but no endpoint is allowed
 M99	tools/pre-pr-gate.sh	  if (t ~ /^-/) return 0\n  r = tolower(t)	  r = tolower(t)	B6: a dash-led word (a glued field value) is read as the endpoint
 M100	tools/pre-pr-gate.sh	  r = tolower(t); sub(/[?#].*/, "", r)	  r = t; sub(/[?#].*/, "", r)	B6: an upper-case MERGE endpoint is no endpoint
-M101	tools/pre-pr-gate.sh	    if (p[k] == "" || p[k] == ".") continue	    if (p[k] == ".") continue	B6: a doubled slash (an empty segment) hides the endpoint
+M101	tools/pre-pr-gate.sh	if (p[k] == "." || (e && p[k] == "")) continue	if (p[k] == "." || (0)) continue	B6: the drop-empty-then-resolve order is not tried (pulls/5/x//../merge)
 M104	tools/pre-pr-gate.sh	; sub(/[?#].*/, "", r)		B6: a query string or fragment hides the endpoint
 M105	tools/pre-pr-gate.sh	    else if (a && ep && mg_ep(t, w)) return 1	    else if (a && mg_ep(t, w)) return 1	B6: an API call holding a merge-endpoint word but no pr merge words is unread in the api fallback
 M106	tools/pre-pr-gate.sh	[ "$mg_code" = unread ] && [ "$mg_tok" = command ] && early_deny	[ "$mg_code" = unread ] && [ "$mg_tok" = commandX ] && early_deny	B6: the unread deny names the wrong cause
@@ -109,13 +109,15 @@ M111	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && [ "$mg_tok" = command ] &
 M112	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api" && mg_code != "unread")	(c == "unread" && mg_code != "api")	B6: a later unread cause overwrites the first
 M113	tools/pre-pr-gate.sh	if (mg_bool(v) && !cm_dd) cm_hasm = 1; return 0 }	if (mg_bool(v)) cm_hasm = 1; return 0 }	B6 (i): --merge after a real -- counts as the merge flag
 M114	tools/pre-pr-gate.sh	    if (p[k] == "..") { if (m > 0) m--; continue }	    if (p[k] == "..") { q[++m] = p[k]; continue }	B6: a .. segment is not resolved
-M120	tools/pre-pr-gate.sh	    if (p[k] == "" || p[k] == ".") continue	    if (p[k] == "") continue	B6: a . segment is not resolved
-M121	tools/pre-pr-gate.sh	(q[m] ~ /^merge([.;]|$)/	(q[m] ~ /^merge$/	B6: a .json suffix hides the endpoint
-M122	tools/pre-pr-gate.sh	(q[m - 2] == "pulls" || (w && mg_ph(q[m - 2], 0)))	(q[m - 2] == "pulls")	B6: an owner/repo placeholder standing for pulls is not read
+M120	tools/pre-pr-gate.sh	if (p[k] == "." || (e && p[k] == "")) continue	if ((e && p[k] == "")) continue	B6: a . segment is not resolved
+M121	tools/pre-pr-gate.sh	(f[c] ~ /^merge([.;]|$)/ ||	(f[c] ~ /^merge$/ ||	B6: a .json suffix hides the endpoint
+M122	tools/pre-pr-gate.sh	(f[c - 2] == "pulls" || (w && mg_ph(f[c - 2], 0)))	(f[c - 2] == "pulls")	B6: an owner/repo placeholder standing for pulls is not read
 M124	tools/pre-pr-gate.sh	:(owner|repo|branch)([^a-z0-9_]|$)/\n}	:(owner|repo|branch)/\n}	B6: :repository reads as the :repo placeholder (a false deny)
 M126	tools/pre-pr-gate.sh	  if (w && (index(r, "%") || index(r, ";") || r ~ /\/\.\.?(\/|$)/) && (r ~ /pulls|merge/ || d ~ /pulls|merge/)) return 1\n		B6: an irregular path (%, ;, an inner dot segment) holding pulls/merge is read only by the model
 M128	tools/pre-pr-gate.sh	 || index(r, ";")		B6: a ; in a write path holding pulls/merge is read only by the model
 M129	tools/pre-pr-gate.sh	 || d ~ /pulls|merge/)) return 1	)) return 1	B6: an encoded merge word (me%72ge) in an irregular path is not seen
 M130	tools/pre-pr-gate.sh	  if (b) return s ~ /\{branch\}|:branch([^a-z0-9_]|$)/	  if (b) return s ~ /\{branch\}|:branch/	B6: :branches reads as the :branch placeholder (a false deny)
-M131	tools/pre-pr-gate.sh	(q[m] ~ /^merge([.;]|$)/ || (w && mg_ph(q[m], 0)))	(q[m] ~ /^merge([.;]|$)/)	B6: an owner/repo placeholder standing for merge (pulls/5/{repo}) is not read
-M132	tools/pre-pr-gate.sh	  return mg_segs(r, w) || mg_segs(d, w)	  return mg_segs(r, w)	B6: the decoded path is not read by segments ({owner}%2f5%2f{repo})
+M131	tools/pre-pr-gate.sh	(f[c] ~ /^merge([.;]|$)/ || (w && mg_ph(f[c], 0)))	(f[c] ~ /^merge([.;]|$)/)	B6: an owner/repo placeholder standing for merge (pulls/5/{repo}) is not read
+M132	tools/pre-pr-gate.sh	 || (d != r && (mg_segs(d, w, 0) || mg_segs(d, w, 1)))		B6: the decoded path is not read by segments ({owner}%2f5%2f{repo})
+M133	tools/pre-pr-gate.sh	  if (w && mg_ph(r, 0) && (d ~ /\/\.\.?(\/|$)/ || index(d, "//"))) return 1\n		B6: a placeholder path with an inner dot segment or // is read only by the model
+M134	tools/pre-pr-gate.sh	  return mg_segs(r, w, 0) || 	  return 	B6: the RFC 3986 order (an empty segment kept for ..) is not tried (pulls/5//../merge)
