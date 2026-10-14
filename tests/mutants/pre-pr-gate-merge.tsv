@@ -15,7 +15,7 @@
 #   so dropping the check is equivalent (it stays: the reader's output shape is checked like the verdict line's).
 # - M55, M59, M61, M63, M67, M69, M71, M72, M74 and M75 retired with the runner look-pasts and the runner list they
 #   pinned; M70, M73, M76, M77 and M80 with the round-9 reading. The two readings (exact when the command word runs gh,
-#   unread otherwise) are M83–M87; M64 pins the path to gh; the xargs code is M65, M68, M78.
+#   unread otherwise) are M83–M92; M64 pins the path to gh; the xargs code is M65, M68, M78.
 M01	tools/pre-pr-gate.sh	  _manager_listed "$mg_path" "$hk_sid" || early_deny	  true || early_deny	B6 (ii): drop the session check
 M02	tools/pre-pr-gate.sh	if (nm == "--squash" || nm == "--rebase"	if (nm == "--squashX" || nm == "--rebase"	B6 (i): accept --squash
 M03	tools/pre-pr-gate.sh	if (c == "s" || c == "r") { if (cm_bad == "") cm_bad = t }	if (c == "r") { if (cm_bad == "") cm_bad = t }	B6 (i): accept -s (a short cluster holding s)
@@ -24,9 +24,9 @@ M05	tools/pre-pr-gate.sh	if (length(v) != 40 ||	if (length(v) < 39 ||	B6 (i): ac
 M06	tools/pre-pr-gate.sh	else if (!cm_pins || cm_pinbad) mg_note("pin", "")	else if (cm_pinbad) mg_note("pin", "")	B6 (i): accept a missing --match-head-commit
 M07	tools/pre-pr-gate.sh	if (nm == "--squash" || nm == "--rebase" || nm == "--auto" || nm == "--admin")	if (t == "--squash" || t == "--rebase" || t == "--auto" || t == "--admin")	B6 (i): accept the =-form (--admin=true)
 M08	tools/pre-pr-gate.sh	_manager_listed() { [ -f "$1" ] && awk	_manager_listed() { [ ! -f "$1" ] || awk	B6 (ii): allow when the manager file is absent
-M09	tools/pre-pr-gate.sh	else if (p_at && !m_at && t == "merge" && w_unquoted(j)) m_at = j	else if (p_at && !m_at && j == p_at + 1 && t == "merge" && w_unquoted(j)) m_at = j	B6: require merge right after pr
+M09	tools/pre-pr-gate.sh	if (!(s2 && tok[s2] == "merge" && w_unquoted(s2)))	if (!(s2 && s2 == s1 + 1 && tok[s2] == "merge" && w_unquoted(s2)))	B6: require merge right after pr (gh pr -R o/r merge read as unread)
 M10	tools/pre-pr-gate.sh	if (nm == "--method") { cm_meth = toupper(eq ? substr(t, eq + 1) : (j < ntok ? tok[j + 1] : "")) }	if (nm == "--method") { cm_meth = toupper(eq ? "" : (j < ntok ? tok[j + 1] : "")) }	B6: miss --method=PUT
-M11	tools/pre-pr-gate.sh	if (m_at < ntok && (tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h")) return	for (j = m_at + 1; j <= ntok; j++) if (tok[j] == "--help" || tok[j] == "-h") return	B6: treat --subject -h (a -h anywhere) as a read
+M11	tools/pre-pr-gate.sh	if (s2 < ntok && (tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")) return	for (j = s2 + 1; j <= ntok; j++) if (tok[j] == "--help" || tok[j] == "-h") return	B6: treat --subject -h (a -h anywhere) as a read
 M12	tools/pre-pr-gate.sh	  # (ii) identity: never a subagent	  [ "$mg_code" = pin ] && early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> (flags first)"\n  # (ii) identity: never a subagent	B6: check the flags before the session
 M13	tools/pre-pr-gate.sh	(cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld)	(cm_meth != "" ? (cm_meth == "POST") : cm_fld)	B6: miss the gh api PUT
 M14	tools/pre-pr-gate.sh	eq = index(t, "="); nm = eq ? substr(t, 1, eq - 1) : t; v = eq ? substr(t, eq + 1) : ""	eq = 0; nm = t; v = ""	B6 (i): miss every long =-form (the pin, --admin=true)
@@ -45,7 +45,7 @@ M26	tools/pre-pr-gate.sh	'$1 == id { f = 1 }	'index($0, id) { f = 1 }	B6 (ii): l
 M27	tools/pre-pr-gate.sh	v = (k < n) ? substr(t, k + 1 + eq) : (j < ntok ? tok[j + 1] : "")	v = (j < ntok ? tok[j + 1] : "")	B6: -XGET read as -X with the next word
 M28	tools/pre-pr-gate.sh	else if (nm == "--field" || nm == "--raw-field" || nm == "--input") cm_fld = 1	else if (nm == "--field" || nm == "--raw-field" || nm == "--input") cm_fld = 0	B6: miss a long field flag on the API shape
 M29	tools/pre-pr-gate.sh	else if (!(nm == "--header" || nm == "--jq"	else if (!(nm == "--headerX" || nm == "--jq"	B6: --header takes no value (its value read as an endpoint)
-M30	tools/pre-pr-gate.sh	tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h"	tok[m_at + 1] == "--help"	B6: -h is no read
+M30	tools/pre-pr-gate.sh	(tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")	(tok[s2 + 1] == "--help")	B6: -h is no read
 M31	tools/pre-pr-gate.sh	  [ "$mg_code" = api ] && early_deny blocked	  [ "$mg_code" = apiX ] && early_deny blocked	B6: the API shape passes a manager
 M32	tools/pre-pr-gate.sh	[ -n "$mg_code" ] && merge_rule\n	[ -n "$mg_code" ] && merge_rule && exit 0\n	B6: a passing merge skips the create rule
 M33	tools/pre-pr-gate.sh	v !~ /^[0-9a-f]+$/	v !~ /^[0-9a-fA-F]+$/	B6 (i): accept an upper-case sha
@@ -56,7 +56,7 @@ M37	tools/pre-pr-gate.sh	  _cwd_not_a_repo "$hk_cwd" && early_deny	  false && ea
 M38	tools/pre-pr-gate.sh	if (nm == "--method") { cm_meth = toupper(eq ? substr(t, eq + 1) : (j < ntok ? tok[j + 1] : "")) }	if (nm == "--method") { cm_meth = toupper(eq ? substr(t, eq + 1) : "") }	B6: miss --method PUT
 M39	tools/pre-pr-gate.sh	(.session_id // "" | sid)	(.session_id // "" | s)	B6 (ii): a session id holding the separator shifts the fields after it
 M40	tools/pre-pr-gate.sh	if (nm == "--merge") { if (mg_bool(v)) cm_hasm = 1; return 0 }	if (nm == "--merge") { return 0 }	B6 (i): --merge is no merge flag
-M41	tools/pre-pr-gate.sh	if (!api && !p_at && t == "api" && w_unquoted(j)) api = j	if (0) api = j	B6: miss the gh api shape
+M41	tools/pre-pr-gate.sh	if (s1 && tok[s1] == "api" && w_unquoted(s1)) {	if (0) {	B6: miss the gh api shape
 M42	tools/pre-pr-gate.sh	  print "merge" SEP mg_code SEP t\n		B6: the reader prints no merge line
 M43	tools/pre-pr-gate.sh	        mg_code="$rd_a"; mg_tok="$rd_b"\n		B6: the shell side drops the merge line
 M44	tools/pre-pr-gate.sh	    pin) early_deny blocked "$mg_why pin the head	    pinX) early_deny blocked "$mg_why pin the head	B6 (i): the pin code is not acted on
@@ -84,5 +84,10 @@ M82	tools/pre-pr-gate.sh	(n >= 3 && substr	(n > 3 && substr	B6: a gh binary at /
 M83	tools/pre-pr-gate.sh	{ if (mg_shape(j)) mg_note("unread", ""); return }	{ if (0) mg_note("unread", ""); return }	B6: a merge whose command word is not gh (timeout 5 gh …) is not noted
 M84	tools/pre-pr-gate.sh	if (mg_gh(j)) { if (mg_shape(i)) mg_note("unread", ""); return }	if (0) { if (mg_shape(i)) mg_note("unread", ""); return }	B6: a second gh word (env -C gh xargs gh …) does not make the merge unread
 M85	tools/pre-pr-gate.sh	  [ "$mg_code" = unread ] && early_deny	  [ "$mg_code" = unreadX ] && early_deny	B6: the unread code is not acted on
-M86	tools/pre-pr-gate.sh	    else if (p && t == "merge" && w_unquoted(j)) return 1	    else if (p && t == "merge" && w_unquoted(j)) return 0	B6: an unread pr merge shape is missed
+M86	tools/pre-pr-gate.sh	else if (p && t == "merge" && w_unquoted(j)) return !(j < ntok	else if (p && t == "merge" && w_unquoted(j)) return 0 && !(j < ntok	B6: an unread pr merge shape is missed
 M87	tools/pre-pr-gate.sh	    if (t == "api" && w_unquoted(j)) a = 1	    if (t == "apiX" && w_unquoted(j)) a = 1	B6: an unread API merge-endpoint shape is missed
+M88	tools/pre-pr-gate.sh	if (!index(t, "=") && t != "-h" && t != "--help" && (substr(t, 1, 2) == "--" || length(t) == 2)) j++	if (0) j++	B6: a flag value before the subcommand is read as the subcommand (gh -t api pr merge)
+M89	tools/pre-pr-gate.sh	    if (j == s1) continue\n      if (mg_ep(tok[j])) ep = 1	    if (j <= s1) continue\n      if (mg_ep(tok[j])) ep = 1	B6: method/field flags before `api` are not read (gh -X PUT api …)
+M90	tools/pre-pr-gate.sh	{ if (mg_shape(i)) mg_note("unread", ""); return }\n  if (s2 < ntok	{ return }\n  if (s2 < ntok	B6: a merge shape the exact reading cannot place (gh pr --x merge) is allowed
+M91	tools/pre-pr-gate.sh	return !(j < ntok && (tok[j + 1] == "--help" || tok[j + 1] == "-h"))	return 1	B6: gh pr merge --help behind a runner is denied (a read)
+M92	tools/pre-pr-gate.sh	(c == "unread" && mg_code != "api") || 		B6: an earlier segment's flag code outranks an unread merge

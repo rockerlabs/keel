@@ -34,8 +34,8 @@ R_NOMERGE="a merge commit only: add --merge"
 R_DROP="a merge commit only: drop"
 R_API="never the API"
 R_SUB="a subagent never merges"
-R_UNREAD="run gh as the command word"
-R_XARGS="not under xargs or parallel"
+R_UNREAD="this merge cannot be read"
+R_XARGS="not under xargs —"
 
 mkrepo() {
   local d; d="$(new_repo)"
@@ -170,7 +170,7 @@ deny "(c) a 6-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-head-commit 04d
 for f in --squash --squash=true -s --rebase -r -sd -rd -dr -ds --auto --auto=true --admin --admin=true -s=x --admin=false; do
   deny "(d) $f" "$R_DROP $f " "$MERGE $f" "$P" "$MID"
 done
-deny "(d) a forbidden flag before the subcommand" "$R_DROP --admin " "gh pr --admin merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
+deny "(d) a flag between pr and merge takes merge as its value (gh's parser): unread" "$R_UNREAD" "gh pr --admin merge 597 --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(d) a 39-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-head-commit ${SHA%?}" "$P" "$MID"
 deny "(d) --match-head-commit=<39-hex>" "$R_PIN" "gh pr merge 597 --merge --match-head-commit=${SHA%?}" "$P" "$MID"
 deny "(d) a 41-hex sha" "$R_PIN" "gh pr merge 597 --merge --match-head-commit ${SHA}a" "$P" "$MID"
@@ -288,6 +288,18 @@ deny "(f) a read of the merge endpoint under a flagless xargs gets the xargs rea
 deny "(f) an API write under xargs keeps the API reason" "$R_API" "echo 1 | xargs gh api -X PUT repos/o/r/pulls/5/merge" "$P" "$MID"
 allow "residual: env -S runs a command from one quoted argument (named in the header)" "env -S 'gh pr merge 5 --squash'" "$P" "$OTHER"
 
+# Flags before the subcommand, read the way gh's parser reads them: a flag value never hides the subcommand, and a
+# method or field flag before `api` counts.
+for c in "gh -t api pr merge 5 --squash --admin" "gh --subject api pr merge 5 --squash"; do
+  deny "(g) a flag value before the subcommand: [$c]" "$R_ID" "$c" "$P" "$OTHER"
+done
+for c in "gh -t pr api -X PUT repos/o/r/pulls/5/merge" "gh --jq pr api -X PUT repos/o/r/pulls/5/merge" \
+         "gh -X PUT api repos/o/r/pulls/5/merge" "gh --method PUT api repos/o/r/pulls/5/merge" \
+         "gh -f merge_method=squash api repos/o/r/pulls/5/merge"; do
+  deny "(f) flags before api: [$c]" "$R_API" "$c" "$P" "$OTHER"
+done
+allow "(f) gh api … pr merge words after the endpoint of a read" "gh api repos/o/r/commits --jq .x pr merge" "$P" "$OTHER"
+allow "(e) gh pr merge --help behind a runner is a read too" "timeout 5 gh pr merge --help" "$P" "$OTHER"
 deny "(f) env -u takes its value: the API write after it is read exactly" "$R_API" "env -u gh -u -XGET gh api repos/o/r/pulls/5/merge -f merge_method=squash" "$P" "$OTHER"
 
 # --- (h) a cwd that is no git checkout ------------------------------------------------------------------------------

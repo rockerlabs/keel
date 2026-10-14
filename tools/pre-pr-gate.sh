@@ -513,12 +513,15 @@
 # method. Such a segment is read exactly only when its command word — after the reserved words, assignments and
 # wrappers the push and create rules skip (`nohup`, `env`, `exec`, `command`, `time`, a flagless `xargs`) — runs gh
 # (`gh`, or a path ending in `/gh`) and no second gh word follows (a wrapper flag may have taken the first as its
-# value: `env -C gh xargs gh …`). When it does not, the reader cannot tell which word is the command (`timeout 5 gh
-# …`, `sudo -u gh -g api gh …`, `xargs -n1 gh …`, `$R gh …`), so a gh word followed by unquoted `pr … merge`, or by
-# `api` and the merge endpoint, is denied to every session, a manager included: run gh as the command word. A merge
-# behind a flagless xargs — `gh pr merge`, or a read of the API merge endpoint — is denied too (stdin can add words
-# no check reads). The rest are denied unless all three hold, checked in this order and denied with the first that
-# fails:
+# value: `env -C gh xargs gh …`). Its subcommand words are then found the way gh's parser finds them — a flag it does
+# not know, with no `=`, takes the next word as its value (`gh -t api pr merge` is a pr merge) — and its flags are
+# read from every word after gh, before the subcommand included (`gh -X PUT api …`); a merge shape it cannot place
+# that way (`gh pr --x merge`) is denied to every session as below. When it does not, the reader cannot tell which
+# word is the command (`timeout 5 gh …`, `sudo -u gh -g api gh …`, `xargs -n1 gh …`, `$R gh …`), so a gh word
+# followed by unquoted `pr … merge`, or by `api` and the merge endpoint, is denied to every session, a manager
+# included: run gh as the command word. A merge behind a flagless xargs — `gh pr merge`, or a read of the API merge
+# endpoint — is denied too (stdin can add words no check reads). The rest are denied unless all three hold, checked
+# in this order and denied with the first that fails:
 #   (ii)  identity — the event is not a subagent's (no non-empty `agent_id`/`agent_type`: a subagent's event carries
 #         its parent's `session_id`, so the id alone cannot tell them apart), its `session_id` is a plain token, the
 #         cwd is a git checkout, and the release-manager file for that repository (`gate_manager_path_for_key`,
@@ -564,7 +567,8 @@
 # and policy line. Without jq the whole hook is inert (its documented choice, above), this rule included: lift the
 # deny only where jq is installed. Accepted costs: a segment whose command word is not gh but which holds a gh word
 # followed by unquoted `pr … merge` or `api … <merge endpoint>` is denied to every session (`echo gh pr merge`, `nice
-# git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the endpoint behind a runner) —
+# git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the endpoint behind a runner), and
+# so is a pr command holding an unquoted word `merge` that is not its subcommand (`gh pr comment 5 --body merge`) —
 # quote the words, or run gh first; a word `xargs` that a wrapper's flag consumes reads as xargs (`env -C xargs gh
 # …`); a second word gh in a merge segment makes it unread (`gh pr merge 5 --subject gh`); any CLAUDE.md line
 # carrying the token opts the project in, a sentence that only mentions it included; and a main session started with
@@ -2350,7 +2354,7 @@ function finish(   s, k, i, m, p, ng, lo, hi) {
   for (i = 1; i <= nreg; i++) if (rscope[ord[i]] == "yes") { refused = 1; refuse_reason = rwhy[ord[i]]; refuse_line = rline[ord[i]]; break }
 }
 
-# --- the command start: the one skip set the push and create matchers share (the merge matcher reads past it) -----
+# --- the command start: the one skip set every matcher starts from -----------------------------------------------
 # Three phases in the shells’ own order, never going back: reserved words (unquoted only — a quoted `if` is a
 # command name; the reserved `time` takes one `-p`), then shell assignments, then wrappers (quoted or not), each
 # with its own flags. assign_at[] collects the assignments and env’s NAME=value arguments skipped.
@@ -2456,10 +2460,10 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
 
 # --- dir #811: the merge rule (a candidate line for the shell side; the rule itself: the merge-rule header section) -
 # Each merge segment gets a code, decided here where the words are: `api` (a write to the API merge endpoint),
-# `xargs` (gh pr merge, or a read of that endpoint, under xargs or parallel: stdin or a file may add words), `flag`
-# (a forbidden flag, named), `pin`, `nomerge` or `ok`. The command’s ONE `merge` line carries the deciding code:
-# `api` if any segment has it, else the first segment’s that is not `ok`, else `ok`. `--help`/`-h` right after
-# `merge` is a read: no code.
+# `unread` (a merge shape this reading cannot place), `xargs` (gh pr merge, or a read of that endpoint, behind a
+# flagless xargs: stdin may add words), `flag` (a forbidden flag, named), `pin`, `nomerge` or `ok`. The command’s ONE
+# `merge` line carries the deciding code: `api` if any segment has it, else `unread` if any has it, else the first
+# segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is a read: no code.
 function mg_bool(v) { return v == "" || v == "true" }
 function mg_note(c, t) {
   if (c == "api" || (c == "unread" && mg_code != "api") || mg_code == "" || mg_code == "ok") { mg_code = c; mg_tok = t }
@@ -2532,14 +2536,26 @@ function mg_gh(j,   n) {
   n = length(tok[j])
   return tok[j] == "gh" || (n >= 3 && substr(tok[j], n - 2) == "/gh")
 }
+function mg_ep(t) { return t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/ }
 function mg_shape(s,   j, t, a, p) {
   a = 0; p = 0
   for (j = s + 1; j <= ntok; j++) {
     t = tok[j]
     if (t == "api" && w_unquoted(j)) a = 1
     else if (t == "pr" && w_unquoted(j)) p = 1
-    else if (p && t == "merge" && w_unquoted(j)) return 1
-    else if (a && t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/) return 1
+    else if (p && t == "merge" && w_unquoted(j)) return !(j < ntok && (tok[j + 1] == "--help" || tok[j + 1] == "-h"))
+    else if (a && mg_ep(t)) return 1
+  }
+  return 0
+}
+# mg_pos(k) — the first positional word from k on, read the way gh’s parser (cobra) finds a subcommand: a flag it does
+# not know, with no `=`, takes the next word as its value (`gh -t api pr merge`: api is -t’s value); -h/--help, a
+# cluster and a glued value take none. 0 when there is none.
+function mg_pos(k,   j, t) {
+  for (j = k; j <= ntok; j++) {
+    t = tok[j]
+    if (t !~ /^-./) return j
+    if (!index(t, "=") && t != "-h" && t != "--help" && (substr(t, 1, 2) == "--" || length(t) == 2)) j++
   }
   return 0
 }
@@ -2555,27 +2571,28 @@ function check_merge(   i, j) {
   }
   for (j = 1; j <= ntok; j++) if (mg_gh(j)) { if (mg_shape(j)) mg_note("unread", ""); return }
 }
-# mg_read(i) — read the gh command whose word is i, and note its code.
-function mg_read(i,   j, p_at, m_at, api, ep, t) {
-  api = 0; ep = 0; p_at = 0; m_at = 0
+# mg_read(i) — read the gh command whose word is i, and note its code. Its subcommand words are found the way gh finds
+# them (mg_pos); its flags are read from every word after gh, before the subcommand included (`gh -X PUT api …`). A
+# segment whose words hold a merge shape (mg_shape) that this reading cannot place is the `unread` code.
+function mg_read(i,   j, s1, s2, ep) {
   cm_meth = ""; cm_fld = 0; cm_bad = ""; cm_pins = 0; cm_pinbad = 0; cm_hasm = 0
-  for (j = i + 1; j <= ntok; j++) {
-    t = tok[j]
-    if (!api && !p_at && t == "api" && w_unquoted(j)) api = j
-    else if (!api && !p_at && t == "pr" && w_unquoted(j)) p_at = j
-    else if (p_at && !m_at && t == "merge" && w_unquoted(j)) m_at = j
-    else if (api && t ~ /(^|\/)pulls\/[^\/]+\/merge\/?([?#].*)?$/) ep = 1
-    else if (api) j += mg_api_word(j)
-  }
-  if (api) {
+  s1 = mg_pos(i + 1); s2 = 0
+  if (s1 && tok[s1] == "pr" && w_unquoted(s1)) s2 = mg_pos(s1 + 1)
+  if (s1 && tok[s1] == "api" && w_unquoted(s1)) {
+    ep = 0
+    for (j = i + 1; j <= ntok; j++) {
+      if (j == s1) continue
+      if (mg_ep(tok[j])) ep = 1
+      else j += mg_api_word(j)
+    }
     if (ep && (cm_meth != "" ? (cm_meth != "GET" && cm_meth != "HEAD") : cm_fld)) mg_note("api", "")
     else if (ep && cm_xargs) mg_note("xargs", "")
     return
   }
-  if (!m_at) return
-  if (m_at < ntok && (tok[m_at + 1] == "--help" || tok[m_at + 1] == "-h")) return
+  if (!(s2 && tok[s2] == "merge" && w_unquoted(s2))) { if (mg_shape(i)) mg_note("unread", ""); return }
+  if (s2 < ntok && (tok[s2 + 1] == "--help" || tok[s2 + 1] == "-h")) return
   for (j = i + 1; j <= ntok; j++) {
-    if (j == p_at || j == m_at) continue
+    if (j == s1 || j == s2) continue
     j += mg_pr_word(j)
   }
   if (cm_xargs) mg_note("xargs", "")
@@ -3776,8 +3793,9 @@ esac
 # machinery (a command may hold both a merge and a create).
 merge_rule() {
   local mg_top mg_path mg_why="Pre-PR gate (merge rule, dir #811):"
+  # A merge the reader cannot place: denied to every session, a release manager included.
+  [ "$mg_code" = unread ] && early_deny blocked "$mg_why this merge cannot be read — gh is not the command word, or a flag before a subcommand may take a word as its value (timeout, sudo -u, xargs -n1, a \$VAR, gh pr --x merge). Run gh as the command word with its subcommands right after it; until then no session may merge this way."
   # The API shape carries no head pin: denied to every session, a release manager included.
-  [ "$mg_code" = unread ] && early_deny blocked "$mg_why run gh as the command word — gh pr merge, or the API merge endpoint, behind another command or a runner's own flags (timeout, sudo -u, xargs -n1, a \$VAR) cannot be read, so no session may merge that way."
   [ "$mg_code" = api ] && early_deny blocked "$mg_why merge with \`gh pr merge --merge --match-head-commit\`, never the API — a \`gh api …/pulls/<n>/merge\` write carries no head pin."
   # (ii) identity: never a subagent, a session id the manager file lists, inside a git checkout.
   [ "$hk_sub" = 1 ] && early_deny blocked "$mg_why a subagent never merges — the merge is the release manager's own step (docs/release-management.md R14)."
@@ -3793,7 +3811,7 @@ merge_rule() {
     ok) ;;
     flag) early_deny blocked "$mg_why a merge commit only: drop $mg_tok — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
     pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on." ;;
-    xargs) early_deny blocked "$mg_why run gh pr merge, or a read of the API merge endpoint, as its own command, not under xargs or parallel — they add words from stdin or a file, which no check can read." ;;
+    xargs) early_deny blocked "$mg_why run gh pr merge, or a read of the API merge endpoint, as its own command, not under xargs — it adds words from stdin, which no check can read." ;;
     nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
     *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check ($mg_code) — run the merge as its own Bash call, or report it." ;;
   esac
