@@ -66,17 +66,19 @@ check_file "tools/lib/ref-guard.sh exists" "$guard_lib"
 . "$guard_lib" || { echo "tools/lib/ref-guard.sh failed to source — refusing (S-fix-1's self-check needs its ownership-scoping helpers, and a silent 'command not found' here would make the self-check vacuously pass)" >&2; exit 1; }
 
 # repo_root_self_check_unowned OWNED_BEFORE OWNED_AFTER REFS_SNAPSHOT — the ownership-scoped filter
-# T14's fixture-driven proof (below) applies. The seam: swapping this body from guard_union+guard_filter_unowned back to a bare passthrough
-# (`printf '%s\n' "$3"` — the pre-S-fix-1 whole-namespace-equivalent shape for the refs/heads channel)
-# is exactly the mutation T14(a)'s sibling-activity assertion exists to catch red.
-# (dir #768: the self-check at the bottom used to go through this seam too. It now calls guard_refs_unexplained,
-# whose own scoping is pinned in tests/test_ref_guard.sh, so mutating this wrapper no longer reaches it.) A named local
+# T14's fixture-driven proof (below) applies. The seam: swapping this body from guard_union+guard_filter_unowned back
+# to a bare passthrough (`printf '%s\n' "$3"` — the pre-S-fix-1 whole-namespace-equivalent shape for the refs/heads
+# channel) is exactly the mutation T14(a)'s sibling-activity assertion exists to catch red. A named local
 # wrapper, not a direct guard_union/guard_filter_unowned call at each site, so that one mutation
 # catches every caller without also affecting tools/lib/ref-guard.sh's own coverage in
 # test_ref_guard.sh. Takes OWNED_BEFORE/OWNED_AFTER rather than a pre-unioned single argument, so a
 # caller needs no separate union variable of its own — the union (a sibling worktree's branch may
 # start or stop being owned mid-window either way) is computed here, once per call, from whichever
 # REFS_SNAPSHOT (before or after) that call is filtering.
+#
+# dir #768: the self-check at the bottom of this file used to go through this seam too. It now calls
+# guard_refs_unexplained, whose own scoping is pinned in tests/test_ref_guard.sh, so mutating this wrapper no
+# longer reaches it.
 repo_root_self_check_unowned() {
   guard_filter_unowned "$(guard_union "$1" "$2")" "$3"
 }

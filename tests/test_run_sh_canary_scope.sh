@@ -142,6 +142,7 @@ peer_act "$d" 'git -C "$R" commit -q --allow-empty -m own-commit'
 awk '/^# guard_tip_survives REPO SHA/ { exit } { print }' "$REPO_ROOT/tools/lib/ref-guard.sh" > "$d/tools/lib/ref-guard.sh"
 run bash "$d/tests/run.sh"
 check_status "an older ref-guard.sh -> the HEAD compare still trips on the run's own commit" 1 "$STATUS"
+check_contains "... with the canary's trip block, not some unrelated failure" "$OUT" "$TRIP"
 
 # --- RED 1: a stray new branch (dir #320's shape) --------------------------------------------------------------
 d="$(mkcanary)"
