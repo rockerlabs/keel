@@ -362,7 +362,7 @@ check_contains "compaction stop (d): an uncommittable tree stops the run" "$g1" 
 check_contains "compaction stop (e): the hand-over file lives outside the repo" "$g1" 'outside the repo'
 check_contains "compaction stop (e): ... and carries the final report with the PR URL left blank" "$g1" 'the PR URL left blank'
 check_contains "compaction stop (e): a /go run's handoff note says next: /polish (compaction stop, dir #739)" "$g1" 'next: /polish (compaction stop, dir #739)'
-check_contains "compaction stop (f): no tool call after the hand-on" "$g1" 'make no further tool call'
+check_contains "compaction stop (f): no tool call after the hand-off" "$g1" 'make no further tool call'
 # dir #845: the stop continues itself — three routes, the two operator lines only as the fallback.
 g1f="$(tr '\n' ' ' <<< "$g1" | tr -s ' ')"
 check_contains "compaction stop (f): the continued run is one skill call (works where a leading /polish may not)" "$g1f" 'invoke the `polish` skill with args `<--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first`'
