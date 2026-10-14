@@ -369,8 +369,9 @@ check_contains "compaction stop (f): the continued run is one skill call (works 
 check_contains "compaction stop (f) route 1: an operator-started turn launches a successor with start_session" "$g1f" 'launch a successor with `start_session`'
 check_contains "compaction stop (f) route 1: the successor runs in the same worktree" "$g1f" '`use_worktree: false`'
 check_contains "compaction stop (f) route 2: a managed worker sends the manager COMPACT <token> <file>" "$g1f" 'send the manager `COMPACT <token> <absolute hand-over file>`'
-check_contains "compaction stop (f) route 2: the manager clears the session once idle and sends a continuation" "$g1f" 'The manager clears this session once it reads idle'
+check_contains "compaction stop (f) route 2: the manager clears the session once idle and sends a continuation" "$g1f" 'The manager clears this session once its list row reads idle'
 check_contains "compaction stop (f) route 1: a cross-session instruction does not make a turn the operator's" "$g1f" 'a turn whose last instruction came in a cross-session message is not one'
+check_contains "compaction stop (f) route 3: a peer's message to a worker with no manager is a refusal case" "$g1f" "a peer session's message to a worker that has no manager"
 check_contains "compaction stop (f) route 1: the launch waits for (d) and (e)" "$g1f" 'once (d) and (e) are complete, launch a successor'
 check_contains "compaction stop (f) route 3: the two lines are the fallback, naming the refusal" "$g1f" 'Fallback — the harness refused'
 check_contains "compaction stop (f) route 3: ... and the turn names the refusal" "$g1f" 'naming the refusal'

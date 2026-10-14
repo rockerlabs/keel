@@ -88,10 +88,10 @@ Steps, in order:
     file — then end the turn with one line linking the successor. The successor is the continued run (g).
   - (2) **A managed-release worker** (its turn started by its manager's message, so `start_session` is refused
     there; the release's brief names this line): send the manager `COMPACT <token> <absolute hand-over file>` —
-    `<token>` is the worker's own, from its overlay — and end the turn. The manager clears this session once it
-    reads idle, and sends one self-contained continuation message: the worker id, the overlay paths and `<call>`.
+    `<token>` is the worker's own, from its overlay — and end the turn. The manager clears this session once its
+    list row reads idle, and sends one self-contained continuation message: the worker id, the overlay paths and `<call>`.
     A manager reading this without the release's overlay does exactly that.
-  - (3) **Fallback — the harness refused** (a launch refused; a turn that no operator and no manager started;
+  - (3) **Fallback — the harness refused** (a launch refused; a turn that no operator and no manager started, such as a peer session's message to a worker that has no manager;
     `clear_session` refused because the session is pinned or open on screen, which the manager reports): end the
     turn naming the refusal, then two paste-ready lines for the operator, each in its own fenced block, to be sent
     as two messages in this order:
