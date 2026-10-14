@@ -869,6 +869,9 @@ check_absent "dir #849: ...and no printf producer feeds it" "$probe_line" "print
 check_contains "dir #849: ...it reads a file (< redirect)" "$probe_line" "< \"\$dir/"
 # Behavioural pin: --selftest writes no producer/pipe error to stderr. The race is probabilistic and a selftest
 # costs ~12 s under load, so three repeats only sample it — the structural pin above is the deterministic one.
+# The twin: the production fail-closed probe on a malformed personal ERE (it runs before every scan) read the same
+# pipe — no `printf 'x\n' |` may feed a grep anywhere in the scanner.
+check_eq "dir #849: no 'printf ... |' feeds a grep in secret-scan.sh (the personal-regex probe included)" "0" "$(grep -cE "printf 'x.n' \| *(LC_ALL=C )?grep" "$scan" || true)"
 sp_err="$SANDBOX/selftest-stderr"; : > "$sp_err"
 for _ in 1 2 3; do "$scan" --selftest >/dev/null 2>>"$sp_err" </dev/null || true; done
 check_absent "dir #849: 3 --selftest runs write no 'Broken pipe' to stderr" "$(cat "$sp_err")" "Broken pipe"
