@@ -532,26 +532,26 @@
 # wires that matcher as `code-review|manage-release|keel-manage-release`) — in the shapes `manage-release`,
 # `<plugin>:manage-release`, `/manage-release` and the same three for `keel-manage-release`. A subagent's call lists
 # nobody. Lines are never removed and the file is not pruned, so two managers in one repository are both listed —
-# and, since a resumed session keeps its id, a session that once launched /manage-release stays listed for as long
-# as it can be resumed (the policy line and the pin still apply to it). Hooks load at session start, so a session started before the installer wired the
-# typed-launch matcher is never listed by a typed launch. Measured 2026-10-14 (dir #118's dump technique, a headless
-# session in a scratch directory, Claude Code 2.1.296): a resumed session keeps its `session_id`; a subagent's Bash
-# event carries the parent's `session_id` plus `agent_id` and `agent_type`; a typed command's UserPromptExpansion
-# event carries `session_id`.
-# Named residuals of this rule — none was closed by the `settings.json` deny on `gh pr merge` it replaces either,
-# so `main`'s branch protection stays the floor: a `gh api graphql` `mergePullRequest` mutation (inside a quoted
+# and, since a resumed session keeps its id, a session that once launched /manage-release stays listed for as long as
+# it can be resumed (the policy line and the pin still apply to it). Hooks load at session start, so a session
+# started before the installer wired the typed-launch matcher is never listed by a typed launch. Measured 2026-10-14
+# (dir #118's dump technique, a headless session in a scratch directory, Claude Code 2.1.296): a resumed session
+# keeps its `session_id`; a subagent's Bash event carries the parent's `session_id` plus `agent_id` and `agent_type`;
+# a typed command's UserPromptExpansion event carries `session_id`.
+# Named residuals of this rule — none was closed by the `settings.json` deny on `gh pr merge` it replaces either, so
+# `main`'s branch protection stays the floor: a `gh api graphql` `mergePullRequest` mutation (inside a quoted
 # argument the reader does not open); a quoted subcommand word (`gh pr "merge"`, `gh "api"`: unquoted only, so a
-# quoted `--title "merge"` stays a create); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper, a path to `gh`;
-# `curl` against the REST merge endpoint; a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`);
-# a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command) — judged by the cwd's
-# file and policy line; and self-listing — any session that calls `Skill(manage-release)` or types
-# `/manage-release x` is listed (PostToolUse fires on the call's success, not on the release it starts: the dir
-# #229 marker-spoof class). Without jq the whole hook is inert (its documented choice, above), this rule included:
-# lift the `settings.json` deny only where jq is installed. Accepted costs: an unquoted `merge` word after `pr`
-# (`gh pr create --title merge`) reads as a merge segment — quote it; any CLAUDE.md line carrying the token opts the
-# project in, a sentence that only mentions it included; and a main session started with `--agent` carries
-# `agent_type` with no `agent_id` (measured 2026-10-14), so it reads as a subagent and is denied — start a
-# release manager without `--agent`.
+# quoted `--title "merge"` stays a create); `sh -c '…'`, `eval`, a script file, a `gh` alias or wrapper, a path to
+# `gh`, a leading word outside the reader's skip set (`sudo`, `timeout`, `nice`, `env -C`); `curl` against the REST
+# merge endpoint; a flag word the shell assembles at run time (`$FLAGS`, `--admin$(true)`); a merge aimed at another
+# repository than the event cwd's (`-R`, a `cd` in the command) — judged by the cwd's file and policy line; and
+# self-listing — any session that calls `Skill(manage-release)` or types `/manage-release x` is listed (PostToolUse
+# fires on the call's success, not on the release it starts: the dir #229 marker-spoof class). Without jq the whole
+# hook is inert (its documented choice, above), this rule included: lift the `settings.json` deny only where jq is
+# installed. Accepted costs: an unquoted `merge` word after `pr` (`gh pr create --title merge`) reads as a merge
+# segment — quote it; any CLAUDE.md line carrying the token opts the project in, a sentence that only mentions it
+# included; and a main session started with `--agent` carries `agent_type` with no `agent_id` (measured 2026-10-14),
+# so it reads as a subagent and is denied — start a release manager without `--agent`.
 
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
@@ -2438,8 +2438,9 @@ function check_segment(   i, j, k, found_pr, found_api, ep_pulls, writes, has_fi
 
 # --- dir #811: the merge rule (a candidate line for the shell side; the rule itself: the merge-rule header section) -
 # Each merge segment gets a code, decided here where the words are: `api` (the API shape), `flag` (a forbidden flag,
-# named), `pin`, `nomerge` or `ok`. The command’s ONE `merge` line carries the deciding code: `api` if any segment
-# has it, else the first segment’s that is not `ok`, else `ok`. `--help`/`-h` right after `merge` is a read: no code.
+# named), `xargs` (stdin may add flags), `pin`, `nomerge` or `ok`. The command’s ONE `merge` line carries the
+# deciding code: `api` if any segment has it, else the first segment’s that is not `ok`, else `ok`. `--help`/`-h`
+# right after `merge` is a read: no code.
 function mg_bool(v) { return v == "" || v == "true" }
 function mg_note(c, t) {
   if (c == "api" || mg_code == "" || mg_code == "ok") { mg_code = c; mg_tok = t }
@@ -2492,7 +2493,7 @@ function mg_api_word(j,   t, n, k, c, eq, nm) {
   for (k = 2; k <= n; k++) {
     c = substr(t, k, 1)
     if (index("XfFHpqt", c)) {
-      if (c == "X") cm_meth = toupper(k < n ? substr(t, k + 1) : (j < ntok ? tok[j + 1] : ""))
+      if (c == "X") { cm_meth = toupper(k < n ? substr(t, k + 1) : (j < ntok ? tok[j + 1] : "")); sub(/^=/, "", cm_meth) }
       else if (c == "f" || c == "F") cm_fld = 1
       return (k == n && j < ntok) ? 1 : 0
     }
@@ -2504,6 +2505,10 @@ function check_merge(   i, j, t, p_at, m_at, api, ep) {
   # A wrapper’s own flags (`xargs -n1 gh …`, `exec -a x gh …`) stop cmd_start before the command word: look past them.
   if (i > 1 && i <= ntok && tok[i] ~ /^-/ && is_wrapper(tok[i - 1])) { while (i <= ntok && !(tok[i] == "gh" && w_plain(i))) i++ }
   if (i > ntok || !w_plain(i) || tok[i] != "gh") return
+  # Under xargs the command takes more words from stdin (`echo --admin | xargs gh pr merge …`): no flag check can read
+  # them, so such a merge is its own code.
+  cm_xargs = 0
+  for (j = 1; j < i; j++) if (tok[j] == "xargs" && w_plain(j)) cm_xargs = 1
   api = 0; ep = 0; p_at = 0; m_at = 0
   cm_meth = ""; cm_fld = 0; cm_bad = ""; cm_pins = 0; cm_pinbad = 0; cm_hasm = 0
   for (j = i + 1; j <= ntok; j++) {
@@ -2524,7 +2529,8 @@ function check_merge(   i, j, t, p_at, m_at, api, ep) {
     if (j == p_at || j == m_at) continue
     j += mg_pr_word(j)
   }
-  if (cm_bad != "") mg_note("flag", cm_bad)
+  if (cm_xargs) mg_note("xargs", "")
+  else if (cm_bad != "") mg_note("flag", cm_bad)
   else if (!cm_pins || cm_pinbad) mg_note("pin", "")
   else if (!cm_hasm) mg_note("nomerge", "")
   else mg_note("ok", "")
@@ -3737,6 +3743,7 @@ merge_rule() {
     ok) ;;
     flag) early_deny blocked "$mg_why a merge commit only: drop $mg_tok — a release manager merges with --merge, pinned, never --squash, --rebase, --auto or --admin." ;;
     pin) early_deny blocked "$mg_why pin the head: --match-head-commit <40-hex sha> — the full lower-case head sha you verified CI green on." ;;
+    xargs) early_deny blocked "$mg_why run gh pr merge as its own command, not under xargs — xargs adds words from stdin, which the flag check cannot read." ;;
     nomerge) early_deny blocked "$mg_why a merge commit only: add --merge — only a merge commit puts every head on main as is." ;;
     *) early_deny reader-failed "$mg_why the command reader reported an unknown merge check ($mg_code) — run the merge as its own Bash call, or report it." ;;
   esac

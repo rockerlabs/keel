@@ -885,6 +885,16 @@ check_status "A7(l): ...exactly ONE UserPromptExpansion entry" 1 "$(jq '.hooks.U
 check_eq "A7(l): ...the widened matcher, this checkout's gate, once" "$UPE_NEW bash '$gate' skill-trace" \
   "$(jq -r '.hooks.UserPromptExpansion[0] | .matcher + " " + ([.hooks[].command] | join(","))' "$l4_repo/.claude/settings.json")"
 check_absent "A7(l): ...no old path left" "$(cat "$l4_repo/.claude/settings.json")" "/old/keel"
+# The old entry holding BOTH this checkout's command and an old-path one: still STALE (it is looked for after the exact
+# retirement), and --force leaves one entry.
+l5_repo="$(new_repo)"; mkdir -p "$l5_repo/.claude"
+jq -n --arg gate "$gate" '{hooks:{UserPromptExpansion:[{matcher:"code-review",hooks:[{type:"command",command:("bash " + ($gate|@sh) + " skill-trace")},{type:"command",command:"bash '"'"'/old/keel/tools/pre-pr-gate.sh'"'"' skill-trace"}]}]}}' > "$l5_repo/.claude/settings.json"
+run "$installer" "$l5_repo"
+check_status "A7(l): an old entry holding both paths -> exit 3 (refused without --force)" 3 "$STATUS"
+run "$installer" --force "$l5_repo"
+check_status "A7(l): ...--force -> exit 0" 0 "$STATUS"
+check_eq "A7(l): ...one entry, the widened matcher, this checkout's gate once" "1 $UPE_NEW bash '$gate' skill-trace" \
+  "$(jq -r '.hooks.UserPromptExpansion | "\(length) " + .[0].matcher + " " + ([.[0].hooks[].command] | join(","))' "$l5_repo/.claude/settings.json")"
 # An uninstall over the OLD entry alone (an adopter who never re-ran the installer) removes it too.
 l3_repo="$(new_repo)"; mkdir -p "$l3_repo/.claude"
 jq -n --arg gate "$gate" '

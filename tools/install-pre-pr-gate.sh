@@ -462,21 +462,23 @@ fi
 #
 # dir #811: a retired slot still wired at ANOTHER path (a moved checkout) is STALE for that slot, as a current one
 # would be — the retirement matches our exact command only, so the old-path entry would otherwise stay beside the
-# new one and fire twice. Refused below without --force; --force first points it at this checkout, so the retirement
-# then takes it out.
-retired_merge="$(hook_install_merge "$retired_specs" "$current")"
+# new one and fire twice. Looked for AFTER the exact retirement (an entry holding both paths must not read SAME),
+# refused below without --force; --force first points it at this checkout, and a second retirement takes it out.
+retire_legacy "$current"
 stale_retired_specs="$(jq -c --argjson specs "$retired_specs" '[.report | split("\n")[] | split("\t")
-  | select(.[0] == "STALE") as $r | $specs[] | select(.event == $r[1] and .matcher == $r[2])]' <<<"$retired_merge")"
-retire_from="$current"
-if [ "$(jq 'length' <<<"$stale_retired_specs")" -gt 0 ]; then
-  retire_from="$(jq -c '.new' <<<"$(hook_install_merge "$stale_retired_specs" "$current")")"
+  | select(.[0] == "STALE") as $r | $specs[] | select(.event == $r[1] and .matcher == $r[2])]' \
+  <<<"$(hook_install_merge "$retired_specs" "$retired_json")")"
+n_stale="$(jq 'length' <<<"$stale_retired_specs")"
+stale="$(jq -r '[.[] | "\(.event)/\(.matcher)"] | join(", ")' <<<"$stale_retired_specs")"
+if [ "$n_stale" -gt 0 ]; then
+  exact_slots="$retired_slots"
+  retire_legacy "$(jq -c '.new' <<<"$(hook_install_merge "$stale_retired_specs" "$retired_json")")"
+  retired_slots="$(printf '%s\n%s\n' "$exact_slots" "$retired_slots" | awk 'NF && !seen[$0]++')"
+  n_retired="$(grep -c . <<<"$retired_slots" || true)"
 fi
-retire_legacy "$retire_from"
 merged="$(hook_install_merge "$hook_specs" "$retired_json")"
 statuses="$(jq -r '.report' <<<"$merged")"
 
-stale="$(jq -r '[.[] | "\(.event)/\(.matcher)"] | join(", ")' <<<"$stale_retired_specs")"
-n_stale="$(jq 'length' <<<"$stale_retired_specs")"
 while IFS=$'\t' read -r status event matcher; do
   [ -n "$status" ] || continue
   if [ "$status" = "STALE" ]; then

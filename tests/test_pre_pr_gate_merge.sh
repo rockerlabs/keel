@@ -186,6 +186,10 @@ allow "(d) --subject -s: a value, not --squash" "$MERGE --subject -s" "$P" "$MID
 allow "(d) -b --admin: a value, not --admin" "$MERGE -b --admin" "$P" "$MID"
 allow "(d) -R o/r before the pin" "gh pr merge 5 -R o/r --merge --match-head-commit $SHA" "$P" "$MID"
 deny "(d) a flag-shaped pin value is the pin, not a flag" "$R_PIN" "gh pr merge 5 --merge --match-head-commit --squash" "$P" "$MID"
+# Under xargs the command takes more words from stdin, which no flag check can read: a manager's merge there is denied.
+deny "(d) manager: a merge under xargs" "under xargs" "printf -- '--admin\\n' | xargs $MERGE" "$P" "$MID"
+deny "(d) manager: a merge under xargs with flags" "under xargs" "echo 5 | xargs -n1 gh pr merge --merge --match-head-commit $SHA" "$P" "$MID"
+allow "(d) manager: exec -a x is read past (no stdin words)" "exec -a x $MERGE" "$P" "$MID"
 deny "(d) -m=false is no --merge" "$R_NOMERGE" "gh pr merge 5 -m=false --match-head-commit $SHA" "$P" "$MID"
 deny "(d) a forbidden flag wins over a missing pin" "$R_DROP --squash " "gh pr merge 597 --squash" "$P" "$MID"
 # Two merges in one command: the first failing one decides, and the API shape outranks every other code.
@@ -224,6 +228,7 @@ deny "(f) -ifx=1 (a field in a cluster)" "$R_API" "gh api repos/o/r/pulls/5/merg
 allow "(f) -H takes a value: an endpoint-shaped header is no endpoint" "gh api -H repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) -iX GET is a read" "gh api -iX GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) -XGET is a read" "gh api -XGET repos/o/r/pulls/5/merge" "$P" "$OTHER"
+allow "(f) -X=GET is a read" "gh api -X=GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) --header takes a value too" "gh api --header repos/o/r/pulls/5/merge -X PUT repos/o/r/issues/5/lock" "$P" "$OTHER"
 allow "(f) gh api …/pulls/5/merge (GET: is it merged)" "gh api repos/o/r/pulls/5/merge" "$P" "$OTHER"
 allow "(f) gh api -X GET …/pulls/5/merge" "gh api -X GET repos/o/r/pulls/5/merge" "$P" "$OTHER"
