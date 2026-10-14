@@ -328,7 +328,13 @@ sweep and once after the last heading edit (G4) — and reconcile any disagreeme
 count**; the second run is nearly free and is the only step that catches a predicate that is wrong, as
 opposed to a file that has moved. Where the mechanism or its equivalent has not shipped on a project,
 this rule names the gap rather than asserting an unshipped tool's own rules as settled fact — derive
-these three by hand, and re-derive on every cycle, not once and carry forward.
+these three by hand, and re-derive on every cycle, not once and carry forward. **A backlog whose
+tickets use another uniform heading token (`### B.N`, `### KB.N`) is not that gap:** keel's census takes
+it as `--ticket-token 'B\.[0-9]+'` (dir #605) and prints the captured token under `--list`. A pool kept
+as a `## Pool` section rather than a `→ pool` tag is still not read; derive it from the section. Its
+foreign-citation strip also still knows only `dir #N` citations, so a heading that cites a sibling in the
+adopter's own form after its own arrow (`→ pool, supersedes B.3 → 0.9.0`) is counted under the cited arrow —
+check such a heading by hand.
 
 **A fourth extraction rule has TWO parts, and the tool ships only one of them.** Matching the closure
 marker at a fixed position (the heading's own tag, not any `✅`/`❌` absorbed from body text) is

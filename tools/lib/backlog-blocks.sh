@@ -14,7 +14,9 @@
 # a pool census has no such exemption — a legacy-numbered ticket still holds real lines and can
 # still sit `→ pool` — so this scanner's heading regex matches both shapes.
 #
-# backlog_ticket_blocks <path>
+# backlog_ticket_blocks <path> [ticket_token_ere]
+#   dir #605: the optional ERE (default `dir #[0-9]+|[0-9]+\.`) names the heading token after `### `; it must
+#   compile and match alike under `grep -E` and bash `=~` (backlog-census.sh --ticket-token validates it).
 #   Emits one line per ticket heading found, TAB-separated:
 #     start_line  end_line  closed(0|1)  heading_block
 #   heading_block is the heading's own text (the `### ...` line plus any wrapped continuation
@@ -186,6 +188,8 @@ bb_heading_continues() {
 
 backlog_ticket_blocks() {
   local file="$1"
+  # dir #605: optional ERE heading token (default = keel's two shapes); see backlog-census.sh --ticket-token.
+  local ticket_re="${2:-dir #[0-9]+|[0-9]+\.}"
   [ -f "$file" ] && [ -r "$file" ] || return 0
 
   local fence_blanked
@@ -201,7 +205,7 @@ backlog_ticket_blocks() {
   # every heading line is already among the boundary lines this pass finds.
   local boundary_raw=()
   while IFS= read -r ln || [ -n "$ln" ]; do boundary_raw+=("$ln"); done \
-    < <(grep -nE '^### (dir #[0-9]+|[0-9]+\.) |^## ' <<< "$fence_blanked")
+    < <(grep -nE "^### (${ticket_re}) |^## " <<< "$fence_blanked")
 
   local heading_lines=() boundary_lines=() entry lnum ltext
   # `[ -gt 0 ]` guard, not a bare `for ... in "${boundary_raw[@]}"`: bash 3.2 (macOS's stock
@@ -214,7 +218,7 @@ backlog_ticket_blocks() {
       lnum="${entry%%:*}"
       ltext="${entry#*:}"
       boundary_lines+=("$lnum")
-      if [[ "$ltext" =~ ^###\ (dir\ \#[0-9]+|[0-9]+\.)\  ]]; then
+      if [[ "$ltext" =~ ^###\ (${ticket_re})\  ]]; then
         heading_lines+=("$lnum")
       fi
     done

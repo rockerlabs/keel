@@ -227,6 +227,81 @@ run "$bc" "$fg"
 check_contains "MUTATION-PROOF: the glued pool ticket is counted (1)" "$OUT" $'1\tpool'
 check_contains "MUTATION-PROOF: the glued scheduled ticket is counted (1)" "$OUT" $'1\t0.17.0'
 
+# --- dir #605: --ticket-token <ERE> names an adopter's own uniform heading token (`### B.N`,
+# `### KB.N`, `### RL.N`); the default (`dir #N` / `<n>.`) is unchanged, so the same file reads EMPTY
+# without the flag. --list prints the CAPTURED token, not a bare number. ------------------------
+tok_backlog="### B.1 — a plain pool ticket — R1 — → pool
+
+body
+
+### B.2 — a scheduled ticket — R2 — → 0.9.0
+
+body
+
+### B.3 — closed, must not count — R1 — ✅ DONE (2026-01-01) — → pool
+
+body
+
+### B.12 — another pool ticket — R2 — → pool
+
+body
+"
+ft="$(mk_backlog "$tok_backlog")"
+run "$bc" "$ft"
+check_status "without the flag a B.N backlog is read as empty, exit 0 (default unchanged)" 0 "$STATUS"
+check_absent "MUTATION-PROOF: the default token never matches a B.N heading" "$OUT" "pool"
+run "$bc" --ticket-token 'B\.[0-9]+' "$ft"
+check_status "--ticket-token on a B.N backlog -> exit 0" 0 "$STATUS"
+check_contains "MUTATION-PROOF: the B.N pool tickets are counted (2, the closed one excluded)" "$OUT" $'2\tpool'
+check_contains "MUTATION-PROOF: the B.N scheduled ticket is counted (1)" "$OUT" $'1\t0.9.0'
+run "$bc" --ticket-token 'B\.[0-9]+' --list pool "$ft"
+check_status "--list prints the captured token, not a bare number" "$(printf 'B.1\nB.12')" "$OUT"
+run "$bc" --ticket-token='B\.[0-9]+' --list 0.9.0 "$ft"
+check_status "--ticket-token=VALUE form works too" "B.2" "$OUT"
+kb_backlog="### KB.7 — a KB ticket — R2 — → next
+
+body
+
+### RL.4 — a remmilab ticket — R2 — → next
+
+body
+"
+fk="$(mk_backlog "$kb_backlog")"
+# token mode keeps the shared helpers for a `dir #N` citation (an adopter's own `Supersedes B.3` form is a
+# named limit, not covered): its arrow is stripped, a closed heading is skipped
+cite_backlog="### B.5 — an open ticket citing a sibling, superseding dir #9 → 0.9.0 — R2 — → pool
+
+body
+
+### B.6 — closed, own arrow ignored — R1 — ✅ DONE (2026-01-01) — → 0.9.0
+
+body
+"
+fc="$(mk_backlog "$cite_backlog")"
+run "$bc" --ticket-token 'B\.[0-9]+' "$fc"
+check_contains "MUTATION-PROOF: token mode strips the cited arrow (B.5 stays under pool)" "$OUT" $'1\tpool'
+check_absent "token mode: the closed B.6 and the cited arrow never reach 0.9.0" "$OUT" "0.9.0"
+# The named limit, pinned so the prose cannot drift from the code: an adopter's OWN citation form is not
+# stripped, so a cited arrow AFTER the heading's own arrow is read as the heading's tag. This assertion flips when the strip learns the token.
+own_cite="### B.7 — open — R2 — → pool, supersedes B.3 → 0.9.0
+
+body
+"
+fo="$(mk_backlog "$own_cite")"
+run "$bc" --ticket-token 'B\.[0-9]+' --list 0.9.0 "$fo"
+check_status "accepted limit: an adopter's own 'supersedes B.3' arrow is not stripped (B.7 lands under 0.9.0 — wrong)" "B.7" "$OUT"
+run "$bc" --ticket-token 'KB\.[0-9]+|RL\.[0-9]+' --list next "$fk"
+check_status "an alternation names two tokens, both captured" "$(printf 'KB.7\nRL.4')" "$OUT"
+run "$bc" --ticket-token 'dir #[0-9]+|[0-9]+\.' --list next "$fk"
+check_status "a token that matches nothing here reads empty, exit 0" "" "$OUT"
+run "$bc" --ticket-token
+check_status "--ticket-token with no value -> exit 2" 2 "$STATUS"
+run "$bc" --ticket-token '' "$ft"
+check_status "an empty --ticket-token -> exit 2" 2 "$STATUS"
+run "$bc" --ticket-token 'B\.(' "$ft"
+check_status "an invalid --ticket-token regex -> exit 2" 2 "$STATUS"
+check_contains "the invalid regex is named in the refusal" "$OUT" "ticket-token"
+
 # --- smoke against today's real BACKLOG.md: must not crash, must print well-formed rows ---------
 if [ -f "$REPO_ROOT/BACKLOG.md" ]; then
   run "$bc" "$REPO_ROOT/BACKLOG.md"
