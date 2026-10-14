@@ -151,9 +151,7 @@ bb_own_ticket_num() {
 
 backlog_ticket_blocks() {
   local file="$1"
-  # dir #605: the ticket-heading token is a parameter. Default = the two shapes keel's own backlog
-  # uses; an adopter's uniform token (`B\.[0-9]+`, `KB\.[0-9]+`) arrives as an ERE alternation that
-  # replaces it (backlog-census.sh --ticket-token). Callers that pass nothing see no change.
+  # dir #605: optional ERE heading token (default = keel's two shapes); see backlog-census.sh --ticket-token.
   local ticket_re="${2:-dir #[0-9]+|[0-9]+\.}"
   [ -f "$file" ] && [ -r "$file" ] || return 0
 

@@ -48,8 +48,7 @@
 # after `### ` and before a space — `B\.[0-9]+` for `### B.N`, `KB\.[0-9]+|RL\.[0-9]+` for two forms.
 # It REPLACES the default (`dir #N` and `<n>.`), which stays unchanged without the flag; an empty or
 # invalid ERE exits 2. With it, --list prints each ticket's captured token (`B.12`), not a bare number.
-# Out of scope: a pool kept as a SECTION (`## Pool`) rather than a `→ pool` heading tag — the flag
-# yields the open set, not that pool.
+# A pool kept as a `## Pool` SECTION (not a `→ pool` tag) is not read.
 #
 # With no --list, prints one line per tag, `count<TAB>tag`, descending by count (ties broken by
 # tag, ascending). With --list TAG, prints the ticket number of every open block under that tag,
@@ -74,7 +73,6 @@ repo_root="$(cd "$self_dir/../.." && pwd)"
 list_tag=""
 backlog_arg=""
 ticket_token=""
-ticket_token_set=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)
@@ -82,9 +80,12 @@ while [ $# -gt 0 ]; do
       list_tag="$2"; shift 2 ;;
     --list=*) list_tag="${1#*=}"; shift ;;
     --ticket-token)
-      [ $# -ge 2 ] || { echo "backlog-census: --ticket-token needs a regex" >&2; exit 2; }
-      ticket_token="$2"; ticket_token_set=1; shift 2 ;;
-    --ticket-token=*) ticket_token="${1#*=}"; ticket_token_set=1; shift ;;
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "backlog-census: --ticket-token needs a non-empty regex" >&2; exit 2; }
+      ticket_token="$2"; shift 2 ;;
+    --ticket-token=*)
+      ticket_token="${1#*=}"
+      [ -n "$ticket_token" ] || { echo "backlog-census: --ticket-token needs a non-empty regex" >&2; exit 2; }
+      shift ;;
     -h|--help)
       cat <<'EOF'
 Usage: backlog-census.sh [--ticket-token ERE] [--list TAG] [BACKLOG_PATH]
@@ -95,8 +96,7 @@ block with no qualifying arrow. With --list TAG, prints the ticket number of eve
 under that tag, one per line, in file order.
 
 --ticket-token ERE names an adopter's heading token (`B\.[0-9]+` for `### B.N`); it replaces the
-default `dir #N` / `<n>.`, and --list then prints the captured token. A pool kept as a `## Pool`
-section is not read: the flag yields the open set only.
+default `dir #N` / `<n>.`, and --list then prints the captured token.
 EOF
       exit 0 ;;
     -*)
@@ -108,14 +108,11 @@ EOF
 done
 
 # dir #605: validate the token under BOTH engines that will run it (grep -E in the scanner's heading
-# pass, bash's own `=~` right after) — a match or none is fine, status 2 is a malformed ERE.
-if [ -n "$ticket_token_set" ]; then
-  if [ -z "$ticket_token" ]; then
-    echo "backlog-census: --ticket-token needs a non-empty regex" >&2
-    exit 2
-  fi
+# pass, bash's own `=~` right after); status 2 is a malformed ERE. One input line, not none: busybox
+# grep only compiles the pattern when it reads input (secret-scan.sh, dir #694 B4).
+if [ -n "$ticket_token" ]; then
   grep_rc=0
-  printf '' | grep -E -- "$ticket_token" >/dev/null 2>&1 || grep_rc=$?
+  printf 'x\n' | grep -E -- "$ticket_token" >/dev/null 2>&1 || grep_rc=$?
   bash_rc="$([[ "" =~ $ticket_token ]]; echo $?)"
   if [ "$grep_rc" -ge 2 ] || [ "$bash_rc" -ge 2 ]; then
     echo "backlog-census: --ticket-token is not a valid extended regex: $ticket_token" >&2
@@ -149,7 +146,8 @@ while IFS=$'\t' read -r start end closed heading_block; do
   : "$start" "$end"  # body span unused; block detection alone gives the heading
   [ "$closed" = "1" ] && continue
 
-  id="$(bb_own_ticket_num "$heading_block")"
+  id=""
+  [ -n "$ticket_token" ] || id="$(bb_own_ticket_num "$heading_block")"
 
   # code-review medium (found live): a qualifying arrow reached only via a citation to a
   # DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") was read as THIS heading's own tag — the
@@ -172,9 +170,8 @@ while IFS=$'\t' read -r start end closed heading_block; do
     <<< "$stripped_block" | tail -1 | sed -E 's/^→[[:space:]]*//' || true)"
   [ -n "$tag" ] || tag="untagged"
 
-  if [ -n "$ticket_token_set" ]; then
-    # dir #605: an adopter's own token — the id IS the captured token (`B.12`), not a bare number.
-    id=""
+  if [ -n "$ticket_token" ]; then
+    # the id IS the captured token (`B.12`), not a bare number
     [[ "$heading_block" =~ ^###\ (${ticket_token})\  ]] && id="${BASH_REMATCH[1]}"
   elif [ -z "$id" ]; then
     # A legacy `### <n>.` heading has no `dir #N` of its own (bb_own_ticket_num's own documented
@@ -185,7 +182,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   [ -n "$id" ] || id="?"
 
   tag_id_pairs+=("$tag"$'\t'"$id")
-done < <(backlog_ticket_blocks "$backlog_file" ${ticket_token_set:+"$ticket_token"})
+done < <(backlog_ticket_blocks "$backlog_file" ${ticket_token:+"$ticket_token"})
 
 # bash 3.2 empty-array guard (dir #204's own trap): expanding "${arr[@]}" on a still-empty array
 # throws "unbound variable" under `set -u` instead of iterating zero times. One guard covers both
