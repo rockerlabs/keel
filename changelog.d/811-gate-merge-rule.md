@@ -9,7 +9,8 @@
   with "this merge cannot be read", as is a gh command holding unquoted `pr … merge` (or `api` and a
   merge-endpoint path) that are not its own, or a merge segment holding a second word `gh`: run gh as the
   command word, its subcommands right after it, quote such words, and keep a second `gh` out of the text.
-  The endpoint is read as GitHub receives it (`%XX` decoded; a `{branch}` that can complete it counts). The
+  The endpoint is read with `%XX` decoded and any case, and an API write to a path holding a part gh
+  fills in (`{branch}`, `:repo`, …) is denied as a merge, whatever the rest of the path. The
   manager file lists a session when it launches `/manage-release` (Claude's `Skill` call, or the operator's
   typed command), so `tools/install-pre-pr-gate.sh` widens the `UserPromptExpansion` matcher to
   `code-review|manage-release|keel-manage-release` and retires the old `code-review` entry first: re-run the
