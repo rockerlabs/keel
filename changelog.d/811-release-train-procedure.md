@@ -1,7 +1,8 @@
 - **A release train and the manager's merge are now a procedure, `docs/release-management.md` R14.** In a
   managed release the manager lands the slate as trains it builds, seam-reviews and merges itself, where the
   project's own `CLAUDE.md` carries a `KEEL-MANAGER-MERGES` line (dir #811, the procedure slice: the text only; the
-  gate that enforces it, the operator's settings edits and the build tool follow in later slices). R14
+  gate that enforces it and the build tool are the gate-merge-rule and release-train-tool entries of this
+  release, and the operator's settings edits live outside the repository). R14
   carries the preconditions for every merge (CI green on the exact head, the worker's literal `no more
   pushes; ok`, no correction in flight, a merge commit with `--match-head-commit`), the build of a train
   with plain git (`git merge-tree` over every pair, `--no-ff` merges of each frozen head as is, an ancestor
@@ -10,4 +11,6 @@
   R10 point at R14, `commands/manage-release.md` gains M7a, `docs/delegation.md` calls the operator's scarce
   resource decision bandwidth, `SECURITY.md` scopes "never merge autonomously" to outside a release manager's
   gated merge, and `/polish`'s guide (§ Step 4) points at R14's rule that a train always opens the depth dialog.
-  Standalone sessions never merge, unchanged.
+  Standalone sessions never merge, unchanged. The GitHub merge queue (dir #784, the last slice of dir #744) was
+  decided and closed: keel enables none, because release trains plus the manager's own update-branch cover the
+  cost of updating a branch.

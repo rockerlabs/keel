@@ -1,4 +1,4 @@
-- **README slimmed from 344 to about 170 lines; the detail moved rather than went.** The landing page
+- **README slimmed from 342 <!-- claim: hand lines of README.md at v0.16.0 (git show v0.16.0:README.md), v0.16.0 --> to 175 <!-- claim: lines README.md --> lines; the detail moved rather than went.** The landing page
   now carries the pitch, the four properties, one install command, the standalone git hook and a short
   pre-PR gate section. Where the rest went:
   - The full docs index is now the Docs section of [`docs/reference.md`](/docs/reference.md); the README

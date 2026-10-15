@@ -9,8 +9,9 @@
   pre-PR gate's push rule, the subagent git floor, a write outside the test sandbox, the installer), and a
   workflow miss goes to the register. Every procedure doc that restates "below the bar, a standing-list line"
   now sends a constructed-bypass finding to its register. [`SECURITY.md`](/SECURITY.md) gains "Threat model by
-  guard" — a row per guard: what it guards against, what a miss costs, the doubt class, what still catches it,
-  where its register lives — and its Scope now says a bypass that holds only for a constructed input is a
+  guard" — a row for each guard except the pre-PR gate's merge rule, which is not listed yet; a row says what
+  the guard guards against, what a miss costs, the doubt class, what still catches it and where its register
+  lives — and its Scope now says a bypass that holds only for a constructed input is a
   known limit, not a vulnerability.
 - **The registers gain the shapes this re-classification closes.** The pre-PR gate's header names a heredoc-
   or pipe-fed shell, an upper-case command word, a grouped `case` inside `$(…)` and a hook started with stdin
