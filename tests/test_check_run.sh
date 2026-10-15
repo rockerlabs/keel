@@ -29,7 +29,7 @@ check_contains "A1 i: the summary line names the short head" "$OUT" "head=$(git 
 check_contains "A1 i: the summary line names the log" "$OUT" "log=$rd/log"
 check_file "A1 i: secs file written" "$rd/secs"
 check_eq "A1 i: head file is the full HEAD" "$(git -C "$cwd" rev-parse HEAD)" "$(cat "$rd/head" 2>/dev/null)"
-check_eq "A1 i: tree file is empty on a clean tree" "" "$(cat "$rd/tree" 2>/dev/null)"
+check_eq "A1 i: tree file on a clean tree is just the diff checksum line" "1" "$(wc -l < "$rd/tree" | tr -d ' ')"
 cr run "$SANDBOX/rd.five" -- bash -c 'for i in 1 2 3 4 5 6 7 8; do echo line$i; done'
 check_contains "A1 i: a pass shows the log's last 5 lines" "$OUT" "line8"
 check_contains "A1 i: …including the fourth from last" "$OUT" "line4"
@@ -61,9 +61,9 @@ c" "$(cat "$SANDBOX/rd.argv/cmd")"
 rd4="$SANDBOX/rd.rerun"
 cr run "$rd4" -- true
 check_file "A1 iv: first run left an exit" "$rd4/exit"
-( cd "$cwd" && bash "$tool" run "$rd4" -- bash -c "touch '$SANDBOX/rerun.started'; sleep 2" >/dev/null 2>&1 ) &
+( cd "$cwd" && bash "$tool" run "$rd4" -- bash -c "touch '$SANDBOX/rerun.ready'; sleep 2" >/dev/null 2>&1 ) &
 rerun_pid=$!
-n=0; while [ ! -e "$SANDBOX/rerun.started" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+wait_ready "$SANDBOX/rerun" "$rerun_pid"
 check_nofile "A1 iv: the old exit is gone while the new run is in flight" "$rd4/exit"
 check_nofile "A1 iv: the old secs is gone too" "$rd4/secs"
 wait "$rerun_pid" 2>/dev/null
@@ -71,9 +71,9 @@ check_eq "A1 iv: the rerun then writes its own exit" "0" "$(cat "$rd4/exit" 2>/d
 
 # --- A1 (v): a SIGTERM'd run leaves no exit --------------------------------------------------------------------
 rd5="$SANDBOX/rd.killed"
-( cd "$cwd" && exec bash "$tool" run "$rd5" -- bash -c "touch '$SANDBOX/kill.started'; sleep 2" >/dev/null 2>&1 ) &
+( cd "$cwd" && exec bash "$tool" run "$rd5" -- bash -c "touch '$SANDBOX/kill.ready'; sleep 2" >/dev/null 2>&1 ) &
 kill_pid=$!
-n=0; while [ ! -e "$SANDBOX/kill.started" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+wait_ready "$SANDBOX/kill" "$kill_pid"
 kill -TERM "$kill_pid" 2>/dev/null
 wait "$kill_pid" 2>/dev/null
 sleep 3   # past the orphaned command's own end: nothing may write an exit afterwards either
@@ -117,7 +117,7 @@ cr verify "$rd" -- true
 check_status "A2 i: …also for the first dir (argv form)" 0 "$STATUS"
 
 # --- A2 (ii): no exit → 1 incomplete ---------------------------------------------------------------------------
-cr verify "$rd5" -- bash -c "touch '$SANDBOX/kill.started'; sleep 2"
+cr verify "$rd5" -- bash -c "touch '$SANDBOX/kill.ready'; sleep 2"
 check_status "A2 ii: a killed run (no exit) → 1" 1 "$STATUS"
 check_contains "A2 ii: …reason incomplete" "$OUT" "incomplete"
 
@@ -164,6 +164,15 @@ check_status "A2 vii: …and back to clean → 0 again" 0 "$STATUS"
 printf 'scratch\n' > "$cwd/untracked.txt"
 cr verify "$SANDBOX/vd.tree" -- true
 check_status "A2 vii: an untracked scratch file does not count → 0" 0 "$STATUS"
+
+# A second edit to a file that was ALREADY dirty when the run started leaves the porcelain text unchanged.
+printf 'three\n' > "$cwd/tracked.txt"
+cr run "$SANDBOX/vd.dirty" -- true
+printf 'four\n' > "$cwd/tracked.txt"
+cr verify "$SANDBOX/vd.dirty" -- true
+check_status "A2 vii: a second edit to an already-dirty tracked file → 1" 1 "$STATUS"
+check_contains "A2 vii: …reason tree changed" "$OUT" "tree changed"
+git -C "$cwd" checkout -q -- tracked.txt
 
 # --- A2 (viii): a different command → command differs ----------------------------------------------------------
 cr run "$SANDBOX/vd.cmd" -- bash -c 'echo ok'
