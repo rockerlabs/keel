@@ -94,7 +94,7 @@ backlog_arg=""
 ticket_token=""
 decay_only=0
 decay_marker='[model-decay]'      # dir #842; the second form is the same text as the ERE the strip helper takes
-decay_marker_re='\[model-decay\]'
+decay_marker_re='\[model-decay\]'   # keep the two spellings identical: a rename must change both
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)
@@ -179,7 +179,9 @@ while IFS=$'\t' read -r start end closed heading_block; do
   id=""
   [ -n "$ticket_token" ] || id="$(bb_own_ticket_num "$heading_block")"
   # the heading's own `dir #N`, empty for a legacy `### <n>.` heading (its $id becomes the numeral below) and in
-  # --ticket-token mode, exactly as for the release tag's strip above: every `dir #N` there is a citation
+  # --ticket-token mode: every `dir #N` there is a citation. The release tag's strip further below passes $id at
+  # this same point (both empty); the decay strip passes THIS variable instead, because $id is set to the numeral
+  # for a legacy heading before it runs — never "unify" the two.
   own_dir_num="$id"
 
   # code-review medium (found live): a qualifying arrow reached only via a citation to a
@@ -217,7 +219,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   if [ "$decay_only" = 1 ]; then
     # dir #842: the marker is read from the heading block with foreign citations stripped, never the body.
     # The literal test first skips the strip's subshell for the unmarked majority; the strip then takes the
-    # heading's OWN `dir #N` (empty for a legacy heading, as for the release tag above), never the numeral $id
+    # heading's OWN `dir #N` (own_dir_num, empty for a legacy heading), never the numeral $id
     # may now hold — a legacy `### 5.` citing `dir #5` is still a citation.
     [[ "$heading_block" == *"$decay_marker"* ]] || continue
     decay_block="$(bb_strip_foreign_citations "$heading_block" "$own_dir_num" "$decay_marker_re")"
