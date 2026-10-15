@@ -152,4 +152,18 @@ pin "G6 has the reviewer diff each decision against its table row" "$doc" \
   'diff every decision against the' \
   "expected G6 to carry the prose-versus-table check (dir #823 item 3)"
 
+# --- dir #842 slice 4: G0 sweeps the guards' bypass registers, in the doc AND in the command ----------------------
+# Each needle must sit inside G0's own text (the doc's "## G0" section; the command's bold G0 block), not merely
+# somewhere in the file — a step moved into another section is the drift this pins.
+g0_doc="$(section_body '## G0 — retro first' "$doc")"
+g0_cmd="$(awk '/^\*\*G0 — retro first\.\*\*/ { f = 1; next } /^\*\*G[1-9]/ { f = 0 } f' "$cmd")"
+for needle in 'tools/self/bypass-scan.sh scan' 'accumulate.sh due --owner guards' 'bypass-scan.sh data-dir'; do
+  case "$g0_doc" in *"$needle"*) pass "docs/grooming.md G0 names [$needle]" ;; *) fail "docs/grooming.md G0 names [$needle]" "expected the G0 section to carry the guards' scan/adjudicate/due step (dir #842 B11)" ;; esac
+  case "$g0_cmd" in *"$needle"*) pass "commands/groom.md G0 names [$needle]" ;; *) fail "commands/groom.md G0 names [$needle]" "expected the command's G0 block to carry the same step (dir #842 B11)" ;; esac
+done
+for needle in 'accumulate.sh closed' 'accumulate.sh fixed'; do
+  case "$g0_doc" in *"$needle"*) pass "docs/grooming.md G0 names [$needle] (a promoted class closes into fixed)" ;; *) fail "docs/grooming.md G0 names [$needle]" "without closed/fixed a promoted class never becomes due again (dir #838 B13 (7))" ;; esac
+done
+case "$g0_doc" in *"outside every"*"repository"*) pass "G0 keeps the scan's candidates out of every repository" ;; *) fail "G0 keeps the scan's candidates out of every repository" "the candidate file holds commands from real sessions (personal data)" ;; esac
+
 summary

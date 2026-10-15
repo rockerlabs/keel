@@ -197,6 +197,24 @@ produced specs** (keel's 0.10.2 cycle ran a six-session design fleet beside the 
 folded since the previous groom gets its follow-up list triaged under G4(d), whether or not the cycle
 shipped code.
 
+**The guards' bypass registers are swept here too, where the project keeps them on the accumulator
+(keel's own: `dir #842`; a project with no guard registers, or no session transcripts, skips this in one line).**
+A register entry counts as a sighting only when a real session wrote the shape, and nothing else reads the sessions,
+so G0 runs, in order: **(1) the scan** — `tools/self/bypass-scan.sh scan` over the harness's transcripts since the
+previous scan (a re-scan is harmless, the accumulator ignores a duplicate), into a scratch file outside every
+repository: it holds commands from real sessions, so it is deleted after the adjudication and nothing from it enters a
+tracked file or a ticket. **(2) The adjudication**, by the session that ran the scan: a pattern cannot tell a
+construction from real work, so a probe, an audit, a fixture, a sandbox setup or a scratch target is dropped, and a real
+session that wrote the guarded action against its real target, by the right actor, becomes ONE `accumulate.sh add`
+(one per parent session — a subagent's command counts under its parent's session uuid) between `accumulate.sh lock`
+and `unlock` on the guards' data dir (`tools/self/bypass-scan.sh data-dir`): `danger yes` when the guard's miss sends
+data off the machine or destroys it (a near-miss, due at once), `no` for a workflow miss (counted to two). **(3) The
+closures:** for every `promoted` class, `accumulate.sh closed <class> --backlog <path> --drafts <dir>` and, when its
+ticket is closed, `accumulate.sh fixed <class> <ref> --date <closure date>` — without it a class stays `promoted` and a
+recurrence is never due. **(4) `accumulate.sh due --owner guards`:** this groom files each class listed as a ticket
+(`accumulate.sh promote` records it); the tool never files. Run the scan more often than the harness keeps transcripts
+(Claude Code's `cleanupPeriodDays`, 30 days by default, checked 2026-10-15), or a sighting is lost before anyone reads it.
+
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
 natural output is a rule telling every future cycle to work around something — and a rule is the most
 expensive fix there is, because it is paid forever, by everyone, silently. That is sometimes right; it
