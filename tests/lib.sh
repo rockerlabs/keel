@@ -159,6 +159,9 @@ unset KEEL_HOME
 # export it, and mw_notify prefers it over every test stub) and its staleness knob. Neither has a harness
 # default; a test that needs one sets it itself.
 unset KEEL_MACHINE_WATCH_NOTIFIER KEEL_MACHINE_WATCH_MAX_AGE_DAYS
+# dir #842 slice 4: the bypass scan's two operator-facing locations (the transcripts to read, the guards' accumulator
+# store). A test that needs one sets it on the command line it runs; none may inherit the operator's real one.
+unset KEEL_GUARDS_ACCUM_DIR KEEL_TRANSCRIPTS_DIR
 # Same reasoning as KEEL_IMPACT_STORE above, for the read-trace store's own external root (dir #317).
 export KEEL_READ_TRACE_STORE="$SANDBOX/harness-read-trace-store"
 # And for the machine-global watcher's baseline store (dir #437 PR2, MW5): its default sits under

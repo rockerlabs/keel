@@ -237,7 +237,8 @@ check_nofile "...and nothing was created there" "$REPO_ROOT/bypass-candidates.ts
 new_repo "$SANDBOX/some-other-repo" >/dev/null 2>&1
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$SANDBOX/some-other-repo/c.tsv"
 check_status "--out inside ANY git work tree is refused" 2 "$STATUS"
-run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30
+mkdir -p "$SANDBOX/scratch-tmp"
+run env TMPDIR="$SANDBOX/scratch-tmp" bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30
 check_status "no --out -> a scratch file, exit 0" 0 "$STATUS"
 dflt="$(sed -n 's/^bypass-scan: candidates written to \(.*\) (since.*/\1/p' <<<"$OUT")"
 check_file "the default scratch file exists" "$dflt"
