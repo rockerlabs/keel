@@ -6,4 +6,4 @@
   `backlog_ticket_blocks` in `tools/lib/backlog-blocks.sh` takes the same token as an optional second argument.
   Limits, stated in the tool's header and `docs/grooming.md` G3: a pool kept as a `## Pool` section
   rather than a `→ pool` heading tag is not read, `tools/self/pool-report.sh` does not take the flag, and the
-  foreign-citation strip still recognises only `dir #N` citations (an adopter's own "Supersedes B.3" is not stripped).
+  foreign-citation strip still recognises only `dir #N` citations (an adopter's own "Supersedes" citation of its token is not stripped).

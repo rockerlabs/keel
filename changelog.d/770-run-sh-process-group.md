@@ -3,6 +3,6 @@
   `sleep` or holder it had started kept running after a timeout or Ctrl-C (dir #770). Each file now
   starts as the leader of its own process group, and the watchdog, the reap and `on_interrupt` signal
   that group: TERM, then KILL for a file or child that ignores it. `on_interrupt` gains the KILL step the
-  watchdog already had (a 5 s grace, then KILL, then exit 130). The mechanism is pure bash, so it works on
+  watchdog already had (a 5 s <!-- claim: hand the grace in tests/run.sh on_interrupt, 2026-10-15 --> grace, then KILL, then exit 130). The mechanism is pure bash, so it works on
   stock macOS and Alpine alike, and it is the same one `tools/self/mutation-sweep.sh` uses. A test
   file's stdin is now `/dev/null` rather than the runner's.

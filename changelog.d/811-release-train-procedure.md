@@ -1,8 +1,8 @@
 - **A release train and the manager's merge are now a procedure, `docs/release-management.md` R14.** In a
   managed release the manager lands the slate as trains it builds, seam-reviews and merges itself, where the
   project's own `CLAUDE.md` carries a `KEEL-MANAGER-MERGES` line (dir #811, the procedure slice: the text only; the
-  gate that enforces it and the build tool are the gate-merge-rule and release-train-tool entries of this
-  release, and the operator's settings edits live outside the repository). R14
+  gate that enforces it and the build tool have entries of their own in this release, and the operator's settings
+  edits live outside the repository). R14
   carries the preconditions for every merge (CI green on the exact head, the worker's literal `no more
   pushes; ok`, no correction in flight, a merge commit with `--match-head-commit`), the build of a train
   with plain git (`git merge-tree` over every pair, `--no-ff` merges of each frozen head as is, an ancestor

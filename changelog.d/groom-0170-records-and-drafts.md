@@ -6,5 +6,5 @@
   groom's placeholder. G0 in [`docs/grooming.md`](/docs/grooming.md) checks that row as well as the
   audit's. Under R8, every ticket the manager files carries a release tag on its heading, `→ pool` when
   nothing else fits. An untagged one sits outside every pool reading. G4, and `/groom`'s checklist, now
-  fold every leftover draft in the project's drafts folder, `→ pool`. That groom found 23 such drafts, one
+  fold every leftover draft in the project's drafts folder, `→ pool`. That groom found 23 <!-- claim: hand the unfolded drafts counted in RELEASES.md for the 0.17.0 groom, 2026-10-12 --> such drafts, one
   of them a spec-ready design.
