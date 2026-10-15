@@ -15,6 +15,383 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-15
+
+- **The runner's SIGTERM and interrupt checks no longer fail when a loaded machine is slow.** The check in
+  `tests/test_run_sh.sh` that a SIGTERM'd run exits and kills its fixtures timed kill-to-exit against a
+  10 s <!-- claim: hand the check's old bound in tests/test_run_sh.sh, v0.16.0 --> wall-clock bound, and flaked under the parallel release waves' load for four workers in a row
+  (dir #592). It is now an event: the run exits within the suite's own hang bound
+  (`KEEL_TEST_HANG_BOUND`) and the fixtures' sleeps, now 300 s <!-- claim: hand the fixtures' sleep length in tests/test_run_sh.sh, 2026-10-15 --> long, are gone. A new case runs the same
+  scenario against a runner whose exit is made 12 s <!-- claim: hand the stretched exit in tests/test_run_sh.sh, 2026-10-15 --> slow on purpose, so the stretch that used to flake it
+  is reproduced rather than waited for. The interrupt-with-a-TERM-ignoring-file case is event-ordered
+  the same way.
+
+- **`tools/self/backlog-census.sh` reads an adopter's own heading token (dir #605).** A backlog whose tickets
+  are `### B.N`, `### KB.N` or `### RL.N` headings printed an empty census, and the adopters that hit it derived
+  the three G3 rules by hand every groom. The new `--ticket-token ERE` flag (for example
+  `--ticket-token 'B\.[0-9]+'`) names the token, replaces the default `dir #N` / `<n>.` for that run, and makes
+  `--list` print the captured token (`B.12`). Without the flag nothing changes; an empty or malformed ERE exits 2.
+  `backlog_ticket_blocks` in `tools/lib/backlog-blocks.sh` takes the same token as an optional second argument.
+  Limits, stated in the tool's header and `docs/grooming.md` G3: a pool kept as a `## Pool` section
+  rather than a `→ pool` heading tag is not read, `tools/self/pool-report.sh` does not take the flag, and the
+  foreign-citation strip still recognises only `dir #N` citations (an adopter's own "Supersedes" citation of its token is not stripped).
+
+- **The backlog scanner recognises an adopter's uniform closure form `✅ **Done 2026-09-20**` (dir #609).**
+  `BB_CLOSURE_TAG_PATTERN` in `tools/lib/backlog-blocks.sh` now accepts each closure word in UPPER or Title case (`DONE`, `Done`) and allows up to two
+  `*` or `_` of markdown emphasis between the glyph and the word (all-lowercase stays prose; a title that puts a closure word right after a glyph reads as closed, a new case for Title case, as it always was for UPPER), so `bb_closure_word_ok` no longer refuses the form
+  a peer project kept for weeks and the census, the pool report and the archive-sweep check read it as closed.
+  `bb_closure_word_ok` also gains the scanner's own trailing boundary, so `✅ FIXEDX` is refused instead of read as
+  `✅ FIXED`, and the archive-sweep check dates a closure from a bare date after the word. The body-prose regex in
+  `tools/self/doctor.sh` stays case-sensitive on purpose; its comment says why.
+
+- **A release's session cost is two commands, not a hand step** (dir #654). `tools/self/session-cost.sh manifest`
+  turns a ledger's `TICKET<TAB>TIER<TAB>MODEL<TAB>BRANCH` lines into the manifest `table` reads, finding each
+  worker's session files by the exact `gitBranch` its transcripts record (new `tu_files_for_branches` in
+  `tools/lib/transcript-usage.sh`, one scan of the transcripts for the whole ledger) rather than by worktree
+  directory or modification time. A branch no session records prints as `# UNMATCHED:`, and a session that
+  recorded two ledger branches (it would be priced twice) as `# SHARED:`; either makes `manifest` exit 1. A
+  branch listed twice, or a comma in a matched session path, is refused with exit 2 before any row prints.
+  `session-cost.sh weighted` sums a manifest at the estimate's weights, the vector `keel tokens` uses
+  (`--weights input,write,read`, else `KEEL_TOKENS_WEIGHTS`, else `1.0,2.0,0.1`), primary and subagent shown
+  apart, and exits 1 over a manifest carrying either marker. The release-management doc's R7 and the grooming
+  doc's G5 point at the commands instead of naming a hand step.
+
+- **`tools/self/doctor.sh` check 5 <!-- claim: hand the check number in tools/self/doctor.sh, 2026-10-15 --> reads a ticket's heading the way the census does (dir #766).** The staleness
+  check kept its own copy of the old "heading block runs to the first blank line" loop, so a body line written
+  directly under a finished, untagged heading was absorbed into the heading, and a `— ✅ CLOSED` at its start read
+  as the heading's own tag: the check went quiet on a ticket whose body already recorded the close. It now sources
+  `tools/lib/backlog-blocks.sh` and asks `bb_heading_continues` (dir #839) which following lines belong to the
+  heading, so doctor, the census, the pool report and the archive-sweep check share one rule. A title that wraps
+  before its tail still takes its continuation lines, as before.
+
+- **`tools/self/doctor.sh` no longer prints an OK over a read it could not complete (dir #766).** The
+  self-check had about forty sites where a failed producer read as a clean answer: a git that would not run
+  (`log`, `tag -l`, `rev-parse --is-shallow-repository`, `grep`) made the CHANGELOG staleness, release-tag and
+  commit-ticket checks print OK or a silent "skipping"; an unreadable tracked file either aborted the whole
+  run with no GAP or read as empty; and the `changelog-fragments.sh` calls ended in `|| true`. Each of those is
+  now a GAP naming what could not be read and the check it leaves incomplete (no OK line), and later checks
+  still run. The sites that stay unchecked on purpose (a `grep` with no match, a filter over text already in
+  memory, a best-effort `gh` call) are listed with their reason in
+  `tests/test_doctor_status_register.sh`, which fails on any new unregistered `|| true`, `|| echo`, `< <(` or
+  `2>/dev/null)` site. An unreadable `CHANGELOG.md` is now a GAP rather than a silent skip.
+
+- **The test-suite canary no longer fails a run for a peer's ordinary work in the shared checkout.**
+  `tests/run.sh` compares the checkout's refs, config and status before and after a run. A full suite re-run
+  cost a release wave about an hour each time it tripped on something the run never wrote (dir #768). The
+  canary is now scoped to what the run could have written:
+  - **Branches** no worktree has checked out are reported only when a new one appears, or when one is deleted
+    or rewritten so that no ref reaches its old tip any more. A sweep of branches that were merged for real,
+    or a peer's branch moving forward, no longer trips it. A squash-merged branch deleted by hand still does.
+  - **Config:** the tracking keys of a branch whose name has a dot (`release-0.17.0-train1`) are
+    per-branch tracking like any other. Only a branch name without a dot was treated that way before.
+  - **`TMPDIR` inside the watched checkout** no longer trips the run on its own log directory. The old
+    "TMPDIR inside the checkout self-trips" pin is reversed.
+  - A watched root that is a **subdirectory of a larger repo** is handled the same way. A checkout whose
+    own `tools/lib/ref-guard.sh` is older than this runner (the symlinked-adopter shape) now gets a NOTE and
+    skips the branch half of the canary, instead of a silent "command not found".
+  - An own-branch move, a changed `.git/config` key and a stray file elsewhere still trip it.
+
+- **`tests/run.sh` signals a test file's whole process group, so a killed or interrupted file leaves nothing
+  running.** The per-file watchdog and the interrupt handler signalled only the file's own bash, so a
+  `sleep` or holder it had started kept running after a timeout or Ctrl-C (dir #770). Each file now
+  starts as the leader of its own process group, and the watchdog, the reap and `on_interrupt` signal
+  that group: TERM, then KILL for a file or child that ignores it. `on_interrupt` gains the KILL step the
+  watchdog already had (a 5 s <!-- claim: hand the grace in tests/run.sh on_interrupt, 2026-10-15 --> grace, then KILL, then exit 130). The mechanism is pure bash, so it works on
+  stock macOS and Alpine alike, and it is the same one `tools/self/mutation-sweep.sh` uses. A test
+  file's stdin is now `/dev/null` rather than the runner's.
+
+- **`tests/run.sh` fails a test file that never printed its own verdict.** A file that sourced `tests/lib.sh`
+  and ended without calling `summary` was judged by its last command's exit status, so FAIL lines in its log
+  still counted as a pass. The 0.16.0 alpine leg shipped three red checks green that way (dir #772). The run now
+  reads each green-exiting file's log for its own `<file>: N passed, M failed` line, on a line of its own, and
+  counts a file without one as failed, naming it. The check lives in the runner, so it holds on macOS and
+  Alpine alike and whatever a file did with its own EXIT trap. A watchdog-killed or already-failed file keeps
+  its own reason. A file that does not source `lib.sh` owes no summary: the detection reads any `.` or `source`
+  line that names `lib.sh`, so a comment that merely mentions it also counts, which fails closed. A new test
+  pins that every file in `tests/` ends in `summary`; that each one sources `lib.sh` was already pinned by
+  `tests/test_lib_source_guard.sh`.
+
+- **The mutation sweep bounds a whole test run, not just its first process.** `tools/self/mutation-sweep.sh`
+  gave each test run a perl alarm, which killed the test file's bash and left the child that bash was
+  waiting on (a `$(…)` running the gate's awk) spinning: one mutant hung a sweep for over three hours
+  (dir #782). Each run is now its own process group, signalled as a whole at `KEEL_SWEEP_TIMEOUT` (TERM,
+  then KILL five seconds later), so a spinning mutant is recorded TIMEOUT and leaves no process behind. The
+  sweep no longer needs perl, so its test file runs on Alpine too instead of skipping itself there.
+
+- **Delta audit: the verifier runs a mutation sweep by default, one range per pass, and files pin gaps as one
+  ticket.** In [`docs/delta-audit.md`](/docs/delta-audit.md), the S-final verifier now mutates the qualifying
+  rules (a filter, threshold, guard or exclusion rule, `/polish`'s own trigger) in its range without a brief
+  asking for it. Each verifier pass sweeps the commits no earlier pass swept, recorded as a `Mutation sweep:`
+  line in the verdict record, so a fix round's rules are swept by the pass that verifies them and no commit is
+  swept twice; a survivor reaches GO only through the §8 disposition any finding gets, never through a rule of
+  its own. A reading leg that claims a test cannot fail now writes a `Mutation candidate:` line unless it ran
+  the mutant itself, and the verifier runs one mutant per candidate. One run's pin gaps are staged as ONE
+  ticket, not one per rule: the 0.16.0 audit filed three for this one class (dir #783).
+
+- **Changelog: numbers in the text are re-derived or listed (dir #810).** `tools/self/changelog-claims.sh` reads
+  the changelog fragments and `CHANGELOG.md`'s `[Unreleased]` (or one section, `--section x.y.z`) and finds
+  every numeric claim. A `<!-- claim: words|lines|matches … -->` marker on the same line binds a number to a
+  source the tool re-derives (a stale one is a MISMATCH and fails); `claim: hand` carries a measurement or a
+  history number with its as-of; a number with no marker is listed UNBOUND and fails at the cut under
+  `--strict`. The four 0.16.0 claims that shipped wrong or nearly did are the tool's test fixtures.
+  `changelog.d/README.md` has a new Numbers section, and the cut (`docs/release-audit.md` Phase 7), the
+  correction round (`docs/delta-audit.md` §10) and `docs/release-management.md` name the tool.
+
+- **The pre-PR gate denies `gh pr merge` except to a release manager, pinned, as a merge commit** (dir #811, slice
+  S2). `tools/pre-pr-gate.sh` gains a merge rule beside its `gh pr create` rule, reading the command the same way:
+  a merge segment is denied unless the session is this repository's release manager, the main checkout's
+  `CLAUDE.md` carries a `KEEL-MANAGER-MERGES` line, and the command carries `--merge` and
+  `--match-head-commit <40-hex sha>` with none of `--squash`, `--rebase`, `--auto` or `--admin`. A subagent never
+  merges, and `gh api …/pulls/<n>/merge` is denied to every session, since the rule reads the head pin only
+  as the CLI's `--match-head-commit` and will not parse the API's own `sha` field; so is a merge
+  the hook cannot place — gh not the command word (`timeout 60 gh pr merge …`, `sudo -u x gh …`), or a flag before
+  the subcommand that may take a word as its value (`gh pr --admin merge`) — denied with "this merge cannot be
+  read", as is a gh command holding unquoted `pr … merge` (or `api` and a merge-endpoint path) that are not its
+  own, or a merge segment holding a second word `gh`: run gh as the command word, its subcommands right after it,
+  quote such words, and keep a second `gh` out of the text. The endpoint is read as GitHub routes it (`%XX`
+  decoded, any case, dot segments resolved, a `.json` suffix), and an API write is denied as a merge, fail-closed,
+  when its path holds `{branch}`/`:branch`, or a `%`, an inner dot segment or a `;` beside `pulls` or `merge`, or a
+  dot segment or a `//` other than a `scheme://` with a non-slash after it beside any gh placeholder
+  (`{owner}`/`{repo}` otherwise only where they could complete the merge path, read on the raw and the decoded path
+  alike), or a placeholder in a full URL's host. The manager file lists a session when it launches
+  `/manage-release` (Claude's `Skill` call, or the operator's typed command), so `tools/install-pre-pr-gate.sh`
+  widens the `UserPromptExpansion` matcher to `code-review|manage-release|keel-manage-release` and retires the old
+  `code-review` entry first: re-run the installer and restart your sessions. A `settings.json` deny on
+  `gh pr merge` still fires before any hook, so the rule takes over only where that deny is lifted, and only with
+  jq installed (without jq the whole hook is inert). Fixtures:
+  [`tests/test_pre_pr_gate_merge.sh`](/tests/test_pre_pr_gate_merge.sh); mutants:
+  [`tests/mutants/pre-pr-gate-merge.tsv`](/tests/mutants/pre-pr-gate-merge.tsv). `SECURITY.md` names the rule.
+
+- **A release train and the manager's merge are now a procedure, `docs/release-management.md` R14.** In a
+  managed release the manager lands the slate as trains it builds, seam-reviews and merges itself, where the
+  project's own `CLAUDE.md` carries a `KEEL-MANAGER-MERGES` line (dir #811, the procedure slice: the text only; the
+  gate that enforces it and the build tool have entries of their own in this release, and the operator's settings
+  edits live outside the repository). R14
+  carries the preconditions for every merge (CI green on the exact head, the worker's literal `no more
+  pushes; ok`, no correction in flight, a merge commit with `--match-head-commit`), the build of a train
+  with plain git (`git merge-tree` over every pair, `--no-ff` merges of each frozen head as is, an ancestor
+  check), a seam review sized from the seam rather than the diff, the rebuild bound, and the fallback in
+  which the operator still merges. The Operator row of the Roles table now holds decisions only, R2, R9 and
+  R10 point at R14, `commands/manage-release.md` gains M7a, `docs/delegation.md` calls the operator's scarce
+  resource decision bandwidth, `SECURITY.md` scopes "never merge autonomously" to outside a release manager's
+  gated merge, and `/polish`'s guide (§ Step 4) points at R14's rule that a train always opens the depth dialog.
+  Standalone sessions never merge, unchanged. The GitHub merge queue (dir #784, the last slice of dir #744) was
+  decided and closed: keel enables none, because release trains plus the manager's own update-branch cover the
+  cost of updating a branch.
+
+- **Release trains are built by a tool, not hand-typed git (dir #811 slice S3).** `tools/self/release-train.sh`
+  (keel-self-maintenance; git only, never pushes) turns a list of `N=SHA` frozen heads into one train branch:
+  `build` creates its own worktree, refuses an existing branch, a non-empty worktree path or an unknown sha
+  before any git write, checks every pair of heads with `git merge-tree`, merges each `--no-ff` as
+  `train: #N (sha)` in the given order and prints the seam list; `build --continue` appends the rest after
+  a hand-resolved conflict or a moved head; `body` prints the train PR body from the branch's own
+  first-parent walk (table never retyped, hand-resolved merges and integration commits listed wherever
+  they sit); `check` names every constituent whose live head moved. The release-management doc's train
+  procedure (R14) now builds, writes and checks a train with it; `tests/test_release_train.sh` pins both.
+
+- **dir #813: the branch-cleanup tool no longer offers a live session's worktree for removal when that session works outside it.** `tools/branch-cleanup.sh` graded a release manager's worktree ASK (with a ready `git worktree remove`) because the session writes the main checkout, so its own worktree stayed clean and untouched past `--live-hours`, and a branch with no commits of its own counts as merged. A worktree with a running process whose working directory is inside it (found through `/proc`, else `lsof`) now grades FLAG, with no destructive command, in every tier and regardless of `--live-hours`; `--prune-safe` leaves it alone. The signal is positive-only: when no process is seen (no `/proc` and no `lsof`, or a process of another user), the grading is unchanged; a stale shell tab or editor left in a merged worktree also keeps it FLAG until closed.
+
+- **dir #813: `/wrap`'s description of the FLAG tier names the running-process reason.** `commands/wrap.md` listed only two reasons a worktree grades FLAG (uncommitted work, or touched within `--live-hours`); the branch-cleanup tool also flags a worktree with a running process whose working directory is inside it, a live session that works elsewhere. One clause added, and `tests/test_rails_honesty.sh` pins it.
+
+- **dir #814: the branch-cleanup tool now grades a repo with no remote whose default branch is not `main`.** `tools/branch-cleanup.sh` used to resolve the default branch as "origin/HEAD's target, else `main`", so a local-only repo whose default is `master` got `no main to compare against (fetch first?)` and nothing was graded. With no remote it now takes the one of `init.defaultBranch`, `main` and `master` that exists as a local branch, and says so on stderr; if two or more exist (a stale `main` beside a live `master`) it grades nothing and names them, since a wrong base deletes work. A new `KEEL_DEFAULT_BRANCH` env var names the default outright and must be a plain branch name, used exactly as given (a value that names no branch grades nothing; `HEAD` and a leading `-` are rejected). A repo that has a remote but no `origin/HEAD` behaves as before, and its message now also names the override.
+
+- `tools/delta-audit/derive.sh` (dir #816, absorbing dir #484 and the classifier half of dir #552)
+  no longer classes every non-shell source as `prose`: Swift, Python, Go, Rust, JS/TS and other
+  compiled/source files class `code`, so they read with the seams before prose; `.yml`/`.yaml`, `.json`,
+  `.toml`, `.plist`, `.xcconfig` and `requirements.txt` class a new `config` read with code; `test/`,
+  `Tests/`, `spec/`, `*Tests.swift` and `*_test.*` class `test`. A file no list names still falls to
+  `prose`, now with one stderr note naming it. The lists are the `DELTA_CODE_EXTENSIONS`,
+  `DELTA_CONFIG_EXTENSIONS` and `DELTA_PROSE_EXTENSIONS` knobs; the executable-bit fallback stays for
+  extensionless CLIs but no longer overrides a known prose extension.
+
+- **`docs/grooming.md` takes in two adopter lessons** (dir #823). G6 says the cross-vendor round runs after the
+  same-family round's fixes are applied rather than beside it, that a vendor's severities and its claims about
+  tools are verified like any finding, and that the reviewer is asked to diff each decision against the table row it
+  cites. G3 says a count taken over a file the groom is itself editing is re-measured after the groom's last edit,
+  with the counting rule stated beside the figure.
+
+- The `/polish` preamble no longer reads as an instruction to push with `--no-verify`: it now says the
+  pre-PR gate denies `git push --no-verify`, so the pre-push secret scan always runs. A test in
+  `tests/test_polish_command.sh` pins that no shipped command tells the agent to use the flag (dir #825).
+
+- **`docs/release-management.md` takes in the field corrections adopters sent back from managed releases** (dir #826,
+  dir #827, dir #828, dir #832, dir #823). R3 now says a launch needs a turn the operator opened whoever decided, queues the
+  rest as proposal cards, and gives one model-verify order, shared with `docs/delegation.md`: the session log by branch
+  first, the worker's quote second (stale after a switch), metadata last, a disagreement recorded with both readings. The
+  worker brief's CI-wait line says the host may have no `timeout` binary and to background the watch itself, and gains a
+  same-turn rule (act on a hand-back at once; the checkpoint belongs to the turn that opens the PR). R1 reads a ticket as its
+  whole block, not its heading line. The fix-round pre-flight is read from the CI workflow at brief time. R6 gates a merge on
+  the ACK of every spec amendment and has an incoming manager probe its hand-off's tooling claims. R9 names the version bump's
+  owner and the route for an audit-heavy worker at the compaction stop. R11 makes a turn-end note without its deliverable a
+  probe trigger. R14's fallback gives every reported PR one of two shapes. `docs/delta-audit.md` gives a Fixer's brief rows of
+  finding plus acceptance check and never a verdict's proposed prose as its premise.
+
+- **`secret-scan.sh --tracked` no longer stalls on a large tracked binary** (dir #830). Decoding a binary writes
+  several text views and also reads its printable runs; the old recipe put a newline after every non-printable
+  byte, so a 20 MiB <!-- claim: hand the generated blob of tests/test_secret_guard_binary_cost.sh, 2026-10-14 -->
+  incompressible blob became about 12.6 million <!-- claim: hand lines in the decoded runs view, 2026-10-14 -->
+  tiny lines, and the key-shape grep paid a fixed cost on each of them: about 180 s <!-- claim: hand CPU time before the fix, 2026-10-14 -->
+  of CPU for the blob (no personal literal set), and on a machine under load a `kb-doctor.sh` run that never seemed to finish. The
+  key-shape pass now reads no run view (its patterns are unanchored printable ASCII, so every match already
+  sits in the NUL-stripped view; a test pins that); the personal-literal passes read the runs squeezed to one
+  line per run, in a file of their own. The verdict is unchanged. On macOS (BSD grep) the same blob now scans in about 40 s <!-- claim: hand CPU time after the fix, macOS BSD grep, no personal literals, 2026-10-14 -->
+  of CPU with no personal literal set (about 55 s <!-- claim: hand CPU time after the fix, macOS BSD grep, two literals, 2026-10-14 -->
+  with two; each literal adds to it), linear in its size, and a test pins that with a CPU-time ceiling (CPU, not
+  wall-clock: wall-clock measures the machine's load, which is what made the stall look endless). On the Alpine
+  leg (busybox grep) the scan is slower but finite, and the test bounds a smaller blob there instead; every other
+  leg enforces the large-blob ceiling. `tools/public-audit.sh`'s decode
+  carries the same squeeze; it never shared the stall.
+  The same change also fixes a fail-open on Alpine/busybox that predates it: the printable-runs view was read with
+  `tr` and the class `[:print:]`, which busybox `tr` takes literally, so every byte became a newline and a
+  personal literal anchored with `^` or `$` inside a binary was missed there (at v0.16.0 the scan read clean). The
+  runs are now read with the range `' -~'`, in `secret-scan.sh` and in `tools/public-audit.sh`'s decode alike; an
+  Alpine adopter who installed the guard at 0.16.0 gets a tightened guard.
+
+- **Keel's own maintenance: a finding accumulator, `tools/self/accumulate.sh`.** A recurring defect class used to be
+  noticed only when a person connected two tickets, and the hand-kept `[n×]` counters rarely moved. The tool keeps a
+  class registry and an append-only sighting log in a data directory the caller names, counts the distinct
+  independent sources of each class inside a window (60 days <!-- claim: hand the default window in tools/self/accumulate.sh, 2026-10-15 --> and a threshold of 2 <!-- claim: hand the default threshold in tools/self/accumulate.sh, 2026-10-15 --> unless the class says otherwise),
+  and lists the classes that are due. One felt danger is due at once. A class that was promoted to a ticket counts
+  recurrence only from the ticket's closure date, and a class quiet for its whole window retires. It reads a backlog
+  to find out whether a promoted class's ticket has closed, through the closure vocabulary in
+  `tools/lib/backlog-blocks.sh`. It never files or edits a ticket, and its day arithmetic is awk, not `date`.
+  `tests/test_accumulate.sh` covers it, and `tests/mutants/accumulate.tsv` lists the single-clause edits of the tool
+  that suite must turn red. The command observers of dir #838 and the guard register of dir #842 are its first consumers.
+
+- **A ticket whose first body line sits directly under its heading no longer reads closed from that line (dir #839).**
+  `tools/lib/backlog-blocks.sh` ended a heading block at the first blank line, so a body line written with
+  no blank line before it joined the heading, and a `✅ DONE` in it closed an open ticket for
+  `tools/self/backlog-census.sh`, `tools/self/pool-report.sh` and `tools/self/archive-sweep-check.sh` (the
+  0.17.0 groom lost dir #813 from every count this way). A heading that already shows its tail (an R grade, a
+  release, pool or lane arrow, or a status glyph) now takes no further line, and a `Log:`, `Draft slug:` or `**`
+  opener always ends the block. A title that wraps before its tail still reads as before. What
+  leaves the block is whatever is wrapped onto the line after a finished first line: dir #207's parenthetical note,
+  a lane arrow (no longer read by the pool report) and a closure tag (a wrapped `— ✅ CLOSED` now reads open); no
+  known heading has the last two, and no `closed` verdict on the maintainers' backlog changes. The other residual,
+  named in the function's header, is a prose body line directly under a heading with no tail at all.
+
+- **A guard's known-bypass register now counts real sightings.** The pre-PR gate's header and its subagent floor
+  mark 12 <!-- claim: matches '\[bypass:' tools/pre-pr-gate.sh --> of their shapes with a `[bypass:<class>]` key (a shape with no key
+  is not counted; the merge rule's residuals carry none yet), and `tools/self/known-bypass-shapes.tsv` holds one detection pattern per key.
+  `tools/self/bypass-scan.sh` reads Claude Code's session transcripts, lists the
+  candidate commands per class and per parent session (a subagent's command counts under its parent) into a
+  scratch file outside every repository, and prints the `accumulate.sh new-class` lines that register the classes
+  in the guards' own data dir. The groom's G0 gains the step that runs the scan, adjudicates each candidate,
+  closes promoted classes and files whatever `accumulate.sh due --owner guards` lists, so a shape a real session
+  writes twice in 90 days <!-- claim: hand WINDOW_DAYS in tools/self/bypass-scan.sh, 2026-10-15 --> (once, for a guard whose miss leaks or destroys data) becomes a ticket on its own. This
+  finishes dir #842 slice 4; `tests/test_bypass_scan.sh` pins each listed entry's key and each key's shape row (a command-reading
+  entry added later without a key is not yet caught by it) and runs the scan and the accumulator's ageing on
+  fixtures.
+
+- **A guard's filing rule now tells a realistic failure from a constructed bypass, and each guard states the
+  threat model it is built against.** The always-file condition of
+  [`docs/verification-economics.md`](/docs/verification-economics.md) §4 splits by the input that makes the
+  surface fail. A **realistic failure** (it happened, or it needs no special input, or the input is attested in
+  ordinary use) is filed with no discretion, as before. A **constructed bypass** — a step whose only purpose is to get past
+  the guard, or a shape searched for in real sessions and not found — goes into the guard's known-bypass
+  register instead of a ticket, and is promoted only when a realistic sighting turns up. When the branches cannot be told apart, the guard's miss decides: a miss
+  that would send data off the machine or destroy data is filed (the secret guard, `public-audit`, the
+  pre-PR gate's push rule, the subagent git floor, a write outside the test sandbox, the installer), and a
+  workflow miss goes to the register. Every procedure doc that restates "below the bar, a standing-list line"
+  now sends a constructed-bypass finding to its register. [`SECURITY.md`](/SECURITY.md) gains "Threat model by
+  guard" — a row for each guard except the pre-PR gate's merge rule, which is not listed yet; a row says what
+  the guard guards against, what a miss costs, the doubt class, what still catches it and where its register
+  lives — and its Scope now says a bypass that holds only for a constructed input is a
+  known limit, not a vulnerability.
+- **The registers gain the shapes this re-classification closes.** The pre-PR gate's header names a heredoc-
+  or pipe-fed shell, an upper-case command word, a grouped `case` inside `$(…)` and a hook started with stdin
+  closed; its subagent floor names the upper-case verb; `tests/lib.sh` names `run.sh`'s unpinned `termed`
+  branch and `tools/lib/safe-write.sh` its unpinned link-planting check. Closed into those registers rather
+  than filed: dir #763, dir #776, dir #777, dir #778, dir #779, dir #780, dir #781 and dir #792.
+  `tests/test_known_bypass_registers.sh` pins every row, its register and its entries, and
+  `tests/test_verification_economics_doc.sh` pins the rule's needles and its routing sites.
+
+- dir #842: work that hardens a guard or a check against an input a model has to produce now carries `[model-decay]` in its backlog heading, and the marker is read by machine instead of living in prose. `tools/self/backlog-census.sh --decay` keeps only the open tickets that carry it (`--list TAG --decay` for one lane, `--list all --decay` for every open marked ticket; a marker reached only through a recognised citation of another ticket never counts). `docs/grooming.md` G5 and `/groom` report each release row's decay-exposed share, `docs/rollout-audit.md` lists every marked ticket for re-triage at a model upgrade, and `tests/test_model_decay_wiring.sh` fails the suite when the definition, either consumer or the reader's flag is deleted or moved to the wrong section.
+
+- **`/polish`'s compaction stop continues itself instead of waiting for two operator messages (dir #845).** At
+  the context threshold the run still commits and writes its hand-over file, then hands on by the first route
+  that applies: a turn the operator started launches a fresh-context successor with `start_session` in the same
+  worktree; a managed-release worker sends its manager `COMPACT <token> <hand-over file>` and the manager clears
+  the idle session and sends one continuation message; only when the harness refuses does the run end with the
+  old two paste-ready lines, naming the refusal. Every route continues with the same skill call, so the
+  `after a compaction stop` loop guard still holds. See
+  [`commands/polish-guide.md`](/commands/polish-guide.md) § Step 1 and
+  [`docs/release-management.md`](/docs/release-management.md) R11.
+
+- **Changelog claim lint: three more kinds of count are no longer excluded as references (dir #846).**
+  `tools/self/changelog-claims.sh` now keeps a number that follows a structure or status word when a count
+  unit or a change verb comes next (`passes 12 tests`, `lines 120 changed`), and a hyphenated count such as
+  `top-10` or `over-100`; a glued unit (`2x`, `40KB`) leaves an integer claim that a marker can bind.
+  `--fragment` accepts `./` and absolute paths under the repository, and `--section` refuses a duplicated
+  version heading. `docs/release-audit.md` Phase 7 now says what to do with a number whose source is
+  gitignored or moves after the cut: `claim: hand` with its as-of. Over the released sections the change adds
+  one real claim and no noise.
+
+- **Keel's own maintenance: `tools/self/accumulate.sh closed` reads a ticket's heading the way the census does.** The
+  accumulator cut a heading block at the first blank line, so an open ticket whose first body line was written with no
+  blank line under a finished heading, and carried a `✅ DONE`, read as closed. `closed` now takes the lines
+  `bb_heading_continues` accepts (dir #839's rule), so that ticket reads open and a title still wrapping onto the next
+  line keeps its continuation. A false close would have silenced a recurring class for dir #838's observers and dir #842's
+  guard register. Ticket: dir #847.
+
+- **A session transcript with one bad line no longer reads as unmatched** (dir #848). `tu_files_for_branches`
+  in `tools/lib/transcript-usage.sh`, the lookup behind `session-cost.sh manifest`, now parses a transcript line
+  by line, so a truncated last line (a session still being written) or a line that is valid JSON but not an
+  object skips only itself. Before, either aborted the whole file, so a branch that a session did record came out of
+  `manifest` as an `# UNMATCHED` line and the command exited 1, and `weighted` repeated it under the total and
+  exited 1 as an incomplete sum. Only `manifest`'s lookup is tolerant: `session-cost.sh weighted` and `table`
+  still read a transcript whole and stop on such a line.
+
+- **The secret scanner's fail-closed regex probes no longer print `Broken pipe` on their own (dir #849).** Both
+  the selftest's probe and the production check that refuses a malformed personal pattern fed `grep` through a
+  pipe from `printf`; `grep` exits on a bad pattern before it reads, so `printf` was sometimes signalled and
+  wrote `write error: Broken pipe` to stderr — which made `tests/test_tour_transcript.sh` fail in roughly one
+  run in ten, and could land ahead of the scanner's own reason line. Both probes now read a file, so no
+  producer can be signalled. `tests/test_secret_guard.sh` pins that no `printf` pipe feeds a `grep` in the
+  scanner and that `--selftest` stays quiet on stderr. See
+  [`tools/secret-guard/secret-scan.sh`](/tools/secret-guard/secret-scan.sh).
+
+- **Grooming and release management: the release record is checked by path, filed tickets carry a tag, and
+  leftover ticket drafts get folded.** Three rules from the 0.17.0 groom's retro. Keel's releases record and its
+  audit record share one file name, and a release closed with only the audit row written. So
+  [`docs/release-management.md`](/docs/release-management.md) R7 and `/manage-release`'s close step now
+  name the releases record by its full path, and a release is not closed while its row still holds the
+  groom's placeholder. G0 in [`docs/grooming.md`](/docs/grooming.md) checks that row as well as the
+  audit's. Under R8, every ticket the manager files carries a release tag on its heading, `→ pool` when
+  nothing else fits. An untagged one sits outside every pool reading. G4, and `/groom`'s checklist, now
+  fold every leftover draft in the project's drafts folder, `→ pool`. That groom found 23 <!-- claim: hand the unfolded drafts counted in RELEASES.md for the 0.17.0 groom, 2026-10-12 --> such drafts, one
+  of them a spec-ready design.
+
+- **Grooming: priced options read as a gauge, and offered tickets are checked live first.** Two rules from
+  the 0.17.0 re-cut, in [`docs/grooming.md`](/docs/grooming.md) and `/groom`. G5's window-point estimate is
+  now quoted as where the weekly gauge stands and where the option leaves it, plus the date the window
+  ends: a bare point figure was read as the gauge's end, not its change. G2's live premise check now runs
+  before a ticket is offered by name, not after the operator's "yes": that re-cut had offered a parked
+  ticket a later change had already fixed.
+
+- **README: a short silent explainer video under the intro.** It walks the four properties
+  (economy, stability, constraint, accumulation) in the order [`README.md`](/README.md) lists them, and
+  every claim on screen comes from that README. The video is a GitHub attachment, so GitHub renders
+  it as an inline player; the MP4 itself never enters the repo.
+
+- **README slimmed from 342 <!-- claim: hand lines of README.md at v0.16.0 (git show v0.16.0:README.md), v0.16.0 --> to 175 <!-- claim: lines README.md --> lines; the detail moved rather than went.** The landing page
+  now carries the pitch, the four properties, one install command, the standalone git hook and a short
+  pre-PR gate section. Where the rest went:
+  - The full docs index is now the Docs section of [`docs/reference.md`](/docs/reference.md); the README
+    lists the five docs to start with.
+  - The what-loads-when diagram and the before/after picture are in
+    [`docs/loading-and-cost.md`](/docs/loading-and-cost.md).
+  - The gate's `SubagentStart` rails hook, its git floor and their off switches are in
+    [`docs/getting-started.md`](/docs/getting-started.md) §6, beside the rest of the gate's wiring; the
+    linked install's full note that the secret-guard hook is a copy is in its Linked install section
+    (the README keeps a short form).
+  - The machine-watch watcher's one-time macOS Script Editor step is on `docs/reference.md`'s
+    `tools/machine-watch.sh` row, beside its notification switches.
+  - The `keel` CLI's verb list is pinned on `docs/reference.md`'s keel row alone; the README points at
+    `keel help`.
+  - The tests that pinned this prose in the README now pin it where it lives.
+  - One row is gone: the install table's deferred `.dmg` option, which does not exist yet.
+
 ## [0.16.0] — 2026-10-12
 
 **Known issues, disclosed at the cut.** These things from the 0.16.0 delta audit ship known-imperfect; each is
