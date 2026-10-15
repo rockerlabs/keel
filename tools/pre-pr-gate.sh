@@ -587,7 +587,13 @@
 # segments resolved in either order. For a listed manager in an opted-in project (whose every merge the deny used to
 # block), two more weaken only the flag check: a flag word the shell assembles at run time (`$FLAGS`,
 # `--admin$(true)`), and a merge aimed at another repository than the event cwd's (`-R`, a `cd` in the command),
-# judged by the cwd's file and policy line. Without jq the whole hook is inert (its documented choice, above), this
+# judged by the cwd's file and policy line. Two more shapes are read as no merge for a non-manager: an upper-case
+# `GH pr merge 5` (on a case-insensitive volume) and a subcommand word the shell assembles at run time (`gh pr $M 5`,
+# `gh pr merge$IFS5`) — dir #811, delta-audit 0.17.0 S2-4/D1-1 (no register key: the shape table has no merge
+# class). The session-id rail is a test gap, not a command shape: no test pins the reader-side `_session_id_ok
+# "$hk_sid"` in merge_rule, the token charset (a tab or a space in an id) or the 128-character cap; the harness mints
+# the id and the writer never writes a non-token one, so only a hand-built event or manager file reaches them — dir
+# #811, delta-audit 0.17.0 S2-7. Without jq the whole hook is inert (its documented choice, above), this
 # rule included: lift the deny only where jq is installed. Accepted costs: a segment whose command word is not gh but
 # which holds a gh word followed by unquoted `pr … merge` or `api … <merge endpoint>` is denied to every session
 # (`echo gh pr merge`, `nice git log --grep gh pr merge`, a manager's `timeout 60 gh pr merge …`, a read of the
