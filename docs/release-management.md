@@ -750,12 +750,12 @@ fixed line copies it instead of hand-typing it, and the manager's one wrap turns
 ## R14 — the release train, and the merge
 
 Two things in one section, because they are one move: the unit that lands on the default branch, and who lands
-it. In a managed release the operator used to click merge on every PR (one release: 40 merges, another: 32)
+it. In a managed release the operator used to click merge on every PR
 while that click was never a gate: three of keel's 594 closed PRs (counted 2026-10-10) ever closed unmerged,
 each withdrawn by its own author, and every revert was found by a session. Twice the click did harm: a PR merged
 on green CI while the worker's granted review round was still running, and a cut PR merged past a correction
 already in flight. The click is the touchpoint the Operator row's class rule (above) names as the manager's, so
-this section moves it, and the train that cut one release's 29 PRs to six clicks gets a procedure instead of a
+this section moves it, and the train, which lands many PRs in one click, gets a procedure instead of a
 hand-typed table.
 
 **The policy: where the manager merges.** The manager merges every PR of a managed release, the trains below,
@@ -843,7 +843,8 @@ conflicting pair is resolved by the LATER PR's worker on its own branch (whichev
 the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
 integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
 a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation
-(the tool leaves that merge in progress, exit 1, the unmerged paths printed):
+(the tool leaves that merge in progress, exit 1, the unmerged paths printed; the manager is running the build, so
+the answer is the manager's):
 `git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
 integration rule below applies; committing the resolution keeps the tool's `train:` subject, and
 `release-train.sh build --continue --worktree <path> <N>=<sha>…` merges the heads still to go) or that PR leaves
@@ -882,8 +883,8 @@ reviewed: outside the seam"), and anything else reopens step 4.
 (R3) with the five-part brief: (1) state, the base sha and the `<N>=<sha>` list to re-read with `gh pr view`;
 (2) the constituent table; (3) leads, the seam list and the recommended depth; (4) rules by pointer, including
 the integration rule, the carve-out sentence above verbatim, the keep-alive and `WRAP CENTRALIZED (R13)` lines;
-(5) handed to you, the build, the verification and the body's wording. It builds, verifies, runs `/polish` 1–9
-on the train and opens the PR. The body: title "<version> train <k>: land #a–#z as one merge"; the constituent
+(5) handed to you, the verification and the body's wording (the manager has already built the worktree). It
+verifies, runs `/polish` 1–9 on the train and opens the PR. The body: title "<version> train <k>: land #a–#z as one merge"; the constituent
 table (PR, ticket, frozen head), written from `git log --first-parent` over the `train: #<N> (<sha>)` subjects,
 never retyped (`release-train.sh body --branch <name>` prints the whole skeleton from that walk, the seam list
 and the integration commits included, with `<fill>` where the worker states the rest); the pairwise result; the integration commits or "none"; the verification block with the sha; the

@@ -58,8 +58,8 @@ Fixed sessions-per-wave at plan time, a budget check before each wave
 and review round. Hitting a bound stops the loop and escalates in one line — never silent retries.
 
 **M7a — the train and the merge (R14).**
-Where two or more PRs are ready, cut a train (R14): the composition from the freeze lines, a train worker for
-the build, the verification and the seam review (its `/polish` step-4 dialog is the operator's one decision
+Where two or more PRs are ready, cut a train (R14): the composition from the freeze lines, the build with
+`release-train.sh build`, then a train worker for the verification and the seam review (its `/polish` step-4 dialog is the operator's one decision
 per train), then merge under R14's preconditions — merge commit, head pinned, one health line per merge. A
 lone ready PR merges alone. Where the project's policy leaves the merge with the operator, build the train
 the same way and hand over the merge as R9's block.

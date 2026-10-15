@@ -199,8 +199,9 @@ threshold, guard or exclusion rule — the same trigger as `/polish`'s mutation 
 ([`commands/polish.md`](../commands/polish.md) step 3), whose mutant shapes and kill rule it follows
 ([`commands/polish-guide.md`](../commands/polish-guide.md) § Step 3, "Mutation pass"), in its own mutation
 clone (§4 rule 5). The verifier looks at every file in its range that holds executable code in the project's
-own languages, not only the ledger's `code` class (`tools/delta-audit/derive.sh` assigns that class by shell
-or YAML extension or the executable bit, so most compiled-language source lands in `prose`; `code-invariant`
+own languages, not only the ledger's `code` class (`tools/delta-audit/derive.sh` assigns that class by a source-language extension list (shell, Swift, C-family,
+Rust, Go, Python, Ruby, JS/TS, Java/Kotlin and others; `DELTA_CODE_EXTENSIONS` replaces it) or the executable bit, and
+classes YAML, JSON, TOML and similar files `config`, which the verifier reads with `code`; `code-invariant`
 rows count too). **Each verifier pass sweeps its own range — the commits no earlier pass swept:** from the
 end of the last `Mutation sweep:` line in the verdict record (from `<prev-rev>` when there is none yet) to
 the SHA it verifies, fixed as `origin/main` resolves when the sweep starts. If the pass then issues GO on a
