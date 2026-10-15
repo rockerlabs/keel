@@ -179,9 +179,11 @@ prepares everything up to "tag ready to cut," names the exact SHA, and stops.
 
 **In that same cut-and-land PR, add the entry to [`docs/release-history.md`](release-history.md),
 following the house form described at the top of that file** — a digest of the `CHANGELOG.md` section
-just cut. This is the pre-tag side of dir #299's allowance: a `## [x.y.z]` heading with no tag yet is
+just cut. This is the pre-tag side of dir #299's allowance: a `## vx.y.z` heading with no tag yet is
 writable here precisely because the tag hasn't landed; write it now, not in `publishing-checklist.md`
-§4, which only starts once the tag is already cut.
+§4, which only starts once the tag is already cut. The suite enforces it: `tests/test_release_history.sh`
+fails the cut PR's CI while a cut `## [x.y.z]` section of `CHANGELOG.md` has no entry in
+`docs/release-history.md`, so the entry is a merge condition, not a memory (dir #866).
 
 **The entry states only events already on record.** A waiver, a GO verdict or a tag that has not yet been
 recorded (in the run record, the audit's verdict file or the repository) is written as pending, never as done —

@@ -549,6 +549,11 @@ its G0 retro** ([`docs/grooming.md`](grooming.md) G0, dir #543), and this role r
 section for the reading this protects, and its `dir #459` for the alternative fix (teaching the tool to
 read a rotated cycle) — one or the other, not both.
 
+**The cut PR carries the release record's entry (dir #866).** The project's release-record page (keel:
+`docs/release-history.md`) gets its entry for the cut in the cut PR itself, not after the tag. Where the
+project's CI gates it (keel's `tests/test_release_history.sh` does), treat that red as the signal; where it
+does not, check the entry by hand before the merge.
+
 ## R10 — the seams duty, active not passive
 
 **This is the manager's one irreducible job.** Everything else in this doc is coordination that could
