@@ -26,7 +26,8 @@
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$REPO_ROOT/tools/lib/nonneg-int.sh"
 #
-# Known residual (/code-review medium, dir #232): the three `fail` branches below (missing heading,
+# Known residual (/code-review medium, dir #232; the dir #866 check below is outside it — it carries its own
+# fixture rows): the three `fail` branches below (missing heading,
 # missing tag, duplicate heading) have no permanent regression fixture — unlike doctor.sh's own check 6,
 # which tests/test_self_doctor.sh exercises with synthetic scratch-repo fixtures, this file's fail paths
 # are only ever exercised against this repo's own real, always-passing state in CI. All three were
@@ -69,6 +70,8 @@ pin "CHANGELOG.md header links docs/release-history.md" \
 # again and reuses this file instead of re-running blank_fenced_blocks a second time. Likewise the
 # heading-line scan itself runs once, into $heading_lines: the verification-block section reuses it too
 # instead of a second `grep -E '^## v...'` pass over $blanked_tmp that could silently drift from this one.
+# The one deliberate exception is _history_entry_tokens below (dir #866): its fixtures must reach the
+# extraction, so it is a second copy of this scan, and a row beside it asserts the two agree.
 blanked_tmp="$(mktemp "$SANDBOX/release-history-blanked.XXXXXX")"
 blank_fenced_blocks "$history" > "$blanked_tmp"
 heading_lines="$(grep -E '^## v[0-9]+\.[0-9]+\.[0-9]+' "$blanked_tmp")"
@@ -244,6 +247,114 @@ fi
 if [ -n "$pending" ]; then
   pass "release heading '$pending' is pending its tag${pending_dist:+ ($pending_dist/$pending_max_commits commits since cut)}"
 fi
+
+# --- every released CHANGELOG.md section has its docs/release-history.md entry (dir #866) -------------
+# A cut PR can land with a released `## [x.y.z]` section and no `## vx.y.z` entry, and nothing caught it
+# before the tag (0.17.0: PR #664 cut, `v0.17.0` was tagged, `main` and every open PR stayed red until the
+# entry was added). The tag<->heading rows above only fire AFTER the tag, so this one reads the two FILES
+# and no git state: it runs unchanged on the shallow, tagless checkout CI uses, and it does not use the
+# pending-release allowance (the cut PR's section is exactly the untagged newest one that allowance
+# exempts).
+#
+# cut_sim_version is the one version exempt from the check: tools/self/cut-sim.sh cuts a CLONE as
+# 9999.0.0 and runs this suite on it, and a real cut would carry a curated entry that a simulation cannot.
+# The exemption is the EXACT string (9999.0.1 and 9999.1.0 are not exempt), and the pin right below it
+# binds it to cut-sim's own invocation, so changing either side without the other fails HERE, in the
+# required legs, not only in the non-required cut-simulation job.
+cut_sim_version="9999.0.0"
+pin "cut-sim.sh cuts the version this check exempts" \
+  "$REPO_ROOT/tools/self/cut-sim.sh" '--repo "$clone" '"$cut_sim_version" \
+  "expected tools/self/cut-sim.sh to invoke changelog-cut.sh as '--repo \"\$clone\" $cut_sim_version' — change cut_sim_version and cut-sim.sh together"
+
+# _history_entry_tokens HISTORY_FILE — the `vX.Y.Z` token of every `## vX.Y.Z` heading outside a fenced block,
+# in file order. The SAME shape as the top-level scan that fills $headings further up (the row after the check
+# below asserts the two agree on the real file), kept as its own function because the fixtures below must
+# reach the fence-blanking of each file.
+_history_entry_tokens() {
+  blank_fenced_blocks "$1" | grep -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^## //' || true
+}
+
+# _changelog_sections_without_entry CHANGELOG_FILE HISTORY_FILE — print, `v`-prefixed and `, `-separated in
+# CHANGELOG file order, every released `## [x.y.z]` section of CHANGELOG_FILE (outside fenced blocks;
+# `## [Unreleased]` never matches) whose whole `vX.Y.Z` token is not a heading of HISTORY_FILE. The one
+# exempt version is $cut_sim_version. Exit 0 = none missing, 1 = some missing, 2 (nothing printed) = a file is
+# unreadable OR CHANGELOG_FILE has no released section at all (counted BEFORE the exemption, so a CHANGELOG
+# whose only section is the exempt one is exit 0): a reader that matched nothing must FAIL, never pass
+# vacuously. Reads no tag and no git state, and compares whole tokens with match() (never a substring, so
+# 0.9.1 is not found in v0.9.10), so it is the same on a shallow, tagless checkout.
+_changelog_sections_without_entry() {
+  local cl="$1" hist="$2" sections tokens v out=""
+  [ -r "$cl" ] && [ -r "$hist" ] || return 2
+  sections="$(blank_fenced_blocks "$cl" | grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' | sed 's/^## \[//; s/\]$//' || true)"
+  [ -n "$sections" ] || return 2
+  tokens="$(_history_entry_tokens "$hist")"
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    [ "$v" = "$cut_sim_version" ] && continue
+    match "$tokens" -qxF "v$v" || out="$out${out:+, }v$v"
+  done <<< "$sections"
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out"
+  return 1
+}
+
+# fx_case ID EXPECTED_OUTPUT EXPECTED_RC CHANGELOG_TEXT HISTORY_TEXT — one synthetic CHANGELOG/history pair
+# under $SANDBOX run through _changelog_sections_without_entry, asserted on stdout AND exit code. An empty
+# CHANGELOG_TEXT or HISTORY_TEXT of the exact string ABSENT leaves that file out of the directory.
+fx_case() {
+  local id="$1" want_out="$2" want_rc="$3" cl="$4" hist="$5" dir out rc
+  dir="$(mktemp -d "$SANDBOX/fx-entry.XXXXXX")"
+  [ "$cl" = ABSENT ] || printf '%s\n' "$cl" > "$dir/CHANGELOG.md"
+  [ "$hist" = ABSENT ] || printf '%s\n' "$hist" > "$dir/history.md"
+  out="$(_changelog_sections_without_entry "$dir/CHANGELOG.md" "$dir/history.md")"; rc=$?
+  check_eq "fixture $id stdout" "$want_out" "$out"
+  check_status "fixture $id exit code" "$want_rc" "$rc"
+}
+
+fx_case C1 "" 0 $'## [Unreleased]\n\n## [0.2.0] - 2026-01-02\n\n## [0.1.0] - 2026-01-01' \
+  $'## v0.2.0 — 2026-01-02\n\n## v0.1.0 — 2026-01-01'
+fx_case C2 "v0.17.0" 1 $'## [0.17.0] - 2026-10-14\n\n## [0.16.0] - 2026-10-01' \
+  $'## v0.16.0 — 2026-10-01'
+fx_case C3 "v0.2.0" 1 $'## [0.3.0] - 2026-01-03\n\n## [0.2.0] - 2026-01-02\n\n## [0.1.0] - 2026-01-01' \
+  $'## v0.3.0 — 2026-01-03\n\n## v0.1.0 — 2026-01-01'
+fx_case C4 "" 0 $'## [Unreleased]\n\n## [0.2.0] - 2026-01-02' \
+  $'## v0.2.0 — 2026-01-02'
+fx_case C5a "v0.9.1" 1 $'## [0.9.1] - 2026-01-02' \
+  $'## v0.9.10 — 2026-01-02'
+fx_case C5b "v0.9.10" 1 $'## [0.9.10] - 2026-01-02' \
+  $'## v0.9.1 — 2026-01-02'
+fx_case C6a "" 0 $'## [0.2.0] - 2026-01-02\n\n```\n## [1.2.3] - 2026-01-01\n```' \
+  $'## v0.2.0 — 2026-01-02'
+fx_case C6b "v1.2.3" 1 $'## [1.2.3] - 2026-01-02' \
+  $'## v0.1.0 — 2026-01-01\n\n```\n## v1.2.3 — 2026-01-02\n```'
+fx_case C7 "" 0 $'## [Unreleased]\n\n## [9999.0.0] - 2026-10-15' \
+  $'## v0.1.0 — 2026-01-01'
+fx_case C8a "v9999.0.1" 1 $'## [9999.0.1] - 2026-10-15' \
+  $'## v0.1.0 — 2026-01-01'
+fx_case C8b "v9999.1.0" 1 $'## [9999.1.0] - 2026-10-15' \
+  $'## v0.1.0 — 2026-01-01'
+# Three sections, file order 0.18.0, 0.9.0, 0.10.0: neither a lexical nor a version-order `sort` reproduces it.
+fx_case C9 "v0.18.0, v0.9.0, v0.10.0" 1 $'## [0.18.0] - 2026-03-01\n\n## [0.9.0] - 2026-02-01\n\n## [0.10.0] - 2026-01-01' \
+  $'## v0.1.0 — 2026-01-01'
+fx_case C10a "" 2 ABSENT $'## v0.1.0 — 2026-01-01'
+fx_case C10b "" 2 $'## [Unreleased]\n\nNo release yet.' $'## v0.1.0 — 2026-01-01'
+fx_case C10c "" 2 $'## [0.1.0] - 2026-01-01' ABSENT
+
+# The real row dispatches on the exit CODE, never on whether the output is empty: an empty output is also
+# what a reader that matched nothing prints (exit 2). tests/lib.sh runs without -e, so rc is captured at once.
+missing_entry="$(_changelog_sections_without_entry "$changelog" "$history")"; entry_rc=$?
+case "$entry_rc" in
+  0) pass "every released CHANGELOG.md section has a docs/release-history.md entry" ;;
+  1) fail "every released CHANGELOG.md section has a docs/release-history.md entry" \
+       "release(s) cut in CHANGELOG.md with no '## v<x.y.z>' entry in docs/release-history.md: $missing_entry — add the entry in the cut-and-land PR (docs/release-audit.md, Phase 7)" ;;
+  *) fail "every released CHANGELOG.md section has a docs/release-history.md entry" \
+       "CHANGELOG.md or docs/release-history.md unreadable, or CHANGELOG.md has no released '## [x.y.z]' section — the reader matched nothing" ;;
+esac
+
+# The function's own history scan is a DELIBERATE second copy of the top-level scan above (the fixtures must
+# reach the extraction); this row binds the two copies to each other on the real file.
+check_eq "the entry check's history scan agrees with the top-level heading scan" \
+  "$headings" "$(_history_entry_tokens "$history")"
 
 # --- no heading is duplicated (dir #139's own precedent: a dedup-based membership check alone can't
 # see a duplicate — self/doctor.sh's own check 6 has a dedicated check for exactly this on

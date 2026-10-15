@@ -454,4 +454,10 @@ pin "the CI-wait rule says to background the watch itself" "$doc" \
   'so background the watch itself and never wrap it in' \
   "expected the CI-wait line to give the portable instruction (dir #828 (a))"
 
+# --- dir #866 A6: R9 and M8 carry the release-record entry rule (the cut PR carries the entry; the suite gates it) ----
+r9="$(awk '/^## R9 — close checklist/{f=1;next} /^## /{f=0} f' "$doc")"
+check_contains "R9 names the suite check that gates the release-record entry in the cut PR (dir #866)" "$r9" "test_release_history.sh"
+m8="$(awk '/^\*\*M8 — close checklist \(R9\)\.\*\*/{p=1} p&&/^$/{exit} p' "$cmd")"
+check_contains "M8 names the release-record entry the cut PR carries (dir #866)" "$m8" "release-history"
+
 summary

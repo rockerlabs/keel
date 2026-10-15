@@ -214,4 +214,8 @@ check_contains "Phase 7's cut paragraph runs the numeric-claim lint on the cut s
 check_contains "...under --strict (dir #810)" "$cut_para" "--strict"
 check_contains "Phase 7's cut paragraph says what to do with a number whose source is gitignored or moves after the cut (dir #846)" "$cut_para" "A number whose source is gitignored"
 
+# --- dir #866 A6: the entry-in-the-cut-PR rule names the suite check that enforces it ----------------------------
+entry_para="$(awk '/^\*\*In that same cut-and-land PR/{p=1} p&&/^$/{exit} p' "$audit")"
+check_contains "Phase 7's cut-and-land entry paragraph names the suite check that enforces the entry (dir #866)" "$entry_para" "test_release_history.sh"
+
 summary
