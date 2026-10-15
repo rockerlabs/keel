@@ -751,7 +751,8 @@ fixed line copies it instead of hand-typing it, and the manager's one wrap turns
 
 Two things in one section, because they are one move: the unit that lands on the default branch, and who lands
 it. In a managed release the operator used to click merge on every PR, and that click was never a gate: three of
-keel's 594 closed PRs (counted 2026-10-10) ever closed unmerged, each withdrawn by its own author, and every revert was found by a session. Twice the click did harm: a PR merged
+keel's 594 closed PRs (counted 2026-10-10) ever closed unmerged, each withdrawn by its own author, and every
+revert was found by a session. Twice the click did harm: a PR merged
 on green CI while the worker's granted review round was still running, and a cut PR merged past a correction
 already in flight. The click is the touchpoint the Operator row's class rule (above) names as the manager's, so
 this section moves it, and the train, which lands many PRs in one click, gets a procedure instead of a
@@ -831,20 +832,18 @@ order (the seam plan's order, R10, else ascending PR number). The manager create
 train with one tool, `git fetch --prune origin`, then
 `tools/self/release-train.sh build --branch claude/release-<version>-train<k> <N>=<sha>…` (it cuts the worktree
 off `origin/main` under `.claude/worktrees/`, or at `--worktree <path>`, prints the path first and each step it
-takes, and never touches the manager's checkout). Once the build is done it launches the train worker with that path as its working
+takes, and never touches the manager's checkout). It launches the train worker with that path as its working
 directory, and early (R3): the pre-PR gate keys its traces off the session's working directory, so the session
 that runs the pre-PR flow starts in that worktree. The worker then owns the worktree end to end, one writer per
-worktree (R5), every later command `git -C <path>`. Once the worker is launched the manager builds nothing there and runs nothing else. The
-tool does what the next sentences require, and they stay as the manager's by-hand fallback, run before the launch.
-Before any merge, run
+worktree (R5), every later command `git -C <path>`. The manager builds nothing there and runs nothing else. The
+tool does what the next sentences require, and they stay as the by-hand fallback. Before any merge, run
 `git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict; the
 tool exits 1 naming the pair and its files and creates nothing). A
 conflicting pair is resolved by the LATER PR's worker on its own branch (whichever merges second rebases) before
 the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
 integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
 a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation
-(the tool leaves that merge in progress, exit 1, the unmerged paths printed; this happens during the manager's build,
-before the worker is launched, so the answer is the manager's; after the launch the worktree is the worker's alone, R5):
+(the tool leaves that merge in progress, exit 1, the unmerged paths printed):
 `git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
 integration rule below applies; committing the resolution keeps the tool's `train:` subject, and
 `release-train.sh build --continue --worktree <path> <N>=<sha>…` merges the heads still to go) or that PR leaves
@@ -880,8 +879,8 @@ diff that touches no seam file and adds no integration commit needs no new dialo
 reviewed: outside the seam"), and anything else reopens step 4.
 
 **The train: who runs it, and the body.** A train worker session (mid tier, medium), launched by the manager
-(R3) with the five-part brief: (1) state, the base sha and the `<N>=<sha>` list to re-read with `gh pr view`, and the train worktree's path as
-its launch working directory;
+(R3) with the five-part brief: (1) state, the base sha and the `<N>=<sha>` list to re-read with `gh pr view`, and the train
+worktree's path as its launch working directory;
 (2) the constituent table; (3) leads, the seam list and the recommended depth; (4) rules by pointer, including
 the integration rule, the carve-out sentence above verbatim, the keep-alive and `WRAP CENTRALIZED (R13)` lines;
 (5) handed to you, the verification and the body's wording (the manager has already built the worktree). It
