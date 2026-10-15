@@ -112,8 +112,8 @@ guard_tip_survives() {
 #   ~ NAME OLD -> NEW     a branch moved so that its old tip no ref reaches any more (a rewrite, a reset)
 # One awk pass joins the two snapshots by name and prints only the rows that differ (`-` stands for "absent on
 # that side"; a ref name holds no space), so a quiet run costs two awk passes and no git call at all.
-# NAMED RESIDUAL: an escaped test that deletes, or fast-forwards, an unowned branch whose tip stays reachable
-# elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
+# NAMED RESIDUAL: an escaped test that deletes, fast-forwards or retargets sideways an unowned branch whose tip stays
+# reachable elsewhere is no longer reported here; tests/lib.sh's ref guard (dir #318) still refuses that write and fails
 # the file, which is the layer that prevents it. This one detects what slipped past that.
 # A second residual, in the other direction: a squash-merged (or otherwise rewritten) branch deleted on purpose —
 # the branch-cleanup sweep's ASK tier — has no ref reaching its tip, so it IS still reported. No sweep should run

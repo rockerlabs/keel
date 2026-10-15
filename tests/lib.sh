@@ -17,7 +17,11 @@
 # Known bypasses (1b, docs/verification-economics.md §4): the harness's register — a shape no honest test writes,
 # kept here instead of a ticket; SECURITY.md "Threat model by guard" lists it. A test gap, not a bypass: `run.sh`'s
 # `termed` branch is unpinned — a test file that traps TERM and exits 0 is caught today (rc 1), but a regression
-# there would read ALL TEST FILES PASSED — dir #799. The fix that pins it deletes this entry.
+# there would read ALL TEST FILES PASSED — dir #799. The fix that pins it deletes this entry. A second, a bypass:
+# `run.sh`'s ref canary does not see a bare ref write (by a process that dropped this file's guard env) that retargets
+# an unowned branch to a commit not descending from its old tip while a branch, remote-tracking ref or tag still
+# reaches the old tip (dir #768's scoping); this file's reference-transaction guard still refuses it for any process
+# that kept the guard env — delta-audit 0.17.0 S4-1.
 #
 # A draft test section (a scratch file sourced to try a fixture) must load this file first, then source
 # tests/section-guard.sh: a section that never loaded lib.sh has no guard at all and its `git -C ""` writes
