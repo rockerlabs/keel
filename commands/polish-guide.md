@@ -263,19 +263,38 @@ Steps, in order:
    step's receipt (dir #123, provisional — see step 1) — do not invoke this step and do not write a
    fresh receipt, unless step 8 later denies for a stale test binding, at which point come back here.*
    Outside a convergence round, you may skip the RUN only if HEAD has not moved since the tests last
-   passed (an interrupted re-run) — you still always WRITE this receipt in that case. Take the
-   test command from the project's `CLAUDE.md` and run it. Show the
-   real output (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
+   passed (an interrupted re-run): `tools/check-run.sh verify` against that last green run's `<dir>` decides
+   it (no such dir, or it fails → run again), and you still always WRITE this receipt in that case. Take the
+   test command from the project's `CLAUDE.md` and run it in ONE `tools/check-run.sh run <dir> -- <command>`
+   call (dir #855): `<dir>` a fresh `mktemp -d`, a compound gate line ONE `<command>` string, foreground with
+   Bash timeout 600000. Show its summary (green/red); never claim "passed" without it. **Exception:** if `$ARGUMENTS` contains
    `--no-test`, skip the run and say explicitly that tests were skipped by request (the human runs them before
    the PR).
-   Receipt: `tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"` (or `...
+   Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"`
+   in the same Bash call, so a red, killed, stale, edited or different-command run writes none, whatever the
+   output looked like (or `...
    polish.3-tests skipped:--no-test`, or `... polish.3-tests skipped:no-test-command` when the project
    genuinely ships no test command — the same escape step 7 has as `skipped:no-doctor`) — **the sha is
    the point** (dir #96): the gate unlocks only when
    some test run is bound to the commit being shipped, via this receipt (directly, or — dir #123 — via
    a still-matching tree-relevant hash carried over from a recovered receipt), or step 6's retest. Only
    the two named literals waive it; an invented `skipped:<anything-else>` is denied, and a prior round's
-   *waiver* is never carried over on recovery — only a real sha's tree-relevant hash is.
+   *waiver* is never carried over on recovery — only a real sha's tree-relevant hash is. A `skipped:…`
+   receipt has no run and no `verify`.
+
+   **Long runs (dir #855).** A suite whose `CLAUDE.md` runtime, or last `secs` this session, is over 9
+   minutes (keel's own, ~10–50) starts the same `tools/check-run.sh run <dir> -- <command>` call with
+   `run_in_background` and a Bash timeout past the suite's runtime (dir #678); a foreground call that merely
+   outlives its timeout is moved to the background by the harness, but a suite known to be long starts there.
+   - End the turn once it starts: no polls, no sleeps (the rule of § Step 9's "Waiting on CI"). The
+     completion notice opens the next turn, which writes the receipt above.
+   - **Never commit, amend or edit while it runs** (dir #505, § Step 6's caution).
+   - No `exit` file means not green: a killed or timed-out run leaves none, and `verify` says `incomplete`.
+     Re-run the whole command, or only the remainder the project's `CLAUDE.md` names (keel: `bash
+     tests/<file>.sh` for each file not yet reported) as ONE sequential `tools/check-run.sh run <dir2> --
+     '<file1 cmd> && <file2 cmd> && …'` call into a new dir; the receipt then chains `verify <dir2> --
+     <that same string>`, and the killed `<dir>` is never verified. That the remainder covers the suite
+     stays your judgment, as before.
 
    **Mutation pass (dir #673).** Reached from step 3's pointer when the diff's code adds or changes a
    filter, threshold, guard or exclusion rule; a rule written only in prose has nothing to mutate, so it
@@ -861,8 +880,8 @@ Steps, in order:
    changed during the hand-off count as step-5 changes** — whether the human's own `--fix` run edited them
    or you did, resolving the findings their review reported. Those land between `/polish` invocations, so
    "did step 5 change files" is otherwise easy to read as "no", and the retest gets skipped after exactly
-   the kind of edit it exists to cover. Show the
-   real output. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
+   the kind of edit it exists to cover. Run it as step 3 does (one `tools/check-run.sh run` call), and show
+   its summary. If it went red, do NOT write this step's receipt or the sentinel — report what broke and
    stop; the human fixes and re-invokes. **This is one bounded re-run, not a loop back to simplify or the
    review dialog.** If the review changed nothing (or tests were skipped), skip the re-run — except after a
    step-5 commit of pending work (K2's spawn precondition), which moves HEAD past step 3's receipt and so
@@ -872,8 +891,9 @@ Steps, in order:
    before and after the run, so a commit, an amend or an uncommitted edit of your own landing mid-run
    trips the self-corruption canary as a false positive and costs a full rerun. A trip whose HEAD
    moved forward: run `git reflog -3` before reading it as a fixture leak.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or `...
-   polish.6-retest skipped:no-file-changes`) — the outcome IS the sha the retest ran at, same convention
+   Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"`
+   as in step 3 (or `...
+   polish.6-retest skipped:no-file-changes`, which has no run and no `verify`) — the outcome IS the sha the retest ran at, same convention
    as step 8, not a bare `done`: step 6 is one of the steps a convergence round must write itself —
    three ordinarily (5, 6, 8 — step 1's branch hands back only 2, 4 (unless the prior round's depth
    was `skip` decided against an earlier commit than current HEAD — dir #116, narrowed by dir #236, not
