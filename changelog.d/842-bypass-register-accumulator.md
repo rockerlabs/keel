@@ -1,6 +1,6 @@
 - **A guard's known-bypass register now counts real sightings.** The pre-PR gate's header and its subagent floor
   mark 12 <!-- claim: matches '\[bypass:' tools/pre-pr-gate.sh --> of their shapes with a `[bypass:<class>]` key (a shape with no key
-  is not counted), and `tools/self/known-bypass-shapes.tsv` holds one detection pattern per key.
+  is not counted; the merge rule's residuals carry none yet), and `tools/self/known-bypass-shapes.tsv` holds one detection pattern per key.
   `tools/self/bypass-scan.sh` reads Claude Code's session transcripts, lists the
   candidate commands per class and per parent session (a subagent's command counts under its parent) into a
   scratch file outside every repository, and prints the `accumulate.sh new-class` lines that register the classes

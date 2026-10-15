@@ -831,11 +831,12 @@ order (the seam plan's order, R10, else ascending PR number). The manager create
 train with one tool, `git fetch --prune origin`, then
 `tools/self/release-train.sh build --branch claude/release-<version>-train<k> <N>=<sha>…` (it cuts the worktree
 off `origin/main` under `.claude/worktrees/`, or at `--worktree <path>`, prints the path first and each step it
-takes, and never touches the manager's checkout). It launches the train worker with that path as its working
+takes, and never touches the manager's checkout). Once the build is done it launches the train worker with that path as its working
 directory, and early (R3): the pre-PR gate keys its traces off the session's working directory, so the session
 that runs the pre-PR flow starts in that worktree. The worker then owns the worktree end to end, one writer per
 worktree (R5), every later command `git -C <path>`. Once the worker is launched the manager builds nothing there and runs nothing else. The
-tool does what the next sentences require, and they stay as the by-hand fallback. Before any merge, run
+tool does what the next sentences require, and they stay as the manager's by-hand fallback, run before the launch.
+Before any merge, run
 `git merge-tree --write-tree <sha-a> <sha-b>` over every pair of constituent heads (exit 1 is a conflict; the
 tool exits 1 naming the pair and its files and creates nothing). A
 conflicting pair is resolved by the LATER PR's worker on its own branch (whichever merges second rebases) before

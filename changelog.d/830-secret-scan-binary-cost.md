@@ -10,7 +10,8 @@
   of CPU with no personal literal set (about 55 s <!-- claim: hand CPU time after the fix, macOS BSD grep, two literals, 2026-10-14 -->
   with two; each literal adds to it), linear in its size, and a test pins that with a CPU-time ceiling (CPU, not
   wall-clock: wall-clock measures the machine's load, which is what made the stall look endless). On the Alpine
-  leg (busybox grep) the test bounds a smaller blob instead, and the large-blob ceiling binds on the macOS legs. `tools/public-audit.sh`'s decode
+  leg (busybox grep) the scan is slower but finite, and the test bounds a smaller blob there instead; every other
+  leg enforces the large-blob ceiling. `tools/public-audit.sh`'s decode
   carries the same squeeze; it never shared the stall.
   The same change also fixes a fail-open on Alpine/busybox that predates it: the printable-runs view was read with
   `tr` and the class `[:print:]`, which busybox `tr` takes literally, so every byte became a newline and a
