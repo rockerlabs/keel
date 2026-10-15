@@ -235,6 +235,16 @@ Steps, in order:
    Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
    continue through every step below in order.
 
+**Changelog nudge (dir #822).** Reached from the core's step 1 when the repo keeps a changelog (a
+`CHANGELOG.md` at the root, or `changelog.d/` fragments) and this diff adds no entry. Decide now, with the
+diff in front of you, whether the change is notable (a behaviour, a command, a rule, a fix a user would
+look up) — a typo or a pure refactor is not. Notable → write the entry in this branch, in the changelog's
+own shape, and commit it before step 3, so the PR carries its entry in the SAME PR. Why here and not at
+wrap: at wrap the PR is already merged, and the late entry costs a whole extra branch → receipts → PR
+round-trip. Felt twice in keel: the entry missing from keel PR #69→#71 (the follow-up) and from keel
+PR #126→#127. The implementing session reads its own diff, and the changelog convention lives one file
+away — nothing else asks. This is a nudge, not a gate: not notable → go on, no receipt.
+
 ## Step 2 — simplify
 
 2. **Simplify.** *Skip entirely if step 1's convergence branch just recovered this step's receipt.*
@@ -256,6 +266,29 @@ Steps, in order:
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
    inline:no-simplify-skill`, or the prose-only receipt above).
+
+**Exit semantics after `/simplify` (dir #822).** A simplify pass can silently drop a `set -e` safety property
+while it tidies. Read each shell edit it made for the error path, not only the happy one: a helper whose last
+statement is a `while read` loop (the `read` failing at EOF returns 1) or a pipeline needs an explicit
+`return 0` or `|| true`, and a `… || true` that simplify folded into a helper must survive the fold. Felt
+twice: keel PR #67 (a `git rev-parse … || true` became a helper whose pipeline lost the `|| true`; under
+`set -euo pipefail` that killed `enable` on any non-git directory, exit 128 — step 5's review caught it) and
+keel PR #74 (a `while read … done <<<…` helper ended on the `read` failing at EOF, so the caller's
+`wtp="$(wt_path_for …)"` aborted the whole script, 23 tests red — step 6's retest caught it). Two independent
+arms each caught a simplify-introduced regression, which is why the order is simplify → tests → review: never
+skip or reorder the test run after simplify touched code.
+
+**Agent tool banned (dir #822).** A session policy that bars the Agent tool makes `/simplify` non-runnable as
+designed (its phase 1 IS four parallel Agent-tool reviewers); step 5's K2 spawn is barred by the same ban and
+takes its own fallbacks. This is not "skill unavailable": do ONE inline cleanup pass over the step-1 diff, over
+the angles `/simplify` covers, say what you tidied, and receipt `tools/pre-pr-gate.sh receipt
+polish.2-simplify inline:agent-tool-banned` — naming the ban, not the skill. A bare `done` would read as a
+real `/simplify` run, the substitution step 5 exists to stop, one step earlier.
+
+**Proportionality.** The step offers no "the fan-out is too big for this diff" exit of its own: the prose-only
+branch is the only proportionality exit, and a sanctioned one (`inline:prose-only`). A small diff outside it
+— code, a fenced block, a command or runbook — runs the full `/simplify`; a receipt invented for
+"disproportionate" is a degradation without a cause the step recognises.
 
 ## Step 3 — tests
 
@@ -872,6 +905,17 @@ Steps, in order:
      receipt the bare `<level>`** and name the operator-run pass in step 10's summary and the PR body
      instead — the same prose-only disclosure the combined `agent:<level>+<addon>` shapes already do for
      a second mechanism the receipt has no slot for.
+
+**One round per batch of findings (dir #822).** The review trace is per-HEAD, so every fix commit costs
+another `/code-review` invocation, and a wording-only fix is no cheaper to the gate than a code fix: dir #488's
+review-null exception covers only comment and blank-line changes to already-reviewed `.sh` files, so a
+docs-only fix commit still needs a delta round (a delta, never a full pass: the review reads only
+`<last-saw>..HEAD`). The order, not the fix, is what wastes a round: when a review reports a finding, fix every
+accepted one plus its obvious neighbours (the same wording in sibling files, the cross-reference the edit
+orphaned) and commit once, THEN invoke the next round. Felt in remmilab-site on 2026-09-29/30: a `/code-review
+high` run three times, a real finding fixed, then a second, each fix moving HEAD past the trace — only the third,
+clean pass at the shipping HEAD unlocked the gate. Foreseeably editorial fixes (a doc's wording, a table the
+change renders stale) belong in the commit BEFORE the first review, not after it.
 
 ## Step 6 — the retest
 

@@ -472,4 +472,36 @@ check_eq "no shipped command tells the agent to push with --no-verify (dir #825)
 pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfn "polish.md no longer says the gate 'always' the push (dir #825)" 'and always `git push --no-verify`'
 
+# --- dir #822: six /polish + gate gaps promoted from claude-kb LEARNINGS (items 1, 2, 4, 6 are text) -------------
+# Items 3 (where pre-pr-gate.sh lives off the keel repo) and 5 (the impact ledger's landing) were already
+# answered by the live core's `<keel-checkout>/tools/…` paragraph and dir #637's external store; the pins
+# below hold only what dir #822 added. Core pins stay short (the core is at its word budget); the guide
+# carries the felt cases.
+g1="$(guide_step 1)"
+g5="$(guide_step 5)"
+# item 1 — a /simplify edit must keep exit semantics
+pinf "core: step 2 re-reads simplify's edits for dropped exit semantics (dir #822 item 1)" \
+  'dropped exit semantics: a helper ending in `while read` or a pipeline needs `return 0` or `|| true`'
+check_contains "guide § Step 2: the exit-semantics rule names both felt cases (PR #67, PR #74)" "$g2" "keel PR #67"
+check_contains "guide § Step 2: the second felt case is the while-read helper (PR #74)" "$g2" "keel PR #74"
+check_contains "guide § Step 2: the steps 3 and 6 test runs are the net, never skipped or reordered after simplify" "$g2" \
+  "never skip or reorder the test run after simplify touched code"
+# item 2 — the changelog entry belongs in the same PR
+pinf "core: step 1 nudges a notable change's changelog entry into this PR (dir #822 item 2)" \
+  'a notable change lacks its entry → add it now, in this PR'
+check_contains "guide § Step 1: the nudge says why it lives here, not at wrap" "$g1" "carries its entry in the SAME PR"
+check_contains "guide § Step 1: both felt cases (PR #69→#71, PR #126→#127)" "$g1" "keel PR #126→#127"
+# item 4 — fix every finding before the next review round; the review-null exception is NOT widened
+pinf "core: step 5 fixes every accepted finding, wording included, before the next round (dir #822 item 4)" \
+  'fix every accepted finding, wording included, before the next round'
+check_contains "guide § Step 5: a docs-only fix commit still needs a delta round (dir #488 stays comment-only .sh)" "$g5" \
+  "a docs-only fix commit still needs a delta round"
+# item 6 — an Agent-tool ban is a first-class degraded path with its own receipt
+pinf "core: step 2's short pointer also covers an Agent-tool ban (dir #822 item 6)" \
+  'Refused or unavailable → § Step 2. An Agent-tool ban counts.'
+check_contains "guide § Step 2: a session ban receipts inline:agent-tool-banned, naming the ban not the skill" "$g2" \
+  "polish.2-simplify inline:agent-tool-banned"
+check_contains "guide § Step 2: the prose-only branch is the one proportionality exit" "$g2" \
+  "the prose-only branch is the only proportionality exit"
+
 summary
