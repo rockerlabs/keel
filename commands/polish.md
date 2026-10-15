@@ -26,7 +26,7 @@ Steps, in order:
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
-   The repo keeps a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add it now, in this PR (guide § Step 1).
+   The repo keeps a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add it now, in this PR, before step 3.
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.
 
@@ -71,7 +71,7 @@ Steps, in order:
    **K2 — for `low|medium|high`, the FIRST attempt is a review run by a fresh-context subagent (dir #670);
    `max`, `ultra` and `skip` keep their paths below, unchanged.** It runs the same `/code-review` recipe in a
    context that has not seen how the diff was written — a reviewer who wrote the code finds less of what is
-   wrong with it, and every review turn run in this session re-reads the whole session's context.
+   wrong with it.
    - **Spawn.** `git status --porcelain --untracked-files=no` must print nothing: simplify's fixes and the
      implementation are committed (ordering rule 1), and untracked files are left alone, never swept into a
      commit. A tracked change still pending → commit exactly that work now, as its own commit; that commit
@@ -139,8 +139,9 @@ Steps, in order:
      recorded at the spawn. Any difference → the review is void AND the run **stops**: report it to the
      operator, who decides; never restore the tree with `git checkout`/`reset`/`clean`/`stash` (dir #375),
      and never fall through to the in-session attempt on a tree the subagent changed. **A final message with
-     neither a findings list nor an explicit `0 findings` and its quoted line** — it stopped halfway, errored, was interrupted,
-     or handed back while its own background work ran — **is void too**, even though the trace was already minted when the
+     neither a findings list nor an explicit `0 findings` and its quoted line** — it stopped halfway, errored, was interrupted
+     (a subagent that never returns is interrupted by the operator and read the same way), or handed back
+     while its own background work ran — **is void too**, even though the trace was already minted when the
      skill launched: go to the in-session attempt below. An empty or error quote is void, and so is `(none)` except at `low` with `0 findings`. Otherwise verify every finding live against the
      file before acting (`FRAMEWORK.md` "Classifying a finding"), fix the accepted ones and commit; a
      finding that fails live verification is named as refuted, with why, in step 10's summary.

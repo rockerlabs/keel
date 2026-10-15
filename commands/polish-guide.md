@@ -238,12 +238,10 @@ Steps, in order:
 **Changelog nudge (dir #822).** Reached from the core's step 1 when the repo keeps a changelog (a
 `CHANGELOG.md` at the root, or `changelog.d/` fragments) and this diff adds no entry. Decide now, with the
 diff in front of you, whether the change is notable (a behaviour, a command, a rule, a fix a user would
-look up) — a typo or a pure refactor is not. Notable → write the entry in this branch, in the changelog's
-own shape, and commit it before step 3, so the PR carries its entry in the SAME PR. Why here and not at
-wrap: at wrap the PR is already merged, and the late entry costs a whole extra branch → receipts → PR
-round-trip. Felt twice in keel: the entry missing from keel PR #69→#71 (the follow-up) and from keel
-PR #126→#127. The implementing session reads its own diff, and the changelog convention lives one file
-away — nothing else asks. This is a nudge, not a gate: not notable → go on, no receipt.
+look up) — a typo or a pure refactor is not. Notable → write the entry in this branch, in the changelog's own shape, and commit it before step 3, so the PR
+carries its entry in the SAME PR. At wrap the PR is already merged and a late entry costs a whole extra
+branch → receipts → PR round-trip (felt twice: keel PR #69→#71, keel PR #126→#127). A nudge, not a gate:
+not notable → go on, no receipt.
 
 ## Step 2 — simplify
 
@@ -255,40 +253,28 @@ away — nothing else asks. This is a nudge, not a gate: not notable → go on, 
    such docs found real fixes. Prose-only → ONE inline reuse/duplication pass over the step-1 diff yourself —
    does the prose restate what another file already says (replace it with a pointer), repeat itself, or
    carry a dead cross-reference? — say what you tidied, and receipt it by name: `tools/pre-pr-gate.sh
-   receipt polish.2-simplify inline:prose-only`. That is a sanctioned outcome, not a degradation. Anything else, or any doubt, runs the full `/simplify`.
+   receipt polish.2-simplify inline:prose-only`. That is a sanctioned outcome, not a degradation, and the prose-only branch is the only proportionality exit. Anything else, or any doubt, runs the full `/simplify`.
    Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff, over the angles
+   If it is genuinely unavailable — or a session policy bans the Agent tool, which `/simplify`'s phase 1 needs (four parallel reviewers) and step 5's K2 spawn needs too — do ONE inline cleanup pass over the step-1 diff, over the angles
    `/simplify` covers (duplication, dead code, over-complication, naming) — not the prose-only pass above —
    say what you tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
-   inline:no-simplify-skill`, or the prose-only receipt above).
+   inline:no-simplify-skill`, `... polish.2-simplify inline:agent-tool-banned` for a session ban — it names
+   the ban, not the skill — or the prose-only receipt above).
 
-**Exit semantics after `/simplify` (dir #822).** A simplify pass can silently drop a `set -e` safety property
-while it tidies. Read each shell edit it made for the error path, not only the happy one: a helper whose last
+**Exit semantics after `/simplify` or any inline cleanup pass (dir #822).** Read each shell edit it made for the error path, not only the
+happy one — a pass can silently drop a `set -e` safety property while it tidies: a helper whose last
 statement is a `while read` loop (the `read` failing at EOF returns 1) or a pipeline needs an explicit
 `return 0` or `|| true`, and a `… || true` that simplify folded into a helper must survive the fold. Felt
 twice: keel PR #67 (a `git rev-parse … || true` became a helper whose pipeline lost the `|| true`; under
 `set -euo pipefail` that killed `enable` on any non-git directory, exit 128 — step 5's review caught it) and
 keel PR #74 (a `while read … done <<<…` helper ended on the `read` failing at EOF, so the caller's
-`wtp="$(wt_path_for …)"` aborted the whole script, 23 tests red — step 6's retest caught it). Two independent
-arms each caught a simplify-introduced regression, which is why the order is simplify → tests → review: never
-skip or reorder the test run after simplify touched code.
-
-**Agent tool banned (dir #822).** A session policy that bars the Agent tool makes `/simplify` non-runnable as
-designed (its phase 1 IS four parallel Agent-tool reviewers); step 5's K2 spawn is barred by the same ban and
-takes its own fallbacks. This is not "skill unavailable": do ONE inline cleanup pass over the step-1 diff, over
-the angles `/simplify` covers, say what you tidied, and receipt `tools/pre-pr-gate.sh receipt
-polish.2-simplify inline:agent-tool-banned` — naming the ban, not the skill. A bare `done` would read as a
-real `/simplify` run, the substitution step 5 exists to stop, one step earlier.
-
-**Proportionality.** The step offers no "the fan-out is too big for this diff" exit of its own: the prose-only
-branch is the only proportionality exit, and a sanctioned one (`inline:prose-only`). A small diff outside it
-— code, a fenced block, a command or runbook — runs the full `/simplify`; a receipt invented for
-"disproportionate" is a degradation without a cause the step recognises.
+`wtp="$(wt_path_for …)"` aborted the whole script, 23 tests red — step 6's retest caught it). That is why the order
+is simplify → tests → review: never skip or reorder the test run after simplify touched code.
 
 ## Step 3 — tests
 
