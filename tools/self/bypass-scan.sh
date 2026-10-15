@@ -174,17 +174,13 @@ cmd_scan() {
   fi
   [ -n "$since" ] || since="$(date_minus "$asof" "$WINDOW_DAYS")"
   valid_date "$since" || die "--since '$since' is not an ISO date"
-  [ "${since//-/}" -le "${asof//-/}" ] || die "--since $since is later than --as-of $asof: nothing could match"
+  LC_ALL=C awk -v a="$since" -v b="$asof" 'BEGIN { exit !(a <= b) }' || die "--since $since is later than --as-of $asof: nothing could match"
 
   if [ -n "$out" ]; then
     in_git_tree "$out" && die "refusing --out $out: it is inside a git work tree (the candidates are personal data)"
-    # Only a regular file (or a path that does not exist yet) is ever written, and so ever removed by the cleanup trap:
-    # /dev/null, a device or a link to some other file is refused.
-    if [ -e "$out" ] || [ -L "$out" ]; then
-      { [ -f "$out" ] && [ ! -L "$out" ]; } || die "refusing --out $out: it exists and is not a regular file"
-    fi
-    : >"$out" 2>/dev/null || die "cannot write $out"
-    chmod 600 "$out" 2>/dev/null   # umask covers a new file; an existing one keeps its mode until now
+    # Never clobber (and so never later remove) a file the scan did not create: an existing path, a link included, is refused.
+    if [ -e "$out" ] || [ -L "$out" ]; then die "refusing --out $out: it already exists (name a new file)"; fi
+    ( set -o noclobber; : >"$out" ) 2>/dev/null || die "cannot create $out"   # new, owner-only (umask above)
     SCAN_OUT="$out"
   else
     out="$(mktemp "${TMPDIR:-/tmp}/bypass-scan.XXXXXX")" || die "cannot create a scratch file"
@@ -207,8 +203,9 @@ cmd_scan() {
         | [ ($l.sessionId // ""), (($l.isSidechain // false) | tostring), ($l.timestamp // ""), input_filename,
             ((.input.command // "") | tostring | gsub("[\t\r]"; " ") | gsub("\n"; " ; ")) ]
         | join("\t")' 2>/dev/null \
-    | LC_ALL=C awk -F'\t' -v since="$since" -v asof="$asof" -v maxex="$EXAMPLES_PER_SESSION" -v cap="$COMMAND_CAP" -v rows="$SCAN_ROWS" -v out="$out" '
+    | BS_ROWS="$SCAN_ROWS" BS_OUT="$out" LC_ALL=C awk -F'\t' -v since="$since" -v asof="$asof" -v maxex="$EXAMPLES_PER_SESSION" -v cap="$COMMAND_CAP" '
         BEGIN {
+          rows = ENVIRON["BS_ROWS"]; out = ENVIRON["BS_OUT"]   # paths via the environment: -v would process backslash escapes
           while ((getline line < rows) > 0) { n++; split(line, f, "\t"); cls[n] = f[1]; pat[n] = f[3]; act[n] = f[4] }
           close(rows)
         }

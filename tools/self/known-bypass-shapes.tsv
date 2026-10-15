@@ -24,7 +24,7 @@ gate-pr:two-pr-commands	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*{PR}.*[;&|][[
 gate-push:env-drops-home	tools/pre-pr-gate.sh	env[[:space:]]+(-i|-u[[:space:]]+HOME)[[:space:]].*{ACT}	any
 gate-push:indexed-assignment-prefix	tools/pre-pr-gate.sh	[A-Za-z_][A-Za-z_0-9]*\[[^]]*\]=[^[:space:]]*[[:space:]]+{ACT}	any
 gate-push:heredoc-close-paren	tools/pre-pr-gate.sh	;[^;]*[a-z.,:'"-][^;]*;[[:space:]]*\)[^;]*{ACTAT}	any
-gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_.-])(bash|sh|zsh)[[:space:]]*<<)|<<[^|;]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)).*{ACTAT}	any
+gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_])(bash|sh|zsh)[[:space:]]*<<)|<<[^|;]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)).*{ACTAT}	any
 gate-push:case-in-group-in-subst	tools/pre-pr-gate.sh	\$\([^)]*\([[:space:]]*case[[:space:]].*esac.*{ACT}	any
 gate-push:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*((GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push|(GH|Gh|gH)[[:space:]]+pr[[:space:]]+create)	any
 floor:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(checkout|reset|stash|clean)	subagent

@@ -202,11 +202,12 @@ bashline "$T/$S1/subagents/agent-a1.jsonl" "$S1" true 2026-09-10T10:02:00.000Z '
 bashline "$T/$S1/subagents/agent-a2.jsonl" "$S1" true 2026-09-10T10:03:00.000Z 'GIT reset --hard'
 printf 'not json at all\n{"truncated":' >>"$T/$S1/subagents/agent-a2.jsonl"
 bashline "$T/$S2.jsonl" "$S2" false 2026-09-11T10:00:00.000Z "$(printf "bash <<'X'\ngit push --no-verify\nX\n")"
+S7=00000000-0000-4000-8000-000000000007   # a path before the shell word is still a candidate (positive control for the boundary)
+bashline "$T/$S7.jsonl" "$S7" false 2026-09-11T10:02:00.000Z "$(printf "/bin/bash <<'X'\\ngit push --no-verify\\nX\\n")"
 bashline "$T/$S3.jsonl" "$S3" false 2026-01-01T10:00:00.000Z 'GIT push origin old'
 bashline "$T/$S4.jsonl" "$S4" false 2026-09-12T10:00:00.000Z 'GIT checkout main'
-S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh, or a script named x.sh, before a heredoc: no heredoc-fed-shell candidate
+S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh before a heredoc: no heredoc-fed-shell candidate
 bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:00:00.000Z "$(printf "crash <<'X'\\ngit push origin x\\nX\\n")"
-bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:01:00.000Z "$(printf "run.sh <<'X'\\ngit push origin x\\nX\\n")"
 S5=00000000-0000-4000-8000-000000000005   # an ordinary commit-message heredoc and a plain push: no heredoc class
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:00:00.000Z "$(printf "git commit -m \"\$(cat <<'EOF'\nfix the thing\nEOF\n)\"\ngit push origin feature\n")"
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:05:00.000Z 'echo "gh pr create" > note.txt; git push origin feature'
@@ -221,6 +222,7 @@ check_contains "candidate: the upper-case git push in the parent session" "$c" "
 check_contains "candidate: the newline-bearing heredoc-fed shell (newlines flattened)" "$c" "gate-push:heredoc-fed-shell${TAB}$S2"
 check_absent "no candidate for 'git status'" "$c" 'git status'
 check_absent "an ordinary commit-message heredoc followed by a push is no heredoc candidate" "$c" "$S5"
+check_contains "a path before the shell word (/bin/bash <<) is still a heredoc-fed-shell candidate" "$c" "gate-push:heredoc-fed-shell${TAB}$S7"
 check_absent "a word merely ending in sh before a heredoc is no heredoc-fed-shell candidate" "$c" "$S6"
 check_absent "no candidate for a command outside the window" "$c" "$S3"
 check_absent "a main-session upper-case git checkout is not a subagent's (actor subagent)" "$c" "floor:upper-case-command-word${TAB}$S4"
@@ -239,16 +241,18 @@ check_contains "a symlinked transcripts root is walked (the KB links ~/.claude/p
 mode_out="$SANDBOX/cands-mode.tsv"
 ( umask 022; bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$mode_out" >/dev/null 2>&1 )
 check_eq "an explicit --out is created owner-only (0600) under umask 022" "-rw-------" "$(ls -l "$mode_out" | cut -c1-10)"
-# ...also when the file already exists with looser permissions, and a non-regular --out is refused (never removed)
-printf 'old\n' >"$mode_out"; chmod 644 "$mode_out"
-bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$mode_out" >/dev/null 2>&1
-check_eq "an existing --out file is tightened to 0600 too" "-rw-------" "$(ls -l "$mode_out" | cut -c1-10)"
-ln -s "$mode_out" "$SANDBOX/cands-link-out.tsv"
+# an existing --out (a regular file, a link, a device) is refused and left untouched: the scan never clobbers or removes
+# a file it did not create
+printf 'precious\n' >"$SANDBOX/precious.txt"
+run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$SANDBOX/precious.txt"
+check_status "an existing --out file is refused (exit 2)" 2 "$STATUS"
+check_eq "...and its content is untouched" "precious" "$(cat "$SANDBOX/precious.txt")"
+ln -s "$SANDBOX/precious.txt" "$SANDBOX/cands-link-out.tsv"
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$SANDBOX/cands-link-out.tsv"
 check_status "--out that is a symlink -> exit 2" 2 "$STATUS"
-check_file "...and the link's target survives the cleanup trap" "$mode_out"
+check_eq "...and the link's target survives" "precious" "$(cat "$SANDBOX/precious.txt")"
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out /dev/null
-check_status "--out /dev/null (not a regular file) -> exit 2" 2 "$STATUS"
+check_status "--out /dev/null -> exit 2" 2 "$STATUS"
 # a failed scan leaves no half-written candidate file behind
 printf 'class\tregister\tpattern\tactor\nok:one\ta-register-file\t(unclosed\tany\n' >"$SANDBOX/bad-shapes2.tsv"
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --shapes "$SANDBOX/bad-shapes2.tsv" --as-of 2026-09-15 --days 30 --out "$SANDBOX/cands-failed.tsv"
