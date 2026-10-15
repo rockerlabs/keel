@@ -64,7 +64,8 @@ the date the window, or the plan that sizes it, ends), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
 against spec-return rate) is a report field, not a role — record it, judge it next cycle. Every row also
 reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,
-derived (keel's own: `backlog-census.sh --list <tag> --decay` against `backlog-census.sh --list <tag>`).
+derived by counting the ticket numbers each census call prints (keel's own: `backlog-census.sh --list <tag> --decay`
+against `backlog-census.sh --list <tag>`; a "skipped" line is no count).
 
 **G6 — fresh-reviewer adjudication is MANDATORY.**
 Hand the produced plan to a reviewer with no shared context, told to read ticket bodies. Re-verify every

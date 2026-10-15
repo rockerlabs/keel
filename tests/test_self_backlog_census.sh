@@ -357,6 +357,19 @@ body
 fdt="$(mk_backlog "$dtok_backlog")"
 run "$bc" --ticket-token 'B\.[0-9]+' --list pool --decay "$fdt"
 check_status "A15: --ticket-token mode reads the marker the same way (B.1 only)" "B.1" "$OUT"
+# A legacy `### <n>.` heading has no `dir #N` of its own: a citation of the SAME number is still a citation,
+# so the cited marker is not its own (MUTATION-PROOF: passing the numeral as the heading's own number reads it marked).
+dleg_backlog="### 5. legacy ticket, Supersedes dir #5 — [model-decay] — R2 — → pool
+
+body
+
+### 6. legacy ticket carrying its own [model-decay] — R2 — → pool
+
+body
+"
+fdl="$(mk_backlog "$dleg_backlog")"
+run "$bc" --list pool --decay "$fdl"
+check_status "A15: a legacy heading's citation of its own numeral is stripped (only 6 is marked)" "6" "$OUT"
 # the second fixture: no marked block at all -> empty output, exit 0; also under macOS /bin/bash 3.2, where an
 # empty array under `set -u` is the classic trap
 run "$bc" --decay "$f"

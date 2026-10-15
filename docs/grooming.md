@@ -522,8 +522,9 @@ check against an input a model has to produce loses value as models improve, whi
 requested capability does not, so such a ticket carries `[model-decay]` in its heading
 ([`docs/verification-economics.md`](verification-economics.md) §4 defines the test). The row states the
 **decay-exposed share** — the marked tickets of its slate over the slate's size — derived, never
-hand-counted (keel's own: `tools/self/backlog-census.sh --list <tag> --decay`, against `tools/self/backlog-census.sh --list <tag>`
-for the slate's size). It is a report field, like design economics: it has no cap and changes no
+hand-counted (keel's own: count the ticket numbers `tools/self/backlog-census.sh --list <tag> --decay` prints against those of
+`tools/self/backlog-census.sh --list <tag>` for the slate's size; its "skipped" line, printed when no backlog is
+readable, is no count). It is a report field, like design economics: it has no cap and changes no
 slate by itself; a ceiling on the share would be a scheduling rule, which this field is not. The
 marker's second reader is the rollout audit ([`docs/rollout-audit.md`](rollout-audit.md)). A rule of
 the procedure, not a compensation.

@@ -87,7 +87,7 @@ baseline the *next* rollout's audit diffs against; a sweep that doesn't name its
 everything" even when it only checked a few.
 
 Hardening against an input a model has to produce loses value as models improve, so the audit also
-re-triages that work. Before the layers, **list** every open ticket that carries the `[model-decay]`
+re-triages that work, in two steps around the layers. Before sweeping them, **list** every open ticket that carries the `[model-decay]`
 marker ([`docs/verification-economics.md`](verification-economics.md) §4) and every entry in a guard's
 known-bypass register, each with its live sighting count where the project keeps an accumulator. After the
 layers, re-triage each against the new model — still worth keeping, retired, or its guard re-tightened —

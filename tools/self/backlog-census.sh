@@ -64,6 +64,11 @@
 # the same `bb_strip_foreign_citations` the release tag uses — a citation form that helper does not know is a
 # census defect. A body line never counts (the heading block ends where `backlog_ticket_blocks` ends it), and a
 # closed block is excluded before the marker is ever read. Nothing marked prints nothing and exits 0.
+# Known limit, inherited from the scanner (`bb_heading_continues`, dir #839): a heading line that already
+# carries its tail (`— R2 — → pool`) takes no further line, so write the marker on the lines up to and
+# including that tail — a marker wrapped onto the NEXT line after a finished heading line is not seen.
+# Only the citation forms `bb_strip_foreign_citations` knows (Supersedes / Superseded [by] / Duplicate of
+# `dir #N`) are stripped; any other way of citing a marked ticket's heading text still counts.
 # `--list all` (a tag no release vocabulary can equal) takes every open block whatever its tag, so
 # `--list all --decay` is every open marked ticket — the list a rollout audit re-triages
 # (docs/rollout-audit.md "Running the audit"); the groom's decay-exposed share (docs/grooming.md G5) is
@@ -171,6 +176,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   id=""
   [ -n "$ticket_token" ] || id="$(bb_own_ticket_num "$heading_block")"
+  own_dir_num="$id"   # a legacy `### <n>.` heading has none; $id becomes its numeral below
 
   # code-review medium (found live): a qualifying arrow reached only via a citation to a
   # DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") was read as THIS heading's own tag — the
@@ -206,7 +212,11 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   if [ "$decay_only" = 1 ]; then
     # dir #842: the marker is read from the heading block with foreign citations stripped, never the body.
-    decay_block="$(bb_strip_foreign_citations "$heading_block" "$id" '\[model-decay\]')"
+    # The literal test first skips the strip's subshell for the unmarked majority; the strip then takes the
+    # heading's OWN `dir #N` (empty for a legacy heading, as for the release tag above), never the numeral $id
+    # may now hold — a legacy `### 5.` citing `dir #5` is still a citation.
+    [[ "$heading_block" == *'[model-decay]'* ]] || continue
+    decay_block="$(bb_strip_foreign_citations "$heading_block" "$own_dir_num" '\[model-decay\]')"
     [[ "$decay_block" == *'[model-decay]'* ]] || continue
   fi
 
