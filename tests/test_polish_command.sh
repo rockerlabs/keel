@@ -484,7 +484,7 @@ check_contains "guide § Step 2: the test run after simplify is never skipped or
   "never skip or reorder the test run after simplify touched code"
 # the changelog entry belongs in the same PR
 check_contains "core: step 1 nudges a notable change's changelog entry into this PR, before step 3" "$(step_text 1)" \
-  'a notable change lacks its entry → add it now, in this PR, before step 3'
+  'a notable change lacks its entry → add and commit it now, in this PR, before step 3'
 check_contains "guide § Step 1: the nudge says the PR carries its entry, not a wrap follow-up" "$g1" "carries its entry in the SAME PR"
 # fix every finding before the next review round; the review-null exception is NOT widened
 check_contains "core: step 5 fixes every accepted finding, wording included, before the next round" "$(step_text 5)" \

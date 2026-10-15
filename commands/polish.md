@@ -13,10 +13,10 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Note an unexpected receipt permission prompt once: `tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Note an unexpected receipt permission prompt: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
-review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt cycle.
+review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
 
 **The guide.** The rare branches live in `polish-guide.md`. When a step below names a trigger that fired,
 load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, at its section; guide unreachable → stop and report. Never improvise a branch. Where the guide and this file disagree, this file wins.
@@ -26,12 +26,12 @@ Steps, in order:
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
-   The repo keeps a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add it now, in this PR, before step 3.
+   The repo keeps a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.
 
 2. **Simplify.** Every changed file `*.md`, none a command, skill or runbook → the guide, § Step 2.
-   Otherwise invoke `/simplify` and wait, then re-read its edits for dropped exit semantics: a helper ending in `while read` or a pipeline needs `return 0` or `|| true`; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
+   Otherwise invoke `/simplify` and wait; after it or any inline cleanup, re-read the edits for dropped exit semantics: a helper ending in `while read` or a pipeline needs `return 0` or `|| true`; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
    Refused or unavailable → § Step 2. An Agent-tool ban counts.
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
@@ -59,8 +59,7 @@ Steps, in order:
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
-   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) (establish availability by
-   attempting, never from the skill listing). On success resolve its findings, receipt the bare
+   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
    step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488, decided by the
    gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to
