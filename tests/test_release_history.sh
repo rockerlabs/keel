@@ -299,8 +299,8 @@ _changelog_sections_without_entry() {
 }
 
 # fx_case ID EXPECTED_OUTPUT EXPECTED_RC CHANGELOG_TEXT HISTORY_TEXT — one synthetic CHANGELOG/history pair
-# under $SANDBOX run through _changelog_sections_without_entry, asserted on stdout AND exit code. An empty
-# CHANGELOG_TEXT or HISTORY_TEXT of the exact string ABSENT leaves that file out of the directory.
+# under $SANDBOX run through _changelog_sections_without_entry, asserted on stdout AND exit code. Passing the
+# string ABSENT as CHANGELOG_TEXT or HISTORY_TEXT leaves that file out of the directory.
 fx_case() {
   local id="$1" want_out="$2" want_rc="$3" cl="$4" hist="$5" dir out rc
   dir="$(mktemp -d "$SANDBOX/fx-entry.XXXXXX")"
