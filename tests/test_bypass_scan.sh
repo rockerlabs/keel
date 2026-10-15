@@ -206,6 +206,15 @@ S7=00000000-0000-4000-8000-000000000007   # a path before the shell word is stil
 bashline "$T/$S7.jsonl" "$S7" false 2026-09-11T10:02:00.000Z "$(printf "/bin/bash <<'X'\\ngit push --no-verify\\nX\\n")"
 bashline "$T/$S3.jsonl" "$S3" false 2026-01-01T10:00:00.000Z 'GIT push origin old'
 bashline "$T/$S4.jsonl" "$S4" false 2026-09-12T10:00:00.000Z 'GIT checkout main'
+# delta-audit 0.17.0 S9-1: {ACTAT}'s `[;&|(]` carries an `&`; on bash >= 5.2 an unquoted `&` in a ${var//pat/rep} replacement
+# reads as "the matched text" and the class silently drifts. The `;` chain is the control; the `&&` chain must be a candidate
+# and an `A`/`C`/`T`/`{`/`}` letter before the action (DATA git push) must not be.
+S8A=00000000-0000-4000-8000-00000000008a   # heredoc-fed shell, `;` chain
+S8B=00000000-0000-4000-8000-00000000008b   # heredoc-fed shell, `&&` chain
+S8C=00000000-0000-4000-8000-00000000008c   # heredoc-fed shell, a plain phrase ending in A before the words git push
+bashline "$T/$S8A.jsonl" "$S8A" false 2026-09-14T11:00:00.000Z "$(printf "bash <<'X'\necho hi; git push --no-verify\nX\n")"
+bashline "$T/$S8B.jsonl" "$S8B" false 2026-09-14T11:01:00.000Z "$(printf "bash <<'X'\necho hi && git push --no-verify\nX\n")"
+bashline "$T/$S8C.jsonl" "$S8C" false 2026-09-14T11:02:00.000Z "$(printf "bash <<'X'\necho DATA git push is a phrase\nX\n")"
 S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh, a script named run.sh, or a git-sh command before a heredoc: no heredoc-fed-shell candidate
 bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:00:00.000Z "$(printf "crash <<'X'\\ngit push origin x\\nX\\n")"
 bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:01:00.000Z "$(printf "./run.sh <<'X'\\ngit push origin x\\nX\\n")"
@@ -226,6 +235,9 @@ check_absent "no candidate for 'git status'" "$c" 'git status'
 check_absent "an ordinary commit-message heredoc followed by a push is no heredoc candidate" "$c" "$S5"
 check_contains "a path before the shell word (/bin/bash <<) is still a heredoc-fed-shell candidate" "$c" "gate-push:heredoc-fed-shell${TAB}$S7"
 check_absent "a word merely ending in sh before a heredoc is no heredoc-fed-shell candidate" "$c" "$S6"
+check_contains "a ; chain before the action in a heredoc-fed shell is a candidate (S9-1 control)" "$c" "gate-push:heredoc-fed-shell${TAB}$S8A"
+check_contains "an && chain before the action in a heredoc-fed shell is a candidate (S9-1: bash >= 5.2 missed it)" "$c" "gate-push:heredoc-fed-shell${TAB}$S8B"
+check_absent "a phrase ending in A before 'git push' in a heredoc-fed shell is no candidate (S9-1: bash >= 5.2 listed it)" "$c" "$S8C"
 check_absent "no candidate for a command outside the window" "$c" "$S3"
 check_absent "a main-session upper-case git checkout is not a subagent's (actor subagent)" "$c" "floor:upper-case-command-word${TAB}$S4"
 floor_sessions="$(awk -F'\t' '$1 == "floor:upper-case-command-word" { print $2 }' "$cands" | sort -u)"
