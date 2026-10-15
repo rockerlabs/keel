@@ -174,11 +174,17 @@ cmd_scan() {
   fi
   [ -n "$since" ] || since="$(date_minus "$asof" "$WINDOW_DAYS")"
   valid_date "$since" || die "--since '$since' is not an ISO date"
-  [[ "$since" > "$asof" ]] && die "--since $since is later than --as-of $asof: nothing could match"
+  [ "${since//-/}" -le "${asof//-/}" ] || die "--since $since is later than --as-of $asof: nothing could match"
 
   if [ -n "$out" ]; then
     in_git_tree "$out" && die "refusing --out $out: it is inside a git work tree (the candidates are personal data)"
+    # Only a regular file (or a path that does not exist yet) is ever written, and so ever removed by the cleanup trap:
+    # /dev/null, a device or a link to some other file is refused.
+    if [ -e "$out" ] || [ -L "$out" ]; then
+      { [ -f "$out" ] && [ ! -L "$out" ]; } || die "refusing --out $out: it exists and is not a regular file"
+    fi
     : >"$out" 2>/dev/null || die "cannot write $out"
+    chmod 600 "$out" 2>/dev/null   # umask covers a new file; an existing one keeps its mode until now
     SCAN_OUT="$out"
   else
     out="$(mktemp "${TMPDIR:-/tmp}/bypass-scan.XXXXXX")" || die "cannot create a scratch file"
@@ -186,8 +192,7 @@ cmd_scan() {
     if in_git_tree "$out"; then die "the scratch dir ${TMPDIR:-/tmp} is inside a git work tree; pass --out elsewhere"; fi
   fi
   SCAN_ROWS="$(mktemp "${TMPDIR:-/tmp}/bypass-scan-shapes.XXXXXX")" || die "cannot create a scratch file"
-  rows_file="$SCAN_ROWS"
-  shape_rows "$shapes" >"$rows_file" || exit 2
+  shape_rows "$shapes" >"$SCAN_ROWS" || exit 2
 
   # `$tdir/.` so a symlinked transcripts root (the KB links ~/.claude/projects) is walked, not listed as one link.
   # Stage 1 (jq): one line per Bash tool call — session, sidechain, timestamp, file, command (newlines -> " ; ").
@@ -202,7 +207,7 @@ cmd_scan() {
         | [ ($l.sessionId // ""), (($l.isSidechain // false) | tostring), ($l.timestamp // ""), input_filename,
             ((.input.command // "") | tostring | gsub("[\t\r]"; " ") | gsub("\n"; " ; ")) ]
         | join("\t")' 2>/dev/null \
-    | LC_ALL=C awk -F'\t' -v since="$since" -v asof="$asof" -v maxex="$EXAMPLES_PER_SESSION" -v cap="$COMMAND_CAP" -v rows="$rows_file" -v out="$out" '
+    | LC_ALL=C awk -F'\t' -v since="$since" -v asof="$asof" -v maxex="$EXAMPLES_PER_SESSION" -v cap="$COMMAND_CAP" -v rows="$SCAN_ROWS" -v out="$out" '
         BEGIN {
           while ((getline line < rows) > 0) { n++; split(line, f, "\t"); cls[n] = f[1]; pat[n] = f[3]; act[n] = f[4] }
           close(rows)
