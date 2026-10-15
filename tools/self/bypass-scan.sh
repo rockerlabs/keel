@@ -21,7 +21,8 @@
 #   bypass-scan.sh scan [--transcripts DIR] [--shapes FILE] [--since D | --days N] [--as-of D] [--out FILE]
 #       lists candidates for every class of the shape table; --since/--days bound the lines by date (default: the 90-day
 #       window up to --as-of, today by default); a re-scan is harmless, the accumulator ignores a duplicate (class,
-#       session, consumer). --out defaults to a fresh file under ${TMPDIR:-/tmp}. Exit 0 ok, 2 a usage or I/O error.
+#       session, consumer). --out must name a file that does not exist yet (an existing path is refused,
+#       never overwritten or removed); it defaults to a fresh file under ${TMPDIR:-/tmp}. Exit 0 ok, 2 a usage or I/O error.
 #   bypass-scan.sh classes [--shapes FILE]
 #       prints one `accumulate.sh --dir <data dir> new-class …` command per class (owner guards, threshold 2, window 90,
 #       counts felt) — the operator-machine half of dir #842 slice 4; it runs nothing. The lines carry this checkout's
@@ -147,7 +148,7 @@ in_git_tree() {
 }
 
 cmd_scan() {
-  local tdir="${KEEL_TRANSCRIPTS_DIR:-$(tu_projects_root)}" shapes="$DEFAULT_SHAPES" since="" days="" asof="" out=""
+  local err tdir="${KEEL_TRANSCRIPTS_DIR:-$(tu_projects_root)}" shapes="$DEFAULT_SHAPES" since="" days="" asof="" out=""
   umask 077   # the candidate file holds commands from real sessions: owner-only, whatever the caller's umask
   trap scan_cleanup EXIT
   trap 'exit 130' INT
@@ -180,7 +181,7 @@ cmd_scan() {
     in_git_tree "$out" && die "refusing --out $out: it is inside a git work tree (the candidates are personal data)"
     # Never clobber (and so never later remove) a file the scan did not create: an existing path, a link included, is refused.
     if [ -e "$out" ] || [ -L "$out" ]; then die "refusing --out $out: it already exists (name a new file)"; fi
-    ( set -o noclobber; : >"$out" ) 2>/dev/null || die "cannot create $out"   # new, owner-only (umask above)
+    err="$( ( set -o noclobber; : >"$out" ) 2>&1 )" || die "cannot create $out: $err"   # new, owner-only (umask above)
     SCAN_OUT="$out"
   else
     out="$(mktemp "${TMPDIR:-/tmp}/bypass-scan.XXXXXX")" || die "cannot create a scratch file"

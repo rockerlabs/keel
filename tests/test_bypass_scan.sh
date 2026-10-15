@@ -206,8 +206,10 @@ S7=00000000-0000-4000-8000-000000000007   # a path before the shell word is stil
 bashline "$T/$S7.jsonl" "$S7" false 2026-09-11T10:02:00.000Z "$(printf "/bin/bash <<'X'\\ngit push --no-verify\\nX\\n")"
 bashline "$T/$S3.jsonl" "$S3" false 2026-01-01T10:00:00.000Z 'GIT push origin old'
 bashline "$T/$S4.jsonl" "$S4" false 2026-09-12T10:00:00.000Z 'GIT checkout main'
-S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh before a heredoc: no heredoc-fed-shell candidate
+S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh, a script named run.sh, or a git-sh command before a heredoc: no heredoc-fed-shell candidate
 bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:00:00.000Z "$(printf "crash <<'X'\\ngit push origin x\\nX\\n")"
+bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:01:00.000Z "$(printf "./run.sh <<'X'\\ngit push origin x\\nX\\n")"
+bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:02:00.000Z "$(printf "git-sh <<'X'\\ngit push origin x\\nX\\n")"
 S5=00000000-0000-4000-8000-000000000005   # an ordinary commit-message heredoc and a plain push: no heredoc class
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:00:00.000Z "$(printf "git commit -m \"\$(cat <<'EOF'\nfix the thing\nEOF\n)\"\ngit push origin feature\n")"
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:05:00.000Z 'echo "gh pr create" > note.txt; git push origin feature'

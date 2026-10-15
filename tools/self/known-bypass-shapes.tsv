@@ -14,6 +14,8 @@
 #              session running the scan (docs/grooming.md G0). Macros, expanded before matching: {PUSH} a `git … push`,
 #              {PR} a `gh pr create`, {ACT} either, {ACTAT} either at a command position (after `;`, `&`, `|`,
 #              `(` or the start — a heredoc body line starts after the ` ; ` that stands for its newline).
+#   Boundary note: heredoc-fed-shell excludes `.` and `-` before the shell word, so a script named `run.sh` or a command
+#              `git-sh` fed a heredoc is no candidate (it is a script reading stdin, not a shell executing the body).
 #   actor      `any` — every Bash command; `subagent` — only a command in a subagent's transcript (isSidechain).
 class	register	pattern	actor
 gate-push:wrapper-outside-skip-set	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(sudo|timeout|noglob|coproc|exec[[:space:]]+-a|env[[:space:]]+-C|/usr/bin/env)[[:space:]].*{ACT}	any
@@ -24,7 +26,7 @@ gate-pr:two-pr-commands	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*{PR}.*[;&|][[
 gate-push:env-drops-home	tools/pre-pr-gate.sh	env[[:space:]]+(-i|-u[[:space:]]+HOME)[[:space:]].*{ACT}	any
 gate-push:indexed-assignment-prefix	tools/pre-pr-gate.sh	[A-Za-z_][A-Za-z_0-9]*\[[^]]*\]=[^[:space:]]*[[:space:]]+{ACT}	any
 gate-push:heredoc-close-paren	tools/pre-pr-gate.sh	;[^;]*[a-z.,:'"-][^;]*;[[:space:]]*\)[^;]*{ACTAT}	any
-gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_])(bash|sh|zsh)[[:space:]]*<<)|<<[^|;]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)).*{ACTAT}	any
+gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_.-])(bash|sh|zsh)[[:space:]]*<<)|<<[^|;]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)).*{ACTAT}	any
 gate-push:case-in-group-in-subst	tools/pre-pr-gate.sh	\$\([^)]*\([[:space:]]*case[[:space:]].*esac.*{ACT}	any
 gate-push:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*((GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push|(GH|Gh|gH)[[:space:]]+pr[[:space:]]+create)	any
 floor:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(checkout|reset|stash|clean)	subagent
