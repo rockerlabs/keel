@@ -842,8 +842,8 @@ conflicting pair is resolved by the LATER PR's worker on its own branch (whichev
 the train is cut, or the manager leaves the later PR out of this train, or, when the fix is mechanical, by an
 integration commit in the train. A merge that conflicts mid-build (three PRs that conflict only in combination,
 a constituent against an integration commit already made) has a fixed pair of answers, never an improvisation
-(the tool leaves that merge in progress, exit 1, the unmerged paths printed; the manager is running the build, so
-the answer is the manager's):
+(the tool leaves that merge in progress, exit 1, the unmerged paths printed; this happens during the manager's build,
+before the worker is launched, so the answer is the manager's; after the launch the worktree is the worker's alone, R5):
 `git -C <path> merge --abort`, then either re-run that merge and resolve it as an integration commit (the
 integration rule below applies; committing the resolution keeps the tool's `train:` subject, and
 `release-train.sh build --continue --worktree <path> <N>=<sha>…` merges the heads still to go) or that PR leaves

@@ -9,9 +9,8 @@
   line per run, in a file of their own. The verdict is unchanged. On macOS (BSD grep) the same blob now scans in about 40 s <!-- claim: hand CPU time after the fix, macOS BSD grep, no personal literals, 2026-10-14 -->
   of CPU with no personal literal set (about 55 s <!-- claim: hand CPU time after the fix, macOS BSD grep, two literals, 2026-10-14 -->
   with two; each literal adds to it), linear in its size, and a test pins that with a CPU-time ceiling (CPU, not
-  wall-clock: wall-clock measures the machine's load, which is what made the stall look endless). busybox grep (the
-  Alpine leg) is markedly slower per pass, so there the test bounds a smaller blob and the large-blob ceiling binds
-  on the macOS legs; the scan still finishes, only more slowly. `tools/public-audit.sh`'s decode
+  wall-clock: wall-clock measures the machine's load, which is what made the stall look endless). On the Alpine
+  leg (busybox grep) the test bounds a smaller blob instead, and the large-blob ceiling binds on the macOS legs. `tools/public-audit.sh`'s decode
   carries the same squeeze; it never shared the stall.
   The same change also fixes a fail-open on Alpine/busybox that predates it: the printable-runs view was read with
   `tr` and the class `[:print:]`, which busybox `tr` takes literally, so every byte became a newline and a
