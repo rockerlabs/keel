@@ -213,7 +213,8 @@ data off the machine or destroys it (a near-miss, due at once), `no` for a workf
 closures:** for every `promoted` class, `accumulate.sh closed <class> --backlog <path> --drafts <dir>` and, when its
 ticket is closed, `accumulate.sh fixed <class> <ref> --date <closure date>` — without it a class stays `promoted` and a
 recurrence is never due. **(4) `accumulate.sh due --owner guards`:** this groom files each class listed as a ticket
-(`accumulate.sh promote` records it); the tool never files. Run the scan more often than the harness keeps transcripts
+(`accumulate.sh promote` records it); the tool never files. A shape row added to the table is registered once with `tools/self/bypass-scan.sh classes` (it prints the
+`accumulate.sh new-class` lines and runs nothing). Run the scan more often than the harness keeps transcripts
 (Claude Code's `cleanupPeriodDays`, 30 days by default, checked 2026-10-15), or a sighting is lost before anyone reads it.
 
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's

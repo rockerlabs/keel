@@ -28,6 +28,8 @@
 #              machine-watch, machine-watch.paths   (tools/machine-watch.sh: the baseline store, and the
 #                           user-authored extra-paths file; dir #437 PR2)
 #              vendor-review (tools/vendor-review.sh: the default --out for round dirs; dir #662)
+#              guards-accumulator (tools/self/bypass-scan.sh data-dir: the guards' bypass-register accumulator,
+#                           dir #842 slice 4; KEEL_GUARDS_ACCUM_DIR overrides it)
 #   reserved:  config, config.d                      (dir #257)
 # Stays per harness, under `${KEEL_HOME:-$HOME/.claude}/.keel/`, unchanged by dir #637:
 # `install-manifest.*`, `foreign-core.*`, the install scratch and `doctor-accept` — they describe ONE

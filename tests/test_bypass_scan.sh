@@ -10,7 +10,7 @@
 #         operator machine's `accumulate.sh lint`, not CI: no data dir there, and HOME is sandboxed.)
 #   A19 — tools/self/bypass-scan.sh on a fixture transcript tree (a candidate for a matching command, none for a
 #         non-matching one or one outside the window, one parent plus two subagent files = ONE session, nothing written
-#         under the repository), and the five fixture classes through accumulate.sh (the dues, the ageing boundary, the
+#         under the repository), and the fixture classes through accumulate.sh (the dues, the ageing boundary, the
 #         G0 sequence promoted -> fixed -> a recurrence).
 # Keel-self-maintenance: it reads keel's own register files, which an adopter does not carry.
 # shellcheck source=tests/lib.sh
@@ -19,6 +19,7 @@
 SCAN="$REPO_ROOT/tools/self/bypass-scan.sh"
 ACC="$REPO_ROOT/tools/self/accumulate.sh"
 SHAPES_REL=tools/self/known-bypass-shapes.tsv
+REGISTER_FILES='tools/pre-pr-gate.sh tests/lib.sh tools/lib/safe-write.sh SECURITY.md'   # every file that may hold a key
 TAB="$(printf '\t')"
 
 check_file "tools/self/bypass-scan.sh exists" "$SCAN"
@@ -83,7 +84,7 @@ regcheck() {
   done <"$root/$SHAPES_REL"
 
   # (k2) every key a register file holds has a shape row.
-  for file in tools/pre-pr-gate.sh tests/lib.sh tools/lib/safe-write.sh SECURITY.md; do
+  for file in $REGISTER_FILES; do
     [ -f "$root/$file" ] || continue
     tmp="$(grep -o -E '\[bypass:[a-z0-9:-]+\]' "$root/$file" | sed 's/^\[bypass://; s/\]$//' | sort -u)"
     while IFS= read -r cls; do
@@ -101,8 +102,8 @@ regcheck() {
     while IFS= read -r line; do
       case "$line" in *"$phrase"*) ;; *) continue ;; esac
       n=$((n + 1))
-      [ "$(grep -o -F "[bypass:$cls]" <<<"$line" | wc -l | tr -d ' ')" = 1 ] || echo "fail:e:[$cls] the line holding '$phrase' lacks its key"
-      [ "$(keycount "$line")" = 1 ] || echo "fail:e:[$cls] the line holding '$phrase' holds $(keycount "$line") keys"
+      case "$line" in *"[bypass:$cls]"*) [ "$(keycount "$line")" = 1 ] || echo "fail:e:[$cls] the line holding '$phrase' holds $(keycount "$line") keys" ;;
+        *) echo "fail:e:[$cls] the line holding '$phrase' lacks its key" ;; esac
     done <<<"$(region_of "$root" "$file" "$region")"
     [ "$n" -ge 1 ] || echo "fail:e:[$cls] no line in the $region holds '$phrase'"
   done <<<"$ENTRIES"
@@ -132,7 +133,7 @@ copy="$SANDBOX/shapes-copy"
 mkdir -p "$copy/tools/lib" "$copy/tools/self" "$copy/tests"
 fresh_copy() {
   local f
-  for f in tools/pre-pr-gate.sh tools/lib/safe-write.sh tests/lib.sh SECURITY.md "$SHAPES_REL"; do cp "$REPO_ROOT/$f" "$copy/$f"; done
+  for f in $REGISTER_FILES "$SHAPES_REL"; do cp "$REPO_ROOT/$f" "$copy/$f"; done
 }
 
 fresh_copy; replace_in_line_containing "$copy/tools/pre-pr-gate.sh" 'a leading word outside the skip set' ' [bypass:gate-push:wrapper-outside-skip-set]' ''
@@ -248,7 +249,7 @@ check_status "--since with --days -> exit 2" 2 "$STATUS"
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-13-45
 check_status "a bad --as-of -> exit 2" 2 "$STATUS"
 
-# --- A19: the five fixture classes through accumulate.sh -------------------------------------------------------------
+# --- A19: the fixture classes through accumulate.sh -------------------------------------------------------------
 D="$SANDBOX/guards-acc"
 ASOF=2026-10-15
 acc() { bash "$ACC" --dir "$D" --as-of "$ASOF" "$@"; }

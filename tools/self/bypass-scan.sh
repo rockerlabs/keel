@@ -26,14 +26,19 @@
 #       prints one `accumulate.sh --dir <data dir> new-class …` command per class (owner guards, threshold 2, window 90,
 #       counts felt) — the operator-machine half of dir #842 slice 4; it runs nothing.
 #   bypass-scan.sh data-dir        prints the guards' accumulator data dir ($KEEL_GUARDS_ACCUM_DIR, else
-#                                  $HOME/.keel/guards-accumulator — outside every repository, never committed).
+#                                  the `guards-accumulator` store under keel's state root, $HOME/.keel — outside every
+#                                  repository, never committed).
 #   bypass-scan.sh -h | --help
-# Environment: KEEL_TRANSCRIPTS_DIR (default $HOME/.claude/projects), KEEL_GUARDS_ACCUM_DIR. Needs jq.
+# Environment: KEEL_TRANSCRIPTS_DIR (default ${KEEL_HOME:-$HOME/.claude}/projects), KEEL_GUARDS_ACCUM_DIR. Needs jq.
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/transcript-usage.sh
+. "$self_dir/../lib/transcript-usage.sh"   # tu_projects_root: the one resolver of the harness's transcripts dir
+# shellcheck source=tools/lib/state-root.sh
+. "$self_dir/../lib/state-root.sh"          # keel_store_root: the one resolver of keel's durable stores
 repo_root="$(cd "$self_dir/../.." && pwd -P)"
 DEFAULT_SHAPES="$self_dir/known-bypass-shapes.tsv"
 WINDOW_DAYS=90          # B11: the guards' window; the scan's default look-back
@@ -77,10 +82,14 @@ date_minus() {
     printf "%04d-%02d-%02d\n", y, m, dd }'
 }
 
-data_dir() { printf '%s\n' "${KEEL_GUARDS_ACCUM_DIR:-$HOME/.keel/guards-accumulator}"; }
+data_dir() {
+  [ -z "${KEEL_GUARDS_ACCUM_DIR:-}" ] || { printf '%s\n' "$KEEL_GUARDS_ACCUM_DIR"; return 0; }
+  keel_store_root guards-accumulator || die "no HOME: cannot name the guards' data dir (set KEEL_GUARDS_ACCUM_DIR)"
+  printf '\n'
+}
 
 # shape_rows FILE — the data rows (class, register, pattern, actor), the comment lines and the header dropped; each
-# pattern's macros expanded. Prints US-free tab rows; exits 2 on a malformed row.
+# pattern's macros expanded. Prints tab rows; exits 2 on a malformed row.
 shape_rows() {
   local file="$1" cls reg pat actor header=1 line
   [ -f "$file" ] || die "shape table $file does not exist"
@@ -96,12 +105,12 @@ shape_rows() {
     # status 2 = a syntax error); an awk that does reject it is caught by the second check.
     [[ "" =~ $pat ]]; [ $? -le 1 ] || die "shape table: class $cls pattern does not compile"
     P="$pat" LC_ALL=C awk 'BEGIN { x = ("" ~ ENVIRON["P"]) }' 2>/dev/null || die "shape table: class $cls pattern does not compile"
-    printf '%s\t%s\t%s\n' "$cls" "$pat" "$actor"
+    printf '%s\t%s\t%s\t%s\n' "$cls" "$reg" "$pat" "$actor"
   done <"$file"
 }
 
 cmd_classes() {
-  local shapes="$DEFAULT_SHAPES" dd acc cls reg pat actor line
+  local shapes="$DEFAULT_SHAPES" dd acc cls reg rows
   while [ $# -gt 0 ]; do
     case "$1" in
       --shapes) [ $# -ge 2 ] || die "--shapes needs a file"; shapes="$2"; shift 2 ;;
@@ -109,14 +118,12 @@ cmd_classes() {
     esac
   done
   dd="$(data_dir)"; acc="$self_dir/accumulate.sh"
-  shape_rows "$shapes" >/dev/null || exit 2
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in ''|'#'*) continue ;; esac
-    IFS=$'\t' read -r cls reg pat actor <<<"$line"
-    [ "$cls" = class ] && continue
+  rows="$(shape_rows "$shapes")" || exit 2
+  while IFS=$'\t' read -r cls reg _ _; do
+    [ -n "$cls" ] || continue
     printf "'%s' --dir '%s' new-class '%s' 'a known-bypass register entry: %s' 'the guard %s: fix the reader for this shape, then delete the register entry and its pins (dir #842)' guards %s %s felt\n" \
       "$acc" "$dd" "$cls" "${cls#*:}" "$reg" "$THRESHOLD" "$WINDOW_DAYS"
-  done <"$shapes"
+  done <<<"$rows"
 }
 
 # in_git_tree PATH — true when PATH (or its nearest existing ancestor) is inside a git work tree or this checkout.
@@ -130,7 +137,7 @@ in_git_tree() {
 }
 
 cmd_scan() {
-  local tdir="${KEEL_TRANSCRIPTS_DIR:-$HOME/.claude/projects}" shapes="$DEFAULT_SHAPES" since="" days="" asof="" out=""
+  local tdir="${KEEL_TRANSCRIPTS_DIR:-$(tu_projects_root)}" shapes="$DEFAULT_SHAPES" since="" days="" asof="" out=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --transcripts) [ $# -ge 2 ] || die "--transcripts needs a directory"; tdir="$2"; shift 2 ;;
@@ -154,7 +161,7 @@ cmd_scan() {
   [ -n "$since" ] || since="$(date_minus "$asof" "$WINDOW_DAYS")"
   valid_date "$since" || die "--since '$since' is not an ISO date"
 
-  local scratch rows_file
+  local rows_file
   if [ -n "$out" ]; then
     in_git_tree "$out" && die "refusing --out $out: it is inside a git work tree (the candidates are personal data)"
     : >"$out" 2>/dev/null || die "cannot write $out"
@@ -162,8 +169,7 @@ cmd_scan() {
     out="$(mktemp "${TMPDIR:-/tmp}/bypass-scan.XXXXXX")" || die "cannot create a scratch file"
     if in_git_tree "$out"; then rm -f "$out"; die "the scratch dir ${TMPDIR:-/tmp} is inside a git work tree; pass --out elsewhere"; fi
   fi
-  scratch="$(mktemp "${TMPDIR:-/tmp}/bypass-scan-shapes.XXXXXX")" || die "cannot create a scratch file"
-  rows_file="$scratch"
+  rows_file="$(mktemp "${TMPDIR:-/tmp}/bypass-scan-shapes.XXXXXX")" || die "cannot create a scratch file"
   shape_rows "$shapes" >"$rows_file" || { rm -f "$rows_file"; exit 2; }
 
   # `$tdir/.` so a symlinked transcripts root (the KB links ~/.claude/projects) is walked, not listed as one link.
@@ -173,7 +179,7 @@ cmd_scan() {
   # because jq -R joins a file's last line, when it has no newline, to the next file's first.
   find "$tdir/." -type f -name '*.jsonl' -print0 2>/dev/null \
     | xargs -0 -n 1 jq -R -r '
-        fromjson? | . as $l
+        select(test("\"name\": ?\"Bash\"")) | fromjson? | . as $l
         | (.message.content? // empty) | select(type == "array") | .[]
         | select(type == "object" and .type == "tool_use" and .name == "Bash")
         | [ ($l.sessionId // ""), (($l.isSidechain // false) | tostring), ($l.timestamp // ""), input_filename,
@@ -181,7 +187,7 @@ cmd_scan() {
         | join("\t")' 2>/dev/null \
     | LC_ALL=C awk -F'\t' -v since="$since" -v asof="$asof" -v maxex="$EXAMPLES_PER_SESSION" -v cap="$COMMAND_CAP" -v rows="$rows_file" -v out="$out" '
         BEGIN {
-          while ((getline line < rows) > 0) { n++; split(line, f, "\t"); cls[n] = f[1]; pat[n] = f[2]; act[n] = f[3] }
+          while ((getline line < rows) > 0) { n++; split(line, f, "\t"); cls[n] = f[1]; pat[n] = f[3]; act[n] = f[4] }
           close(rows)
         }
         {
@@ -202,7 +208,7 @@ cmd_scan() {
               c = (length(cmd) > cap) ? substr(cmd, 1, cap) "..." : cmd
               exl[key, total[key]] = d "\t" (side == "true" ? "subagent" : "main") "\t" c
             }
-            if (!(key in seen)) { seen[key] = 1; per[cls[i]]++; ns++; order[ns] = key }
+            if (total[key] == 1) { per[cls[i]]++; ns++; order[ns] = key }
           }
         }
         END {
