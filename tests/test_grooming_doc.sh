@@ -152,4 +152,15 @@ pin "G6 has the reviewer diff each decision against its table row" "$doc" \
   'diff every decision against the' \
   "expected G6 to carry the prose-versus-table check (dir #823 item 3)"
 
+# --- dir #842 slice 4: G0 sweeps the guards' bypass registers ---------------------------------------------------
+# The step's wiring (`accumulate.sh due --owner guards` and `bypass-scan.sh` in the doc's G0 section and the command's G0
+# block) is pinned, with misplacement mutants, by tests/test_model_decay_wiring.sh (c'). Pinned here: what that does not
+# cover — the data-dir surface, the closure order, the data-dir override and the candidate file's privacy.
+g0_doc="$(section_body '## G0 — retro first' "$doc")"
+check_contains "docs/grooming.md G0 names bypass-scan.sh data-dir" "$g0_doc" 'bypass-scan.sh data-dir'
+check_contains "docs/grooming.md G0 names the data-dir override KEEL_GUARDS_ACCUM_DIR" "$g0_doc" 'KEEL_GUARDS_ACCUM_DIR'
+check_contains "docs/grooming.md G0 names accumulate.sh closed (a promoted class is looked up in the backlog)" "$g0_doc" 'accumulate.sh closed'
+check_contains "docs/grooming.md G0 names accumulate.sh fixed (without it a recurrence is never due)" "$g0_doc" 'accumulate.sh fixed'
+check_contains "docs/grooming.md G0 keeps the scan's candidates out of every repository" "$g0_doc" 'outside every'
+
 summary

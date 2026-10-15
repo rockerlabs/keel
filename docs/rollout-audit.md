@@ -93,7 +93,8 @@ known-bypass register, each with its live sighting count where the project keeps
 layers, re-triage each against the new model — still worth keeping, retired, or its guard re-tightened —
 and queue the outcomes as findings like any other. Both lists come from their sources, never from
 memory (keel's own: `tools/self/backlog-census.sh --list all --decay` for the tickets; the register
-files that [`SECURITY.md`](../SECURITY.md) "Threat model by guard" names for the entries). This sits here,
+files that [`SECURITY.md`](../SECURITY.md) "Threat model by guard" names for the entries, and each entry's count from
+`tools/self/accumulate.sh count <class>` on the guards' data dir, `tools/self/bypass-scan.sh data-dir`). This sits here,
 not in Layer 0, which stays free of model behaviour.
 
 See also: [`FRAMEWORK.md`](../FRAMEWORK.md)'s "Verify gates" section for the mechanism behind a pipeline's

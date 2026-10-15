@@ -1,0 +1,32 @@
+# tools/self/known-bypass-shapes.tsv — keel-self-maintenance (dir #842 B11; dir #68: never installed by install.sh).
+# The sensor's shape table for the guards' known-bypass registers: one row per CLASS = one command-reading register
+# entry that carries a `[bypass:<class>]` key in its register file. tools/self/bypass-scan.sh reads it; the classes live
+# in the guards' accumulator (owner `guards`, threshold 2, window 90, counts felt — `bypass-scan.sh classes` prints the
+# `accumulate.sh new-class` lines). An entry about a file's content or a machine state (a hook started with stdin closed,
+# a test file that traps TERM, a link planted at a claimed temp path) has no transcript to scan, so it has no row here and
+# carries no key (tests/test_bypass_scan.sh holds both lists).
+#
+# Columns, tab-separated (the first non-comment row is the header):
+#   class      `<guard>:<shape-slug>` — the accumulator's class id and the key written in the register line.
+#   register   the repo-relative file whose comment holds the entry (the key appears there exactly once).
+#   pattern    an awk ERE (LC_ALL=C) tested against ONE command with its newlines turned into ` ; `. It finds CANDIDATES,
+#              not bypasses: a pattern cannot tell a construction from real work, so every hit is adjudicated by the
+#              session running the scan (docs/grooming.md G0). Macros, expanded before matching: {PUSH} a `git … push`,
+#              {PR} a `gh pr create`, {ACT} either, {ACTAT} either at a command position (after `;`, `&`, `|`,
+#              `(` or the start — a heredoc body line starts after the ` ; ` that stands for its newline).
+#   Boundary note: heredoc-fed-shell excludes `.` and `-` before the shell word, so a script named `run.sh` or a command
+#              `git-sh` fed a heredoc is no candidate (it is a script reading stdin, not a shell executing the body).
+#   actor      `any` — every Bash command; `subagent` — only a command in a subagent's transcript (isSidechain).
+class	register	pattern	actor
+gate-push:wrapper-outside-skip-set	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(sudo|timeout|noglob|coproc|exec[[:space:]]+-a|env[[:space:]]+-C|/usr/bin/env)[[:space:]].*{ACT}	any
+gate-push:zsh-short-form	tools/pre-pr-gate.sh	(repeat[[:space:]]+[0-9]+[[:space:]]+|function[[:space:]]+[A-Za-z_][A-Za-z_0-9]*[[:space:]]*\{[^}]*|\]\][[:space:]]+){ACT}	any
+gate-pr:path-to-gh	tools/pre-pr-gate.sh	(^|[;&|( ])/[^[:space:];&|]*/gh[[:space:]]+pr[[:space:]]+create	any
+gate-pr:gh-pr-new-or-graphql	tools/pre-pr-gate.sh	gh[[:space:]]+pr[[:space:]]+new|createPullRequest	any
+gate-pr:two-pr-commands	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*{PR}.*[;&|][[:space:]]*{PR}	any
+gate-push:env-drops-home	tools/pre-pr-gate.sh	env[[:space:]]+(-i|-u[[:space:]]+HOME)[[:space:]].*{ACT}	any
+gate-push:indexed-assignment-prefix	tools/pre-pr-gate.sh	[A-Za-z_][A-Za-z_0-9]*\[[^]]*\]=[^[:space:]]*[[:space:]]+{ACT}	any
+gate-push:heredoc-close-paren	tools/pre-pr-gate.sh	;[^;]*[a-z.,:'"-][^;]*;[[:space:]]*\)[^;]*{ACTAT}	any
+gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_.-])(bash|sh|zsh)[[:space:]]*<<)|<<[^|;]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)).*{ACTAT}	any
+gate-push:case-in-group-in-subst	tools/pre-pr-gate.sh	\$\([^)]*\([[:space:]]*case[[:space:]].*esac.*{ACT}	any
+gate-push:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*((GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push|(GH|Gh|gH)[[:space:]]+pr[[:space:]]+create)	any
+floor:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(checkout|reset|stash|clean)	subagent

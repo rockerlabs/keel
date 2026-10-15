@@ -31,24 +31,29 @@
 # backslash-newline. Where bash, zsh and busybox read a part differently, or the reader cannot know, and that part's
 # segment mentions git or gh, the hook REFUSES the command and says why, so a bypass cannot hide there;
 # `pre-pr-gate.sh lex` shows how a command was read. It guards habits, not a deliberate disguise. Named residuals,
-# caught only by the CI scan on the PR: a variable exported earlier, or set in an earlier segment of the same
-# command; an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted
-# subcommand word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion
+# caught only by the CI scan on the PR: a variable exported earlier, or set in an earlier segment of the same command;
+# an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted subcommand
+# word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
-# earlier segment; a leading word outside the skip set (`sudo`, `timeout`, `env -C`, `/usr/bin/env …`, zsh's
-# `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `nohup --`, an env argument whose
-# name is no identifier); a `case` header split over lines behind a prefix word (`coproc NAME case x`, newline, `in`)
-# or an `esac` as the first pattern on its own line, inside `$(…)`; an array assignment's `(…)` (read as commands: a
-# false deny, fail-safe); zsh's short forms (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
-# `function NAME { … }` body; a path to `gh` (`/opt/homebrew/bin/gh pr create`), gh's alias `gh pr new`, a
-# `gh api graphql` mutation and a second PR-opening command in one call (only the last one's head is checked
-# for a receipt); an env that drops the home (`env -u HOME`, `env -i`); an indexed assignment whose
-# index holds an expansion or a blank (`a[$i]=1 git …`, read as the command word); bash 3.2's misreading of a
-# heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only from a
-# body line that starts with `)`); a heredoc- or pipe-fed shell (`bash <<'X'` … `git push --no-verify` … `X`,
-# `cat <<'X' | bash`) — dir #792; an upper-case command word (`GIT push`, `GH pr create` on a case-insensitive
-# volume) — dir #792; a `case` inside a `( … )` group inside a `$(…)` that is double-quoted or in a heredoc body,
-# or inside an unquoted `${v:-$(…)}` — dir #792; a missing jq, another harness, the operator's own terminal. dir #731.
+# earlier segment; a leading word outside the skip set [bypass:gate-push:wrapper-outside-skip-set] (`sudo`, `timeout`,
+# `env -C`, `/usr/bin/env …`, zsh's `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`,
+# `nohup --`, an env argument whose name is no identifier); a `case` header split over lines behind a prefix word
+# (`coproc NAME case x`, newline, `in`) or an `esac` as the first pattern on its own line, inside `$(…)`;
+# an array assignment's `(…)` (read as commands: a false deny, fail-safe);
+# zsh's short forms [bypass:gate-push:zsh-short-form] (`if [[ … ]] cmd`, `repeat N cmd`, `{cmd}`) and a
+# `function NAME { … }` body; a path to `gh` [bypass:gate-pr:path-to-gh] (`/opt/homebrew/bin/gh pr create`),
+# gh's alias `gh pr new` [bypass:gate-pr:gh-pr-new-or-graphql], a `gh api graphql` mutation and
+# a second PR-opening command [bypass:gate-pr:two-pr-commands] in one call (only the last one's head is checked for a
+# receipt); an env that drops the home [bypass:gate-push:env-drops-home] (`env -u HOME`, `env -i`);
+# an indexed assignment [bypass:gate-push:indexed-assignment-prefix] whose index holds an expansion or a blank
+# (`a[$i]=1 git …`, read as the command word); bash 3.2's misreading [bypass:gate-push:heredoc-close-paren] of a
+# heredoc body inside `$(…)`, which closes the `$(…)` at a `)` and runs the text after it (refused only from a body
+# line that starts with `)`); a heredoc- or pipe-fed shell [bypass:gate-push:heredoc-fed-shell] (`bash <<'X'` …
+# `git push --no-verify` … `X`, `cat <<'X' | bash`) — dir #792;
+# an upper-case command word [bypass:gate-push:upper-case-command-word] (`GIT push`, `GH pr create` on a
+# case-insensitive volume) — dir #792; a `case` inside a `( … )`
+# group inside a [bypass:gate-push:case-in-group-in-subst] `$(…)` that is double-quoted or in a heredoc body, or
+# inside an unquoted `${v:-$(…)}` — dir #792; a missing jq, another harness, the operator's own terminal. dir #731.
 # Not a command shape, so not a CI-scan case either: a hook started with stdin closed hangs to the harness timeout
 # (Claude Code delivers hook input on stdin; `subagent-rails` has the same shape) — dir #781.
 #
@@ -499,7 +504,7 @@
 # `cd "$S"`), `sh -c`/`bash -c`/`eval` text, a script FILE that runs git (the command text is all this reads — a
 # probe file holding `git push` is invisible; treating every `bash <file>` as a deny would stop every legitimate
 # test run), an alias or `git-<x>` external command, a wrapper outside the reader's skip set (`timeout`, `nice`,
-# `sudo`, `env -C`), a non-literal verb (`git $v`), an upper-case command word
+# `sudo`, `env -C`), a non-literal verb (`git $v`), an upper-case command word [bypass:floor:upper-case-command-word]
 # (`GIT checkout`: the verb match is exact-case — dir #792), a `GIT_DIR`/`GIT_WORK_TREE` exported in an earlier segment, a
 # `cd X || git …` whose cd fails although X exists (every cd is replayed as if it ran, so `false && cd X; git …`
 # and a backgrounded `cd X &` count too), `cd -`, a cd in one pipeline stage taken as applying to the next, a write
