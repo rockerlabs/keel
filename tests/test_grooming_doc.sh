@@ -161,6 +161,7 @@ for needle in 'tools/self/bypass-scan.sh scan' 'accumulate.sh due --owner guards
   case "$g0_doc" in *"$needle"*) pass "docs/grooming.md G0 names [$needle]" ;; *) fail "docs/grooming.md G0 names [$needle]" "expected the G0 section to carry the guards' scan/adjudicate/due step (dir #842 B11)" ;; esac
   case "$g0_cmd" in *"$needle"*) pass "commands/groom.md G0 names [$needle]" ;; *) fail "commands/groom.md G0 names [$needle]" "expected the command's G0 block to carry the same step (dir #842 B11)" ;; esac
 done
+case "$g0_doc" in *'KEEL_GUARDS_ACCUM_DIR'*) pass "docs/grooming.md G0 names the data-dir override KEEL_GUARDS_ACCUM_DIR" ;; *) fail "docs/grooming.md G0 names the data-dir override KEEL_GUARDS_ACCUM_DIR" "an adopter must be able to point the guards' accumulator elsewhere" ;; esac
 for needle in 'accumulate.sh closed' 'accumulate.sh fixed'; do
   case "$g0_doc" in *"$needle"*) pass "docs/grooming.md G0 names [$needle] (a promoted class closes into fixed)" ;; *) fail "docs/grooming.md G0 names [$needle]" "without closed/fixed a promoted class never becomes due again (dir #838 B13 (7))" ;; esac
 done

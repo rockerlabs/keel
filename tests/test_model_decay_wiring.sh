@@ -7,7 +7,8 @@
 #       `backlog-census.sh --list`) — the groom's release row reports the decay-exposed share;
 #   (c) docs/rollout-audit.md's "Running the audit" section names `backlog-census.sh --list all --decay`;
 #   (d) tools/self/backlog-census.sh accepts `--decay` (exit 0 on a fixture).
-# Assertion (c') — G0 names `accumulate.sh due --owner guards` — is slice 4's, added with its step.
+#   (c') docs/grooming.md's G0 section AND commands/groom.md's G0 block each name `accumulate.sh due --owner guards`
+#       (dir #842 slice 4, B11) — the groom's scan-adjudicate-due step that files a register entry's promotion.
 # Each assertion reads ITS OWN section, bounded by the next heading or bold block title, so a paragraph
 # moved to a different section turns it red (the MISPLACED mutations below prove it). A check that cannot
 # fail proves nothing: every predicate runs against a good and a bad sample before it is trusted.
@@ -52,6 +53,9 @@ groom_doc_wired() { names_all "$(h2_section '## G5 — ' "$1")" '--decay' 'backl
 groom_cmd_wired() { names_all "$(bold_block '**G5 — ' "$1")" '--decay' 'backlog-census.sh --list'; }
 # (c) the rollout audit reads it, in its "Running the audit" section (Layer 0 stays free of model behaviour)
 rollout_wired() { names_all "$(h2_section '## Running the audit' "$1")" 'backlog-census.sh --list all --decay'; }
+# (c') the groom's G0 step that reads the guards' register accumulator, in the doc's G0 section and the command's G0 block
+guards_doc_wired() { names_all "$(h2_section '## G0 — ' "$1")" 'accumulate.sh due --owner guards' 'bypass-scan.sh'; }
+guards_cmd_wired() { names_all "$(bold_block '**G0 — ' "$1")" 'accumulate.sh due --owner guards' 'bypass-scan.sh'; }
 # (d) the reader exists: the census takes --decay and exits 0 on a fixture
 census_accepts_decay() {
   local fx="$SANDBOX/decay-wiring-fixture.md" rc=0
@@ -80,6 +84,8 @@ assert_wired "(a) docs/verification-economics.md defines \`[model-decay]\` once,
 assert_wired "(b) docs/grooming.md G5 names --decay and backlog-census.sh --list" groom_doc_wired "$grooming"
 assert_wired "(b) commands/groom.md's G5 block names --decay and backlog-census.sh --list" groom_cmd_wired "$groom_cmd"
 assert_wired "(c) docs/rollout-audit.md \"Running the audit\" names backlog-census.sh --list all --decay" rollout_wired "$rollout"
+assert_wired "(c') docs/grooming.md G0 names accumulate.sh due --owner guards and bypass-scan.sh" guards_doc_wired "$grooming"
+assert_wired "(c') commands/groom.md's G0 block names accumulate.sh due --owner guards and bypass-scan.sh" guards_cmd_wired "$groom_cmd"
 assert_wired "(d) backlog-census.sh accepts --decay (exit 0 on a fixture)" census_accepts_decay "$census"
 
 # --- bad samples: each predicate must turn red, or the assertion above proves nothing -----------------
@@ -127,6 +133,22 @@ r="$(scratch_copy "$rollout" rollout-audit.md)"
 delete_line_containing "$r" '--list all --decay'
 insert_before_line_containing "$r" '### Layer 1' 'Re-triage: backlog-census.sh --list all --decay.'
 assert_unwired "(c) the rollout paragraph moved into Layer 0 fails" rollout_wired "$r"
+
+# (c') the G0 step: deleted, then MISPLACED into G1 (inserted at G1's end)
+g="$(scratch_copy "$grooming" grooming.md)"
+delete_line_containing "$g" 'accumulate.sh due --owner guards'
+assert_unwired "(c') docs/grooming.md without the G0 guards step fails" guards_doc_wired "$g"
+g="$(scratch_copy "$grooming" grooming.md)"
+delete_line_containing "$g" 'accumulate.sh due --owner guards'
+insert_before_line_containing "$g" '## G2 — ' 'Guards: bypass-scan.sh then accumulate.sh due --owner guards.'
+assert_unwired "(c') the G0 step moved into G1 fails" guards_doc_wired "$g"
+c="$(scratch_copy "$groom_cmd" groom.md)"
+delete_line_containing "$c" 'accumulate.sh due --owner guards'
+assert_unwired "(c') commands/groom.md without the G0 guards clause fails" guards_cmd_wired "$c"
+c="$(scratch_copy "$groom_cmd" groom.md)"
+delete_line_containing "$c" 'accumulate.sh due --owner guards'
+insert_before_line_containing "$c" '**G2 — ' 'Guards: bypass-scan.sh then accumulate.sh due --owner guards.'
+assert_unwired "(c') the G0 clause moved into G1 fails" guards_cmd_wired "$c"
 
 # (d) a census that does not know the flag fails the predicate
 stub="$SANDBOX/census-stub.sh"

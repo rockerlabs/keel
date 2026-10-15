@@ -207,7 +207,8 @@ tracked file or a ticket. **(2) The adjudication**, by the session that ran the 
 construction from real work, so a probe, an audit, a fixture, a sandbox setup or a scratch target is dropped, and a real
 session that wrote the guarded action against its real target, by the right actor, becomes ONE `accumulate.sh add`
 (one per parent session — a subagent's command counts under its parent's session uuid) between `accumulate.sh lock`
-and `unlock` on the guards' data dir (`tools/self/bypass-scan.sh data-dir`): `danger yes` when the guard's miss sends
+and `unlock` on the guards' data dir (`tools/self/bypass-scan.sh data-dir`; `KEEL_GUARDS_ACCUM_DIR` points it
+elsewhere, e.g. at a backed-up directory): `danger yes` when the guard's miss sends
 data off the machine or destroys it (a near-miss, due at once), `no` for a workflow miss (counted to two). **(3) The
 closures:** for every `promoted` class, `accumulate.sh closed <class> --backlog <path> --drafts <dir>` and, when its
 ticket is closed, `accumulate.sh fixed <class> <ref> --date <closure date>` — without it a class stays `promoted` and a
