@@ -24,7 +24,8 @@
 #       session, consumer). --out defaults to a fresh file under ${TMPDIR:-/tmp}. Exit 0 ok, 2 a usage or I/O error.
 #   bypass-scan.sh classes [--shapes FILE]
 #       prints one `accumulate.sh --dir <data dir> new-class …` command per class (owner guards, threshold 2, window 90,
-#       counts felt) — the operator-machine half of dir #842 slice 4; it runs nothing.
+#       counts felt) — the operator-machine half of dir #842 slice 4; it runs nothing. The lines carry this checkout's
+#       path to accumulate.sh: run them now, before the checkout moves.
 #   bypass-scan.sh data-dir        prints the guards' accumulator data dir ($KEEL_GUARDS_ACCUM_DIR, else
 #                                  the `guards-accumulator` store under keel's state root, $HOME/.keel — outside every
 #                                  repository, never committed).
@@ -109,6 +110,14 @@ shape_rows() {
   done <"$file"
 }
 
+# scan_cleanup — the EXIT trap of `scan`: the shapes copy always goes; the candidate file (personal data) goes unless the
+# scan completed, so a failed or interrupted run leaves no half-written command list behind.
+SCAN_OUT=""; SCAN_ROWS=""; SCAN_OK=0
+scan_cleanup() {
+  [ -z "$SCAN_ROWS" ] || rm -f "$SCAN_ROWS"
+  [ "$SCAN_OK" = 1 ] || [ -z "$SCAN_OUT" ] || rm -f "$SCAN_OUT"
+}
+
 cmd_classes() {
   local shapes="$DEFAULT_SHAPES" dd acc cls reg rows
   while [ $# -gt 0 ]; do
@@ -117,7 +126,8 @@ cmd_classes() {
       *) die "classes: unknown argument '$1'" ;;
     esac
   done
-  dd="$(data_dir)"; acc="$self_dir/accumulate.sh"
+  dd="$(data_dir)" || exit 2
+  acc="$self_dir/accumulate.sh"
   rows="$(shape_rows "$shapes")" || exit 2
   while IFS=$'\t' read -r cls reg _ _; do
     [ -n "$cls" ] || continue
@@ -138,6 +148,10 @@ in_git_tree() {
 
 cmd_scan() {
   local tdir="${KEEL_TRANSCRIPTS_DIR:-$(tu_projects_root)}" shapes="$DEFAULT_SHAPES" since="" days="" asof="" out=""
+  umask 077   # the candidate file holds commands from real sessions: owner-only, whatever the caller's umask
+  trap scan_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   while [ $# -gt 0 ]; do
     case "$1" in
       --transcripts) [ $# -ge 2 ] || die "--transcripts needs a directory"; tdir="$2"; shift 2 ;;
@@ -160,17 +174,20 @@ cmd_scan() {
   fi
   [ -n "$since" ] || since="$(date_minus "$asof" "$WINDOW_DAYS")"
   valid_date "$since" || die "--since '$since' is not an ISO date"
+  [[ "$since" > "$asof" ]] && die "--since $since is later than --as-of $asof: nothing could match"
 
-  local rows_file
   if [ -n "$out" ]; then
     in_git_tree "$out" && die "refusing --out $out: it is inside a git work tree (the candidates are personal data)"
     : >"$out" 2>/dev/null || die "cannot write $out"
+    SCAN_OUT="$out"
   else
     out="$(mktemp "${TMPDIR:-/tmp}/bypass-scan.XXXXXX")" || die "cannot create a scratch file"
-    if in_git_tree "$out"; then rm -f "$out"; die "the scratch dir ${TMPDIR:-/tmp} is inside a git work tree; pass --out elsewhere"; fi
+    SCAN_OUT="$out"
+    if in_git_tree "$out"; then die "the scratch dir ${TMPDIR:-/tmp} is inside a git work tree; pass --out elsewhere"; fi
   fi
-  rows_file="$(mktemp "${TMPDIR:-/tmp}/bypass-scan-shapes.XXXXXX")" || die "cannot create a scratch file"
-  shape_rows "$shapes" >"$rows_file" || { rm -f "$rows_file"; exit 2; }
+  SCAN_ROWS="$(mktemp "${TMPDIR:-/tmp}/bypass-scan-shapes.XXXXXX")" || die "cannot create a scratch file"
+  rows_file="$SCAN_ROWS"
+  shape_rows "$shapes" >"$rows_file" || exit 2
 
   # `$tdir/.` so a symlinked transcripts root (the KB links ~/.claude/projects) is walked, not listed as one link.
   # Stage 1 (jq): one line per Bash tool call — session, sidechain, timestamp, file, command (newlines -> " ; ").
@@ -223,8 +240,8 @@ cmd_scan() {
           for (i = 1; i <= n; i++) if (per[cls[i]] > 0) printf "  %s: %d session(s)\n", cls[i], per[cls[i]]
         }'
   local rc=$?
-  rm -f "$rows_file"
   [ "$rc" -eq 0 ] || die "scan failed"
+  SCAN_OK=1
   printf 'bypass-scan: candidates written to %s (since %s, as-of %s)\n' "$out" "$since" "$asof"
 }
 

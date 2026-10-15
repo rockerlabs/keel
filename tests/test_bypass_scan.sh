@@ -204,6 +204,8 @@ printf 'not json at all\n{"truncated":' >>"$T/$S1/subagents/agent-a2.jsonl"
 bashline "$T/$S2.jsonl" "$S2" false 2026-09-11T10:00:00.000Z "$(printf "bash <<'X'\ngit push --no-verify\nX\n")"
 bashline "$T/$S3.jsonl" "$S3" false 2026-01-01T10:00:00.000Z 'GIT push origin old'
 bashline "$T/$S4.jsonl" "$S4" false 2026-09-12T10:00:00.000Z 'GIT checkout main'
+S6=00000000-0000-4000-8000-000000000006   # a word merely ending in sh before a heredoc: no heredoc-fed-shell candidate
+bashline "$T/$S6.jsonl" "$S6" false 2026-09-14T10:00:00.000Z "$(printf "crash <<'X'\\ngit push origin x\\nX\\n")"
 S5=00000000-0000-4000-8000-000000000005   # an ordinary commit-message heredoc and a plain push: no heredoc class
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:00:00.000Z "$(printf "git commit -m \"\$(cat <<'EOF'\nfix the thing\nEOF\n)\"\ngit push origin feature\n")"
 bashline "$T/$S5.jsonl" "$S5" false 2026-09-13T10:05:00.000Z 'echo "gh pr create" > note.txt; git push origin feature'
@@ -218,6 +220,7 @@ check_contains "candidate: the upper-case git push in the parent session" "$c" "
 check_contains "candidate: the newline-bearing heredoc-fed shell (newlines flattened)" "$c" "gate-push:heredoc-fed-shell${TAB}$S2"
 check_absent "no candidate for 'git status'" "$c" 'git status'
 check_absent "an ordinary commit-message heredoc followed by a push is no heredoc candidate" "$c" "$S5"
+check_absent "a word merely ending in sh before a heredoc is no heredoc-fed-shell candidate" "$c" "$S6"
 check_absent "no candidate for a command outside the window" "$c" "$S3"
 check_absent "a main-session upper-case git checkout is not a subagent's (actor subagent)" "$c" "floor:upper-case-command-word${TAB}$S4"
 floor_sessions="$(awk -F'\t' '$1 == "floor:upper-case-command-word" { print $2 }' "$cands" | sort -u)"
@@ -231,6 +234,20 @@ ln -s "$SANDBOX/transcripts" "$SANDBOX/transcripts-link"
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts-link" --as-of 2026-09-15 --days 30 --out "$SANDBOX/cands-link.tsv"
 check_contains "a symlinked transcripts root is walked (the KB links ~/.claude/projects)" "$(cat "$SANDBOX/cands-link.tsv")" "gate-push:heredoc-fed-shell${TAB}$S2"
 
+# the candidate file is personal data: owner-only whatever the caller's umask
+mode_out="$SANDBOX/cands-mode.tsv"
+( umask 022; bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$mode_out" >/dev/null 2>&1 )
+check_eq "an explicit --out is created owner-only (0600) under umask 022" "-rw-------" "$(ls -l "$mode_out" | cut -c1-10)"
+# a failed scan leaves no half-written candidate file behind
+printf 'class\tregister\tpattern\tactor\nok:one\ta-register-file\t(unclosed\tany\n' >"$SANDBOX/bad-shapes2.tsv"
+run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --shapes "$SANDBOX/bad-shapes2.tsv" --as-of 2026-09-15 --days 30 --out "$SANDBOX/cands-failed.tsv"
+check_status "a malformed shape table -> exit 2" 2 "$STATUS"
+check_nofile "...and the candidate file is removed" "$SANDBOX/cands-failed.tsv"
+run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --since 2026-10-20 --as-of 2026-10-15
+check_status "--since later than --as-of -> exit 2" 2 "$STATUS"
+run env -u HOME -u KEEL_HOME -u KEEL_GUARDS_ACCUM_DIR bash "$SCAN" classes
+check_status "classes with no data dir to name -> exit 2, no half-printed lines" 2 "$STATUS"
+check_absent "...and prints no new-class line" "$OUT" ' new-class '
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$REPO_ROOT/bypass-candidates.tsv"
 check_status "--out inside the repository is refused (exit 2)" 2 "$STATUS"
 check_nofile "...and nothing was created there" "$REPO_ROOT/bypass-candidates.tsv"
