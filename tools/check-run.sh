@@ -30,7 +30,10 @@
 # Exit codes: 0 ok · 1 verify refused · 2 bad usage (a missing `--`, dir or command, an unknown subcommand)
 # · otherwise `run` returns the command's status. Reads and writes no gate state; only the dir it is given.
 # `verify` is deliberately stricter than the gate's own test-relevance rule (`_test_relevant_tree_hash`, dir #123):
-# any tracked edit after the run refuses, a documentation-only one included.
+# any tracked edit after the run refuses, a documentation-only one included. Residuals, accepted (dir #855):
+#   - cmd is one argument per line, so one argument holding a newline equals the same words as separate arguments;
+#   - one run per <dir> at a time — two runs sharing a dir can leave one's exit beside the other's head/tree/cmd;
+#   - tree is taken before the command runs, so a command that rewrites a tracked file refuses its own verify.
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
