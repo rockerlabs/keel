@@ -93,6 +93,8 @@ list_tag=""
 backlog_arg=""
 ticket_token=""
 decay_only=0
+decay_marker='[model-decay]'      # dir #842; the second form is the same text as the ERE the strip helper takes
+decay_marker_re='\[model-decay\]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)
@@ -176,7 +178,9 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   id=""
   [ -n "$ticket_token" ] || id="$(bb_own_ticket_num "$heading_block")"
-  own_dir_num="$id"   # a legacy `### <n>.` heading has none; $id becomes its numeral below
+  # the heading's own `dir #N`, empty for a legacy `### <n>.` heading (its $id becomes the numeral below) and in
+  # --ticket-token mode, exactly as for the release tag's strip above: every `dir #N` there is a citation
+  own_dir_num="$id"
 
   # code-review medium (found live): a qualifying arrow reached only via a citation to a
   # DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") was read as THIS heading's own tag — the
@@ -215,9 +219,9 @@ while IFS=$'\t' read -r start end closed heading_block; do
     # The literal test first skips the strip's subshell for the unmarked majority; the strip then takes the
     # heading's OWN `dir #N` (empty for a legacy heading, as for the release tag above), never the numeral $id
     # may now hold — a legacy `### 5.` citing `dir #5` is still a citation.
-    [[ "$heading_block" == *'[model-decay]'* ]] || continue
-    decay_block="$(bb_strip_foreign_citations "$heading_block" "$own_dir_num" '\[model-decay\]')"
-    [[ "$decay_block" == *'[model-decay]'* ]] || continue
+    [[ "$heading_block" == *"$decay_marker"* ]] || continue
+    decay_block="$(bb_strip_foreign_citations "$heading_block" "$own_dir_num" "$decay_marker_re")"
+    [[ "$decay_block" == *"$decay_marker"* ]] || continue
   fi
 
   tag_id_pairs+=("$tag"$'\t'"$id")
