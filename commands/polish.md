@@ -13,7 +13,7 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Note an unexpected receipt permission prompt: `tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
@@ -26,7 +26,7 @@ Steps, in order:
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
-   The repo keeps a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
+   Repo has a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.
 
@@ -59,7 +59,7 @@ Steps, in order:
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
-   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`). On success resolve its findings, receipt the bare
+   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`; availability = the attempt, not the listing). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
    step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488, decided by the
    gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to
@@ -149,7 +149,7 @@ Steps, in order:
      with ONE change: the Skill args are `<level> <the HEAD the last review saw>..HEAD`, so the fork
      reviews the delta, never the full diff again. Record HEAD
      and status again before each follow-up message; the compare above applies to every return. dir #127's
-     budget and terminal condition below apply unchanged. A fork that reviewed the full diff, not the delta, counts as a full pass (say so), which is not dir #127's terminal signal. dir #488's review-null exception applies unchanged. The
+     budget and terminal condition apply. A fork that reviewed the full diff, not the delta, counts as a full pass (say so), which is not dir #127's terminal signal. dir #488's review-null exception applies unchanged. The
      subagent is gone (a later session, a refused message, "No transcript found") → spawn a fresh one with
      the same prompt, the delta as the args' target, and the earlier rounds' findings, and say so; it counts
      as the same round.
@@ -165,7 +165,7 @@ Steps, in order:
    - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
      by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does.
 
-   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical, and fix every accepted finding, wording included, before the next round; on
+   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical; fix every accepted finding, wording included, before the next round; on
    `--amend`, re-read the commit message against the final diff (dir #244). dir #127: the full review runs
    once, then at most TWO delta rounds; only zero findings in a delta round ends the cycle (a clean full
    re-review does not). A second delta round still finding → file the residual, say so in the PR body, open

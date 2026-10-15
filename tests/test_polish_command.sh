@@ -491,6 +491,8 @@ check_contains "core: step 5 fixes every accepted finding, wording included, bef
   'fix every accepted finding, wording included, before the next round'
 check_contains "guide § Step 5: a docs-only fix commit still needs a delta round (dir #488 stays comment-only .sh)" "$g5" \
   "a docs-only fix commit still needs a delta round"
+check_contains "core: step 5 keeps the rule that availability comes from the attempt, not the listing" "$(step_text 5)" \
+  'availability = the attempt, not the listing'
 # an Agent-tool ban is a first-class degraded path with its own receipt
 check_contains "core: step 2's short pointer also covers an Agent-tool ban" "$c2" \
   'Refused or unavailable → § Step 2. An Agent-tool ban counts.'

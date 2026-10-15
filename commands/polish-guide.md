@@ -258,7 +258,7 @@ not notable → go on, no receipt.
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable — or a session policy bans the Agent tool, which `/simplify`'s phase 1 needs (four parallel reviewers) and step 5's K2 spawn needs too (step 5 then takes the core's own "Agent tool is unavailable" fallbacks, its receipt the bare level) — do ONE inline cleanup pass over the step-1 diff, over the angles
+   If it is genuinely unavailable — or a session policy bans the Agent tool, which `/simplify`'s phase 1 needs (four parallel reviewers) and step 5's K2 spawn needs too (step 5 then takes the core's own "Agent tool is unavailable" fallbacks, its receipt the one for the path that actually ran) — do ONE inline cleanup pass over the step-1 diff, over the angles
    `/simplify` covers (duplication, dead code, over-complication, naming) — not the prose-only pass above —
    say what you tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
