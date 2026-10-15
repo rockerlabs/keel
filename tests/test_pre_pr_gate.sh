@@ -67,6 +67,20 @@ check_status "non-target command → exit 0" 0 "$STATUS"
 check_absent "non-target command is allowed (no deny payload)" "$OUT" "deny"
 rm -f "$(sentinel_for "$d")"
 
+# 1b. dir #855 (A3): /polish steps 3 and 6 write their receipt as the tail of a `check-run.sh verify` chain.
+# The hook reads the command TEXT: the chain names no `gh pr create` and its git word is a read, so it is
+# allowed; the same chain ending in `gh pr create` is denied exactly as a bare one is (the deny proves the
+# hook ran on a chained shape at all, so the allow above it is not vacuous).
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate 'tools/check-run.sh verify /tmp/d -- npm test && tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"' "$d"
+check_status "dir #855 A3: a verify-chained receipt → exit 0" 0 "$STATUS"
+check_absent "dir #855 A3: a verify-chained receipt is not denied" "$OUT" "deny"
+gate 'tools/check-run.sh verify /tmp/d -- npm test && tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"' "$d"
+check_absent "dir #855 A3: the step-6 chain is not denied either" "$OUT" "deny"
+gate 'tools/check-run.sh verify /tmp/d -- npm test && gh pr create --head b' "$d"
+check_contains "dir #855 A3: a verify chain ending in gh pr create is denied as today" "$OUT" '"permissionDecision":"deny"'
+
 # 2. `gh pr create` with NO sentinel → deny, telling the user to run /polish.
 d="$(mkrepo)"
 rm -f "$(sentinel_for "$d")"          # ensure no stale sentinel from a prior run

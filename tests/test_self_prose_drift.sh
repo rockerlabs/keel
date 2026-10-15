@@ -26,6 +26,8 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 # session, and a WARN never fails this script anyway (only signal 2 does).
 run "$pd" "$REPO_ROOT" --quiet
 check_status "the real keel checkout has no dead relative link (no GAP)" 0 "$STATUS"
+# On a red, show what the script found (its GAP lines): `run` captured them and a bare exit code names nothing.
+[ "$STATUS" -eq 0 ] || printf '%s\n' "$OUT" | grep -v '^  WARN'
 
 # --- fixture builder: a throwaway repo with the given files, committed -----------------------------
 mk_repo_with() {   # mk_repo_with REL_PATH CONTENT [REL_PATH CONTENT ...]

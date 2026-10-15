@@ -13,7 +13,7 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write. An unexpected permission prompt on one: note it once with
+current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. An unexpected permission prompt on one: note it once with
 `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
@@ -34,8 +34,7 @@ Steps, in order:
    Otherwise invoke `/simplify` and wait; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
    Refused or unavailable → § Step 2.
 
-3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`), backgrounded with an explicit timeout past the suite's runtime, and show the real
-   output; never claim "passed" without it. A cut-short run is not green: re-run the remainder. `--no-test` in the arguments → skip the run and say so. Receipt: `tools/pre-pr-gate.sh
+3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
    the gate unlocks only on a test run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
 
@@ -182,10 +181,8 @@ Steps, in order:
    delta round still finding, the in-run `--amend` path:* the guide, § Step 5.
 
 6. **Re-run tests if the review touched code — once.** If step 5 changed any files (hand-off edits count)
-   or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once, showing the real output; red → no receipt,
-   report what broke and stop. Nothing changed → skip the re-run (`skipped:no-file-changes`). **Never commit,
-   amend or edit while a background suite run is alive** (dir #505): it trips `tests/run.sh`'s
-   self-corruption canary as a false positive. Receipt: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or
+   or committed pending work, and tests weren't `--no-test`-skipped, re-run the test command once, as step 3 does; red → no receipt,
+   report what broke and stop. Nothing changed → skip the re-run (`skipped:no-file-changes`). Receipt, chained after `tools/check-run.sh verify` as in step 3: `tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"` (or
    `skipped:no-file-changes`/`skipped:--no-test`) — the outcome IS the sha the retest ran at, and after a fix commit or `--amend` it also re-binds step 3's receipt to the new HEAD.
 
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP

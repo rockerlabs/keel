@@ -189,6 +189,26 @@ short-interval monitor makes every tick a turn of its own that re-prices the who
 returns nothing (felt in 0.11.0: a 30-tick `No-op, awaiting CI` streak on a worker that had already
 backgrounded `gh pr checks --watch`). The rule's text: `polish-guide` § Step 9.
 
+## Mechanical turns in `/polish` (dir #855)
+
+A `/polish` run costs about its context times its primary turns, and a turn that only does mechanics pays the
+same re-read as a turn that thinks. Measured over 186 closed windows (2026-10-15), the median window spent
+6 turns only writing gate receipts (16% of its cost), 7 only running or polling checks (26%) and 5 with no tool
+call at all (16%). Three rules cut those turns without moving any judgment:
+
+- **A receipt rides in the next step's turn.** It stays its own Bash call, but may share a turn with the next
+  step's calls; never a turn holding a commit, an amend, a push or `gh pr create`.
+- **A test step is ONE call.** `tools/check-run.sh run <dir> -- <command>` runs the suite and leaves `exit`,
+  `head`, `tree`, `cmd` and `log` as files; no second call reads the output or polls for it. A suite over nine
+  minutes starts backgrounded with an explicit timeout and is waited for by its completion notice, never by
+  polls (`polish-guide` § Step 3, "Long runs").
+- **The files decide the receipt.** The test receipt is the tail of `tools/check-run.sh verify <dir> -- <command>
+  &&`, which passes only for an exit of 0 at the same HEAD, the same tracked tree and the same command. A red,
+  killed, stale or edited run writes no receipt, whatever a model made of the output.
+
+The same pattern is not yet applied to `/go`'s implementation-time runs or to `/wrap` (dir #857, dir #858); a
+cheaper-tier runner for long runs waits on a measurement of what this leaves (dir #856).
+
 ## See also
 
 - [`docs/loading-and-cost.md`](loading-and-cost.md) — what Keel's own always-loaded files cost.

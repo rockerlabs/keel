@@ -107,9 +107,17 @@ for h in 'Preamble' 'Step 1' 'Step 2' 'Step 3' 'Step 4' 'Step 5' 'Step 6' 'Step 
 done
 
 # --- K1: what a normal run needs stays in the CORE (B8b) -----------------------------------------------------
-# dir #678: step 3 backgrounds the suite with an explicit timeout and never reports a cut-short run as green.
-pinf "core: step 3 backgrounds the suite with an explicit timeout" 'backgrounded with an explicit timeout past the suite'
-pinf "core: step 3 says a cut-short run is not green" 'A cut-short run is not green: re-run the remainder.'
+# dir #855 (A4): step 3 is ONE check-run call, foreground; a long suite's backgrounding and the cut-short-run rule
+# (dir #678) moved to the guide's § Step 3 "Long runs" (A5 pins them below). The receipt rides behind a `verify`.
+pinf "core: the preamble lets a receipt share the next step's turn, never a commit/push turn" \
+  'it may share a turn with the next step'"'"'s calls, never one holding a commit, amend, push or `gh pr create`'
+pinf "core: step 3 runs the suite in ONE check-run.sh call, foreground" \
+  'in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000'
+pinf "core: step 3 points a suite over 9 minutes at the guide" '(a suite over 9 minutes: the guide, § Step 3)'
+pinf "core: step 3 still shows output before claiming a pass" 'Show its summary; never claim "passed" without it.'
+check_contains "core: step 3's receipt is chained after check-run.sh verify" "$(step_text 3)" 'chained after `tools/check-run.sh verify'
+check_contains "core: step 6's receipt is chained after check-run.sh verify" "$(step_text 6)" 'chained after `tools/check-run.sh verify'
+check_contains "core: step 6 re-runs the way step 3 does" "$(step_text 6)" 're-run the test command once, as step 3 does'
 pinf "core: step 9 requires --head" '`gh pr create --head <branch>` — `--head` is mandatory'
 pinf "core: step 9 writes every receipt in its own Bash call" 'Write every receipt in its own Bash call and invoke `gh pr create` alone in the next'
 pinf "core: step 8 pushes before it unlocks" 'Push the branch first'
@@ -120,7 +128,7 @@ check_contains "core: step 1 mints the run's nonce with init" "$(step_text 1)" '
 pinf "core: step 4's receipt carries the sizing evidence" '`tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`'
 pinf "core: the delta-round budget" 'the full review runs once, then at most TWO delta rounds'
 pinf "core: dir #244's commit-message re-read after an --amend" 'on `--amend`, re-read the commit message against the final diff (dir #244)'
-pinf "core: step 6 never commits while a background suite run is alive" '**Never commit, amend or edit while a background suite run is alive**'
+# (the dir #505 caution left the core: the guide pin at tests/test_polish_review_rails.sh covers it, A5 cites it)
 pinf "core: a finding's fix is folded into one commit where practical" "Fold a finding's fix into one commit where practical"
 check_contains "core: step 6 skips the re-run when nothing changed" "$(step_text 6)" "Nothing changed → skip the re-run (\`skipped:no-file-changes\`)"
 pinf "core: ordering rule 1 is named, K2 cites it" '**Ordering rule 1 — have the implementation committed by step 3**'
@@ -286,6 +294,23 @@ check_contains "guide: § Step 2's prose-only class keeps procedure docs out" "$
 check_contains "guide: § Step 2 sends anything else, or any doubt, to the full /simplify" "$g2" 'Anything else, or any doubt, runs the full `/simplify`'
 check_contains "guide: § Step 2 states the inline pass is one reuse/duplication pass" "$g2" 'ONE inline reuse/duplication pass'
 check_contains "guide: § Step 2 keeps the unavailable-skill receipt" "$g2" 'inline:no-simplify-skill'
+
+# --- dir #855 (A5): the guide's § Step 3 "Long runs", and the verify chain at every receipt site ----------------
+pinfg "guide: § Step 3 has the Long runs subsection" '**Long runs (dir #855).**'
+pinfg "guide: Long runs backgrounds with an explicit timeout past the runtime (dir #678)" \
+  'with `run_in_background` and a Bash timeout past the suite'"'"'s runtime (dir #678)'
+pinfg "guide: Long runs forbids polls and sleeps" 'End the turn once it starts: no polls, no sleeps'
+pinfg "guide: Long runs cites the dir #505 caution" '**Never commit, amend or edit while it runs** (dir #505'
+pinfg "guide: Long runs says no exit file means not green" 'No `exit` file means not green'
+pinfg "guide: Long runs runs the remainder as ONE sequential call" 'as ONE sequential `tools/check-run.sh run <dir2>'
+pinfg "guide: Long runs verifies the remainder's dir with the same string, once" 'chains `verify <dir2> -- <that same string>`'
+pinfg "guide: § Step 3's receipt carries the verify chain" \
+  'Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh receipt polish.3-tests'
+pinfg "guide: § Step 3's skip-the-run receipt is decided by verify" \
+  '`tools/check-run.sh verify` against that last green run'"'"'s `<dir>`'
+pinfg "guide: § Step 6's receipt carries the verify chain" \
+  'Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh receipt polish.6-retest'
+pinfgn "guide: § Step 3 no longer asks to show the real output of a bare run" 'Show the real output (green/red)'
 
 # --- dir #616: wait on CI in ONE backgrounded, bounded command — never a wakeup, a sleep chain or a short Monitor ----
 check_contains "core: step 9 names the one backgrounded command and what never to use" "$(step_text 9)" \
