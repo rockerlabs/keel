@@ -28,6 +28,46 @@ paths only, all of which a reader without access to the private audit ledger can
 back-filled:** entries below v0.9.0 describe their verification only in the digest prose above and
 were never recorded in this comparable shape.
 
+## v0.17.0 — 2026-10-15
+
+A release that made the manager's merge a gated, enforced procedure and hardened the tooling around it. The pre-PR gate gained a merge rule that denies `gh pr merge` to every
+session but a release manager, and then only as a pinned merge commit (dir #811, slice S2). `docs/release-management.md`
+R14 became the procedure for it, covering the preconditions for every merge, how a release train is built and seam-reviewed,
+and the fallback in which the operator still merges (dir #811, the procedure slice). `tools/self/release-train.sh`
+builds a train from frozen heads instead of hand-typed git (dir #811, slice S3). `/polish`'s preamble no longer reads as an instruction to push
+with `--no-verify` (dir #825). Backlog and release tooling learned to read an adopter's own conventions:
+`tools/self/backlog-census.sh --ticket-token` reads a ticket heading token other than the default one (dir #605), the scanner
+recognises the closure form `✅ **Done 2026-09-20**` (dir #609), a ticket whose first body line sits directly under its
+heading no longer reads closed from that line (dir #839), and `doctor.sh` check 5 reads a ticket's heading the way the
+census does and no longer prints an OK over a read it could not complete (dir #766). A release's session cost is two
+commands, `session-cost.sh manifest` and `weighted`, and a transcript with one bad line no longer reads as unmatched
+(dir #654, dir #848). The test runner became harder to fool: it signals a file's whole process group, fails a file that
+never printed its verdict, and the mutation sweep bounds a whole test run (dir #782); the SIGTERM check no longer flakes
+on a loaded machine (dir #592). The delta audit's verifier now runs a mutation sweep by default, one range per pass
+(dir #783), and the changelog gained a claim lint that re-derives or lists every number in its text (dir #810,
+dir #846). Keel's own maintenance gained a finding accumulator, `tools/self/accumulate.sh`, and a bypass scan that counts
+real sightings of a guard's known shapes (dir #842). Smaller fixes: `branch-cleanup.sh` no longer offers a live
+session's worktree for removal and grades a remote-less repo whose default branch is not `main` (dir #813, dir #814),
+`secret-scan.sh --tracked` no longer stalls on a large tracked binary (dir #830) and its regex probes no longer print
+`Broken pipe` (dir #849), `/polish`'s compaction stop continues itself (dir #845), and grooming and release management
+took in field corrections from adopters (dir #823, dir #826). The README was slimmed from 342 to 175 lines, with the
+detail moved rather than dropped, and gained a short silent explainer video.
+
+**Verification.** **Scope:** 97 files across 21 first-parent merges (PRs #623 to #664) and 295 commits,
++10,272/−821, range v0.16.0 (`e577a66`) to v0.17.0 (`f572b06`); the figures are `git diff --shortstat v0.16.0 v0.17.0`
+and `git rev-list --count v0.16.0..v0.17.0`. The tagged commit is the merge of the cut PR (#664), which folded the
+changelog fragments into `CHANGELOG.md` and added no code. **Method:** the range carries the delta-audit fix commits
+(the `delta-audit 0.17.0 fix` and `audit fix` commits in `git log v0.16.0..v0.17.0`) and a managed release's
+per-slice review-round commits, so a delta audit and review rounds ran; how many legs, of what kind and at what tier is
+recorded in the run's own audit directory, which is gitignored, and is not restated here. **Coverage:** not recorded in
+a form this page can cite. **Findings:** the fix commits above were made before the tag; the counts of findings filed,
+accepted, ticketed or disclosed are in the audit record and are not restated. **Behavioural defects:** not recorded here.
+**Which layer found what:** not recorded here. **What was NOT checked:** this entry was written after the tag from the
+repository alone (`CHANGELOG.md`'s section for this version and git history), so every field above is what git shows
+and nothing the audit concluded; the verifiers' verdict, the suite and CI results at the tagged commit, and anything the
+operator checked by hand were not available to it. **Induced-defect rate:** not recorded here. **Records:** the run's
+own audit directory, gitignored.
+
 ## v0.16.0 — 2026-10-12
 
 A managed release that drained the live backlog pool: 57 slated tickets, 51 credited in the CHANGELOG section by
