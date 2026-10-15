@@ -94,7 +94,8 @@ backlog_arg=""
 ticket_token=""
 decay_only=0
 decay_marker='[model-decay]'      # dir #842; the second form is the same text as the ERE the strip helper takes
-decay_marker_re='\[model-decay\]'   # keep the two spellings identical: a rename must change both
+# keep the two spellings identical: a rename must change both
+decay_marker_re='\[model-decay\]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)
