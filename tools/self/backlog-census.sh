@@ -41,7 +41,7 @@
 # the literal tag `untagged`. Nothing is written; exit 0 always (advisory, like pool-report.sh).
 #
 # Usage:
-#   tools/self/backlog-census.sh [--ticket-token ERE] [--list TAG] [BACKLOG_PATH]
+#   tools/self/backlog-census.sh [--ticket-token ERE] [--decay] [--list TAG] [BACKLOG_PATH]
 #   tools/self/backlog-census.sh -h | --help
 #
 # --ticket-token ERE (dir #605): the heading token an adopter's backlog uses, as an ERE matched right
@@ -56,6 +56,23 @@
 # tag, ascending). With --list TAG, prints the ticket number of every open block under that tag,
 # one per line, in the file's own order — a legacy heading's number is its bare leading numeral,
 # a `dir #N` heading's is N.
+#
+# --decay (dir #842, B10): restricts every output above to the OPEN blocks whose heading block carries the
+# literal `[model-decay]` marker (docs/verification-economics.md §4 defines it: a ticket that hardens a guard
+# or check against an input a model has to produce). One marker per heading however often it is written, and a
+# marker reached only via a citation of a DIFFERENT ticket ("Supersedes dir #N — [model-decay]") is stripped by
+# the same `bb_strip_foreign_citations` the release tag uses — a citation form that helper does not know is a
+# census defect. A body line never counts (the heading block ends where `backlog_ticket_blocks` ends it), and a
+# closed block is excluded before the marker is ever read. Nothing marked prints nothing and exits 0.
+# Known limit, inherited from the scanner (`bb_heading_continues`, dir #839): a heading line that already
+# carries its tail (`— R2 — → pool`) takes no further line, so write the marker on the lines up to and
+# including that tail — a marker wrapped onto the NEXT line after a finished heading line is not seen.
+# Only the citation forms `bb_strip_foreign_citations` knows (Supersedes / Superseded [by] / Duplicate of
+# `dir #N`) are stripped; any other way of citing a marked ticket's heading text still counts.
+# `--list all` (a tag no release vocabulary can equal) takes every open block whatever its tag, so
+# `--list all --decay` is every open marked ticket — the list a rollout audit re-triages
+# (docs/rollout-audit.md "Running the audit"); the groom's decay-exposed share (docs/grooming.md G5) is
+# `--list TAG --decay` against `--list TAG`.
 #
 # BACKLOG_PATH defaults to the MAIN checkout's BACKLOG.md, resolved the same way
 # tools/self/pool-report.sh resolves it (dir #135) — override for a test fixture or a
@@ -75,6 +92,10 @@ repo_root="$(cd "$self_dir/../.." && pwd)"
 list_tag=""
 backlog_arg=""
 ticket_token=""
+decay_only=0
+decay_marker='[model-decay]'      # dir #842; the second form is the same text as the ERE the strip helper takes
+# keep the two spellings identical: a rename must change both
+decay_marker_re='\[model-decay\]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)
@@ -88,14 +109,18 @@ while [ $# -gt 0 ]; do
       ticket_token="${1#*=}"
       [ -n "$ticket_token" ] || { echo "backlog-census: --ticket-token needs a non-empty regex" >&2; exit 2; }
       shift ;;
+    --decay) decay_only=1; shift ;;
     -h|--help)
       cat <<'EOF'
-Usage: backlog-census.sh [--ticket-token ERE] [--list TAG] [BACKLOG_PATH]
+Usage: backlog-census.sh [--ticket-token ERE] [--decay] [--list TAG] [BACKLOG_PATH]
 
 Prints one line per release tag, `count<TAB>tag`, descending by count — the last `→ pool` /
 `→ next` / `→ on-demand` / `→ N.N[.N]` token on every OPEN heading block, `untagged` for a
 block with no qualifying arrow. With --list TAG, prints the ticket number of every open block
-under that tag, one per line, in file order.
+under that tag, one per line, in file order; `--list all` takes every open block whatever its tag.
+
+--decay (dir #842) keeps only the open blocks whose heading carries the `[model-decay]` marker, in
+either mode (`--list all --decay` = every open marked ticket); nothing marked prints nothing.
 
 --ticket-token ERE names an adopter's heading token (`B\.[0-9]+` for `### B.N`; POSIX ERE only, no
 `\d \w \b`); it replaces the default `dir #N` / `<n>.`, and --list then prints the captured token.
@@ -140,7 +165,8 @@ if [ ! -f "$backlog_file" ] || [ ! -r "$backlog_file" ]; then
   exit 0
 fi
 
-# tag_id_pairs holds one "TAG<TAB>ID" entry per open, tagged-or-untagged block, in file order —
+# tag_id_pairs holds one "TAG<TAB>ID" entry per open, tagged-or-untagged block, in file order
+# (with --decay, only the marked ones) —
 # a plain indexed array, not `declare -A`: this repo's tools target bash 3.2 (macOS's shipped
 # /bin/bash), which has no associative arrays (same reason citation-resolvability.sh and
 # session-cost.sh avoid them). Grouping and sorting by tag is done downstream with sort/uniq,
@@ -153,6 +179,11 @@ while IFS=$'\t' read -r start end closed heading_block; do
 
   id=""
   [ -n "$ticket_token" ] || id="$(bb_own_ticket_num "$heading_block")"
+  # the heading's own `dir #N`, empty for a legacy `### <n>.` heading (its $id becomes the numeral below) and in
+  # --ticket-token mode: every `dir #N` there is a citation. The release tag's strip further below passes $id at
+  # this same point (both empty); the decay strip passes THIS variable instead, because $id is set to the numeral
+  # for a legacy heading before it runs — never "unify" the two.
+  own_dir_num="$id"
 
   # code-review medium (found live): a qualifying arrow reached only via a citation to a
   # DIFFERENT ticket ("Supersedes dir #5 → 0.9.0") was read as THIS heading's own tag — the
@@ -186,6 +217,16 @@ while IFS=$'\t' read -r start end closed heading_block; do
   fi
   [ -n "$id" ] || id="?"
 
+  if [ "$decay_only" = 1 ]; then
+    # dir #842: the marker is read from the heading block with foreign citations stripped, never the body.
+    # The literal test first skips the strip's subshell for the unmarked majority; the strip then takes the
+    # heading's OWN `dir #N` (own_dir_num, empty for a legacy heading), never the numeral $id
+    # may now hold — a legacy `### 5.` citing `dir #5` is still a citation.
+    [[ "$heading_block" == *"$decay_marker"* ]] || continue
+    decay_block="$(bb_strip_foreign_citations "$heading_block" "$own_dir_num" "$decay_marker_re")"
+    [[ "$decay_block" == *"$decay_marker"* ]] || continue
+  fi
+
   tag_id_pairs+=("$tag"$'\t'"$id")
 done < <(backlog_ticket_blocks "$backlog_file" ${ticket_token:+"$ticket_token"})
 
@@ -198,7 +239,9 @@ fi
 
 if [ -n "$list_tag" ]; then
   for pair in "${tag_id_pairs[@]}"; do
-    [ "${pair%%$'\t'*}" = "$list_tag" ] && printf '%s\n' "${pair#*$'\t'}"
+    if [ "$list_tag" = all ] || [ "${pair%%$'\t'*}" = "$list_tag" ]; then
+      printf '%s\n' "${pair#*$'\t'}"
+    fi
   done
   exit 0
 fi
