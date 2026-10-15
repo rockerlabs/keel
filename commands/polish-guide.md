@@ -235,6 +235,14 @@ Steps, in order:
    Not a convergence round (the ordinary case): `tools/pre-pr-gate.sh receipt polish.1-diff`, then
    continue through every step below in order.
 
+**Changelog nudge (dir #822).** Reached from the core's step 1 when the repo keeps a changelog (a
+`CHANGELOG.md` at the root, or `changelog.d/` fragments) and this diff adds no entry. Decide now, with the
+diff in front of you, whether the change is notable (a behaviour, a command, a rule, a fix a user would
+look up) — a typo or a pure refactor is not. Notable → write the entry in this branch, in the changelog's own shape, and commit it before step 3, so the PR
+carries its entry in the SAME PR. At wrap the PR is already merged and a late entry costs a whole extra
+branch → receipts → PR round-trip (felt twice: keel PR #69→#71, keel PR #126→#127). A nudge, not a gate:
+not notable → go on, no receipt.
+
 ## Step 2 — simplify
 
 2. **Simplify.** *Skip entirely if step 1's convergence branch just recovered this step's receipt.*
@@ -245,17 +253,28 @@ Steps, in order:
    such docs found real fixes. Prose-only → ONE inline reuse/duplication pass over the step-1 diff yourself —
    does the prose restate what another file already says (replace it with a pointer), repeat itself, or
    carry a dead cross-reference? — say what you tidied, and receipt it by name: `tools/pre-pr-gate.sh
-   receipt polish.2-simplify inline:prose-only`. That is a sanctioned outcome, not a degradation. Anything else, or any doubt, runs the full `/simplify`.
+   receipt polish.2-simplify inline:prose-only`. That is a sanctioned outcome, not a degradation, and the prose-only branch is the only proportionality exit. Anything else, or any doubt, runs the full `/simplify`.
    Invoke the `/simplify` skill — it runs the cleanup pass (duplication, dead code,
    over-complication, naming) and applies the fixes. Wait for it to finish before the next step.
    **Establish availability by *attempting* the call, never by inferring it from the skill listing** — a
    skill can be installed and still refuse model invocation, and only the attempt returns the reason.
-   If it is genuinely unavailable, do ONE inline cleanup pass over the step-1 diff, over the angles
+   If it is genuinely unavailable — or a session policy bans the Agent tool, which `/simplify`'s phase 1 needs (four parallel reviewers) and step 5's K2 spawn needs too (step 5 then takes the core's own "Agent tool is unavailable" fallbacks, its receipt the one for the path that actually ran) — do ONE inline cleanup pass over the step-1 diff, over the angles
    `/simplify` covers (duplication, dead code, over-complication, naming) — not the prose-only pass above —
    say what you tidied, and receipt the degradation rather than a bare `done` — a bare `done` reads as a real
    `/simplify` run, which is the substitution step 5 exists to stop, one step earlier.
    Receipt: `tools/pre-pr-gate.sh receipt polish.2-simplify` (or `... polish.2-simplify
-   inline:no-simplify-skill`, or the prose-only receipt above).
+   inline:no-simplify-skill`, `... polish.2-simplify inline:agent-tool-banned` for a session ban — it names
+   the ban, not the skill — or the prose-only receipt above).
+
+**Exit semantics after `/simplify` or any inline cleanup pass (dir #822).** Read each shell edit it made for the error path, not only the
+happy one — a pass can silently drop a `set -e` safety property while it tidies: a helper whose last
+statement is a `while read` loop (the `read` failing at EOF returns 1) or a pipeline needs an explicit
+`return 0` or `|| true`, and a `… || true` that simplify folded into a helper must survive the fold. Felt
+twice: keel PR #67 (a `git rev-parse … || true` became a helper whose pipeline lost the `|| true`; under
+`set -euo pipefail` that killed `enable` on any non-git directory, exit 128 — step 5's review caught it) and
+keel PR #74 (a `while read … done <<<…` helper ended on the `read` failing at EOF, so the caller's
+`wtp="$(wt_path_for …)"` aborted the whole script, 23 tests red — step 6's retest caught it). That is why the order
+is simplify → tests → review: never skip or reorder the test run after simplify touched code.
 
 ## Step 3 — tests
 
@@ -872,6 +891,17 @@ Steps, in order:
      receipt the bare `<level>`** and name the operator-run pass in step 10's summary and the PR body
      instead — the same prose-only disclosure the combined `agent:<level>+<addon>` shapes already do for
      a second mechanism the receipt has no slot for.
+
+**One round per batch of findings (dir #822).** The review trace is per-HEAD, so every fix commit costs
+another `/code-review` invocation, and a wording-only fix is no cheaper to the gate than a code fix: dir #488's
+review-null exception covers only comment and blank-line changes to already-reviewed `.sh` files, so a
+docs-only fix commit still needs a delta round (a delta, never a full pass: the review reads only
+`<last-saw>..HEAD`). The order, not the fix, is what wastes a round: when a review reports a finding, fix every
+accepted one plus its obvious neighbours (the same wording in sibling files, the cross-reference the edit
+orphaned) and commit once, THEN invoke the next round. Felt in remmilab-site on 2026-09-29/30: a `/code-review
+high` run three times, a real finding fixed, then a second, each fix moving HEAD past the trace — only the third,
+clean pass at the shipping HEAD unlocked the gate. Foreseeably editorial fixes (a doc's wording, a table the
+change renders stale) belong in the commit BEFORE the first review, not after it.
 
 ## Step 6 — the retest
 

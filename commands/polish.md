@@ -13,11 +13,10 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. An unexpected permission prompt on one: note it once with
-`tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
-review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt cycle.
+review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
 
 **The guide.** The rare branches live in `polish-guide.md`. When a step below names a trigger that fired,
 load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, at its section; guide unreachable → stop and report. Never improvise a branch. Where the guide and this file disagree, this file wins.
@@ -27,12 +26,13 @@ Steps, in order:
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
+   Repo has a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.
 
 2. **Simplify.** Every changed file `*.md`, none a command, skill or runbook → the guide, § Step 2.
-   Otherwise invoke `/simplify` and wait; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
-   Refused or unavailable → § Step 2.
+   Otherwise invoke `/simplify` and wait; after it or any inline cleanup, re-read the edits for dropped exit semantics: a helper ending in `while read` or a pipeline needs `return 0` or `|| true`; receipt `tools/pre-pr-gate.sh receipt polish.2-simplify`.
+   Refused or unavailable → § Step 2. An Agent-tool ban counts.
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
@@ -59,8 +59,7 @@ Steps, in order:
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
    receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
-   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`) (establish availability by
-   attempting, never from the skill listing). On success resolve its findings, receipt the bare
+   K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`; availability = the attempt, not the listing). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
    step 6; no dialog. The gate cross-checks the call's trace against the commit and the recorded level (dir #488, decided by the
    gate's own diff check, never your say-so: a later fix commit that is wholly comment/blank-line changes to
@@ -71,7 +70,7 @@ Steps, in order:
    **K2 — for `low|medium|high`, the FIRST attempt is a review run by a fresh-context subagent (dir #670);
    `max`, `ultra` and `skip` keep their paths below, unchanged.** It runs the same `/code-review` recipe in a
    context that has not seen how the diff was written — a reviewer who wrote the code finds less of what is
-   wrong with it, and every review turn run in this session re-reads the whole session's context.
+   wrong with it.
    - **Spawn.** `git status --porcelain --untracked-files=no` must print nothing: simplify's fixes and the
      implementation are committed (ordering rule 1), and untracked files are left alone, never swept into a
      commit. A tracked change still pending → commit exactly that work now, as its own commit; that commit
@@ -92,8 +91,7 @@ Steps, in order:
      diff target. **The args are the only channel to the review itself:** invoked from a subagent,
      `/code-review` runs as a forked agent one level deeper whose prompt is the skill's recipe plus the
      args; this prompt never reaches it, a wired `SubagentStart` hook delivers the rails (`docs/delegation.md`,
-     "Keel's reach stops at the prompts keel writes"), and without the target in the args the fork picks its scope (felt: `git diff HEAD~1`
-     on two-commit PRs). The skill's fork is not "a subagent of your own" under the rails' no-spawn
+     "Keel's reach stops at the prompts keel writes"), and without the target in the args the fork picks its scope. The skill's fork is not "a subagent of your own" under the rails' no-spawn
      line. Then: edit nothing, commit nothing; wait for the skill to finish, including any background agents
      it starts; restate every finding in your final message as `file:line — quoted text — failure scenario`,
      even after a `ReportFindings` call, and write `0 findings` explicitly when there are none, quoting the skill's first line after `Result:`; print no
@@ -149,16 +147,13 @@ Steps, in order:
    - **Delta rounds.** A fix commit (or `--amend`) moves HEAD past the trace. Send a follow-up message to
      the SAME subagent (its agent id — dir #127's "same reviewer"), repeating the prompt's instructions
      with ONE change: the Skill args are `<level> <the HEAD the last review saw>..HEAD`, so the fork
-     reviews the delta, never the full diff again; that call mints the trace at the new HEAD. Record HEAD
+     reviews the delta, never the full diff again. Record HEAD
      and status again before each follow-up message; the compare above applies to every return. dir #127's
-     budget and terminal condition below apply unchanged. If the fork's `git diff` is not the delta (a
-     two-dot range not honoured), the round reviewed the full diff: say so, and count it as a full pass,
-     which is not dir #127's terminal signal. dir #488's review-null exception applies unchanged. The
+     budget and terminal condition apply. A fork that reviewed the full diff, not the delta, counts as a full pass (say so), which is not dir #127's terminal signal. dir #488's review-null exception applies unchanged. The
      subagent is gone (a later session, a refused message, "No transcript found") → spawn a fresh one with
      the same prompt, the delta as the args' target, and the earlier rounds' findings, and say so; it counts
      as the same round.
-   - **Step 8 denies for a missing review trace.** HEAD moved since the HEAD the last review saw (the
-     common cause — a commit after the review) → the delta round above, with the same subagent, never the
+   - **Step 8 denies for a missing review trace.** HEAD moved since the HEAD the last review saw → the delta round above, with the same subagent, never the
      in-session attempt — unless that review itself ran in-session (a fallback below), when no K2 subagent
      exists: then the in-session attempt again at the current HEAD, with the delta args `<level> <that
      sha>..HEAD`. HEAD unchanged (the trace is genuinely missing) → the in-session attempt below.
@@ -168,10 +163,9 @@ Steps, in order:
      with the SAME two-word args `<level> origin/<default>...HEAD` (after step 8's push the skill's own
      first scope, `@{upstream}...HEAD`, is empty); refused there too → the guide's (a) and (b).
    - **Disclosure.** Step 10's summary and the PR body name this mechanism as "`/code-review <level>` run
-     by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does, as for every
-     other mechanism (dir #183).
+     by a fresh-context subagent". The receipt cannot carry it (a bare level); the prose does.
 
-   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical; on
+   **Fixes and delta rounds, the normal path.** Fold a finding's fix into one commit where practical; fix every accepted finding, wording included, before the next round; on
    `--amend`, re-read the commit message against the final diff (dir #244). dir #127: the full review runs
    once, then at most TWO delta rounds; only zero findings in a delta round ends the cycle (a clean full
    re-review does not). A second delta round still finding → file the residual, say so in the PR body, open

@@ -472,4 +472,33 @@ check_eq "no shipped command tells the agent to push with --no-verify (dir #825)
 pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfn "polish.md no longer says the gate 'always' the push (dir #825)" 'and always `git push --no-verify`'
 
+# --- dir #822: four /polish gaps promoted from claude-kb LEARNINGS --------------------------------------------
+# Pins hold only what dir #822 added: core pins are scoped to the step that owns the rule and stay short (the
+# core is at its word budget); the guide carries the felt cases.
+g5="$(guide_step 5)"
+# a /simplify edit must keep exit semantics (guide § Step 2; the core's step 2 carries the trigger)
+check_contains "core: step 2 re-reads simplify's edits for dropped exit semantics" "$c2" \
+  'dropped exit semantics: a helper ending in `while read` or a pipeline needs `return 0` or `|| true`'
+check_contains "guide § Step 2: the rule covers a helper simplify folded a guard into" "$g2" "must survive the fold"
+check_contains "guide § Step 2: the test run after simplify is never skipped or reordered" "$g2" \
+  "never skip or reorder the test run after simplify touched code"
+# the changelog entry belongs in the same PR
+check_contains "core: step 1 nudges a notable change's changelog entry into this PR, before step 3" "$(step_text 1)" \
+  'a notable change lacks its entry → add and commit it now, in this PR, before step 3'
+check_contains "guide § Step 1: the nudge says the PR carries its entry, not a wrap follow-up" "$g1" "carries its entry in the SAME PR"
+# fix every finding before the next review round; the review-null exception is NOT widened
+check_contains "core: step 5 fixes every accepted finding, wording included, before the next round" "$(step_text 5)" \
+  'fix every accepted finding, wording included, before the next round'
+check_contains "guide § Step 5: a docs-only fix commit still needs a delta round (dir #488 stays comment-only .sh)" "$g5" \
+  "a docs-only fix commit still needs a delta round"
+check_contains "core: step 5 keeps the rule that availability comes from the attempt, not the listing" "$(step_text 5)" \
+  'availability = the attempt, not the listing'
+# an Agent-tool ban is a first-class degraded path with its own receipt
+check_contains "core: step 2's short pointer also covers an Agent-tool ban" "$c2" \
+  'Refused or unavailable → § Step 2. An Agent-tool ban counts.'
+check_contains "guide § Step 2: a session ban receipts inline:agent-tool-banned, naming the ban not the skill" "$g2" \
+  "polish.2-simplify inline:agent-tool-banned"
+check_contains "guide § Step 2: the prose-only branch is the one proportionality exit" "$g2" \
+  "the prose-only branch is the only proportionality exit"
+
 summary
