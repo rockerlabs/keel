@@ -92,6 +92,9 @@ shape_rows() {
     [ -n "$reg" ] && [ -n "$pat" ] || die "shape table: class $cls has an empty column"
     case "$actor" in any|subagent) ;; *) die "shape table: class $cls has actor '$actor' (any|subagent)" ;; esac
     pat="${pat//\{ACTAT\}/$M_ACTAT}"; pat="${pat//\{ACT\}/$M_ACT}"; pat="${pat//\{PUSH\}/$M_PUSH}"; pat="${pat//\{PR\}/$M_PR}"
+    # busybox awk accepts an unbalanced pattern silently, so the syntax is also checked by the shell's own ERE (regcomp
+    # status 2 = a syntax error); an awk that does reject it is caught by the second check.
+    [[ "" =~ $pat ]]; [ $? -le 1 ] || die "shape table: class $cls pattern does not compile"
     P="$pat" LC_ALL=C awk 'BEGIN { x = ("" ~ ENVIRON["P"]) }' 2>/dev/null || die "shape table: class $cls pattern does not compile"
     printf '%s\t%s\t%s\n' "$cls" "$pat" "$actor"
   done <"$file"
