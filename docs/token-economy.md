@@ -198,8 +198,8 @@ call at all (16%). Three rules cut those turns without moving any judgment:
 
 - **A receipt rides in the next step's turn.** It stays its own Bash call, but is written in the same turn as
   the next step's first calls, never alone; never in a turn holding a commit, an amend, a push or `gh pr create`.
-  The self-check and unlock receipts are chained instead (the unlock receipt behind the push, the one push
-  allowed to carry a receipt) (`doctor.sh && receipt`, `git push … && receipt`), so
+  The one push allowed to carry a receipt is step 8's, the receipt chained behind it. The self-check and unlock
+  receipts are chained instead (`doctor.sh && receipt`, `git push … && receipt`), so
   no turn of its own is left for them and a red or failed step writes none. The first reading of this rule was
   permissive ("may share a turn"), and across the 16 closed windows after it a receipt-only turn still held
   step 1's receipt (init and diff) in 12 windows, step 2's in 11, step 4's in 13 and step 8's in 14 (dir #765,

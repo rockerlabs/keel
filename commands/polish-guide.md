@@ -961,7 +961,7 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    the branch's push remote (see the deny note below), and in a convergence round the fix commit is
    exactly the one that tends to still be local-only. The core chains the two (dir #765): `git push -u <remote>
    <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. `<remote>` is the branch's push remote (`branch.<branch>.pushRemote`, else `remote.pushDefault`, else
-   `origin`). A failed push, or a
+   `branch.<branch>.remote`, else `origin` — git's own order). A failed push, or a
    pre-push hook that refuses it, writes no receipt, and the turn that held only the receipt is gone.
 
    **One deny is NOT a receipt problem, and re-running `/polish` alone will never clear it** (dir
