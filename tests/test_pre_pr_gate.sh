@@ -89,6 +89,8 @@ d="$(mkrepo)"
 rm -f "$(sentinel_for "$d")"
 gate 'tools/self/doctor.sh && tools/pre-pr-gate.sh receipt polish.7-selfcheck' "$d"
 check_absent "dir #765: a doctor-chained self-check receipt is not denied" "$OUT" "deny"
+gate 'tools/self/doctor.sh && tools/pre-pr-gate.sh receipt polish.7-selfcheck && gh pr create --head b' "$d"
+check_contains "dir #765: the step-7 chain ending in gh pr create is denied as today" "$OUT" '"permissionDecision":"deny"'
 gate 'git push -u origin feature && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"' "$d"
 check_status "dir #765: a push-chained unlock receipt → exit 0" 0 "$STATUS"
 check_absent "dir #765: a push-chained unlock receipt is not denied" "$OUT" "deny"

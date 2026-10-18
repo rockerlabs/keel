@@ -198,14 +198,15 @@ call at all (16%). Three rules cut those turns without moving any judgment:
 
 - **A receipt rides in the next step's turn.** It stays its own Bash call, but is written in the same turn as
   the next step's first calls, never alone; never in a turn holding a commit, an amend, a push or `gh pr create`.
-  The self-check and unlock receipts are chained instead (`doctor.sh && receipt`, `git push … && receipt`), so
+  The self-check and unlock receipts are chained instead (the unlock receipt behind the push, the one push
+  allowed to carry a receipt) (`doctor.sh && receipt`, `git push … && receipt`), so
   no turn of its own is left for them and a red or failed step writes none. The first reading of this rule was
   permissive ("may share a turn"), and across the 16 closed windows after it a receipt-only turn still held
   step 1's receipt (init and diff) in 12 windows, step 2's in 11, step 4's in 13 and step 8's in 14 (dir #765,
-  read 2026-10-19 by step id; the median window had 4 such turns, 4.5 in the dir #855 observer's count).
+  read 2026-10-19 by step id; the median window had 4 such turns by this by-step-id count, 4.5 by the dir #855 observer's).
   Batching receipts into one call was weighed and not built: it saves no turn, since parallel calls already
   share one. The after-reading is owed: the same by-step-id count over the windows that follow this change,
-  the target being at most 2 receipt-only turns per window.
+  the target being dir #855's own, at most 2 receipt-only turns per window.
 - **A test step is ONE call.** `tools/check-run.sh run <dir> -- <command>` runs the suite and leaves `exit`,
   `head`, `tree`, `cmd` and `log` as files; no second call reads the output or polls for it. A suite over nine
   minutes starts backgrounded with an explicit timeout and is waited for by its completion notice, never by

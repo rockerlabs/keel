@@ -960,7 +960,8 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    contain. **Push the branch before you unlock** — the gate also checks that current HEAD is reachable on
    the branch's push remote (see the deny note below), and in a convergence round the fix commit is
    exactly the one that tends to still be local-only. The core chains the two (dir #765): `git push -u <remote>
-   <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A failed push, or a
+   <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. `<remote>` is the branch's push remote (`branch.<branch>.pushRemote`, else `remote.pushDefault`, else
+   `origin`). A failed push, or a
    pre-push hook that refuses it, writes no receipt, and the turn that held only the receipt is gone.
 
    **One deny is NOT a receipt problem, and re-running `/polish` alone will never clear it** (dir
