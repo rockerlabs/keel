@@ -81,6 +81,20 @@ check_absent "dir #855 A3: the step-6 chain is not denied either" "$OUT" "deny"
 gate 'tools/check-run.sh verify /tmp/d -- npm test && gh pr create --head b' "$d"
 check_contains "dir #855 A3: a verify chain ending in gh pr create is denied as today" "$OUT" '"permissionDecision":"deny"'
 
+# 1c. dir #765: /polish step 8 writes the unlock receipt as the tail of the push (`git push … && receipt`), so the
+# receipt-only turn goes. The hook reads the TEXT: a plain push with the receipt chained behind it is allowed; the
+# same chain with a secret-scan bypass on the push is denied (dir #731), so the allow is not a hook that stopped
+# reading; and the chain ending in `gh pr create` is denied as a bare one is.
+d="$(mkrepo)"
+rm -f "$(sentinel_for "$d")"
+gate 'git push -u origin feature && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"' "$d"
+check_status "dir #765: a push-chained unlock receipt → exit 0" 0 "$STATUS"
+check_absent "dir #765: a push-chained unlock receipt is not denied" "$OUT" "deny"
+gate 'git push --no-verify -u origin feature && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"' "$d"
+check_contains "dir #765: the same chain with --no-verify on the push is still denied" "$OUT" '"permissionDecision":"deny"'
+gate 'git push -u origin feature && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)" && gh pr create --head b' "$d"
+check_contains "dir #765: a push chain ending in gh pr create is denied as today" "$OUT" '"permissionDecision":"deny"'
+
 # 2. `gh pr create` with NO sentinel → deny, telling the user to run /polish.
 d="$(mkrepo)"
 rm -f "$(sentinel_for "$d")"          # ensure no stale sentinel from a prior run

@@ -196,8 +196,14 @@ same re-read as a turn that thinks. Measured over 186 closed windows (2026-10-15
 6 turns only writing gate receipts (16% of its cost), 7 only running or polling checks (26%) and 5 with no tool
 call at all (16%). Three rules cut those turns without moving any judgment:
 
-- **A receipt rides in the next step's turn.** It stays its own Bash call, but may share a turn with the next
-  step's calls; never a turn holding a commit, an amend, a push or `gh pr create`.
+- **A receipt rides in the next step's turn.** It stays its own Bash call, but is written in the same turn as
+  the next step's first calls, never alone; never in a turn holding a commit, an amend, a push or `gh pr create`.
+  The self-check and unlock receipts are the exception that proves it: each is chained (`doctor.sh && receipt`,
+  `git push … && receipt`) so no turn of its own is left. The first reading of this rule was permissive ("may
+  share a turn"), and across the 16 closed windows after it a receipt-only turn still held the init and diff
+  receipts in 12, the depth receipt in 13 and the unlock receipt in 14 (dir #765, read 2026-10-19 by step id).
+  Batching receipts into one call was weighed and not built: it saves no turn, since parallel calls already
+  share one.
 - **A test step is ONE call.** `tools/check-run.sh run <dir> -- <command>` runs the suite and leaves `exit`,
   `head`, `tree`, `cmd` and `log` as files; no second call reads the output or polls for it. A suite over nine
   minutes starts backgrounded with an explicit timeout and is waited for by its completion notice, never by
