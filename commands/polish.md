@@ -13,7 +13,7 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; write it in the same turn as the next step's first calls, never alone, and never in one holding a commit, amend, push or `gh pr create`. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run — never skip a receipt write; write it alongside the next step's first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8's chain. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
@@ -184,8 +184,8 @@ Steps, in order:
    `tools/self/doctor.sh && tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it flagged
    → re-invoke `/polish`: a convergence round (step 1's pointer).
 
-8. **Unlock the gate.** Push the branch first (the gate needs HEAD on the push remote), the receipt chained behind it:
-   `git push -u origin <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
+8. **Unlock the gate.** Push the branch first (the gate needs HEAD on the push remote), its receipt chained:
+   `git push -u <remote> <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
    "The chain is intact" → do the one thing it names and retry; "This has discarded the receipt chain" →
    `tools/pre-pr-gate.sh init`, then `tools/pre-pr-gate.sh receipt --recover`.
    *Rare — any deny, before you act on it:* the guide, § Step 8.
