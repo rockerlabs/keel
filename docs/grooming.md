@@ -429,15 +429,12 @@ settled fact.
   fold it; the 0.17.0 groom found 23, one a spec-ready design. The sweep folds each by the project's own
   fold procedure (keel: `/backlog` step 2b), tagged `→ pool`; it joins a slate only through G1's lane
   rule. A rule of the procedure, not a compensation.
-- **Every backlog write in this sweep goes through a checked writer (the 0.18.0 groom).** The groom
-  writes the backlog more than any session but the release manager — closures, folds, Log lines, filings
-  — and [`docs/release-management.md`](release-management.md) R8's checked-writer rule binds it the same
-  way. That groom's first edit rewrote the file in place and sent the output to a second path, which
-  emptied a 990 KB backlog; a copy taken seconds earlier restored it byte for byte. Take that copy before
-  the first write, and give a deletion (a standing-list line, a moved block) its exact expected byte
-  count, since R8's shrink refusal fits additions only. A compensation: each session hand-writes its own
-  checked writer because none has shipped (R8's 0.15.0 incident, then this one); its remover is the
-  parked `dir #193`, backlog writes as a mechanized guarantee.
+- **Every backlog write in this sweep goes through a checked writer (the 0.18.0 groom).**
+  [`docs/release-management.md`](release-management.md) R8's checked-writer rule binds the groom's
+  closures, folds, Log lines, filings and deletions too. That groom's first edit, an in-place rewrite
+  redirected to a second path, emptied a 990 KB backlog; a copy taken seconds earlier restored it byte for
+  byte, so take that copy before the first write. A compensation, since no checked writer has shipped;
+  its remover is the parked `dir #193`, backlog writes as a mechanized guarantee.
 
 **Plus the accumulator triage** — three places findings and ideas already pile up and, without a named
 owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`
@@ -507,21 +504,19 @@ estimate's own weights the audit cost 65.4M — most of that release's miss agai
 because the orchestrator holds the release in context across many turns, the same mechanism that makes
 the manager expensive ([`docs/release-management.md`](release-management.md) R7). So an audit priced as its own line takes the previous audit session's
 measured total, orchestrator and legs together, at the estimate's weights. Subtract that total from the
-release total before the per-unit division above, or the audit is counted twice. How far the audit
-grows with a larger slate has not been measured; the estimate cell names the scaling it used as a
-judgement. A rule of the procedure; `tools/self/session-cost.sh weighted` sums sessions at those
+release total before the per-unit division above, or the audit is counted twice; the next rule bounds
+how it scales with the slate. A rule of the procedure; `tools/self/session-cost.sh weighted` sums sessions at those
 weights ([`docs/session-cost.md`](session-cost.md)).
 
 **Never scale the audit below the smallest recent measured audit (the 0.18.0 groom, reading the 0.17.0
-row).** 0.17.0 scaled 0.16.0's audit linearly by tickets — 126.7M × 26/55 = 59.9M — and the audit ran
-87.9M, about 1.5× its line. Three measured audits at the same weights do not lie on a line through
-zero: 65.4M for 23 tickets (0.15.0), 126.7M for 55 (0.16.0), 87.9M for 26 (0.17.0, two passes). Much of
-an audit's cost does not shrink with the slate: the orchestrator reading the range, the suite and
-tag-time legs, a verifier per pass. So the audit line's lower end is the smallest of the last three
-measured audit totals, and its upper end is the previous audit's total, scaled up linearly only when
-the slate is larger than that release's. A
-compensation; its remover is `dir #872`, which sizes the legs by the diff and prices the audit per
-ticket.
+row).** 0.17.0 scaled 0.16.0's audit linearly by tickets to 59.9M, and the audit ran 87.9M, about 1.5×
+its line. Three measured audits at the same weights do not lie on a line through zero: 65.4M for 23
+tickets (0.15.0), 126.7M for 55 (0.16.0), 87.9M for 26 (0.17.0, two passes). Much of an audit's cost
+does not shrink with the slate: the orchestrator reading the range, the suite and tag-time legs, a
+verifier per pass. So the audit line's lower end is the smallest of the last three measured audit
+totals, and its upper end is the previous audit's total, scaled up linearly only when the slate is
+larger than that release's. A compensation; its remover is `dir #872`, which sizes the legs by the
+diff and prices the audit per ticket.
 
 **A procedure change between the two releases scales that total by its own measured counterfactual (dir #860).**
 When a change to the procedure between the previous comparable release and this one moves the cost, the estimate

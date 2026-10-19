@@ -56,8 +56,8 @@ one; archive re-sweep when the closed share crosses its threshold, carrying what
 mechanism has recorded against itself (keel: `dir #359`). Dedup/absorption with reproduced evidence,
 never a silent close. Re-examine on merit any ticket carried by ≥2 consecutive mechanical re-tags. Fold
 every leftover ticket draft `→ pool` by the project's own fold procedure (keel: `/backlog` step 2b). Every
-backlog write here goes through a checked writer ([`docs/release-management.md`](../docs/release-management.md) R8),
-a deletion with its exact expected byte count.
+backlog write here, deletions included, goes through a checked writer
+([`docs/release-management.md`](../docs/release-management.md) R8), after a copy taken before the first.
 **Plus the accumulator triage:** (a) re-read the project's standing list (keel: `## Standing list` in
 `BACKLOG.md`), (b) the project's ideas file, and the project's learnings file — all three run under
 `/triage` ([`docs/triage.md`](../docs/triage.md)), called by reference: its verdicts decide each
@@ -68,8 +68,8 @@ Name, pain (G1), derived ticket list (G3), size against the project's own per-re
 risks — plus a budget estimate sized from the project's own cost-measurement data where it exists (the
 estimate names its weights, and the release's actual is summed at the same ones; where the binding
 limit is a subscription window, also in window points quoted as the gauge's live start and end, with
-the date the window, or the plan that sizes it, ends); the audit line never below the smallest
-of the last three measured audits, and
+the date the window, or the plan that sizes it, ends; the audit line never below the smallest of
+the last three measured audits), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
 against spec-return rate) is a report field, not a role — record it, judge it next cycle. Every row also
 reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,
