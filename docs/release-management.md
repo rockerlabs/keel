@@ -177,8 +177,7 @@ cross-session message may not run as a command). The cleared session remembers n
 settings, so the message says to skip the hello hold and start. It is the one message a warm hand-out costs, counted
 against R6's send budget (with none left, the manager does not clear: the clear and the message go together, and the
 ticket waits for the operator's next turn, as R11's stopped workers do), and the manager logs the clear in the ledger
-(R7 counts it). "Finished" means the worker's
-PR is **frozen** (its checkpoint sent and the manager's freeze acknowledged, the point 0.17.0 handed out the next
+(R7 counts it). "Finished" means the worker's PR is **frozen** (its checkpoint sent and the manager's freeze acknowledged, the point 0.17.0 handed out the next
 ticket) or merged. A freeze is revocable (R14): after the manager's own `gh pr update-branch` the merge waits for a
 new freeze on the new head, and a conflicting PR is its worker's rebase, so each such step reaches the cleared author
 as one self-contained message naming the PR, its branch, the new head and the line to send back (`no more pushes;
@@ -189,7 +188,7 @@ queued launch, whichever comes first. Any new unit of work counts as a next tick
 included. A clear the harness refuses because the session is pinned or open on screen is logged and put to the
 operator in one line (unpin or close it); meanwhile the ticket goes to another idle worker if one exists, else is
 held for the operator's answer or a queued launch (never to the warm session; past R6's hand-over threshold a queued
-launch is out, so it is held), and once unpinned the clear is retried.
+launch is out, so it is held and written into the handover file), and once unpinned the clear is retried.
 
 **The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
 or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool

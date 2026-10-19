@@ -487,6 +487,8 @@ check_contains "R3 B2 handles a PR unfrozen after its author's clear by a new fr
 check_contains "R3 B2 keeps the refusal fallback for a pinned or open session (A2)" "$b2" 'pinned or open on screen'
 check_contains "R3 B2 clears the session first, before any hand-out (A2)" "$b2" 'clears that session first'
 check_contains "R3 B2 never hands the ticket to the warm session (A2)" "$b2" 'never to the warm session'
+check_contains "R3 B2: with no send left the clear and the message go together (A2)" "$b2" 'the clear and the message go together'
+check_contains "R3 B2: past the hand-over threshold a queued launch is out (A2)" "$b2" 'a queued launch is out'
 check_absent "R3 no longer says a follow-up message keeps the worker's context (dir #860 A2)" "$r3flat" 'keeps its context'
 pin "R6 says the manager hands over at 600k tokens of context (dir #860 A3)" "$doc" \
   '**The manager hands over at 600k tokens of context' \
