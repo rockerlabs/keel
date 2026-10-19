@@ -175,7 +175,9 @@ the worker id, the path of the next ticket's own overlay (a file written for it)
 threshold the operator named (R11), and the call, to invoke the `go` skill with args `<N>` (a leading `/go` in a
 cross-session message may not run as a command). The cleared session remembers nothing but keeps its model and
 settings, so the message says to skip the hello hold and start. It is the one message a warm hand-out costs, counted
-against R6's send budget, and the manager logs the clear in the ledger (R7 counts it). "Finished" means the worker's
+against R6's send budget (with none left, the manager does not clear: the clear and the message go together, and the
+ticket waits for the operator's next turn, as R11's stopped workers do), and the manager logs the clear in the ledger
+(R7 counts it). "Finished" means the worker's
 PR is **frozen** (its checkpoint sent and the manager's freeze acknowledged, the point 0.17.0 handed out the next
 ticket) or merged. A freeze is revocable (R14): after the manager's own `gh pr update-branch` the merge waits for a
 new freeze on the new head, and a conflicting PR is its worker's rebase, so each such step reaches the cleared author
@@ -186,7 +188,8 @@ new work: that session is not cleared, and its next ticket waits for the freeze 
 queued launch, whichever comes first. Any new unit of work counts as a next ticket, an R14 train assignment
 included. A clear the harness refuses because the session is pinned or open on screen is logged and put to the
 operator in one line (unpin or close it); meanwhile the ticket goes to another idle worker if one exists, else is
-held for the operator's answer or a queued launch (never to the warm session), and once unpinned the clear is retried.
+held for the operator's answer or a queued launch (never to the warm session; past R6's hand-over threshold a queued
+launch is out, so it is held), and once unpinned the clear is retried.
 
 **The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
 or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool
@@ -409,7 +412,8 @@ incidental and has already broken mid-release once.
 - **The manager hands over at 600k tokens of context (dir #860).** The manager is the one session that holds the
   whole release, and 0.17.0's first ran to 927k of context before it was replaced; a hand-over at 600k would have
   added two hand-overs and saved about 4% of that release's list price (re-based on dir #855's turn cut). At each
-  R11 sweep (before each wave, before each merge) the manager reads its own context. Keel's instance is
+  R11 sweep (before each wave, before each merge) the manager reads its own context, so it hands over at the first
+  sweep past the threshold, not at the instant it is crossed. Keel's instance is
   `KEEL_POLISH_COMPACT_TOKENS=600000 tools/token-report.sh --context`, the workers' reader with the manager's
   threshold; elsewhere it is the harness's own context reading (R12). A reading that prints `context: unknown (…)`
   (no session id, an ambiguous or missing transcript, no `jq`) is named once in the health line, and the full window

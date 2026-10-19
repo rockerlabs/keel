@@ -485,6 +485,8 @@ b2="$(para_of "$doc" "$b2_needle")"
 check_contains "R3 B2 defines finished as frozen (A2)" "$b2" 'frozen'
 check_contains "R3 B2 handles a PR unfrozen after its author's clear by a new freeze (A2)" "$b2" 'new freeze'
 check_contains "R3 B2 keeps the refusal fallback for a pinned or open session (A2)" "$b2" 'pinned or open on screen'
+check_contains "R3 B2 clears the session first, before any hand-out (A2)" "$b2" 'clears that session first'
+check_contains "R3 B2 never hands the ticket to the warm session (A2)" "$b2" 'never to the warm session'
 check_absent "R3 no longer says a follow-up message keeps the worker's context (dir #860 A2)" "$r3flat" 'keeps its context'
 pin "R6 says the manager hands over at 600k tokens of context (dir #860 A3)" "$doc" \
   '**The manager hands over at 600k tokens of context' \
