@@ -621,6 +621,14 @@ section_body() {
   awk -v h="$heading" '$0 == h { f = 1; next } /^## / { f = 0 } f { print }' "$file"
 }
 
+# para_of FILE NEEDLE — print the paragraph of FILE that holds the first line containing NEEDLE (a fixed
+# string), from that line to the next blank line, flattened to one line (newlines -> spaces, runs squeezed). Promoted
+# here (dir #860) once test_grooming_doc.sh needed the same slice test_release_management_doc.sh had written:
+# a phrase that wraps a line is found, and a `check_absent` over it cannot pass vacuously on a raw-line miss.
+para_of() {
+  awk -v n="$2" 'index($0, n) { f = 1 } f && /^$/ { exit } f' "$1" | tr '\n' ' ' | tr -s ' '
+}
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always

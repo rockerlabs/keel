@@ -461,12 +461,11 @@ m8="$(awk '/^\*\*M8 — close checklist \(R9\)\.\*\*/{p=1} p&&/^$/{exit} p' "$cm
 check_contains "M8 names the release-record entry the cut PR carries (dir #866)" "$m8" "release-history"
 
 # --- dir #860: a context budget for a release (B1 workers' threshold, B2 clear per ticket, B3 manager hand-over, B4 the close) ----
-# Each check_contains / check_absent runs over the section or paragraph FLATTENED (newlines -> spaces, runs squeezed), so a
-# phrase that wraps a line is found, and a dropped clause is not passed vacuously by a raw-line check (A2's `keeps its context`).
-para_of() { awk -v n="$2" 'index($0, n) { f = 1 } f && /^$/ { exit } f' "$1" | tr '\n' ' ' | tr -s ' '; }
-r3flat="$(awk '/^## R3 /{f=1} /^## The worker brief/{f=0} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
-r6flat="$(awk '/^## R6 /{f=1} /^## R7 /{f=0} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
-r7flat="$(awk '/^## R7 /{f=1} /^## R8 /{f=0} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
+# Each check_contains / check_absent runs over the section or paragraph FLATTENED (newlines -> spaces, runs squeezed; lib.sh's
+# para_of), so a phrase that wraps a line is found, and a dropped clause is not passed vacuously by a raw-line check (A2).
+r3flat="$(section_body '## R3 — worker launches, soft form' "$doc" | tr '\n' ' ' | tr -s ' ')"
+r6flat="$(section_body '## R6 — transport is a requirement set, never a tool' "$doc" | tr '\n' ' ' | tr -s ' ')"
+r7flat="$(section_body '## R7 — the cost line' "$doc" | tr '\n' ' ' | tr -s ' ')"
 b1_needle='**The release runs at the default compaction threshold'
 b2_needle='**Clear an idle finished worker before its next ticket'
 pin "R11 states the release runs at the default compaction threshold (dir #860 A1)" "$doc" "$b1_needle" \

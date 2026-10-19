@@ -167,7 +167,7 @@ check_contains "docs/grooming.md G0 keeps the scan's candidates out of every rep
 b5_needle='**A procedure change between the two releases scales that total'
 pin "G5 scales the previous total by a procedure change's measured counterfactual (dir #860)" "$doc" "$b5_needle" \
   "expected G5 to carry the counterfactual-scaling rule after the audit paragraph"
-b5="$(awk -v n="$b5_needle" 'index($0, n) { f = 1 } f && /^$/ { exit } f' "$doc" | tr '\n' ' ' | tr -s ' ')"
+b5="$(para_of "$doc" "$b5_needle")"
 check_contains "G5's counterfactual rule says a counterfactual is re-based on a change that ran after it (dir #860)" "$b5" 're-based'
 pin "groom.md G5 points at the measured-counterfactual rule (dir #860)" "$cmd" \
   'measured counterfactual (G5)' \
