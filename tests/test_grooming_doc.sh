@@ -163,4 +163,14 @@ check_contains "docs/grooming.md G0 names accumulate.sh closed (a promoted class
 check_contains "docs/grooming.md G0 names accumulate.sh fixed (without it a recurrence is never due)" "$g0_doc" 'accumulate.sh fixed'
 check_contains "docs/grooming.md G0 keeps the scan's candidates out of every repository" "$g0_doc" 'outside every'
 
+# --- dir #860 A5: G5 scales a total by a measured counterfactual of a procedure change, and the command points at it -----
+b5_needle='**A procedure change between the two releases scales that total'
+pin "G5 scales the previous total by a procedure change's measured counterfactual (dir #860)" "$doc" "$b5_needle" \
+  "expected G5 to carry the counterfactual-scaling rule after the audit paragraph"
+b5="$(para_of "$doc" "$b5_needle")"
+check_contains "G5's counterfactual rule says a counterfactual is re-based on a change that ran after it (dir #860)" "$b5" 're-based'
+pin "groom.md G5 points at the measured-counterfactual rule (dir #860)" "$cmd" \
+  'measured counterfactual (G5)' \
+  "expected the command's G5 to point at the doc's counterfactual-scaling rule"
+
 summary

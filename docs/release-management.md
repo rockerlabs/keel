@@ -135,7 +135,8 @@ launch, flag a mismatch before the worker spends. That doc also names
 which way the un-set default falls (the launcher's own tier — a top-tier manager makes every worker
 top-tier by doing nothing), the order to verify in (running-tier evidence before session metadata), and
 the hold: the worker sends a hello line and waits for the manager's go message, so a correction costs
-nothing. A release's worker brief therefore tells each worker to hello, then stop.
+nothing. A release's worker brief therefore tells each worker to hello, then stop (the one exception is a
+cleared session handed its next ticket below, whose model is already verified).
 **The verify's read, at the hello and before GO,** follows `docs/delegation.md`'s order: running-tier evidence
 first, the commit trailer next (the model a commit's own Co-Authored-By line names as its author), session metadata last, because it
 reports what is configured. The running-tier
@@ -160,10 +161,34 @@ verify step too, with no separate edit needed on that surface.
 `start_session` on a turn that a worker's message began, so a manager that wakes on a worker's report cannot
 launch anything overnight, whatever it was told. What worked: launch while the operator is present and
 pre-stage the next launches then (a proposal card per worker, or the integration branch's session of R2
-started early); give follow-up work to an idle finished author's session through a message, which keeps its
-context (the 0.15.0 audit's fix round did exactly this); and list in the wave plan which launches wait for the
-operator's next turn, so they are held on purpose and not stalled unnamed. The refusal is the harness's own
-rate limit on the launches R11 bounds, so it is worked with, not around.
+started early); give follow-up work to an idle finished author's session through a message (the 0.15.0 audit's
+fix round did exactly this; the next paragraph says what the manager does to that session first); and list in the
+wave plan which launches wait for the operator's next turn, so they are held on purpose and not stalled unnamed.
+The refusal is the harness's own rate limit on the launches R11 bounds, so it is worked with, not around.
+
+**Clear an idle finished worker before its next ticket (dir #860).** A reused session carries its whole earlier
+context into every turn of the next ticket: in 0.17.0 two workers fed two and four tickets reached 732k and 775k of
+context, and a cleared session per ticket would have saved about 2% of that release's list price (re-based on
+dir #855's turn cut). So the manager clears that session first (`clear_session`, once its row reads idle: the same
+clear R11's compaction stop uses). On the clear's "Cleared session …" result it sends one self-contained message:
+the worker id, the path of the next ticket's own overlay (a file written for it) beside the common one's, any
+threshold the operator named (R11), and the call, to invoke the `go` skill with args `<N>` (a leading `/go` in a
+cross-session message may not run as a command). The cleared session remembers nothing but keeps its model and
+settings, so the message says to skip the hello hold and start. It is the one message a warm hand-out costs, counted
+against R6's send budget (with none left, the manager does not clear: the clear and the message go together, and the
+ticket waits for the operator's next turn, as R11's stopped workers do), and the manager logs the clear in the ledger
+(R7 counts it). "Finished" means the worker's PR is **frozen** (its checkpoint sent and the manager's freeze acknowledged, the point 0.17.0 handed out the next
+ticket) or merged. A freeze is revocable (R14): after the manager's own `gh pr update-branch` the merge waits for a
+new freeze on the new head, and a conflicting PR is its worker's rebase, so each such step reaches the cleared author
+as one self-contained message naming the PR, its branch, the new head and the line to send back (`no more pushes;
+ok`, or the rebase's checkpoint); the worker commits its next ticket's work in its own worktree, switches to that
+branch, does it, sends the line and switches back. A follow-up on a PR that is still open and not frozen is not
+new work: that session is not cleared, and its next ticket waits for the freeze or goes to another idle worker or a
+queued launch, whichever comes first. Any new unit of work counts as a next ticket, an R14 train assignment
+included. A clear the harness refuses because the session is pinned or open on screen is logged and put to the
+operator in one line (unpin or close it); meanwhile the ticket goes to another idle worker if one exists, else is
+held for the operator's answer or a queued launch (never to the warm session; past R6's hand-over threshold a queued
+launch is out, so it is held and written into the handover file), and once unpinned the clear is retried.
 
 **The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
 or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool
@@ -374,7 +399,7 @@ incidental and has already broken mid-release once.
   workers must read in the shared brief file the briefs already point at, then send each worker a one-line
   pointer, instead of spending the budget on a broadcast a file can carry.
 - **A manager change is a re-identification (0.16.0).** When the manager's session is replaced (its context
-  is full), the outgoing manager writes a handover file: the ledger's location, each live worker's token,
+  has reached the hand-over threshold below, or is full), the outgoing manager writes a handover file: the ledger's location, each live worker's token,
   session id and task, the open PRs, the operator decisions still in force, and the tooling. The incoming one
   updates the manager's session id in the shared brief, then sends each live worker one line carrying its token
   and the new id, under the same ACK rule as any amendment. Workers report to the id in their brief, so until
@@ -383,6 +408,26 @@ incidental and has already broken mid-release once.
   them**, as it re-derives the hand-off's figures: one hand-off said a restart of the app would hand the agent sessions
   the new keys, and on that machine desktop sessions never inherit secrets by design. The successor probed first and
   found the per-command route instead of acting on the claim.
+- **The manager hands over at 600k tokens of context (dir #860).** The manager is the one session that holds the
+  whole release, and 0.17.0's first ran to 927k of context before it was replaced; a hand-over at 600k would have
+  added two hand-overs and saved about 4% of that release's list price (re-based on dir #855's turn cut). At each
+  R11 sweep (before each wave, before each merge) the manager reads its own context, so it hands over at the first
+  sweep past the threshold, not at the instant it is crossed. Keel's instance is
+  `KEEL_POLISH_COMPACT_TOKENS=600000 tools/token-report.sh --context`, the workers' reader with the manager's
+  threshold; elsewhere it is the harness's own context reading (R12). A reading that prints `context: unknown (…)`
+  (no session id, an ambiguous or missing transcript, no `jq`) is named once in the health line, and the full window
+  stays the trigger. On `verdict: compact` the manager (1) writes the handover file above at once and keeps it
+  current from then on, (2) launches nothing new, a queued proposal card included, since a card starts a session
+  the successor must track, and (3) asks the operator in one line to start the successor, once, then carried as a
+  status in each health line until the successor runs (a status, not a new ask: R11's once-per-wave rule is about
+  questions). An operator who defers the successor leaves (2) and (3) in force until a successor runs, unless they
+  name a new manager threshold, recorded like R11's. With the operator away the manager keeps its duties (merges,
+  sweeps, ACKs, compaction continuations and R3 hand-outs), records each in the handover file as it goes, and
+  launches no session until the operator's next turn (a launch needs one, R3). If the window fills before the
+  operator returns, the harness compacts the manager on its own, and nothing here reaches it then (a compaction
+  re-injects no command body): that is an accepted risk, covered by the handover file kept current since the
+  threshold, which is what the successor reads. On a window of about 1M, 600k leaves about 400k for a night;
+  another harness states its own threshold.
 
 ## R7 — the cost line
 
@@ -414,6 +459,12 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 `KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
 sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
+
+**Beside the figure, record the context budget the run held (dir #860).** The row names the workers' threshold and the
+manager's, each with every value the operator named during the run (read from the shared brief), and how often each
+fired: compaction stops, clears before a next ticket and manager hand-overs, counted from the ledger (where the
+manager logs each as it handles it), plus the stops that waited for a send (R11). A cost line that moved cannot be
+split from the budget that moved it.
 
 **Record each worker's branch beside its row in the run's ledger at launch, and at close find its
 session log by that branch — never by worktree directory or modification time (0.12.0).** Worktree
@@ -673,6 +724,26 @@ continuation message — the worker id, its overlay paths, and the call to invok
 (a session pinned or open on screen) falls back to the two paste-ready lines for the operator, and the manager
 reports the refusal. The threshold and any override are the operator's decision, never raised on the manager's
 own authority.
+
+**The release runs at the default compaction threshold, and only the operator names another (dir #860).** A managed
+release leaves `/polish`'s compaction stop at the project's default (keel: `KEEL_POLISH_COMPACT_TOKENS` unset, so
+250000); the manager does not ask for or set a release-wide override. Felt: 0.17.0 ran the stop at 900000 and it never
+fired, while four sessions above 400k mean context were 38% of that release's weighted cost; the default would have
+stopped 12 workers, each on the compaction route above, for about 5% of the release's list price (re-based on
+dir #855's turn cut). The stop no longer blocks on the operator (dir #845), so the threshold is not asked per wave.
+The operator may name a value at any time, at the wave plan or later when stops slow the release, and the manager
+records it as a positive integer (the operator's «400k» is `400000`): `tools/token-report.sh` rejects anything else
+with exit 2 and no output line, and `/polish` then runs with no check at all, so a reading that prints no line is
+treated as `unknown` and named in the health line. A named value is delivered like any brief amendment (R6): the
+manager writes the value, the date and the reason into the shared brief, sends each live worker a one-line pointer
+(counted against R6's send budget, under the per-amendment ACK), and the worker puts the value in front of step 1's
+command (`KEEL_POLISH_COMPACT_TOKENS=<value> tools/token-report.sh --context`). A worker launched later reads it from
+the shared brief, and an R3 hand-out message repeats it. A run already past step 1 is not re-checked; it applies the
+value from its next fresh run. Each continuation is one cross-session send: with none left (R6's cap; 0.17.0's
+manager had none for hours overnight), a stopped worker waits for the operator's next turn. The manager logs it in the
+ledger, names it in its next health line and counts it at the close (R7); the waiting worker is not cleared before its
+continuation can be sent, and waiting workers are continued in the order they stopped. The wait costs time, not
+tokens. Each wave's health line counts the stops so far, so the operator sees the cost.
 
 ## R12 — portability
 

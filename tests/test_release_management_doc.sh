@@ -460,4 +460,51 @@ check_contains "R9 names the suite check that gates the release-record entry in 
 m8="$(awk '/^\*\*M8 — close checklist \(R9\)\.\*\*/{p=1} p&&/^$/{exit} p' "$cmd")"
 check_contains "M8 names the release-record entry the cut PR carries (dir #866)" "$m8" "release-history"
 
+# --- dir #860: a context budget for a release (B1 workers' threshold, B2 clear per ticket, B3 manager hand-over, B4 the close) ----
+# Each check_contains / check_absent runs over the section or paragraph FLATTENED (newlines -> spaces, runs squeezed; lib.sh's
+# para_of), so a phrase that wraps a line is found, and a dropped clause is not passed vacuously by a raw-line check (A2).
+r3flat="$(section_body '## R3 — worker launches, soft form' "$doc" | tr '\n' ' ' | tr -s ' ')"
+r6flat="$(section_body '## R6 — transport is a requirement set, never a tool' "$doc" | tr '\n' ' ' | tr -s ' ')"
+r7flat="$(section_body '## R7 — the cost line' "$doc" | tr '\n' ' ' | tr -s ' ')"
+b1_needle='**The release runs at the default compaction threshold'
+b2_needle='**Clear an idle finished worker before its next ticket'
+pin "R11 states the release runs at the default compaction threshold (dir #860 A1)" "$doc" "$b1_needle" \
+  "expected R11 to carry the workers' threshold rule: the default, and only the operator names another"
+b1="$(para_of "$doc" "$b1_needle")"
+check_contains "R11 B1 names the keel default 250000 (A1)" "$b1" '250000'
+check_contains "R11 B1: the manager does not ask for or set an override (A1)" "$b1" 'does not ask for or set'
+check_contains "R11 B1: a named value is recorded as a positive integer (A1)" "$b1" 'positive integer'
+check_contains "R11 B1: a named value reaches live workers as a one-line pointer (A1)" "$b1" 'one-line pointer'
+check_contains "R11 B1: a worker with no send left waits for the operator's next turn (A1)" "$b1" "waits for the operator's next turn"
+pin "R11 keeps the threshold the operator's decision, never the manager's (dir #860 A7)" "$doc" \
+  "The threshold and any override are the operator's decision" \
+  "expected R11 to keep the sentence F1's pick rests on: only the operator names another value"
+pin "R3 says to clear an idle finished worker before its next ticket (dir #860 A2)" "$doc" "$b2_needle" \
+  "expected R3 to carry the cleared-context-per-ticket rule"
+b2="$(para_of "$doc" "$b2_needle")"
+check_contains "R3 B2 defines finished as frozen (A2)" "$b2" 'frozen'
+check_contains "R3 B2 handles a PR unfrozen after its author's clear by a new freeze (A2)" "$b2" 'new freeze'
+check_contains "R3 B2 keeps the refusal fallback for a pinned or open session (A2)" "$b2" 'pinned or open on screen'
+check_contains "R3 B2 clears the session first, before any hand-out (A2)" "$b2" 'clears that session first'
+check_contains "R3 B2 never hands the ticket to the warm session (A2)" "$b2" 'never to the warm session'
+check_contains "R3 B2: with no send left the clear and the message go together (A2)" "$b2" 'the clear and the message go together'
+check_contains "R3 B2: past the hand-over threshold a queued launch is out (A2)" "$b2" 'a queued launch is out'
+check_absent "R3 no longer says a follow-up message keeps the worker's context (dir #860 A2)" "$r3flat" 'keeps its context'
+pin "R6 says the manager hands over at 600k tokens of context (dir #860 A3)" "$doc" \
+  '**The manager hands over at 600k tokens of context' \
+  "expected R6 to carry the manager's hand-over threshold"
+check_contains "R6 B3 reads the manager's own context with the workers' reader at 600000 (A3)" "$r6flat" 'KEEL_POLISH_COMPACT_TOKENS=600000 tools/token-report.sh --context'
+check_contains "R6 B3: on verdict compact the manager launches nothing new (A3)" "$r6flat" 'launches nothing new'
+check_contains "R6 B3: an unknown reading is named once and the full window stays the trigger (A3)" "$r6flat" 'context: unknown'
+pin "R7 records the context budget the run held (dir #860 A4)" "$doc" \
+  '**Beside the figure, record the context budget the run held' \
+  "expected R7 to record the thresholds and how often each fired, so a moved cost line can be split from a moved budget"
+check_contains "R7 B4 counts the compaction stops (A4)" "$r7flat" 'compaction stops'
+pin "manage-release.md M4 clears an idle finished worker before its next ticket (dir #860 A6)" "$cmd" \
+  'clear an idle finished worker' \
+  "expected M4 to carry B2: the manager acts from the M-items"
+pin "manage-release.md M7 reads the manager's own context against the hand-over threshold (dir #860 A6)" "$cmd" \
+  'hand-over threshold (R6)' \
+  "expected M7 to carry B3: the manager acts from the M-items"
+
 summary
