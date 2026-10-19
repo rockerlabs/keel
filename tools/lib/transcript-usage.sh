@@ -184,6 +184,13 @@ tu_require_jq() {
 # scanned). Used ONLY by tu_self_check's "unrecognized" counter below — never to gate tu_turns'
 # selection, which is a positive match on `type == "assistant"` (see the header note on why a type
 # enumeration is the wrong filter to build the actual reader on).
+# The readers below take a file as RAW lines and parse each one alone, so a line that is not JSON (the truncated
+# last line of a session still being written), is JSON but not an object, or ends in a CR skips only itself,
+# never the whole file (dir #852; dir #848 did the same for tu_files_for_branches). _TU_OBJECTS is the jq prefix
+# that yields the surviving objects as one array, where the readers used to slurp (`jq -s`) and die on the first
+# bad line. Callers run jq with `-R -n`.
+_TU_OBJECTS='[inputs | fromjson? | objects]'
+
 _TU_KNOWN_OTHER_TYPES='["user","attachment","last-prompt","atis-latch","bridge-session","queue-operation","custom-title","system","pr-link","mode","worktree-state","relocated","file-history-snapshot","permission-mode"]'
 
 # tu_turns KIND FILE — deduped per-turn usage records from one transcript file (primary or subagent),
@@ -211,8 +218,8 @@ _TU_KNOWN_OTHER_TYPES='["user","attachment","last-prompt","atis-latch","bridge-s
 tu_turns() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
-  jq -c -s --arg file "$file" --arg kind "$kind" '
-    [ .[] | select(.type == "assistant" and (.message.usage != null)) ] as $recs
+  jq -R -n -c --arg file "$file" --arg kind "$kind" '
+    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and ((.message | objects | .usage) != null)) ] as $recs
     | (reduce $recs[] as $r ({seen: {}, out: []};
         if ($r.requestId == null) then (.out += [$r])
         else
@@ -259,9 +266,10 @@ tu_turns() {
 tu_tool_calls() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
-  jq -c -s --arg file "$file" --arg kind "$kind" '
-    .[] | select(.type == "assistant") as $rec
-    | ($rec.message.content // [])[]
+  jq -R -n -c --arg file "$file" --arg kind "$kind" '
+    '"$_TU_OBJECTS"' | .[] | select(.type == "assistant") as $rec
+    | (($rec.message | objects | .content) // [] | arrays)[]
+    | select(type == "object")
     | select(.type == "tool_use")
     | (.input.file_path // .input.path // .input.notebook_path // null) as $fp
     | {
@@ -273,7 +281,7 @@ tu_tool_calls() {
         name: .name,
         command: (if .name == "Bash" then (.input.command // null) else null end),
         file_path: (
-          if ($fp != null and $rec.cwd != null and ($fp | startswith($rec.cwd + "/")))
+          if (($fp | type) == "string" and ($rec.cwd | type) == "string" and ($fp | startswith($rec.cwd + "/")))
           then ($fp | ltrimstr($rec.cwd + "/"))
           else $fp
           end
@@ -291,8 +299,8 @@ tu_tool_calls() {
 tu_tool_results() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
-  jq -c --arg file "$file" --arg kind "$kind" '
-    select(.type == "user") as $rec
+  jq -R -c --arg file "$file" --arg kind "$kind" '
+    fromjson? | objects | select(.type == "user") as $rec
     | (if (($rec.message.content | type) == "array") then $rec.message.content else [] end)[]
     | select(type == "object" and .type == "tool_result")
     | {
@@ -326,8 +334,8 @@ tu_subagent_meta() {
   id="${id#agent-}"
   meta="${file%.jsonl}.meta.json"
   if [ -f "$meta" ] && jq -e . "$meta" >/dev/null 2>&1; then meta_json="$(jq -c . "$meta")"; fi
-  jq -c -s --arg file "$file" --arg id "$id" --argjson meta "$meta_json" '
-    (first(.[] | select(.type == "user") | .message.content
+  jq -R -n -c --arg file "$file" --arg id "$id" --argjson meta "$meta_json" '
+    '"$_TU_OBJECTS"' | (first(.[] | select(.type == "user") | .message.content
            | if (type == "string") then .
              elif (type == "array") then (first(.[] | select(type == "object" and .type == "text") | .text) // "")
              else "" end) // "") as $prompt
@@ -348,7 +356,9 @@ tu_subagent_meta() {
 # incomplete record — should be zero; a warning sign, never silently dropped), how many are one of the
 # known non-usage-bearing types (_TU_KNOWN_OTHER_TYPES above), and — the actual guard — which types
 # this lib has never seen before, named explicitly so a future harness format change is visible rather
-# than silently absorbed into "known_other". Emits one JSON object.
+# than silently absorbed into "known_other". Emits one JSON object. `skipped_lines` counts the non-blank
+# lines that were not a JSON object (truncated, corrupt, a bare scalar/array) and were left out of every other
+# count (dir #852): the partition below is over the OBJECT records, so a skip is visible, never silent.
 #
 # INVARIANT a caller may rely on: total/assistant_usage/assistant_no_usage/known_other/
 # unrecognized_types partition every record in the file EXACTLY (no gap, no overlap) — the four
@@ -361,9 +371,13 @@ tu_subagent_meta() {
 tu_self_check() {
   local file="$1"
   tu_require_jq || return 1
-  jq -c -s --arg file "$file" --argjson known "$_TU_KNOWN_OTHER_TYPES" '
-    {
+  jq -R -n -c --arg file "$file" --argjson known "$_TU_KNOWN_OTHER_TYPES" '
+    [inputs | select(test("\\S"))] as $raw
+    | [$raw[] | fromjson? | objects] as $objs
+    | (($raw | length) - ($objs | length)) as $skipped
+    | $objs | {
       file: $file,
+      skipped_lines: $skipped,
       total: length,
       assistant_usage: ([.[] | select(.type == "assistant" and (.message.usage != null))] | length),
       assistant_no_usage: ([.[] | select(.type == "assistant" and (.message.usage == null))] | length),
