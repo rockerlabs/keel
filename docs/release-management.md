@@ -590,6 +590,15 @@ than where the tool's own warning was written to fire. The operator reviews the 
 running the actual release-publish command — publishing is an irreversible outward action, so the
 **read** stays human even though the write no longer does.
 
+**A `known-issue-in-changelog` disposition reaches the CHANGELOG section before the GO SHA (the 0.18.0
+groom, reading the 0.17.0 close).** The notes are composed from that section, so a known issue that is
+not in it is disclosed nowhere. 0.17.0's audit staged one (dir #845's compaction-stop routes were never
+observed live, so the old two-line route stays the fallback), and the close filed it as a Log line on
+dir #845 only: the shipped changelog and notes disclose no known issue. Before the GO SHA, check every
+`known-issue-in-changelog` line in the audit's staged files against the section. One that does not
+belong there is demoted with its reason written in the staged file's FILED stamp, never routed
+silently to a ticket. A rule of the procedure, not a compensation.
+
 **Rotate a per-cycle instrument's logs AFTER the next groom has read them, never at the tag.** Where
 a project keeps a session-scoped log the grooming retro consumes (keel's own is the read trace, whose
 rotation the tool's header USED to assign to this role as a wrap-time chore), rotating it at release
