@@ -109,8 +109,15 @@ done
 # --- K1: what a normal run needs stays in the CORE (B8b) -----------------------------------------------------
 # dir #855 (A4): step 3 is ONE check-run call, foreground; a long suite's backgrounding and the cut-short-run rule
 # (dir #678) moved to the guide's § Step 3 "Long runs" (A5 pins them below). The receipt rides behind a `verify`.
-pinf "core: the preamble lets a receipt share the next step's turn, never a commit/push turn" \
-  'it may share a turn with the next step'"'"'s calls, never one holding a commit, amend, push or `gh pr create`'
+pinf "core: the preamble puts a receipt in the next step's first turn, never alone, never in a commit/push turn" \
+  'write it alongside the next step'"'"'s first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8'"'"'s chain.'
+# dir #765: of the 16 windows after dir #855, a receipt-only turn still held step 1's receipt (init and diff) in 12 windows, step 2's in 11, step 4's in 13 and step 8's in 14.
+# Step 7's receipt rides behind its doctor run, step 8's behind the push — both `&&` chains, so a red or failed
+# step writes none (the hook's reading of the step-8 chain is pinned in test_pre_pr_gate.sh).
+check_contains "core: step 7's receipt is chained after the self-check run" "$(step_text 7)" \
+  '`tools/self/doctor.sh && tools/pre-pr-gate.sh receipt polish.7-selfcheck`'
+check_contains "core: step 8's unlock receipt is chained behind the push" "$(step_text 8)" \
+  '`git push -u <remote> <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
 pinf "core: step 3 runs the suite in ONE check-run.sh call, foreground" \
   'in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000'
 pinf "core: step 3 points a suite over 9 minutes at the guide" '(a suite over 9 minutes: the guide, § Step 3)'
@@ -121,7 +128,7 @@ check_contains "core: step 6 re-runs the way step 3 does" "$(step_text 6)" 're-r
 pinf "core: step 9 requires --head" '`gh pr create --head <branch>` — `--head` is mandatory'
 pinf "core: step 9 writes every receipt in its own Bash call" 'Write every receipt in its own Bash call and invoke `gh pr create` alone in the next'
 pinf "core: step 8 pushes before it unlocks" 'Push the branch first'
-pinf "core: step 8's unlock receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
+pinf "core: step 8's unlock receipt binds HEAD" 'tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
 pinf "core: step 6's retest receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.6-retest "$(git rev-parse HEAD)"`'
 pinf "core: step 3's tests receipt binds HEAD" '`tools/pre-pr-gate.sh receipt polish.3-tests "$(git rev-parse HEAD)"`'
 check_contains "core: step 1 mints the run's nonce with init" "$(step_text 1)" '`tools/pre-pr-gate.sh init`'

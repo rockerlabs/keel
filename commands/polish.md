@@ -2,7 +2,7 @@
 description: Pre-PR polish pass — simplify + tests + depth-matched code-review + gate + open the PR
 argument-hint: [--no-test]
 ---
-<!-- Installed by default (dir #68). Pairs with tools/pre-pr-gate.sh, wired per project by
+<!-- Pairs with tools/pre-pr-gate.sh, wired per project by
 tools/install-pre-pr-gate.sh <repo>; unwired, only its blocks are inert. -->
 
 The final pass over the diff before a PR — run between implementation and `/wrap`. Once `tools/install-pre-pr-gate.sh` wires the gate, it also blocks
@@ -13,7 +13,7 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; it may share a turn with the next step's calls, never one holding a commit, amend, push or `gh pr create`. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run — never skip a receipt write; write it alongside the next step's first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8's chain. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
@@ -25,7 +25,7 @@ Steps, in order:
 
 1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
    nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
-   `tools/pre-pr-gate.sh init` (mints a fresh nonce), then `tools/pre-pr-gate.sh receipt polish.1-diff`.
+   `tools/pre-pr-gate.sh init`, then `tools/pre-pr-gate.sh receipt polish.1-diff`.
    Repo has a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
    something), `--recover`:* the guide, § Step 1.
@@ -36,7 +36,7 @@ Steps, in order:
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
-   the gate unlocks only on a test run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
+   a run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** Proceed only if simplify left no open
    problems and tests are green or explicitly skipped; otherwise report what is left and stop (no receipt).
@@ -181,11 +181,11 @@ Steps, in order:
 
 7. **Self-check, if this repo ships one.** If `tools/self/doctor.sh` exists at the repo root, run it. A GAP
    (non-zero exit) is a red test: no receipt, report what it flagged, stop. Receipt:
-   `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it flagged
+   `tools/self/doctor.sh && tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or `skipped:no-doctor`). A fix commit for what it flagged
    → re-invoke `/polish`: a convergence round (step 1's pointer).
 
-8. **Unlock the gate.** Push the branch first (the gate checks that HEAD is reachable on the push remote),
-   then `tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
+8. **Unlock the gate.** Push the branch first (the gate needs HEAD on the push remote), its receipt chained:
+   `git push -u <remote> <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. A deny says which case it is:
    "The chain is intact" → do the one thing it names and retry; "This has discarded the receipt chain" →
    `tools/pre-pr-gate.sh init`, then `tools/pre-pr-gate.sh receipt --recover`.
    *Rare — any deny, before you act on it:* the guide, § Step 8.

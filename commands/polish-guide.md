@@ -942,7 +942,8 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    it's the repo's own structural self-audit (dead references, ship-skip-list sync, tool wiring, doc
    staleness — distinct from the test suite). A GAP (non-zero exit) is treated the same as a red test: do
    NOT write this step's receipt or the sentinel, report what it flagged, and stop.
-   Receipt: `tools/pre-pr-gate.sh receipt polish.7-selfcheck` (or, if the project has no `tools/self/doctor.sh`,
+   Receipt, chained behind the run so a GAP writes none (dir #765): `tools/self/doctor.sh && tools/pre-pr-gate.sh
+   receipt polish.7-selfcheck` (or, if the project has no `tools/self/doctor.sh`,
    `... polish.7-selfcheck skipped:no-doctor`).
 
    **If fixing what it flagged takes a commit, you are in a convergence round** (dir #119) — a GAP that
@@ -958,7 +959,10 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    the `gh pr create` block. The SHA is recorded *after* the review so it matches exactly what the PR will
    contain. **Push the branch before you unlock** — the gate also checks that current HEAD is reachable on
    the branch's push remote (see the deny note below), and in a convergence round the fix commit is
-   exactly the one that tends to still be local-only.
+   exactly the one that tends to still be local-only. The core chains the two (dir #765): `git push -u <remote>
+   <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`. `<remote>` is the branch's push remote (`branch.<branch>.pushRemote`, else `remote.pushDefault`, else
+   `branch.<branch>.remote`, else `origin` — git's own order). A failed push, or a
+   pre-push hook that refuses it, writes no receipt, and the turn that held only the receipt is gone.
 
    **One deny is NOT a receipt problem, and re-running `/polish` alone will never clear it** (dir
    #133/#152): `current HEAD (<sha>) is not reachable on <remote>/<branch> — push the branch (git push)
@@ -1030,6 +1034,11 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    `gh pr create` that then fails for a NON-gate reason — a bad `--body-file` path, a worktree's `.git`
    being a file — still spends the receipt chain**, even right after a genuine pass; re-`init` and
    re-receipt rather than assume the failure was free.
+   **Why the rule is about the `gh pr create` line, not about receipts sharing a call (dir #765):** receipts in
+   one Bash call or in parallel calls of one turn cost the same single turn, so putting receipts into one call
+   saves nothing and stays unbuilt. What costs turns is a receipt that gets a turn of its own, which the core's
+   preamble now forbids; the two chains in steps 7 and 8, like steps 3 and 6, are the only places a receipt
+   shares a call with another command, and neither names `gh pr create`.
    Compose the title and body from the implementation context (what changed, why, a test plan). **If
    `<keel-checkout>/tools/read-trace.sh` exists (dir #387, opt-in — silent no-op otherwise), include the
    line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints, verbatim, in the PR body** — a
