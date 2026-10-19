@@ -72,6 +72,8 @@ against spec-return rate) is a report field, not a role — record it, judge it 
 reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,
 derived by counting the ticket numbers each census call prints (keel's own: `backlog-census.sh --list <tag> --decay`
 against `backlog-census.sh --list <tag>`; a "skipped" line is no count).
+A procedure change since the last release scales its total by that change's
+measured counterfactual (G5), named in the estimate cell.
 
 **G6 — fresh-reviewer adjudication is MANDATORY.**
 Hand the produced plan to a reviewer with no shared context, told to read ticket bodies. Re-verify every

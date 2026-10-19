@@ -35,7 +35,8 @@ operator the wave plan before wave 1 starts.
 **M4 — launch workers (R3), one brief shape (see the doc's worker-brief section), single writer to
 the backlog (R8).**
 Where the harness can launch a real, gated session directly, launch it yourself — one health-line
-report per launch, operator can revoke to manual at any time; a launch needs a turn the operator started.
+report per launch, operator can revoke to manual at any time; a launch needs a turn the operator started. A next
+ticket never goes to a warm session: clear an idle finished worker first (R3).
 State the model/effort call as the FIRST line of the launch, not the brief's tail. Every brief states
 explicitly that backlog writes of any kind (a marker, a Log line, a ticket) route through you, not
 through the worker's own `/go` claim step. Every brief carries: state to
@@ -55,7 +56,8 @@ your one irreducible job.
 **M7 — bounded loops, budgeted waves (R11).**
 Fixed sessions-per-wave at plan time, a budget check before each wave
 ([`docs/delegation.md`](../docs/delegation.md)'s session-limit flow), a numeric bound on every retry
-and review round. Hitting a bound stops the loop and escalates in one line — never silent retries.
+and review round. Hitting a bound stops the loop and escalates in one line — never silent retries. Read your own
+context at each sweep against the hand-over threshold (R6).
 
 **M7a — the train and the merge (R14).**
 Where two or more PRs are ready, cut a train (R14): the composition from the freeze lines, the manager

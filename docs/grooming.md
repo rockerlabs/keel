@@ -503,6 +503,17 @@ grows with a larger slate has not been measured; the estimate cell names the sca
 judgement. A rule of the procedure; `tools/self/session-cost.sh weighted` sums sessions at those
 weights ([`docs/session-cost.md`](session-cost.md)).
 
+**A procedure change between the two releases scales that total by its own measured counterfactual (dir #860).**
+When a change to the procedure between the previous comparable release and this one moves the cost, the estimate
+takes that change's measured counterfactual, stated in absolute tokens at the estimate's weights with the base it was
+measured on, and names it and its source in the estimate cell, never a guessed factor. It applies after the audit
+subtraction above: the counterfactual says which sessions it moves, and one that leaves the audit untouched comes off
+the non-audit total only. A counterfactual measured on a release that ran before another change is re-based on that
+change, never stacked on it (two changes that cut the same turns count them once). Keel's first instance is the
+context budget ([`docs/release-management.md`](release-management.md) R11): 40.3M less on 0.17.0's weighted
+total at 1.0/2.0/0.1, re-based on dir #855's turn cut, which is about 15% of that release's non-audit total (272.6M)
+and 11.2% of the whole (360.5M), the audit untouched. A rule of the procedure, not a compensation.
+
 **When the operator's binding limit is a subscription window, state the estimate in window points
 too, as the gauge's start and end, and name the ratio it was converted at (the same groom; the form,
 the 0.17.0 re-cut).** A weighted figure alone does not say
