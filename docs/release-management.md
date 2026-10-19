@@ -595,9 +595,9 @@ running the actual release-publish command — publishing is an irreversible out
 groom, reading the 0.17.0 close).** The notes are composed from that section, so a known issue left out
 of it is disclosed nowhere: 0.17.0's audit staged one (dir #845's compaction-stop routes were never
 observed live), and the close filed it only as a Log line on dir #845. Before the GO SHA, check every
-`known-issue-in-changelog` line in the audit's staged-tickets file against the section. One that does
-not belong there is demoted with its reason written beside it in that file, never routed silently to a
-ticket. A rule of the procedure, not a compensation.
+`known-issue-in-changelog` line in the audit's staged files (the staged tickets and the staged
+standing-list lines both) against the section. One that does not belong there is demoted with its reason
+written beside it in the staged file, never routed silently to a ticket. A rule of the procedure, not a compensation.
 
 **Rotate a per-cycle instrument's logs AFTER the next groom has read them, never at the tag.** Where
 a project keeps a session-scoped log the grooming retro consumes (keel's own is the read trace, whose
