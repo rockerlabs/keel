@@ -517,8 +517,9 @@ a silent contradiction between the two documents a worker could follow either of
 script opened the backlog for writing before it read it, which empties the file: the backlog was truncated,
 and only a backup could restore it. A script that touches
 the backlog reads it whole, writes a temp file beside it, refuses when the result is shorter than the
-original (a filing only adds), and renames over it; the closure-word check above rides in the same script. One such
-writer serves markers, Log lines and new tickets alike. A manager without one writes it before wave 1.
+original (a filing only adds) or, for a deletion (a standing-list line a ticket takes, a moved block), not
+exactly its expected byte count, and renames over it; the closure-word check above rides in the same script. One
+such writer serves markers, Log lines, new tickets and deletions alike. A manager without one writes it before wave 1.
 
 ## R9 — close checklist
 
@@ -589,6 +590,14 @@ precisely to replace the staleness hazard that warning is guarding against, one 
 than where the tool's own warning was written to fire. The operator reviews the composed notes before
 running the actual release-publish command — publishing is an irreversible outward action, so the
 **read** stays human even though the write no longer does.
+
+**A `known-issue-in-changelog` disposition reaches the CHANGELOG section before the GO SHA (the 0.18.0
+groom, reading the 0.17.0 close).** The notes are composed from that section, so a known issue left out
+of it is disclosed nowhere: 0.17.0's audit staged one (dir #845's compaction-stop routes were never
+observed live), and the close filed it only as a Log line on dir #845. Before the GO SHA, check every
+`known-issue-in-changelog` line in the audit's staged-tickets file against the section. One that does
+not belong there is demoted with its reason written beside it in that file, never routed silently to a
+ticket. A rule of the procedure, not a compensation.
 
 **Rotate a per-cycle instrument's logs AFTER the next groom has read them, never at the tag.** Where
 a project keeps a session-scoped log the grooming retro consumes (keel's own is the read trace, whose

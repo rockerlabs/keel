@@ -33,7 +33,9 @@ and that's fine.)
   0.11.0 cycle; kept.** **Re-reviewed 2026-10-09 (0.16.0 groom, G4(b)): still not fired through the
   0.12.0–0.15.0 cycles — `ADAPTING.md` names no second always-on module; kept.**
   **Re-reviewed 2026-10-12 (0.17.0 groom, G4(b)): still not fired in the 0.16.0 cycle — no second
-  always-on module asked for; kept.**
+  always-on module asked for; kept.** **Re-reviewed 2026-10-20 (0.18.0 groom, G4(b)): still not
+  fired in the 0.17.0 cycle; kept. Where it would fire first: dir #253's §1 layer model, if that
+  ticket runs.**
 - [2026-07-23] **openwiki (langchain-ai/openwiki) — auto-generated CLAUDE.md/AGENTS.md, opposite bet from
   Keel's manual curation** — surfaced while triaging six repos from an Instagram post; the only one that
   overlapped with Keel's domain (the other five dropped without action). OpenWiki synthesizes
