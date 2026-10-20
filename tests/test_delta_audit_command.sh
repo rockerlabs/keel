@@ -65,4 +65,10 @@ pin "skill states version resolves against the target project's own tags" "$skil
   "never keel's own release-plan table" \
   "expected the skill to state the portable resolution rule, not a keel-only shortcut"
 
+# --- dir #872: A3 pilots on a work-dense unit and names the merge trade, instead of the retired seam-dense predictor ---
+a3_872="$(para_of "$skill" '**A3 — budget flow BEFORE any wave.**')"
+check_contains "A3 pilots on a work-dense unit and names the merge trade (dir #872)" "$a3_872" \
+  "Pilot on a work-dense unit (§7: no size measure predicted a leg's cost; a merge of clusters trades verification depth for cost and goes into the plan with its price), do the arithmetic before spawning a wave"
+check_absent "the command no longer says seam-dense (dir #872)" "$(flatten_ws < "$skill")" 'seam-dense'
+
 summary

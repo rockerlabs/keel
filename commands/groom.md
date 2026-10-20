@@ -68,8 +68,8 @@ Name, pain (G1), derived ticket list (G3), size against the project's own per-re
 risks — plus a budget estimate sized from the project's own cost-measurement data where it exists (the
 estimate names its weights, and the release's actual is summed at the same ones; where the binding
 limit is a subscription window, also in window points quoted as the gauge's live start and end, with
-the date the window, or the plan that sizes it, ends; the audit line never below the smallest of
-the last three measured audits), and
+the date the window, or the plan that sizes it, ends; the audit line the previous audit's fixed part
+plus its per-ticket part times the slate's tickets), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
 against spec-return rate) is a report field, not a role — record it, judge it next cycle. Every row also
 reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,

@@ -629,6 +629,11 @@ para_of() {
   awk -v n="$2" 'index($0, n) { f = 1 } f && /^$/ { exit } f' "$1" | tr '\n' ' ' | tr -s ' '
 }
 
+# flatten_ws — stdin to one line (newlines -> spaces, runs squeezed). The whole-file or section_body counterpart of
+# para_of's slice (dir #872, 2nd and 3rd call sites): a needle that wraps a line is found, and a `check_absent` over
+# the result cannot pass vacuously on a raw-line miss.
+flatten_ws() { tr '\n' ' ' | tr -s ' '; }
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always
