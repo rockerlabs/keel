@@ -246,6 +246,30 @@ Not at a boundary: (@x.md) and name@x.md
 
 # A heading, then an indented code block
     @notes/x.md
+
+```
+x
+```
+    @notes/x.md
+
+```
+x
+    ```
+@x.md
+```
+
+text
+***
+    @notes/x.md
+
+Title
+=====
+    @notes/x.md
+
+<!--
+ a comment block
+-->
+    @notes/x.md
 EOF
 dinst "$h"
 check_eq "A15: no negative sample is followed (N = 1)" 1 "$(chain_n)"
@@ -272,6 +296,12 @@ a15_pos 'a ~~~ line inside a ``` fence neither closes it nor hides the import af
 h="$SANDBOX/a15-indented-fence"; mkdir -p "$h"; fill "$h/y.md" 70000
 printf 'global\n\n    ```\n@y.md\n' > "$h/CLAUDE.md"
 a15_pos 'a ``` line in an indented code block opens no fence' "$h" 2
+# paragraph text an indented line continues, and lines that only look like a fence or a heading: each import loads
+h="$SANDBOX/a15-paragraph"; mkdir -p "$h"; fill "$h/y1.md" 70000
+for i in 2 3 4; do printf 'small %s\n' "$i" > "$h/y$i.md"; done
+printf '%s\n' global '' '```' code '````' '@y1.md' '' '``` a`b' '@y2.md' '' paragraph $'\t```' '@y3.md' '' \
+  '####### seven # is no heading' '    @y4.md' > "$h/CLAUDE.md"
+a15_pos 'a longer closer closes a fence, a backtick info string is prose, an indented ``` or a 4-space line continues a paragraph' "$h" 5
 h="$SANDBOX/a15-symlinked"; mkdir -p "$h/real"
 printf 'target\nRelative: @a.md\n' > "$h/real/target.md"; fill "$h/real/a.md" 70000
 ln -s "$h/real/target.md" "$h/CLAUDE.md"
