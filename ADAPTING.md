@@ -226,9 +226,9 @@ with the literal `<!-- KEEL-GENERATED` (no byte-order mark before it). Keel then
 `doctor` still reads what a generated `CLAUDE.md` loads — its whole import chain — so the `G-ALWAYSON-*` and
 `W-ALWAYSON-*` checks (an on-demand Keel file imported, an import that resolves to nothing, a file past the fourth
 hop, the always-on budget) apply to it too ([what loads, when](docs/loading-and-cost.md#the-always-on-layers)).
-Those four remedies are worded for the file ("remove that import", "fix the path"), not for a generator: apply
+The remedies for those checks are worded for the file ("remove that import", "fix the path"), not for a generator: apply
 them to what your generator emits. A generated `AGENTS.md` (`--codex`) is read as one file, with no import
-followed, so only its size is checked.
+followed, so only its size and readability are checked.
 
 Keel reserves what it reads from a context file: the `KEEL-CORE`, `KEEL-GIT` and `KEEL-NOGIT` comment fences,
 line 1's `KEEL-GENERATED`, and the policy token `KEEL-MANAGER-MERGES` (the pre-PR gate reads it from a project

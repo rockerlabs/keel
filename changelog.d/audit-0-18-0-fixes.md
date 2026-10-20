@@ -3,8 +3,8 @@
   `doctor` is a line-based approximation of Claude Code's import grammar that can differ from the harness, name
   where, and call a clean chain line evidence rather than proof; the per-project run is not fail-closed on an
   unreadable project `CLAUDE.md`. `ADAPTING.md`'s "Generating your entrypoints yourself" no longer says that
-  `doctor.sh --install` sends every remedy to the generator (the four `ALWAYSON` remedies name none) or that the
-  `ALWAYSON` checks apply to a generated `AGENTS.md` (it is read as one file, so only its size is checked).
+  `doctor.sh --install` sends every remedy to the generator (the `ALWAYSON` remedies name none) or that the
+  `ALWAYSON` checks apply to a generated `AGENTS.md` (it is read as one file, so only its size and readability are checked).
   `docs/token-economy.md` no longer calls the follow-ups to `/go` and `/wrap` (dir #857, dir #858) and the
   cheaper-tier runner (dir #856) pending: all three are closed. Entries of this release's own notes were corrected
   where a later change in the same release had replaced what they announced (the `/polish` receipt placement, the
