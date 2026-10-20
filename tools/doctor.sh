@@ -284,10 +284,11 @@ _parent_real() {
 # _alwayson_imports FILE — FILE's import tokens, one per line (`\ ` unescaped), under Claude Code's import grammar
 # as measured on 2.1.296 (spec 253 E26, E29, E30, and S2's probe of its TV2): an `@` at the start of a line or after
 # a space or tab; the token is the maximal run of non-whitespace (`\ ` escapes a space). Not an import: anything
-# inside a fenced block (``` or ~~~, toggled as the registry parse above does), an indented code block (four spaces
-# or a tab after a blank line, outside a list), a code span of any backtick count, an HTML comment (block, multi-line
-# or inline); a quoted path (`@"…"`); a bare `@`; a token whose last character is . , ; : ) ! ] " or '. A code span
-# or comment reads as one space, so a token right after it still starts at a boundary.
+# inside a fenced block (``` or ~~~; only a run of the opener's character, at least as long, closes it), an indented
+# code block (four spaces or a tab after a blank line or a heading, outside a list; read before a fence opener), a
+# code span of any backtick count, an HTML comment (block, multi-line or inline); a quoted path (`@"…"`); a bare
+# `@`; a token whose last character is . , ; : ) ! ] " or '. A code span or comment reads as one space, so a token
+# right after it still starts at a boundary.
 _alwayson_imports() {
   awk -v sq="'" '
     function tokens(s,    n, i, c, tok, ch) {
@@ -312,13 +313,27 @@ _alwayson_imports() {
       sub(/\r$/, "")
       line = $0
       if (!incom) {
-        if (line ~ /^[ \t]*(```|~~~)/) { fence = !fence; prevblank = 0; previnc = 0; next }
-        if (fence) next
+        if (fence) {
+          # only a run of the opener character, at least as long, and nothing else closes a fence
+          t = line; sub(/^[ \t]*/, "", t); sub(/[ \t]*$/, "", t)
+          if (substr(t, 1, 1) == fch && length(t) >= flen && t !~ /[^`~]/ && index(t, fch == "`" ? "~" : "`") == 0) {
+            fence = 0; prevblank = 1; previnc = 0
+          }
+          next
+        }
         if (line ~ /^[ \t]*$/) { prevblank = 1; next }
         if (line ~ /^(    |\t)/ && (prevblank || previnc) && !inlist) { previnc = 1; prevblank = 0; next }
+        if (line ~ /^[ \t]*(```|~~~)/) {
+          t = line; sub(/^[ \t]*/, "", t); fch = substr(t, 1, 1)
+          if (fch == "`") match(t, /^`+/); else match(t, /^~+/)
+          flen = RLENGTH
+          # a backtick in the info string of a backtick fence makes the line prose (a code span), not a fence
+          if (fch != "`" || index(substr(t, flen + 1), "`") == 0) { fence = 1; prevblank = 0; previnc = 0; next }
+        }
         previnc = 0; prevblank = 0
         if (line ~ /^ ? ? ?([-*+]|[0-9]+[.)])([ \t]|$)/) inlist = 1
         else if (line !~ /^[ \t]/) inlist = 0
+        if (line ~ /^ ? ? ?#+([ \t]|$)/) prevblank = 1      # an ATX heading: an indented code block may follow it
       }
       if (!incom && index(line, "`") == 0 && index(line, "<!--") == 0) { tokens(line); next }
       out = ""; n = length(line); i = 1
@@ -362,7 +377,7 @@ _alwayson_imports() {
 # dir #252 owns Antigravity's). STOP_SET: a newline-framed set of real paths not followed or counted (the per-project
 # run passes the global chain's, so a global file is never counted or judged twice).
 alwayson_chain() {
-  local root="$1" stop="${2-}" hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
+  local root="$1" stop="${2-}" max_hop=4 hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
   [ -f "$root" ] || return 0
   if [ ! -r "$root" ]; then printf 'UNREAD\t%s\n' "$root"; return 0; fi
   real="$(_real_path "$root")" || real="$root"
@@ -371,7 +386,7 @@ alwayson_chain() {
   seen="$seen$real"$'\n'
   [ "${root##*/}" != AGENTS.md ] || return 0
   queue="$real	$root"$'\n'
-  while [ -n "$queue" ] && [ "$hop" -le 4 ]; do
+  while [ -n "$queue" ] && [ "$hop" -le "$max_hop" ]; do
     next=""
     while IFS=$'\t' read -r f fdisp; do
       [ -n "$f" ] || continue
@@ -394,7 +409,7 @@ alwayson_chain() {
         real="$(_real_path "$abs")" || real="$abs"
         if in_token_set "$seen" "$real" || in_token_set "$stop" "$real"; then continue; fi
         seen="$seen$real"$'\n'
-        if [ "$hop" -ge 4 ]; then printf 'DEPTH\t%s\t%s\n' "$fdisp" "$abs"; continue; fi
+        if [ "$hop" -ge "$max_hop" ]; then printf 'DEPTH\t%s\t%s\n' "$fdisp" "$abs"; continue; fi
         pr="$(_parent_real "$abs")" || pr="$abs"
         printf 'LOAD\t%s\t%s\t%s\t%s\t%s\t%s\n' "$((hop + 1))" "$real" "$pr" "$(_char_count "$abs")" "$abs" "$fdisp"
         next="$next$real	$abs"$'\n'
@@ -533,10 +548,11 @@ fi
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 # Two git questions the context checks keep asking, in one place (dir #75's AGENTS.md block asks them
-# too). tracked: the path is in the index. ignored: ANY of the paths matches an ignore rule from any
-# source git honours (.gitignore, .git/info/exclude, the global excludesfile) — one process, since
-# check-ignore without -q exits 0 when at least one pathspec is ignored. A path need not exist.
-_tracked() { git -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1; }
+# too). tracked: the path is in the index, read literally (`notes[1].md` never matches a tracked notes1.md).
+# ignored: ANY of the paths matches an ignore rule from any source git honours (.gitignore, .git/info/exclude,
+# the global excludesfile) — one process, since check-ignore without -q exits 0 when at least one pathspec is
+# ignored. A path need not exist.
+_tracked() { git -C "$1" ls-files --error-unmatch -- ":(literal)$2" >/dev/null 2>&1; }
 _ignored() { git -C "$1" check-ignore "${@:2}" >/dev/null 2>&1; }
 
 # Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered

@@ -147,10 +147,11 @@ check_contains "A12: a doc of the install's own checkout (checkout=), imported d
 h="$SANDBOX/a12-fromA-untracked"; mkdir -p "$h"
 "$treeA/install.sh" --link --home "$h" --no-hooks >/dev/null 2>&1 </dev/null
 printf 'my private notes\n' > "$treeA/my-untracked-notes.md"
-printf '\n@%s/my-untracked-notes.md\n' "$treeA" >> "$h/CLAUDE.md"
+printf 'a glob-shaped name\n' > "$treeA/CHANGELO[G].md"      # as a pathspec it would match the tracked CHANGELOG.md
+printf '\n@%s/my-untracked-notes.md\n@%s/CHANGELO[G].md\n' "$treeA" "$treeA" >> "$h/CLAUDE.md"
 dinst "$h"
 check_absent "A12: an UNTRACKED file in the install's checkout is the adopter's → no G-ALWAYSON-*" "$OUT" "[G-ALWAYSON-"
-check_eq "A12: the untracked file is loaded and counted (3 files)" 3 "$(chain_n)"
+check_eq "A12: the untracked files (one glob-shaped, read literally) are loaded and counted (4 files)" 4 "$(chain_n)"
 
 p="$(proj "# a project
 @$h_ok/CLAUDE.md")"
@@ -242,6 +243,9 @@ Path-shaped trailing: @notes/x.md] @notes/x.md" @notes/x.md'
 Not at a boundary: (@x.md) and name@x.md
 
     @x.md
+
+# A heading, then an indented code block
+    @notes/x.md
 EOF
 dinst "$h"
 check_eq "A15: no negative sample is followed (N = 1)" 1 "$(chain_n)"
@@ -262,6 +266,12 @@ a15_pos '@~/ resolves under $HOME' "$h" 2
 h="$SANDBOX/a15-nested"; mkdir -p "$h/sub"; printf 'nested\n@b.md\n' > "$h/sub/a.md"; fill "$h/sub/b.md" 70000
 printf 'global\n@sub/a.md\n' > "$h/CLAUDE.md"
 a15_pos 'a relative import inside a nested file resolves against that file (sub/b.md)' "$h" 3
+h="$SANDBOX/a15-fence-mixed"; mkdir -p "$h"; fill "$h/y.md" 70000
+printf 'global\n```\n~~~\n@notes/inside.md\n```\n@y.md\n' > "$h/CLAUDE.md"
+a15_pos 'a ~~~ line inside a ``` fence neither closes it nor hides the import after it' "$h" 2
+h="$SANDBOX/a15-indented-fence"; mkdir -p "$h"; fill "$h/y.md" 70000
+printf 'global\n\n    ```\n@y.md\n' > "$h/CLAUDE.md"
+a15_pos 'a ``` line in an indented code block opens no fence' "$h" 2
 h="$SANDBOX/a15-symlinked"; mkdir -p "$h/real"
 printf 'target\nRelative: @a.md\n' > "$h/real/target.md"; fill "$h/real/a.md" 70000
 ln -s "$h/real/target.md" "$h/CLAUDE.md"
@@ -336,9 +346,10 @@ if match "$largest" -q 'CLAUDE\.md.*keel/CORE\.md'; then pass "A18a: the largest
 else fail "A18a: the largest files are CLAUDE.md, then keel/CORE.md" "got: $largest"; fi
 run env KEEL_ALWAYS_ON_WARN_TOKENS=20000 "$doctor" --install "$h"
 check_absent "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=20000 → no W-ALWAYSON-BUDGET" "$OUT" "[W-ALWAYSON-BUDGET]"
-# one bad value proves the variable goes through sanitize_nonneg_int; its other branches are test_nonneg_int_lib.sh's
-run env KEEL_ALWAYS_ON_WARN_TOKENS=abc "$doctor" --install "$h"
-check_contains "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=abc falls back to the 8000 default" "$(idline W-ALWAYSON-BUDGET)" "budget 8000"
+for bad in abc 99999999999999999999; do    # both sanitize paths (A18a)
+  run env "KEEL_ALWAYS_ON_WARN_TOKENS=$bad" "$doctor" --install "$h"
+  check_contains "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=$bad falls back to the 8000 default" "$(idline W-ALWAYSON-BUDGET)" "budget 8000"
+done
 p="$(proj)"
 dproj "$p" "$h"
 check_absent "A18a: the per-project run beside that home raises no W-ALWAYSON-BUDGET (--install only)" "$OUT" "[W-ALWAYSON-BUDGET]"
