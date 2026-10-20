@@ -148,6 +148,7 @@ for pv in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICAS
   run env "$pv=1" "$doctor" --install "$h"
   check_contains "A12: … still a GAP under an exported $pv=1" "$OUT" "[G-ALWAYSON-ONDEMAND]"
   dproj "$pp" "$h" "$pv=1"
+  check_status "A12: … the per-project run under $pv=1 completes (exit 0)" 0 "$STATUS"
   check_absent "A12: … and a project's gitignored CLAUDE.md still reads as ignored under $pv=1" "$OUT" "[G-GITIGNORE-CONTEXT]"
 done
 
@@ -222,26 +223,16 @@ check_contains "A14: a missing import in the project chain → W-ALWAYSON-DANGLI
 check_absent "A14: the per-project run prints no count line" "$OUT" "always-on chain:"
 
 # --- A15 (B5): the import grammar --------------------------------------------------------------------------
-# One home holds every NEGATIVE sample: none may add a file to the chain or raise DANGLING. x.md, notes/x.md and a
-# file literally named `x.md.` are 70,000 bytes each, so following any of them would show in N.
+# One home holds the line-level NEGATIVE samples: none may add a file to the chain or raise DANGLING. x.md,
+# notes/x.md and a file literally named `x.md.` are 70,000 bytes each, so following any of them would show in N.
+# A sample that opens a block (a fence, a comment, a list) gets a home of its own below (a15_neg).
 h="$SANDBOX/a15-neg"; mkdir -p "$h/notes"
 fill "$h/x.md" 70000; fill "$h/notes/x.md" 70000; fill "$h/x.md." 70000
 cat > "$h/CLAUDE.md" <<'EOF'
 # negative samples — nothing here is an import
 A code span: `@x.md` and a double one: `` @x.md ``.
 
-```
-@x.md
-```
-
-~~~
-@x.md
-~~~
-
 Quoted: @"x.md" and @"dir name/x.md" and @"notes/x.md"
-<!-- a multi-line header
-@x.md
--->
 Inline <!-- @x.md --> comment.
 A bare @ alone.
 Path-shaped with trailing punctuation: @notes/x.md, and @notes/x.md)
@@ -265,6 +256,9 @@ a15_neg() {
   check_eq "A15: $label (N = 1)" 1 "$(chain_n)"
   check_absent "A15: $label (nothing dangling)" "$OUT" "[W-ALWAYSON-DANGLING]"
 }
+a15_neg 'a ``` fence' '```' '@x.md' '```'
+a15_neg 'a ~~~ fence' '~~~' '@x.md' '~~~'
+a15_neg 'a multi-line HTML comment' '<!-- a multi-line header' '@x.md' '-->'
 a15_neg 'a heading, then an indented code block' '# A heading' '    @notes/x.md'
 a15_neg 'a fence close, then an indented code block' '```' x '```' '    @notes/x.md'
 a15_neg 'a closer indented 4 does not close a top-level fence' '```' x '    ```' '@x.md' '```'
@@ -275,6 +269,8 @@ a15_neg 'a setext -- underline, then an indented code block' Title '--' '    @no
 a15_neg 'an HTML comment block, then an indented code block' '<!--' ' a comment block' '-->' '    @notes/x.md'
 a15_neg 'an unindented thematic break ends a list' '- a list item' '***' '' '    @notes/x.md'
 a15_neg 'an unindented fence ends a list' '- a list item' '```' x '```' '' '    @notes/x.md'
+a15_neg 'a closer more than 3 past a list fence does not close it' '- item' '' '  ```' '  x' '      ```' '@x.md' '  ```'
+a15_neg 'an unindented closer of a list fence ends the list' '- item' '' '  ```' '  x' '```' '' '    @notes/x.md'
 
 a15_pos() {  # a15_pos LABEL HOME EXPECTED_N — the home's chain counts EXPECTED_N files and ≥ 70,000 bytes, nothing dangling
   dinst "$2"

@@ -323,7 +323,8 @@ _alwayson_imports() {
     # Block state: inpara (the last line was paragraph text, which an indented line continues), inlist, fence
     # (with its opener character fre, length flen, indent find, and flist: it opened inside a list) and incom
     # (inside an HTML comment). A simplification of CommonMark, not all of it: list content indentation is not
-    # tracked, and an unindented line always ends a list.
+    # tracked (a fence on a list-marker line, or a list fence indented less than its item content, is misread), an
+    # unindented line always ends a list (no lazy continuation), and a blockquote is read as plain text.
     BEGIN { trail = ".,;:)!]\"" sq }
     {
       sub(/\r$/, "")
@@ -333,14 +334,17 @@ _alwayson_imports() {
           # only a run of the opener character, at least as long, closes it — indented at most 3, or, for a fence
           # opened inside a list, at most 3 past the opener
           t = line; sub(/^[ \t]*/, "", t); sub(/[ \t]*$/, "", t)
-          if (indent(line) <= (flist ? find + 3 : 3) && length(t) >= flen && t ~ fre) { fence = 0; inpara = 0 }
+          if (indent(line) <= (flist ? find + 3 : 3) && length(t) >= flen && t ~ fre) {
+            fence = 0; inpara = 0; if (indent(line) == 0) inlist = 0
+          }
           next
         }
         if (line ~ /^[ \t]*$/) { inpara = 0; next }
         ind = indent(line)
         # a thematic break (three or more * - or _, spaces allowed), or a setext underline below paragraph text outside
         # a list (a run of = or of -, no inner space): neither holds an import, both end the paragraph — and,
-        # unindented, a list (under a list item, a bare - is an item and === is paragraph text)
+        # unindented, a list (under a list item a bare - is an item, and === is no underline: as an unindented line
+        # it ends the list, like any other)
         t = line; gsub(/[ \t]/, "", t); u = line; sub(/^[ \t]*/, "", u); sub(/[ \t]*$/, "", u)
         if (ind <= 3 && (t ~ /^(\*\*\*+|---+|___+)$/ || (inpara && !inlist && u ~ /^(=+|-+)$/))) {
           inpara = 0; if (ind == 0) inlist = 0; next

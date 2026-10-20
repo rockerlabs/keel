@@ -13,3 +13,7 @@
   on a generator-owned file.
 - [`docs/loading-and-cost.md`](/docs/loading-and-cost.md) gains "The always-on layers" (dir #253). It names the
   core, personal, project and on-demand layers and the one-file-one-slot rule, and lists what `doctor` checks.
+- `doctor` no longer misreads a project under an exported `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`,
+  `GIT_NOGLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` (found in dir #253's review). It unsets all four before its
+  first git call, the way it drops an inherited `GIT_DIR`. Before, any one of them made `git check-ignore` fail,
+  so a gitignored `CLAUDE.md` raised a false `G-GITIGNORE-CONTEXT`.
