@@ -1,0 +1,1 @@
+- `docs/verification-economics.md` §4's per-release debt budget now carries its number: a release's audit tail is capped at a quarter of the slate, rounded up, measured on the three slates before the guard-threat-model split (dir #843).
