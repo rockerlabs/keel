@@ -62,6 +62,8 @@ placeholder-fill, so "nothing to detect" is never a reason to skip it.
   checkout): it swaps the `keel/CORE.md` symlink for a generated copy minus the marked blocks, keeps
   the import line and pull-through, and stays sticky across re-runs (`--with-git` restores). Offer to
   run it.
+- If line 1 of the file begins `<!-- KEEL-GENERATED`, another tool generates it: change its sources and
+  regenerate, never edit it in place (the installer leaves it untouched too).
 - If it's the user's **pre-existing** file (install left it untouched), do **not** overwrite. Show what
   Keel's rails would add (`diff` it against `templates/CLAUDE.md`) and offer to merge the parts they want.
 - If none of the above apply (template already filled, no pre-existing file to diff, linked install

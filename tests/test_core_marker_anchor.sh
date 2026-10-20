@@ -24,7 +24,6 @@ fresh_home() {
 # real_markers FILE — count of anchored marker lines (BEGIN or END) in FILE.
 real_markers() { grep -c -E '^<!-- KEEL-CORE-(BEGIN.*-->|END -->)[[:space:]]*$' "$1" || true; }
 
-cksum_of() { cksum < "$1"; }
 prose='Note to self: never hand-edit anything between the KEEL-CORE-BEGIN and KEEL-CORE-END markers.'
 
 # --- A21: uninstall keeps every user line after a prose mention, strips only the real block -------------

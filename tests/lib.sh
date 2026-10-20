@@ -634,6 +634,9 @@ para_of() {
 # the result cannot pass vacuously on a raw-line miss.
 flatten_ws() { tr '\n' ' ' | tr -s ' '; }
 
+# cksum_of FILE — the file's POSIX cksum (CRC and size): the byte-identity compare for "left untouched" checks.
+cksum_of() { cksum < "$1"; }
+
 # run CMD...  → capture combined stdout+stderr in OUT, exit status in STATUS
 #
 # dir #85 (code audit, finding 19): stdin is redirected from /dev/null for EVERY run. CI is always

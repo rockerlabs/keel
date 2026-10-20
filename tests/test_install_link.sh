@@ -188,6 +188,9 @@ ln -sfn "$REPO_ROOT/commands/go.md" "$HOME/.claude/commands/go.md"   # restore f
 shome="$SANDBOX/link-dotfiles"; mkdir -p "$shome" "$SANDBOX/dotfiles"
 cp "$REPO_ROOT/templates/CLAUDE.md" "$SANDBOX/dotfiles/CLAUDE.md"
 ln -s "$SANDBOX/dotfiles/CLAUDE.md" "$shome/CLAUDE.md"
+# dir #253 B2a: the automatic swap needs Keel's own copy-install record, so a plain install (through the link) comes first
+run "$install" --home "$shome" --no-hooks
+check_status "dotfiles setup: the plain copy install over the link → exit 0" 0 "$STATUS"
 run "$install" --link --home "$shome" --no-hooks
 check_status "symlinked CLAUDE.md + --link → exit 0" 0 "$STATUS"
 check_link "CLAUDE.md is still a symlink after migration" "$shome/CLAUDE.md"
@@ -196,7 +199,9 @@ check_absent "dotfiles file lost the embedded block" "$(cat "$SANDBOX/dotfiles/C
 
 # --- half-done manual migration (import line + leftover identical block): block auto-removed ------
 hhome="$SANDBOX/link-halfdone"; mkdir -p "$hhome"
-{ cat "$REPO_ROOT/templates/CLAUDE.md"; printf '\n@%s/keel/CORE.md\n' "$hhome"; } > "$hhome/CLAUDE.md"
+# dir #253 B2a: only a block Keel recorded is removed — a plain copy install first, then the import is added by hand
+run "$install" --home "$hhome" --no-hooks
+printf '\n@%s/keel/CORE.md\n' "$hhome" >> "$hhome/CLAUDE.md"
 run "$install" --link --home "$hhome" --no-hooks
 check_status "import + leftover block → exit 0" 0 "$STATUS"
 check_contains "identical leftover block removed (was loading twice)" "$OUT" "removed the embedded rails block"
