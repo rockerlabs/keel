@@ -183,4 +183,67 @@ run bash "$tool" weighted "$mf"
 check_contains "weighted prices the tolerant file" "$OUT" "W5"
 rm -f "$ft"
 
+# --- dir #852: the same bad lines in the PRICING readers (weighted/table/session/selfcheck/tail) -------------
+# dir #848 fixed only the branch resolver; the readers slurped the file and died on the first bad line, so the
+# dirty twin below used to exit 1 (the `weighted prices the tolerant file` check above passed on the FAILURE text).
+wt_d="$proj/${slug}--claude-worktrees-w6-dirty"
+mkdir -p "$wt_d"
+fclean="$wt_d/77777777-7777-7777-7777-777777777777.jsonl"
+fdirty="$wt_d/88888888-8888-8888-8888-888888888888.jsonl"
+{ turn claude/w6-d t1 3 5 7 11; turn claude/w6-d t2 13 17 19 23; } > "$fclean"
+{
+  turn claude/w6-d t1 3 5 7 11
+  printf '42\n[1,2]\nnull\n"str"\nnot json at all\n'
+  turn claude/w6-d t2 13 17 19 23 | sed 's/$/\r/'
+  printf '{"type":"assistant","requestId":"cut","gitBranch":"claude/w6-trunc'
+} > "$fdirty"
+printf 'D1\tR3\tsonnet\t%s\n' "$fclean" > "$mf.clean"
+printf 'D1\tR3\tsonnet\t%s\n' "$fdirty" > "$mf.dirty"
+run bash "$tool" weighted "$mf.clean"
+clean_status="$STATUS"; clean_out="$OUT"
+check_status "weighted on the clean twin exits 0" "0" "$clean_status"
+run bash "$tool" weighted "$mf.dirty"
+check_status "weighted on a file with truncated, non-object and CRLF lines exits 0" "0" "$STATUS"
+check_eq "...and prices it at the clean twin's number" "$(grep '^TOTAL' <<<"$clean_out")" "$(grep '^TOTAL' <<<"$OUT")"
+run bash "$tool" table "$mf.dirty"
+check_status "table on the dirty file exits 0" "0" "$STATUS"
+run bash "$tool" session --json "$fdirty"
+check_status "session --json on the dirty file exits 0" "0" "$STATUS"
+check_contains "...and counts both real turns" "$OUT" '"turns":2'
+run bash "$tool" selfcheck "$fdirty"
+check_status "selfcheck on the dirty file exits 0" "0" "$STATUS"
+check_contains "selfcheck REPORTS the skipped-line count (5 non-object/bad + 1 truncated)" "$OUT" '"skipped_lines":6'
+run bash "$tool" selfcheck "$fclean"
+check_contains "selfcheck on a clean file reports zero skipped" "$OUT" '"skipped_lines":0'
+
+# a tool_use whose cwd or file_path is not a string used to abort `startswith()` for the whole file (tail --json)
+ftail="$wt_d/99999999-9999-9999-9999-999999999999.jsonl"
+{
+  printf '{"type":"assistant","requestId":"a1","cwd":5,"timestamp":"t","message":{"content":[{"type":"tool_use","id":"u1","name":"Read","input":{"file_path":"/x/y"}}],"usage":{"output_tokens":1}}}\n'
+  printf '{"type":"assistant","requestId":"a2","cwd":"/x","timestamp":"t","message":{"content":[{"type":"tool_use","id":"u2","name":"Read","input":{"file_path":7}}],"usage":{"output_tokens":1}}}\n'
+  printf '{"type":"user","message":"plain string, not an object"}\n{"type":"user","message":{"content":"x"}}\n'
+  printf '{"type":"assistant","requestId":"a3","message":"str"}\n{"type":"assistant","requestId":{"x":1},"message":{"usage":5}}\n'
+  printf '{"type":"assistant","requestId":"a4","timestamp":"t","message":{"content":[{"type":"tool_use","id":"u4","name":"Bash","input":"not an object"}],"usage":{"output_tokens":2}}}\n'
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"u4","content":"ok"}]}}\n'
+} > "$ftail"
+run bash "$tool" tail --json "$ftail"
+check_status "tail --json survives a non-string cwd / file_path" "0" "$STATUS"
+calls="$(tu_tool_calls primary "$ftail" 2>/dev/null)"
+check_status "tu_tool_calls reads every call past a non-string field" "0" "$?"
+check_eq "...three calls, the one with a non-object input kept" "3" "$(printf '%s\n' "$calls" | grep -c .)"
+check_eq "tu_tool_results reads past a non-object message" "1" "$(tu_tool_results primary "$ftail" 2>/dev/null | grep -c .)"
+check_eq "tu_turns keeps the 3 real turns past a non-object message, a non-object usage and an object requestId" "3" "$(tu_turns primary "$ftail" 2>/dev/null | grep -c .)"
+run bash "$tool" selfcheck "$ftail"
+check_status "selfcheck survives a non-object message" "0" "$STATUS"
+check_contains "...counting the two usage-less assistant records and the bad lines" "$OUT" '"assistant_no_usage":2'
+check_eq "tu_turns keeps the first turn's tokens intact" "1" "$(tu_turns primary "$ftail" 2>/dev/null | jq -s '[.[] | select(.requestId == "a1")] | .[0].output_tokens')"
+
+# a manifest line that resolves no file is priced as zero with a note, never an abort (bash 3.2 empty-array expansion)
+printf 'Z1\tR1\tsonnet\t,\n' > "$mf.empty"
+run /bin/bash "$tool" weighted "$mf.empty"
+check_status "weighted on a manifest line resolving no file exits 0 (bash as /bin/bash)" "0" "$STATUS"
+check_contains "...with a note saying it was priced as zero" "$OUT" "no session file"
+check_contains "...and still prints a total" "$OUT" "TOTAL"
+rm -f "$fclean" "$fdirty" "$ftail" "$mf.clean" "$mf.dirty" "$mf.empty"
+
 summary

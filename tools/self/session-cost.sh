@@ -171,8 +171,14 @@ cmd_selfcheck() {
       [ "$rc" -lt 2 ] && rc=2
       continue
     fi
-    local sc; sc="$(tu_self_check "$f")"
+    local sc; sc="$(tu_self_check "$f")" || { printf 'session-cost.sh: could not read %s\n' "$f" >&2; [ "$rc" -lt 2 ] && rc=2; continue; }
     printf '%s\n' "$sc"
+    # A skipped line (truncated, not JSON, not an object) is counted, never silent (dir #852).
+    local skipped; skipped="$(printf '%s' "$sc" | jq -r '.skipped_lines')"
+    if [ "$skipped" -gt 0 ]; then
+      printf 'session-cost.sh: %s: %s line(s) skipped (not a JSON object — a truncated last line, or a corrupt one)\n' \
+        "$f" "$skipped" >&2
+    fi
     local unrec; unrec="$(printf '%s' "$sc" | jq -r '.unrecognized_types | length')"
     if [ "$unrec" -gt 0 ]; then
       printf 'session-cost.sh: %s carries %s unrecognized record type(s) — the transcript format may have moved\n' \
@@ -218,7 +224,12 @@ _sc_manifest_rows() {
     while IFS= read -r ff; do
       [ -n "$ff" ] && files+=("$ff")
     done < <(printf '%s' "$files_csv" | tr ',' '\n' | awk '!seen[$0]++')
-    local row; row="$(_sc_ticket_cost "$tier" "$model" "$ticket" "${files[@]}")" || {
+    # A line whose FILE column names no file (`,`) is priced as zero with a note: an empty array under `set -u`
+    # aborts bash 3.2 (dir #852), and one degenerate line must not take the other tickets' rows down.
+    if [ "${#files[@]}" -eq 0 ]; then
+      printf 'session-cost.sh: ticket %s: no session file named on the manifest line — priced as zero\n' "$ticket" >&2
+    fi
+    local row; row="$(_sc_ticket_cost "$tier" "$model" "$ticket" ${files[@]+"${files[@]}"})" || {
       printf 'session-cost.sh: failed to read %s (ticket %s)\n' "$files_csv" "$ticket" >&2
       rm -f "$tmp"; exit 1
     }
