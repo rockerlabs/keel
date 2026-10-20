@@ -253,7 +253,20 @@ conventions that happen to look similar, it's one convention applied at two poin
    name are `ScheduleWakeup` (for loop mode only) and `Monitor`; the bound is R11's, and the cost reason is
    [`docs/token-economy.md`](token-economy.md)'s. **Include the same-turn rule beside them** (dir #832): act on a
    subagent's hand-back in the same turn, and the checkpoint is part of the turn that opens the PR, so that turn never
-   ends without it (R11's observed-state clause is the manager's side of the same rule). **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
+   ends without it (R11's observed-state clause is the manager's side of the same rule). **Include the
+   review-round cap beside them** (R11, dir #871) — keel's wording: "review/fix rounds per PR: at most <N> delta
+   rounds after the full review; keep reviewing until a delta round's verdict (`FRAMEWORK.md`'s stop rule) is
+   `MERGE` or the cap is reached, whichever comes first; this replaces `/polish`'s own two-round budget and
+   residual exit, and the cap stands in for that rule's two-round ceiling. A full re-review counts as a round and
+   never converges the loop; a re-send after a harness failure, or a fresh reviewer for a lost one, is the same
+   round. Four reviews count only when their verdict asks for another round: your one post-convergence fix
+   commit's review (the last one), the gate's trace on the shipping head, a review forced by a rebase or merge of
+   the default branch, and a CI-forced fix's review. After convergence fix the remaining findings in at most one
+   commit and name the rest in the PR body. A counted round whose verdict still asks for another round at round
+   <N> or later → fix nothing more, commit nothing, send the manager
+   `ROUNDS <token> <PR or branch> — <that round's trend line>` (polish-guide § Step 5's per-round trend line)
+   and end your turn (the answer comes as a message, no watch needed); on more rounds, fix that round's
+   findings first." **Include the R13 `WRAP CENTRALIZED` marker verbatim here too**, for
    the same reason and the same mechanism — a session-end fuse that greps a transcript for a text
    convention cannot see a rule that never made it into the brief (see R13's own text for the exact
    line and the incident that named this requirement). **A brief whose workers run simulator- or
@@ -662,8 +675,8 @@ this stays a manual rule, not a gap a ticket closes.
 ## R11 — bounded loops everywhere
 
 Every automated cycle in this pattern carries an explicit numeric bound **and** a budget precondition:
-max launch retries per worker, max review/fix rounds per PR (per your project's own round-budget
-convention, where it ships one), sessions-per-wave fixed at wave-plan time and never grown mid-wave,
+max launch retries per worker, max review/fix rounds per PR (the release's review-round cap, below),
+sessions-per-wave fixed at wave-plan time and never grown mid-wave,
 and a token-budget check before each wave — [`docs/delegation.md`](delegation.md)'s own session-limit
 flow (ask the operator for the live remaining-window percentage, pilot two units spanning the cost
 envelope, do the arithmetic before spawning) is that check, not a separate one this pattern invents.
@@ -710,6 +723,44 @@ stopped at round six with a serious finding fixed but unreviewed. The convergenc
 nothing serious, so a long loop is a reason to keep reviewing the fixes, and a stop is a named blocker the
 worker reports in one line.
 
+**A review loop has a cap, and reaching it is the operator's call (dir #871).** The wave plan names the cap:
+the most delta rounds (re-reviews of the fixes, after the PR's full review) one PR's loop may run; keel's wave
+plans name five. For the release's workers it replaces the project's own round budget and its residual exit
+(keel's: `/polish` step 5's two delta rounds), and the worker brief carries it (its item 4); the loop's budget
+precondition is `/polish`'s own context check at entry (dir #860, below). The loop converges at a delta round
+whose verdict under `FRAMEWORK.md`'s stop rule is `MERGE`, with this cap standing in for that rule's two-round
+ceiling; below, a round "finds something serious" when its verdict asks for another round (`ROUND` or
+`ROUND-MANDATORY`). Before the cap a worker still stops only on a named blocker (the paragraph above). A counted
+round that still finds something serious at or past the cap is the stop: the worker fixes nothing more, commits
+nothing, sends the manager one line, `ROUNDS <token> <PR or branch> — <that round's trend line>` (keel's: the
+per-round trend line of `/polish`'s guide, § Step 5), and ends its turn; the answer arrives as a message, so no
+background watch is needed. The manager logs the line in the ledger and asks the operator about that PR: this
+stop is asked per PR, never settled in advance at the wave plan. The operator answers one of three: more rounds
+(its cap rises by the number named, and the worker fixes that round's findings first), the residual exit
+(`/polish` step 5's own, for that round's findings, its backlog writes through the manager; the PR then counts
+as converged for R14's readiness, and its body and the train's seam review name the residual), or a redesign
+(the run stops, the branch is kept, and the ticket goes back to its design). The manager sends each answer to its
+waiting worker as one message under R6's budget, in the order the stops came, and logs it beside the line. Until
+the answer comes, and while no send is left (R6), the worker waits and the manager names the wait in its health
+line. The manager does not clear a waiting worker, whose context holds the loop's state; its resume after the
+prompt cache expires rewrites that context once, which is the wait's price.
+
+**What counts as a round toward the cap (dir #871).** Each review after the full one counts, a full re-review
+included, though a clean full re-review never converges the loop: the worker goes on with a delta round (keel's:
+`/polish`'s guide, § Step 5). A re-send of the same round after a harness failure, or a fresh reviewer spawned
+because the last one was lost, is the same round, and a commit no review reads (a review-null commit) adds no
+round. Four kinds of review count only when they find something serious: the review of the one commit that fixes
+the remaining findings after the loop converged, the review the gate needs on the shipping head, one forced by a
+rebase or merge of the default branch, and one of a fix that CI or a test run forced; one of them that finds
+nothing serious leaves a converged loop converged. After convergence the worker fixes the remaining findings in
+at most one commit, and that commit's review is the last unless it finds something serious: its findings are
+named in the PR body, not fixed. Felt: 0.17.0 ran with no cap, and one PR's loop ran 31 delta rounds while its
+context grew from 480k to 960k. Priced on that release, a cap of five under this counting would have stopped at
+most three of its 38 PR loops (six ran past five messages to their reviewer), and it would have saved up to $76
+against the release's $607 list price (measured on top of dir #860's context budget, below) where the answer was
+the residual exit or a redesign. A context check before each delta round was weighed and is not run: under the
+cap it moves that price by −$6 to +$2, for 12 more restarts in the middle of a review.
+
 **Suite concurrency is a budget too (0.16.0).** The bound on sessions per wave does not bound the machine:
 about seven full suites at once at the default cap (the host's CPU count outside CI) put the load average in the hundreds and every suite past
 an hour, with timing flakes rising alongside. State a per-worker concurrency cap for the suite in the wave
@@ -723,7 +774,7 @@ So no session runs a branch-cleanup sweep while a wave's suites run — the wrap
 re-run only after naming the ref that moved.
 
 **A stop that waits for the operator is settled at wave-plan time (0.16.0).** Any step that blocks on the
-operator is asked once per wave, and the answer is recorded in the shared brief with its date. Keel's example is
+operator is asked once per wave (the review-round stop above is the one exception, asked per PR), and the answer is recorded in the shared brief with its date. Keel's example is
 `/polish`'s compaction stop (dir #739), which used to ask the operator for `/compact`: every worker of one wave
 reached it at step one within the same hour, and three idled until the operator returned. It no longer waits
 (dir #845): the worker commits, writes its hand-over file and sends the manager `COMPACT <token> <absolute
