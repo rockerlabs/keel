@@ -127,6 +127,10 @@ check_contains "A12: a hand-wired no-manifest linked home importing keel/FRAMEWO
 p="$(proj)"
 dproj "$p" "$h_gap"
 check_absent "A12: the per-project run does not repeat the global chain's GAP" "$OUT" "[G-ALWAYSON-"
+p="$(proj "# a project
+@$h_gap/CLAUDE.md")"
+dproj "$p" "$h_gap"
+check_absent "A12: a project importing the global context file stops at the global chain — its GAP is not repeated" "$OUT" "[G-ALWAYSON-"
 
 # a linked home installed from scratch tree A (a git repository), its CLAUDE.md importing a shipped doc of A directly:
 # audited by THIS checkout's doctor, so only B6 (iii) through the manifest's checkout= can see it
@@ -187,15 +191,21 @@ for i in 1 2 3 4; do expected=$(( expected + $(bytes_of "$h/h$i.md") )); done
 check_eq "A14: the hop-5 file's bytes are absent from the chain total" "$expected" "$(chain_bytes)"
 
 h="$SANDBOX/a14-shapes"; mkdir -p "$h"
-printf 'global\n@missing.md\n@notes/missing\nAsk @Model, or check @main.\n' > "$h/CLAUDE.md"
+printf 'global\n@missing.md\n@notes/missing\n@missing.md\nAsk @Model, or check @main.\n' > "$h/CLAUDE.md"
 dinst "$h"
-check_eq "A14: @missing.md and @notes/missing each raise one W-ALWAYSON-DANGLING; @Model / @main raise none" 2 "$(idcount W-ALWAYSON-DANGLING)"
+check_eq "A14: @missing.md and @notes/missing each raise one W-ALWAYSON-DANGLING (a repeated import once); @Model / @main raise none" 2 "$(idcount W-ALWAYSON-DANGLING)"
 
 h="$(inst a14-core-broken link)"
 rm "$h/keel/CORE.md"
 dinst "$h"
 check_contains "A14: the context file's own broken core import is the rails check's GAP" "$OUT" "[G-RAILS-IMPORT-BROKEN]"
 check_absent "A14: … and is not repeated as a W-ALWAYSON-DANGLING" "$OUT" "[W-ALWAYSON-DANGLING]"
+
+h="$(inst a14-codex codex)"
+printf '\n@extra.md\n@notes/missing.md\n' >> "$h/AGENTS.md"; fill "$h/extra.md" 70000
+dinst "$h" --codex
+check_eq "A14: an AGENTS.md entrypoint is a one-file chain — its imports are not followed (N = 1)" 1 "$(chain_n)"
+check_absent "A14: … nor reported dangling" "$OUT" "[W-ALWAYSON-DANGLING]"
 
 p="$(proj "# a project
 @notes/missing.md")"
@@ -228,6 +238,7 @@ Inline <!-- @x.md --> comment.
 A bare @ alone.
 Path-shaped with trailing punctuation: @notes/x.md, and @notes/x.md)
 Trailing: @x.md. @x.md, @x.md; @x.md: @x.md) @x.md! @x.md] @x.md" @x.md'
+Path-shaped trailing: @notes/x.md] @notes/x.md" @notes/x.md'
 Not at a boundary: (@x.md) and name@x.md
 
     @x.md
