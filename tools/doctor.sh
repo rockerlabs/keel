@@ -474,7 +474,8 @@ alwayson_audit() {
     case "$k" in
       UNREAD) as_unread=1 ;;
       DANGLING)
-        if [ "${4:-0}" = 1 ] && [ "$hop" = "$entry" ]; then case "$real" in *keel/CORE.md) continue ;; esac; fi
+        # (a suffix strip, not a `case` arm: tools/self/doctor.sh reads a `<name>.md) continue` arm as a ship-skip list)
+        if [ "${4:-0}" = 1 ] && [ "$hop" = "$entry" ] && [ "${real%keel/CORE.md}" != "$real" ]; then continue; fi
         warn W-ALWAYSON-DANGLING "$(_as_show "$hop") imports @$real, which does not resolve (missing, a directory, or unreadable) — the harness skips it silently every session; fix the path or remove the import" ;;
       DEPTH) warn W-ALWAYSON-DEPTH "$(_as_show "$real") is imported by $(_as_show "$hop") past the fourth hop — it does not load (the harness follows four hops); import it from a shallower file, or drop it" ;;
       LOAD)
