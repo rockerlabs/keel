@@ -36,12 +36,14 @@ export KEEL_CORE_BEGIN_RE KEEL_CORE_END_RE
 # GENERATOR-OWNED (dir #253, spec 253 B1): its FIRST line begins with the literal `<!-- KEEL-GENERATED`. Another tool
 # writes the whole file, so no Keel installer or uninstaller edits it and doctor gives the generator's remedy. Line 1
 # only — the same text anywhere else, or after a byte-order mark, is prose. A missing, unreadable or non-regular FILE
-# is not owned (the callers' existing branches handle those); a symlink is read through, as every ownership read is.
+# is not owned (the callers' existing branches handle those) and the predicate prints nothing for it — the read's
+# redirect sits inside braces because a failed OPEN reports before a trailing `2>/dev/null` applies (pinned by
+# tests/test_install_generated.sh's B1 checks); a symlink is read through, as every ownership read is.
 # The ONE predicate for install.sh, uninstall.sh and tools/doctor.sh (S2's chain checks build on it).
 keel_context_is_generated() {
   local first=""
   [ -f "$1" ] || return 1
-  { IFS= read -r first < "$1"; } 2>/dev/null || [ -n "$first" ] || return 1   # braces: a failed OPEN reports before a trailing 2>/dev/null applies
+  { IFS= read -r first < "$1"; } 2>/dev/null || [ -n "$first" ] || return 1
   case "$first" in '<!-- KEEL-GENERATED'*) return 0 ;; esac
   return 1
 }
