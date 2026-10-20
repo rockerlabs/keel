@@ -273,4 +273,14 @@ run "$install" --link --home "$h" --no-hooks
 check_contains "A10c (iv): a recorded block + a hand-added import → the duplicate is removed" "$OUT" "removed the embedded rails block"
 check_absent "A10c (iv): …no KEEL-CORE block remains" "$(<"$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
+# B1: an unreadable regular file is not owned, and the predicate prints nothing (chmod 000 is a no-op for root — Linux trap 2).
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  h="$(new_home b1-unreadable)"
+  mk_gen "$h/CLAUDE.md" block
+  chmod 000 "$h/CLAUDE.md"
+  b1_err="$(bash -c '. "$1/tools/lib/core-ownership.sh"; keel_context_is_generated "$2"' _ "$REPO_ROOT" "$h/CLAUDE.md" 2>&1 >/dev/null || true)"
+  check_eq "B1: an unreadable regular file reports nothing on stderr" "" "$b1_err"
+  chmod 600 "$h/CLAUDE.md"
+fi
+
 summary

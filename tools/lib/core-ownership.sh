@@ -41,7 +41,7 @@ export KEEL_CORE_BEGIN_RE KEEL_CORE_END_RE
 keel_context_is_generated() {
   local first=""
   [ -f "$1" ] || return 1
-  IFS= read -r first < "$1" 2>/dev/null || [ -n "$first" ] || return 1
+  { IFS= read -r first < "$1"; } 2>/dev/null || [ -n "$first" ] || return 1   # braces: a failed OPEN reports before a trailing 2>/dev/null applies
   case "$first" in '<!-- KEEL-GENERATED'*) return 0 ;; esac
   return 1
 }
