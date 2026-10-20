@@ -131,10 +131,12 @@ The three tiers keep on-demand and on-recall content out of startup; this keeps 
 honest. Two signals drive placement, not intuition:
 
 - **Footprint drift = the demote signal.** `doctor` estimates the token count of the project's own
-  `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (following its `@…/keel/CORE.md` import when one is
-  wired) PLUS the harness's `MEMORY.md` index (all three load every session) and emits a HINT
+  `CLAUDE.md` PLUS the resolved global `CLAUDE.md` — each with its whole import chain followed (the
+  `@…/keel/CORE.md` import and every other, up to four hops) — PLUS the harness's `MEMORY.md` index (all
+  three load every session) and emits a HINT
   (`H-FOOTPRINT`) once the sum exceeds `KEEL_STARTUP_WARN_TOKENS` (default 16,000), reporting all three
-  figures. A dated row under `## Footprint exceptions` in the project's `CLAUDE.md`
+  figures. `doctor --install` also budgets the global chain alone: a WARN (`W-ALWAYSON-BUDGET`) past
+  `KEEL_ALWAYS_ON_WARN_TOKENS` (default 8,000). A dated row under `## Footprint exceptions` in the project's `CLAUDE.md`
   (`| Expires (YYYY-MM-DD) | Ticket/note |`) silences the hint until its expiry day; once expired the hint
   returns, flagged EXPIRED. That hint means: trim — move roadmap/changelog detail to the
   on-demand tier.
