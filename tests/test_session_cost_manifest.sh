@@ -225,9 +225,9 @@ ftail="$wt_d/99999999-9999-9999-9999-999999999999.jsonl"
 } > "$ftail"
 run bash "$tool" tail --json "$ftail"
 check_status "tail --json survives a non-string cwd / file_path" "0" "$STATUS"
-(. "$REPO_ROOT/tools/lib/transcript-usage.sh"; tu_tool_calls primary "$ftail" >/dev/null 2>&1) 
+calls="$(tu_tool_calls primary "$ftail" 2>/dev/null)"
 check_status "tu_tool_calls reads every call past a non-string field" "0" "$?"
-check_eq "...two calls" "2" "$(tu_tool_calls primary "$ftail" 2>/dev/null | grep -c .)"
+check_eq "...two calls" "2" "$(printf '%s\n' "$calls" | grep -c .)"
 
 # a manifest line that resolves no file is priced as zero with a note, never an abort (bash 3.2 empty-array expansion)
 printf 'Z1\tR1\tsonnet\t,\n' > "$mf.empty"
