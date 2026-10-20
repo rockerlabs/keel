@@ -507,4 +507,53 @@ pin "manage-release.md M7 reads the manager's own context against the hand-over 
   'hand-over threshold (R6)' \
   "expected M7 to carry B3: the manager acts from the M-items"
 
+# --- dir #871: R11's review-round cap, the counting rules, the stop line and the brief's item 4 -----------------------
+# Needles are checked on the flattened doc (`flatten_ws`), because `pin` is a line-mode `grep -F`
+# and these clauses wrap; the rule needles are scoped to their own paragraph, so a rule that moved or was dropped
+# from it is not passed by the same words elsewhere.
+docflat="$(flatten_ws < "$doc")"
+# count_of TEXT NEEDLE — occurrences of NEEDLE in TEXT. awk `index()` loop: busybox `grep -oF` reports only the first
+# match on a one-line text, so the flattened doc cannot be counted with it, and a bash `${t//n/}` is quadratic on it.
+count_of() { printf '%s' "$1" | NEEDLE="$2" awk '{ s = $0; n = ENVIRON["NEEDLE"]; while ((i = index(s, n)) > 0) { c++; s = substr(s, i + length(n)) } } END { print c + 0 }'; }
+cap_head='**A review loop has a cap, and reaching it is the operator'"'"'s call (dir #871).**'
+count_head='**What counts as a round toward the cap (dir #871).**'
+rounds_line='ROUNDS <token> <PR or branch> — <that round'"'"'s trend line>'
+check_eq "R11 carries the review-round cap paragraph once (dir #871 A1)" 1 "$(count_of "$docflat" "$cap_head")"
+check_eq "R11 carries the what-counts-as-a-round paragraph once (dir #871 A1)" 1 "$(count_of "$docflat" "$count_head")"
+check_eq "the ROUNDS stop line appears twice, in R11 and in the brief's item 4 (dir #871 A2)" \
+  2 "$(count_of "$docflat" "$rounds_line")"
+for n in '**Include the review-round cap beside them** (R11, dir #871)' \
+  'this replaces `/polish`'"'"'s own two-round budget and residual exit' \
+  'a review forced by a rebase or merge of the default branch' \
+  'or a fresh reviewer for a lost one, is the same round'; do
+  check_eq "the brief's item 4 carries: $n (dir #871 A3)" 1 "$(count_of "$docflat" "$n")"
+done
+check_contains "R11's bound list names the release's review-round cap (dir #871 A4)" "$docflat" \
+  "max review/fix rounds per PR (the release's review-round cap, below)"
+check_absent "R11's bound list no longer defers the round bound to the project's own convention (dir #871 A4)" \
+  "$docflat" "per your project's own round-budget convention"
+check_contains "the wave-plan paragraph names the review-round stop as its one exception (dir #871 A4)" "$docflat" \
+  "(the review-round stop above is the one exception, asked per PR)"
+cap_para="$(para_of "$doc" "$cap_head")"
+count_para="$(para_of "$doc" "$count_head")"
+for n in "keel's wave plans name five" "replaces the project's own round budget and its residual exit" \
+  "the loop's budget precondition is \`/polish\`'s own context check at entry" \
+  "whose verdict under \`FRAMEWORK.md\`'s stop rule is \`MERGE\`" "standing in for that rule's two-round ceiling" \
+  "Before the cap a worker still stops only on a named blocker" "at or past the cap is the stop" \
+  "fixes nothing more, commits nothing" "no background watch is needed" "logs the line in the ledger" \
+  "never settled in advance at the wave plan" "more rounds (its cap rises" "fixes that round's findings first" \
+  "the residual exit (\`/polish\` step 5's own" "counts as converged for R14's readiness" "the branch is kept" \
+  "as one message under R6's budget, in the order the stops came" "while no send is left (R6)" \
+  "the manager names the wait in its health line" "does not clear a waiting worker"; do
+  check_contains "the cap paragraph carries: $n (dir #871 A5)" "$cap_para" "$n"
+done
+for n in "a full re-review included" "a clean full re-review never converges the loop" \
+  "the worker goes on with a delta round" "or a fresh reviewer spawned because the last one was lost, is the same round" \
+  "adds no round" "Four kinds of review count only when they find something serious" \
+  "the review of the one commit that fixes the remaining findings" \
+  "forced by a rebase or merge of the default branch" "leaves a converged loop converged" \
+  "in at most one commit" "named in the PR body, not fixed" "measured on top of dir #860's context budget"; do
+  check_contains "the counting paragraph carries: $n (dir #871 A5)" "$count_para" "$n"
+done
+
 summary
