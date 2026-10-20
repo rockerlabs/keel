@@ -510,21 +510,23 @@ pin "manage-release.md M7 reads the manager's own context against the hand-over 
 # --- dir #871: R11's review-round cap, the counting rules, the stop line and the brief's item 4 -----------------------
 # Needles are checked on the flattened doc (`flatten_ws`), because `pin` is a line-mode `grep -F`
 # and these clauses wrap; the rule needles are scoped to their own paragraph, so a rule that moved or was dropped
-# from it is not passed by the same words elsewhere. A count is taken with `grep -o` on the flattened text.
+# from it is not passed by the same words elsewhere.
 docflat="$(flatten_ws < "$doc")"
-count_of() { local n; n="$(grep -oF -- "$2" <<<"$1" | wc -l | tr -d ' ')"; printf '%s' "$n"; }
+# count_of TEXT NEEDLE — occurrences of NEEDLE in TEXT. awk `index()` loop: busybox `grep -oF` reports only the first
+# match on a one-line text, so the flattened doc cannot be counted with it, and a bash `${t//n/}` is quadratic on it.
+count_of() { printf '%s' "$1" | NEEDLE="$2" awk '{ s = $0; n = ENVIRON["NEEDLE"]; while ((i = index(s, n)) > 0) { c++; s = substr(s, i + length(n)) } } END { print c + 0 }'; }
 cap_head='**A review loop has a cap, and reaching it is the operator'"'"'s call (dir #871).**'
 count_head='**What counts as a round toward the cap (dir #871).**'
 rounds_line='ROUNDS <token> <PR or branch> — <that round'"'"'s trend line>'
-check_eq "R11 carries the review-round cap paragraph once (dir #871 A1)" "$(count_of "$docflat" "$cap_head")" 1
-check_eq "R11 carries the what-counts-as-a-round paragraph once (dir #871 A1)" "$(count_of "$docflat" "$count_head")" 1
+check_eq "R11 carries the review-round cap paragraph once (dir #871 A1)" 1 "$(count_of "$docflat" "$cap_head")"
+check_eq "R11 carries the what-counts-as-a-round paragraph once (dir #871 A1)" 1 "$(count_of "$docflat" "$count_head")"
 check_eq "the ROUNDS stop line appears twice, in R11 and in the brief's item 4 (dir #871 A2)" \
-  "$(count_of "$docflat" "$rounds_line")" 2
+  2 "$(count_of "$docflat" "$rounds_line")"
 for n in '**Include the review-round cap beside them** (R11, dir #871)' \
   'this replaces `/polish`'"'"'s own two-round budget and residual exit' \
   'a review forced by a rebase or merge of the default branch' \
   'or a fresh reviewer for a lost one, is the same round'; do
-  check_eq "the brief's item 4 carries: $n (dir #871 A3)" "$(count_of "$docflat" "$n")" 1
+  check_eq "the brief's item 4 carries: $n (dir #871 A3)" 1 "$(count_of "$docflat" "$n")"
 done
 check_contains "R11's bound list names the release's review-round cap (dir #871 A4)" "$docflat" \
   "max review/fix rounds per PR (the release's review-round cap, below)"
