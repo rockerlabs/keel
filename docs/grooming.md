@@ -504,19 +504,33 @@ estimate's own weights the audit cost 65.4M — most of that release's miss agai
 because the orchestrator holds the release in context across many turns, the same mechanism that makes
 the manager expensive ([`docs/release-management.md`](release-management.md) R7). So an audit priced as its own line takes the previous audit session's
 measured total, orchestrator and legs together, at the estimate's weights. Subtract that total from the
-release total before the per-unit division above, or the audit is counted twice; the next rule bounds
-how it scales with the slate. A rule of the procedure; `tools/self/session-cost.sh weighted` sums sessions at those
-weights ([`docs/session-cost.md`](session-cost.md)).
+release total before the per-unit division above, or the audit is counted twice; the next rule splits it
+into a fixed part and a part per ticket. A rule of the procedure; `tools/self/session-cost.sh weighted` sums
+sessions at those weights ([`docs/session-cost.md`](session-cost.md)).
 
-**Never scale the audit below the smallest recent measured audit (the 0.18.0 groom, reading the 0.17.0
-row).** 0.17.0 scaled 0.16.0's audit linearly by tickets to 59.9M, and the audit ran 87.9M, about 1.5×
-its line. Three measured audits at the same weights do not lie on a line through zero: 65.4M for 23
-tickets (0.15.0), 126.7M for 55 (0.16.0), 87.9M for 26 (0.17.0, two passes). Much of an audit's cost
-does not shrink with the slate: the orchestrator reading the range, the suite and tag-time legs, a
-verifier per pass. So the audit line's lower end is the smallest of the last three measured audit
-totals, and its upper end is the previous audit's total, scaled up linearly only when the slate is
-larger than that release's. A compensation; its remover is `dir #872`, which sizes the legs by the
-diff and prices the audit per ticket.
+**Price the audit in two parts, a fixed part per run and a part per ticket (dir #872, reading the 0.15.0–0.17.0
+rows).** An audit's whole-read legs (S2…Sn) grow with the range it reads; the rest of the run — the orchestrator,
+the mechanical baseline, the diversity leg, each verifier pass, the re-check pair, any tag-time legs — grows more
+slowly. So take the previous measured audit apart. Its **per-ticket part** is its whole-read legs' total over the
+slate tickets that release closed, a ticket counted once whatever its slices — the slate, not the delivered count
+G5's input-side rule divides by, because this line multiplies by a slate; its **fixed part** is the rest of its
+total. Both parts are of the audit session's own total, as the rule above prices it: a leg billed outside that
+session, such as another vendor's, is in neither. The legs' total is the sum of the whole-read legs' transcripts at
+the estimate's weights (keel's own: a manifest with one line per leg's subagent transcript, summed by
+`tools/self/session-cost.sh weighted`; the run record names each leg's transcript,
+[`docs/delta-audit.md`](delta-audit.md) §5). A harness's per-leg token count is the leg's final context, not its
+spend, and cannot stand in for it. The audit line is the previous audit's fixed part plus its per-ticket part times
+this slate's tickets. Its band runs from the smallest fixed part plus the smallest per-ticket part times that count
+to the largest of each, over the last three measured audits that can be split, or as many as exist; with one, the
+line is a point and says so. A slate smaller or larger than every measured one makes the line an extrapolation, and
+the cell says that too. A run whose whole-read legs' transcripts are not all found cannot be split: it stays out of
+the band, and if it is the previous audit, the line is its total per slate ticket times this slate's tickets,
+labelled unsplit, with no band. No measured audit at all → the line is unpriced, and the cell says so. Keel's three
+runs (65.4M, 126.7M and 87.9M, each with a second pass): fixed parts 32.3M, 43.5M and 40.3M; per-ticket parts
+1.44M, 1.51M and 1.83M (23, 55 and 26 slate tickets). Priced from the run before it alone, this shape missed 0.16.0
+by -12% and 0.17.0 by -6%, where the previous total per slate ticket missed them by +23% and -32%. A run that
+reaches GO in one pass is expected to come in under its line, since every measured run carried a second pass. A
+rule of the procedure, not a compensation.
 
 **A procedure change between the two releases scales that total by its own measured counterfactual (dir #860).**
 When a change to the procedure between the previous comparable release and this one moves the cost, the estimate

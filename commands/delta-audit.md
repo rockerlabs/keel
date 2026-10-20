@@ -29,8 +29,9 @@ stops the run, verbatim — never proceed on an unclosed universe.
 [`docs/delegation.md`](../docs/delegation.md)'s session-limit flow, not restated here: read the
 token-SPEND side from whatever on-disk usage data your project already ships; ask the operator for the
 live remaining-WINDOW percentage where that isn't derivable (delegation.md's own named-override note
-for this amendment). Pilot on a seam-dense file, do the arithmetic before spawning a wave, hard-stop
-planning at ~95%. This is a required checklist item, not advice — leg counts are fixed at plan time and
+for this amendment). Pilot on a work-dense unit (§7: no size measure predicted a leg's cost; a merge of
+clusters trades verification depth for cost and goes into the plan with its price), do the arithmetic before
+spawning a wave, hard-stop planning at ~95%. This is a required checklist item, not advice — leg counts are fixed at plan time and
 never grown mid-run; a leg that fails twice is reported to the operator, never relaunched in a loop.
 
 **A4 — the diversity leg is non-waivable by you.**

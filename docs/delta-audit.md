@@ -260,8 +260,9 @@ independently of this application.
 **The orchestrator's bookkeeping (the table's own "all bookkeeping" cell) includes the run profile's
 other during-the-run field.** [`docs/verification-economics.md`](verification-economics.md)'s
 per-leg cost (field 5) is not something `run-record.md`'s stub reconstructs at verdict time — record
-each leg's sessions spawned, model tier + effort, and token spend as it completes, or `unmeasured`
-where the harness doesn't report it, never a fabricated zero. Same discipline as the
+each leg's sessions spawned, model tier + effort, token spend and where its transcript is (keel's own: the
+subagent's agent id) as it completes — spend summed from that transcript, since a harness's per-leg token count is
+the leg's final context — or `unmeasured` where the harness doesn't report it, never a fabricated zero. Same discipline as the
 `induced`/`original` mark above, with one gap that mark alone can't close: a per-file auditor sees
 only its own assigned files' post-anchor commits (Protocol rule 7), so it can mark a same-file induced
 defect but not one caused by a fix to a *different* file. The orchestrator, who already knows every
@@ -337,10 +338,20 @@ file and PR counts, not from either row above as a target.
 **Session limits use [`docs/delegation.md`](delegation.md)'s own flow unchanged** (ask the operator
 for their live remaining-window percentage, pilot two sessions spanning the cost envelope, do the
 arithmetic before spawning a wave, hard-stop planning at ~95%) — not restated here. The one
-application-specific input that flow needs: for a delta audit, cost scales with **seam count and PR
-density**, not raw file count, since seam duty (Protocol rule 4) is the expensive part of a whole-read
-session — pilot on a seam-dense file, not just a large one, the same way
-[`docs/drydock.md`](drydock.md) pilots on a claims-dense file rather than a long one.
+application-specific input that flow needs: **no static measure of a cluster predicted its leg's cost.** In
+keel's 0.16.0 and 0.17.0 runs (28 whole-read legs, cost in list-price dollars), file count predicted nothing in
+either run, and diff lines, whole-file volume and seam count each changed sign or strength from one run to the
+other; the leg's own turn count tracked its cost in both. So `tools/delta-audit/derive.sh`'s suggested sessions (§3)
+set how many legs there are; regroup them so code sits with its tests and the prose that pins them; pilot on a
+work-dense unit as that flow says, and let the pilots' measured spend, not a size rule, set what the legs cost.
+**A merge of clusters trades verification depth for cost.** Every turn re-reads the leg's whole context, which starts
+at about 74k tokens (keel's 0.17.0 run) and grows with what the leg reads, and a leg's turns grew only weakly with its
+files. A merged leg that takes as many turns as the legs it replaces saves nothing and re-reads the earlier cluster
+on every later turn; one that takes a single leg's turns saves about the removed leg's cost, by spending fewer turns
+on each file. Price a merge as that range, from your own measured legs, put it into the plan, and let the operator
+pick it for the run. Keel's one pairing — 0.16.0's single 40-file prose-and-changelog leg at 6.2M (weighted
+1.0/2.0/0.1) against 0.17.0's three prose legs at 13.1M — compares different releases and content, so it is no
+price. The release plan's audit line is [`docs/grooming.md`](grooming.md) G5's.
 
 ## 8. The verdict contract
 

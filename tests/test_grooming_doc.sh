@@ -173,4 +173,71 @@ pin "groom.md G5 points at the measured-counterfactual rule (dir #860)" "$cmd" \
   'measured counterfactual (G5)' \
   "expected the command's G5 to point at the doc's counterfactual-scaling rule"
 
+# --- dir #872: G5 prices the audit in two parts (a fixed part per run, a part per slate ticket), measured -------------
+# Every check runs on whitespace-joined text (a para_of paragraph, or a section_body piped through `tr`), so a needle may
+# wrap in the doc; only the para_of anchors below must each sit on one line. Whole clauses, not one-word needles: a
+# reversed clause ("never under" for "expected under", the band's ends swapped) must fail here.
+join872() { tr '\n' ' ' | tr -s ' '; }
+g5_872="$(section_body '## G5 — every release row, five fields' "$doc" | join872)"
+check_contains "G5 carries the two-part audit price (dir #872)" "$g5_872" \
+  '**Price the audit in two parts, a fixed part per run and a part per ticket'
+b872="$(para_of "$doc" '**Price the audit in two parts')"
+while IFS= read -r n872; do
+  [ -z "$n872" ] && continue
+  check_contains "G5's two-part audit price carries: $n872 (dir #872)" "$b872" "$n872"
+done <<'EOF'
+grows more slowly
+per-ticket part** is its whole-read legs' total over the slate tickets that release closed
+counted once whatever its slices
+not the delivered count G5's input-side rule divides by, because this line multiplies by a slate
+fixed part** is the rest of its total
+Both parts are of the audit session's own total, as the rule above prices it: a leg billed outside that session, such as another vendor's, is in neither
+The legs' total is the sum of the whole-read legs' transcripts at the estimate's weights
+session-cost.sh weighted
+A harness's per-leg token count is the leg's final context, not its spend, and cannot stand in for it
+The audit line is the previous audit's fixed part plus its per-ticket part times this slate's tickets
+Its band runs from the smallest fixed part plus the smallest per-ticket part times that count to the largest of each, over the last three measured audits that can be split, or as many as exist
+with one, the line is a point and says so
+A slate smaller or larger than every measured one makes the line an extrapolation
+A run whose whole-read legs' transcripts are not all found cannot be split: it stays out of the band, and if it is the previous audit, the line is its total per slate ticket times this slate's tickets, labelled unsplit, with no band
+No measured audit at all → the line is unpriced, and the cell says so
+A run that reaches GO in one pass is expected to come in under its line
+EOF
+# the retired floor's wording, and the run profile's rail (never publish a cross-leg cost-per-finding)
+for n872 in 'never under' 'never below' 'a finding'; do
+  check_absent "G5's two-part audit price does not carry: $n872 (dir #872)" "$b872" "$n872"
+done
+# B1 sits after the paragraph that prices from the previous session's total, so that paragraph's "next rule" points at it
+la872="$(grep -n -F '**Price the audit from the previous audit session' "$doc" | head -1 | cut -d: -f1)"
+lb872="$(grep -n -F '**Price the audit in two parts' "$doc" | head -1 | cut -d: -f1)"
+if [ -n "$la872" ] && [ -n "$lb872" ] && [ "$lb872" -gt "$la872" ]; then
+  pass "G5's two-part audit price sits after the previous-session paragraph (dir #872)"
+else
+  fail "G5's two-part audit price sits after the previous-session paragraph (dir #872)" "lines: previous-session=${la872:-none} two-part=${lb872:-none}"
+fi
+# the floor is gone, the previous-session paragraph changed and kept its subtraction
+check_absent "G5 no longer carries the floor: Never scale the audit below (dir #872)" "$(join872 < "$doc")" 'Never scale the audit below'
+check_absent "G5 no longer carries the floor: smallest of the last three measured audit (dir #872)" "$(join872 < "$doc")" 'smallest of the last three measured audit'
+check_absent "groom.md no longer carries the floor (dir #872)" "$(join872 < "$cmd")" 'never below the smallest of'
+b1a872="$(para_of "$doc" '**Price the audit from the previous audit session')"
+check_contains "G5's previous-session paragraph points at the split (dir #872)" "$b1a872" \
+  'the next rule splits it into a fixed part and a part per ticket'
+check_contains "G5's previous-session paragraph keeps its subtraction (dir #872)" "$b1a872" \
+  'Subtract that total from the release total before the per-unit division above'
+check_contains "groom.md's G5 prices the audit line from the two parts (dir #872)" "$(para_of "$cmd" '**G5 — every release row')" \
+  "the audit line the previous audit's fixed part plus its per-ticket part times the slate's tickets"
+# The paragraph's figures: the three totals, the fixed parts, the per-ticket parts, the two back-test misses
+# (the `method tool` block of dir #872's price script over the 0.15.0-0.17.0 audits; a figure from its other
+# blocks, or the per-ticket-only misses in place of the two-part ones, fails)
+while IFS= read -r n872; do
+  [ -z "$n872" ] && continue
+  check_contains "G5's two-part audit price states: $n872 (dir #872)" "$b872" "$n872"
+done <<'EOF'
+Keel's three runs (65.4M, 126.7M and 87.9M, each with a second pass)
+fixed parts 32.3M, 43.5M and 40.3M
+per-ticket parts 1.44M, 1.51M and 1.83M (23, 55 and 26 slate tickets)
+missed 0.16.0 by -12% and 0.17.0 by -6%
+missed them by +23% and -32%
+EOF
+
 summary

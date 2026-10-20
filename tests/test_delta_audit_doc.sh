@@ -338,4 +338,31 @@ sec10="$(awk '/^## 10\. /{p=1; next} /^## 11\. /{p=0} p' "$doc")"
 check_contains "section 10 names tools/self/changelog-claims.sh (dir #810)" "$sec10" "changelog-claims.sh"
 check_contains "section 10 states the pre-cut pass condition (--strict --fragment)" "$sec10" "--strict --fragment"
 
+# --- dir #872: section 7 says what a leg's cost follows and what a merge trades; section 5 records where a leg's transcript is
+# Every check runs on whitespace-joined text, so a needle may wrap in the doc. Whole clauses, so a reversed clause fails.
+join872() { tr '\n' ' ' | tr -s ' '; }
+s7_872="$(section_body '## 7. Sizing — a range, not a target' "$doc" | join872)"
+while IFS= read -r n872; do
+  [ -z "$n872" ] && continue
+  check_contains "section 7 carries: $n872 (dir #872)" "$s7_872" "$n872"
+done <<'EOF'
+**no static measure of a cluster predicted its leg's cost.**
+the leg's own turn count tracked its cost in both
+suggested sessions (§3) set how many legs there are
+pilot on a work-dense unit as that flow says, and let the pilots' measured spend, not a size rule, set what the legs cost
+**A merge of clusters trades verification depth for cost.**
+saves about the removed leg's cost, by spending fewer turns on each file
+Price a merge as that range, from your own measured legs, put it into the plan, and let the operator pick it for the run
+compares different releases and content, so it is no price
+EOF
+# the retired seam-count claim (unmeasured, contradicted by the legs), and the run profile's rail
+for n872 in 'seam count and PR' 'seam-dense' 'expensive part of a whole-read' 'a finding'; do
+  check_absent "section 7 does not carry: $n872 (dir #872)" "$s7_872" "$n872"
+done
+s5_872="$(section_body '## 5. Roles and legs' "$doc" | join872)"
+check_contains "section 5's per-leg record names the transcript and sums spend from it (dir #872)" "$s5_872" \
+  "token spend and where its transcript is (keel's own: the subagent's agent id) as it completes — spend summed from that transcript, since a harness's per-leg token count is the leg's final context"
+check_contains "section 5's per-leg record keeps its unmeasured clause (dir #872)" "$s5_872" \
+  "or \`unmeasured\` where the harness doesn't report it, never a fabricated zero"
+
 summary
