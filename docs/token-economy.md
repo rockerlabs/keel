@@ -215,8 +215,11 @@ call at all (16%). Three rules cut those turns without moving any judgment:
   &&`, which passes only for an exit of 0 at the same HEAD, the same tracked tree and the same command. A red,
   killed, stale or edited run writes no receipt, whatever a model made of the output.
 
-The same pattern is not yet applied to `/go`'s implementation-time runs or to `/wrap` (dir #857, dir #858); a
-cheaper-tier runner for long runs waits on a measurement of what this leaves (dir #856).
+The same pattern was weighed for `/go`'s implementation-time runs and for `/wrap` (dir #857, dir #858) and not
+built: each was measured on 2026-10-20 and closed with the number, no design. A cheaper-tier runner for long runs
+(dir #856) was held to the same test and also not built: after this change, waits and polls were a median 6.0%
+of a `/polish` window's cost over 16 closed windows (read 2026-10-18), below the 10% bar that ticket set for
+opening it.
 
 ## See also
 

@@ -115,14 +115,20 @@ writes it. These are Keel's layers, not everything that loads at session start:
   layer by its new route *before* renaming or removing the old one, or the layer stops arriving mid-move.
 - **Delivery.** The embedded `KEEL-CORE` block works in every harness — it is plain text in the entrypoint;
   the `@import` line is Claude Code's optimisation (the rails refresh with `git pull`). A `doctor` check
-  proves a file: what the entrypoint's chain resolves to under Claude Code's import grammar (four hops; code
-  spans, fenced and indented code, HTML comments and quoted paths are not imports; an `AGENTS.md` entrypoint
-  is read as one file) — never that the harness read it.
+  reads a file: what the entrypoint's chain resolves to under a line-based approximation of Claude Code's
+  import grammar (four hops; code spans, fenced and indented code, HTML comments and quoted paths are not
+  imports; an `AGENTS.md` entrypoint is read as one file) — never that the harness read it. The approximation
+  can differ from the harness: it can miss an import (one after a fence opened on a list-marker line, or one in
+  inline formatting), read `@path#fragment` as a different path, flag an on-demand `@path` the harness would not
+  import (inside an HTML block, a link reference definition or a blockquote), and over-count a file near the
+  fourth hop. A clean chain line is evidence, not proof.
 - **What `doctor --install` reports for the global entrypoint:** the chain as one line — `always-on chain:
   N file(s), M bytes` — failing closed (an entrypoint it cannot read is a GAP, `G-ALWAYSON-UNREAD`, never a
   silent 0); an import that resolves to nothing (`W-ALWAYSON-DANGLING`) or lies past the fourth hop
   (`W-ALWAYSON-DEPTH`); and core + personal over their own budget, 8,000 tokens (`W-ALWAYSON-BUDGET`,
-  `KEEL_ALWAYS_ON_WARN_TOKENS`). The per-project run checks the project file's own chain the same way.
+  `KEEL_ALWAYS_ON_WARN_TOKENS`). The per-project run checks the project file's own chain with the same reader, but it is not
+  fail-closed: a project `CLAUDE.md` it cannot read is passed over without a finding (only `--install` raises
+  `G-ALWAYSON-UNREAD`).
 
 ## With Keel vs without — a concrete moment
 
