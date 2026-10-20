@@ -508,10 +508,10 @@ pin "manage-release.md M7 reads the manager's own context against the hand-over 
   "expected M7 to carry B3: the manager acts from the M-items"
 
 # --- dir #871: R11's review-round cap, the counting rules, the stop line and the brief's item 4 -----------------------
-# Needles are checked on the flattened doc (newlines -> spaces, runs squeezed), because `pin` is a line-mode `grep -F`
+# Needles are checked on the flattened doc (`flatten_ws`), because `pin` is a line-mode `grep -F`
 # and these clauses wrap; the rule needles are scoped to their own paragraph, so a rule that moved or was dropped
 # from it is not passed by the same words elsewhere. A count is taken with `grep -o` on the flattened text.
-docflat="$(tr '\n' ' ' < "$doc" | tr -s ' ')"
+docflat="$(flatten_ws < "$doc")"
 count_of() { local n; n="$(grep -oF -- "$2" <<<"$1" | wc -l | tr -d ' ')"; printf '%s' "$n"; }
 cap_head='**A review loop has a cap, and reaching it is the operator'"'"'s call (dir #871).**'
 count_head='**What counts as a round toward the cap (dir #871).**'
