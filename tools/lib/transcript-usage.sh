@@ -187,6 +187,9 @@ tu_require_jq() {
 # Inside a surviving object a field of the wrong type is treated as absent (`| objects`, `| strings`), never an error.
 _TU_PARSE='fromjson? | objects'
 _TU_OBJECTS='[inputs | '"$_TU_PARSE"']'
+# A record that carries a usable usage object — the ONE predicate tu_turns prices by and tu_self_check counts by,
+# so the two cannot drift apart.
+_TU_HAS_USAGE='(((.message | objects | .usage | objects) // null) != null)'
 
 # The known non-assistant record types this project's own transcripts carry (verified live, 2026-09-06,
 # across every keel session file on this machine — 15 distinct non-"assistant" types, ~106k records
@@ -204,7 +207,7 @@ _TU_KNOWN_OTHER_TYPES='["user","attachment","last-prompt","atis-latch","bridge-s
 # attributionSkill, attributionAgent, isSidechain, input_tokens, cache_creation_input_tokens,
 # cache_read_input_tokens, output_tokens, thinking_tokens, cache_creation_1h, cache_creation_5m.
 #
-# Dedup: first occurrence per requestId, in ORIGINAL file order — a `reduce` over the slurped array,
+# Dedup: first occurrence per requestId, in ORIGINAL file order — a `reduce` over the array of surviving objects,
 # not `group_by`/`unique_by`: both of those SORT by the key first, which would silently reorder turns
 # and defeat "first" for a field (timestamp) that genuinely differs across duplicates (see header).
 # A record with no requestId is NEVER deduped against anything — it always survives. An earlier
@@ -216,12 +219,13 @@ _TU_KNOWN_OTHER_TYPES='["user","attachment","last-prompt","atis-latch","bridge-s
 # principle, a STRING that a sufficiently adversarial `requestId` value could equal (dir #313 review:
 # flagged as a live-reproducible, if practically negligible, edge case). Skipping the dedup step
 # entirely for a requestId-less record removes the possibility outright, at zero cost: there is no
-# identity to dedupe by in the first place, so "always keep it" is both simpler and provably correct.
+# identity to dedupe by in the first place, so "always keep it" is both simpler and provably correct. A requestId
+# that is not a string (dir #852) has no usable identity either: it is kept, never deduped.
 tu_turns() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
   jq -R -n -c --arg file "$file" --arg kind "$kind" '
-    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) != null)) ] as $recs
+    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and '"$_TU_HAS_USAGE"') ] as $recs
     | (reduce $recs[] as $r ({seen: {}, out: []};
         if ((($r.requestId | strings) // null) == null) then (.out += [$r])
         else
@@ -382,8 +386,8 @@ tu_self_check() {
       file: $file,
       skipped_lines: $skipped,
       total: length,
-      assistant_usage: ([.[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) != null))] | length),
-      assistant_no_usage: ([.[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) == null))] | length),
+      assistant_usage: ([.[] | select(.type == "assistant" and '"$_TU_HAS_USAGE"')] | length),
+      assistant_no_usage: ([.[] | select(.type == "assistant" and ('"$_TU_HAS_USAGE"' | not))] | length),
       known_other: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) != null)] | length),
       unrecognized_types: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) == null) | $t] | unique)
     }

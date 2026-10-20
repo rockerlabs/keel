@@ -235,6 +235,8 @@ check_eq "tu_tool_results reads past a non-object message" "1" "$(tu_tool_result
 check_eq "tu_turns keeps the 3 real turns past a non-object message, a non-object usage and an object requestId" "3" "$(tu_turns primary "$ftail" 2>/dev/null | grep -c .)"
 run bash "$tool" selfcheck "$ftail"
 check_status "selfcheck survives a non-object message" "0" "$STATUS"
+check_contains "...counting the two usage-less assistant records and the bad lines" "$OUT" '"assistant_no_usage":2'
+check_eq "tu_turns keeps the first turn's tokens intact" "1" "$(tu_turns primary "$ftail" 2>/dev/null | jq -s '[.[] | select(.requestId == "a1")] | .[0].output_tokens')"
 
 # a manifest line that resolves no file is priced as zero with a note, never an abort (bash 3.2 empty-array expansion)
 printf 'Z1\tR1\tsonnet\t,\n' > "$mf.empty"
