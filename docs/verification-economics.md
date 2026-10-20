@@ -297,11 +297,12 @@ Two corollaries:
   always-file surface list — otherwise every method upgrade taxes the whole history and the backlog
   reads as a fix snowball.
 - **A per-release debt budget.** A release is feature-first by default; its audit tail (tickets filed
-  from an audit or review that no one felt or asked for) is capped at a quarter of the slate, rounded up, as
-  tagged tickets — the three audit-fed slates measured here carried 35–48% — the rest staying an untagged
-  background pool taken as passengers — deliberately, not as neglect. The snowball fear is measurable rather than felt: this repo's larger
-  audit tail ran to roughly two dozen tickets and closed twenty of them in one day, and the following
-  release's tail had zero behavioural findings.
+  from an audit or review that no one felt or asked for) is capped at a quarter of the slate, rounded up,
+  as tagged tickets — the three audit-fed slates measured here ran at 35–48%, which is why the cap is
+  set below them — the rest staying an untagged background pool taken as passengers — deliberately, not
+  as neglect. The snowball fear is measurable rather than felt: this repo's larger audit tail ran to
+  roughly two dozen tickets and closed twenty of them in one day, and the following release's tail had
+  zero behavioural findings.
 
 ## 5. Diversity — what actually decorrelates a reviewer
 
