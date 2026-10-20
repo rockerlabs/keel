@@ -51,11 +51,13 @@ gen_file() {
 idline() { match "$OUT" -F "[$1]" || true; }
 # idcount ID — how many lines of OUT carry [ID]
 idcount() { local l; l="$(idline "$1")"; if [ -z "$l" ]; then echo 0; else printf '%s\n' "$l" | wc -l | tr -d ' '; fi; }
+# out_num SED_EXPR — the first capture SED_EXPR prints from OUT (empty when none)
+out_num() { local v; v="$(sed -n "$1" <<<"$OUT")"; printf '%s' "${v%%$'\n'*}"; }
 # chain_n / chain_bytes — N and M of B8's count line `always-on chain: N file(s), M bytes` (empty when absent)
-chain_n()     { local v; v="$(sed -n 's/.*always-on chain: \([0-9][0-9]*\) file(s), [0-9][0-9]* bytes.*/\1/p' <<<"$OUT")"; printf '%s' "${v%%$'\n'*}"; }
-chain_bytes() { local v; v="$(sed -n 's/.*always-on chain: [0-9][0-9]* file(s), \([0-9][0-9]*\) bytes.*/\1/p' <<<"$OUT")"; printf '%s' "${v%%$'\n'*}"; }
+chain_n()     { out_num 's/.*always-on chain: \([0-9][0-9]*\) file(s), [0-9][0-9]* bytes.*/\1/p'; }
+chain_bytes() { out_num 's/.*always-on chain: [0-9][0-9]* file(s), \([0-9][0-9]*\) bytes.*/\1/p'; }
 # fp_field NAME — the ~N figure H-FOOTPRINT prints for NAME (global | project), empty when absent
-fp_field() { local v; v="$(sed -n "s/.*$1 ~\\([0-9][0-9]*\\).*/\\1/p" <<<"$OUT")"; printf '%s' "${v%%$'\n'*}"; }
+fp_field()    { out_num "s/.*$1 ~\\([0-9][0-9]*\\).*/\\1/p"; }
 ge() { if [ -n "$2" ] && [ "$2" -ge "$3" ]; then pass "$1"; else fail "$1" "expected ≥ $3, got '${2}'"; fi; }
 bytes_of() { wc -c < "$1" | tr -d ' '; }
 no_alwayson() {  # no_alwayson LABEL — OUT carries no G-ALWAYSON-* and no W-ALWAYSON-* finding
@@ -75,6 +77,9 @@ gen_file "$h/CLAUDE.md" block                       # this machine's state [E7]:
 dinst "$h"
 check_contains "A11: an edit record on a generated file → W-MANIFEST-DRIFT" "$OUT" "[W-MANIFEST-DRIFT]"
 check_contains "A11: the drift line names the generated file" "$(idline W-MANIFEST-DRIFT)" "generated"
+"$install" --link --home "$h" --no-hooks >/dev/null 2>&1 </dev/null    # S1: the re-run drops the record
+dinst "$h"
+check_absent "A11 negative: after the S1 re-run over a generated file, no W-MANIFEST-DRIFT" "$OUT" "[W-MANIFEST-DRIFT]"
 
 h="$(inst a11-codex codex)"
 gen_file "$h/AGENTS.md" block                       # ~/.codex's state [E25]: core-block recorded, the block still there
@@ -86,12 +91,6 @@ awk '/^<!-- KEEL-CORE-BEGIN/{skip=1} !skip{print} /^<!-- KEEL-CORE-END/{skip=0}'
 dinst "$h"
 check_contains "A11: core-block recorded, block deleted by hand → W-MANIFEST-DRIFT" "$OUT" "[W-MANIFEST-DRIFT]"
 check_contains "A11: the drift line names core-block" "$(idline W-MANIFEST-DRIFT)" "core-block"
-
-h="$(inst a11-neg link)"
-gen_file "$h/CLAUDE.md" block
-"$install" --link --home "$h" --no-hooks >/dev/null 2>&1 </dev/null    # S1: the re-run drops the record
-dinst "$h"
-check_absent "A11 negative: after the S1 re-run over a generated file, no W-MANIFEST-DRIFT" "$OUT" "[W-MANIFEST-DRIFT]"
 
 # --- A12 (B6): an on-demand Keel file in the chain is a GAP ------------------------------------------------
 h_ok="$(inst a12-healthy link)"
@@ -270,7 +269,7 @@ for mode in link copy codex; do
   check_status "A16: a project beside the fresh $mode home → the per-project run exits 0" 0 "$STATUS"
   no_alwayson "A16: project beside the fresh $mode home"
 done
-h="$(inst a16-unread link)"
+h="$h_ok"                                           # restored below, before A17 reads it again
 chmod 000 "$h/CLAUDE.md"
 dinst "$h"
 if [ "$(id -u 2>/dev/null)" != 0 ]; then
@@ -296,8 +295,8 @@ check_contains "A17: a project file importing the checkout's FRAMEWORK.md → GA
 
 # --- A18 (B10a, the registry, B10b's S2 clause): the contract in prose ----------------------------------------
 lac="$REPO_ROOT/docs/loading-and-cost.md"
-layers="$(awk '/^## The always-on layers/{p=1;print;next} p&&/^## /{exit} p' "$lac")"
-check_contains "A18: docs/loading-and-cost.md has '## The always-on layers'" "$layers" "## The always-on layers"
+check_contains "A18: docs/loading-and-cost.md has '## The always-on layers'" "$(cat "$lac")" $'\n## The always-on layers\n'
+layers="$(section_body '## The always-on layers' "$lac")"
 for w in core personal project on-demand MEMORY.md '## Three tiers'; do
   check_contains "A18: the always-on layers section names '$w'" "$layers" "$w"
 done
@@ -309,7 +308,7 @@ for id in G-ALWAYSON-ONDEMAND G-ALWAYSON-UNREAD W-ALWAYSON-DANGLING W-ALWAYSON-D
 done
 fp_entry="$(awk '/H-FOOTPRINT/{p=1} p{print} p&&/^#   [A-Z]+ /&&!/H-FOOTPRINT/{exit}' <<<"$registry" | flatten_ws)"
 check_contains "A18: the registry's H-FOOTPRINT entry says the import chain is followed" "$fp_entry" "import chain"
-adapting="$(awk '/^## Generating your entrypoints yourself/{p=1;print;next} p&&/^## /{exit} p' "$REPO_ROOT/ADAPTING.md")"
+adapting="$(section_body '## Generating your entrypoints yourself' "$REPO_ROOT/ADAPTING.md")"
 check_contains "A18: ADAPTING.md's generator section names the W-ALWAYSON checks" "$adapting" "W-ALWAYSON"
 
 # --- A18a (B7b): the always-on budget ---------------------------------------------------------------------
@@ -326,10 +325,9 @@ if match "$largest" -q 'CLAUDE\.md.*keel/CORE\.md'; then pass "A18a: the largest
 else fail "A18a: the largest files are CLAUDE.md, then keel/CORE.md" "got: $largest"; fi
 run env KEEL_ALWAYS_ON_WARN_TOKENS=20000 "$doctor" --install "$h"
 check_absent "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=20000 → no W-ALWAYSON-BUDGET" "$OUT" "[W-ALWAYSON-BUDGET]"
-for bad in abc 99999999999999999999; do
-  run env "KEEL_ALWAYS_ON_WARN_TOKENS=$bad" "$doctor" --install "$h"
-  check_contains "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=$bad falls back to the 8000 default" "$(idline W-ALWAYSON-BUDGET)" "budget 8000"
-done
+# one bad value proves the variable goes through sanitize_nonneg_int; its other branches are test_nonneg_int_lib.sh's
+run env KEEL_ALWAYS_ON_WARN_TOKENS=abc "$doctor" --install "$h"
+check_contains "A18a: KEEL_ALWAYS_ON_WARN_TOKENS=abc falls back to the 8000 default" "$(idline W-ALWAYSON-BUDGET)" "budget 8000"
 p="$(proj)"
 dproj "$p" "$h"
 check_absent "A18a: the per-project run beside that home raises no W-ALWAYSON-BUDGET (--install only)" "$OUT" "[W-ALWAYSON-BUDGET]"

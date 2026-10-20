@@ -267,14 +267,13 @@ _char_count() {
 # when it does not resolve. _parent_real PATH — PATH's directory made physical, its last component KEPT: a per-file
 # symlink inside a real keel/ directory (install.sh's linked layout) stays visible as keel/<name>.
 _real_path() {
-  local p="$1" t n=0 dir
+  local p="$1" t n=0
   while [ -L "$p" ]; do
     n=$((n + 1)); [ "$n" -le 40 ] || return 1
     t="$(readlink "$p")" || return 1
     case "$t" in /*) p="$t" ;; *) p="${p%/*}/$t" ;; esac
   done
-  dir="$(cd -P "${p%/*}/" 2>/dev/null && pwd -P)" || return 1
-  printf '%s/%s' "${dir%/}" "${p##*/}"
+  _parent_real "$p"
 }
 _parent_real() {
   local dir
@@ -351,7 +350,7 @@ _alwayson_imports() {
   ' "$1" 2>/dev/null || true
 }
 
-# alwayson_chain FILE [ONE_FILE] [STOP_SET] — B5's resolver. Prints tab-separated records, FILE first:
+# alwayson_chain FILE [STOP_SET] — B5's resolver. Prints tab-separated records, FILE first:
 #   LOAD <hop> <real path> <parent-real path> <bytes> <path as imported> <importer as imported>   (hop 0-4)
 #   DANGLING <importer> <token>   a path-shaped import (a / in it, or a .md end) that does not resolve: missing, a
 #                                 directory, or unreadable (a word-shaped one — @Model — is prose: nothing)
@@ -359,19 +358,18 @@ _alwayson_imports() {
 #   UNREAD <file>                 FILE exists but cannot be read (nothing else is printed)
 # A relative import resolves against the REAL directory of the file that holds it (a symlinked entrypoint's target
 # dir, measured [E30]); `~/` is this process's $HOME. Each file once, by real path (BFS, so a file takes its lowest
-# hop), so a cycle ends. ONE_FILE=1: an AGENTS.md entrypoint, a one-file chain (no harness import semantics assumed;
+# hop), so a cycle ends. An AGENTS.md entrypoint is a one-file chain (no harness import semantics assumed;
 # dir #252 owns Antigravity's). STOP_SET: a newline-framed set of real paths not followed or counted (the per-project
 # run passes the global chain's, so a global file is never counted or judged twice).
 alwayson_chain() {
-  local root="$1" one="${2:-0}" stop="${3-}" hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
-  [ -n "$stop" ] || stop=$'\n'
+  local root="$1" stop="${2-}" hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
   [ -f "$root" ] || return 0
   if [ ! -r "$root" ]; then printf 'UNREAD\t%s\n' "$root"; return 0; fi
   real="$(_real_path "$root")" || real="$root"
   pr="$(_parent_real "$root")" || pr="$root"
   printf 'LOAD\t0\t%s\t%s\t%s\t%s\t-\n' "$real" "$pr" "$(_char_count "$root")" "$root"
   seen="$seen$real"$'\n'
-  [ "$one" = 1 ] && return 0
+  [ "${root##*/}" != AGENTS.md ] || return 0
   queue="$real	$root"$'\n'
   while [ -n "$queue" ] && [ "$hop" -le 4 ]; do
     next=""
@@ -387,15 +385,14 @@ alwayson_chain() {
         if [ ! -f "$abs" ] || [ ! -r "$abs" ]; then
           case "$tok" in
             */*|*.md)
-              case "$dseen" in
-                *$'\n'"$fdisp"$'\t'"$tok"$'\n'*) ;;
-                *) dseen="$dseen$fdisp"$'\t'"$tok"$'\n'; printf 'DANGLING\t%s\t%s\n' "$fdisp" "$tok" ;;
-              esac ;;
+              if ! in_token_set "$dseen" "$fdisp"$'\t'"$tok"; then
+                dseen="$dseen$fdisp"$'\t'"$tok"$'\n'; printf 'DANGLING\t%s\t%s\n' "$fdisp" "$tok"
+              fi ;;
           esac
           continue
         fi
         real="$(_real_path "$abs")" || real="$abs"
-        case "$seen$stop" in *$'\n'"$real"$'\n'*) continue ;; esac
+        if in_token_set "$seen" "$real" || in_token_set "$stop" "$real"; then continue; fi
         seen="$seen$real"$'\n'
         if [ "$hop" -ge 4 ]; then printf 'DEPTH\t%s\t%s\n' "$fdisp" "$abs"; continue; fi
         pr="$(_parent_real "$abs")" || pr="$abs"
@@ -411,7 +408,9 @@ alwayson_chain() {
 # path of HOME/keel when that is itself a symlink — a hand-wired whole-directory link), as_rels (newline-framed:
 # the rel of every artifact record of the home's install manifests, except the context-file edit records and
 # keel/CORE.md), as_roots (newline-separated: this checkout and each manifest's checkout=, canonical). Every root
-# is canonicalized: install and doctor compute them with a logical pwd [E33].
+# is canonicalized: install and doctor compute them with a logical pwd [E33]. The two manifest reads below are
+# hand copies of manifest_usable / manifest_field on purpose: a plain project audit calls this too, and
+# tools/lib/manifest.sh is sourced only inside --install (see that block's comment).
 alwayson_ctx() {
   local h="$1" man ck
   as_home="$(cd -P "$h" 2>/dev/null && pwd -P || printf '%s' "$h")"
@@ -444,7 +443,7 @@ alwayson_shipped() {
     [ -n "$root" ] || continue
     case "$real" in "$root"/*) rel="${real#"$root"/}" ;; *) continue ;; esac
     [ "$rel" != CORE.md ] || continue
-    git -C "$root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 && return 0
+    _tracked "$root" "$rel" && return 0
   done <<<"$as_roots"
   return 1
 }
@@ -459,33 +458,36 @@ _as_show() {
   esac
 }
 
-# alwayson_audit ENTRY ONE_FILE [STOP_SET] [CORE_BROKEN] — resolve ENTRY's chain and record B6 (G-ALWAYSON-ONDEMAND),
+# alwayson_audit ENTRY [STOP_SET] [CORE_BROKEN] — resolve ENTRY's chain and record B6 (G-ALWAYSON-ONDEMAND),
 # B8 (W-ALWAYSON-DANGLING, W-ALWAYSON-DEPTH) into the unit's NOTES. CORE_BROKEN=1: --install's rails check already
 # raises G-RAILS-IMPORT-BROKEN for ENTRY's own unresolved keel/CORE.md import, so that one is not repeated as a
-# DANGLING (an import of keel/CORE.md from a deeper file still is). Sets as_unread (1 = ENTRY exists unreadable),
+# DANGLING (an import of keel/CORE.md from a deeper file still is). Sets as_root_real (ENTRY's real path, empty when
+# it does not load), as_unread (1 = ENTRY exists unreadable),
 # as_n / as_bytes (the files that load and their byte sum — comments included, a small named over-count: the
 # harness strips block comments [E26]) and as_files ("<bytes>\t<shown path>" per file). Needs alwayson_ctx and
 # $as_base set first.
 alwayson_audit() {
-  local entry="$1" k hop real pr bytes path imp shown
-  as_unread=0; as_n=0; as_bytes=0; as_files=""
+  local entry="$1" core_broken="${3:-0}" k a b pr bytes path imp shown
+  as_root_real=""; as_unread=0; as_n=0; as_bytes=0; as_files=""
   as_base_real="$(cd -P "$as_base" 2>/dev/null && pwd -P || printf '%s' "$as_base")"
-  while IFS=$'\t' read -r k hop real pr bytes path imp; do
+  # a b: LOAD's hop and real path; DANGLING's importer and token; DEPTH's importer and path.
+  while IFS=$'\t' read -r k a b pr bytes path imp; do
     case "$k" in
       UNREAD) as_unread=1 ;;
       DANGLING)
         # (a suffix strip, not a `case` arm: tools/self/doctor.sh reads a `<name>.md) continue` arm as a ship-skip list)
-        if [ "${4:-0}" = 1 ] && [ "$hop" = "$entry" ] && [ "${real%keel/CORE.md}" != "$real" ]; then continue; fi
-        warn W-ALWAYSON-DANGLING "$(_as_show "$hop") imports @$real, which does not resolve (missing, a directory, or unreadable) — the harness skips it silently every session; fix the path or remove the import" ;;
-      DEPTH) warn W-ALWAYSON-DEPTH "$(_as_show "$real") is imported by $(_as_show "$hop") past the fourth hop — it does not load (the harness follows four hops); import it from a shallower file, or drop it" ;;
+        if [ "$core_broken" = 1 ] && [ "$a" = "$entry" ] && [ "${b%keel/CORE.md}" != "$b" ]; then continue; fi
+        warn W-ALWAYSON-DANGLING "$(_as_show "$a") imports @$b, which does not resolve (missing, a directory, or unreadable) — the harness skips it silently every session; fix the path or remove the import" ;;
+      DEPTH) warn W-ALWAYSON-DEPTH "$(_as_show "$b") is imported by $(_as_show "$a") past the fourth hop — it does not load (the harness follows four hops); import it from a shallower file, or drop it" ;;
       LOAD)
         shown="$(_as_show "$path")"
         as_n=$((as_n + 1)); as_bytes=$((as_bytes + bytes)); as_files="$as_files$bytes	$shown"$'\n'
-        if [ "$hop" -ge 1 ] && alwayson_shipped "$real" "$pr"; then
+        if [ "$a" = 0 ]; then as_root_real="$b"
+        elif alwayson_shipped "$b" "$pr"; then
           gap G-ALWAYSON-ONDEMAND "$(_as_show "$entry") pulls $shown into every session (the on-demand tier), imported by $(_as_show "$imp") — remove that import: a Keel on-demand file is read when a task needs it, never at session start (docs/loading-and-cost.md)"
         fi ;;
     esac
-  done < <(alwayson_chain "$entry" "$2" "${3-}")
+  done < <(alwayson_chain "$entry" "${2-}")
 }
 
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
@@ -534,7 +536,7 @@ say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 # too). tracked: the path is in the index. ignored: ANY of the paths matches an ignore rule from any
 # source git honours (.gitignore, .git/info/exclude, the global excludesfile) — one process, since
 # check-ignore without -q exits 0 when at least one pathspec is ignored. A path need not exist.
-_tracked() { git -C "$1" ls-files --error-unmatch "$2" >/dev/null 2>&1; }
+_tracked() { git -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1; }
 _ignored() { git -C "$1" check-ignore "${@:2}" >/dev/null 2>&1; }
 
 # Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered
@@ -1356,7 +1358,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
     alwayson_ctx "$ihome"
     as_base="$ihome"
     as_core_broken=0; [ -f "$ihome/keel/CORE.md" ] || as_core_broken=1
-    alwayson_audit "$gclaude" "$CODEX_MODE" "" "$as_core_broken"
+    alwayson_audit "$gclaude" "" "$as_core_broken"
     if [ "$as_unread" = 1 ]; then
       gap G-ALWAYSON-UNREAD "$icontext at $ihome exists but cannot be read — what it loads every session is unknown; make it readable (chmod u+r) and re-run the audit"
     else
@@ -1932,11 +1934,10 @@ memory_checks() {
 global_chars=0
 global_set=$'\n'
 if [ -f "$footprint_home/$footprint_context" ]; then
-  fp_one=0; [ "$footprint_context" = AGENTS.md ] && fp_one=1
   while IFS=$'\t' read -r fp_k _fp_hop fp_real _fp_pr fp_bytes _fp_rest; do
     [ "$fp_k" = LOAD ] || continue
     global_chars=$((global_chars + fp_bytes)); global_set="$global_set$fp_real"$'\n'
-  done < <(alwayson_chain "$footprint_home/$footprint_context" "$fp_one")
+  done < <(alwayson_chain "$footprint_home/$footprint_context")
 fi
 global_est=$(( global_chars / 4 ))
 # B6's roots for every project chain: doctor's global home (where the per-project run looks for the global install).
@@ -1967,15 +1968,11 @@ for d in "${DIRS[@]}"; do
       gap G-CLAUDEMD-MISSING "no project CLAUDE.md (copy templates/project-CLAUDE.md, or run init-project)"
     fi
   else
-    # _char_count degrades to 0 on an unreadable file instead of aborting under set -e (dir #45):
-    # findings are buffered until this unit's flush_notes, so a read failure here must not take down
-    # anything already recorded for this unit — including a GAP — before it ever prints.
     # dir #253: the project file's own always-on chain — B6, B8's DANGLING/DEPTH, B7's project figure — and B9
     # (one file, one slot). The chain stops at the global set, so the global audit's findings are not repeated.
     as_base="$(cd "$d" 2>/dev/null && pwd || printf '%s' "$d")"
-    alwayson_audit "$as_base/CLAUDE.md" 0 "$global_set"
-    proj_real="$(_real_path "$as_base/CLAUDE.md" || true)"
-    if [ -n "$proj_real" ] && in_token_set "$global_set" "$proj_real"; then
+    alwayson_audit "$as_base/CLAUDE.md" "$global_set"
+    if [ -n "$as_root_real" ] && in_token_set "$global_set" "$as_root_real"; then
       warn W-ALWAYSON-TWICE "$d/CLAUDE.md is also in the global always-on chain — it sits in two layer slots (personal and project); deliver it by one route, or accept W-ALWAYSON-TWICE in this project's .keel/doctor-accept when deliberate"
     fi
     proj_est=$(( as_bytes / 4 ))
