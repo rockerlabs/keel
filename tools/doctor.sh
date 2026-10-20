@@ -141,6 +141,9 @@
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# dir #253: and an inherited pathspec mode — every pathspec below is written for git's default reading, and
+# GIT_LITERAL_PATHSPECS=1 alone makes check-ignore and ls-files :(literal) fail or miss.
+unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
 
 _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
@@ -318,26 +321,28 @@ _alwayson_imports() {
       return w
     }
     # Block state: inpara (the last line was paragraph text, which an indented line continues), inlist, fence
-    # (with its opener character fre, length flen and indent find) and incom (inside an HTML comment). A
-    # simplification of CommonMark, not all of it: list content indentation is not tracked.
+    # (with its opener character fre, length flen, indent find, and flist: it opened inside a list) and incom
+    # (inside an HTML comment). A simplification of CommonMark, not all of it: list content indentation is not
+    # tracked, and an unindented line always ends a list.
     BEGIN { trail = ".,;:)!]\"" sq }
     {
       sub(/\r$/, "")
       line = $0
       if (!incom) {
         if (fence) {
-          # only a run of the opener character, at least as long, closes it — indented at most 3, or (a fence
-          # inside a list) at most 3 past the opener
+          # only a run of the opener character, at least as long, closes it — indented at most 3, or, for a fence
+          # opened inside a list, at most 3 past the opener
           t = line; sub(/^[ \t]*/, "", t); sub(/[ \t]*$/, "", t)
-          if (indent(line) <= (find > 3 ? find + 3 : 3) && length(t) >= flen && t ~ fre) { fence = 0; inpara = 0 }
+          if (indent(line) <= (flist ? find + 3 : 3) && length(t) >= flen && t ~ fre) { fence = 0; inpara = 0 }
           next
         }
         if (line ~ /^[ \t]*$/) { inpara = 0; next }
         ind = indent(line)
-        # a thematic break (three or more * - or _, spaces allowed), or a setext underline below paragraph text (a
-        # run of = or of -, no inner space): neither holds an import, both end the paragraph — and, unindented, a list
+        # a thematic break (three or more * - or _, spaces allowed), or a setext underline below paragraph text outside
+        # a list (a run of = or of -, no inner space): neither holds an import, both end the paragraph — and,
+        # unindented, a list (under a list item, a bare - is an item and === is paragraph text)
         t = line; gsub(/[ \t]/, "", t); u = line; sub(/^[ \t]*/, "", u); sub(/[ \t]*$/, "", u)
-        if (ind <= 3 && (t ~ /^(\*\*\*+|---+|___+)$/ || (inpara && u ~ /^(=+|-+)$/))) {
+        if (ind <= 3 && (t ~ /^(\*\*\*+|---+|___+)$/ || (inpara && !inlist && u ~ /^(=+|-+)$/))) {
           inpara = 0; if (ind == 0) inlist = 0; next
         }
         if (line ~ /^ ? ? ?([-*+]|[0-9]+[.)])([ \t]|$)/) inlist = 1
@@ -349,7 +354,7 @@ _alwayson_imports() {
           flen = RLENGTH
           # a backtick in the info string of a backtick fence makes the line prose (a code span), not a fence
           if (fch != "`" || index(substr(t, flen + 1), "`") == 0) {
-            fence = 1; find = ind; fre = (fch == "`") ? "^`+$" : "^~+$"; inpara = 0; next
+            fence = 1; find = ind; flist = inlist; fre = (fch == "`") ? "^`+$" : "^~+$"; inpara = 0; next
           }
         }
         if (line ~ /^ ? ? ?##?#?#?#?#?([ \t]|$)/ || line ~ /^ ? ? ?<!--/) inpara = 0   # ATX heading, comment block
@@ -568,16 +573,11 @@ fi
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 # Two git questions the context checks keep asking, in one place (dir #75's AGENTS.md block asks them
-# too). tracked: the path is in the index, read literally (`notes[1].md` never matches a tracked notes1.md, whatever
-# GIT_*_PATHSPECS the caller exports: the other three are incompatible with literal and would fail every call;
-# check-ignore accepts no literal magic, so ignored keeps git's default reading).
+# too). tracked: the path is in the index, read literally (`notes[1].md` never matches a tracked notes1.md).
 # ignored: ANY of the paths matches an ignore rule from any source git honours (.gitignore, .git/info/exclude,
 # the global excludesfile) — one process, since check-ignore without -q exits 0 when at least one pathspec is
 # ignored. A path need not exist.
-_tracked() {
-  env -u GIT_GLOB_PATHSPECS -u GIT_NOGLOB_PATHSPECS -u GIT_ICASE_PATHSPECS \
-    git --literal-pathspecs -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1
-}
+_tracked() { git -C "$1" ls-files --error-unmatch -- ":(literal)$2" >/dev/null 2>&1; }
 _ignored() { git -C "$1" check-ignore "${@:2}" >/dev/null 2>&1; }
 
 # Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered

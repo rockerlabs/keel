@@ -143,9 +143,12 @@ h="$SANDBOX/a12-fromA"; mkdir -p "$h"
 printf '\n@%s/docs/loading-and-cost.md\n' "$treeA" >> "$h/CLAUDE.md"
 dinst "$h"
 check_contains "A12: a doc of the install's own checkout (checkout=), imported directly → GAP (B6 (iii))" "$OUT" "[G-ALWAYSON-ONDEMAND]"
-for pv in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_ICASE_PATHSPECS; do    # the caller's pathspec mode never blinds B6 (iii)
+pp="$(proj)"
+for pv in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do    # the caller's pathspec mode is not doctor's
   run env "$pv=1" "$doctor" --install "$h"
   check_contains "A12: … still a GAP under an exported $pv=1" "$OUT" "[G-ALWAYSON-ONDEMAND]"
+  dproj "$pp" "$h" "$pv=1"
+  check_absent "A12: … and a project's gitignored CLAUDE.md still reads as ignored under $pv=1" "$OUT" "[G-GITIGNORE-CONTEXT]"
 done
 
 h="$SANDBOX/a12-fromA-untracked"; mkdir -p "$h"
@@ -247,59 +250,31 @@ Path-shaped trailing: @notes/x.md] @notes/x.md" @notes/x.md'
 Not at a boundary: (@x.md) and name@x.md
 
     @x.md
-
-# A heading, then an indented code block
-    @notes/x.md
-
-```
-x
-```
-    @notes/x.md
-
-```
-x
-    ```
-@x.md
-```
-
-text
-***
-    @notes/x.md
-
-Title
-=====
-    @notes/x.md
-
-<!--
- a comment block
--->
-    @notes/x.md
-
-Title
---
-    @notes/x.md
-
-   ```
-x
-      ```
-@x.md
-   ```
-
-- a list item
-***
-
-    @notes/x.md
-
-- a list item
-```
-x
-```
-
-    @notes/x.md
 EOF
 dinst "$h"
 check_eq "A15: no negative sample is followed (N = 1)" 1 "$(chain_n)"
 check_absent "A15: no negative sample is reported dangling" "$OUT" "[W-ALWAYSON-DANGLING]"
+# a15_neg LABEL LINE… — a home of its own whose CLAUDE.md is `global`, a blank line, then the LINEs: a sample that
+# could leave a block open (a fence, a list) gets one, so a broken rule cannot hide the samples after it
+a15_n=0
+a15_neg() {
+  local label="$1"; shift
+  a15_n=$((a15_n + 1)); h="$SANDBOX/a15-neg-$a15_n"; mkdir -p "$h/notes"; fill "$h/x.md" 70000; fill "$h/notes/x.md" 70000
+  printf '%s\n' global '' "$@" > "$h/CLAUDE.md"
+  dinst "$h"
+  check_eq "A15: $label (N = 1)" 1 "$(chain_n)"
+  check_absent "A15: $label (nothing dangling)" "$OUT" "[W-ALWAYSON-DANGLING]"
+}
+a15_neg 'a heading, then an indented code block' '# A heading' '    @notes/x.md'
+a15_neg 'a fence close, then an indented code block' '```' x '```' '    @notes/x.md'
+a15_neg 'a closer indented 4 does not close a top-level fence' '```' x '    ```' '@x.md' '```'
+a15_neg 'a closer at 6 does not close a fence opened at 3' '   ```' x '      ```' '@x.md' '   ```'
+a15_neg 'a thematic break, then an indented code block' text '***' '    @notes/x.md'
+a15_neg 'a setext = underline, then an indented code block' Title '=====' '    @notes/x.md'
+a15_neg 'a setext -- underline, then an indented code block' Title '--' '    @notes/x.md'
+a15_neg 'an HTML comment block, then an indented code block' '<!--' ' a comment block' '-->' '    @notes/x.md'
+a15_neg 'an unindented thematic break ends a list' '- a list item' '***' '' '    @notes/x.md'
+a15_neg 'an unindented fence ends a list' '- a list item' '```' x '```' '' '    @notes/x.md'
 
 a15_pos() {  # a15_pos LABEL HOME EXPECTED_N — the home's chain counts EXPECTED_N files and ≥ 70,000 bytes, nothing dangling
   dinst "$2"
@@ -336,6 +311,8 @@ a15_one 'a backtick in a backtick fence info string makes the line prose' '``` a
 a15_one 'a tab-indented ``` continues a paragraph, opening no fence' paragraph $'\t```' '@y.md'
 a15_one 'seven # is no heading: a 4-space line continues it' '####### seven' '    @y.md'
 a15_one '"= =" is no setext underline: a 4-space line continues the paragraph' Title '= =' '    @y.md'
+a15_one 'a fence opened inside a list closes 3 past its own indent' '- item' '' '  ```' '  x' '    ```' '@y.md'
+a15_one 'under a list item a bare - is an item, so a 4-space line continues it' '- item' - '    @y.md'
 h="$SANDBOX/a15-symlinked"; mkdir -p "$h/real"
 printf 'target\nRelative: @a.md\n' > "$h/real/target.md"; fill "$h/real/a.md" 70000
 ln -s "$h/real/target.md" "$h/CLAUDE.md"
