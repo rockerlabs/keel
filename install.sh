@@ -2366,9 +2366,9 @@ _keel_test_checkpoint foreign-core-sentinel
 # result is just as correct and far simpler. `foreign_core=1` → context_created=0, no edit artifact.
 # NAMING NOTE for PR2's uninstall consumer (raised by an independent /code-review high pass): in
 # linked mode, context_created=1 covers BOTH "Keel generated a brand-new CLAUDE.md" AND "Keel appended
-# one @import line to your pre-existing global CLAUDE.md" — foreign_core is a copy-mode-only concept
-# (see this file's own `foreign_core=0` initialisation), so linked mode has no separate signal for the second
-# case. This is intentional
+# one @import line to your pre-existing global CLAUDE.md" — foreign_core is a copy-mode-only concept, except
+# for a generator-owned file (dir #253 B1: foreign in every mode, and never written), so linked mode has no
+# separate signal for the second case. This is intentional
 # per the field's own definition ("0 = pre-existing/foreign — install never wrote rails into it"; here
 # it DID), but it means context_created=1 must NEVER be read as "safe to delete the whole file" — only
 # the `edit` artifact (a single import line or core block) is ever a removal candidate, never the file
