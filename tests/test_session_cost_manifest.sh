@@ -222,12 +222,19 @@ ftail="$wt_d/99999999-9999-9999-9999-999999999999.jsonl"
   printf '{"type":"assistant","requestId":"a1","cwd":5,"timestamp":"t","message":{"content":[{"type":"tool_use","id":"u1","name":"Read","input":{"file_path":"/x/y"}}],"usage":{"output_tokens":1}}}\n'
   printf '{"type":"assistant","requestId":"a2","cwd":"/x","timestamp":"t","message":{"content":[{"type":"tool_use","id":"u2","name":"Read","input":{"file_path":7}}],"usage":{"output_tokens":1}}}\n'
   printf '{"type":"user","message":"plain string, not an object"}\n{"type":"user","message":{"content":"x"}}\n'
+  printf '{"type":"assistant","requestId":"a3","message":"str"}\n{"type":"assistant","requestId":{"x":1},"message":{"usage":5}}\n'
+  printf '{"type":"assistant","requestId":"a4","timestamp":"t","message":{"content":[{"type":"tool_use","id":"u4","name":"Bash","input":"not an object"}],"usage":{"output_tokens":2}}}\n'
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"u4","content":"ok"}]}}\n'
 } > "$ftail"
 run bash "$tool" tail --json "$ftail"
 check_status "tail --json survives a non-string cwd / file_path" "0" "$STATUS"
 calls="$(tu_tool_calls primary "$ftail" 2>/dev/null)"
 check_status "tu_tool_calls reads every call past a non-string field" "0" "$?"
-check_eq "...two calls" "2" "$(printf '%s\n' "$calls" | grep -c .)"
+check_eq "...three calls, the one with a non-object input kept" "3" "$(printf '%s\n' "$calls" | grep -c .)"
+check_eq "tu_tool_results reads past a non-object message" "1" "$(tu_tool_results primary "$ftail" 2>/dev/null | grep -c .)"
+check_eq "tu_turns keeps the 3 real turns past a non-object message, a non-object usage and an object requestId" "3" "$(tu_turns primary "$ftail" 2>/dev/null | grep -c .)"
+run bash "$tool" selfcheck "$ftail"
+check_status "selfcheck survives a non-object message" "0" "$STATUS"
 
 # a manifest line that resolves no file is priced as zero with a note, never an abort (bash 3.2 empty-array expansion)
 printf 'Z1\tR1\tsonnet\t,\n' > "$mf.empty"

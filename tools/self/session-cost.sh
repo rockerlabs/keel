@@ -171,7 +171,7 @@ cmd_selfcheck() {
       [ "$rc" -lt 2 ] && rc=2
       continue
     fi
-    local sc; sc="$(tu_self_check "$f")"
+    local sc; sc="$(tu_self_check "$f")" || { printf 'session-cost.sh: could not read %s\n' "$f" >&2; [ "$rc" -lt 2 ] && rc=2; continue; }
     printf '%s\n' "$sc"
     # A skipped line (truncated, not JSON, not an object) is counted, never silent (dir #852).
     local skipped; skipped="$(printf '%s' "$sc" | jq -r '.skipped_lines')"

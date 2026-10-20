@@ -179,18 +179,20 @@ tu_require_jq() {
   }
 }
 
+# The readers below take a file as RAW lines and parse each one alone, so a line that is not JSON (the truncated
+# last line of a session still being written), is JSON but not an object, or ends in a CR skips only itself,
+# never the whole file (dir #852; dir #848 did the same for tu_files_for_branches). _TU_PARSE is that per-line
+# step, the one place to change it; _TU_OBJECTS collects the survivors into one array where the readers used to
+# slurp (`jq -s`) and die on the first bad line. Callers run jq with `-R -n` (`-R` alone for a streaming reader).
+# Inside a surviving object a field of the wrong type is treated as absent (`| objects`, `| strings`), never an error.
+_TU_PARSE='fromjson? | objects'
+_TU_OBJECTS='[inputs | '"$_TU_PARSE"']'
+
 # The known non-assistant record types this project's own transcripts carry (verified live, 2026-09-06,
 # across every keel session file on this machine — 15 distinct non-"assistant" types, ~106k records
 # scanned). Used ONLY by tu_self_check's "unrecognized" counter below — never to gate tu_turns'
 # selection, which is a positive match on `type == "assistant"` (see the header note on why a type
 # enumeration is the wrong filter to build the actual reader on).
-# The readers below take a file as RAW lines and parse each one alone, so a line that is not JSON (the truncated
-# last line of a session still being written), is JSON but not an object, or ends in a CR skips only itself,
-# never the whole file (dir #852; dir #848 did the same for tu_files_for_branches). _TU_OBJECTS is the jq prefix
-# that yields the surviving objects as one array, where the readers used to slurp (`jq -s`) and die on the first
-# bad line. Callers run jq with `-R -n`.
-_TU_OBJECTS='[inputs | fromjson? | objects]'
-
 _TU_KNOWN_OTHER_TYPES='["user","attachment","last-prompt","atis-latch","bridge-session","queue-operation","custom-title","system","pr-link","mode","worktree-state","relocated","file-history-snapshot","permission-mode"]'
 
 # tu_turns KIND FILE — deduped per-turn usage records from one transcript file (primary or subagent),
@@ -219,9 +221,9 @@ tu_turns() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
   jq -R -n -c --arg file "$file" --arg kind "$kind" '
-    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and ((.message | objects | .usage) != null)) ] as $recs
+    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and ((.message | objects | .usage | objects) != null)) ] as $recs
     | (reduce $recs[] as $r ({seen: {}, out: []};
-        if ($r.requestId == null) then (.out += [$r])
+        if (($r.requestId | strings) == null) then (.out += [$r])
         else
           ($r.requestId) as $rid
           | if (.seen[$rid] // false) then .
@@ -236,7 +238,7 @@ tu_turns() {
         agentId: (.agentId // null),
         requestId: .requestId,
         timestamp: .timestamp,
-        model: .message.model,
+        model: (.message | objects | .model),
         gitBranch: (.gitBranch // null),
         effort: (.effort // null),
         attributionSkill: (.attributionSkill // null),
@@ -271,7 +273,8 @@ tu_tool_calls() {
     | (($rec.message | objects | .content) // [] | arrays)[]
     | select(type == "object")
     | select(.type == "tool_use")
-    | (.input.file_path // .input.path // .input.notebook_path // null) as $fp
+    | ((.input | objects) // {}) as $in
+    | ($in.file_path // $in.path // $in.notebook_path // null) as $fp
     | {
         file: $file,
         kind: $kind,
@@ -279,7 +282,7 @@ tu_tool_calls() {
         timestamp: $rec.timestamp,
         id: (.id // null),
         name: .name,
-        command: (if .name == "Bash" then (.input.command // null) else null end),
+        command: (if .name == "Bash" then ($in.command // null) else null end),
         file_path: (
           if (($fp | type) == "string" and ($rec.cwd | type) == "string" and ($fp | startswith($rec.cwd + "/")))
           then ($fp | ltrimstr($rec.cwd + "/"))
@@ -300,8 +303,8 @@ tu_tool_results() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
   jq -R -c --arg file "$file" --arg kind "$kind" '
-    fromjson? | objects | select(.type == "user") as $rec
-    | (if (($rec.message.content | type) == "array") then $rec.message.content else [] end)[]
+    '"$_TU_PARSE"' | select(.type == "user") as $rec
+    | (if ((($rec.message | objects | .content) | type) == "array") then $rec.message.content else [] end)[]
     | select(type == "object" and .type == "tool_result")
     | {
         file: $file,
@@ -335,7 +338,7 @@ tu_subagent_meta() {
   meta="${file%.jsonl}.meta.json"
   if [ -f "$meta" ] && jq -e . "$meta" >/dev/null 2>&1; then meta_json="$(jq -c . "$meta")"; fi
   jq -R -n -c --arg file "$file" --arg id "$id" --argjson meta "$meta_json" '
-    '"$_TU_OBJECTS"' | (first(.[] | select(.type == "user") | .message.content
+    '"$_TU_OBJECTS"' | (first(.[] | select(.type == "user") | (.message | objects | .content)
            | if (type == "string") then .
              elif (type == "array") then (first(.[] | select(type == "object" and .type == "text") | .text) // "")
              else "" end) // "") as $prompt
@@ -373,14 +376,14 @@ tu_self_check() {
   tu_require_jq || return 1
   jq -R -n -c --arg file "$file" --argjson known "$_TU_KNOWN_OTHER_TYPES" '
     [inputs | select(test("\\S"))] as $raw
-    | [$raw[] | fromjson? | objects] as $objs
+    | [$raw[] | '"$_TU_PARSE"'] as $objs
     | (($raw | length) - ($objs | length)) as $skipped
     | $objs | {
       file: $file,
       skipped_lines: $skipped,
       total: length,
-      assistant_usage: ([.[] | select(.type == "assistant" and (.message.usage != null))] | length),
-      assistant_no_usage: ([.[] | select(.type == "assistant" and (.message.usage == null))] | length),
+      assistant_usage: ([.[] | select(.type == "assistant" and ((.message | objects | .usage | objects) != null))] | length),
+      assistant_no_usage: ([.[] | select(.type == "assistant" and ((.message | objects | .usage | objects) == null))] | length),
       known_other: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) != null)] | length),
       unrecognized_types: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) == null) | $t] | unique)
     }
