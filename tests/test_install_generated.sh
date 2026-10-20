@@ -18,8 +18,8 @@ have_script=1
 command -v script >/dev/null 2>&1 || have_script=0
 skip_tty() { printf '  SKIP  %s: no `script` binary on this host — the terminal branch is not exercised here\n' "$1"; }
 
-core_block() { sed -n '/^<!-- KEEL-CORE-BEGIN/,/^<!-- KEEL-CORE-END/p' "$REPO_ROOT/CORE.md"; }
-cksum_of() { cksum < "$1"; }
+core_txt="$(sed -n '/^<!-- KEEL-CORE-BEGIN/,/^<!-- KEEL-CORE-END/p' "$REPO_ROOT/CORE.md")"
+core_block() { printf '%s\n' "$core_txt"; }
 # arts FILE — count of `artifact=edit` records in a manifest (grep -c prints 0 on no match; its status is not read).
 arts() { grep -c '^artifact=edit' "$1" || true; }
 # mk_gen FILE KIND [IMPORT] — a generator-owned entrypoint (E7's shape: the marker on line 1, the comment closing on
@@ -143,10 +143,10 @@ check_eq "A5 only: byte-identical" "$before" "$(cksum_of "$h/CLAUDE.md")"
 # --- A6 (guards, hold today): line 1 only ---------------------------------------------------------------------
 h="$(new_home a6-line2)"; printf '<!-- a note -->\n<!-- KEEL-GENERATED -->\nmy rules\n' > "$h/CLAUDE.md"
 run "$install" --link --home "$h" --no-hooks
-check_contains "A6 (i): the marker on line 2 is prose — the import is appended" "$(cat "$h/CLAUDE.md")" "keel/CORE.md"
+check_contains "A6 (i): the marker on line 2 is prose — the import is appended" "$(<"$h/CLAUDE.md")" "keel/CORE.md"
 h="$(new_home a6-word)"; printf '# Notes on KEEL-GENERATED files\nmy rules\n' > "$h/CLAUDE.md"
 run "$install" --link --home "$h" --no-hooks
-check_contains "A6 (iii): the word on line 1, not at its start, is not the marker — the import is appended" "$(cat "$h/CLAUDE.md")" "keel/CORE.md"
+check_contains "A6 (iii): the word on line 1, not at its start, is not the marker — the import is appended" "$(<"$h/CLAUDE.md")" "keel/CORE.md"
 h="$(new_home a6-migrate)"
 run "$install" --home "$h" --no-hooks
 run "$install" --link --home "$h" --no-hooks
@@ -160,7 +160,7 @@ check_link "A7: CLAUDE.md is still a link" "$h/CLAUDE.md"
 check_eq "A7: the link's target is byte-identical" "$before" "$(cksum_of "$SANDBOX/a7-dots/CLAUDE.md")"
 
 # --- A8: doctor names a generated file and gives the generator remedy --------------------------------------
-doc_line() { grep -F "$2" <<<"$1" | head -n1 || true; }
+doc_line() { grep -Fm1 "$2" <<<"$1" || true; }
 h="$(new_home a8)"
 run "$install" --link --home "$h" --no-hooks
 mk_gen "$h/CLAUDE.md" block
@@ -188,7 +188,7 @@ check_contains "A8: trimmed block with the older linked note → W-CORE-DRIFT sa
 check_absent "A8: …and names no install.sh" "$l" "install.sh"
 
 # --- A9: the documents ---------------------------------------------------------------------------------------
-adapting="$(cat "$REPO_ROOT/ADAPTING.md")"
+adapting="$(<"$REPO_ROOT/ADAPTING.md")"
 sec="$(awk '/^## Generating your entrypoints yourself/ { f = 1; print; next } f && /^## / { exit } f' "$REPO_ROOT/ADAPTING.md")"
 check_contains "A9: ADAPTING.md has the generator section" "$adapting" "## Generating your entrypoints yourself"
 for tok in KEEL-GENERATED KEEL-CORE KEEL-GIT KEEL-NOGIT KEEL-MANAGER-MERGES; do
@@ -215,8 +215,8 @@ if [ "$have_script" = 1 ]; then
   h="$(new_home a10a-tty)"; hand_copy "$h/CLAUDE.md"
   tty_run y "$install" --link --home "$h" --no-hooks
   check_contains "A10a tty: the offer line says Keel did not record the block" "$OUT" "did not record"
-  check_absent "A10a tty: answered y → the block is swapped for the import line" "$(cat "$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
-  check_contains "A10a tty: …the import is there" "$(cat "$h/CLAUDE.md")" "keel/CORE.md"
+  check_absent "A10a tty: answered y → the block is swapped for the import line" "$(<"$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
+  check_contains "A10a tty: …the import is there" "$(<"$h/CLAUDE.md")" "keel/CORE.md"
   # A10c (iii): an EMPTY answer keeps the file (default no)
   h="$(new_home a10c-empty)"; hand_copy "$h/CLAUDE.md"; before="$(cksum_of "$h/CLAUDE.md")"
   tty_run "" "$install" --link --home "$h" --no-hooks
@@ -249,7 +249,7 @@ else skip_tty "A10b dup tty"; fi
 # --- A10b': a copy manifest WITHOUT the core-block record is unrecorded too --------------------------------------
 h="$(new_home a10bp)"; core_block > "$h/CLAUDE.md"; before="$(cksum_of "$h/CLAUDE.md")"
 run "$install" --home "$h" --no-hooks
-check_contains "A10b': the plain install recorded layout=copy" "$(cat "$h/.keel/install-manifest.claude")" "layout=copy"
+check_contains "A10b': the plain install recorded layout=copy" "$(<"$h/.keel/install-manifest.claude")" "layout=copy"
 check_eq "A10b': …and found the file foreign (no edit record)" 0 "$(arts "$h/.keel/install-manifest.claude")"
 run "$install" --link --home "$h" --no-hooks
 check_eq "A10b': --link over it → byte-identical" "$before" "$(cksum_of "$h/CLAUDE.md")"
@@ -271,6 +271,6 @@ run "$install" --home "$h" --no-hooks
 printf '\n@%s/keel/CORE.md\n' "$h" >> "$h/CLAUDE.md"
 run "$install" --link --home "$h" --no-hooks
 check_contains "A10c (iv): a recorded block + a hand-added import → the duplicate is removed" "$OUT" "removed the embedded rails block"
-check_absent "A10c (iv): …no KEEL-CORE block remains" "$(cat "$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
+check_absent "A10c (iv): …no KEEL-CORE block remains" "$(<"$h/CLAUDE.md")" "KEEL-CORE-BEGIN"
 
 summary

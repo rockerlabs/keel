@@ -1781,19 +1781,21 @@ EOF
       echo "  =    CLAUDE.md already imports the linked core"
     fi
   elif keel_core_has_block "$gclaude"; then
+    core_same=0   # the embedded block's text equals the shipped core's — computed once for the chain below
+    [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ] && core_same=1
     if [ ! -f "$core_dest" ]; then
       # keel/CORE.md was declined or is gone: swapping the block for an import of it would load nothing.
       echo "  =    CLAUDE.md left untouched — keel/CORE.md does not resolve, so its embedded KEEL-CORE block stays (an import of it would load nothing)"
     elif ! keel_core_block_check "$gclaude"; then
       echo "  !    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
-    elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ] && core_block_recorded; then
+    elif [ "$core_same" = 1 ] && core_block_recorded; then
       if replace_core_block "$gclaude"; then
         echo "  ^    CLAUDE.md — embedded rails swapped for the import line (identical text; now updates with git pull)"
       else
         echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
       fi
     elif [ -t 0 ]; then
-      if [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+      if [ "$core_same" = 1 ]; then
         # B2a: identical, but Keel never recorded it as its own copy-install block — offered, never automatic.
         echo "  ~    CLAUDE.md embeds a KEEL-CORE block Keel did not record (no copy-install record in the manifest) — a hand copy, another tool's file, or an install older than the manifest."
       else
@@ -1811,7 +1813,7 @@ EOF
       else
         echo "  =    CLAUDE.md left untouched (embedded rails kept; the verify below flags the missing import)"
       fi
-    elif [ "$(keel_core_block_text "$gclaude")" = "$(keel_core_block_text "$root/CORE.md")" ]; then
+    elif [ "$core_same" = 1 ]; then
       echo "  !    CLAUDE.md embeds a KEEL-CORE block Keel did not record — left untouched (a hand copy, another tool's file, or an install older than the manifest)."
       echo "       Compare, then migrate by hand: replace the KEEL-CORE block with the line  $import_line"
     else

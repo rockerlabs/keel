@@ -289,7 +289,7 @@ has_keel_rails() {
 # stripping them would be undone by the next regeneration and edits a file another tool owns — so they are left in
 # place, said so (step 5), and never counted as "a Keel install here" by the no-manifest ladder below.
 strippable_rails() {
-  has_keel_rails "$1" && ! keel_context_is_generated "$1"
+  ! keel_context_is_generated "$1" && has_keel_rails "$1"
 }
 
 # strip_rails FILE — FILE on stdout without Keel's rails: the embedded KEEL-CORE block (core-ownership's
