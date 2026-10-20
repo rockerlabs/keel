@@ -340,8 +340,7 @@ check_contains "section 10 states the pre-cut pass condition (--strict --fragmen
 
 # --- dir #872: section 7 says what a leg's cost follows and what a merge trades; section 5 records where a leg's transcript is
 # Every check runs on whitespace-joined text, so a needle may wrap in the doc. Whole clauses, so a reversed clause fails.
-join872() { tr '\n' ' ' | tr -s ' '; }
-s7_872="$(section_body '## 7. Sizing — a range, not a target' "$doc" | join872)"
+s7_872="$(section_body '## 7. Sizing — a range, not a target' "$doc" | flatten_ws)"
 while IFS= read -r n872; do
   [ -z "$n872" ] && continue
   check_contains "section 7 carries: $n872 (dir #872)" "$s7_872" "$n872"
@@ -359,7 +358,7 @@ EOF
 for n872 in 'seam count and PR' 'seam-dense' 'expensive part of a whole-read' 'a finding'; do
   check_absent "section 7 does not carry: $n872 (dir #872)" "$s7_872" "$n872"
 done
-s5_872="$(section_body '## 5. Roles and legs' "$doc" | join872)"
+s5_872="$(section_body '## 5. Roles and legs' "$doc" | flatten_ws)"
 check_contains "section 5's per-leg record names the transcript and sums spend from it (dir #872)" "$s5_872" \
   "token spend and where its transcript is (keel's own: the subagent's agent id) as it completes — spend summed from that transcript, since a harness's per-leg token count is the leg's final context"
 check_contains "section 5's per-leg record keeps its unmeasured clause (dir #872)" "$s5_872" \

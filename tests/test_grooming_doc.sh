@@ -177,8 +177,7 @@ pin "groom.md G5 points at the measured-counterfactual rule (dir #860)" "$cmd" \
 # Every check runs on whitespace-joined text (a para_of paragraph, or a section_body piped through `tr`), so a needle may
 # wrap in the doc; only the para_of anchors below must each sit on one line. Whole clauses, not one-word needles: a
 # reversed clause ("never under" for "expected under", the band's ends swapped) must fail here.
-join872() { tr '\n' ' ' | tr -s ' '; }
-g5_872="$(section_body '## G5 — every release row, five fields' "$doc" | join872)"
+g5_872="$(section_body '## G5 — every release row, five fields' "$doc" | flatten_ws)"
 check_contains "G5 carries the two-part audit price (dir #872)" "$g5_872" \
   '**Price the audit in two parts, a fixed part per run and a part per ticket'
 b872="$(para_of "$doc" '**Price the audit in two parts')"
@@ -216,9 +215,9 @@ else
   fail "G5's two-part audit price sits after the previous-session paragraph (dir #872)" "lines: previous-session=${la872:-none} two-part=${lb872:-none}"
 fi
 # the floor is gone, the previous-session paragraph changed and kept its subtraction
-check_absent "G5 no longer carries the floor: Never scale the audit below (dir #872)" "$(join872 < "$doc")" 'Never scale the audit below'
-check_absent "G5 no longer carries the floor: smallest of the last three measured audit (dir #872)" "$(join872 < "$doc")" 'smallest of the last three measured audit'
-check_absent "groom.md no longer carries the floor (dir #872)" "$(join872 < "$cmd")" 'never below the smallest of'
+check_absent "G5 no longer carries the floor: Never scale the audit below (dir #872)" "$(flatten_ws < "$doc")" 'Never scale the audit below'
+check_absent "G5 no longer carries the floor: smallest of the last three measured audit (dir #872)" "$(flatten_ws < "$doc")" 'smallest of the last three measured audit'
+check_absent "groom.md no longer carries the floor (dir #872)" "$(flatten_ws < "$cmd")" 'never below the smallest of'
 b1a872="$(para_of "$doc" '**Price the audit from the previous audit session')"
 check_contains "G5's previous-session paragraph points at the split (dir #872)" "$b1a872" \
   'the next rule splits it into a fixed part and a part per ticket'
