@@ -217,6 +217,22 @@ hook adds — the same per-folder-sandbox gotcha as above, in reverse), and its 
 tool's own allow-list, never a skip-permissions flag. See `docs/delegation.md`'s Worker → Mutator table
 for the role split this leans on. (An installer adapter for these tools is separate work.)
 
+## Generating your entrypoints yourself
+
+If your own tool generates the global entrypoint (`CLAUDE.md`, or `AGENTS.md` under `--codex`), start line 1
+with the literal `<!-- KEEL-GENERATED` (no byte-order mark before it). Keel then treats the file as yours:
+`install.sh` leaves it byte-identical in every mode, `uninstall.sh` leaves its rails in place, and
+`doctor.sh --install` sends every remedy to your generator.
+
+Keel reserves what it reads from a context file: the `KEEL-CORE`, `KEEL-GIT` and `KEEL-NOGIT` comment fences,
+line 1's `KEEL-GENERATED`, and the policy token `KEEL-MANAGER-MERGES` (the pre-PR gate reads it from a project
+`CLAUDE.md`). Mint no family under those names; any other `KEEL-*` fence you add (a personal layer, say) is
+yours — Keel neither reads nor writes it.
+
+Three rules learned in the field: write the file atomically (temp file + rename) and back up what it replaces;
+fence each embedded layer with BEGIN/END markers and refuse to write when either is missing (a truncated
+source otherwise leaves a prefix that reads valid); no byte-order mark before the marker.
+
 ## Help map your tool
 
 Claude Code, Codex (ChatGPT app), and Cursor have been run live and hold the rails reliably; a small local

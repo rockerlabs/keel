@@ -133,7 +133,9 @@ clone — the linked path needs a checkout that survives, so this variant keeps 
   (announced; delete that line to unlink) — your rules stay yours, the rails ride in under them.
 - **Migrating from a copy install:** re-run with `--link` — it swaps the embedded rails block for the
   import line and upgrades unmodified command copies to symlinks; anything you edited is left alone
-  and flagged instead.
+  and flagged instead. A block Keel did not record (copied by hand, or an install older than its
+  manifest) is offered on a terminal instead. A file another tool generates (line 1 begins
+  `<!-- KEEL-GENERATED`) is never rewritten.
 - **A pull changes your next session's rails without review.** `main` is PR- and CI-protected, but
   pull deliberately — don't automate it; a conservative setup pins a release tag (`git checkout vX.Y.Z`).
 - **The clone becomes the installation.** Park it somewhere permanent *before* linking; moving it later
