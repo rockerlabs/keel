@@ -143,6 +143,10 @@ h="$SANDBOX/a12-fromA"; mkdir -p "$h"
 printf '\n@%s/docs/loading-and-cost.md\n' "$treeA" >> "$h/CLAUDE.md"
 dinst "$h"
 check_contains "A12: a doc of the install's own checkout (checkout=), imported directly → GAP (B6 (iii))" "$OUT" "[G-ALWAYSON-ONDEMAND]"
+for pv in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_ICASE_PATHSPECS; do    # the caller's pathspec mode never blinds B6 (iii)
+  run env "$pv=1" "$doctor" --install "$h"
+  check_contains "A12: … still a GAP under an exported $pv=1" "$OUT" "[G-ALWAYSON-ONDEMAND]"
+done
 
 h="$SANDBOX/a12-fromA-untracked"; mkdir -p "$h"
 "$treeA/install.sh" --link --home "$h" --no-hooks >/dev/null 2>&1 </dev/null
@@ -270,6 +274,28 @@ Title
  a comment block
 -->
     @notes/x.md
+
+Title
+--
+    @notes/x.md
+
+   ```
+x
+      ```
+@x.md
+   ```
+
+- a list item
+***
+
+    @notes/x.md
+
+- a list item
+```
+x
+```
+
+    @notes/x.md
 EOF
 dinst "$h"
 check_eq "A15: no negative sample is followed (N = 1)" 1 "$(chain_n)"
@@ -296,12 +322,20 @@ a15_pos 'a ~~~ line inside a ``` fence neither closes it nor hides the import af
 h="$SANDBOX/a15-indented-fence"; mkdir -p "$h"; fill "$h/y.md" 70000
 printf 'global\n\n    ```\n@y.md\n' > "$h/CLAUDE.md"
 a15_pos 'a ``` line in an indented code block opens no fence' "$h" 2
-# paragraph text an indented line continues, and lines that only look like a fence or a heading: each import loads
-h="$SANDBOX/a15-paragraph"; mkdir -p "$h"; fill "$h/y1.md" 70000
-for i in 2 3 4; do printf 'small %s\n' "$i" > "$h/y$i.md"; done
-printf '%s\n' global '' '```' code '````' '@y1.md' '' '``` a`b' '@y2.md' '' paragraph $'\t```' '@y3.md' '' \
-  '####### seven # is no heading' '    @y4.md' > "$h/CLAUDE.md"
-a15_pos 'a longer closer closes a fence, a backtick info string is prose, an indented ``` or a 4-space line continues a paragraph' "$h" 5
+# a15_one LABEL LINE… — a home of its own whose CLAUDE.md is `global`, a blank line, then the LINEs, which import
+# y.md (70,000 bytes) once: the sample decides N = 2 and the figure alone
+a15_k=0
+a15_one() {
+  local label="$1"; shift
+  a15_k=$((a15_k + 1)); h="$SANDBOX/a15-one-$a15_k"; mkdir -p "$h"; fill "$h/y.md" 70000
+  printf '%s\n' global '' "$@" > "$h/CLAUDE.md"
+  a15_pos "$label" "$h" 2
+}
+a15_one 'a longer closer closes a fence' '```' code '````' '@y.md'
+a15_one 'a backtick in a backtick fence info string makes the line prose' '``` a`b' '@y.md'
+a15_one 'a tab-indented ``` continues a paragraph, opening no fence' paragraph $'\t```' '@y.md'
+a15_one 'seven # is no heading: a 4-space line continues it' '####### seven' '    @y.md'
+a15_one '"= =" is no setext underline: a 4-space line continues the paragraph' Title '= =' '    @y.md'
 h="$SANDBOX/a15-symlinked"; mkdir -p "$h/real"
 printf 'target\nRelative: @a.md\n' > "$h/real/target.md"; fill "$h/real/a.md" 70000
 ln -s "$h/real/target.md" "$h/CLAUDE.md"

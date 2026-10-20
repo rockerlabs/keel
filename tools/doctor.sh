@@ -318,21 +318,30 @@ _alwayson_imports() {
       return w
     }
     # Block state: inpara (the last line was paragraph text, which an indented line continues), inlist, fence
-    # (with its opener character fre, length flen and indent find), incom (inside an HTML comment) and htmlblock
-    # (that comment started a line, so it is a block and its end ends any paragraph).
+    # (with its opener character fre, length flen and indent find) and incom (inside an HTML comment). A
+    # simplification of CommonMark, not all of it: list content indentation is not tracked.
     BEGIN { trail = ".,;:)!]\"" sq }
     {
       sub(/\r$/, "")
       line = $0
       if (!incom) {
         if (fence) {
-          # only a run of the opener character, at least as long, indented at most 3 past the opener, closes it
+          # only a run of the opener character, at least as long, closes it — indented at most 3, or (a fence
+          # inside a list) at most 3 past the opener
           t = line; sub(/^[ \t]*/, "", t); sub(/[ \t]*$/, "", t)
-          if (indent(line) <= find + 3 && length(t) >= flen && t ~ fre) { fence = 0; inpara = 0 }
+          if (indent(line) <= (find > 3 ? find + 3 : 3) && length(t) >= flen && t ~ fre) { fence = 0; inpara = 0 }
           next
         }
         if (line ~ /^[ \t]*$/) { inpara = 0; next }
         ind = indent(line)
+        # a thematic break (three or more * - or _, spaces allowed), or a setext underline below paragraph text (a
+        # run of = or of -, no inner space): neither holds an import, both end the paragraph — and, unindented, a list
+        t = line; gsub(/[ \t]/, "", t); u = line; sub(/^[ \t]*/, "", u); sub(/[ \t]*$/, "", u)
+        if (ind <= 3 && (t ~ /^(\*\*\*+|---+|___+)$/ || (inpara && u ~ /^(=+|-+)$/))) {
+          inpara = 0; if (ind == 0) inlist = 0; next
+        }
+        if (line ~ /^ ? ? ?([-*+]|[0-9]+[.)])([ \t]|$)/) inlist = 1
+        else if (ind == 0) inlist = 0                               # any other unindented block, a fence too
         if (ind >= 4 && !inpara && !inlist) next                    # an indented code block line
         if (line ~ /^[ \t]*(```|~~~)/ && (ind <= 3 || inlist)) {
           t = line; sub(/^[ \t]*/, "", t); fch = substr(t, 1, 1)
@@ -343,13 +352,7 @@ _alwayson_imports() {
             fence = 1; find = ind; fre = (fch == "`") ? "^`+$" : "^~+$"; inpara = 0; next
           }
         }
-        t = line; gsub(/[ \t]/, "", t)
-        # a thematic break, or a setext underline below paragraph text: neither holds an import, both end the paragraph
-        if (ind <= 3 && (t ~ /^(\*\*\*+|---+|___+)$/ || (inpara && t ~ /^=+$/))) { inpara = 0; next }
-        if (line ~ /^ ? ? ?([-*+]|[0-9]+[.)])([ \t]|$)/) inlist = 1
-        else if (line !~ /^[ \t]/) inlist = 0
-        if (line ~ /^ ? ? ?##?#?#?#?#?([ \t]|$)/) inpara = 0        # an ATX heading (one to six #) is no paragraph
-        else if (line ~ /^ ? ? ?<!--/) { inpara = 0; htmlblock = 1 }
+        if (line ~ /^ ? ? ?##?#?#?#?#?([ \t]|$)/ || line ~ /^ ? ? ?<!--/) inpara = 0   # ATX heading, comment block
         else inpara = 1
       }
       if (!incom && index(line, "`") == 0 && index(line, "<!--") == 0) { tokens(line); next }
@@ -377,7 +380,6 @@ _alwayson_imports() {
         if (substr(line, i, 4) == "<!--") { incom = 1; i += 4; continue }
         out = out c; i++
       }
-      if (htmlblock && !incom) htmlblock = 0
       tokens(out)
     }
   ' "$1" 2>/dev/null || true
@@ -566,12 +568,16 @@ fi
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 # Two git questions the context checks keep asking, in one place (dir #75's AGENTS.md block asks them
-# too). tracked: the path is in the index, read literally (`notes[1].md` never matches a tracked notes1.md, even
-# under GIT_LITERAL_PATHSPECS=1; check-ignore accepts no literal magic, so ignored keeps git's default reading).
+# too). tracked: the path is in the index, read literally (`notes[1].md` never matches a tracked notes1.md, whatever
+# GIT_*_PATHSPECS the caller exports: the other three are incompatible with literal and would fail every call;
+# check-ignore accepts no literal magic, so ignored keeps git's default reading).
 # ignored: ANY of the paths matches an ignore rule from any source git honours (.gitignore, .git/info/exclude,
 # the global excludesfile) — one process, since check-ignore without -q exits 0 when at least one pathspec is
 # ignored. A path need not exist.
-_tracked() { git --literal-pathspecs -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1; }
+_tracked() {
+  env -u GIT_GLOB_PATHSPECS -u GIT_NOGLOB_PATHSPECS -u GIT_ICASE_PATHSPECS \
+    git --literal-pathspecs -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1
+}
 _ignored() { git -C "$1" check-ignore "${@:2}" >/dev/null 2>&1; }
 
 # Findings are BUFFERED per audit unit (a project dir, or the install) and flushed ordered
