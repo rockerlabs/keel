@@ -56,7 +56,7 @@ the table above.
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~430 |
 | `IDEAS.md` (from `templates/IDEAS.md`) | on demand — staging a raw, not-yet-actionable idea | The earliest staging tier, one step before `LEARNINGS.md`/`BACKLOG.md`. | ~330 |
-| `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~4,510 |
+| `ADAPTING.md` | on demand — run Keel under another AI tool | Reference. | ~4,870 |
 | `CHANGELOG.md` | on demand — release history | Reference. | ~210,000+ |
 | `commands/*.md` (excl. `polish.md`, `polish-guide.md`) | **only when you invoke** that command | Lifecycle procedures (`/wrap`, `/init-project`, …). Only the invoked command's body loads. | ~250–3,000+ each |
 | `commands/polish.md` | **only when you invoke** `/polish` | The core of the outlier: simplify + tests + a depth-matched review + the gate + the PR, kept to the text a normal run needs (a word budget pins it) — the rare branches live in `polish-guide.md`. | ~4,500+ |
@@ -83,13 +83,46 @@ Put in perspective:
 - Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~19.3K for one decision.
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
-when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` (its `@…/keel/CORE.md` import
-followed, when one is wired) PLUS the harness's `MEMORY.md` index together pass **16,000 tokens**
+when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` — each with its whole import chain
+followed (the `@…/keel/CORE.md` import and every other, up to four hops) — PLUS the harness's `MEMORY.md`
+index together pass **16,000 tokens**
 (`KEEL_STARTUP_WARN_TOKENS` — the former 10,000 plus ~6,000 for the index, whose measured size on keel's
 own project was ~5.8k), naming the three figures separately. A live dated row under `## Footprint exceptions` in the
 project's `CLAUDE.md` silences it until its expiry. For scale, the typical project file above is ~330 and the global core ~2,490 —
 together roughly 18% of the budget before the index — so the hint fires only once a side has grown into a roadmap,
 which is exactly what it then tells you to move to the on-demand tier.
+
+## The always-on layers
+
+The always-loaded tier of this page's opening section ([`## Three tiers`](#three-tiers)), split by who
+writes it. These are Keel's layers, not everything that loads at session start:
+
+| Layer | What it holds | Where it lives |
+|---|---|---|
+| **core** | Keel's rails, `CORE.md` | embedded in your global entrypoint as the `KEEL-CORE` block, or imported from it (`@…/keel/CORE.md`, a linked install) |
+| **personal** | your own always-on text: preferences, and the map of where the rest lives | the global entrypoint — `~/.claude/CLAUDE.md`, or `~/.codex/AGENTS.md` under Codex |
+| **project** | the project's context | `<project>/CLAUDE.md` |
+| **on-demand** | everything else — `FRAMEWORK.md`, the docs, the commands, your `INSTANCE.md` | read when a task reaches it through the map |
+
+- **What session start loads:** core + personal, plus project inside a project — class A of the
+  [retirement table](#retiring-a-shipped-capability) below. The harness adds slots of its own outside these
+  layers: Claude Code's `MEMORY.md` index (which `H-FOOTPRINT` sums), its user rules and local files.
+- **An on-demand file in an entrypoint's import chain is a defect:** it moves into every session the cost
+  the tiering exists to defer. `doctor` follows each entrypoint's whole chain and reports one as a GAP,
+  `G-ALWAYSON-ONDEMAND`.
+- **One file, one slot.** A project `CLAUDE.md` that the global entrypoint also imports sits in two layers
+  (personal and project) — `W-ALWAYSON-TWICE`. When you move a double-slotted file, deliver the personal
+  layer by its new route *before* renaming or removing the old one, or the layer stops arriving mid-move.
+- **Delivery.** The embedded `KEEL-CORE` block works in every harness — it is plain text in the entrypoint;
+  the `@import` line is Claude Code's optimisation (the rails refresh with `git pull`). A `doctor` check
+  proves a file: what the entrypoint's chain resolves to under Claude Code's import grammar (four hops; code
+  spans, fenced and indented code, HTML comments and quoted paths are not imports; an `AGENTS.md` entrypoint
+  is read as one file) — never that the harness read it.
+- **What `doctor --install` reports for the global entrypoint:** the chain as one line — `always-on chain:
+  N file(s), M bytes` — failing closed (an entrypoint it cannot read is a GAP, `G-ALWAYSON-UNREAD`, never a
+  silent 0); an import that resolves to nothing (`W-ALWAYSON-DANGLING`) or lies past the fourth hop
+  (`W-ALWAYSON-DEPTH`); and core + personal over their own budget, 8,000 tokens (`W-ALWAYSON-BUDGET`,
+  `KEEL_ALWAYS_ON_WARN_TOKENS`). The per-project run checks the project file's own chain the same way.
 
 ## With Keel vs without — a concrete moment
 

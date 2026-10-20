@@ -187,6 +187,7 @@ export KEEL_MACHINE_WATCH_NOTIFY=0
 # poisoned, that none survives — a name added to a tool and forgotten here turns that file red.
 # One name per line on purpose: the gate's mutation proof deletes a single line.
 unset \
+  KEEL_ALWAYS_ON_WARN_TOKENS \
   KEEL_ARCHIVE_SWEEP_THRESHOLD \
   KEEL_AUDIT_BLOB_MAX \
   KEEL_BACKUP \

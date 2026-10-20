@@ -93,12 +93,26 @@
 #                              .env.local, secrets.env must be ignored, secrets.enc.yaml must not be
 #   HINT  H-DENY-ENV           (--install, Claude Code only) the Read deny globs for env files are
 #                              missing from the machine-global settings.json — see the install note below
-#   HINT  H-FOOTPRINT         session startup footprint (project CLAUDE.md + resolved global
-#                              CLAUDE.md/keel/CORE.md + the harness's MEMORY.md index, all loaded every
+#   HINT  H-FOOTPRINT         session startup footprint (the project CLAUDE.md's import chain + the global
+#                              context file's import chain — keel/CORE.md and every other import, dir #253 —
+#                              + the harness's MEMORY.md index, all loaded every
 #                              session) over budget (KEEL_STARTUP_WARN_TOKENS, 16000 — the old 10000
 #                              plus ~6000 for the index, dir #686). A live `## Footprint exceptions` row
 #                              in the project's CLAUDE.md silences it until its expiry; an EXPIRED row
 #                              is flagged on the hint instead (dir #687)
+#   GAP   G-ALWAYSON-ONDEMAND  an entrypoint's always-on import chain (Claude Code's import grammar, four
+#                              hops, each file once — dir #253) pulls a Keel on-demand file (FRAMEWORK.md, a
+#                              doc, a command) into every session; keel/CORE.md is the one Keel file that
+#                              belongs there. The project run checks the project's own chain, --install the
+#                              global one (a global finding is never repeated per project)
+#   GAP   G-ALWAYSON-UNREAD    (--install) the home's context file exists but cannot be read — what it loads
+#                              every session is unknown, never a silent 0
+#   WARN  W-ALWAYSON-DANGLING  a path-shaped import (it holds a / or ends in .md) that does not resolve — the
+#                              harness skips it silently; a word-shaped @Model is prose and never fires
+#   WARN  W-ALWAYSON-DEPTH     a file past the fourth import hop: it does not load, its bytes are not counted
+#   WARN  W-ALWAYSON-TWICE     the project's CLAUDE.md is also in the global always-on chain — one file in two
+#                              layer slots (personal and project); accept it per project when deliberate
+#   WARN  W-ALWAYSON-BUDGET    (--install) the global chain alone is over KEEL_ALWAYS_ON_WARN_TOKENS (8000)
 #   WARN  W-MEMORY-ORPHAN      a top-level *.md in the harness memory dir that no MEMORY.md line
 #                              links — unreachable by recall, invisible to every session (dir #521)
 #   WARN  W-MEMORY-DANGLING    a MEMORY.md link whose target file does not exist
@@ -224,12 +238,15 @@ fi
 # 5.8k tokens (2026-10-05), so ~6000 keeps a project with an index of that size, and inside the old budget,
 # from being newly flagged merely because the index is now counted; a larger index is real startup cost.
 WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_STARTUP_WARN_TOKENS:-16000}" 16000)"
+# dir #253 B7b: the global always-on chain's own budget (--install only), sanitized the same way.
+ALWAYS_ON_WARN_TOKENS="$(sanitize_nonneg_int "${KEEL_ALWAYS_ON_WARN_TOKENS:-8000}" 8000)"
 exit_code=0
 
-# The @import line's own detection regex — mirror of install.sh's has_core_import() — used twice
-# below (H-FOOTPRINT's global-core resolution, and the --install rails check further down): one
-# definition instead of two hand-copies of the same literal in this file (keep the two in sync with
-# install.sh's own copy).
+# The @import line's own detection regex — mirror of install.sh's has_core_import() — used by the
+# --install rails check and the manifest edit-record check further down: one definition instead of
+# hand-copies of the same literal in this file (keep it in sync with install.sh's own copy). It stays the
+# plain "is the core import wired" line grep; the always-on chain below parses the full import grammar
+# instead (dir #253 B5 — the two differ only on a core import inside a fenced block or a comment).
 core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
 
 # Byte-count-or-0: `wc -c` an existing file, degrading to 0 on any read failure instead of aborting
@@ -241,6 +258,233 @@ _char_count() {
   n="$(wc -c < "$1" 2>/dev/null | tr -d ' ')" || n=0
   [ -n "$n" ] || n=0
   printf '%s' "$n"
+}
+
+# --- dir #253: the always-on chain — what an entrypoint actually loads every session (spec 253 B5-B9) ------------
+# Read-only: these read files and print, they never write. Paths are absolute from here on.
+#
+# _real_path PATH — PATH with every symlink followed (its last component too) and its directory physical; fails
+# when it does not resolve. _parent_real PATH — PATH's directory made physical, its last component KEPT: a per-file
+# symlink inside a real keel/ directory (install.sh's linked layout) stays visible as keel/<name>.
+_real_path() {
+  local p="$1" t n=0 dir
+  while [ -L "$p" ]; do
+    n=$((n + 1)); [ "$n" -le 40 ] || return 1
+    t="$(readlink "$p")" || return 1
+    case "$t" in /*) p="$t" ;; *) p="${p%/*}/$t" ;; esac
+  done
+  dir="$(cd -P "${p%/*}/" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/%s' "${dir%/}" "${p##*/}"
+}
+_parent_real() {
+  local dir
+  dir="$(cd -P "${1%/*}/" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/%s' "${dir%/}" "${1##*/}"
+}
+
+# _alwayson_imports FILE — FILE's import tokens, one per line (`\ ` unescaped), under Claude Code's import grammar
+# as measured on 2.1.296 (spec 253 E26, E29, E30, and S2's probe of its TV2): an `@` at the start of a line or after
+# a space or tab; the token is the maximal run of non-whitespace (`\ ` escapes a space). Not an import: anything
+# inside a fenced block (``` or ~~~, toggled as the registry parse above does), an indented code block (four spaces
+# or a tab after a blank line, outside a list), a code span of any backtick count, an HTML comment (block, multi-line
+# or inline); a quoted path (`@"…"`); a bare `@`; a token whose last character is . , ; : ) ! ] " or '. A code span
+# or comment reads as one space, so a token right after it still starts at a boundary.
+_alwayson_imports() {
+  awk -v sq="'" '
+    function tokens(s,    n, i, c, tok, ch) {
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        if (substr(s, i, 1) != "@") continue
+        if (i > 1) { c = substr(s, i - 1, 1); if (c != " " && c != "\t") continue }
+        tok = ""
+        for (i = i + 1; i <= n; i++) {
+          ch = substr(s, i, 1)
+          if (ch == " " || ch == "\t") break
+          if (ch == "\\") { if (substr(s, i + 1, 1) == " ") { tok = tok " "; i++; continue } break }
+          tok = tok ch
+        }
+        if (tok == "" || substr(tok, 1, 1) == "\"") continue
+        if (index(trail, substr(tok, length(tok), 1))) continue
+        print tok
+      }
+    }
+    BEGIN { trail = ".,;:)!]\"" sq; prevblank = 1 }
+    {
+      sub(/\r$/, "")
+      line = $0
+      if (!incom) {
+        if (line ~ /^[ \t]*(```|~~~)/) { fence = !fence; prevblank = 0; previnc = 0; next }
+        if (fence) next
+        if (line ~ /^[ \t]*$/) { prevblank = 1; next }
+        if (line ~ /^(    |\t)/ && (prevblank || previnc) && !inlist) { previnc = 1; prevblank = 0; next }
+        previnc = 0; prevblank = 0
+        if (line ~ /^ ? ? ?([-*+]|[0-9]+[.)])([ \t]|$)/) inlist = 1
+        else if (line !~ /^[ \t]/) inlist = 0
+      }
+      if (!incom && index(line, "`") == 0 && index(line, "<!--") == 0) { tokens(line); next }
+      out = ""; n = length(line); i = 1
+      while (i <= n) {
+        if (incom) {
+          j = index(substr(line, i), "-->")
+          if (j == 0) { i = n + 1; continue }
+          i = i + j + 2; incom = 0; out = out " "; continue
+        }
+        c = substr(line, i, 1)
+        if (c == "`") {
+          k = i; while (k <= n && substr(line, k, 1) == "`") k++
+          r = k - i; m = k; close_at = 0
+          while (m <= n) {
+            if (substr(line, m, 1) == "`") {
+              q = m; while (q <= n && substr(line, q, 1) == "`") q++
+              if (q - m == r) { close_at = q; break }
+              m = q
+            } else m++
+          }
+          if (close_at) { out = out " "; i = close_at } else { out = out substr(line, i, r); i = k }
+          continue
+        }
+        if (substr(line, i, 4) == "<!--") { incom = 1; i += 4; continue }
+        out = out c; i++
+      }
+      tokens(out)
+    }
+  ' "$1" 2>/dev/null || true
+}
+
+# alwayson_chain FILE [ONE_FILE] [STOP_SET] — B5's resolver. Prints tab-separated records, FILE first:
+#   LOAD <hop> <real path> <parent-real path> <bytes> <path as imported> <importer as imported>   (hop 0-4)
+#   DANGLING <importer> <token>   a path-shaped import (a / in it, or a .md end) that does not resolve: missing, a
+#                                 directory, or unreadable (a word-shaped one — @Model — is prose: nothing)
+#   DEPTH <importer> <path>       a file past hop 4 — it does not load, and is not counted
+#   UNREAD <file>                 FILE exists but cannot be read (nothing else is printed)
+# A relative import resolves against the REAL directory of the file that holds it (a symlinked entrypoint's target
+# dir, measured [E30]); `~/` is this process's $HOME. Each file once, by real path (BFS, so a file takes its lowest
+# hop), so a cycle ends. ONE_FILE=1: an AGENTS.md entrypoint, a one-file chain (no harness import semantics assumed;
+# dir #252 owns Antigravity's). STOP_SET: a newline-framed set of real paths not followed or counted (the per-project
+# run passes the global chain's, so a global file is never counted or judged twice).
+alwayson_chain() {
+  local root="$1" one="${2:-0}" stop="${3-}" hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
+  [ -n "$stop" ] || stop=$'\n'
+  [ -f "$root" ] || return 0
+  if [ ! -r "$root" ]; then printf 'UNREAD\t%s\n' "$root"; return 0; fi
+  real="$(_real_path "$root")" || real="$root"
+  pr="$(_parent_real "$root")" || pr="$root"
+  printf 'LOAD\t0\t%s\t%s\t%s\t%s\t-\n' "$real" "$pr" "$(_char_count "$root")" "$root"
+  seen="$seen$real"$'\n'
+  [ "$one" = 1 ] && return 0
+  queue="$real	$root"$'\n'
+  while [ -n "$queue" ] && [ "$hop" -le 4 ]; do
+    next=""
+    while IFS=$'\t' read -r f fdisp; do
+      [ -n "$f" ] || continue
+      while IFS= read -r tok; do
+        [ -n "$tok" ] || continue
+        case "$tok" in
+          /*) abs="$tok" ;;
+          \~/*) abs="${HOME:-}/${tok#\~/}" ;;
+          *) abs="${f%/*}/$tok" ;;
+        esac
+        if [ ! -f "$abs" ] || [ ! -r "$abs" ]; then
+          case "$tok" in
+            */*|*.md)
+              case "$dseen" in
+                *$'\n'"$fdisp"$'\t'"$tok"$'\n'*) ;;
+                *) dseen="$dseen$fdisp"$'\t'"$tok"$'\n'; printf 'DANGLING\t%s\t%s\n' "$fdisp" "$tok" ;;
+              esac ;;
+          esac
+          continue
+        fi
+        real="$(_real_path "$abs")" || real="$abs"
+        case "$seen$stop" in *$'\n'"$real"$'\n'*) continue ;; esac
+        seen="$seen$real"$'\n'
+        if [ "$hop" -ge 4 ]; then printf 'DEPTH\t%s\t%s\n' "$fdisp" "$abs"; continue; fi
+        pr="$(_parent_real "$abs")" || pr="$abs"
+        printf 'LOAD\t%s\t%s\t%s\t%s\t%s\t%s\n' "$((hop + 1))" "$real" "$pr" "$(_char_count "$abs")" "$abs" "$fdisp"
+        next="$next$real	$abs"$'\n'
+      done < <(_alwayson_imports "$f")
+    done <<<"$queue"
+    queue="$next"; hop=$((hop + 1))
+  done
+}
+
+# alwayson_ctx HOME — the roots B6 classifies against, for one home: as_home (canonical), as_keel_real (the real
+# path of HOME/keel when that is itself a symlink — a hand-wired whole-directory link), as_rels (newline-framed:
+# the rel of every artifact record of the home's install manifests, except the context-file edit records and
+# keel/CORE.md), as_roots (newline-separated: this checkout and each manifest's checkout=, canonical). Every root
+# is canonicalized: install and doctor compute them with a logical pwd [E33].
+alwayson_ctx() {
+  local h="$1" man ck
+  as_home="$(cd -P "$h" 2>/dev/null && pwd -P || printf '%s' "$h")"
+  as_keel_real=""
+  if [ -L "$h/keel" ]; then as_keel_real="$(cd -P "$h/keel" 2>/dev/null && pwd -P || true)"; fi
+  as_rels=$'\n'
+  as_roots="$(cd -P "$tools_dir/.." 2>/dev/null && pwd -P || true)"
+  for man in "$h/.keel/install-manifest.claude" "$h/.keel/install-manifest.codex"; do
+    [ -f "$man" ] && grep -qx 'keel_manifest_version=1' "$man" 2>/dev/null || continue
+    as_rels="$as_rels$(awk -F'\t' '/^artifact=/ && $1 != "artifact=edit" && $2 != "keel/CORE.md" { print $2 }' "$man" 2>/dev/null || true)"$'\n'
+    ck="$(sed -n 's/^checkout=//p' "$man" 2>/dev/null | awk 'NR == 1' || true)"
+    if [ -n "$ck" ] && ck="$(cd -P "$ck" 2>/dev/null && pwd -P)"; then as_roots="$as_roots"$'\n'"$ck"; fi
+  done
+}
+
+# alwayson_shipped REAL PARENT_REAL — B6: true when the file is Keel-shipped other than the core (the on-demand
+# tier), judged on both path forms against alwayson_ctx's roots: (i) a manifest artifact record of the home, (ii) a
+# path under <home>/keel/ (or under the real target of a symlinked <home>/keel), (iii) a file a Keel checkout's git
+# tracks — an untracked or ignored file there (private/, BACKLOG.md) is the adopter's, never classified.
+alwayson_shipped() {
+  local real="$1" pr="$2" p root rel
+  for p in "$pr" "$real"; do
+    case "$p" in "$as_home"/*) in_token_set "$as_rels" "${p#"$as_home"/}" && return 0 ;; esac
+  done
+  case "$pr" in "$as_home/keel/CORE.md") ;; "$as_home"/keel/*) return 0 ;; esac
+  if [ -n "$as_keel_real" ]; then
+    case "$real" in "$as_keel_real/CORE.md") ;; "$as_keel_real"/*) return 0 ;; esac
+  fi
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    case "$real" in "$root"/*) rel="${real#"$root"/}" ;; *) continue ;; esac
+    [ "$rel" != CORE.md ] || continue
+    git -C "$root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 && return 0
+  done <<<"$as_roots"
+  return 1
+}
+
+# _as_show PATH — PATH as a message names it: relative to $as_base (the audited home or project) when it lies
+# under it, as given or canonical; else as is.
+_as_show() {
+  case "$1" in
+    "$as_base"/*) printf '%s' "${1#"$as_base"/}" ;;
+    "$as_base_real"/*) printf '%s' "${1#"$as_base_real"/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# alwayson_audit ENTRY ONE_FILE [STOP_SET] [CORE_BROKEN] — resolve ENTRY's chain and record B6 (G-ALWAYSON-ONDEMAND),
+# B8 (W-ALWAYSON-DANGLING, W-ALWAYSON-DEPTH) into the unit's NOTES. CORE_BROKEN=1: --install's rails check already
+# raises G-RAILS-IMPORT-BROKEN for ENTRY's own unresolved keel/CORE.md import, so that one is not repeated as a
+# DANGLING (an import of keel/CORE.md from a deeper file still is). Sets as_unread (1 = ENTRY exists unreadable),
+# as_n / as_bytes (the files that load and their byte sum — comments included, a small named over-count: the
+# harness strips block comments [E26]) and as_files ("<bytes>\t<shown path>" per file). Needs alwayson_ctx and
+# $as_base set first.
+alwayson_audit() {
+  local entry="$1" k hop real pr bytes path imp shown
+  as_unread=0; as_n=0; as_bytes=0; as_files=""
+  as_base_real="$(cd -P "$as_base" 2>/dev/null && pwd -P || printf '%s' "$as_base")"
+  while IFS=$'\t' read -r k hop real pr bytes path imp; do
+    case "$k" in
+      UNREAD) as_unread=1 ;;
+      DANGLING)
+        if [ "${4:-0}" = 1 ] && [ "$hop" = "$entry" ]; then case "$real" in *keel/CORE.md) continue ;; esac; fi
+        warn W-ALWAYSON-DANGLING "$(_as_show "$hop") imports @$real, which does not resolve (missing, a directory, or unreadable) — the harness skips it silently every session; fix the path or remove the import" ;;
+      DEPTH) warn W-ALWAYSON-DEPTH "$(_as_show "$real") is imported by $(_as_show "$hop") past the fourth hop — it does not load (the harness follows four hops); import it from a shallower file, or drop it" ;;
+      LOAD)
+        shown="$(_as_show "$path")"
+        as_n=$((as_n + 1)); as_bytes=$((as_bytes + bytes)); as_files="$as_files$bytes	$shown"$'\n'
+        if [ "$hop" -ge 1 ] && alwayson_shipped "$real" "$pr"; then
+          gap G-ALWAYSON-ONDEMAND "$(_as_show "$entry") pulls $shown into every session (the on-demand tier), imported by $(_as_show "$imp") — remove that import: a Keel on-demand file is read when a task needs it, never at session start (docs/loading-and-cost.md)"
+        fi ;;
+    esac
+  done < <(alwayson_chain "$entry" "$2" "${3-}")
 }
 
 # dir #114 (M4-2): H-FOOTPRINT used to measure only the project's own CLAUDE.md, so the number it
@@ -281,20 +525,8 @@ if [ ! -f "$footprint_home/$footprint_context" ] && [ -z "${KEEL_HOME:-}" ] \
    && [ -f "${HOME:-}/.codex/AGENTS.md" ]; then
   footprint_home="${HOME:-}/.codex"; footprint_context="AGENTS.md"
 fi
-global_chars=0
-if [ -f "$footprint_home/$footprint_context" ]; then
-  global_chars="$(_char_count "$footprint_home/$footprint_context")"
-  # Linked mode: the global CLAUDE.md carries one `@…/keel/CORE.md` line, and Claude Code loads that
-  # target's own bytes at session start — so an honest sum must resolve it and add its size in too.
-  # Copy mode (or --no-git) embeds the core's content directly inside CLAUDE.md instead (no @import
-  # line), so its bytes are already counted by the read above — nothing extra to add there. AGENTS.md
-  # (--codex, copy-mode only) never carries an @import line either, so this never fires for it.
-  if grep -qE "$core_import_re" "$footprint_home/$footprint_context" 2>/dev/null \
-     && [ -f "$footprint_home/keel/CORE.md" ]; then
-    global_chars=$(( global_chars + $(_char_count "$footprint_home/keel/CORE.md") ))
-  fi
-fi
-global_est=$(( global_chars / 4 ))
+# The global figure itself (the whole import chain of $footprint_home/$footprint_context, dir #253 B7) is summed
+# just before the per-project loop below, where the chain resolver's helpers are all defined.
 
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 # Two git questions the context checks keep asking, in one place (dir #75's AGENTS.md block asks them
@@ -1116,6 +1348,27 @@ if [ "$INSTALL_MODE" = 1 ]; then
     fi
   fi
 
+  # dir #253 B5-B8, B7b: what the context file actually loads every session — its whole import chain — counted,
+  # fail-closed (an unreadable file is a GAP, never a silent 0), and checked: an on-demand Keel file in it, an
+  # import that does not resolve, a file past the fourth hop, and the global layer's own budget.
+  if [ -f "$gclaude" ]; then
+    alwayson_ctx "$ihome"
+    as_base="$ihome"
+    as_core_broken=0; [ -f "$ihome/keel/CORE.md" ] || as_core_broken=1
+    alwayson_audit "$gclaude" "$CODEX_MODE" "" "$as_core_broken"
+    if [ "$as_unread" = 1 ]; then
+      gap G-ALWAYSON-UNREAD "$icontext at $ihome exists but cannot be read — what it loads every session is unknown; make it readable (chmod u+r) and re-run the audit"
+    else
+      say "  OK   always-on chain: $as_n file(s), $as_bytes bytes, resolved from $icontext"
+      as_est=$(( as_bytes / 4 ))
+      if [ "$as_est" -gt "$ALWAYS_ON_WARN_TOKENS" ]; then
+        # The three largest files, biggest first (awk, not head: no producer is cut off under pipefail).
+        as_top="$(printf '%s' "$as_files" | sort -t "$(printf '\t')" -k1,1nr | awk -F'\t' 'NR <= 3 { printf "%s%s (~%d)", (NR > 1 ? ", " : ""), $2, $1 / 4 }')"
+        warn W-ALWAYSON-BUDGET "the always-on chain of $icontext is ~$as_est tokens ($as_bytes bytes over $as_n file(s)) > budget $ALWAYS_ON_WARN_TOKENS (KEEL_ALWAYS_ON_WARN_TOKENS) — every session pays it before any work; largest: $as_top — move text to the on-demand tier (docs/loading-and-cost.md), or accept W-ALWAYSON-BUDGET in $ihome/.keel/doctor-accept"
+      fi
+    fi
+  fi
+
   # On-demand tier reachable in either layout — and not shadowed: a root COPY beside a linked
   # keel/ version is a stale shadow (a leftover of the copy→linked migration) that a map still
   # pointing at the root name would silently keep reading.
@@ -1284,6 +1537,23 @@ if [ "$INSTALL_MODE" = 1 ]; then
       fi
       if [ -n "$iman_drift" ]; then
         warn W-MANIFEST-DRIFT "$iman_drift — ${iman_first}re-run install.sh$irelink_mode$ihome_flag to refresh the manifest, or uninstall first if the layout changed on purpose: keel uninstall$imode_flag$ihome_flag"
+      fi
+      # dir #253 B4: the manifest's edit record for the context file vs the file itself — a record of an edit the
+      # file no longer carries, or any edit record on a generator-owned file (Keel never edits one, B2). The
+      # re-run refreshes the record (after B2 it never writes a generated file).
+      iman_edit="$(awk -F'\t' -v f="$icontext" '$1 == "artifact=edit" && $2 == f { print $3; exit }' "$imanifest" 2>/dev/null || true)"
+      iedit_drift=""
+      if [ -n "$iman_edit" ] && [ -f "$gclaude" ] && [ -r "$gclaude" ]; then
+        if keel_context_is_generated "$gclaude"; then
+          iedit_drift="manifest records a Keel edit ($iman_edit) of $icontext, but $icontext is generated by another tool (KEEL-GENERATED, line 1), which Keel never edits"
+        elif [ "$iman_edit" = import-line ] && ! grep -qE "$core_import_re" "$gclaude" 2>/dev/null; then
+          iedit_drift="manifest records the core import line (import-line) in $icontext, but the file carries no keel/CORE.md import"
+        elif [ "$iman_edit" = core-block ] && ! keel_core_has_block "$gclaude"; then
+          iedit_drift="manifest records the embedded KEEL-CORE block (core-block) in $icontext, but the file carries no KEEL-CORE block"
+        fi
+      fi
+      if [ -n "$iedit_drift" ]; then
+        warn W-MANIFEST-DRIFT "$iedit_drift — re-run install.sh$irelink_mode$ihome_flag to refresh the manifest"
       fi
     fi
   fi
@@ -1653,6 +1923,24 @@ memory_checks() {
   done
 }
 
+# dir #114 / dir #253 B7: the global half of H-FOOTPRINT — the byte sum of the global context file's whole import
+# chain (keel/CORE.md in a linked home, and every other import), resolved once: it is machine-invariant across the
+# projects below. An AGENTS.md home is a one-file chain. global_set holds the chain's real paths: B9 compares each
+# project's CLAUDE.md with it, and each project chain stops at it (a global file is counted and judged once, by
+# the global audit — never again per project).
+global_chars=0
+global_set=$'\n'
+if [ -f "$footprint_home/$footprint_context" ]; then
+  fp_one=0; [ "$footprint_context" = AGENTS.md ] && fp_one=1
+  while IFS=$'\t' read -r fp_k _fp_hop fp_real _fp_pr fp_bytes _fp_rest; do
+    [ "$fp_k" = LOAD ] || continue
+    global_chars=$((global_chars + fp_bytes)); global_set="$global_set$fp_real"$'\n'
+  done < <(alwayson_chain "$footprint_home/$footprint_context" "$fp_one")
+fi
+global_est=$(( global_chars / 4 ))
+# B6's roots for every project chain: doctor's global home (where the per-project run looks for the global install).
+alwayson_ctx "$footprint_home"
+
 for d in "${DIRS[@]}"; do
   name="$(basename "$(cd "$d" 2>/dev/null && pwd || echo "$d")")"
   say "● $name ($d)"
@@ -1681,7 +1969,15 @@ for d in "${DIRS[@]}"; do
     # _char_count degrades to 0 on an unreadable file instead of aborting under set -e (dir #45):
     # findings are buffered until this unit's flush_notes, so a read failure here must not take down
     # anything already recorded for this unit — including a GAP — before it ever prints.
-    proj_est=$(( $(_char_count "$d/CLAUDE.md") / 4 ))
+    # dir #253: the project file's own always-on chain — B6, B8's DANGLING/DEPTH, B7's project figure — and B9
+    # (one file, one slot). The chain stops at the global set, so the global audit's findings are not repeated.
+    as_base="$(cd "$d" 2>/dev/null && pwd || printf '%s' "$d")"
+    alwayson_audit "$as_base/CLAUDE.md" 0 "$global_set"
+    proj_real="$(_real_path "$as_base/CLAUDE.md" || true)"
+    if [ -n "$proj_real" ] && in_token_set "$global_set" "$proj_real"; then
+      warn W-ALWAYSON-TWICE "$d/CLAUDE.md is also in the global always-on chain — it sits in two layer slots (personal and project); deliver it by one route, or accept W-ALWAYSON-TWICE in this project's .keel/doctor-accept when deliberate"
+    fi
+    proj_est=$(( as_bytes / 4 ))
     mem_est=$(( mem_index_chars / 4 ))
     est=$(( proj_est + global_est + mem_est ))
     if [ "$est" -gt "$WARN_TOKENS" ]; then
