@@ -221,9 +221,9 @@ tu_turns() {
   local kind="$1" file="$2"
   tu_require_jq || return 1
   jq -R -n -c --arg file "$file" --arg kind "$kind" '
-    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and ((.message | objects | .usage | objects) != null)) ] as $recs
+    '"$_TU_OBJECTS"' | [ .[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) != null)) ] as $recs
     | (reduce $recs[] as $r ({seen: {}, out: []};
-        if (($r.requestId | strings) == null) then (.out += [$r])
+        if ((($r.requestId | strings) // null) == null) then (.out += [$r])
         else
           ($r.requestId) as $rid
           | if (.seen[$rid] // false) then .
@@ -382,8 +382,8 @@ tu_self_check() {
       file: $file,
       skipped_lines: $skipped,
       total: length,
-      assistant_usage: ([.[] | select(.type == "assistant" and ((.message | objects | .usage | objects) != null))] | length),
-      assistant_no_usage: ([.[] | select(.type == "assistant" and ((.message | objects | .usage | objects) == null))] | length),
+      assistant_usage: ([.[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) != null))] | length),
+      assistant_no_usage: ([.[] | select(.type == "assistant" and (((.message | objects | .usage | objects) // null) == null))] | length),
       known_other: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) != null)] | length),
       unrecognized_types: ([.[] | select(.type != "assistant") | .type as $t | select($known | index($t) == null) | $t] | unique)
     }
