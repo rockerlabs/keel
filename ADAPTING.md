@@ -222,10 +222,13 @@ for the role split this leans on. (An installer adapter for these tools is separ
 If your own tool generates the global entrypoint (`CLAUDE.md`, or `AGENTS.md` under `--codex`), start line 1
 with the literal `<!-- KEEL-GENERATED` (no byte-order mark before it). Keel then treats the file as yours:
 `install.sh` leaves it byte-identical in every mode, `uninstall.sh` leaves its rails in place, and
-`doctor.sh --install` sends every remedy to your generator.
-`doctor` still reads what your file loads — its whole import chain — so the `G-ALWAYSON-*` and `W-ALWAYSON-*`
-checks (an on-demand Keel file imported, an import that resolves to nothing, a file past the fourth hop, the
-always-on budget) apply to a generated file too ([what loads, when](docs/loading-and-cost.md#the-always-on-layers)).
+`doctor.sh --install` names it and sends the remedies about its rails to your generator.
+`doctor` still reads what a generated `CLAUDE.md` loads — its whole import chain — so the `G-ALWAYSON-*` and
+`W-ALWAYSON-*` checks (an on-demand Keel file imported, an import that resolves to nothing, a file past the fourth
+hop, the always-on budget) apply to it too ([what loads, when](docs/loading-and-cost.md#the-always-on-layers)).
+The remedies for those checks are worded for the file ("remove that import", "fix the path"), not for a generator: apply
+them to what your generator emits. A generated `AGENTS.md` (`--codex`) is read as one file, with no import
+followed, so only its size and readability are checked.
 
 Keel reserves what it reads from a context file: the `KEEL-CORE`, `KEEL-GIT` and `KEEL-NOGIT` comment fences,
 line 1's `KEEL-GENERATED`, and the policy token `KEEL-MANAGER-MERGES` (the pre-PR gate reads it from a project

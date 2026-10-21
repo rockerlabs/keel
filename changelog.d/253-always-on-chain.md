@@ -1,6 +1,10 @@
 - `doctor` now resolves what each entrypoint actually loads, its whole import chain, and checks it (dir #253,
-  slice 2). It follows Claude Code's import grammar: four hops, each file once, and no import inside a code
-  span, fenced or indented code, an HTML comment or a quoted path. `doctor --install` prints the global chain
+  slice 2). It reads imports with a line-based approximation of Claude Code's import grammar (four hops, each file once; no
+  import inside a code span, fenced or indented code, an HTML comment or a quoted path), which can differ from what
+  the harness loads: it can miss an import (one after a fence opened on a list-marker line, or one in inline formatting),
+  read `@path#fragment` as a different path, flag an on-demand `@path` the harness would not import (inside an HTML
+  block, a link reference definition or a blockquote), and over-count a file near the fourth hop. A clean `always-on
+  chain` line is evidence, not proof, and a `G-ALWAYSON-ONDEMAND` on one of those constructs cannot be suppressed. `doctor --install` prints the global chain
   as one line (`always-on chain: N file(s), M bytes`) and fails closed: a context file it cannot read is a GAP,
   `G-ALWAYSON-UNREAD`. A Keel on-demand file imported into a chain is a GAP, `G-ALWAYSON-ONDEMAND` (the global
   chain under `--install`, the project's own chain in the per-project run). The WARNs are `W-ALWAYSON-DANGLING`
