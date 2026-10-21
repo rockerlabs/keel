@@ -15,6 +15,119 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-21
+
+**Known issues, disclosed at the cut.** Two things from the 0.18.0 delta audit ship known-imperfect. The first, that
+`doctor`'s import reader is an approximation of the harness's, is stated in the `doctor` bullet below. The second:
+`/polish` runs the project's test command through `tools/check-run.sh` as one string under `bash -c`, without
+`pipefail`, so a pipe or a `;` inside that string makes the run's recorded status the last stage's and a red
+suite can verify green. Put the pipe outside the `check-run.sh` call, or chain the stages with `&&`.
+
+- `doctor` now resolves what each entrypoint actually loads, its whole import chain, and checks it (dir #253,
+  slice 2). It reads imports with a line-based approximation of Claude Code's import grammar (four hops, each file once; no
+  import inside a code span, fenced or indented code, an HTML comment or a quoted path), which can differ from what
+  the harness loads: it can miss an import (one after a fence opened on a list-marker line, or one in inline formatting),
+  read `@path#fragment` as a different path, flag an on-demand `@path` the harness would not import (inside an HTML
+  block, a link reference definition or a blockquote), and over-count a file near the fourth hop. A clean `always-on
+  chain` line is evidence, not proof, and a `G-ALWAYSON-ONDEMAND` on one of those constructs cannot be suppressed. `doctor --install` prints the global chain
+  as one line (`always-on chain: N file(s), M bytes`) and fails closed: a context file it cannot read is a GAP,
+  `G-ALWAYSON-UNREAD`. A Keel on-demand file imported into a chain is a GAP, `G-ALWAYSON-ONDEMAND` (the global
+  chain under `--install`, the project's own chain in the per-project run). The WARNs are `W-ALWAYSON-DANGLING`
+  (an import that resolves to nothing), `W-ALWAYSON-DEPTH` (a file past the fourth hop) and `W-ALWAYSON-TWICE`
+  (a project `CLAUDE.md` the global entrypoint also imports). `W-ALWAYSON-BUDGET` warns when the global chain
+  alone passes `KEEL_ALWAYS_ON_WARN_TOKENS` (default 8,000 tokens <!-- claim: hand the KEEL_ALWAYS_ON_WARN_TOKENS default in tools/doctor.sh, 2026-10-20 -->). `H-FOOTPRINT` now sums both chains, no
+  longer only the `keel/CORE.md` import.
+- `W-MANIFEST-DRIFT` now compares the install manifest's edit record with the context file (dir #253). It fires
+  when the recorded import line or embedded KEEL-CORE block is gone from the file, and when any edit is recorded
+  on a generator-owned file.
+- [`docs/loading-and-cost.md`](/docs/loading-and-cost.md) gains "The always-on layers" (dir #253). It names the
+  core, personal, project and on-demand layers and the one-file-one-slot rule, and lists what `doctor` checks.
+- `doctor` no longer misreads a project under an exported `GIT_LITERAL_PATHSPECS`, `GIT_GLOB_PATHSPECS`,
+  `GIT_NOGLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` (found in dir #253's review). It unsets all four before its
+  first git call, the way it drops an inherited `GIT_DIR`. Before, any one of them made `git check-ignore` fail,
+  so a gitignored `CLAUDE.md` raised a false `G-GITIGNORE-CONTEXT`.
+
+- No Keel installer rewrites an entrypoint another tool generates (dir #253, slice 1). A context file whose line 1
+  begins `<!-- KEEL-GENERATED` is generator-owned: `install.sh` (every mode, `--codex` too) leaves it byte-identical
+  with no prompt and no manifest edit record, `uninstall.sh` leaves its rails in place, and `doctor.sh --install` names
+  it, and its `W-RAILS-UNWIRED`, `W-RAILS-DOUBLE` and `W-CORE-DRIFT` findings send the fix to the generator instead of an `install.sh` run. This closes the `install.sh --link`
+  hazard that swapped a generated file's embedded rails for an import line. `ADAPTING.md` gains "Generating your
+  entrypoints yourself" (the marker and the `KEEL-*` names Keel reads).
+- `install.sh --link` now auto-swaps (or auto-removes) an embedded KEEL-CORE block only when the prior manifest
+  recorded it as Keel's own copy-install block (dir #253). A block Keel did not record (a hand copy, another tool's
+  file, an install older than its manifest) is offered on a terminal and left untouched otherwise, except when the
+  file already holds the import line beside a block identical to Keel's: that case is never offered, only reported;
+  a drifted block keeps its existing path. After a plain `install.sh`, `--link` migrates a copy home as before.
+
+- **`/polish` no longer gives a gate receipt a turn of its own** (dir #765). After dir #855's permissive "a receipt may share the next step's turn", the 16 <!-- claim: hand closed windows after d00bbf2c in the dir #855 observer report, 2026-10-18 --> closed windows that followed still spent a median of 4.5 <!-- claim: hand pure-receipt turns per window, same report, 2026-10-18 --> turns each on receipts alone, most often those of steps 1, 2, 4 and 8, because nothing made the model choose otherwise.
+  - **`commands/polish.md`.** The preamble now says to write a receipt alongside the next step's first calls, never alone; step 7's receipt is chained behind the self-check (`tools/self/doctor.sh && … receipt polish.7-selfcheck`) and step 8's behind the push (`git push -u origin <branch> && … receipt polish.8-unlock …`), so a GAP or a failed push writes none. The core stays within its word budget.
+  - **`commands/polish-guide.md`.** § Steps 7 and 8 carry the chains; § Step 9 records why receipts are not batched into one call (it saves no turn) and why the `gh pr create` rule stands.
+  - **`docs/token-economy.md`.** The measurement by step id. `tests/test_pre_pr_gate.sh` pins that the hook allows the push chain, still denies the same chain with `--no-verify` on the push, and still denies a chain ending in `gh pr create`.
+
+- **`/polish` closes four recurring gaps promoted from adopter sessions** (dir #822).
+  - **`commands/polish.md`.** Step 1 nudges a notable change's changelog entry into the same PR; step 2 re-reads `/simplify`'s edits for dropped exit semantics (a helper ending in `while read` or a pipeline needs `return 0` or `|| true`) and counts an Agent-tool ban as a degraded path; step 5 fixes every accepted finding before the next review round.
+  - **`commands/polish-guide.md`.** § Step 1 gains the changelog nudge; § Step 2 gains the exit-semantics rule with both felt cases, the `inline:agent-tool-banned` receipt, and the statement that the prose-only branch is the only proportionality exit; § Step 5 gains "one round per batch of findings" and states that a docs-only fix commit still needs a delta round.
+  - Two further items were already answered and are not rebuilt: `<keel-checkout>/tools/pre-pr-gate.sh` is named in the core's opening paragraph, and the impact ledger no longer lives in a repo's tracked tree (dir #637).
+
+- `docs/verification-economics.md` §4's per-release debt budget now carries its number: a release's audit tail is capped at a quarter of the slate, rounded up, measured on the three slates before the guard-threat-model split (dir #843).
+
+- One bad line no longer aborts the session-cost reader for the whole file (dir #852).
+  `weighted`, `table`, `session`, `selfcheck` and `tail --json` read a transcript line by line, so a truncated last
+  line, a line that is not an object, a CRLF line, or a tool call whose `cwd` or `file_path` is not a string skips only
+  itself and the file is priced at the same number as its clean twin. `selfcheck` reports the skipped-line count; `keel tokens` shares the reader
+  (`tools/lib/transcript-usage.sh`) and skips a bad line the same way, without reporting it. A
+  manifest line that names no session file is priced as zero with a note instead of aborting on bash 3.2.
+
+- **`/polish`'s mechanical steps take fewer primary turns, and a test receipt now follows the run's files, not a reading of its output** (dir #855).
+  - **`tools/check-run.sh`** (new). `run <dir> -- <cmd…>` runs a check in one call and leaves `exit` (written last, so a killed run has none), `head`, `tree` (tracked edits only), `cmd`, `log` and `secs` in `<dir>`; `verify <dir> -- <cmd…>` succeeds only for a successful exit at the same HEAD, the same tracked tree and the same command (argv-exact). Covered by `tests/test_check_run.sh`.
+  - **`commands/polish.md`.** Step 3 runs the test command in ONE `check-run.sh run` call (foreground, timeout 600000 <!-- claim: hand the foreground Bash timeout in ms, as step 3 of commands/polish.md names it, 2026-10-15 -->); steps 3 and 6 write their receipt chained after `check-run.sh verify … &&`, so a red, killed, stale, edited or different-command run writes none; the receipt is written alongside the next step's first calls, never alone, and never in a turn holding a commit, amend or `gh pr create`, nor a push but step 8's chain. The core stays within its word budget, now at 3,000 words <!-- claim: words commands/polish.md -->. Dir #765 tightened the receipt rule later in this release.
+  - **`commands/polish-guide.md`.** § Step 3 gains "Long runs": a suite over nine minutes starts backgrounded with an explicit timeout, is waited for by its completion notice (no polls), and a run with no `exit` file is never green; the remainder of a cut-short suite runs as one sequential call with one `verify`.
+  - The pre-PR gate's hook allows the `verify … && receipt` chain and still denies the same chain ending in `gh pr create` (pinned in `tests/test_pre_pr_gate.sh`). `docs/token-economy.md` gains the measurement behind the change.
+
+- **A managed release now runs under a context budget** (dir #860). A release's cost is context size times turns, and in the last release the sessions with the longest contexts were over a third of it; `docs/release-management.md` now bounds each long-lived role.
+  - **R11.** The workers' compaction stop stays at the project's default for the whole release; the manager neither asks for nor sets a release-wide override, and only the operator may name another value, which the manager records as a positive integer and hands to each live worker as a one-line pointer to the shared brief. A stop that finds no send left waits for the operator's next turn, is named in the health line and is counted at the close.
+  - **R3.** The manager clears an idle finished (frozen) worker before handing it a next ticket or a train, then sends one self-contained message; a PR that is not yet frozen is not finished, and a clear the harness refuses falls back to another idle worker or a queued launch.
+  - **R6.** The manager reads its own context at each sweep and hands over at 600k tokens <!-- claim: hand the manager's hand-over threshold, as R6 of docs/release-management.md names it, 2026-10-19 -->: it writes the handover file at once, launches nothing new and asks the operator for a successor, instead of running until its window is full.
+  - **R7 and `docs/grooming.md` G5.** The close records the context budget the run held and how often each part fired; the groom's estimate takes a procedure change's own measured counterfactual, re-based when another change cut the same turns.
+  - **`commands/manage-release.md` and `commands/groom.md`** point at the new rules (M4, M7, G5). `tests/test_release_management_doc.sh` and `tests/test_grooming_doc.sh` pin them.
+
+- **A release cut can no longer land without its release-history entry** (dir #866). `tests/test_release_history.sh` gains a check that fails the cut PR's CI while a released `## [x.y.z]` section of `CHANGELOG.md` has no `## vx.y.z` entry in the history page; it reads just the changelog and the history page, so it behaves the same on a shallow, tagless checkout, and it exempts only the version `tools/self/cut-sim.sh` cuts (a pin binds them). Before this, the entry was a prose step: a cut was tagged without it, and `main` and every open PR stayed red until a fix PR added it. `docs/release-audit.md` Phase 7 and `docs/release-management.md` R9 now name the gate, and `commands/manage-release.md` M8 names the release-record entry and points at R9.
+
+- **A managed release now caps each PR's review loop, and the operator decides at the cap** (dir #871). A release ran `/polish`'s review loop with no cap, and one PR's loop ran 31 delta rounds <!-- claim: hand 0.17.0's longest single-PR review loop, 31 delta rounds, from spec 871's measurement, 2026-10-20 --> while its worker's context doubled; `docs/release-management.md` R11 now states the bound.
+  - **R11.** The wave plan names a cap, in keel's plans five delta rounds after the full review; for the release's workers it replaces the project's own round budget and residual exit. The loop converges at a round whose verdict under `FRAMEWORK.md`'s stop rule is `MERGE`. A counted round that still finds something serious at the cap is the stop: the worker fixes and commits nothing more, sends the manager a `ROUNDS` line with that round's trend line, and ends its turn. The operator is asked per PR and answers more rounds, the residual exit or a redesign; the review-round stop is the one exception to the wave-plan rule that a stop waiting for the operator is asked once per wave.
+  - **What counts as a round.** Every review after the full one counts, a full re-review included; a re-send after a harness failure and a fresh reviewer for a lost one are the same round, and a commit no review reads adds none. Four kinds of review (the post-convergence fix commit's, the gate's on the shipping head, one forced by a rebase or merge of the default branch, and a CI-forced fix's) count only when they find something serious.
+  - **The worker brief's item 4** carries the cap, the counting rules and the stop line, since a worker never reads R11. `tests/test_release_management_doc.sh` pins the headings, the stop line, the brief's four sentences and the rule needles of both new paragraphs.
+
+- **The release audit is priced from its measured parts, and the delta-audit doc says what a leg's cost follows** (dir #872).
+  - **`docs/grooming.md` G5.** The audit line is now the previous measured audit's fixed part (orchestrator, baseline, diversity leg, verifier passes, re-check pair) plus its part per slate ticket (the whole-read legs' total over the tickets that release closed) times this slate's tickets, with a band over the recent splittable audits; one audit gives a labelled point, an unsplittable previous audit falls back to its total per slate ticket labelled unsplit, and no measured audit leaves the line unpriced. It replaces the floor the 0.18.0 groom added earlier in this same release (a compensation whose named remover was this ticket), so the floor never ships. The split is summed from each whole-read leg's own transcript with `tools/self/session-cost.sh weighted`, since a harness's per-leg token count is the leg's final context, not its spend. Mirrored into [`/groom`](/commands/groom.md).
+  - **`docs/delta-audit.md`.** The sizing section (7) no longer claims a leg's cost scales with seam count and PR density, which the measured legs do not bear out: no static measure of a cluster predicted its leg's cost, the leg's own turn count did, and a merge of clusters trades verification depth for cost, so a merge goes into the plan with its price and the operator picks it per run. The roles section's per-leg record now names where each leg's transcript is, so the next groom can split the audit. [`/delta-audit`](/commands/delta-audit.md) A3 follows.
+  - Pinned by whole-clause checks in `tests/test_grooming_doc.sh`, `tests/test_delta_audit_doc.sh` and `tests/test_delta_audit_command.sh`.
+
+- **Corrections from the 0.18.0 release-candidate audit.** Prose only, no behaviour change (audit findings B01–B08).
+  The always-on chain entry (dir #253) and `docs/loading-and-cost.md` now say that the always-on import reader in
+  `doctor` is a line-based approximation of Claude Code's import grammar that can differ from the harness, name
+  where, and call a clean chain line evidence rather than proof; the per-project run is not fail-closed on an
+  unreadable project `CLAUDE.md`. `ADAPTING.md`'s "Generating your entrypoints yourself" no longer says that
+  `doctor.sh --install` sends every remedy to the generator (the `ALWAYSON` remedies name none) or that the
+  `ALWAYSON` checks apply to a generated `AGENTS.md` (it is read as one file, so only its size and readability are checked).
+  `docs/token-economy.md` no longer calls the follow-ups to `/go` and `/wrap` (dir #857, dir #858) and the
+  cheaper-tier runner (dir #856) pending: all three are closed. Entries of this release's own notes were corrected
+  where a later change in the same release had replaced what they announced (the `/polish` receipt placement, the
+  groom's audit-price floor) or where they over-read the code (the generated-entrypoints block offer, the
+  release-history gate, which tools share the session-cost reader).
+
+- **Grooming and release-close corrections from the 0.18.0 groom.** `docs/release-management.md` R8's checked writer
+  now holds a deletion to its exact expected byte count, and `docs/grooming.md` G4 now says every backlog write in the
+  hygiene sweep goes through that writer, after a copy taken before the first write: that groom's first in-place edit
+  emptied the backlog, and a copy taken seconds earlier restored it. It is labelled a compensation; its remover is
+  dir #193. G5 briefly floored the release audit's price at the smallest of the last three measured audits instead of
+  scaling it linearly by tickets, which had under-read the 0.17.0 audit by about a third; dir #872 replaced that
+  floor in this same release with a price from the previous audit's measured parts, so it is not in the release.
+  The G4 rule is mirrored into [`/groom`](/commands/groom.md). `docs/release-management.md` R9 now requires every
+  `known-issue-in-changelog` disposition in the audit's staged files to reach the CHANGELOG section before the GO SHA,
+  or to be demoted with a written reason: 0.17.0's one staged known issue went to a ticket Log and was disclosed
+  nowhere.
+
 ## [0.17.0] — 2026-10-15
 
 - **The runner's SIGTERM and interrupt checks no longer fail when a loaded machine is slow.** The check in
