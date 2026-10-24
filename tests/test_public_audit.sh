@@ -1031,4 +1031,33 @@ run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr746" bash "$pa" --no-
 check_status "dir #746 A9(d): a Cyrillic literal after an invalid unit in a binary → GAP exit 1" 1 "$STATUS"
 check_contains "dir #746 A9(d): ...naming bad16le.bin" "$OUT" "in a binary file in the working tree — bad16le.bin"
 
+# --- dir #761: an ASCII-only personal literal or token whose ERE `.` or bracket stands for a non-ASCII letter. The
+# UTF-16 bytes of `Michalek` (l-stroke = 42 01) leave `MichaB\x01ek` in decode_binary's NUL-strip view; on a host
+# whose iconv cannot resume (musl) the built-in decoder was gated on a non-ASCII needle and never ran. The shim
+# below is that iconv. Needles and bytes are built at runtime so this test source stays ASCII.
+loc761="$(pick_utf8_locale)" || loc761=C.UTF-8
+mkdir "$SANDBOX/shim761"
+printf '#!/bin/sh\nexit 1\n' > "$SANDBOX/shim761/iconv"; chmod +x "$SANDBOX/shim761/iconv"
+printf 'micha.ek\n' > "$SANDBOX/pa-personal-dot761"
+printf 'micha[^x]ek\n' > "$SANDBOX/pa-personal-bracket761"
+printf 'michalek\n' > "$SANDBOX/pa-personal-plain761"
+d="$(repo_by dev@example.com)"
+printf 'AB\000\330M\000i\000c\000h\000a\000B\001e\000k\000' > "$d/lone.bin"
+commit_in "$d" "binary with a lone surrogate before the UTF-16 l-stroke literal"
+for n761 in dot bracket; do
+  run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-${n761}761" bash "$pa" --no-history "$d"
+  check_status "dir #761: the $n761 literal vs a lone surrogate + UTF-16 l-stroke, iconv cannot resume (tree) → exit 1" 1 "$STATUS"
+  check_contains "dir #761: ...naming lone.bin" "$OUT" "in a binary file in the working tree — lone.bin"
+  run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-${n761}761" bash "$pa" "$d"
+  check_status "dir #761: ...and in git history → exit 1" 1 "$STATUS"
+  check_contains "dir #761: ...naming the history binary" "$OUT" "in a binary blob in git history"
+done
+run env LC_ALL="$loc761" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-dot761" bash "$pa" --no-history "$d"
+check_status "dir #761: the dot literal, iconv -c resumes here → exit 1" 1 "$STATUS"
+run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" bash "$pa" --no-history --token 'Micha.ek' "$d"
+check_status "dir #761: the token 'Micha.ek' vs the same binary, iconv cannot resume → exit 1" 1 "$STATUS"
+check_contains "dir #761: ...found in the binary file" "$OUT" "private token /Micha.ek/ in a binary file in the working tree"
+run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-plain761" bash "$pa" --no-history "$d"
+check_status "dir #761 control: the literal 'michalek' does not match an l-stroke → exit 0" 0 "$STATUS"
+
 summary

@@ -142,6 +142,20 @@ say()  { [ "$QUIET" = 1 ] || echo "$@"; }
 gap()  { echo "  GAP  $1"; exit_code=1; }
 warn() { echo "  WARN $1"; }
 
+# needle_wide STRING — status 0 when STRING holds a non-ASCII byte, or an ERE construct that can stand for a
+# non-ASCII letter: an unescaped `.` or `[` (a bracket expression, `[^x]` too), or a backslash before a letter or
+# digit (`\w`, `\S`, `\1`). Such a needle can match text the NUL-strip view of a UTF-16 binary does not hold (`.`
+# is one character; a letter outside ASCII is a NUL-stripped byte pair there), so it needs the decoded views. A
+# backslash before punctuation (`\.`, `\[`, `\\`) is a literal and is dropped first. Pure bash: no tool to be missing.
+# IN SYNC with the same function in tools/secret-guard/secret-scan.sh (pinned by
+# tests/test_secret_guard.sh, dir #761).
+needle_wide() {
+  local s="${1//\\[![:alnum:]]/}"
+  case "$1" in *[![:ascii:]]*) return 0 ;; esac
+  case "$s" in *[.[\\]*) return 0 ;; esac
+  return 1
+}
+
 # --- the producer rule (dir #738 B14) ------------------------------------------------------------
 # A git read or a grep whose output a check reads runs in the MAIN shell, spools its output under
 # $audit_tmp and has its status checked: a non-zero status is a GAP `could not <step> (exit N) — the audit
@@ -338,19 +352,20 @@ while IFS= LC_ALL=C read -r line; do
   if valid_ere -iE "$line"; then
     printf '%s\n' "$line" >> "$personal_pat" || personal_wr_rc=$?
     has_personal=1
-    case "$line" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
+    if needle_wide "$line"; then decode_nonascii=1; fi
   else
     bad_personal=$((bad_personal + 1))
   fi
 done <<EOF_PERSONAL
 $personal_lines
 EOF_PERSONAL
-# dir #746 (B7): the non-ASCII needle flag — set above for a personal literal, here for a token (an ASCII one
-# survives decode_binary's NUL-strip pass, unless an ERE `.` or bracket in it stands for a non-ASCII letter: a
-# stated limit there). It gates decode_binary's built-in decoder only; pass U runs for every needle.
+# dir #746 (B7), dir #761: the wide-needle flag — set above for a personal literal, here for a token. A needle is
+# wide (needle_wide) when it holds a non-ASCII byte or an ERE `.`/bracket/class escape that can stand for a
+# non-ASCII letter: an ASCII needle without one survives decode_binary's NUL-strip pass. It gates decode_binary's
+# built-in decoder only; pass U runs for every needle.
 if [ "${#tokens[@]}" -gt 0 ]; then
   for t in "${tokens[@]}"; do
-    case "$t" in *[![:ascii:]]*) decode_nonascii=1 ;; esac
+    if needle_wide "$t"; then decode_nonascii=1; fi
   done
 fi
 # A pattern file that could not be written is no coverage at all: report it, and run no personal grep.
@@ -412,7 +427,7 @@ decode_binary() {  # $1 = source file, $2 = destination file for the decoded vie
       iconv -c -f UTF-32LE -t UTF-8 "$src" 2>/dev/null || true; echo
       iconv -c -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
     fi
-    # the built-in decoder, only where iconv cannot resume and a personal literal is non-ASCII
+    # the built-in decoder, only where iconv cannot resume and a needle is wide (needle_wide: non-ASCII, or a `.`/bracket that can stand for a non-ASCII letter)
     if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
       od -An -v -tu1 < "$src" | LC_ALL=C awk '
         function o(v, k) {
