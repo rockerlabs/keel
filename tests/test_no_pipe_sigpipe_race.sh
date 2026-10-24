@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # test_no_pipe_sigpipe_race.sh — dir #280: a static guard against reintroducing the
-# `printf "$var" | grep -q/-m/head` SIGPIPE race in any tools/*.sh or tests/*.sh file that runs
+# `printf "$var" | grep -q/-m/head` SIGPIPE race in any tools/*.sh or tests/*.sh file — plus
+# install.sh, uninstall.sh, bootstrap.sh, keel and the tools/secret-guard pre-commit/pre-push hooks (dir #837; the sh-only bootstrap.sh and keel have no pipefail
+# and are skipped by runs_under_pipefail; other tracked scripts, e.g. under docs/ and examples/, stay
+# out of scope) — that runs
 # under `pipefail`. Under pipefail, grep's (or head's) own early exit on a match/line-count can
 # close the pipe before printf finishes writing, and the resulting SIGPIPE flips a real match into
 # a false "not found" — the exact bug dir #280 fixed across ~20 call sites (reproduced live: a
@@ -38,8 +41,9 @@
 # test fail on its own source the moment it became in-scope of its own scan).
 # dir #837 widened the consumer SPELLING: an absolute path (`/usr/bin/grep`), `command grep`, `ggrep`
 # (GNU grep on macOS) and `rg`, and a flag that takes its argument ahead of the q/m one (`grep -e pat -q`:
-# -e/-f/-A/-B/-C and the long --regexp/--file consume the next word).
-QMHEAD_RE='((/[^ |]*/|command +)?(e|f|g)?grep|rg)( +(-[efABC]|--regexp|--file) +[^ |]+| +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
+# -e/-f/-A/-B/-C, also clustered (`-ie`), and the long --regexp/--file consume the next word, quoted or not).
+# Still a known gap: other wrappers (`env`, `sudo`, `xargs`, `busybox`, a leading backslash) and `grep -- -q`.
+QMHEAD_RE='((/[^ |]*/|command +)?(e|f|g)?grep|rg)( +(-[a-zA-Z]*[efABC]|--regexp|--file) +("[^"]*"|'"'"'[^'"'"']*'"'"'|[^ |]+)| +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
 # dir #708 widened the q/m consumer to ANY producer. Measured @0a99412: `| grep -q/-m` after any
 # command was 9 hits tree-wide (all fixed), while `| head` after any command was ~97 — nearly all
 # `x="$(... | head -1)"` captures whose pipeline status nobody reads, so a SIGPIPE there changes no
@@ -156,13 +160,18 @@ fx="$SANDBOX/race-fixture.sh"
   echo "func_prod $P grep -e pat -q"
   echo "func_prod $P grep -c x"
   echo "func_prod $P rg x"
+  echo "func_prod $P grep -ie pat -q"
+  echo "func_prod $P grep -e \"a b\" -q"
+  echo "func_prod $P rg --quiet x"
+  echo "func_prod $P grep --regexp pat -q"
+  echo "func_prod $P grep -A 3 x"
 } > "$fx"
 got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
-if [ "$got" = "1 2 3 7 8 9 10 11 12 13 14 15 16 " ]; then
+if [ "$got" = "1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 " ]; then
   pass "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg"
 else
   fail "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg" \
-    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 12 13 14 15 16 ')"
+    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 ')"
 fi
 
 # dir #837 scope fixture: every file the ticket named is in the scan list.
