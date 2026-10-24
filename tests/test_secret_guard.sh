@@ -3103,7 +3103,7 @@ git_shim_raw764() {  # dir bytes — a git whose `--raw` answer is the printf-fo
   printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = --raw ] && { printf "%s"; exit 0; }; done\nexec "%s" "$@"\n' "$2" "$real_git715" > "$1/git"
   chmod +x "$1/git"
 }
-for row764 in 'a bare token|bogus\\0' 'a combined-diff header|::100644 100644 100644 aaaa bbbb cccc MM\\0' 'a header with no path|:100644 100644 aaaa bbbb M\\0'; do
+for row764 in 'a bare token and a path|bogus\\0f.txt\\0' 'a combined-diff header and a path|::100644 100644 100644 aaaa bbbb cccc MM\\0f.txt\\0' 'a header with no path|:100644 100644 aaaa bbbb M\\0'; do
   git_shim_raw764 "$d746/shim-rec" "${row764#*|}"
   run_in "$a24_repo746" env PATH="$d746/shim-rec:$PATH" "$scan" --range "$a24_base746..HEAD"
   check_status "dir #764: the pair enumeration answers ${row764%%|*} → exit 2" 2 "$STATUS"

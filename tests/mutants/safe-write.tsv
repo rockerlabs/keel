@@ -11,7 +11,8 @@
 # Also retired as equivalent: backup-noclobber (the pre-check skips every taken name before the claim, so the
 # exclusive create only matters to the same race) and inside-empty-checkout (an empty checkout reaches `cd -P ""`, which
 # fails on bash 4+ and so returns 1 as the guard does; only macOS's bash 3.2 lets it through, a platform-dependent row).
-# backup-not-regular ends in TIMEOUT, a real kill: without the refusal an earlier row's FIFO blocks the copy forever.
+# backup-not-regular and backup-skip-taken end in TIMEOUT, real kills: without them an earlier row's FIFO blocks the
+# backup's copy or claim forever.
 # Run the sweep as an ordinary user: write-readonly and backup-claim-failed are killed by rows the root leg skips
 # (CLAUDE.md "Linux-leg traps" 2), so a root run reports them SURVIVED.
 # Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
