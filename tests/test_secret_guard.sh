@@ -3358,6 +3358,72 @@ for n746 in c.txt d.txt; do
   check_contains "dir #746 A26(g): ...and $n746 says both were scanned" "$OUT" \
     "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $n746"
 done
+# (h) dir #775: a tracked file reached through a symlinked PARENT directory. The path itself is a regular file, so
+# the working read succeeded and the committed blob was never scanned: a key moved away with its directory read
+# clean. The index copy is scanned too, and the target's content as well (as for a symlink AT the path).
+r775="$(new_repo)"
+mkdir "$r775/sub" "$r775/sub/deep"
+printf 'tok = %s\n' "$k746" > "$r775/sub/key.txt"
+printf 'tok = %s\n' "$k746" > "$r775/sub/deep/key.txt"
+commit746 "$r775" key
+o775="$(mktemp -d "$SANDBOX/o775.XXXXXX")"
+mkdir "$o775/deep"
+printf 'clean\n' > "$o775/key.txt"; printf 'clean\n' > "$o775/deep/key.txt"
+mv "$r775/sub" "$o775/orig-sub"
+ln -s "$o775" "$r775/sub"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: a committed key behind a symlinked parent (clean target) → BLOCKED" 1 "$STATUS"
+check_contains "dir #775: ...the index copy's key is reported" "$OUT" "  sub/key.txt:1:tok = $k746"
+check_contains "dir #775: ...at any depth" "$OUT" "  sub/deep/key.txt:1:tok = $k746"
+check_contains "dir #775: ...and the WARN says both copies were scanned" "$OUT" \
+  "secret-scan: WARN reached through a symlinked directory, scanned its working copy and its index copy: sub/key.txt"
+check_absent "dir #775: ...never clean" "$OUT" "secret-scan: clean"
+# the target holding the key too: reported once from each copy's point of view, still BLOCKED
+printf 'tok = %s\n' "$k746" > "$o775/key.txt"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: the key in the target as well → BLOCKED" 1 "$STATUS"
+check_eq "dir #775: ...a hit both copies share prints once" 1 "$(match "$OUT" -c '^  sub/key.txt:')"
+printf 'clean\n' > "$o775/key.txt"
+# a symlinked parent over content identical to the index copy still reads clean
+r775="$(new_repo)"
+mkdir "$r775/sub"; printf 'clean\n' > "$r775/sub/same.txt"
+commit746 "$r775" same
+mv "$r775/sub" "$o775/orig-sub2"
+ln -s "$o775/orig-sub2" "$r775/sub"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: a symlinked parent with identical clean content → exit 0" 0 "$STATUS"
+check_contains "dir #775: ...clean" "$OUT" "secret-scan: clean"
+# a tracked symlink (mode 120000) under a symlinked parent: its committed target string is scanned too
+r775="$(new_repo)"
+mkdir "$r775/sub"; ln -s "/tmp/$aws746" "$r775/sub/lnk"
+commit746 "$r775" lnk
+mv "$r775/sub" "$o775/orig-sub3"
+mkdir "$o775/sub3"; ln -s /nowhere/x "$o775/sub3/lnk"
+ln -s "$o775/sub3" "$r775/sub"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: a committed symlink behind a symlinked parent → BLOCKED on its committed target" 1 "$STATUS"
+check_contains "dir #775: ...the committed target string is reported" "$OUT" "  sub/lnk:1:/tmp/$aws746"
+# a symlinked parent whose target is dangling: the file is absent through it, so the index copy stands in
+r775="$(new_repo)"
+mkdir "$r775/sub"; printf 'tok = %s\n' "$k746" > "$r775/sub/key.txt"
+commit746 "$r775" dangling
+mv "$r775/sub" "$o775/orig-sub5"
+ln -s "$o775/no-such-dir" "$r775/sub"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: a committed key behind a dangling symlinked parent → BLOCKED" 1 "$STATUS"
+check_contains "dir #775: ...from its index copy" "$OUT" "  sub/key.txt:1:tok = $k746"
+# fail closed: a committed blob git cannot read is exit 2 behind a symlinked parent too
+r775="$(new_repo)"
+mkdir "$r775/sub"; printf 'clean\n' > "$r775/sub/g.txt"
+commit746 "$r775" g
+mv "$r775/sub" "$o775/orig-sub4"
+mkdir "$o775/sub4"; printf 'clean\n' > "$o775/sub4/g.txt"
+ln -s "$o775/sub4" "$r775/sub"
+bsha775="$(git -C "$r775" rev-parse HEAD:sub/g.txt)"
+rm "$r775/.git/objects/${bsha775%"${bsha775#??}"}/${bsha775#??}"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: an unreadable index copy behind a symlinked parent → exit 2" 2 "$STATUS"
+check_absent "dir #775: ...never clean" "$OUT" "secret-scan: clean"
 
 # --- dir #695: the shipped example documents the rules the scanner enforces, and is itself accepted -------
 ex="$REPO_ROOT/tools/secret-guard/secret-scan-personal.example"
