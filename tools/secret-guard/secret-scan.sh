@@ -238,16 +238,32 @@ esac
 # only the first. A literal starting with `-` is a pattern too, never a grep option (S2-1). No literal → no
 # file and no personal grep: `grep -f` over an empty file disagrees across BSD, GNU and busybox. The file
 # lives in $SCRATCH (mktemp -d, mode 0700), which the EXIT trap removes on every exit.
-# has_personal — at least one literal; personal_nonascii — one holds a non-ASCII byte, which skips --range's
-# NUL-strip fast path and, through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on
-# emit_blob's built-in decoder.
+# needle_wide STRING — status 0 when STRING holds a non-ASCII byte, or an ERE construct that can stand for a
+# non-ASCII letter: an unescaped `.` or `[` (a bracket expression, `[^x]` too), or a backslash before a letter or
+# digit (`\w`, `\S`, `\1`). Such a needle can match text the NUL-strip view of a UTF-16 binary does not hold (`.`
+# is one character; a letter outside ASCII is a NUL-stripped byte pair there), so it needs the decoded views. A
+# backslash before punctuation (`\.`, `\[`, `\\`) is a literal and is dropped first. Pure bash: no tool to be missing.
+# IN SYNC with the same function in tools/public-audit.sh (pinned by
+# tests/test_secret_guard.sh, dir #761).
+needle_wide() {
+  local s="${1//\\[![:alnum:]]/}"
+  case "$1" in *[![:ascii:]]*) return 0 ;; esac
+  case "$s" in *[.[\\]*) return 0 ;; esac
+  return 1
+}
+# has_personal — at least one literal; personal_nonascii — one is wide (needle_wide: a non-ASCII byte, or an ERE
+# `.`/bracket/class escape that can stand for a non-ASCII letter), which skips --range's NUL-strip fast path and,
+# through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on emit_blob's built-in decoder.
 has_personal=""
 personal_nonascii=""
 personal_pat="$SCRATCH/personal.pat"
 if [ -n "$_personal_lines" ]; then
   has_personal=1
   printf '%s\n' "$_personal_lines" > "$personal_pat" || _fail_closed "write the personal literals" $?
-  case "$_personal_lines" in *[![:ascii:]]*) personal_nonascii=1 ;; esac
+  # one literal per call: a plain literal beside a wide one must not hide in the whole file's text
+  while IFS= LC_ALL=C read -r _pl_line; do
+    if needle_wide "$_pl_line"; then personal_nonascii=1; fi
+  done <<< "$_personal_lines"
 fi
 decode_nonascii="$personal_nonascii"
 # Fail CLOSED on a broken personal regex: a malformed ERE would make every personal grep exit 2,
@@ -422,8 +438,8 @@ collect_matches() {
 # dir #746 (S2-2, spec 746 B7): the decode never stops at an invalid unit. A plain iconv stopped at the first
 # one (a lone surrogate, a value past U+10FFFF), so a literal after it read clean; `-c` skips it and decodes
 # the rest (macOS libiconv, glibc). musl's iconv stops anyway and ignores -c, so where the host's iconv does not
-# resume — or there is none — and a personal literal is non-ASCII (an ASCII one survives the NUL-strip pass,
-# unless an ERE `.` or bracket in it stands for a non-ASCII letter: a stated limit there), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
+# resume — or there is none — and a personal literal is wide (needle_wide: non-ASCII, or an ERE `.`/bracket/class
+# escape that can stand for a non-ASCII letter; any other ASCII literal survives the NUL-strip pass), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
 # surrogates pair, code point 0 is dropped. It costs about 24 s per MiB on busybox and never runs on macOS or
 # glibc. Every pass but the best-effort iconv ones ends `|| exit $?`: a missing od, awk or tr ends the group,
 # and the caller exits 2 naming the file. A payload that does not start on a unit boundary is not decoded.
@@ -457,7 +473,7 @@ emit_blob() {  # $1 = record label (path)
       iconv -c -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
       iconv -c -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
     fi
-    # the built-in decoder, only where iconv cannot resume and a personal literal is non-ASCII
+    # the built-in decoder, only where iconv cannot resume and a needle is wide (needle_wide: non-ASCII, or a `.`/bracket that can stand for a non-ASCII letter)
     if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
       od -An -v -tu1 < "$tmp" | LC_ALL=C awk '
         function o(v, k) {
@@ -902,9 +918,9 @@ case "$mode" in
     if [ -z "$blobs" ]; then
       range_hits=0
     else
-      # a non-ASCII personal literal (e.g. a Cyrillic name) is invisible to the NUL-strip fast view of
-      # UTF-16 bytes — skip the fast path and let the detailed scan's decode passes see it. Stated limit: an
-      # ASCII literal whose `.` or bracket stands for a non-ASCII letter is not visible in that view either.
+      # a wide personal literal (needle_wide: a non-ASCII byte, or a `.`/bracket that can stand for a non-ASCII
+      # letter) is invisible to the NUL-strip fast view of UTF-16 bytes — skip the fast path and let the
+      # detailed scan's decode passes see it (dir #761).
       if [ -z "$personal_nonascii" ]; then
         rtmp="$(spool)"; rerr="$(spool)"
         awk '{print $2}' <<< "$blobs" \
