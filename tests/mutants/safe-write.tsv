@@ -1,0 +1,77 @@
+# tests/mutants/safe-write.tsv — single-clause mutants of tools/lib/safe-write.sh's never-clobber rules (dir #764, spec 745 D4):
+# the refusals of an EDIT and a STATE write, the claimed temp name, the exclusive backup, REPLACE, and the
+# checkout-is-never-written-into predicate.
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_safe_write.sh) and checked for
+# staleness by tests/test_mutation_lists.sh.
+# Retired as equivalent (2026-10-24, dir #764): check-hardlink-new-file (`stat_portable_nlink` on a missing file prints
+# nothing, which the check already treats as unknown); backup-regular and backup-nonlink (each post-claim check guards a
+# name that a race plants between the pre-check and the claim, and no ordinary run, nor any test hook, can stage that;
+# the pre-check skips every existing name first). The temp-name pair claim-regular/claim-nonlink is one joint row here
+# (claim-regular-and-link): either clause alone is redundant against the other.
+# Run the sweep as an ordinary user: write-readonly and backup-claim-failed are killed by rows the root leg skips
+# (CLAUDE.md "Linux-leg traps" 2), so a root run reports them SURVIVED.
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
+check-loop-refuse	tools/lib/safe-write.sh	if [ -L "$file" ] && ! target="$(_keel_sw_resolve "$file")"; then	if false && ! target="$(_keel_sw_resolve "$file")"; then	a symlink loop is refused
+resolve-hop-limit	tools/lib/safe-write.sh	[ "$n" -le 40 ] || return 1	[ "$n" -le 39 ] || return 1	the 40-hop bound: a 40-hop chain still resolves
+check-not-regular	tools/lib/safe-write.sh	if [ -e "$target" ] && [ ! -f "$target" ]; then	if false; then	a target that is not a regular file is refused
+check-dir-missing	tools/lib/safe-write.sh	if [ ! -d "$tdir" ]; then	if false; then	a link into a missing directory is refused
+check-hardlink-strict-only	tools/lib/safe-write.sh	if [ "$2" = strict ] && [ -f "$target" ]; then	if false; then	an EDIT refuses a hard-linked target
+check-hardlink-bound	tools/lib/safe-write.sh	if [ "$nl" -gt 1 ]; then	if [ "$nl" -gt 2 ]; then	two names for one file is already a hard link
+check-link-branch	tools/lib/safe-write.sh	if [ "$target" != "$file" ]; then\n    if [ -z	if false; then\n    if [ -z	the link clauses run only for a link
+check-checkout-unknown	tools/lib/safe-write.sh	if [ -z "${KEEL_SAFE_WRITE_CHECKOUT:-}" ]; then\n      _keel_sw_refuse "$file is a link	if false; then\n      _keel_sw_refuse "$file is a link	a link is refused when the checkout is unknown
+check-inside-refuse	tools/lib/safe-write.sh	if _keel_sw_inside "$tdir" && ! _keel_sw_inside "$(_keel_sw_dir_of "$file")"; then	if false; then	a link that leads into the checkout is refused
+check-inside-from-outside	tools/lib/safe-write.sh	if _keel_sw_inside "$tdir" && ! _keel_sw_inside "$(_keel_sw_dir_of "$file")"; then	if _keel_sw_inside "$tdir"; then	a link inside the checkout to the checkout is allowed
+check-inside-target	tools/lib/safe-write.sh	if _keel_sw_inside "$tdir" && ! _keel_sw_inside "$(_keel_sw_dir_of "$file")"; then	if ! _keel_sw_inside "$(_keel_sw_dir_of "$file")"; then	a link from outside to outside is allowed
+write-through-strict	tools/lib/safe-write.sh	keel_write_through() {\n  _keel_sw_check "$1" strict || return 1	keel_write_through() {\n  _keel_sw_check "$1" state || return 1	an EDIT checks strictly
+write-through-refuse	tools/lib/safe-write.sh	keel_write_through() {\n  _keel_sw_check "$1" strict || return 1	keel_write_through() {\n  _keel_sw_check "$1" strict || :	an EDIT stops at a refusal
+write-state-split	tools/lib/safe-write.sh	keel_write_state() {\n  _keel_sw_check "$1" state || return 1	keel_write_state() {\n  _keel_sw_check "$1" strict || return 1	a STATE write splits a hard link instead of refusing
+write-state-refuse	tools/lib/safe-write.sh	keel_write_state() {\n  _keel_sw_check "$1" state || return 1	keel_write_state() {\n  _keel_sw_check "$1" state || :	a STATE write stops at a refusal
+backup-write-strict	tools/lib/safe-write.sh	KEEL_BACKUP=""\n  _keel_sw_check "$1" strict || return 1	KEEL_BACKUP=""\n  _keel_sw_check "$1" state || return 1	a backed-up EDIT checks strictly
+backup-write-refuse	tools/lib/safe-write.sh	KEEL_BACKUP=""\n  _keel_sw_check "$1" strict || return 1	KEEL_BACKUP=""\n  _keel_sw_check "$1" strict || :	a refused backed-up EDIT claims no backup
+backup-write-backup-fail	tools/lib/safe-write.sh	keel_backup "$1" || return 1\n  shift	keel_backup "$1" || :\n  shift	a failed backup stops the write
+backup-write-remove	tools/lib/safe-write.sh	rm -f "$KEEL_BACKUP" 2>/dev/null || :	:	a write that fails after the backup removes it
+backup-write-clear	tools/lib/safe-write.sh	KEEL_BACKUP=""\n    return 1	return 1	a failed write leaves $KEEL_BACKUP empty
+claim-clear-stale	tools/lib/safe-write.sh	if [ -e "$1" ] || [ -L "$1" ]; then\n    rm -f "$1" 2>/dev/null || :\n  fi	if [ -e "$1" ] || [ -L "$1" ]; then\n    :\n  fi	a stale or planted temp is removed before the claim
+claim-noclobber	tools/lib/safe-write.sh	err="$(set -C; [ -z "${3:-}" ]	err="$([ -z "${3:-}" ]	the claim is an exclusive create
+claim-umask	tools/lib/safe-write.sh	[ -z "${3:-}" ] || umask "$3"; { : > "$1"; }	{ : > "$1"; }	an over-existing-target claim runs under umask 077
+claim-regular-and-link	tools/lib/safe-write.sh	|| [ ! -f "$1" ] || [ -L "$1" ]; then	; then	the claimed temp must be a regular, non-link file
+write-claim-new	tools/lib/safe-write.sh	_keel_sw_claim "$tmp" "$target" || return 1	_keel_sw_claim "$tmp" "$target" || :	a refused claim of a new file's temp stops the write
+write-claim-existing	tools/lib/safe-write.sh	_keel_sw_claim "$tmp" "$target" 077 || return 1	_keel_sw_claim "$tmp" "$target" 077 || :	a refused claim over an existing file stops the write
+write-claim-077	tools/lib/safe-write.sh	_keel_sw_claim "$tmp" "$target" 077 || return 1	_keel_sw_claim "$tmp" "$target" || return 1	the temp over an existing target is claimed under 077
+write-keep-mode	tools/lib/safe-write.sh	if ! err="$(cp -p "$target" "$tmp" 2>&1)"; then	if ! err="$(cp "$target" "$tmp" 2>&1)"; then	the rename carries the target's mode
+write-unreadable	tools/lib/safe-write.sh	if ! err="$(cp -p "$target" "$tmp" 2>&1)"; then\n      _keel_sw_fail "$tmp" "could not write $target (it cannot be read	if false; then\n      _keel_sw_fail "$tmp" "could not write $target (it cannot be read	an unreadable target is refused
+write-readonly	tools/lib/safe-write.sh	if ! { : >| "$tmp"; } 2>/dev/null; then	if false; then	a read-only target is reported as that
+write-cmd-status	tools/lib/safe-write.sh	( "$@" ) >| "$tmp" || rc=$?	( "$@" ) >| "$tmp" || :	a failing CMD is reported with its status
+write-cmd-refuse	tools/lib/safe-write.sh	if [ "$rc" != 0 ]; then	if false; then	a failing CMD leaves the file untouched
+write-stdin-fail	tools/lib/safe-write.sh	elif ! err="$(cat 2>&1 >| "$tmp")"; then	elif false; then	a failed stdin copy is a refusal
+write-mv-fail	tools/lib/safe-write.sh	if ! err="$(mv -f "$tmp" "$target" 2>&1)"; then	if false; then	a failed rename is a refusal
+fail-removes-temp	tools/lib/safe-write.sh	rm -f "$1" 2>/dev/null || :\n  _keel_sw_refuse "$2"	:\n  _keel_sw_refuse "$2"	a refusal after the claim removes the temp
+replace-dir	tools/lib/safe-write.sh	if [ -d "$p" ]; then\n    _keel_sw_refuse "$p is a directory"\n    return 1\n  fi\n  _keel_sw_claim	if false; then\n    _keel_sw_refuse "$p is a directory"\n    return 1\n  fi\n  _keel_sw_claim	a REPLACE onto a directory is refused
+replace-claim	tools/lib/safe-write.sh	_keel_sw_claim "$tmp" "$p" || return 1	_keel_sw_claim "$tmp" "$p" || :	a refused claim stops a REPLACE
+replace-temp-sibling-of-path	tools/lib/safe-write.sh	local p="$1" tmp="$1.keeltmp.$$" err=""\n  if [ -d "$p" ]	local p="$1" tmp="$(_keel_sw_resolve "$1").keeltmp.$$" err=""\n  if [ -d "$p" ]	a REPLACE's temp sits beside PATH, never a link's target
+link-replace-dir	tools/lib/safe-write.sh	local p="$2" tmp="$2.keeltmp.$$" err=""\n  if [ -d "$p" ]; then	local p="$2" tmp="$2.keeltmp.$$" err=""\n  if false; then	a link onto a directory is refused
+link-replace-clear	tools/lib/safe-write.sh	if [ -e "$tmp" ] || [ -L "$tmp" ]; then\n    rm -f "$tmp" 2>/dev/null || :\n  fi\n  if [ -e "$tmp" ]	if [ -e "$tmp" ] || [ -L "$tmp" ]; then\n    :\n  fi\n  if [ -e "$tmp" ]	a stale temp name is cleared before the link
+link-replace-taken	tools/lib/safe-write.sh	if [ -e "$tmp" ] || [ -L "$tmp" ]; then\n    _keel_sw_refuse "could not link $p: its temp name $tmp is taken	if false; then\n    _keel_sw_refuse "could not link $p: its temp name $tmp is taken	a temp name that cannot be cleared refuses
+link-replace-ln-n	tools/lib/safe-write.sh	ln -sn "$1" "$tmp"	ln -s "$1" "$tmp"	ln -n never descends into a directory link at the temp name
+link-replace-ln-fail	tools/lib/safe-write.sh	if ! err="$(ln -sn "$1" "$tmp" 2>&1)"; then	if false; then	a failed ln is a refusal
+link-replace-ours	tools/lib/safe-write.sh	if [ ! -L "$tmp" ] || [ "$(readlink "$tmp" 2>/dev/null)" != "$1" ]; then	if false; then	the link made is checked to be ours
+link-replace-ours-target	tools/lib/safe-write.sh	if [ ! -L "$tmp" ] || [ "$(readlink "$tmp" 2>/dev/null)" != "$1" ]; then	if [ ! -L "$tmp" ]; then	the link made must point at TARGET
+link-replace-mv-fail	tools/lib/safe-write.sh	if ! err="$(mv -f "$tmp" "$p" 2>&1)"; then\n    _keel_sw_fail "$tmp" "could not link	if false; then\n    _keel_sw_fail "$tmp" "could not link	a failed rename of the link is a refusal
+backup-not-regular	tools/lib/safe-write.sh	if [ -e "$1" ] && [ ! -f "$1" ]; then\n    _keel_sw_refuse "$1 is not a regular file" "no backup was taken"	if false; then\n    _keel_sw_refuse "$1 is not a regular file" "no backup was taken"	a FIFO or directory is never backed up
+backup-skip-taken	tools/lib/safe-write.sh	if [ ! -e "$b" ] && [ ! -L "$b" ]; then\n      if err=	if true; then\n      if err=	a taken name is skipped before any claim
+backup-noclobber	tools/lib/safe-write.sh	err="$(set -C; umask 077; { : > "$b"; } 2>&1)"	err="$(umask 077; { : > "$b"; } 2>&1)"	the backup name is claimed exclusively
+backup-umask	tools/lib/safe-write.sh	err="$(set -C; umask 077; { : > "$b"; } 2>&1)"	err="$(set -C; { : > "$b"; } 2>&1)"	a backup is 0600
+backup-claim-failed	tools/lib/safe-write.sh	if [ ! -e "$b" ] && [ ! -L "$b" ]; then\n        _keel_sw_refuse "cannot create a backup	if false; then\n        _keel_sw_refuse "cannot create a backup	an uncreatable backup is a refusal
+backup-name-limit	tools/lib/safe-write.sh	if [ "$n" -gt 99 ]; then	if [ "$n" -gt 98 ]; then	.99.bak is still a usable name
+backup-name-exhausted	tools/lib/safe-write.sh	if [ "$n" -gt 99 ]; then	if false; then	a hundred taken names is a refusal
+backup-copy-fail-removes	tools/lib/safe-write.sh	if ! err="$(cat "$1" 2>&1 >| "$b")"; then\n    rm -f "$b" 2>/dev/null || :	if ! err="$(cat "$1" 2>&1 >| "$b")"; then\n    :	a failed copy leaves no backup
+backup-copy-fail	tools/lib/safe-write.sh	if ! err="$(cat "$1" 2>&1 >| "$b")"; then	if false; then	a failed copy is a refusal
+backup-timestamp	tools/lib/safe-write.sh	base="$1.${KEEL_TEST_NOW:-$(date -u +%Y%m%dT%H%M%SZ)}"	base="$1.${KEEL_TEST_NOW:-$(date +%Y%m%dT%H%M%SZ)}"	the backup's timestamp is UTC
+checkout-physical	tools/lib/safe-write.sh	KEEL_SAFE_WRITE_CHECKOUT="$(cd -P "$_keel_sw_libdir/../.." 2>/dev/null && pwd -P)"	KEEL_SAFE_WRITE_CHECKOUT="$(cd "$_keel_sw_libdir/../.." 2>/dev/null && pwd)"	the checkout is the physical path, every hop resolved
+inside-slash	tools/lib/safe-write.sh	"$ck"|"$ck"/*) return 0 ;;	"$ck"|"$ck"*) return 0 ;;	a sibling of the checkout is not inside it
+inside-empty-checkout	tools/lib/safe-write.sh	[ -n "${KEEL_SAFE_WRITE_CHECKOUT:-}" ] || return 1\n  ck=	:\n  ck=	an unknown checkout contains nothing
+inside-dir-physical	tools/lib/safe-write.sh	d="$(cd -P "$1" 2>/dev/null && pwd -P)" || return 1	d="$(cd "$1" 2>/dev/null && pwd)" || return 1	a directory is compared by its physical path
+inside-ck-physical	tools/lib/safe-write.sh	ck="$(cd -P "$KEEL_SAFE_WRITE_CHECKOUT" 2>/dev/null && pwd -P)" || return 1	ck="$KEEL_SAFE_WRITE_CHECKOUT"	an overridden checkout is resolved physically too
+own-dotdot	tools/lib/safe-write.sh	..) if [ "$new" -gt 0 ]; then new=$((new - 1)); else a="$a/.."; fi ;;	..) a="$a/.." ;;	a `..` leaves the newest new directory first
+own-new-chain	tools/lib/safe-write.sh	if [ "$new" = 0 ] && [ -d "$a/$c" ]; then a="$a/$c"; else new=$((new + 1)); fi	if [ -d "$a/$c" ]; then a="$a/$c"; else new=$((new + 1)); fi	below a new directory every component is new
+own-ancestor	tools/lib/safe-write.sh	while [ ! -d "$a" ]; do	while false; do	a not-yet-made directory is judged by its nearest existing ancestor

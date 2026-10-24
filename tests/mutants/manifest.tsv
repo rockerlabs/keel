@@ -1,0 +1,20 @@
+# tests/mutants/manifest.tsv — single-clause mutants of tools/lib/manifest.sh's link-record predicates
+# (manifest_link_is_keels, keel_path_inside, manifest_same_path; dir #764, spec 745 D4).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_manifest_lib.sh) and checked
+# for staleness by tests/test_mutation_lists.sh. These clauses decide which link uninstall and install may move.
+# Retired as equivalent (2026-10-24, dir #764): mlk-record-present (an empty record never equals a link's own target
+# in manifest_same_path, so dropping `-n "$rec"` changes no result) and mlk-readlink (a `readlink` that fails leaves
+# `cur` empty, which manifest_same_path then rejects).
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
+mlk-usable	tools/lib/manifest.sh	manifest_usable "$man" || return 1\n  rec="$(manifest_symlink_extra	:\n  rec="$(manifest_symlink_extra	an unusable manifest proves nothing
+mlk-record-dash	tools/lib/manifest.sh	[ -n "$rec" ] && [ "$rec" != "-" ] || return 1	[ -n "$rec" ] || return 1	a pre-dir-#369 `-` record names no target
+mlk-same-target	tools/lib/manifest.sh	manifest_same_path "$cur" "$rec" || return 1	:	the link must still point at the recorded target
+mlk-record-is-link	tools/lib/manifest.sh	[ ! -L "$rec" ] || return 1	:	a recorded target that is itself a symlink is an adopter's alias
+mlk-inside	tools/lib/manifest.sh	  keel_path_inside "$rec" "$ck"\n}	  true\n}	the recorded target lies inside the recording checkout
+inside-empty-ck	tools/lib/manifest.sh	[ -n "$ck" ] || return 1\n  case "$p" in "$ck"|"$ck"/*)	:\n  case "$p" in "$ck"|"$ck"/*)	an empty checkout header contains nothing
+inside-slash	tools/lib/manifest.sh	case "$p" in "$ck"|"$ck"/*) return 0 ;; esac	case "$p" in "$ck"*) return 0 ;; esac	a sibling `<checkout>-dots` is not inside
+inside-unresolved	tools/lib/manifest.sh	[ -e "$p" ] || return 1\n  pd=	:\n  pd=	a path that no longer resolves is judged on the strings alone
+inside-physical-slash	tools/lib/manifest.sh	case "$pd/$(basename "$p")" in "$ckp"|"$ckp"/*) return 0 ;; esac	case "$pd/$(basename "$p")" in "$ckp"*) return 0 ;; esac	the physical comparison keeps the slash
+same-path-absolute	tools/lib/manifest.sh	case "$1" in /*) ;; *) return 1 ;; esac	:	only an absolute A may match through another spelling
+same-path-name	tools/lib/manifest.sh	[ "${1##*/}" = "${2##*/}" ] && [ "${1%/*}/" -ef "${2%/*}/" ]	[ "${1%/*}/" -ef "${2%/*}/" ]	the entry's own name must match exactly
+same-path-parent	tools/lib/manifest.sh	[ "${1##*/}" = "${2##*/}" ] && [ "${1%/*}/" -ef "${2%/*}/" ]	[ "${1##*/}" = "${2##*/}" ]	the same name in the same directory
