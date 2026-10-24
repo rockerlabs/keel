@@ -841,9 +841,12 @@ real runs, stated as classes rather than tied to any one vendor's harness:
    3 replies came back truncated (one release earlier: 1 of 3); a 31 KB bundle truncated, and the
    re-run on a ~7 KB one came back complete. For that leg keep each bundle **at or under 10 KB** and
    put a **quote cap** in its system prompt, worded like: "at most 10 findings; quote at most 3 lines
-   of code per claim and do not restate code; put the JSON object last." A truncated reply is a
-   failed round (R11), not a partial result — re-run it on a smaller bundle rather than parsing what
-   arrived. This is the direct chat leg only; the reasoning model's budget is class 2's.
+   of code per claim and do not restate code; put the JSON object last." The 10 KB figure is
+   provisional (measured at ~7 KB and 20 KB+, nothing between); the quote cap is the real control. A
+   truncated reply is a failed round, not a partial result: do not parse what arrived. Re-run once on a
+   smaller bundle, split by coupling with the sibling manifest above; if it truncates again, report the
+   leg and let the sibling vendor cover that bundle — do not relaunch. This is the direct chat leg
+   only; the reasoning model's budget is class 2's.
 
 4. **An unscriptable or non-integrated vendor is still a diversity leg — it just arrives through a
    packet, not an API call.** Feed `derive.sh`'s file list to `tools/audit-packet/export.sh`, hand
