@@ -1,0 +1,1 @@
+- `docs/grooming.md` G1: each row's pain now carries a provenance (`stated`, `accepted-on-proposal`, `carried`), so an agent-proposed pain the operator accepts is recorded as neither operator-stated nor no-pain; G0 reads `accepted-on-proposal` rows as weaker evidence of felt pain (dir #819).
