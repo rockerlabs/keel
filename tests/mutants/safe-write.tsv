@@ -8,6 +8,10 @@
 # name that a race plants between the pre-check and the claim, and no ordinary run, nor any test hook, can stage that;
 # the pre-check skips every existing name first). The temp-name pair claim-regular/claim-nonlink is one joint row here
 # (claim-regular-and-link): either clause alone is redundant against the other.
+# Also retired as equivalent: backup-noclobber (the pre-check skips every taken name before the claim, so the
+# exclusive create only matters to the same race) and inside-empty-checkout (an empty checkout reaches `cd -P ""`, which
+# fails on bash 4+ and so returns 1 as the guard does; only macOS's bash 3.2 lets it through, a platform-dependent row).
+# backup-not-regular ends in TIMEOUT, a real kill: without the refusal an earlier row's FIFO blocks the copy forever.
 # Run the sweep as an ordinary user: write-readonly and backup-claim-failed are killed by rows the root leg skips
 # (CLAUDE.md "Linux-leg traps" 2), so a root run reports them SURVIVED.
 # Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
@@ -59,7 +63,6 @@ link-replace-ours-target	tools/lib/safe-write.sh	if [ ! -L "$tmp" ] || [ "$(read
 link-replace-mv-fail	tools/lib/safe-write.sh	if ! err="$(mv -f "$tmp" "$p" 2>&1)"; then\n    _keel_sw_fail "$tmp" "could not link	if false; then\n    _keel_sw_fail "$tmp" "could not link	a failed rename of the link is a refusal
 backup-not-regular	tools/lib/safe-write.sh	if [ -e "$1" ] && [ ! -f "$1" ]; then\n    _keel_sw_refuse "$1 is not a regular file" "no backup was taken"	if false; then\n    _keel_sw_refuse "$1 is not a regular file" "no backup was taken"	a FIFO or directory is never backed up
 backup-skip-taken	tools/lib/safe-write.sh	if [ ! -e "$b" ] && [ ! -L "$b" ]; then\n      if err=	if true; then\n      if err=	a taken name is skipped before any claim
-backup-noclobber	tools/lib/safe-write.sh	err="$(set -C; umask 077; { : > "$b"; } 2>&1)"	err="$(umask 077; { : > "$b"; } 2>&1)"	the backup name is claimed exclusively
 backup-umask	tools/lib/safe-write.sh	err="$(set -C; umask 077; { : > "$b"; } 2>&1)"	err="$(set -C; { : > "$b"; } 2>&1)"	a backup is 0600
 backup-claim-failed	tools/lib/safe-write.sh	if [ ! -e "$b" ] && [ ! -L "$b" ]; then\n        _keel_sw_refuse "cannot create a backup	if false; then\n        _keel_sw_refuse "cannot create a backup	an uncreatable backup is a refusal
 backup-name-limit	tools/lib/safe-write.sh	if [ "$n" -gt 99 ]; then	if [ "$n" -gt 98 ]; then	.99.bak is still a usable name
@@ -69,7 +72,6 @@ backup-copy-fail	tools/lib/safe-write.sh	if ! err="$(cat "$1" 2>&1 >| "$b")"; th
 backup-timestamp	tools/lib/safe-write.sh	base="$1.${KEEL_TEST_NOW:-$(date -u +%Y%m%dT%H%M%SZ)}"	base="$1.${KEEL_TEST_NOW:-$(date +%Y%m%dT%H%M%SZ)}"	the backup's timestamp is UTC
 checkout-physical	tools/lib/safe-write.sh	KEEL_SAFE_WRITE_CHECKOUT="$(cd -P "$_keel_sw_libdir/../.." 2>/dev/null && pwd -P)"	KEEL_SAFE_WRITE_CHECKOUT="$(cd "$_keel_sw_libdir/../.." 2>/dev/null && pwd)"	the checkout is the physical path, every hop resolved
 inside-slash	tools/lib/safe-write.sh	"$ck"|"$ck"/*) return 0 ;;	"$ck"|"$ck"*) return 0 ;;	a sibling of the checkout is not inside it
-inside-empty-checkout	tools/lib/safe-write.sh	[ -n "${KEEL_SAFE_WRITE_CHECKOUT:-}" ] || return 1\n  ck=	:\n  ck=	an unknown checkout contains nothing
 inside-dir-physical	tools/lib/safe-write.sh	d="$(cd -P "$1" 2>/dev/null && pwd -P)" || return 1	d="$(cd "$1" 2>/dev/null && pwd)" || return 1	a directory is compared by its physical path
 inside-ck-physical	tools/lib/safe-write.sh	ck="$(cd -P "$KEEL_SAFE_WRITE_CHECKOUT" 2>/dev/null && pwd -P)" || return 1	ck="$KEEL_SAFE_WRITE_CHECKOUT"	an overridden checkout is resolved physically too
 own-dotdot	tools/lib/safe-write.sh	..) if [ "$new" -gt 0 ]; then new=$((new - 1)); else a="$a/.."; fi ;;	..) a="$a/.." ;;	a `..` leaves the newest new directory first
