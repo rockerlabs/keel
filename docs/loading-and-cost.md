@@ -22,7 +22,7 @@ flowchart TD
         proj["project CLAUDE.md<br/>(when you are in a project)"]
     end
     subgraph demand["On demand — pulled only when a task needs it"]
-        fw["FRAMEWORK.md (~13.3K)"]
+        fw["FRAMEWORK.md (~15.6K)"]
         prin["PRINCIPLES.md (~5.9K)"]
         inst["INSTANCE.md"]
         cmd["commands/* (when invoked)"]
@@ -51,7 +51,7 @@ the table above.
 | `~/.claude/CLAUDE.md` (from `templates/CLAUDE.md`) | **every session** | The thin always-loaded core: git/secret rails, reconcile-first, verify discipline, how to handle forks, memory, a trigger-condition index of shipped `docs/` procedures, and a **map** of where everything else lives. Shapes **every** decision the agent makes. | **~2,490** |
 | `CORE.md` | **every session** in a linked setup (imported live); never as its own file in a copy setup — the template above embeds it verbatim | The rails alone, placeholder-free. A Claude Code linked install imports this instead of copying the template, so `git pull` in the checkout refreshes the rails; your own map/preferences ride in your own file. (On a machine with no git projects, `install.sh --link --no-git` trims the code/git rails out of the imported core — a couple hundred tokens lighter, and the trim leaves an always-on breadcrumb so the rails come back before git ever enters the workflow.) | ~1,920 |
 | `<project>/CLAUDE.md` (from `templates/project-CLAUDE.md`) | when you work **in that project** | Project context: stack, architecture, conventions, roadmap. Shapes decisions inside the project. | ~330 *(as filled)* |
-| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~13,300 |
+| `FRAMEWORK.md` | on demand — tasks about KB structure / conventions | The reusable methodology engine. Read when grooming a knowledge base, not every session. | ~15,600 |
 | `PRINCIPLES.md` | on demand — foundational / expensive-to-reverse forks | P0–P4. Opened rarely, for a specific decision. | ~5,950 |
 | `INSTANCE.md` (from `templates/INSTANCE.md`) | on demand — need the project registry / environment | The private personal layer (hardware, model access, project list). | ~380 |
 | `LEARNINGS.md` (from `templates/LEARNINGS.md`) | on demand — staging a workflow insight | The on-ramp between "promote to a rule" and "drop". | ~430 |
@@ -80,7 +80,7 @@ Put in perspective:
 - The core is **identical from session to session** → a prime candidate for **prompt caching**, where a
   cache hit costs ~10% of the normal input price. The effective cost is lower still.
 - Over a month at ~50 sessions, the always-loaded core is ~125K input tokens total — cents, less with caching.
-- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~19.3K for one decision.
+- Even if you do open `FRAMEWORK` + `PRINCIPLES` together (rare), that's a one-off ~21.6K for one decision.
 
 A guard against bloat ships with the whole session's set: `doctor` raises a **HINT** (`H-FOOTPRINT`)
 when a project's own `CLAUDE.md` PLUS the resolved global `CLAUDE.md` — each with its whole import chain
