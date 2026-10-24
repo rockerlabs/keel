@@ -404,7 +404,7 @@ fi
 # must be fixed here too; pinned by tests/test_secret_guard.sh, dir #681).
 #
 # dir #746 (S2-2): the decode never stops at an invalid unit — iconv -c, or the built-in od + awk decoder
-# where the host's iconv cannot resume (musl) or is absent and a personal literal or a token is non-ASCII
+# where the host's iconv cannot resume (musl) or is absent and a personal literal or a token is wide (needle_wide)
 # (decode_nonascii). secret-scan.sh's emit_blob() comment has the details. A pass that cannot run ends the
 # group with its status, which this function returns.
 #
