@@ -263,7 +263,9 @@ So context files don't bloat and stay useful.
   carried by `/wrap` step 2 — re-read `BACKLOG.md` fresh, take the next free number (max existing + 1,
   scanned from `BACKLOG.md` only), append the body, update the queue line if the backlog tracks one, and
   delete the own draft. At *your own wrap* fold only your own draft and leave foreign ones for their
-  owners; the `/backlog` sweep below is the path that folds anything, whoever wrote it. Two sessions
+  owners; the `/backlog` sweep below is the path that folds anything, whoever wrote it. Derive the
+  number immediately before writing the heading, from the headings as they are at that moment, never from
+  a census taken at session start (a parallel session may have filed the same number since). Two sessions
   folding in the same instant
   still race — on a modified-since-read collision, re-read and retry rather than overwriting. Any draft
   not yet folded when its own session ends — crashed mid-session, or simply still open elsewhere — is
@@ -336,6 +338,16 @@ gotchas) → a global knowledge-base file (cwd-independent); **project-specific 
 while working FROM the project dir — never from a throwaway cwd. A cross-project fact stranded in a project
 silo is effectively invisible.
 
+**Recovery after an incident covers what git cannot see.** "The tree is clean" is not "the machine is
+intact": damage outside every git tree (the harness home and its symlinks, global git config, scheduler
+agents, the user config directory) produces no diff, no failing test and no alarm — a wiped harness home
+once left every new session without hooks, commands or memory for hours. Before declaring recovery:
+- Enumerate those out-of-tree surfaces by name and check each for what was CHANGED or DELETED.
+- Sweep the user's home by birth time for what the run CREATED — no list of known surfaces names a path a
+  buggy run invents. On macOS (`-newerBt` needs filesystem birth times; elsewhere it errors or matches
+  nothing, which is not a clean result): `find "$HOME" -xdev -path "$HOME/Library" -prune -o -newerBt
+  '<run start>' ! -newerBt '<run end>' -print`. Classify the hits by content; never delete by name.
+
 ---
 
 ## Git conventions
@@ -376,6 +388,16 @@ the worktree so the session keeps the project's context.
 **The squash/rebase "merged" caveat.** A squash/rebase-merge looks *unmerged* by SHA even when its content
 is fully in — judge "merged?" by PR state, not SHA-reachability, before deleting a branch. Full rule (the
 two false verdicts, branch classification, delete-on-merge) → the *Git branch lifecycle* section below.
+
+**Un-committing a colliding local commit without touching the working tree.** When a local commit
+collides with a concurrent one (the same ticket number filed twice) and other sessions have uncommitted
+edits in the same checkout, `git reset --hard` is both often blocked and wrong — it destroys their work.
+Move the branch pointer alone: `git update-ref refs/heads/<branch> <fetched-sha>` (the bad commit's
+content stays in the index and working tree, as a staged diff against the new HEAD), then restore only the
+colliding file with `git -C <checkout> checkout HEAD -- <file>` — `-C`, because from another worktree's
+cwd a relative pathspec fails to match. This is safe only when the fetched commit differs from the local
+parent in that one file; if it also changed others, the index still holds their old versions and a later
+`git add -A` or `commit -a` would revert them, so restore those files from HEAD the same way.
 
 ---
 
@@ -467,6 +489,20 @@ Review the diff before merge — for correctness bugs and for reuse/simplificati
   useful, but it usually needs its own API budget/token (a cost beyond a normal subscription) and may have
   auth/expiry constraints unfit for CI. Wire one only where an API key is deliberately available; otherwise
   rely on the manual pass.
+
+**Correcting a multi-round document: grep for the retracted claim, and re-read a heavily patched section
+whole.** An inline "CORRECTED" clause is a point edit, but a correction is a search-and-replace over
+meaning: the retracted claim is usually restated in the heading, a done-criterion and sibling tickets,
+and each fix round then creates new defects where the correction landed in one paragraph and the old
+claim stayed standing elsewhere (one review found 19 defects in round 1 and five more, all made by the
+fixes, in round 2).
+- Before writing a correction, grep the whole file for the claim's distinctive noun phrase, not its
+  wording, and fix every hit in the same edit — headings and done-criteria first.
+- When the correction supersedes a RULE, rewrite the rule in place; never leave the old one standing
+  above its replacement with a "superseded" note after it.
+- When a section takes more than ~2 corrections in one pass, stop patching and re-read the WHOLE section
+  top to bottom — heading, reconcile line, done-criterion and any trailing metadata line. A done-criterion
+  carries the rule it tests, so a superseded rule left in it silently contradicts the guard.
 
 ### When to stop reviewing
 
@@ -674,6 +710,50 @@ first real timer fire, after every manual run had been green.
 
 ---
 
+## Shell and editing craft
+
+Each rule below was learned from a repeated incident; none is caught by a linter, because the code is
+valid and simply says or does the wrong thing. The shell rules assume bash; under a login shell that is
+zsh (see *Shell* above) run such scripts with `bash <file>`.
+
+**Edit shell with the edit tool, not a generated rewrite.** Rewriting a shell file through a `python3`
+(or `sed`/`perl`) heredoc layers a second escaping language on the first, and it fails silently: a
+Python `'\$var'` is a literal backslash-dollar, so the shipped text printed the variable's NAME; flipping a
+generated README's heredoc from `<<'EOF'` to `<<EOF` (to interpolate one value) turned every markdown
+backtick in it into a command substitution, which dropped the code spans and spliced a paragraph into
+the middle of a sentence. An edit with an exact `old_string` has neither failure mode and its diff is
+reviewable at the point of change.
+- Prefer the edit tool for any multi-site change to text holding heredocs, `$` or backticks.
+- When a generator is unavoidable, **quote the heredoc delimiter always** (`<<'EOF'`) and pass paths and
+  values through argv or the environment, never by unquoting the delimiter.
+- A scripted multi-edit asserts `count(anchor) == 1` **before every `find()`** — "exists" and "is unique"
+  are different checks, and only the second stops a paragraph landing at the first of two identical
+  anchors — and **writes after each substitution**. One write at the end loses every good edit when a
+  late assertion fires. Never drop the assertion; it is what makes the approach safe.
+- After any insertion into a list-structured file (a backlog, a changelog, a ticket list), re-read the
+  seam lines — the old neighbours above and below the insert — or diff the result, tracked or not. An
+  insert whose `new_string` forgot to repeat its own anchor silently eats the adjacent heading. "The
+  right files are staged" does not verify what changed inside them.
+
+**Multi-step shell work goes in a script file, run with `bash <file>`.** Test harnesses, fixture setup and
+repo scaffolding written as a long inline compound command (`a && b; c`, `mktemp` + `git init` + `grep`)
+are routinely refused by a permission layer that judges the compound shape, while every constituent
+command is allowed alone and the same steps as a script run first try. A script is also reviewable,
+re-runnable and editable between runs. With no script to write, issue the parts one at a time.
+
+**Never `IFS=$'\t' read` over data that may hold an empty field.** Tab is hardcoded into bash's
+"IFS whitespace" class, so consecutive or leading tabs collapse exactly as under the default `IFS` — an
+empty middle field vanishes and every later field shifts, with no error. Emit and split on a delimiter
+outside that class: join with `\x1f`, read with `IFS=$'\x1f' read -r …`.
+
+**A bash "cache" written inside a function reached via `$( … )` is dead on arrival.** The command
+substitution forks a subshell and discards the global write on every call. A `_*_cached` helper whose
+result is captured with `$( … )` needs explicit parameter-threading — resolve once in the top caller, pass
+the value down — never a process-global. Citing an anti-pattern's history in a comment does not protect
+against writing it again; the check is an audit of the call shape.
+
+---
+
 ## Verify gates — mechanizing the done-claim
 
 A completion claim ("tests pass", "the bug's fixed", "PR's ready") is worth exactly as much as the
@@ -707,6 +787,38 @@ Keel's own pre-PR flow and ship to every adopter; the gate itself is a separate,
 (`tools/install-pre-pr-gate.sh <repo>` — a hook changes what a session can do without asking each time,
 so it's never auto-wired). Read them for the concrete receipt format, not this summary. See *Enforcement
 mechanics* below for the companion rule on what a gate's error text may and may not say.
+
+**Trust your instrument no more than someone else's claim.** A measurement pipeline that discards exit
+status and stderr makes a hard FAILURE indistinguishable from a clean EMPTY result, and the empty result
+is the one that gets quoted. Felt three times in one audit: a tool piped through `2>/dev/null | grep | wc -l`
+"returned 0" where it had actually died with exit 128 and the false mechanism was written into a finding;
+a waiter matched a test assertion that QUOTES the runner's pass banner and declared a truncated suite
+green; two runs keyed by `file:line` reported phantom "new" findings that were the same lines shifted by
+an insert. Rules that cost nothing:
+- Capture the exit code apart from the filtered output (`rc=0; out=$(cmd) || rc=$?` with stderr kept apart, so `set -e` cannot abort before `rc` is read), then filter.
+- Anchor a terminal-banner match to `^` and pair it with a process check, so a line that merely quotes the
+  banner cannot satisfy it.
+- Assert a NONZERO input count before treating any zero as a finding.
+- Across a diff that inserts, compare findings by CONTENT, never by line number.
+
+**A regression check on a code path runs the path.** Diffing the path's inputs or generated output proves
+nothing about the path: one script's "inline path byte-identical" check compared prompt output, and the
+path itself had gained a bash-3.2 empty-array crash nobody executed for three days. Likewise a mechanism
+proven on a narrow factual probe is unproven on the real task until the task itself runs once, with a
+completeness check that cannot be talked past (a machine-checked floor, not a model's say-so).
+
+**A measured figure in a durable document carries its predicate.** "Count X" has several true answers
+(occurrences vs lines vs sections; lines matching A but not B), and a bare number cannot be re-derived, only
+re-guessed — three successive figures in one ticket each failed verification for exactly this reason.
+Derive the figure locally with the predicate visible in the command, write the predicate beside the number,
+and never copy a figure from a subagent's report or from a grep whose predicate you did not spell out.
+When two workers disagree on a count, do not arbitrate: re-measure yourself. Delegating a count means
+stating the predicate in the prompt.
+
+**A ratchet or guard test must fail one assertion, not crash its host.** A test whose live-case mutation
+raises (an out-of-range index, an unrecognized selector, a missing attribute) takes the whole suite down
+and is not red, only broken. Guard the precondition so the mutation yields an assertion failure: check
+that the index exists, assert the attribute is there, prefer a read-only store to removal.
 
 ---
 

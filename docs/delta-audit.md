@@ -413,6 +413,16 @@ the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanical
 does nothing of the kind; a session told to "harvest" can run that script and believe the duty
 discharged.)*
 
+**Clause B's demotion ticket is staged by the verdict, never addressed to "the groom" in prose (dir #815).**
+When [`verification-economics.md`](verification-economics.md) §3's Clause B trigger holds for the run (it
+yielded only instances of known classes), or one class has now recurred across three or more runs, the
+orchestrator stages the demotion ticket in the run's staged-tickets file like any other ticket draft, naming
+the class, the runs and instances that carry it, and the mechanical check that would retire it. The
+duty in (b) — the staged-tickets file is empty or filed — then files it with no new step. A verdict note that
+only says the class is "the groom's to weigh" leaves the ticket with no owner: neither (b) nor
+[`grooming.md`](grooming.md)'s G0/G4(c) harvest check reads Clause A text, so such a note is never weighed. One
+adopter's groom found the same class noted that way in three consecutive runs.
+
 **A `ticket-next` finding is filed `→ pool` by default, never straight into the next release's tag
 (operator decision 2026-09-20, at the 0.11.0 groom).** The exceptions are the two dispositions that
 already carry their own urgency — `fix-before-tag` (fixed in this run) and a behavioural finding the
