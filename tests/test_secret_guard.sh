@@ -3096,6 +3096,19 @@ git_shim_any746 "$d746/shim-raw" --raw
 run_in "$a24_repo746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a24_base746..HEAD"
 check_status "dir #746 A25: the pair enumeration fails → exit 2" 2 "$STATUS"
 check_contains "dir #746 A25: ...naming it" "$OUT" "secret-scan: could not list the range's paths"
+# dir #764: the same enumeration answering with a record that is not a header (a bare token, a combined-diff
+# `::` header) or with a header and no path exits 2 naming the record, never reads as an empty pair list.
+git_shim_raw764() {  # dir bytes — a git whose `--raw` answer is the printf-format BYTES, any other call the real git
+  mkdir -p "$1"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = --raw ] && { printf "%s"; exit 0; }; done\nexec "%s" "$@"\n' "$2" "$real_git715" > "$1/git"
+  chmod +x "$1/git"
+}
+for row764 in 'a bare token|bogus\\0' 'a combined-diff header|::100644 100644 100644 aaaa bbbb cccc MM\\0' 'a header with no path|:100644 100644 aaaa bbbb M\\0'; do
+  git_shim_raw764 "$d746/shim-rec" "${row764#*|}"
+  run_in "$a24_repo746" env PATH="$d746/shim-rec:$PATH" "$scan" --range "$a24_base746..HEAD"
+  check_status "dir #764: the pair enumeration answers ${row764%%|*} → exit 2" 2 "$STATUS"
+  check_contains "dir #764: ...naming the unexpected record (${row764%%|*})" "$OUT" "could not read the range's paths (unexpected record)"
+done
 r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
 printf 'clean\n' > "$r746/src/ok.txt"
 commit746 "$r746" clean
