@@ -63,7 +63,7 @@ mk="$SANDBOX/mck"; mkdir -p "$mk/commands" "$mk-dots" "$SANDBOX/mdl-parent"
 : > "$mk/commands/go.md"; : > "$mk-dots/x"; : > "$mk-dots/commands-go.md"
 ln -s "$mk" "$SANDBOX/mck-alias"; ln -s "$mk-dots" "$SANDBOX/mdl-parent/sib"
 mm="$SANDBOX/link-manifest"; mm_old="$SANDBOX/link-manifest-v99"; mm_nock="$SANDBOX/link-manifest-nock"
-printf 'keel_manifest_version=1\ncheckout=%s\nartifact=symlink\tcommands/go.md\t%s/commands/go.md\nartifact=symlink\tcommands/dash.md\t-\nartifact=symlink\tcommands/out.md\t%s/commands-go.md\n' "$mk" "$mk" "$mk-dots" > "$mm"
+printf 'keel_manifest_version=1\ncheckout=%s\nartifact=symlink\tcommands/go.md\t%s/commands/go.md\nartifact=symlink\tlinks/dash\t-\nartifact=symlink\tlinks/out\t%s/commands-go.md\n' "$mk" "$mk" "$mk-dots" > "$mm"
 sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$mm" > "$mm_old"
 sed '/^checkout=/d' "$mm" > "$mm_nock"
 ln -s "$mk/commands/go.md" "$SANDBOX/lk-good"; ln -s "$mk-dots/commands-go.md" "$SANDBOX/lk-out"
@@ -72,17 +72,17 @@ lk() { manifest_link_is_keels "$@" && echo 0 || echo 1; }
 check_eq "link_is_keels: a link at its recorded target inside the recording checkout" 0 "$(lk "$mm" commands/go.md "$SANDBOX/lk-good")"
 check_eq "link_is_keels: an unusable manifest (unknown version) proves nothing" 1 "$(lk "$mm_old" commands/go.md "$SANDBOX/lk-good")"
 check_eq "link_is_keels: a link that points elsewhere than recorded" 1 "$(lk "$mm" commands/go.md "$SANDBOX/lk-moved")"
-check_eq "link_is_keels: a recorded target outside the checkout is an adopter's" 1 "$(lk "$mm" commands/out.md "$SANDBOX/lk-out")"
+check_eq "link_is_keels: a recorded target outside the checkout is an adopter's" 1 "$(lk "$mm" links/out "$SANDBOX/lk-out")"
 check_eq "link_is_keels: a manifest without a checkout= header names no checkout" 1 "$(lk "$mm_nock" commands/go.md "$SANDBOX/lk-good")"
 # a `-` record names no target: even a link whose own target is the text `-`, run from a directory that holds a
 # file of that name inside the checkout, is not Keel's.
 ln -s -- - "$SANDBOX/lk-dash"; : > "$mk/-"
-check_eq "link_is_keels: a pre-dir-#369 \`-\` record is never Keel's" 1 "$(cd "$mk" && lk "$mm" commands/dash.md "$SANDBOX/lk-dash")"
+check_eq "link_is_keels: a pre-dir-#369 \`-\` record is never Keel's" 1 "$(cd "$mk" && lk "$mm" links/dash "$SANDBOX/lk-dash")"
 # a recorded target that is itself a symlink is an adopter's alias inside the checkout.
 ln -s go.md "$mk/commands/ALIAS.md"
-printf 'artifact=symlink\tcommands/alias.md\t%s/commands/ALIAS.md\n' "$mk" >> "$mm"
+printf 'artifact=symlink\tlinks/alias\t%s/commands/ALIAS.md\n' "$mk" >> "$mm"
 ln -s "$mk/commands/ALIAS.md" "$SANDBOX/lk-alias"
-check_eq "link_is_keels: a recorded target that is itself a symlink" 1 "$(lk "$mm" commands/alias.md "$SANDBOX/lk-alias")"
+check_eq "link_is_keels: a recorded target that is itself a symlink" 1 "$(lk "$mm" links/alias "$SANDBOX/lk-alias")"
 
 in_() { keel_path_inside "$@" && echo 0 || echo 1; }
 check_eq "path_inside: a path below the checkout" 0 "$(in_ "$mk/commands/go.md" "$mk")"
