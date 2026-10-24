@@ -3470,7 +3470,8 @@ printf 'nothing to see here\n' > "$d764/f/f.txt"
 # other call. The passes are told apart by their flags and by LC_ALL, which only the C-locale passes carry as a
 # per-command prefix: rc2 = match_text's P-C (`-aiE`, LC_ALL=C), rc3 = its P-U (`-aiE`, caller's locale),
 # cm-personal / cm-pu = count_matches' second and third pass (`-aciE` under LC_ALL=C / `-aiE -c`), probe-utf8 =
-# the personal-regex probe's second run (`-iE`, caller's locale).
+# the personal-regex probe's second run (`-iE`, caller's locale). The runs unset an ambient LC_ALL (a CI image may
+# export LC_ALL=C), which would make every call look like a C-locale pass.
 cat > "$d764/shim-grep/grep" <<'EOF'
 #!/bin/sh
 hasf=; fl=
@@ -3492,11 +3493,11 @@ EOF
 chmod +x "$d764/shim-grep/grep"
 grep_env764=(PATH="$d764/shim-grep:$PATH" GREP764_REAL="$(type -P grep)")
 for k764 in rc2 rc3; do
-  run_in "$d764/f" env "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
+  run_in "$d764/f" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
   check_status "dir #764: a failing personal grep pass ($k764) in a FILE scan → exit 2" 2 "$STATUS"
   check_contains "dir #764: ...naming the match step ($k764)" "$OUT" "could not match"
 done
-run_in "$d764/f" env "${grep_env764[@]}" GREP764_FAIL=probe-utf8 SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
+run_in "$d764/f" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL=probe-utf8 SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
 check_status "dir #764: the personal-regex probe failing in the caller's locale only → exit 2" 2 "$STATUS"
 check_contains "dir #764: ...named as an invalid regex" "$OUT" "invalid regex"
 r764="$(new_repo)"
@@ -3505,7 +3506,7 @@ a764="$(git -C "$r764" rev-parse HEAD)"
 printf 'clean\n' > "$r764/ok.txt"
 commit746 "$r764" clean
 for k764 in cm-personal cm-pu; do
-  run_in "$r764" env "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" --range "$a764..HEAD"
+  run_in "$r764" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" --range "$a764..HEAD"
   check_status "dir #764: a failing personal count pass ($k764) in --range's fast path → exit 2" 2 "$STATUS"
   check_contains "dir #764: ...naming the blob count ($k764)" "$OUT" "could not count matches in the range's blobs"
 done

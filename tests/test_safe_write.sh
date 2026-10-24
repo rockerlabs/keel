@@ -595,7 +595,7 @@ run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/full'; printf '%s' \"\
 check_status "S764 keel_backup with only .99.bak free → rc 0" 0 "$STATUS"
 check_eq "S764 …the backup is .99.bak" "$w/full.$ts.99.bak" "$OUT"
 
-# backup-noclobber: two backups in one second get two names, and the first keeps its bytes.
+# (extra coverage — a retired row, see the list's header) two backups in one second get two names, and the first keeps its bytes.
 printf 'one\n' > "$w/two"; ts=20260303T030303Z
 run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/two'"
 printf 'second\n' > "$w/two"
@@ -611,13 +611,18 @@ check_status "S764 keel_backup of a directory → rc 1" 1 "$STATUS"
 check_contains "S764 …named as not a regular file, no backup taken" "$OUT" "is not a regular file — no backup was taken"
 check_eq "S764 …and no name was claimed" 0 "$(find "$w" -maxdepth 1 -name 'adir.*.bak' | grep -c . || true)"
 
-# backup-timestamp: the name carries UTC, whatever the zone.
+# backup-timestamp: the name carries UTC, whatever the zone. Skipped where the zone database lacks the zone (TZ then
+# falls back to UTC, and local time would read the same); the name is compared as a stamp between two UTC reads.
 printf 'z\n' > "$w/zone"
-before="$(date -u +%Y%m%dT%H%M%SZ)"
-run env -u KEEL_TEST_NOW TZ=Pacific/Auckland bash -c ". '$lib'; keel_backup '$w/zone'; printf '%s' \"\$KEEL_BACKUP\""
-after="$(date -u +%Y%m%dT%H%M%SZ)"
-case "$OUT" in "$w/zone.$before.bak"|"$w/zone.$after.bak") zone_ok=yes ;; *) zone_ok="no ($OUT)" ;; esac
-check_eq "S764 the backup's timestamp is UTC under TZ=Pacific/Auckland" yes "$zone_ok"
+if [ "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" != +0000 ] && [ -n "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" ]; then
+  before="$(date -u +%Y%m%dT%H%M%SZ)"
+  run env -u KEEL_TEST_NOW TZ=Pacific/Auckland bash -c ". '$lib'; keel_backup '$w/zone'; printf '%s' \"\$KEEL_BACKUP\""
+  after="$(date -u +%Y%m%dT%H%M%SZ)"
+  stamp="${OUT#"$w/zone."}"; stamp="${stamp%.bak}"
+  zone_ok=no
+  if [ "$stamp" = "$(printf '%s\n%s\n%s\n' "$before" "$stamp" "$after" | sort | sed -n 2p)" ] && [ "${#stamp}" -eq "${#before}" ]; then zone_ok=yes; fi
+  check_eq "S764 the backup's timestamp is UTC under TZ=Pacific/Auckland ($OUT)" yes "$zone_ok"
+fi
 
 # backup-claim-failed: an unwritable directory is a refusal naming that (root writes into 0555: guarded).
 mkdir -p "$w/robk"; printf 'b\n' > "$w/robk/f"; chmod 555 "$w/robk"
@@ -668,7 +673,8 @@ check_status "S764 a temp name planted as a link to /dev/null → rc 1" 1 "$STAT
 check_contains "S764 …named as a temp name that could not be claimed" "$OUT" "could not be claimed"
 check_eq "S764 …and nothing was written at the path" 0 "$(find "$w" -maxdepth 1 -name planted | grep -c . || true)"
 
-# inside-empty-checkout, inside-dir-physical, inside-ck-physical, own-*: keel_dir_is_checkouts_own.
+# inside-dir-physical, inside-ck-physical, own-*: keel_dir_is_checkouts_own (the empty-checkout row below is extra
+# coverage: a retired row, see the list's header).
 mkdir -p "$w/ck/inner" "$w/other"
 ln -s "$w/ck/inner" "$w/other/into-ck"; ln -s "$w/ck" "$w/ck-alias"
 own() { run bash -c ". '$lib'; KEEL_SAFE_WRITE_CHECKOUT='$1'; keel_dir_is_checkouts_own '$2'"; }
