@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # test_no_pipe_sigpipe_race.sh — dir #280: a static guard against reintroducing the
-# `printf "$var" | grep -q/-m/head` SIGPIPE race in any tools/*.sh or tests/*.sh file that runs
+# `printf "$var" | grep -q/-m/head` SIGPIPE race in any tools/*.sh or tests/*.sh file — plus
+# install.sh, uninstall.sh, bootstrap.sh, keel and the tools/secret-guard pre-commit/pre-push hooks (dir #837; the sh-only bootstrap.sh and keel have no pipefail
+# and are skipped by runs_under_pipefail; other tracked scripts, e.g. under docs/ and examples/, stay
+# out of scope) — that runs
 # under `pipefail`. Under pipefail, grep's (or head's) own early exit on a match/line-count can
 # close the pipe before printf finishes writing, and the resulting SIGPIPE flips a real match into
 # a false "not found" — the exact bug dir #280 fixed across ~20 call sites (reproduced live: a
@@ -36,14 +39,17 @@
 # never spells this shape with a literal producer-pipe-consumer sequence (found in review: an
 # earlier draft's own pass/fail strings self-matched this exact regex, which would have made the
 # test fail on its own source the moment it became in-scope of its own scan).
-QMHEAD_RE='(e|f)?grep( +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
+# dir #837 widened the consumer SPELLING: an absolute path (`/usr/bin/grep`), `command grep`, `ggrep`
+# (GNU grep on macOS) and `rg`, and a flag that takes its argument ahead of the q/m one (`grep -e pat -q`:
+# -e/-f/-A/-B/-C, also clustered (`-ie`), and the long --regexp/--file consume the next word, quoted or not).
+# Still a known gap: other wrappers (`env`, `sudo`, `xargs`, `busybox`, a leading backslash) and `grep -- -q`.
+QMHEAD_RE='((/[^ |]*/|command +)?(e|f|g)?grep|rg)( +(-[a-zA-Z]*[efABC]|--regexp|--file) +("[^"]*"|'"'"'[^'"'"']*'"'"'|[^ |]+)| +-[^ |]+)* +(-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--max-count)'
 # dir #708 widened the q/m consumer to ANY producer. Measured @0a99412: `| grep -q/-m` after any
 # command was 9 hits tree-wide (all fixed), while `| head` after any command was ~97 — nearly all
 # `x="$(... | head -1)"` captures whose pipeline status nobody reads, so a SIGPIPE there changes no
 # result. grep -q/-m is branched on, which is what makes the race real; `head` stays bounded to the
 # fixed producer list above. `(^|[^|])` keeps `|| grep -q ...` (an OR list, not a pipe) out.
-# The consumer also takes egrep/fgrep (the prefix matters: the pipe anchor needs the name to start right after it) and flag clusters before the q/m one (`grep -F -q`); a flag that
-# takes an argument ahead of it (`grep -e pat -q`) stays a known gap, like the others in the header.
+# The consumer also takes egrep/fgrep (the prefix matters: the pipe anchor needs the name to start right after it) and flag clusters before the q/m one (`grep -F -q`);
 ANY_QM_RE="(^|[^|])\\|[[:space:]]*$QMHEAD_RE"
 RACE_RE="(^|[^a-zA-Z0-9_])(printf|echo|sed|tr)[[:space:]][^|]*\\|[[:space:]]*($QMHEAD_RE|head)|$ANY_QM_RE"
 # The rare safe case (e.g. a producer that is a single fixed short line, proven by the reason):
@@ -101,6 +107,19 @@ race_lines() {
   done < <(grep -nE "$RACE_RE" "$1" 2>/dev/null)
 }
 
+# scan_files — NUL-separated list of every file the guard reads: all tools/ and tests/ `*.sh`, plus
+# (dir #837) the root-level scripts and the extensionless secret-guard hooks the `*.sh` find skipped.
+# bootstrap.sh and keel are POSIX sh with no pipefail, so runs_under_pipefail still skips them: they
+# are listed to be covered if they ever gain it, not because they race today.
+SCAN_EXTRA="install.sh uninstall.sh bootstrap.sh keel tools/secret-guard/pre-commit tools/secret-guard/pre-push"
+scan_files() {
+  local x
+  find "$REPO_ROOT/tools" "$REPO_ROOT/tests" -name '*.sh' -print0
+  for x in $SCAN_EXTRA; do
+    [ -f "$REPO_ROOT/$x" ] && printf '%s\0' "$REPO_ROOT/$x"
+  done
+}
+
 hits=""
 while IFS= read -r -d '' f; do
   runs_under_pipefail "$f" || continue
@@ -108,7 +127,7 @@ while IFS= read -r -d '' f; do
     [ -n "$n" ] || continue
     hits="${hits:+$hits }$f:$n"
   done < <(race_lines "$f")
-done < <(find "$REPO_ROOT/tools" "$REPO_ROOT/tests" -name '*.sh' -print0)
+done < <(scan_files)
 
 if [ -z "$hits" ]; then
   pass "no unsafe pipe-into-grep/head race under pipefail"
@@ -134,13 +153,35 @@ fx="$SANDBOX/race-fixture.sh"
   echo "func_prod $P grep -q x   # sigpipe-ok: x"
   echo "func_prod $P egrep -q x"
   echo "func_prod $P fgrep -qx x"
+  echo "func_prod $P /usr/bin/grep -q x"
+  echo "func_prod $P command grep -q x"
+  echo "func_prod $P ggrep -q x"
+  echo "func_prod $P rg -q x"
+  echo "func_prod $P grep -e pat -q"
+  echo "func_prod $P grep -c x"
+  echo "func_prod $P rg x"
+  echo "func_prod $P grep -ie pat -q"
+  echo "func_prod $P grep -e \"a b\" -q"
+  echo "func_prod $P rg --quiet x"
+  echo "func_prod $P grep --regexp pat -q"
+  echo "func_prod $P grep -A 3 x"
 } > "$fx"
 got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
-if [ "$got" = "1 2 3 7 8 9 10 11 " ]; then
-  pass "guard flags function/awk/git producers; skips allow-comment, OR list, head capture"
+if [ "$got" = "1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 " ]; then
+  pass "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg"
 else
-  fail "guard flags function/awk/git producers; skips allow-comment, OR list, head capture" \
-    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 ')"
+  fail "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg" \
+    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 ')"
 fi
+
+# dir #837 scope fixture: every file the ticket named is in the scan list.
+listed="$(scan_files | tr '\0' '\n')"
+for x in $SCAN_EXTRA; do
+  if match "$listed" -qxF "$REPO_ROOT/$x"; then
+    pass "scan scope covers $x"
+  else
+    fail "scan scope covers $x" "not in scan_files output"
+  fi
+done
 
 summary
