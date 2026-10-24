@@ -46,10 +46,6 @@ Consume it **by pointing at the tool that produces it**, never by citing its int
 column names, no file path, no output shape — the tool's own doc is where that lives, and it may
 change there without this doc needing an edit.
 
-**Read a recorded pain by its provenance (G1).** A row whose pain is `accepted-on-proposal` is weaker
-evidence of felt pain than a `stated` one: it may recur only because the previous groom or session kept
-proposing it. Weigh it that way, and do not count its recurrence as the pain's persistence.
-
 **Read both signals against what the sensor can actually see, and expect the first cycle to spend
 most of its effort on the instrument rather than on the docs.** Three coverage gaps, all found by one
 groom, all invisible from the output alone: a read trace records read *tool calls*, so any file the
@@ -73,6 +69,11 @@ key against its own top, not the main checkout's). Two of the three gaps stay pe
 future ticket closes: an always-on context file or a slash-command body never produces a Read tool
 call, and neither does a file opened via `cat`/`sed`/`grep` — the disclosure exists to name that limit,
 not to remove it. Read what the tool prints; it is no longer guidance to remember by hand.
+
+**Read a recorded pain by its provenance (G1).** A row whose pain is `accepted-on-proposal` is weaker
+evidence of felt pain than a `stated` one: the pain may recur only because the previous groom or session
+kept proposing it, so a proposal repeated is not a pain persisting. A live re-check that still fails
+counts for either provenance, as the re-verification rule below requires.
 
 **An empty aggregate is the "surprising number" the paragraph above already tells you to treat as a
 question about the instrument — and the commonest answer is a rotation, not a dead tree.** Where the
@@ -277,7 +278,8 @@ the parked file had a price, then priced it and asked again).
 groom, 2026-09-23).** The session before that groom had surfaced five pooled defects and the agent
 recommended a patch release for three of them. Asked "should we fix the tails first?", the operator
 accepted; the day before, the same case had been put to them and declined. The decision was real and the
-operator's, but the wording and the argument were the agent's, which fits neither of the two states above.
+operator's, but the wording and the argument were the agent's, which fits neither of the two states above (an operator-stated pain in the operator's words, and
+"carried-over theme, not a sprint").
 Recording it as operator-stated overstates what the next G0 reads, since a pain that recurs because the
 agent keeps proposing it looks felt; refusing it discards a genuine decision. One field settles it:
 
@@ -287,8 +289,9 @@ agent keeps proposing it looks felt; refusing it discards a genuine decision. On
 - `carried`: no pain behind the row; the "carried-over theme, not a sprint" wording above.
 
 G0 of the next groom reads `accepted-on-proposal` rows as weaker evidence of felt pain. A pain picked from
-offered labels (next paragraph) is a case of `accepted-on-proposal`, with the label as the proposal. A
-rule of the procedure, not a compensation.
+offered labels is `accepted-on-proposal` too, with the label as the proposal: record it as a picked label
+(below) and give it that provenance. The field applies to every row, including a plan whose only pain is
+the META-pain. A rule of the procedure, not a compensation.
 
 **A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
 grooms).** At 0.14.0 two of three pains were labels the groom wrote and the operator chose; at 0.15.0
@@ -489,7 +492,7 @@ horizon live there); (c) is unchanged. What stays here is why each input is on t
 
 ## G5 — every release row, five fields
 
-Name, the pain it answers (G1), a derived ticket list (G3), its size measured against the project's own
+Name, the pain it answers (G1) with its provenance, a derived ticket list (G3), its size measured against the project's own
 per-release band, and named risks are the baseline fields any release row needs. Two more, sized from
 what a project's own cost-measurement work has already put on disk (where that work exists — see
 `dir #313` for keel's own instance): a rough **budget estimate** for the release, and its **value
