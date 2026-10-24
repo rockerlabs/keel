@@ -3403,6 +3403,15 @@ ln -s "$o775/sub3" "$r775/sub"
 run_in "$r775" "$scan" --tracked
 check_status "dir #775: a committed symlink behind a symlinked parent → BLOCKED on its committed target" 1 "$STATUS"
 check_contains "dir #775: ...the committed target string is reported" "$OUT" "  sub/lnk:1:/tmp/$aws746"
+# a symlinked parent whose target is dangling: the file is absent through it, so the index copy stands in
+r775="$(new_repo)"
+mkdir "$r775/sub"; printf 'tok = %s\n' "$k746" > "$r775/sub/key.txt"
+commit746 "$r775" dangling
+mv "$r775/sub" "$o775/orig-sub5"
+ln -s "$o775/no-such-dir" "$r775/sub"
+run_in "$r775" "$scan" --tracked
+check_status "dir #775: a committed key behind a dangling symlinked parent → BLOCKED" 1 "$STATUS"
+check_contains "dir #775: ...from its index copy" "$OUT" "  sub/key.txt:1:tok = $k746"
 # fail closed: a committed blob git cannot read is exit 2 behind a symlinked parent too
 r775="$(new_repo)"
 mkdir "$r775/sub"; printf 'clean\n' > "$r775/sub/g.txt"

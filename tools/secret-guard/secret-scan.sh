@@ -1035,7 +1035,8 @@ case "$mode" in
     # A skip-worktree file that IS present is read from the working tree, whose copy may hold what the index does
     # not. A working-tree symlink's target string is always scanned (it is what the next `git add` commits); a
     # tracked file a symlink replaced (index mode not 120000) has its index copy scanned too, and so has any tracked
-    # path whose parent directory is a symlink (dir #775: the working file there is the target's, not the tree's). An unmerged path (a
+    # path whose parent directory is a symlink (dir #775: the working file there is the target's, not the tree's).
+    # An unmerged path (a
     # stage other than 0) is read whole: its working file if there is one, and every distinct non-gitlink stage's
     # index copy — the working file of a binary or type conflict holds one side only, and a key may sit in "ours"
     # or "theirs" alone. A hit a later copy shares byte for byte with an earlier one is recorded once; one WARN
@@ -1122,12 +1123,14 @@ case "$mode" in
         # tracked file gets the same read: its target is what the next `git add` commits.
         target="$(readlink "$top/$f")" || _fail_closed "read the tracked symlink '$f'" $?
         emit_stream "$f" <<< "$target"
-        [ "$tmode" != 120000 ] || [ "$plink" -eq 1 ] || continue
-        if [ "$plink" -eq 1 ]; then
-          echo "secret-scan: WARN reached through a symlinked directory, scanned its working copy and its index copy: $fesc" >&2
-        else
+        if [ "$tmode" != 120000 ]; then
           # a tracked file a symlink replaced: its committed content is the index copy
           echo "secret-scan: WARN replaced by a symlink in the working tree, scanned its target and its index copy: $fesc" >&2
+        elif [ "$plink" -eq 1 ]; then
+          # a committed symlink behind a symlinked parent: the working readlink is the target directory's, not ours
+          echo "secret-scan: WARN reached through a symlinked directory, scanned its working copy and its index copy: $fesc" >&2
+        else
+          continue
         fi
       elif [ -f "$top/$f" ] && [ -r "$top/$f" ]; then              # (a symlink took the branch above)
         emit_stream "$f" < "$top/$f"
