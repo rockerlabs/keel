@@ -364,4 +364,16 @@ check_contains "section 5's per-leg record names the transcript and sums spend f
 check_contains "section 5's per-leg record keeps its unmeasured clause (dir #872)" "$s5_872" \
   "or \`unmeasured\` where the harness doesn't report it, never a fabricated zero"
 
+# dir #815: Clause B's demotion ticket is staged by the verdict, so (b)'s harvest files it.
+cb_815="$(awk '/^\*\*Clause B.s demotion ticket is staged by the verdict/{f=1} f && /^$/{exit} f' "$doc" | tr '\n' ' ' | tr -s ' ')"
+for needle in \
+  'never addressed to "the groom" in prose' \
+  'or one class has now recurred across three or more runs' \
+  'stages the demotion ticket in the run'"'"'s staged-tickets file like any other ticket draft' \
+  'files it with no new step' \
+  'is never weighed'
+do
+  check_contains "Clause B demotion-ticket paragraph: $needle (dir #815)" "$cb_815" "$needle"
+done
+
 summary
