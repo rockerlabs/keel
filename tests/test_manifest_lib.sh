@@ -76,7 +76,7 @@ check_eq "link_is_keels: a recorded target outside the checkout is an adopter's"
 check_eq "link_is_keels: a manifest without a checkout= header names no checkout" 1 "$(lk "$mm_nock" commands/go.md "$SANDBOX/lk-good")"
 # a `-` record names no target: even a link whose own target is the text `-`, run from a directory that holds a
 # file of that name inside the checkout, is not Keel's.
-ln -s - "$SANDBOX/lk-dash"; : > "$mk/-"
+ln -s -- - "$SANDBOX/lk-dash"; : > "$mk/-"
 check_eq "link_is_keels: a pre-dir-#369 \`-\` record is never Keel's" 1 "$(cd "$mk" && lk "$mm" commands/dash.md "$SANDBOX/lk-dash")"
 # a recorded target that is itself a symlink is an adopter's alias inside the checkout.
 ln -s go.md "$mk/commands/ALIAS.md"
