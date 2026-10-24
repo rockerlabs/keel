@@ -263,9 +263,9 @@ So context files don't bloat and stay useful.
   carried by `/wrap` step 2 — re-read `BACKLOG.md` fresh, take the next free number (max existing + 1,
   scanned from `BACKLOG.md` only), append the body, update the queue line if the backlog tracks one, and
   delete the own draft. At *your own wrap* fold only your own draft and leave foreign ones for their
-  owners; the `/backlog` sweep below is the path that folds anything, whoever wrote it. **Derive the number immediately before writing the heading** — from the headings as they are at
-  that moment, never from a census taken at session start: a parallel session may have filed the same
-  number since, and two `###` headings with one number is the failure. Two sessions
+  owners; the `/backlog` sweep below is the path that folds anything, whoever wrote it. Derive the
+  number immediately before writing the heading, from the headings as they are at that moment, never from
+  a census taken at session start (a parallel session may have filed the same number since). Two sessions
   folding in the same instant
   still race — on a modified-since-read collision, re-read and retry rather than overwriting. Any draft
   not yet folded when its own session ends — crashed mid-session, or simply still open elsewhere — is
@@ -344,8 +344,9 @@ agents, the user config directory) produces no diff, no failing test and no alar
 once left every new session without hooks, commands or memory for hours. Before declaring recovery:
 - Enumerate those out-of-tree surfaces by name and check each for what was CHANGED or DELETED.
 - Sweep the user's home by birth time for what the run CREATED — no list of known surfaces names a path a
-  buggy run invents (macOS: `find "$HOME" -xdev -newerBt '<run start>' ! -newerBt '<run end>'`, with the
-  library directory pruned). Classify the hits by content; never delete by name.
+  buggy run invents. On macOS (`-newerBt` needs filesystem birth times; elsewhere it errors or matches
+  nothing, which is not a clean result): `find "$HOME" -xdev -path "$HOME/Library" -prune -o -newerBt
+  '<run start>' ! -newerBt '<run end>' -print`. Classify the hits by content; never delete by name.
 
 ---
 
@@ -392,9 +393,11 @@ two false verdicts, branch classification, delete-on-merge) → the *Git branch 
 collides with a concurrent one (the same ticket number filed twice) and other sessions have uncommitted
 edits in the same checkout, `git reset --hard` is both often blocked and wrong — it destroys their work.
 Move the branch pointer alone: `git update-ref refs/heads/<branch> <fetched-sha>` (the bad commit's
-content stays as an ordinary uncommitted diff), then restore only the colliding file with
-`git checkout HEAD -- <absolute path>`. Use the absolute path: a relative pathspec silently fails to match
-when the shell's cwd is a different worktree than the target checkout.
+content stays in the index and working tree, as a staged diff against the new HEAD), then restore only the
+colliding file with `git -C <checkout> checkout HEAD -- <file>` — `-C`, because from another worktree's
+cwd a relative pathspec fails to match. This is safe only when the fetched commit differs from the local
+parent in that one file; if it also changed others, the index still holds their old versions and a later
+`git add -A` or `commit -a` would revert them, so restore those files from HEAD the same way.
 
 ---
 
@@ -709,8 +712,9 @@ first real timer fire, after every manual run had been green.
 
 ## Shell and editing craft
 
-Each rule below was paid for by at least two independent incidents; none is caught by a linter, because
-the code is valid and simply says or does the wrong thing.
+Each rule below was learned from a repeated incident; none is caught by a linter, because the code is
+valid and simply says or does the wrong thing. The shell rules assume bash; under a login shell that is
+zsh (see *Shell* above) run such scripts with `bash <file>`.
 
 **Edit shell with the edit tool, not a generated rewrite.** Rewriting a shell file through a `python3`
 (or `sed`/`perl`) heredoc layers a second escaping language on the first, and it fails silently: a
@@ -791,7 +795,7 @@ is the one that gets quoted. Felt three times in one audit: a tool piped through
 a waiter matched a test assertion that QUOTES the runner's pass banner and declared a truncated suite
 green; two runs keyed by `file:line` reported phantom "new" findings that were the same lines shifted by
 an insert. Rules that cost nothing:
-- Capture the exit code apart from the filtered output (`out=$(cmd 2>&1); rc=$?`), then filter.
+- Capture the exit code apart from the filtered output (`rc=0; out=$(cmd) || rc=$?` with stderr kept apart, so `set -e` cannot abort before `rc` is read), then filter.
 - Anchor a terminal-banner match to `^` and pair it with a process check, so a line that merely quotes the
   banner cannot satisfy it.
 - Assert a NONZERO input count before treating any zero as a finding.
