@@ -531,4 +531,97 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 chmod 755 "$w/rodir"
 
+# --- dir #764: pins for the clauses tests/mutants/safe-write.tsv found unguarded ----------------------
+# Each row names the mutant it kills. The sweep itself: tools/self/mutation-sweep.sh tests/mutants/safe-write.tsv
+# tests/test_safe_write.sh (tests/test_mutation_lists.sh keeps the list's needles current).
+w="$SANDBOX/s764"; mkdir -p "$w"
+oneline() { grep -c . <<<"$1" || true; }
+
+# resolve-hop-limit: a chain of 40 links resolves, 41 is refused as a loop.
+mkdir -p "$w/hop"; printf 'real\n' > "$w/hop/real"
+prev=real; i=1
+while [ "$i" -le 41 ]; do
+  ln -s "$prev" "$w/hop/l$i"; prev="l$i"
+  [ "$i" -eq 40 ] && cp -P "$w/hop/l40" "$w/hop/chain40"
+  i=$((i + 1))
+done
+run bash -c ". '$lib'; printf 'new\n' | keel_write_through '$w/hop/chain40'"
+check_status "S764 a 40-hop link chain is written through → rc 0" 0 "$STATUS"
+check_eq "S764 …the end of the chain holds the new content" new "$(cat "$w/hop/real")"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/hop/l41'"
+check_status "S764 a 41-hop link chain → rc 1" 1 "$STATUS"
+check_contains "S764 …refused as a loop" "$OUT" "symlink loop"
+
+# check-dir-missing: the refusal names the missing directory (the claim would fail anyway, with another line).
+ln -s "$w/no-such-dir/f" "$w/s764-dangle"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/s764-dangle'"
+check_contains "S764 a link into a missing directory is refused for that" "$OUT" "its directory is missing"
+check_eq "S764 …in one line" 1 "$(oneline "$OUT")"
+
+# check-inside-from-outside: a link that lies inside the checkout and leads inside it is written through.
+mkdir -p "$w/ckin/sub"; printf 'in\n' > "$w/ckin/sub/real"; ln -s sub/real "$w/ckin/lnk"
+run bash -c ". '$lib'; KEEL_SAFE_WRITE_CHECKOUT='$w/ckin'; printf 'new\n' | keel_write_through '$w/ckin/lnk'"
+check_status "S764 a link inside the checkout to a file inside it → rc 0" 0 "$STATUS"
+check_eq "S764 …its target got the content" new "$(cat "$w/ckin/sub/real")"
+
+# write-state-refuse, backup-write-refuse: a refusal is ONE line and writes nothing, whatever the entry point.
+ln -s s764-loopb "$w/s764-loopa"; ln -s s764-loopa "$w/s764-loopb"
+mkdir -p "$w/s764-cwd"
+run bash -c "cd '$w/s764-cwd' && . '$lib'; printf 'x\n' | keel_write_state '$w/s764-loopa'"
+check_status "S764 write_state on a loop → rc 1" 1 "$STATUS"
+check_eq "S764 …in one line (the refusal stops the write)" 1 "$(oneline "$OUT")"
+check_eq "S764 …and leaves no temp in the working directory" 0 "$(keeltmp_count "$w/s764-cwd")"
+run bash -c "cd '$w/s764-cwd' && . '$lib'; keel_backup_write_through '$w/s764-loopa' printf 'x\n'"
+check_status "S764 backup_write_through on a loop → rc 1" 1 "$STATUS"
+check_eq "S764 …in one line (no backup is attempted)" 1 "$(oneline "$OUT")"
+check_eq "S764 …and no backup is left" 0 "$(find "$w" -maxdepth 1 -name 's764-loop*.bak' | grep -c . || true)"
+
+# backup-write-backup-fail: a backup that cannot be taken stops the write (all 99 names taken).
+printf 'keep\n' > "$w/full"
+ts=20260202T020202Z
+: > "$w/full.$ts.bak"; i=2; while [ "$i" -le 99 ]; do : > "$w/full.$ts.$i.bak"; i=$((i + 1)); done
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup_write_through '$w/full' printf 'new\n'"
+check_status "S764 backup_write_through with no free backup name → rc 1" 1 "$STATUS"
+check_contains "S764 …named as no free backup name" "$OUT" "no free backup name"
+check_eq "S764 …the file is untouched" keep "$(cat "$w/full")"
+check_eq "S764 …and \$KEEL_BACKUP is empty" "" "$(bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup_write_through '$w/full' printf 'new\n' 2>/dev/null; printf '%s' \"\$KEEL_BACKUP\"")"
+# backup-name-exhausted: keel_backup alone refuses the same way.
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/full'"
+check_status "S764 keel_backup with .bak through .99.bak taken → rc 1" 1 "$STATUS"
+check_contains "S764 …named as no free backup name" "$OUT" "no free backup name"
+# backup-name-limit: .99.bak itself is still a usable name.
+rm -f "$w/full.$ts.99.bak"
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/full'; printf '%s' \"\$KEEL_BACKUP\""
+check_status "S764 keel_backup with only .99.bak free → rc 0" 0 "$STATUS"
+check_eq "S764 …the backup is .99.bak" "$w/full.$ts.99.bak" "$OUT"
+
+# (extra coverage — a retired row, see the list's header) two backups in one second get two names, and the first keeps its bytes.
+printf 'one\n' > "$w/two"; ts=20260303T030303Z
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/two'"
+printf 'second\n' > "$w/two"
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/two'; printf '%s' \"\$KEEL_BACKUP\""
+check_eq "S764 the second backup of one second is .2.bak" "$w/two.$ts.2.bak" "$OUT"
+check_eq "S764 …the first backup still holds the first bytes" one "$(cat "$w/two.$ts.bak")"
+check_eq "S764 …and a backup is 0600" 600 "$(stat_portable_mode "$w/two.$ts.bak")"
+
+# backup-not-regular: a directory is refused before any name is claimed (a FIFO would hang the copy).
+mkdir -p "$w/adir"
+run bash -c ". '$lib'; keel_backup '$w/adir'"
+check_status "S764 keel_backup of a directory → rc 1" 1 "$STATUS"
+check_contains "S764 …named as not a regular file, no backup taken" "$OUT" "is not a regular file — no backup was taken"
+check_eq "S764 …and no name was claimed" 0 "$(find "$w" -maxdepth 1 -name 'adir.*.bak' | grep -c . || true)"
+
+# backup-timestamp: the name carries UTC, whatever the zone. Skipped where the zone database lacks the zone (TZ then
+# falls back to UTC, and local time would read the same); the name is compared as a stamp between two UTC reads.
+printf 'z\n' > "$w/zone"
+if [ "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" != +0000 ] && [ -n "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" ]; then
+  before="$(date -u +%Y%m%dT%H%M%SZ)"
+  run env -u KEEL_TEST_NOW TZ=Pacific/Auckland bash -c ". '$lib'; keel_backup '$w/zone'; printf '%s' \"\$KEEL_BACKUP\""
+  after="$(date -u +%Y%m%dT%H%M%SZ)"
+  stamp="${OUT#"$w/zone."}"; stamp="${stamp%.bak}"
+  zone_ok=no
+  if [ "$stamp" = "$(printf '%s\n%s\n%s\n' "$before" "$stamp" "$after" | sort | sed -n 2p)" ] && [ "${#stamp}" -eq "${#before}" ]; then zone_ok=yes; fi
+  check_eq "S764 the backup's timestamp is UTC under TZ=Pacific/Auckland ($OUT)" yes "$zone_ok"
+fi
+
 summary
