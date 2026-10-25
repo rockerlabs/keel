@@ -3153,6 +3153,19 @@ git_shim_any746 "$d746/shim-raw" --raw
 run_in "$a24_repo746" env PATH="$d746/shim-raw:$PATH" "$scan" --range "$a24_base746..HEAD"
 check_status "dir #746 A25: the pair enumeration fails → exit 2" 2 "$STATUS"
 check_contains "dir #746 A25: ...naming it" "$OUT" "secret-scan: could not list the range's paths"
+# dir #764: the same enumeration answering with a record that is not a header (a bare token, a combined-diff
+# `::` header) or with a header and no path exits 2 naming the record, never reads as an empty pair list.
+git_shim_raw764() {  # dir bytes — a git whose `--raw` answer is the printf-format BYTES, any other call the real git
+  mkdir -p "$1"
+  printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = --raw ] && { printf "%s"; exit 0; }; done\nexec "%s" "$@"\n' "$2" "$real_git715" > "$1/git"
+  chmod +x "$1/git"
+}
+for row764 in 'a bare token and a path|bogus\\0f.txt\\0' 'a combined-diff header and a path|::100644 100644 100644 aaaa bbbb cccc MM\\0f.txt\\0' 'a header with no path|:100644 100644 aaaa bbbb M\\0'; do
+  git_shim_raw764 "$d746/shim-rec" "${row764#*|}"
+  run_in "$a24_repo746" env PATH="$d746/shim-rec:$PATH" "$scan" --range "$a24_base746..HEAD"
+  check_status "dir #764: the pair enumeration answers ${row764%%|*} → exit 2" 2 "$STATUS"
+  check_contains "dir #764: ...naming the unexpected record (${row764%%|*})" "$OUT" "could not read the range's paths (unexpected record)"
+done
 r746="$(range746)"; a746="$(git -C "$r746" rev-parse HEAD)"
 printf 'clean\n' > "$r746/src/ok.txt"
 commit746 "$r746" clean
@@ -3503,5 +3516,79 @@ printf 'ends\\\n' > "$rule"
 run env SECRET_SCAN_PERSONAL_FILE="$rule" "$scan" --selftest
 check_status "dir #695: an ODD run is refused" 2 "$STATUS"
 check_contains "dir #695: ...with the reason as the first stderr line" "${OUT%%$'\n'*}" "ends in a backslash"
+
+# --- dir #764: pins for the clauses tests/mutants/secret-scan.tsv found unguarded --------------------------
+# The sweep: tools/self/mutation-sweep.sh tests/mutants/secret-scan.tsv tests/test_secret_guard.sh (every
+# row fails closed on one read or config error; tests/test_mutation_lists.sh keeps the needles current).
+d764="$(mktemp -d "$SANDBOX/d764.XXXXXX")"
+mkdir "$d764/shim-grep" "$d764/f"
+printf 'nothing to see here\n' > "$d764/f/f.txt"
+# A grep shim that fails (exit 2) ONE personal-grep pass, named by GREP764_FAIL, and execs the real grep for every
+# other call. The passes are told apart by their flags and by LC_ALL, which only the C-locale passes carry as a
+# per-command prefix: rc2 = match_text's P-C (`-aiE`, LC_ALL=C), rc3 = its P-U (`-aiE`, caller's locale),
+# cm-personal / cm-pu = count_matches' second and third pass (`-aciE` under LC_ALL=C / `-aiE -c`), probe-utf8 =
+# the personal-regex probe's second run (`-iE`, caller's locale). The runs unset an ambient LC_ALL (a CI image may
+# export LC_ALL=C), which would make every call look like a C-locale pass.
+cat > "$d764/shim-grep/grep" <<'EOF'
+#!/bin/sh
+hasf=; fl=
+for a in "$@"; do
+  case "$a" in -f) hasf=1 ;; -[a-zA-Z]*) fl="$fl $a" ;; esac
+done
+c=; [ "${LC_ALL:-}" = C ] && c=C
+if [ -n "$hasf" ]; then
+  case "$GREP764_FAIL:$c" in
+    rc2:C) case "$fl" in *" -aiE"*) exit 2 ;; esac ;;
+    rc3:) case "$fl" in *" -aiE"*) case "$fl" in *" -c"*) ;; *) exit 2 ;; esac ;; esac ;;
+    cm-personal:C) case "$fl" in *" -aciE"*) exit 2 ;; esac ;;
+    cm-pu:) case "$fl" in *" -aiE"*" -c"*) exit 2 ;; esac ;;
+    probe-utf8:) [ "$fl" = " -iE" ] && exit 2 ;;
+  esac
+fi
+exec "$GREP764_REAL" "$@"
+EOF
+chmod +x "$d764/shim-grep/grep"
+grep_env764=(PATH="$d764/shim-grep:$PATH" GREP764_REAL="$(type -P grep)")
+for k764 in rc2 rc3; do
+  run_in "$d764/f" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
+  check_status "dir #764: a failing personal grep pass ($k764) in a FILE scan → exit 2" 2 "$STATUS"
+  check_contains "dir #764: ...naming the match step ($k764)" "$OUT" "could not match"
+done
+run_in "$d764/f" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL=probe-utf8 SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" -- f.txt
+check_status "dir #764: the personal-regex probe failing in the caller's locale only → exit 2" 2 "$STATUS"
+check_contains "dir #764: ...named as an invalid regex" "$OUT" "invalid regex"
+r764="$(new_repo)"
+git -C "$r764" commit -q --allow-empty -m base
+a764="$(git -C "$r764" rev-parse HEAD)"
+printf 'clean\n' > "$r764/ok.txt"
+commit746 "$r764" clean
+for k764 in cm-personal cm-pu; do
+  run_in "$r764" env -u LC_ALL "${grep_env764[@]}" GREP764_FAIL="$k764" SECRET_SCAN_PERSONAL_FILE="$d746/p-ascii" "$scan" --range "$a764..HEAD"
+  check_status "dir #764: a failing personal count pass ($k764) in --range's fast path → exit 2" 2 "$STATUS"
+  check_contains "dir #764: ...naming the blob count ($k764)" "$OUT" "could not count matches in the range's blobs"
+done
+
+# the completion marker: an exit 0 that never set it is a crash and becomes exit 2 (a copy of the scanner with
+# every `_scan_done=1` removed stands for a code path that forgot it; the unmodified one is the control).
+sed 's/_scan_done=1/:/' "$scan" > "$d764/nomarker.sh"
+run_in "$d764/f" bash "$d764/nomarker.sh" -- f.txt
+check_status "dir #764: an exit 0 without the completion marker → exit 2" 2 "$STATUS"
+check_contains "dir #764: ...named as an internal error" "$OUT" "internal error — the scan did not complete; failing closed"
+run_in "$d764/f" "$scan" -- f.txt
+check_status "dir #764: the control — the unmodified scanner on the same file → exit 0" 0 "$STATUS"
+
+# the caller errors name themselves: a missing FILE, an unknown option and an unresolvable range each exit 2 with
+# their own line, not through a later read's failure.
+run_in "$d764/f" "$scan" -- missing.txt
+check_status "dir #764: a FILE that does not exist → exit 2" 2 "$STATUS"
+check_contains "dir #764: ...named as no such file" "$OUT" "secret-scan: no such file: missing.txt"
+check_absent "dir #764: ...not as a failed read" "$OUT" "could not read"
+run_in "$d764/f" "$scan" --bogus-option
+check_status "dir #764: an unknown option → exit 2" 2 "$STATUS"
+check_contains "dir #764: ...named as an unknown option" "$OUT" "unknown option '--bogus-option'"
+run_in "$errepo" "$scan" --range "deadbeef..cafebabe"
+check_status "dir #764: an unresolvable range → exit 2" 2 "$STATUS"
+check_contains "dir #764: ...named as a bad range" "$OUT" "bad range 'deadbeef..cafebabe'"
+check_absent "dir #764: ...and the scan stopped there (no later read failed)" "$OUT" "could not"
 
 summary
