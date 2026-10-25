@@ -1,0 +1,13 @@
+# tests/mutants/install-never-clobber.tsv — single-clause mutants of the installers' never-clobber rules (dir #764,
+# spec 745 D4): the home-inside-the-checkout refusals of install.sh and uninstall.sh (B19), the stale-docs advice that
+# must skip a docs/ inside the checkout, and uninstall's link-ownership arms (B20).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_install_never_clobber.sh) and
+# checked for staleness by tests/test_mutation_lists.sh. The manifest.sh predicates have their own list
+# (manifest.tsv); the product-directory and take() refusals theirs (install-product-dirs.tsv).
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
+inst-home-in-checkout	install.sh	if keel_dir_is_checkouts_own "$HOME_DIR"; then\n  echo "install: refusing	if false; then\n  echo "install: refusing	a home inside the checkout is refused
+inst-home-exit	install.sh	choose a home outside the checkout. Nothing was written." >&2\n  exit 2	choose a home outside the checkout. Nothing was written." >&2\n  exit 1	…with exit 2
+inst-stale-docs-in-checkout	install.sh	if ! keel_dir_is_checkouts_own "$HOME_DIR/docs"; then	if true; then	docs/ inside the checkout is never advised for removal
+un-home-in-checkout	uninstall.sh	if keel_dir_is_checkouts_own "$HOME_DIR"; then\n  echo "uninstall: refusing	if false; then\n  echo "uninstall: refusing	an uninstall of a home inside the checkout is refused
+un-link-is-keels	uninstall.sh	elif manifest_link_is_keels "$this_manifest" "$rel" "$apath"; then	elif true; then	an adopter's link a manifest recorded is never moved
+un-link-same-path	uninstall.sh	if ! manifest_same_path "$live_target" "$extra"; then	if false; then	a link that no longer points where Keel wired it is kept

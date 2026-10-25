@@ -531,4 +531,163 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
 fi
 chmod 755 "$w/rodir"
 
+# --- dir #764: pins for the clauses tests/mutants/safe-write.tsv found unguarded ----------------------
+# Each row names the mutant it kills. The sweep itself: tools/self/mutation-sweep.sh tests/mutants/safe-write.tsv
+# tests/test_safe_write.sh (tests/test_mutation_lists.sh keeps the list's needles current).
+w="$SANDBOX/s764"; mkdir -p "$w"
+oneline() { grep -c . <<<"$1" || true; }
+
+# resolve-hop-limit: a chain of 40 links resolves, 41 is refused as a loop.
+mkdir -p "$w/hop"; printf 'real\n' > "$w/hop/real"
+prev=real; i=1
+while [ "$i" -le 41 ]; do
+  ln -s "$prev" "$w/hop/l$i"; prev="l$i"
+  i=$((i + 1))
+done
+# 40 hops: chain40 -> l39 -> … -> l1 -> real (an explicit link: BSD `cp -P` without -R follows the link it copies)
+ln -s l39 "$w/hop/chain40"
+run bash -c ". '$lib'; printf 'new\n' | keel_write_through '$w/hop/chain40'"
+check_status "S764 a 40-hop link chain is written through → rc 0" 0 "$STATUS"
+check_eq "S764 …the end of the chain holds the new content" new "$(cat "$w/hop/real")"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/hop/l41'"
+check_status "S764 a 41-hop link chain → rc 1" 1 "$STATUS"
+check_contains "S764 …refused as a loop" "$OUT" "symlink loop"
+
+# check-dir-missing: the refusal names the missing directory (the claim would fail anyway, with another line).
+ln -s "$w/no-such-dir/f" "$w/s764-dangle"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/s764-dangle'"
+check_contains "S764 a link into a missing directory is refused for that" "$OUT" "its directory is missing"
+check_eq "S764 …in one line" 1 "$(oneline "$OUT")"
+
+# check-inside-from-outside: a link that lies inside the checkout and leads inside it is written through.
+mkdir -p "$w/ckin/sub"; printf 'in\n' > "$w/ckin/sub/real"; ln -s sub/real "$w/ckin/lnk"
+run bash -c ". '$lib'; KEEL_SAFE_WRITE_CHECKOUT='$w/ckin'; printf 'new\n' | keel_write_through '$w/ckin/lnk'"
+check_status "S764 a link inside the checkout to a file inside it → rc 0" 0 "$STATUS"
+check_eq "S764 …its target got the content" new "$(cat "$w/ckin/sub/real")"
+
+# write-state-refuse, backup-write-refuse: a refusal is ONE line and writes nothing, whatever the entry point.
+ln -s s764-loopb "$w/s764-loopa"; ln -s s764-loopa "$w/s764-loopb"
+mkdir -p "$w/s764-cwd"
+run bash -c "cd '$w/s764-cwd' && . '$lib'; printf 'x\n' | keel_write_state '$w/s764-loopa'"
+check_status "S764 write_state on a loop → rc 1" 1 "$STATUS"
+check_eq "S764 …in one line (the refusal stops the write)" 1 "$(oneline "$OUT")"
+check_eq "S764 …and leaves no temp in the working directory" 0 "$(keeltmp_count "$w/s764-cwd")"
+run bash -c "cd '$w/s764-cwd' && . '$lib'; keel_backup_write_through '$w/s764-loopa' printf 'x\n'"
+check_status "S764 backup_write_through on a loop → rc 1" 1 "$STATUS"
+check_eq "S764 …in one line (no backup is attempted)" 1 "$(oneline "$OUT")"
+check_eq "S764 …and no backup is left" 0 "$(find "$w" -maxdepth 1 -name 's764-loop*.bak' | grep -c . || true)"
+
+# backup-write-backup-fail: a backup that cannot be taken stops the write (all 99 names taken).
+printf 'keep\n' > "$w/full"
+ts=20260202T020202Z
+: > "$w/full.$ts.bak"; i=2; while [ "$i" -le 99 ]; do : > "$w/full.$ts.$i.bak"; i=$((i + 1)); done
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup_write_through '$w/full' printf 'new\n'"
+check_status "S764 backup_write_through with no free backup name → rc 1" 1 "$STATUS"
+check_contains "S764 …named as no free backup name" "$OUT" "no free backup name"
+check_eq "S764 …the file is untouched" keep "$(cat "$w/full")"
+check_eq "S764 …and \$KEEL_BACKUP is empty" "" "$(bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup_write_through '$w/full' printf 'new\n' 2>/dev/null; printf '%s' \"\$KEEL_BACKUP\"")"
+# backup-name-exhausted: keel_backup alone refuses the same way.
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/full'"
+check_status "S764 keel_backup with .bak through .99.bak taken → rc 1" 1 "$STATUS"
+check_contains "S764 …named as no free backup name" "$OUT" "no free backup name"
+# backup-name-limit: .99.bak itself is still a usable name.
+rm -f "$w/full.$ts.99.bak"
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/full'; printf '%s' \"\$KEEL_BACKUP\""
+check_status "S764 keel_backup with only .99.bak free → rc 0" 0 "$STATUS"
+check_eq "S764 …the backup is .99.bak" "$w/full.$ts.99.bak" "$OUT"
+
+# (extra coverage — a retired row, see the list's header) two backups in one second get two names, and the first keeps its bytes.
+printf 'one\n' > "$w/two"; ts=20260303T030303Z
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/two'"
+printf 'second\n' > "$w/two"
+run bash -c ". '$lib'; KEEL_TEST_NOW=$ts; keel_backup '$w/two'; printf '%s' \"\$KEEL_BACKUP\""
+check_eq "S764 the second backup of one second is .2.bak" "$w/two.$ts.2.bak" "$OUT"
+check_eq "S764 …the first backup still holds the first bytes" one "$(cat "$w/two.$ts.bak")"
+check_eq "S764 …and a backup is 0600" 600 "$(stat_portable_mode "$w/two.$ts.bak")"
+
+# backup-not-regular: a directory is refused before any name is claimed (a FIFO would hang the copy).
+mkdir -p "$w/adir"
+run bash -c ". '$lib'; keel_backup '$w/adir'"
+check_status "S764 keel_backup of a directory → rc 1" 1 "$STATUS"
+check_contains "S764 …named as not a regular file, no backup taken" "$OUT" "is not a regular file — no backup was taken"
+check_eq "S764 …and no name was claimed" 0 "$(find "$w" -maxdepth 1 -name 'adir.*.bak' | grep -c . || true)"
+
+# backup-timestamp: the name carries UTC, whatever the zone. Skipped where the zone database lacks the zone (TZ then
+# falls back to UTC, and local time would read the same); the name is compared as a stamp between two UTC reads.
+printf 'z\n' > "$w/zone"
+if [ "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" != +0000 ] && [ -n "$(TZ=Pacific/Auckland date +%z 2>/dev/null)" ]; then
+  before="$(date -u +%Y%m%dT%H%M%SZ)"
+  run env -u KEEL_TEST_NOW TZ=Pacific/Auckland bash -c ". '$lib'; keel_backup '$w/zone'; printf '%s' \"\$KEEL_BACKUP\""
+  after="$(date -u +%Y%m%dT%H%M%SZ)"
+  stamp="${OUT#"$w/zone."}"; stamp="${stamp%.bak}"
+  zone_ok=no
+  if [ "$stamp" = "$(printf '%s\n%s\n%s\n' "$before" "$stamp" "$after" | sort | sed -n 2p)" ] && [ "${#stamp}" -eq "${#before}" ]; then zone_ok=yes; fi
+  check_eq "S764 the backup's timestamp is UTC under TZ=Pacific/Auckland ($OUT)" yes "$zone_ok"
+fi
+
+# backup-claim-failed: an unwritable directory is a refusal naming that (root writes into 0555: guarded).
+mkdir -p "$w/robk"; printf 'b\n' > "$w/robk/f"; chmod 555 "$w/robk"
+run bash -c ". '$lib'; keel_backup '$w/robk/f'"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "S764 keel_backup into an unwritable directory → rc 1" 1 "$STATUS"
+  check_contains "S764 …named as an uncreatable backup" "$OUT" "cannot create a backup beside"
+fi
+chmod 755 "$w/robk"
+
+# write-readonly: a read-only target is reported as that (root writes through 0444: guarded).
+printf 'ro\n' > "$w/ro2"; chmod 444 "$w/ro2"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_through '$w/ro2'"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_status "S764 a read-only target, content on stdin → rc 1" 1 "$STATUS"
+  check_contains "S764 …reported as read-only" "$OUT" "read-only"
+  check_eq "S764 …and still holds its bytes" ro "$(cat "$w/ro2")"
+fi
+
+# replace-dir, link-replace-dir: a REPLACE or a link onto a directory is refused, nothing nested.
+mkdir -p "$w/rdir"
+run bash -c ". '$lib'; printf 'x\n' | keel_write_replace '$w/rdir'"
+check_status "S764 write_replace onto a directory → rc 1" 1 "$STATUS"
+check_contains "S764 …named as a directory" "$OUT" "is a directory"
+check_eq "S764 …nothing was nested inside" 0 "$(find "$w/rdir" | grep -c "keeltmp" || true)"
+run bash -c ". '$lib'; keel_link_replace some-target '$w/rdir'"
+check_status "S764 link_replace onto a directory → rc 1" 1 "$STATUS"
+check_contains "S764 …named as a directory" "$OUT" "is a directory"
+check_eq "S764 …no link was made inside" 0 "$(find "$w/rdir" -type l | grep -c . || true)"
+
+# replace-temp-sibling-of-path: a REPLACE's temp is beside PATH, so a link into a missing directory is replaced.
+ln -s "$w/no-such-dir/f" "$w/rlink"
+run bash -c ". '$lib'; printf 'whole\n' | keel_write_replace '$w/rlink'"
+check_status "S764 write_replace over a dangling link → rc 0" 0 "$STATUS"
+check_eq "S764 …the link is now a regular file with the content" whole "$(cat "$w/rlink" 2>/dev/null)"
+check_eq "S764 …not a link any more" 0 "$(find "$w" -maxdepth 1 -name rlink -type l | grep -c . || true)"
+
+# claim-regular + claim-nonlink: a temp name that cannot be removed and resolves to /dev/null is not a claim.
+# (`rm` is stubbed so the plant survives the clearing; noclobber lets an open of a link to /dev/null through.)
+cat > "$w/plant.sh" <<'PLANT'
+. "$1"
+rm() { :; }
+ln -s /dev/null "$2.keeltmp.$$"
+printf 'x\n' | keel_write_replace "$2"
+PLANT
+run bash "$w/plant.sh" "$lib" "$w/planted"
+check_status "S764 a temp name planted as a link to /dev/null → rc 1" 1 "$STATUS"
+check_contains "S764 …named as a temp name that could not be claimed" "$OUT" "could not be claimed"
+check_eq "S764 …and nothing was written at the path" 0 "$(find "$w" -maxdepth 1 -name planted | grep -c . || true)"
+
+# inside-dir-physical, inside-ck-physical, own-*: keel_dir_is_checkouts_own (the empty-checkout row below is extra
+# coverage: a retired row, see the list's header).
+mkdir -p "$w/ck/inner" "$w/other"
+ln -s "$w/ck/inner" "$w/other/into-ck"; ln -s "$w/ck" "$w/ck-alias"
+own() { run bash -c ". '$lib'; KEEL_SAFE_WRITE_CHECKOUT='$1'; keel_dir_is_checkouts_own '$2'"; }
+own "$w/ck" "$w/ck/inner";                check_status "S764 own: a directory inside the checkout → rc 0" 0 "$STATUS"
+own "$w/ck" "$w/other";                   check_status "S764 own: a directory outside it → rc 1" 1 "$STATUS"
+own "$w/ck" "$w/other/into-ck";           check_status "S764 own: a link that leads into the checkout is judged by its physical path → rc 0" 0 "$STATUS"
+own "$w/ck-alias" "$w/ck/inner";          check_status "S764 own: a checkout named through a link is resolved physically → rc 0" 0 "$STATUS"
+own "$w/ck" "$w/ck/not-yet/deeper";       check_status "S764 own: a directory still to be made inside it, judged by its ancestor → rc 0" 0 "$STATUS"
+own "$w/ck" "$w/other/not-yet";           check_status "S764 own: a directory still to be made outside it → rc 1" 1 "$STATUS"
+own "$w/ck" "$w/nx/../ck/dd";             check_status "S764 own: a new directory that climbs back with .. into the checkout → rc 0" 0 "$STATUS"
+own "$w/ck" "$w/newdir/ck";               check_status "S764 own: below a new directory a same-named existing one is still new → rc 1" 1 "$STATUS"
+run bash -c "cd '$w/ck' && . '$lib'; KEEL_SAFE_WRITE_CHECKOUT=''; keel_dir_is_checkouts_own '$w/ck/inner'"
+check_status "S764 own: an unknown checkout contains nothing, whatever the working directory → rc 1" 1 "$STATUS"
+
 summary

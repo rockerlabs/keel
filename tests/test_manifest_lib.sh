@@ -55,4 +55,49 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
   chmod 644 "$m"   # restore so cleanup can remove the sandbox
 fi
 
+# --- dir #764: the link-record predicates, pinned clause by clause (tests/mutants/manifest.tsv) --------
+# manifest_link_is_keels / keel_path_inside / manifest_same_path decide what uninstall and install may move;
+# tests/test_install_never_clobber.sh reaches them only through whole installs, which left single clauses
+# unguarded. The sweep: tools/self/mutation-sweep.sh tests/mutants/manifest.tsv tests/test_manifest_lib.sh.
+mk="$SANDBOX/mck"; mkdir -p "$mk/commands" "$mk-dots" "$SANDBOX/mdl-parent"
+: > "$mk/commands/go.md"; : > "$mk-dots/x"; : > "$mk-dots/commands-go.md"
+ln -s "$mk" "$SANDBOX/mck-alias"; ln -s "$mk-dots" "$SANDBOX/mdl-parent/sib"
+mm="$SANDBOX/link-manifest"; mm_old="$SANDBOX/link-manifest-v99"; mm_nock="$SANDBOX/link-manifest-nock"
+printf 'keel_manifest_version=1\ncheckout=%s\nartifact=symlink\tcommands/go.md\t%s/commands/go.md\nartifact=symlink\tlinks/dash\t-\nartifact=symlink\tlinks/out\t%s/commands-go.md\n' "$mk" "$mk" "$mk-dots" > "$mm"
+sed 's/^keel_manifest_version=1/keel_manifest_version=99/' "$mm" > "$mm_old"
+sed '/^checkout=/d' "$mm" > "$mm_nock"
+ln -s "$mk/commands/go.md" "$SANDBOX/lk-good"; ln -s "$mk-dots/commands-go.md" "$SANDBOX/lk-out"
+ln -s "$mk/commands/other.md" "$SANDBOX/lk-moved"
+lk() { manifest_link_is_keels "$@" && echo 0 || echo 1; }
+check_eq "link_is_keels: a link at its recorded target inside the recording checkout" 0 "$(lk "$mm" commands/go.md "$SANDBOX/lk-good")"
+check_eq "link_is_keels: an unusable manifest (unknown version) proves nothing" 1 "$(lk "$mm_old" commands/go.md "$SANDBOX/lk-good")"
+check_eq "link_is_keels: a link that points elsewhere than recorded" 1 "$(lk "$mm" commands/go.md "$SANDBOX/lk-moved")"
+check_eq "link_is_keels: a recorded target outside the checkout is an adopter's" 1 "$(lk "$mm" links/out "$SANDBOX/lk-out")"
+check_eq "link_is_keels: a manifest without a checkout= header names no checkout" 1 "$(lk "$mm_nock" commands/go.md "$SANDBOX/lk-good")"
+# a `-` record names no target: even a link whose own target is the text `-`, run from a directory that holds a
+# file of that name inside the checkout, is not Keel's.
+ln -s -- - "$SANDBOX/lk-dash"; : > "$mk/-"
+check_eq "link_is_keels: a pre-dir-#369 \`-\` record is never Keel's" 1 "$(cd "$mk" && lk "$mm" links/dash "$SANDBOX/lk-dash")"
+# a recorded target that is itself a symlink is an adopter's alias inside the checkout.
+ln -s go.md "$mk/commands/ALIAS.md"
+printf 'artifact=symlink\tlinks/alias\t%s/commands/ALIAS.md\n' "$mk" >> "$mm"
+ln -s "$mk/commands/ALIAS.md" "$SANDBOX/lk-alias"
+check_eq "link_is_keels: a recorded target that is itself a symlink" 1 "$(lk "$mm" links/alias "$SANDBOX/lk-alias")"
+
+in_() { keel_path_inside "$@" && echo 0 || echo 1; }
+check_eq "path_inside: a path below the checkout" 0 "$(in_ "$mk/commands/go.md" "$mk")"
+check_eq "path_inside: the checkout itself, and a trailing slash on it" 0 "$(in_ "$mk" "$mk/")"
+check_eq "path_inside: an empty checkout contains nothing, not every absolute path" 1 "$(in_ /anything/at/all "")"
+check_eq "path_inside: a sibling sharing the checkout's name prefix is not inside" 1 "$(in_ "$mk-dots/x" "$mk")"
+check_eq "path_inside: …nor when spelled through a link to that sibling (the physical form keeps the slash)" 1 "$(in_ "$SANDBOX/mdl-parent/sib/x" "$mk")"
+check_eq "path_inside: a path spelled through a link to the checkout, still there" 0 "$(in_ "$SANDBOX/mck-alias/commands/go.md" "$mk")"
+check_eq "path_inside: …but one that no longer exists is judged on the strings alone" 1 "$(in_ "$SANDBOX/mck-alias/not-yet" "$mk")"
+
+same() { manifest_same_path "$@" && echo 0 || echo 1; }
+check_eq "same_path: the same text" 0 "$(same "$mk/commands/go.md" "$mk/commands/go.md")"
+check_eq "same_path: the same name through another spelling of its directory" 0 "$(same "$SANDBOX/mck-alias/commands/go.md" "$mk/commands/go.md")"
+check_eq "same_path: a different entry name in the same directory" 1 "$(same "$mk/commands/ALIAS.md" "$mk/commands/go.md")"
+check_eq "same_path: the same name in a different directory" 1 "$(same "$mk-dots/x" "$mk/x")"
+check_eq "same_path: a relative A never matches through another spelling" 1 "$(cd "$SANDBOX" && same "mck/commands/go.md" "$mk/commands/go.md")"
+
 summary

@@ -1,0 +1,8 @@
+# tests/mutants/install-product-dirs.tsv — single-clause mutants of the product-directory and take() refusals (dir #764,
+# spec 745 D4): install.sh never writes into, and uninstall.sh never moves a file out of, a directory that is the Keel
+# checkout's own (B7, B8).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_install_product_dirs.sh) and
+# checked for staleness by tests/test_mutation_lists.sh.
+# Columns, TAB-separated: id, file, needle, replacement, note. The needle must occur exactly once in the file.
+inst-product-in-checkout	install.sh	if keel_dir_is_checkouts_own "$d"; then\n    echo "  !    $d lands inside	if false; then\n    echo "  !    $d lands inside	a product directory inside the checkout is skipped
+un-take-in-checkout	uninstall.sh	if keel_dir_is_checkouts_own "${p%/*}"; then	if false; then	take() never moves a path out of the checkout's own directory
