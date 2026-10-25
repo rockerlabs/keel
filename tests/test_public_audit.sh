@@ -918,6 +918,23 @@ check_status "dir #738 A33j: a deleted-but-committed tracked file, --no-history 
 check_contains "dir #738 A33j: names the missing file" "$OUT" "tracked file 't.txt' is missing from the working tree"
 run env SECRET_SCAN_PERSONAL_FILE="$p738" bash "$pa" "$d"
 check_absent "dir #738 A33j control: default mode reads HEAD, so no such GAP" "$OUT" "is missing from the working tree"
+# dir #798: the GAP does not hang on the token/personal gate — no personal file and no --token still raises it.
+run env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$d"
+check_status "dir #798 A33j: --no-history, no personal file, no --token → exit 1" 1 "$STATUS"
+check_contains "dir #798 A33j: names the missing file without a token" "$OUT" "tracked file 't.txt' is missing from the working tree"
+check_absent "dir #798 A33j: never claims a clean audit" "$OUT" "no publication blockers found"
+# ...and with a token the line prints exactly once, not once per pass.
+printf '%s\n' "$OUT" > "$SANDBOX/pa-798-notoken.out"
+run env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history --token zzqq "$d"
+printf '%s\n' "$OUT" > "$SANDBOX/pa-798-token.out"
+check_status "dir #798 A33j: --no-history --token zzqq → exit 1" 1 "$STATUS"
+check_count "dir #798 A33j: the missing-file line prints exactly once with a token" "$SANDBOX/pa-798-token.out" "is missing from the working tree" 1
+check_count "dir #798 A33j: ...and exactly once without one" "$SANDBOX/pa-798-notoken.out" "is missing from the working tree" 1
+# a dangling tracked symlink is not a missing file
+d="$(repo_by dev@example.com)"
+ln -s no-such-target "$d/dangling"; commit_in "$d" "add dangling symlink"
+run env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$d"
+check_absent "dir #798 A33j: a dangling tracked symlink is not a missing file" "$OUT" "is missing from the working tree"
 
 # A35 (#740, B5 in public-audit): a literal after an invalid byte in history is still found under a UTF-8 locale.
 d="$(repo_by dev@example.com)"
