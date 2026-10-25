@@ -265,7 +265,8 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   **Your own terminal is never gated** — the hook fires on the assistant's tool calls, not on you typing
   `gh` yourself.
 - **The agent's `gh pr merge` is denied too** (dir #811) — unless the session is this repository's release
-  manager and pins the head it verified. The merge is otherwise yours.
+  manager, the project opted in (a `KEEL-MANAGER-MERGES` line in the main checkout's `CLAUDE.md`), and the
+  merge is a `--merge` pinned to the head it verified. The merge is otherwise yours.
 - **The claim is checked, not just trusted.** A separate hook writes a mechanical trace the instant a
   real `/code-review <level>` pass runs (whether the agent invoked it or you typed it directly); the gate
   cross-checks that trace against the receipt before unlocking, so a session can't write "review: medium"

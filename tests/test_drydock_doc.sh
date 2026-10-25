@@ -219,7 +219,7 @@ pin "Scope C's cost disclosure names the existing prose-only figure" "$doc" '6.1
 pin "Scope C defers real code-run numbers to the module's first run" "$doc" \
   'token** cost stays' \
   "expected the doc to say per-batch token cost is unmeasured rather than invent a number"
-pin "Scope C points at the live batch count, not a pinned number" "$doc" 'read the live count off `inventory.sh`' \
+pin "Scope C points at the live batch count, not a pinned number" "$doc" 'read the live count off its output rather than a quoted number' \
   "the claim marker's own correction: the spec's 'roughly 4-6' estimate was stale, and a quoted count goes stale as the tree grows"
 pin "Scope C's diversity leg cites delta-audit.md §5, not restated" "$doc" \
   'delta-audit.md`](delta-audit.md) §5' \

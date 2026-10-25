@@ -102,9 +102,9 @@ impact_store_root() {
 # root — unsets the whole list, not just whichever two variables a fix happens to know about at the
 # time: the exact class of miss that let dir #290's own canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its
 # printed command). A new store-resolving variable anywhere must be added here;
-# tests/test_impact_store_lib.sh's A3 pins that with a mutation proof, so a resolver that starts reading an unlisted variable fails the suite.
-IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG \
-KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
+# tests/test_impact_store_lib.sh's A3 pins that with a mutation proof, so a resolver that starts reading an
+# unlisted variable fails the suite.
+IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
 
 # impact_isolated HOME_DIR CMD [ARG…] — dir #317: the ONE way to run CMD (a shell function or an
 # external command) fully isolated from every ambient keel store override, without a caller having to
