@@ -154,6 +154,17 @@ pin "G3 re-measures a self-referential count after the groom's last edit" "$doc"
 pin "G3 states the counting rule beside the figure" "$doc" \
   'and state the counting rule beside the figure' \
   "expected G3 to require the counting rule next to the figure (dir #823 item 5)"
+# --- dir #820: a plan item outside the slate names its launcher; a hand census persists its predicate ---------
+pin "G5 requires a launcher on every plan item outside the slate" "$doc" \
+  '**Every plan item outside a release'"'"'s slate names who launches it and when (dir #820).**' \
+  "expected G5 to require a named launcher for a 'parallel, not in the slate' item (dir #820)"
+pin "G5 names the launcher forms" "$doc" \
+  '`operator: /go <n> now`, `manager: wave N worker`, or `next groom`' \
+  "expected G5 to list the launcher forms (dir #820)"
+pin "G3 persists the predicate of a hand-derived census" "$doc" \
+  'and persist the predicate you used' \
+  "expected G3 to require a hand-derived census to persist its predicate (dir #820)"
+
 pin "G6 runs the vendor round AFTER the same-family round's fixes" "$doc" \
   "**Run it AFTER the same-family round's fixes are applied, never beside it (dir #823).**" \
   "expected G6 to order the vendor round after the same-family round (dir #823 item 3)"
