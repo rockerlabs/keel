@@ -16,15 +16,14 @@ a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every s
 current run — never skip a receipt write; write it alongside the next step's first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8's chain. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
-review trace binds the HEAD current when the review fires, so a late commit costs a re-receipt.
+review trace binds the HEAD current when the review fires.
 
 **The guide.** The rare branches live in `polish-guide.md`. When a step below names a trigger that fired,
 load the `polish-guide` skill (`keel-polish-guide` if aliased), else `polish-guide.md` beside this file, at its section; guide unreachable → stop and report. Never improvise a branch. Where the guide and this file disagree, this file wins.
 
 Steps, in order:
 
-1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` (the working-tree `git diff` if
-   nothing is committed yet) is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
+1. **Diff.** `git fetch --prune`, then `git diff origin/<default>...HEAD` is this pass's scope. No diff → say so and stop; no receipt. Not a convergence round: run `tools/token-report.sh --context`; `verdict: compact` → the guide, § Step 1's compaction stop (dir #739). Otherwise
    `tools/pre-pr-gate.sh init`, then `tools/pre-pr-gate.sh receipt polish.1-diff`.
    Repo has a changelog (`CHANGELOG.md`, `changelog.d/`) and a notable change lacks its entry → add and commit it now, in this PR, before step 3 (guide § Step 1).
    *Rare — a convergence round (you re-invoked after step 5's review or step 7's self-check found
@@ -36,7 +35,7 @@ Steps, in order:
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
-   a run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
+   a run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt. New-API test: the guide, § Step 3's new-API red.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** Proceed only if simplify left no open
    problems and tests are green or explicitly skipped; otherwise report what is left and stop (no receipt).
