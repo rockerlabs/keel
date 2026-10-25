@@ -934,6 +934,7 @@ check_count "dir #798 A33j: ...and exactly once without one" "$SANDBOX/pa-798-no
 d="$(repo_by dev@example.com)"
 ln -s no-such-target "$d/dangling"; commit_in "$d" "add dangling symlink"
 run env -u SECRET_SCAN_PERSONAL_FILE bash "$pa" --no-history "$d"
+check_status "dir #798 A33j: a dangling tracked symlink, --no-history → clean exit" 0 "$STATUS"
 check_absent "dir #798 A33j: a dangling tracked symlink is not a missing file" "$OUT" "is missing from the working tree"
 
 # A35 (#740, B5 in public-audit): a literal after an invalid byte in history is still found under a UTF-8 locale.

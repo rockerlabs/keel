@@ -578,13 +578,16 @@ fi
 # it, while HEAD — what would be published — still holds it. Default mode reads HEAD in the history pass.
 # Not gated on tokens or personal literals (dir #798): the content of a missing file was not audited either
 # way. A dangling tracked symlink is not missing (its tracked content is its link-text).
+# The spool is reused by section 2's binary pass, so a failed listing is reported here, once.
+wt_tracked_ok=0
 if [ "$NO_HISTORY" = 1 ]; then
-  if pa_read "list the tracked files" "$audit_tmp/wt.missing" git -C "$DIR" ls-files -z -- . "${excludes[@]}"; then
+  if pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}"; then
+    wt_tracked_ok=1
     while IFS= LC_ALL=C read -r -d '' f; do
       [ -L "$DIR/$f" ] && continue
       [ -e "$DIR/$f" ] && continue
       gap "tracked file '$f' is missing from the working tree — its committed content was not audited (restore it or commit the removal)"
-    done < "$audit_tmp/wt.missing"
+    done < "$audit_tmp/wt.tracked"
   fi
 fi
 
@@ -618,8 +621,7 @@ if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
   wt_spool_kinds=()
   wt_prefix=""
   if [ "$NO_HISTORY" = 1 ]; then
-    pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}" \
-      && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(tracked); }
+    [ "$wt_tracked_ok" = 1 ] && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(tracked); }
   elif git -C "$DIR" rev-parse --verify -q HEAD >/dev/null 2>&1; then
     pa_read "find the audited directory's prefix" "$audit_tmp/wt.prefix" git -C "$DIR" rev-parse --show-prefix \
       && { pa_first "$audit_tmp/wt.prefix"; wt_prefix="$pa_line"; } \
