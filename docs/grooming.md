@@ -373,7 +373,7 @@ sweep and once after the last heading edit (G4) — and reconcile any disagreeme
 count**; the second run is nearly free and is the only step that catches a predicate that is wrong, as
 opposed to a file that has moved. Where the mechanism or its equivalent has not shipped on a project,
 this rule names the gap rather than asserting an unshipped tool's own rules as settled fact — derive
-these three by hand, and re-derive on every cycle, not once and carry forward. **A backlog whose
+these three by hand, and persist the predicate you used beside the backlog (an unrecorded one leaves a count unrecoverable), and re-derive on every cycle, not once and carry forward. **A backlog whose
 tickets use another uniform heading token (`### B.N`, `### KB.N`) is not that gap:** keel's census takes
 it as `--ticket-token 'B\.[0-9]+'` (dir #605) and prints the captured token under `--list`. A pool kept
 as a `## Pool` section rather than a `→ pool` tag is still not read; derive it from the section. Its
@@ -613,6 +613,15 @@ readable, is no count). It is a report field, like design economics: it has no c
 slate by itself; a ceiling on the share would be a scheduling rule, which this field is not. The
 marker's second reader is the rollout audit ([`docs/rollout-audit.md`](rollout-audit.md)). A rule of
 the procedure, not a compensation.
+
+**Every plan item outside a release's slate names who launches it and when (dir #820).** Inside a managed
+release the manager owns the slate's workers and nothing else ([`docs/release-management.md`](release-management.md)),
+and the groom that wrote the plan has ended, so an item the plan calls "parallel, not in the slate: runs now" has
+no one to start it. An adopter's spec-ready spike, written that way, never started: no branch and no commit in the
+five days after the patch it ran beside tagged, with no plan-shape cause behind it. The row names the launcher in the
+item itself: `operator: /go <n> now`, `manager: wave N worker`, or `next groom`. An item that cannot name one is
+either moved into the slate as a worker or not called "parallel". G0's "did the batch's first item start"
+question then has a named party to ask. A rule of the procedure, not a compensation.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that

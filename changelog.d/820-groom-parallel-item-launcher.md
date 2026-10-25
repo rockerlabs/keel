@@ -1,0 +1,1 @@
+- `docs/grooming.md` G5: every plan item outside a release's slate names its launcher (`operator: /go <n> now`, `manager: wave N worker`, or `next groom`), else it joins the slate or is not called "parallel"; G3: a hand-derived census persists the predicate it used (dir #820).
