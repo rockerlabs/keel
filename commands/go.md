@@ -4,11 +4,10 @@ argument-hint: <task-id, spec path, or one sentence>
 effort: high
 ---
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
-resolve. Load only the task's own context. A defect outside the ticket: record it
-in the PR body or a new ticket (step 6's override, in a managed release); do not fix it. A project without git: `<root>` is the project
+resolve. An obstacle only the operator can clear (access, approval, outage) blocking every remaining step → stop; otherwise mark that step unverified, name it in the report, finish the rest. A defect outside the ticket: record it
+in the PR body or a new ticket (step 6's override, in a managed release); do not fix it. Without git, `<root>` is the project
 directory; `inflight-check`, `worktree` and the PR in `close` do not run — except a `⏳` marker not yours
-still stops you first; the claim is still written; closing runs step 9's `conform` walk, reported by
-hand. `[tag]` → `## Notes`.
+still stops you first; the claim is still written; closing runs step 9's `conform` walk, reported by hand. `[tag]` → `## Notes`.
 
 **1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline
 open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout — the first entry of
@@ -61,15 +60,15 @@ whose branch is gone → if its PR merged, stop: done, the heading is stale.
   keep it; create none.
 - Any other branch with no commits past the default (a fresh worktree's own branch) → keep it; it becomes
   this ticket's branch.
-Re-check at every ticket; run every git write with `git -C <working-tree-path>`.
+Re-check every ticket; run every git write with `git -C <working-tree-path>`.
 
 **6. claim.** Write `⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)` onto the ticket's heading at `<root>`
 (spec mode: its `Status:` line, added if absent; closed per the guide); `/wrap`'s closing sweep replaces it with ✅ on merge — never leave both. **Named override
 inside a managed release (`dir #367` R8)** — or under any brief that names a single backlog writer: a
 worker does NOT write the marker, a ticket or any backlog entry; request them through that writer.
 This step as written is the standalone default. Once step 7 decides, append `, tests: first` or
-`, tests: infeasible — <reason>` after the marker's closing parenthesis, never inside it. Write main-checkout files by absolute path.
-Without git, `<name>` names the ticket.
+`, tests: infeasible — <reason>` after the marker's closing parenthesis, never inside it. 
+
 
 **7. acceptance-tests.** First load the implementer guide — the `go-guide` skill (`keel-go-guide` if
 aliased), else `go-guide.md` beside this file; it runs steps 7–9. Derive acceptance tests from the
