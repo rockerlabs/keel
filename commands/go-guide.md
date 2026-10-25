@@ -8,7 +8,7 @@ before moving on, and when to stop. Where this file and `go.md` disagree, `go.md
 
 ## Map — when there is no git, or no runnable surface
 
-Read this table once; from then on, every word in the left column means its right-hand entry.
+Read this table once; each left-column word then means its right-hand entry.
 
 | With git and code | Without git, or with no runnable surface |
 |---|---|
@@ -45,13 +45,12 @@ depends on → `go.md` step 3's stop-or-escape rule.
 
 **I2 — acceptance checks first.**
 1. Write one test per `**Acceptance:**` item (no Acceptance line → per done-criterion clause).
-2. Run them. Each must fail for the reason the item names; paste that failing output into the test
-   plan. A test that passes before you change anything tests nothing — rewrite it.
+2. Run them. Each must fail for the reason the item names; paste that output into the test plan.
+   A test that passes before your change tests nothing — rewrite it.
 3. No runnable surface → one checklist item per check, naming the evidence it will need; this is
    still `tests: first`. `infeasible` is only for a check that cannot be performed at all; write why.
    A check only a named person can pass (a sign-off) is neither: it stays open, `pending` (I6).
-4. A test that needs NEW API cannot compile on the pre-fix code, so "red" is two proofs: a probe through the
-   OLD API that shows the defect, and per new test a mutation of the fix that the test catches. Paste both.
+4. A test needing NEW API has no pre-fix red: do `polish-guide.md` § Step 3, New-API red.
 Result: every Acceptance item has a red test or an open checklist item.
 
 **I3 — build, one item at a time.**
@@ -92,7 +91,7 @@ None → the count is `0`; still write the line.
 `| <id> | done — <file:line or evidence> |`, `| <id> | escape <n> |`, or — only for a check a named
 person must pass — `| <id> | pending — <who> |`, which `Operator next:` then asks for. A spec without rule ids → one
 row per section of its Rules. A red row → back to I3 until green, or an escape if the check itself is
-wrong. (I3 is part of `go.md` step 7, so this is its "back to step 7".) Without `/polish`, this table plus I4 is the whole pre-close review — do not skip a row.
+wrong. Without `/polish`, this table plus I4 is the whole pre-close review — do not skip a row.
 
 **I7 — outcome test.** The spec's Class & outcome section names an outcome test (it worked), apart
 from the done-criterion (it's built).
