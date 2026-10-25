@@ -153,6 +153,15 @@ check_status "bad: an ftp:// link -> exit 1" 1 "$STATUS"
 lint 19-x.md $'- cites `dir #5` in backticks\n'
 check_status "bad: a backtick-wrapped dir #N -> exit 1" 1 "$STATUS"
 check_contains "bad: the backtick-wrapped dir #N is named" "$OUT" "changelog.d/19-x.md:1: dir #N inside backticks"
+# dir #795: spans pair left to right — a citation BETWEEN two code spans is not inside one (the old regex
+# paired span 1's closing backtick with span 2's opener and false-fired); one INSIDE a span still fails.
+lint 23-x.md $'- The `foo` helper now exits 2 (dir #5) in the `bar` case.\n'
+check_status "ok: dir #N between two code spans -> exit 0" 0 "$STATUS"
+lint 24-x.md $'- Fixed `a` (dir #5).\n'
+check_status "ok: dir #N after a code span -> exit 0" 0 "$STATUS"
+lint 25-x.md $'- Wrapped `dir #9` wrongly.\n'
+check_status "bad: dir #N wrapped in a code span among other text -> exit 1" 1 "$STATUS"
+check_contains "bad: ...and named" "$OUT" "changelog.d/25-x.md:1: dir #N inside backticks"
 lint 10-x.md ''
 check_status "bad: an empty file -> exit 1" 1 "$STATUS"
 check_contains "bad: empty file named" "$OUT" "changelog.d/10-x.md:1: empty file"

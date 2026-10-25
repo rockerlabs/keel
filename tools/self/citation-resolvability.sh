@@ -188,11 +188,14 @@ if git -C "$repo_dir" ls-files --error-unmatch -- CHANGELOG.md >/dev/null 2>&1; 
   cl_tmp="$(mktemp -d "${TMPDIR:-/tmp}/citation-resolvability.XXXXXX")"
   trap 'rm -rf "$cl_tmp"' EXIT   # this script sets no other EXIT trap; INT/TERM leave the scratch dir to the OS temp sweep
   cl_slice="$cl_tmp/unreleased.md"
-  awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' "$repo_dir/CHANGELOG.md" > "$cl_slice"
+  # Cut from the fence-blanked file: a fenced `## [x.y.z]` line must neither end the slice nor hide later text.
+  blank_fenced_blocks "$repo_dir/CHANGELOG.md" | awk '/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p' > "$cl_slice"
   abs_files+=("$cl_slice")
 fi
 while IFS= read -r f; do
-  [ "$f" = changelog.d/README.md ] || abs_files+=("$repo_dir/$f")
+  [ "$f" = changelog.d/README.md ] && continue
+  [ -f "$repo_dir/$f" ] || continue   # tracked but deleted from the working tree (dir #795): skipped quietly
+  abs_files+=("$repo_dir/$f")
 done < <(git -C "$repo_dir" ls-files -- 'changelog.d/*.md')
 
 # extract_dir_tickets (below, and the archive scan further down) can emit a non-numeric marker line
