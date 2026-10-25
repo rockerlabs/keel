@@ -137,7 +137,7 @@
 #                              H-JAVA-WILDCARD — a Java file uses a wildcard import
 # (--install mode audits the install instead; its findings are GAP/WARN only, IDs in the code below —
 # the one HINT exception is H-DENY-ENV, listed above. One GAP is --install's alone, G-REQUIRED-LIB: a lib
-# install.sh / uninstall.sh REQUIRE (artifact-cksum.sh, safe-write.sh) missing or corrupt — dir #747.)
+# install.sh / uninstall.sh REQUIRE (artifact-cksum.sh, safe-write.sh, ledger.sh) missing or corrupt — dir #747, #805.)
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -1132,8 +1132,14 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # artifact-cksum.sh and safe-write.sh (dir #679). Without either they refuse to run, so an install "complete" by
   # every other check can neither be finished nor removed. Judged the way the two sourced libs above are (`-s` and
   # `bash -n`), but reported as a GAP rather than aborting: this audit has nothing to source them for.
-  for ireq_lib in artifact-cksum.sh safe-write.sh; do
+  # dir #805: ledger.sh is the third — sourced bare and late (install.sh near its end, uninstall.sh after its
+  # removals), so its absence fails at the last step, not at the start; it gets its own wording below.
+  for ireq_lib in artifact-cksum.sh safe-write.sh ledger.sh; do
     if ! { [ -s "$tools_dir/lib/$ireq_lib" ] && bash -n "$tools_dir/lib/$ireq_lib" 2>/dev/null; }; then
+      if [ "$ireq_lib" = ledger.sh ]; then
+        gap G-REQUIRED-LIB "tools/lib/ledger.sh is missing or corrupted — install.sh does its work, then exits 1 at the ledger step; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
+        continue
+      fi
       gap G-REQUIRED-LIB "tools/lib/$ireq_lib is missing or corrupted — install.sh and uninstall.sh refuse to run without it, so this install can be neither completed nor removed; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
     fi
   done
