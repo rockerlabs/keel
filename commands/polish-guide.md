@@ -1055,8 +1055,9 @@ change renders stale) belong in the commit BEFORE the first review, not after it
    receipt half was carrying until dir #183 removed it, so the burden is here now. Return the PR URL.
 
    **Waiting on CI (dir #616).** If you wait on CI after the PR opens, wait in ONE backgrounded Bash command
-   with a timeout or iteration cap — `gh pr checks <n> --watch`, or an `until` loop over
-   `gh pr view <n> --json mergeStateStatus` — and let its completion notify you. Never ScheduleWakeup
+   with an iteration cap — an `until` loop over `gh pr view <n> --json mergeStateStatus` (`gh pr checks <n>
+   --watch` has no timeout of its own and macOS has no `timeout` command, so a wrapper around it is no
+   bound) — and let its completion notify you. Never ScheduleWakeup
    (Claude Code's timer for loop mode only), a foreground `sleep` chain or a short-interval Monitor, and end
    no turn "waiting" without a live background task. A harness with no background-completion notice: one
    bounded foreground wait, or hand the CI status to the operator. Why: `docs/token-economy.md`.

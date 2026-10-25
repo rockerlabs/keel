@@ -321,8 +321,8 @@ pinfgn "guide: § Step 3 no longer asks to show the real output of a bare run" '
 
 # --- dir #616: wait on CI in ONE backgrounded, bounded command — never a wakeup, a sleep chain or a short Monitor ----
 check_contains "core: step 9 names the one backgrounded command and what never to use" "$(step_text 9)" \
-  'Waiting on CI: ONE backgrounded `gh pr checks <n> --watch` with a timeout; never wakeups, sleeps or short Monitors.'
-pinfg "guide: § Step 9 owns the CI-wait rule, bounded (dir #616)" '**Waiting on CI (dir #616).** If you wait on CI after the PR opens, wait in ONE backgrounded Bash command with a timeout or iteration cap'
+  'Waiting on CI: ONE backgrounded `until` loop with an iteration cap over `gh pr view <n> --json mergeStateStatus` (`gh pr checks --watch` has no timeout and macOS has no `timeout`); never wakeups, sleeps or short Monitors.'
+pinfg "guide: § Step 9 owns the CI-wait rule, bounded (dir #616)" '**Waiting on CI (dir #616).** If you wait on CI after the PR opens, wait in ONE backgrounded Bash command with an iteration cap'
 pinfg "guide: § Step 9 forbids ScheduleWakeup for a background wait" 'Never ScheduleWakeup'
 pinfg "guide: § Step 9 gives a harness with no completion notice a bounded foreground wait" 'A harness with no background-completion notice: one bounded foreground wait'
 

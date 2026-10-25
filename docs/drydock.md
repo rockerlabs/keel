@@ -286,8 +286,8 @@ incremental scoping applies to scope C exactly as it does to A and B.
 [What a first run costs](#what-a-first-run-costs) records (≈6.1M tokens): re-run that
 section's session-limit arithmetic fresh rather than reusing its number, and fall back to
 `DRYDOCK_SCOPE_C=':!*'` (a prose-only run) when the wave doesn't fit. The batch **count** is
-mechanical and already known — 14 directory-affinity batches on keel's own tree at the default
-`DRYDOCK_CODE_BATCH_LINES` (live-measured, not the "roughly 4–6" an early estimate guessed before
+mechanical and already known — the directory-affinity batches `inventory.sh` derives on keel's own tree at the default
+`DRYDOCK_CODE_BATCH_LINES` (read the live count off `inventory.sh`'s output — it grows with the tree, and it is far above the "roughly 4–6" an early estimate guessed before
 directory affinity's per-directory forcing was accounted for). Per-batch **token** cost stays
 unmeasured until the module's own first real run — no invented numbers here — and that run records
 them in its own dated summary.
@@ -525,7 +525,7 @@ Every behavioural defect drydock has ever caught in shipped code was found by a 
 reader, after same-family sessions read the same files clean (`private/audit/RUNS.md`'s cross-run
 record). The scriptable cross-vendor leg this repo ships ([`docs/vendor-review.md`](vendor-review.md),
 plus the harness lessons in [`docs/delta-audit.md`](delta-audit.md) §11) shares one ceiling: a small
-context window per round. A
+prompt-size cap per round (`agy.sh` caps the combined prompt at 185 KiB, and at 131071 bytes on Linux). A
 vendor with a materially larger window may only be reachable through **another person's account and
 UI** — no API, no CLI, nothing this machine can drive. `tools/audit-packet/{export,import}.sh`
 (dir #495) turn that into a **packet** (what to hand over) and a **result contract** (what comes back)

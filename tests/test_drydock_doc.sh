@@ -219,8 +219,8 @@ pin "Scope C's cost disclosure names the existing prose-only figure" "$doc" '6.1
 pin "Scope C defers real code-run numbers to the module's first run" "$doc" \
   'token** cost stays' \
   "expected the doc to say per-batch token cost is unmeasured rather than invent a number"
-pin "Scope C states the real, live-measured batch count" "$doc" '14 directory-affinity batches' \
-  "the claim marker's own correction: the spec's 'roughly 4-6' estimate was stale, 14 is the real measured count"
+pin "Scope C points at the live batch count, not a pinned number" "$doc" 'read the live count off `inventory.sh`' \
+  "the claim marker's own correction: the spec's 'roughly 4-6' estimate was stale, and a quoted count goes stale as the tree grows"
 pin "Scope C's diversity leg cites delta-audit.md §5, not restated" "$doc" \
   'delta-audit.md`](delta-audit.md) §5' \
   "F6: the code module inherits delta-audit.md §5's rule as-is, cited not restated"

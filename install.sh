@@ -262,7 +262,7 @@ advise_install="install.sh$mode_flag$layout_flag$home_flag"
 # THIS run's own context (dir #323/#324): a kept checkout re-runs install.sh --force directly; a linked
 # install prefers `keel sync`; an EPHEMERAL bootstrap run's $root is a temp clone reaped on exit, so
 # neither a bare re-run nor a $FIX cp/ln hint can ever reach it again — only the piped bootstrap form
-# can (verified against README.md's "#2 — One line, no manual clone" block and docs/getting-started.md's "One
+# can (verified against README.md's "One line, no manual clone" bullet and docs/getting-started.md's "One
 # line, no manual clone" paragraph).
 # BOTH of those forward their args straight through to install.sh and add no ARGUMENTS of their own
 # (keel's `sync)` arm, bootstrap.sh's `KEEL_EPHEMERAL=1 ./install.sh "$@"` line — each does add something

@@ -126,7 +126,8 @@ tests, a review depth matched to the diff — has run cleanly on the current com
 mechanical trace the moment a real `/code-review` pass runs, and the gate checks it before unlocking, so
 "review: medium" in a PR means a review actually ran.
 `/polish` has a fresh-context subagent run the real, built-in `/code-review` pass first, and the PR is
-labeled honestly whatever path the review took.
+labeled honestly whatever path the review took. The same gate also denies the agent's own `gh pr merge`
+(only a release manager merges, pinned to the head it verified): the merge stays yours.
 
 ```bash
 tools/install-pre-pr-gate.sh <repo>   # project scope (default) — --global covers every repo instead

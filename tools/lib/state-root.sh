@@ -35,8 +35,8 @@
 # `install-manifest.*`, `foreign-core.*`, the install scratch and `doctor-accept` — they describe ONE
 # install and are moot once its home is gone.
 #
-# Every function prints WITHOUT a trailing newline (the convention of impact_store_root) and prints
-# nothing on failure.
+# Every function but keel_legacy_store_entries prints WITHOUT a trailing newline (the convention of
+# impact_store_root; that one prints one entry per line) and prints nothing on failure.
 
 # keel_state_root — `$HOME/.keel`; rc 1 and no output when `$HOME` is unset or empty.
 keel_state_root() {

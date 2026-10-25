@@ -192,7 +192,7 @@ _TU_OBJECTS='[inputs | '"$_TU_PARSE"']'
 _TU_HAS_USAGE='(((.message | objects | .usage | objects) // null) != null)'
 
 # The known non-assistant record types this project's own transcripts carry (verified live, 2026-09-06,
-# across every keel session file on this machine — 15 distinct non-"assistant" types, ~106k records
+# across every keel session file on this machine — 14 distinct non-"assistant" types, ~106k records
 # scanned). Used ONLY by tu_self_check's "unrecognized" counter below — never to gate tu_turns'
 # selection, which is a positive match on `type == "assistant"` (see the header note on why a type
 # enumeration is the wrong filter to build the actual reader on).

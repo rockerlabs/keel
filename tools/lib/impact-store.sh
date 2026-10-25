@@ -100,10 +100,11 @@ impact_store_root() {
 # the vendored tools/secret-guard/secret-scan.sh's own _impact_log_path_inline copy. Named in this ONE
 # place (dir #317) so impact_isolated (below) — and any future caller that wants a truly sandboxed store
 # root — unsets the whole list, not just whichever two variables a fix happens to know about at the
-# time: the exact class of miss that let dir #290's own canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its printed command). A new store-resolving
-# variable anywhere must be added here; tests/test_impact_store_lib.sh's A3 pins that with a mutation
-# proof, so a resolver that starts reading an unlisted variable fails the suite.
-IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
+# time: the exact class of miss that let dir #290's own canary leak (E11: KEEL_IMPACT_LOG stayed unblanked in its
+# printed command). A new store-resolving variable anywhere must be added here;
+# tests/test_impact_store_lib.sh's A3 pins that with a mutation proof, so a resolver that starts reading an unlisted variable fails the suite.
+IMPACT_ISOLATION_VARS="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LEDGER KEEL_IMPACT_EVIDENCE KEEL_IMPACT_LOG \
+KEEL_READ_TRACE_STORE KEEL_MACHINE_WATCH_STORE"
 
 # impact_isolated HOME_DIR CMD [ARG…] — dir #317: the ONE way to run CMD (a shell function or an
 # external command) fully isolated from every ambient keel store override, without a caller having to
@@ -300,9 +301,9 @@ _impact_override_active() {
 # _keel_store_git ARGS… — dir #630 fix round (F1): run `git ARGS…` with the repo-selecting variables
 # (the list in tools/lib/repo-arg-guard.sh, pinned by tests/test_git_env_guard.sh) cleared, for the
 # one-off `-C "$top"` calls keel_store_record and keel_store_recorded make. A caller process started
-# with one of those already set (a hook, a tool invoked from inside another repo's git machinery) otherwise hijacks `-C`: git honors an inherited
-# GIT_DIR over it, so e.g. `rev-parse --show-toplevel` silently succeeds against the HIJACKED repo
-# (not `$top`) and a `--add` lands in ITS .git/config — as long as `$top` exists as SOME directory on
+# with one of those already set (a hook, a tool invoked from inside another repo's git machinery) otherwise
+# hijacks `-C`: git honors an inherited GIT_DIR over it, so e.g. `rev-parse --show-toplevel` silently succeeds against
+# the HIJACKED repo (not `$top`) and a `--add` lands in ITS .git/config — as long as `$top` exists as SOME directory on
 # disk (a project not yet git-initialized is enough: `-C` only needs a `chdir` to succeed, and git
 # resolves the repo from `GIT_DIR` from there, never from `$top`'s own contents). A `$top` that
 # doesn't exist on disk at all was already safe before this fix, verified live (git 2.52.0): `-C`

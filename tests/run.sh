@@ -2,8 +2,8 @@
 # Keel test runner — execute every tests/test_*.sh in its own process and aggregate.
 # Each test file sets up (and tears down) its own isolated sandbox HOME (tests/lib.sh), so files
 # run independently of each other — that's what makes concurrent execution below safe. The one
-# externally-shared resource any file touches, tools/pre-pr-gate.sh's /tmp sentinel (dir #80), is
-# keyed off a repo basename that every fixture mints via `mktemp -d "$SANDBOX/repo.XXXXXX"`
+# externally-shared resource any file touches, tools/pre-pr-gate.sh's sentinel (dir #80; under
+# $HOME/.keel/tmp since dir #398), is keyed off a repo basename that every fixture mints via `mktemp -d "$SANDBOX/repo.XXXXXX"`
 # (tests/lib.sh's new_repo(), and pipeline-canary.sh's own toy-repo setup) — randomized per
 # process, so two files running at once cannot collide on it either (dir #130).
 #

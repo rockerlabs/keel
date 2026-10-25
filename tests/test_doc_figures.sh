@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_doc_figures.sh — every per-file token figure quoted in docs/loading-and-cost.md (and the README's
+# test_doc_figures.sh — every per-file token figure quoted in docs/loading-and-cost.md (and its mermaid
 # diagram) must stay close to the real file size by the doc's own ruler (~4 chars/token), plus the
 # doc-coupling pins that keep prose references (droppable-section headings) in sync with the template.
 # A methodology selling honest token accounting can't ship a stale number. This guards EVERY
