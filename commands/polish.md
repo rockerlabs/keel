@@ -36,7 +36,7 @@ Steps, in order:
 
 3. **Tests — run them by default.** Run the project's test command (from its `CLAUDE.md`) in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000 (a suite over 9 minutes: the guide, § Step 3). Show its summary; never claim "passed" without it. `--no-test` in the arguments → skip the run and say so. Receipt, chained after `tools/check-run.sh verify <dir> -- <command> &&`: `tools/pre-pr-gate.sh
    receipt polish.3-tests "$(git rev-parse HEAD)"` (or `skipped:--no-test`, or `skipped:no-test-command`) —
-   a run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt.
+   a run bound to the commit being shipped. A diff whose code adds or changes a filter, threshold, guard or exclusion rule → the guide, § Step 3's mutation pass, before this receipt. A new test that needs NEW API: the guide, § Step 3's new-API red.
 
 4. **Pick a review depth — matched to the diff, mostly automatic.** Proceed only if simplify left no open
    problems and tests are green or explicitly skipped; otherwise report what is left and stop (no receipt).

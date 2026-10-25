@@ -50,6 +50,8 @@ depends on → `go.md` step 3's stop-or-escape rule.
 3. No runnable surface → one checklist item per check, naming the evidence it will need; this is
    still `tests: first`. `infeasible` is only for a check that cannot be performed at all; write why.
    A check only a named person can pass (a sign-off) is neither: it stays open, `pending` (I6).
+4. A test that needs NEW API cannot compile on the pre-fix code, so "red" is two proofs: a probe through the
+   OLD API that shows the defect, and per new test a mutation of the fix that the test catches. Paste both.
 Result: every Acceptance item has a red test or an open checklist item.
 
 **I3 — build, one item at a time.**
