@@ -2948,6 +2948,63 @@ pin_exact "dir #746 A11 T3: one dir #725 predicate in public-audit.sh" "$pa746" 
 check_block_equal "dir #746 A11 T3: the dir #725 predicate (both lines) equals public-audit.sh's" \
   "$(grep -F -A1 -e "$pred746" "$scan" | sed 's/^[[:space:]]*//')" \
   "$(grep -F -A1 -e "$pred746" "$pa746" | sed 's/^[[:space:]]*//')"
+# dir #761: needle_wide is the one classifier both tools gate the decoder on (and secret-scan's --range fast path)
+check_count "dir #761 twin: one needle_wide in secret-scan.sh" "$scan" "^needle_wide() {" 1
+check_count "dir #761 twin: one needle_wide in public-audit.sh" "$pa746" "^needle_wide() {" 1
+check_block_equal "dir #761 twin: needle_wide equals public-audit.sh's" \
+  "$(sed -n '/^needle_wide() {/,/^}/p' "$scan")" "$(sed -n '/^needle_wide() {/,/^}/p' "$pa746")"
+
+# --- dir #761: an ASCII-only personal literal whose ERE `.` or bracket stands for a non-ASCII letter. Its UTF-16
+# bytes (`Michalek` with an l-stroke = 42 01) leave `MichaB\x01ek` in the NUL-strip view, which the literal
+# `micha.ek` cannot match: --range's fast path counted 0 and skipped the detailed scan, and where iconv cannot
+# resume (musl) the built-in decoder, gated on a non-ASCII literal, never ran. Fixtures are built from bytes.
+d761="$(mktemp -d "$SANDBOX/d761.XXXXXX")"
+printf 'micha.ek\n' > "$d761/p-dot"
+printf 'micha[^x]ek\n' > "$d761/p-bracket"
+printf 'michalek\n' > "$d761/p-plain"
+mkdir "$d761/shim-noiconv"                       # a musl-like iconv: never converts anything, so the built-in decoder is the decode
+printf '#!/bin/sh\nexit 1\n' > "$d761/shim-noiconv/iconv"; chmod +x "$d761/shim-noiconv/iconv"
+r761="$(new_repo)"
+git -C "$r761" commit -q --allow-empty -m base
+printf 'M\000i\000c\000h\000a\000B\001e\000k\000' > "$r761/plain.bin"
+printf 'AB\000\330M\000i\000c\000h\000a\000B\001e\000k\000' > "$r761/lone.bin"
+git -C "$r761" add plain.bin lone.bin
+git -C "$r761" commit -q -m bins
+for f761 in plain.bin lone.bin; do
+  for p761 in p-dot p-bracket; do
+    run_in "$r761" env LC_ALL="$loc746" SECRET_SCAN_PERSONAL_FILE="$d761/$p761" "$scan" --range HEAD~1..HEAD
+    check_status "dir #761: --range, $p761 against the UTF-16 l-stroke in $f761 → exit 1" 1 "$STATUS"
+    check_contains "dir #761: ...naming $f761" "$OUT" "$f761:(binary)"
+    run_in "$r761" env LC_ALL="$loc746" PATH="$d761/shim-noiconv:$PATH" SECRET_SCAN_PERSONAL_FILE="$d761/$p761" "$scan" --range HEAD~1..HEAD
+    check_status "dir #761: --range on a host whose iconv cannot resume, $p761, $f761 → exit 1" 1 "$STATUS"
+    run_in "$r761" env LC_ALL="$loc746" PATH="$d761/shim-noiconv:$PATH" SECRET_SCAN_PERSONAL_FILE="$d761/$p761" "$scan" -- "$f761"
+    check_status "dir #761: a file scan on a host whose iconv cannot resume, $p761, $f761 → exit 1" 1 "$STATUS"
+  done
+done
+# control: a literal with no wildcard and no non-ASCII byte matches neither fixture (the l-stroke is not an l)
+run_in "$r761" env LC_ALL="$loc746" PATH="$d761/shim-noiconv:$PATH" SECRET_SCAN_PERSONAL_FILE="$d761/p-plain" "$scan" --range HEAD~1..HEAD
+check_status "dir #761 control: the literal 'michalek' does not match an l-stroke → exit 0" 0 "$STATUS"
+# needle_wide: the classifier, run on its own. One copy per tool (each stands alone); the bodies are pinned equal below.
+nw761_fn="$(sed -n '/^needle_wide() {/,/^}/p' "$scan")"
+check_ne "dir #761: secret-scan.sh defines needle_wide" "" "$nw761_fn"
+nw761() {  # want literal
+  local rc=0
+  bash -c "$nw761_fn"$'\n''needle_wide "$1"' _ "$2" >/dev/null 2>&1 || rc=$?
+  check_eq "dir #761 needle_wide: '$2' → $([ "$1" = 0 ] && echo wide || echo plain)" "$1" "$rc"
+}
+nw761 0 'micha.ek'
+nw761 0 'mich[a]lek'
+nw761 0 'mich[^x]lek'
+nw761 0 'micha\\.ek'
+nw761 0 'mich\wlek'
+nw761 0 'mich\Slek'
+nw761 0 '(ab)\1'
+nw761 0 "$cyr746"
+nw761 1 'michalek'
+nw761 1 'micha\.ek'
+nw761 1 'micha\[ek'
+nw761 1 'a+b|c(d)?e{2}^$'
+nw761 1 '\<word\>'
 
 # Slice 2 (dir #741, dir #742, dir #746 D1-4): a record keeps its label apart from its content, so each allow
 # channel reads its own field (B10); --range exempts a blob only when every path it is introduced at is exempt

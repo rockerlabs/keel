@@ -413,6 +413,16 @@ the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanical
 does nothing of the kind; a session told to "harvest" can run that script and believe the duty
 discharged.)*
 
+**Clause B's demotion ticket is staged by the verdict, never addressed to "the groom" in prose (dir #815).**
+When [`verification-economics.md`](verification-economics.md) §3's Clause B trigger holds for the run (it
+yielded only instances of known classes), or one class has now recurred across three or more runs, the
+orchestrator stages the demotion ticket in the run's staged-tickets file like any other ticket draft, naming
+the class, the runs and instances that carry it, and the mechanical check that would retire it. The
+duty in (b) — the staged-tickets file is empty or filed — then files it with no new step. A verdict note that
+only says the class is "the groom's to weigh" leaves the ticket with no owner: neither (b) nor
+[`grooming.md`](grooming.md)'s G0/G4(c) harvest check reads Clause A text, so such a note is never weighed. One
+adopter's groom found the same class noted that way in three consecutive runs.
+
 **A `ticket-next` finding is filed `→ pool` by default, never straight into the next release's tag
 (operator decision 2026-09-20, at the 0.11.0 groom).** The exceptions are the two dispositions that
 already carry their own urgency — `fix-before-tag` (fixed in this run) and a behavioural finding the
@@ -825,6 +835,18 @@ real runs, stated as classes rather than tied to any one vendor's harness:
    in two forms now: keel's own harness (`dir #489`, phase 1's bundling rule for its second auditor)
    for a scriptable API vendor, and `tools/audit-packet/export.sh`'s `CHUNK-MANIFEST` line (dir #495)
    for the unscriptable leg below — one clause, applied by hand wherever neither has shipped yet.
+
+   **Size the bundle for the vendor's non-reasoning chat model too (deepseek-chat, 2026-10):** its
+   8192-token output budget is spent re-quoting code, not reasoning. On bundles of 20 KB or more, 2 of
+   3 replies came back truncated (one release earlier: 1 of 3); a 31 KB bundle truncated, and the
+   re-run on a ~7 KB one came back complete. For that leg keep each bundle **at or under 10 KB** and
+   put a **quote cap** in its system prompt, worded like: "at most 10 findings; quote at most 3 lines
+   of code per claim and do not restate code; put the JSON object last." The 10 KB figure is
+   provisional (measured at ~7 KB and 20 KB+, nothing between); the quote cap is the real control. A
+   truncated reply is a failed round, not a partial result: do not parse what arrived. Re-run once on a
+   smaller bundle, split by coupling with the sibling manifest above; if it truncates again, report the
+   leg and let the sibling vendor cover that bundle — do not relaunch. This is the direct chat leg
+   only; the reasoning model's budget is class 2's.
 
 4. **An unscriptable or non-integrated vendor is still a diversity leg — it just arrives through a
    packet, not an API call.** Feed `derive.sh`'s file list to `tools/audit-packet/export.sh`, hand

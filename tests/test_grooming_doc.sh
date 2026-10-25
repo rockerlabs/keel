@@ -42,6 +42,18 @@ pin "G0 anchor: retro first" \
 pin "G0 requires amendments to be APPLIED, not reported" \
   "$doc" 'applied, not reported' \
   "expected G0 to keep the apply-not-report distinction explicit"
+pin "G1 records each pain's provenance: stated" \
+  "$doc" '`stated`: the operator' \
+  "expected G1 to name the stated provenance value (dir #819)"
+pin "G1 records each pain's provenance: accepted-on-proposal" \
+  "$doc" '`accepted-on-proposal`: the agent proposed' \
+  "expected G1 to name the accepted-on-proposal provenance value (dir #819)"
+pin "G1 records each pain's provenance: carried" \
+  "$doc" '`carried`: no pain behind the row' \
+  "expected G1 to name the carried provenance value (dir #819)"
+pin "G0 reads accepted-on-proposal as weaker evidence" \
+  "$doc" 'is weaker' \
+  "expected G0 to discount an accepted-on-proposal pain against a stated one (dir #819)"
 pin "G3 anchor: derive, don't assert" \
   "$doc" "## G3 — derive, don't assert" \
   "expected a named G3 section"
