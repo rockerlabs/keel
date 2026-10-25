@@ -1128,8 +1128,8 @@ if [ "$INSTALL_MODE" = 1 ]; then
     echo "doctor: tools/lib/core-ownership.sh is missing or corrupted — this checkout is incomplete and cannot safely audit an install; re-clone or re-download Keel and re-run tools/doctor.sh --install$imode_flag$idoctor_arg" >&2
     exit 1
   fi
-  # dir #747 (S3-2): install.sh and uninstall.sh REQUIRE two more libs that doctor itself never sources —
-  # artifact-cksum.sh and safe-write.sh (dir #679). Without either they refuse to run, so an install "complete" by
+  # dir #747 (S3-2): install.sh and uninstall.sh REQUIRE three more libs that doctor itself never sources —
+  # artifact-cksum.sh, safe-write.sh (dir #679) and ledger.sh (dir #805, below). Without either they refuse to run, so an install "complete" by
   # every other check can neither be finished nor removed. Judged the way the two sourced libs above are (`-s` and
   # `bash -n`), but reported as a GAP rather than aborting: this audit has nothing to source them for.
   # dir #805: ledger.sh is the third — sourced bare and late (install.sh near its end, uninstall.sh after its

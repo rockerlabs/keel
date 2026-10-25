@@ -171,6 +171,11 @@ cp "$cp_root/tools/lib/safe-write.sh.corrupt" "$cp_root/tools/lib/safe-write.sh"
 run "$cdoc" --install "$dah"
 check_contains "S3-2: a CORRUPT tools/lib/safe-write.sh → G-REQUIRED-LIB too" "$(id_line G-REQUIRED-LIB)" "safe-write.sh"
 cp "$cp_root/tools/lib/safe-write.sh.orig" "$cp_root/tools/lib/safe-write.sh"
+cp "$cp_root/tools/lib/ledger.sh" "$cp_root/tools/lib/ledger.sh.orig"
+: > "$cp_root/tools/lib/ledger.sh"
+run "$cdoc" --install "$dah"
+check_contains "S3-2: a ZERO-BYTE tools/lib/ledger.sh → G-REQUIRED-LIB too" "$(id_line G-REQUIRED-LIB)" "ledger.sh"
+cp "$cp_root/tools/lib/ledger.sh.orig" "$cp_root/tools/lib/ledger.sh"
 
 # --- S3-2 census (dir #805): every lib install.sh / uninstall.sh source is listed or sourced by doctor --install ---------
 # Pinned from the files, not derived at run time by the audit itself: a lib sourced there must be in doctor's ireq_lib
@@ -183,7 +188,7 @@ check_contains "S3-2 census: found the sourced libs (regex sanity: ledger.sh)" "
 check_eq "S3-2 census: the five real source lines, nothing else" 5 "$(printf '%s\n' "$census_libs" | grep -c .)"
 for x in $census_libs; do
   case " $ireq_list " in *" $x "*) continue ;; esac
-  grep -qE "^[[:space:]]*\. \"\\\$tools_dir/lib/$x\"" "$doctor" || census_missing="$census_missing $x"
+  grep -qE "^[[:space:]]*\. \"\\\$tools_dir/lib/${x//./\\.}\"" "$doctor" || census_missing="$census_missing $x"
 done
 check_eq "S3-2 census: no sourced lib is missing from doctor --install (missing:${census_missing:- none})" "" "$census_missing"
 
