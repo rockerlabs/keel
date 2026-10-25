@@ -315,6 +315,13 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      <that same string>`, and the killed `<dir>` is never verified. That the remainder covers the suite
      stays your judgment, as before.
 
+   **New-API red (dir #818).** A test written against API the pre-fix code lacks cannot compile or run there,
+   so "red on the pre-fix code" is unavailable for it. State the substitute in step 10 instead of skipping red:
+   - A probe through the OLD API that shows the defect on the pre-fix code (e.g. 50 points fed, no stop, count 0).
+   - Per new test, a targeted mutation of the fixed code that this test turns red; run it in the scratch clone
+     as in the mutation pass below, never the worktree.
+   - A new test with no killing mutation tests nothing: rewrite it.
+
    **Mutation pass (dir #673).** Reached from step 3's pointer when the diff's code adds or changes a
    filter, threshold, guard or exclusion rule; a rule written only in prose has nothing to mutate, so it
    never fires. It tests the tests: the suite must go red when the rule is wrong.
