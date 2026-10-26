@@ -33,7 +33,7 @@ scan_unquoted_replacements() {
         my $hit = 0;
         while ($l =~ /\$\{((?:[^{}]++|\{(?:[^{}]++|(?-1))*+\})*+)\}/g) {
           my $body = $1;
-          next unless $body =~ m{^(?:[A-Za-z_][A-Za-z_0-9]*|[0-9]+|[@*])(?:\[[^\]]*\])?(//?[#%]?)(.*)$}s;
+          next unless $body =~ m{^!?(?:[A-Za-z_][A-Za-z_0-9]*|[0-9]+|[@*])(?:\[[^\]]*\])?(//?[#%]?)(.*)$}s;
           my $rest = $2; my ($pat, $rep) = ("", undef);
           my ($i, $len, $br) = (0, length $rest, 0);
           while ($i < $len) {
@@ -77,7 +77,7 @@ cd "$REPO_ROOT" || exit 1
 
 # --- the real tree ---------------------------------------------------------------------------------
 # shellcheck disable=SC2046  # tracked names in tools/ hold no whitespace (git ls-files, one per line)
-real="$(violations $(git ls-files 'tools/*.sh' tests/lib.sh))"
+real="$(violations $(git ls-files 'tools/*.sh' tools/secret-guard/pre-commit tools/secret-guard/pre-push tests/lib.sh))"
 if [ -z "$real" ]; then
   pass "no tools/**/*.sh or tests/lib.sh replacement carries an unquoted \$ outside the allow-list"
 else
