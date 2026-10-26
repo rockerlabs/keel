@@ -44,6 +44,28 @@ run env PATH="$nojq" bash "$tool"
 check_status "jq missing exits non-zero" "1" "$STATUS"
 check_contains "jq missing prints the exact spec-quoted message" "$OUT" "unavailable: keel tokens needs jq"
 
+# dir #769: --help answers without jq (usage is not a transcript mode); a value slot keeps its meaning.
+run env PATH="$nojq" bash "$tool" --help
+check_status "dir #769: --help with jq off PATH exits 0" "0" "$STATUS"
+check_contains "dir #769: --help with jq off PATH prints the usage" "$OUT" "token-report.sh --session UUID|FILE"
+run env PATH="$nojq" bash "$tool" --session -h
+check_status "dir #769: '--session -h' is a session lookup (jq missing -> 1), not help" "1" "$STATUS"
+
+# dir #769: --session UUID resolves through a projects root that is itself a symlink.
+sym_real="$SANDBOX/sym-real"; mkdir -p "$sym_real/-x-sym"
+sym_id="d0000000-0000-4000-8000-000000000769"
+printf '{"type":"assistant","requestId":"r1","sessionId":"S","timestamp":"2026-10-01T10:00:00.000Z","message":{"model":"m","content":[],"usage":{"input_tokens":1,"cache_creation_input_tokens":1,"cache_read_input_tokens":1,"output_tokens":1}}}\n' > "$sym_real/-x-sym/$sym_id.jsonl"
+ln -s "$sym_real" "$SANDBOX/sym-link"
+run env KEEL_TOKENS_PROJECTS_DIR="$SANDBOX/sym-link" bash "$tool" --session "$sym_id"
+check_status "dir #769: --session <id> via a symlinked projects root exits 0" "0" "$STATUS"
+check_contains "dir #769: the symlinked-root lookup reports that session" "$OUT" "$sym_id"
+# Structural pin: nothing piped into head (the dir #280 SIGPIPE shape).
+resolver_body="$(sed -n '/^_tr_resolve_session() {/,/^}/p' "$tool")"
+case "$resolver_body" in
+  *"| head"*) fail "dir #769: _tr_resolve_session pipes into head" "found '| head' in the body" ;;
+  *) pass "dir #769: _tr_resolve_session has no '| head'" ;;
+esac
+
 # --- fixtures: a project with two sessions --------------------------------------------------------
 # Session A (primary + one subagent): a >=55min gap whose next turn's cache_creation exceeds its
 # cache_read (the cold-resume signature, SPEC F5), and BACKLOG.md read 3 times (SPEC F7).
@@ -377,7 +399,7 @@ ctx_run "$id_hi" PATH="$nojq_ctx"
 check_status "--context (ix): jq off PATH exits 0" "0" "$CTX_STATUS"
 check_eq "--context (ix): jq off PATH -> unknown, stay" "context: unknown (jq missing) threshold: 250000 verdict: stay" "$CTX_OUT"
 # (x) --context combined with any other option is a usage error, in either order.
-for combo in "--context --json" "--json --context" "--context --session X" "--session --context" "--context --since 2026-01-01" "--context --context" "--context -h"; do
+for combo in "--context --json" "--json --context" "--context --session X" "--session --context" "--context --since 2026-01-01" "--context --context" "--context -h" "-h --context"; do
   # shellcheck disable=SC2086 # the combo is a deliberate word list
   run env CLAUDE_CODE_SESSION_ID="$id_hi" KEEL_TOKENS_PROJECTS_DIR="$ctxroot" bash "$tool" $combo
   check_status "--context (x): '$combo' exits 2" "2" "$STATUS"

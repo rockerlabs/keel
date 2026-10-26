@@ -798,6 +798,16 @@ d="$(mkrepo)"; rt_env s706sub
 mkdir -p "$d/sub"
 run_hook aggregate "$d/sub"
 check_absent "706: run from a subdirectory, the repo top's docs/ still count" "$OUT" "nothing in this repository is in the trace's scope"
+# dir #803 — a symlinked docs/ (or a symlinked file inside a real docs/) still counts as in scope.
+d="$(new_repo)"; rt_env s803dir
+mkdir -p "$d/realdocs"; printf 'a\n' > "$d/realdocs/a.md"; ln -s realdocs "$d/docs"
+git -C "$d" add -A; git -C "$d" commit -q -m init
+run_hook aggregate "$d"
+check_absent "803: a symlinked docs/ does not print the nothing-in-scope line" "$OUT" "nothing in this repository is in the trace's scope"
+d="$(new_repo)"; rt_env s803file
+mkdir -p "$d/docs"; printf 'b\n' > "$d/outside803.md"; ln -s ../outside803.md "$d/docs/b.md"
+run_hook aggregate "$d"
+check_absent "803: a docs/ holding only a symlinked file does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
 d="$(new_repo)"; rt_env s706backlog
 printf '# b\n' > "$d/BACKLOG.md"
 run_hook aggregate "$d"
