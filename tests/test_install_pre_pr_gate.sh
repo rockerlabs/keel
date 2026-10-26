@@ -905,4 +905,30 @@ check_status "A7(l): --uninstall over the old entry alone -> exit 0" 0 "$STATUS"
 check_contains "A7(l): ...names it removed" "$OUT" "UserPromptExpansion/code-review removed"
 check_status "A7(l): ...and leaves no UserPromptExpansion key" "false" "$(jq '.hooks | has("UserPromptExpansion")' "$l3_repo/.claude/settings.json")"
 
+# dir #861: a live slot holding BOTH this checkout's command and an old-path copy, in TWO entries (the merge used to
+# stop at the exact command and report SAME, leaving the old entry wired). Refused without --force, byte-untouched,
+# no backup; with --force the old entry is gone, ours is on the slot once, the neighbour stays, and a backup exists.
+d_repo="$(new_repo)"; mkdir -p "$d_repo/.claude"
+jq -n --arg gate "$gate" --arg s "bash '/old/checkout/tools/pre-pr-gate.sh'" '
+  {hooks:{PreToolUse:[{matcher:"Bash",hooks:[{type:"command",command:("bash " + ($gate|@sh))}]},
+                      {matcher:"Bash",hooks:[{type:"command",command:"echo mine"},{type:"command",command:$s}]}]}}' > "$d_repo/.claude/settings.json"
+d_before="$(cat "$d_repo/.claude/settings.json")"
+run "$installer" "$d_repo"
+check_status "#861: ours + an old-path copy on one slot -> exit 3 (refused without --force)" 3 "$STATUS"
+check_contains "#861: ...naming the slot" "$OUT" "PreToolUse/Bash"
+check_eq "#861: ...and settings.json untouched" "$d_before" "$(cat "$d_repo/.claude/settings.json")"
+check_status "#861: ...no backup written by the refusal" 0 "$(find "$d_repo/.claude" -name 'settings.json.*.bak' | grep -c . || true)"
+run "$installer" --force "$d_repo"
+check_status "#861: --force -> exit 0" 0 "$STATUS"
+check_absent "#861: ...the old-path entry is gone" "$(cat "$d_repo/.claude/settings.json")" "/old/checkout"
+check_status "#861: ...our PreToolUse/Bash command is there exactly once" 1 \
+  "$(jq --arg c "bash '$gate'" '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.command == $c)] | length' "$d_repo/.claude/settings.json")"
+check_status "#861: ...the foreign neighbour stays" 1 \
+  "$(jq '[.hooks.PreToolUse[].hooks[] | select(.command == "echo mine")] | length' "$d_repo/.claude/settings.json")"
+d_bak="$(find "$d_repo/.claude" -name 'settings.json.*.bak' | head -n1)"
+[ -n "$d_bak" ] && pass "#861: ...a backup exists" || fail "#861: ...a backup exists" "none found"
+check_status "#861: ...the backup is byte-equal to the settings BEFORE the run" "$d_before" "$(cat "${d_bak:-/dev/null}")"
+run "$installer" "$d_repo"
+check_status "#861: a re-run over the forced result -> exit 0" 0 "$STATUS"
+
 summary

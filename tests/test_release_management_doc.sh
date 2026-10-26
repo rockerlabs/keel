@@ -556,4 +556,12 @@ for n in "a full re-review included" "a clean full re-review never converges the
   check_contains "the counting paragraph carries: $n (dir #871 A5)" "$count_para" "$n"
 done
 
+# --- dir #862: a manager launched with --agent reads as a subagent to the merge rule ----------------
+pin "R14 says to launch the manager without --agent (dir #862)" "$doc" \
+  'launches the manager without `--agent`, because the merge rule reads a main session started with `--agent` as a subagent and refuses its merge' \
+  "expected R14 to carry the launch-without---agent sentence (dir #862; the gate header tools/pre-pr-gate.sh says the same)"
+pin "M7a says a --agent manager cannot merge and points at R14 (dir #862)" "$cmd" \
+  'A manager launched with `--agent` cannot merge, since the merge rule reads that session as a subagent; launch it without `--agent` (R14).' \
+  "expected M7a to carry the launch-without---agent sentence, pointing at R14 (dir #862)"
+
 summary
