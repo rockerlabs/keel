@@ -205,20 +205,26 @@ shipped code.
 **The guards' bypass registers are swept here too, where the project keeps them on the accumulator
 (keel's own: `dir #842`; a project with no guard registers, or no session transcripts, skips this in one line).**
 A register entry counts as a sighting only when a real session wrote the shape, and nothing else reads the sessions,
-so G0 runs, in order: **(1) the scan** — `tools/self/bypass-scan.sh scan` over the harness's transcripts since the
-previous scan (a re-scan is harmless, the accumulator ignores a duplicate), into a scratch file outside every
+so G0 runs, in order: **(1) the scan** — `tools/self/bypass-scan.sh scan --since <the date the previous G0 scan ran>`
+over the harness's transcripts, into a scratch file outside every
 repository: it holds commands from real sessions, so it is deleted after the adjudication and nothing from it enters a
-tracked file or a ticket. **(2) The adjudication**, by the session that ran the scan: a pattern cannot tell a
+tracked file or a ticket. `scan` keeps no cursor: without `--since` it reads the default 90-day window again and the
+groom re-adjudicates pairs it already judged (a re-scan is harmless to the accumulator, which ignores a duplicate, but
+not to the groom's time), so the groom writes the scan date down with its G0 result for the next one to read. With
+no `classes.tsv` in the data dir yet, run `accumulate.sh --dir "$(bypass-scan.sh data-dir)" init` once first
+(`bypass-scan.sh classes` prints that line when `classes.tsv` is absent). **(2) The adjudication**, by the session
+that ran the scan: a pattern cannot tell a
 construction from real work, so a probe, an audit, a fixture, a sandbox setup or a scratch target is dropped, and a real
 session that wrote the guarded action against its real target, by the right actor, becomes ONE `accumulate.sh add`
 (one per parent session — a subagent's command counts under its parent's session uuid) between `accumulate.sh lock`
 and `unlock` on the guards' data dir (`tools/self/bypass-scan.sh data-dir`; `KEEL_GUARDS_ACCUM_DIR` points it
 elsewhere, e.g. at a backed-up directory): `danger yes` when the guard's miss sends
-data off the machine or destroys it (a near-miss, due at once), `no` for a workflow miss (counted to two). **(3) The
+data off the machine or destroys it (a near-miss, due at once), `no` for a workflow miss (counted to two). FELT is
+`yes` for a real session: the guards' classes count only `felt yes` sightings, so a `no` entry is never `due`. **(3) The
 closures:** for every `promoted` class, `accumulate.sh closed <class> --backlog <path> --drafts <dir>` and, when its
 ticket is closed, `accumulate.sh fixed <class> <ref> --date <closure date>` — without it a class stays `promoted` and a
 recurrence is never due. **(4) `accumulate.sh due --owner guards`:** this groom files each class listed as a ticket
-(`accumulate.sh promote` records it); the tool never files. A shape row added to the table is registered once with `tools/self/bypass-scan.sh classes` (it prints the
+tagged `[model-decay]` (`accumulate.sh promote` records it); the tool never files. A shape row added to the table is registered once with `tools/self/bypass-scan.sh classes` (it prints the
 `accumulate.sh new-class` lines and runs nothing). Run the scan more often than the harness keeps transcripts
 (Claude Code's `cleanupPeriodDays`, 30 days by default, checked 2026-10-15), or a sighting is lost before anyone reads it.
 
