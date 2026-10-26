@@ -61,6 +61,17 @@ check_eq "reuse stays on a branch" "$br" "$(git -C "$want" symbolic-ref -q --sho
 check_eq "reuse removes a fresh .DS_Store" "" "$(find "$want/.git" -name .DS_Store | head -1)"
 check_eq "reuse leaves no hard-linked object file" "" "$(find "$want/.git/objects" -type f -links +1 | head -1)"
 
+# dir #869 — tags: a reused clone mirrors the source's tag set (a new tag arrives, a deleted one goes)
+git -C "$src" tag v-old "$sha1"
+run "$tool" W14 "$sha2" --source "$src"
+check_status "869: a first run exits 0" 0 "$STATUS"
+git -C "$src" tag v-new "$sha2"; git -C "$src" tag -d v-old >/dev/null
+run "$tool" W14 "$sha2" --source "$src"
+check_status "869: a reuse run exits 0" 0 "$STATUS"
+tags14="$(git -C "$HOME/.keel/tmp/alpine-clone-W14" tag -l | tr '\n' ' ')"
+check_contains "869: a tag added to the source reaches the reused clone" "$tags14" "v-new"
+check_absent "869: a tag deleted from the source is pruned from the clone" "$tags14" "v-old"
+
 # the solo path
 run "$tool" solo "$sha1" --source "$src"
 check_status "solo exits 0" 0 "$STATUS"

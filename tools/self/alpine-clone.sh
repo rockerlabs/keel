@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/self/alpine-clone.sh — keel-self-maintenance (dir #68: never installed by install.sh; dir #728):
 # cuts, or refreshes in place, the Alpine-leg clone `CLAUDE.md`'s "Run the real leg locally" recipe
-# mounts into Docker, with the three traps that each cost a false red in the 0.14.0 release built in:
+# mounts into Docker, with the traps that each cost a false red in the 0.14.0 release built in:
 #   1. hard-linked packs — a plain local `git clone` hard-links the source's objects, so the container
 #      (running as another uid) mutates files the source shares: the clone uses `--no-hardlinks`;
 #   2. a copied `.DS_Store` under `.git/objects` — `git clone` inside the container then exits 128 and
@@ -9,6 +9,10 @@
 #      removed after the clone, the fetch and the checkout;
 #   3. a detached HEAD after `checkout FETCH_HEAD` — `bootstrap --link` exits 128: the clone is always
 #      left ON the branch `keel-alpine-leg`, reset to the requested commit.
+#   4. a stale tag set (dir #869) — a reused clone fetched with `--no-tags` missed the source's newer tags,
+#      so tests that read release tags (test_release_history.sh, test_self_doctor.sh) went falsely red: every
+#      prepare mirrors the source's tags (`+refs/tags/*:refs/tags/*` with `--prune`, so a tag the source
+#      deleted does not linger either).
 #
 # Usage: tools/self/alpine-clone.sh <Wn|solo> <sha> [--source DIR] [--run]
 #   <Wn>      a worker id (letters, digits, `_`, `-`): the clone lives at $HOME/.keel/tmp/alpine-clone-<Wn>,
@@ -89,7 +93,9 @@ if [ -e "$clone" ] && [ -n "$(ls -A "$clone" 2>/dev/null)" ]; then
   [ "$have" = "$source_dir" ] \
     || die "$clone has origin '$have', not the source '$source_dir' — a stale clone; refusing to reuse it"
   strip_ds_store
-  git -C "$clone" fetch -q --no-tags origin '+refs/heads/*:refs/remotes/origin/*' \
+  # tags too, pruned (dir #869): a reused clone kept a stale tag set, so tag-pinned tests went falsely red;
+  # the explicit refspec + --prune also drops a tag the source deleted, unlike `--tags`.
+  git -C "$clone" fetch -q --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*' \
     || die "fetch from $source_dir failed"
 else
   git clone -q --no-hardlinks --no-checkout "$source_dir" "$clone" || die "clone of $source_dir failed"
