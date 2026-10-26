@@ -1,0 +1,1 @@
+- `install.sh --link` resolves a relative `--home` to an absolute path before it writes the `@…/keel/CORE.md` import line (it was cwd-relative), and refuses (exit 2, before writing anything) a linked home whose import path holds whitespace, where keel could never recognise its own line and every re-run appended another; copy mode is unchanged (dir #801).

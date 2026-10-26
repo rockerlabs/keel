@@ -296,6 +296,34 @@ if { [ "$NOGIT" = 1 ] || [ "$WITHGIT" = 1 ]; } && [ "$LINK" = 0 ]; then
   exit 2
 fi
 
+# keel_link_import_path HOME — the path linked mode writes after its `@` for a home HOME (dir #801): the absolute
+# spelling of HOME + /keel/CORE.md, rewritten to the ~-form when it sits under $HOME. Pure string work, no disk
+# access, so the whitespace refusal below can run before anything is written, and the import line is built by this
+# same function — the check and the written line cannot drift. (${HOME:-} guard: --home/KEEL_HOME callers may
+# legitimately run without $HOME.)
+keel_link_import_path() {
+  local p="$1"
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  p="$p/keel/CORE.md"
+  if [ -n "${HOME:-}" ]; then
+    case "$p" in "$HOME"/*) p="~${p#"$HOME"}" ;; esac
+  fi
+  printf '%s' "$p"
+}
+# Linked mode refuses a home whose import path holds whitespace, BEFORE the first write: has_core_import (below)
+# matches `@[^[:space:]]*keel/CORE.md`, so keel could never recognise its own line there and every re-run would
+# append another. Copy mode writes no import line and is not checked.
+if [ "$LINK" = 1 ]; then
+  link_import_path="$(keel_link_import_path "$HOME_DIR")"
+  case "$link_import_path" in
+    *[[:space:]]*)
+      echo "install: refusing --link --home $HOME_DIR — its import path ($link_import_path) holds whitespace; keel cannot" >&2
+      echo "         recognise its own import line at a path with whitespace — every re-run would append another." >&2
+      echo "         Choose a home without whitespace. Nothing was written." >&2
+      exit 2 ;;
+  esac
+fi
+
 echo "Keel → $HOME_DIR"
 mkdir -p "$HOME_DIR"
 
@@ -307,6 +335,10 @@ mkdir -p "$HOME_DIR"
 # same dir still collide. Refuse rather than no-op — the invocation is nonsensical (home is ~/.claude,
 # not the checkout). $link_dir is referenced again inside the LINK-mode block further down.
 if [ "$LINK" = 1 ]; then
+  # Absolute HOME_DIR (dir #801): the import line must not be cwd-relative, and every manifest record is
+  # `${dest#"$HOME_DIR"/}` — an absolute $link_dir under a relative $HOME_DIR would drop every keel/… record. Logical
+  # `pwd` (not -P): a symlinked $HOME must keep matching the ~-form.
+  HOME_DIR="$(CDPATH='' cd -- "$HOME_DIR" && pwd)" || exit 1
   link_dir="$HOME_DIR/keel"
   if [ "$link_dir" -ef "$root" ] 2>/dev/null; then
     echo "install: --link consumption dir ($link_dir) is the Keel checkout itself — refusing (it would" >&2
@@ -1648,12 +1680,8 @@ if [ "$LINK" = 1 ]; then
   # link_dir/the self-link guard are set/checked earlier now (dir #323) — before anything sources
   # tools/lib/manifest.sh, so the refusal below still fires from a checkout that hasn't got a tools/
   # dir yet. $link_dir is already set.
-  import_line="@$link_dir/CORE.md"
-  # Prefer the ~-form when the home sits under $HOME — shorter, and survives a username-preserving
-  # home move. (${HOME:-} guard: --home/KEEL_HOME callers may legitimately run without $HOME.)
-  if [ -n "${HOME:-}" ]; then
-    case "$link_dir" in "$HOME"/*) import_line="@~${link_dir#"$HOME"}/CORE.md" ;; esac
-  fi
+  # The ~-form when the home sits under $HOME — shorter, and survives a username-preserving home move.
+  import_line="@$(keel_link_import_path "$HOME_DIR")"
   core_dest="$link_dir/CORE.md"
   if [ "$NOGIT" = 1 ]; then
     # A generated trimmed copy instead of the symlink. keel/ is Keel-owned and the KEEL-NOGIT token
