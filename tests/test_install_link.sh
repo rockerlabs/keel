@@ -398,4 +398,54 @@ check_contains "dir #647 A7: it took the update-in-place branch" "$OUT" "updatin
 check_eq "dir #647 A7: the decoy's HEAD did not move (no pull landed in it)" "$decoy647_head" "$(git -C "$decoy647" rev-parse HEAD)"
 check_eq "dir #647 A7: the decoy's refs are byte-identical" "$decoy647_refs" "$(git -C "$decoy647" for-each-ref)"
 
+# --- dir #801: --link resolves --home to an absolute path and refuses a linked home it cannot import by ----
+# (1) a RELATIVE --home: the import line must not be cwd-relative (`@relhome/keel/CORE.md` resolves against
+# whatever directory Claude Code starts in), and the manifest must keep its `keel/...` records (they are
+# written relative to $HOME_DIR, so only an absolute $HOME_DIR keeps them).
+cwd801="$SANDBOX/cwd801"; mkdir -p "$cwd801"
+run_in "$cwd801" "$install" --link --home relhome --no-hooks
+check_status "dir #801: --link --home <relative> -> exit 0" 0 "$STATUS"
+check_contains "dir #801: verify prints OK for the import" "$OUT" "OK   CLAUDE.md imports keel/CORE.md"
+imp801="$(grep '^@' "$cwd801/relhome/CLAUDE.md")"
+case "$imp801" in @/*/keel/CORE.md|@~/*/keel/CORE.md) pass "dir #801: the import line is absolute (@/ or @~/) and ends keel/CORE.md" ;;
+  *) fail "dir #801: the import line is absolute (@/ or @~/) and ends keel/CORE.md" "got: $imp801" ;; esac
+check_eq "dir #801: one import line" 1 "$(grep -c '^@' "$cwd801/relhome/CLAUDE.md")"
+man801="$(cat "$cwd801/relhome/.keel/install-manifest.claude")"
+check_contains "dir #801: the manifest keeps the keel/CORE.md symlink record" "$man801" "$(printf 'artifact=symlink\tkeel/CORE.md')"
+check_contains "dir #801: the manifest keeps the keel/FRAMEWORK.md symlink record" "$man801" "$(printf 'artifact=symlink\tkeel/FRAMEWORK.md')"
+run_in "$cwd801" "$REPO_ROOT/uninstall.sh" --home relhome --yes
+check_status "dir #801: uninstall --home <relative> -> exit 0" 0 "$STATUS"
+check_nodir "dir #801: uninstall leaves no relhome/keel" "$cwd801/relhome/keel"
+
+# (2) a linked home whose import path holds whitespace: refused with exit 2 BEFORE anything is written.
+sp801="$SANDBOX/sp ace"
+run "$install" --link --home "$sp801" --no-hooks
+check_status "dir #801: --link --home <path with a space> -> exit 2" 2 "$STATUS"
+check_contains "dir #801: the refusal names the path" "$OUT" "$sp801"
+check_contains "dir #801: the refusal gives the reason" "$OUT" "whitespace"
+check_nodir "dir #801: the refused home was not created" "$sp801"
+# (2b) under $HOME the ~-form keeps the space, so it is refused too.
+run "$install" --link --home "$HOME/sp ace" --no-hooks
+check_status "dir #801: --link --home \$HOME/<path with a space> -> exit 2" 2 "$STATUS"
+check_nodir "dir #801: the refused \$HOME home was not created" "$HOME/sp ace"
+# a RELATIVE home under a cwd with a space (outside $HOME) is refused as well: its import line holds the space.
+spcwd801="$SANDBOX/sp cwd 801"; mkdir -p "$spcwd801"
+run_in "$spcwd801" "$install" --link --home relhome --no-hooks
+check_status "dir #801: --link --home <relative> under a cwd with a space -> exit 2" 2 "$STATUS"
+check_nodir "dir #801: nothing was created under the spaced cwd" "$spcwd801/relhome"
+
+# (3) guard: a $HOME that itself holds a space is fine — the default home's import is ~-form, one line across re-runs.
+sh801="$SANDBOX/sp ace home"; mkdir -p "$sh801"
+run env HOME="$sh801" GIT_CONFIG_GLOBAL="$sh801/.gitconfig" "$install" --link --no-hooks
+check_status "dir #801: a \$HOME with a space + the default home -> exit 0" 0 "$STATUS"
+run env HOME="$sh801" GIT_CONFIG_GLOBAL="$sh801/.gitconfig" "$install" --link --no-hooks
+check_status "dir #801: ... and its re-run -> exit 0" 0 "$STATUS"
+check_eq "dir #801: exactly one import line after two runs" 1 "$(grep -c '^@' "$sh801/.claude/CLAUDE.md")"
+check_contains "dir #801: that line is the ~-form" "$(grep '^@' "$sh801/.claude/CLAUDE.md")" "@~/.claude/keel/CORE.md"
+
+# (4) guard: copy mode is not checked — the whitespace path still installs.
+run "$install" --home "$sp801" --no-hooks
+check_status "dir #801: copy mode into a path with a space -> exit 0" 0 "$STATUS"
+check_file "dir #801: copy mode wrote its CLAUDE.md" "$sp801/CLAUDE.md"
+
 summary
