@@ -58,6 +58,16 @@ run bash "$pa" --no-history --token '-leaked-id-1234' "$d"
 check_status "dash-leading token in tree → GAP (not a silent false-clean)" 1 "$STATUS"
 check_contains "names the dash-leading token (tree)" "$OUT" "private token /-leaked-id-1234/ in tracked tree"
 
+# dir #797: a token that is an invalid regex ('[' / '(') makes the tree search itself fail (git grep exit
+# 128) — pa_match must turn that into a GAP and exit 1, never into "no publication blockers found". Only
+# the prefix is asserted: busybox and BSD word the tail differently.
+for t797 in '[' '('; do
+  run bash "$pa" --no-history --token "$t797" "$d"
+  check_status "dir #797: token '$t797' (invalid regex) → GAP exit 1, not a false-clean" 1 "$STATUS"
+  check_contains "dir #797: ...the tree-search failure is named (token '$t797')" "$OUT" \
+    "GAP  could not search the tracked tree for"
+done
+
 d="$(repo_by dev@example.com)"
 { utf16le "-leaked-id-1234 in a binary blob"; } > "$d/dash.bin"
 commit_in "$d" "add dash binary fixture"

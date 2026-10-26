@@ -2877,6 +2877,21 @@ else
   pass "dir #746 A9(g): this host's iconv does not resume — the built-in decoder is the decode here"
 fi
 
+# dir #797: the personal-list grep in match_text runs under LC_ALL=C. GNU grep reads every byte under a UTF-8
+# locale anyway, so the effect is not observable here; pin the call instead — a grep shim logs $LC_ALL and the
+# arguments, and the call carrying `-f <personal list>` must have run under LC_ALL=C.
+d797="$SANDBOX/d797"; mkdir -p "$d797/shim"
+printf 'SeekritPersonName\n' > "$d797/p"
+printf 'clean line\n' > "$d797/f.txt"
+printf '#!/bin/sh\necho "LC_ALL=${LC_ALL-unset} $*" >> "%s"\nexec "%s" "$@"\n' "$d797/grep.log" "$(type -P grep)" > "$d797/shim/grep"
+chmod +x "$d797/shim/grep"
+: > "$d797/grep.log"
+run_in "$d797" env LC_ALL=en_US.UTF-8 PATH="$d797/shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$d797/p" "$scan" -- f.txt
+check_status "dir #797: FILE mode with a personal list on a clean file → exit 0" 0 "$STATUS"
+# the scanner copies the list to its scratch personal.pat; P-C (-aiE -f) must carry LC_ALL=C, P-U runs in the caller's locale
+if grep -q -E '^LC_ALL=C .*-aiE .*-f [^ ]*personal\.pat ' "$d797/grep.log"; then c797=1; else c797=0; fi
+check_eq "dir #797: the P-C personal-list grep (-aiE -f <list>) ran under LC_ALL=C" 1 "$c797"
+
 # A10 (B8): --selftest proves the resume on every host.
 run "$scan" --selftest
 check_status "dir #746 A10: --selftest → exit 0" 0 "$STATUS"
