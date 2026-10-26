@@ -9,7 +9,8 @@
 # sandboxed. dir #750 adds the symlink group: a clone path that is a symlink, that resolves to the source
 # (same device+inode, also through a symlinked ancestor) or whose .git is a symlink is refused before any git
 # write, and the .git-not-at-its-root refusal is pinned with an enclosing-repository fixture; every decoy lives
-# under $SANDBOX, each case with its own clone name or HOME.
+# under $SANDBOX, each case with its own clone name or HOME. dir #869 adds the tag group: a reused clone
+# mirrors the source's tags (added and moved ones arrive, a deleted one is pruned).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -62,14 +63,15 @@ check_eq "reuse removes a fresh .DS_Store" "" "$(find "$want/.git" -name .DS_Sto
 check_eq "reuse leaves no hard-linked object file" "" "$(find "$want/.git/objects" -type f -links +1 | head -1)"
 
 # dir #869 — tags: a reused clone mirrors the source's tag set (a new tag arrives, a deleted one goes)
-git -C "$src" tag v-old "$sha1"
+git -C "$src" tag v-old "$sha1"; git -C "$src" tag v-move "$sha1"
 run "$tool" W14 "$sha2" --source "$src"
 check_status "869: a first run exits 0" 0 "$STATUS"
-git -C "$src" tag v-new "$sha2"; git -C "$src" tag -d v-old >/dev/null
+git -C "$src" tag v-new "$sha2"; git -C "$src" tag -d v-old >/dev/null; git -C "$src" tag -f v-move "$sha2" >/dev/null
 run "$tool" W14 "$sha2" --source "$src"
 check_status "869: a reuse run exits 0" 0 "$STATUS"
 tags14="$(git -C "$HOME/.keel/tmp/alpine-clone-W14" tag -l | tr '\n' ' ')"
 check_contains "869: a tag added to the source reaches the reused clone" "$tags14" "v-new"
+check_eq "869: a tag moved in the source is moved in the clone" "$sha2" "$(git -C "$HOME/.keel/tmp/alpine-clone-W14" rev-parse "v-move^{commit}")"
 check_absent "869: a tag deleted from the source is pruned from the clone" "$tags14" "v-old"
 
 # the solo path

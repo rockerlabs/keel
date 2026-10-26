@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/self/alpine-clone.sh — keel-self-maintenance (dir #68: never installed by install.sh; dir #728):
 # cuts, or refreshes in place, the Alpine-leg clone `CLAUDE.md`'s "Run the real leg locally" recipe
-# mounts into Docker, with the traps that each cost a false red in the 0.14.0 release built in:
+# mounts into Docker, with the traps that each cost a false red built in (1-3 in the 0.14.0 release, 4 later):
 #   1. hard-linked packs — a plain local `git clone` hard-links the source's objects, so the container
 #      (running as another uid) mutates files the source shares: the clone uses `--no-hardlinks`;
 #   2. a copied `.DS_Store` under `.git/objects` — `git clone` inside the container then exits 128 and
@@ -30,7 +30,8 @@
 # is not at its root or is a symlink, or its origin differs); an unknown <sha>. This tool never removes a clone
 # directory — a session cannot `rm -rf` — so removing one stays the release manager's wrap or the
 # operator's. A REUSED clone is reset to the requested commit (`checkout -f -B`), cleaned (`clean -ffdx`) and
-# stripped of `.DS_Store` files under `.git` (`find -delete`): keep nothing in it. The path is under
+# stripped of `.DS_Store` files under `.git` (`find -delete`): keep nothing in it — a local tag the source lacks is
+# pruned too, as is a remote-tracking branch the source deleted (`--prune`, dir #869). The path is under
 # $HOME/.keel/tmp (Docker cannot mount the scratchpad), outside the
 # `$HOME/keel*alpine*` shape tools/self/doctor.sh's stray-clone advisory looks for.
 set -euo pipefail
