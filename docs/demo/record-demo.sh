@@ -6,7 +6,8 @@
 #
 # Sandboxed like examples/tour.sh: HOME and the global git config are redirected into
 # a temp dir; the repo's tools are copied there so no local path leaks into the frames;
-# nothing on the recording machine is touched, and the sandbox is removed on exit.
+# the sandbox is removed on exit. The one write outside it: the default mode overwrites
+# docs/demo.gif in this checkout.
 #
 #   docs/demo/record-demo.sh            # record + render (needs: brew install asciinema agg)
 #   docs/demo/record-demo.sh --scenes   # inner mode: just play the scenes (what gets recorded)
