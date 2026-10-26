@@ -50,6 +50,9 @@ unset $IMPACT_ISOLATION_VARS
 # guard NOT installed below and the key-shaped commit goes through. Unset, it falls back to
 # $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
 unset SECRET_SCAN_PERSONAL_FILE
+# dir #800: init-project.sh auto-registers into ${KEEL_INSTANCE:-...}; an ambient value would take a row naming this
+# deleted sandbox. Unset, it falls back to the sandbox HOME.
+unset KEEL_INSTANCE
 # dir #753: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface — the GIT_CONFIG_COUNT/KEY_n/VALUE_n
 # triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone), GIT_CONFIG_PARAMETERS
 # (what a parent `git -c k=v` exports to its children) and GIT_CONFIG_SYSTEM (an alternate system file) would
