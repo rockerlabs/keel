@@ -224,7 +224,7 @@ if [ -n "$REGISTRY" ]; then
     case "$path" in
       ""|Path|*"<"*) continue ;;        # header / blank / placeholder
     esac
-    path="${path/#\~/$HOME}"
+    path=${path/#\~/"$HOME"}
     DIRS+=("$path")
   done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$REGISTRY" \
             | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')
@@ -1352,7 +1352,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         while IFS='|' read -r _lead _col1 col_path _rest; do
           p="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           case "$p" in ""|Path|*"<"*) continue ;; esac
-          p="${p/#\~/${HOME:-}}"
+          p=${p/#\~/"${HOME:-}"}
           if [ -e "$p/.git" ]; then git_projects=$((git_projects + 1)); fi
         done < <(awk 'BEGIN{f=0} /^[[:space:]]*(```|~~~)/{f=!f;next} !f' "$ihome/INSTANCE.md" \
                   | grep -E '^[[:space:]]*\|' | grep -vE '^[[:space:]]*\|[-:| ]+\|?[[:space:]]*$')

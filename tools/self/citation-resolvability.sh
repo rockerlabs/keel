@@ -174,7 +174,9 @@ while IFS= read -r f; do scan_files+=("$f"); done < <(
   git -C "$repo_dir" ls-files -- 'docs/*.md'
 )
 abs_files=()
-[ "${#scan_files[@]}" -gt 0 ] && abs_files=("${scan_files[@]/#/$repo_dir/}")
+# A loop, not `${scan_files[@]/#/"$repo_dir/"}`: bash 3.2 keeps the inner quotes literally in the array form,
+# and an unquoted `&` in $repo_dir would be read as the matched text on bash >= 5.2 (dir #859).
+for f in ${scan_files[@]+"${scan_files[@]}"}; do abs_files+=("$repo_dir/$f"); done
 
 # dir #729: the UNRELEASED changelog text is scanned too — CHANGELOG.md's `## [Unreleased]` section and
 # the tracked changelog.d/ fragments (dir #744; README.md is the how-to, not an entry). Fresh text cites

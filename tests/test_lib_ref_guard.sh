@@ -130,6 +130,34 @@ else
 fi
 
 # ============================================================================================
+# T15 (dir #859) — bash >= 5.2 turns patsub_replacement on, so an unquoted `&` in the replacement of
+# the hook-source substitution would stand for the matched text. A TMPDIR holding `&` (a child file's
+# $SANDBOX) must still leave a NON-EMPTY refusal record after a refused write. Skipped below 5.2: the
+# bug cannot occur there (macOS /bin/bash is 3.2).
+# ============================================================================================
+if [ "${BASH_VERSINFO[0]}" -gt 5 ] || { [ "${BASH_VERSINFO[0]}" -eq 5 ] && [ "${BASH_VERSINFO[1]}" -ge 2 ]; }; then
+  f15="$(mktemp -d "$SANDBOX/T15.XXXXXX")"
+  require_sandbox_path "$f15" test_lib_ref_guard_T15
+  git -C "$f15" init -q
+  git -C "$f15" commit -q --allow-empty -m init
+  mkdir -p "$f15/tests" "$f15/tmp&amp"
+  cp "$lib_src" "$f15/tests/lib.sh"
+  cat > "$f15/tests/test_amp.sh" <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+. "$(dirname "$0")/lib.sh"
+git -C "$REPO_ROOT" branch leak || true
+if [ -s "$SANDBOX/ref-guard/refused" ]; then echo "RECORD=nonempty"; else echo "RECORD=empty"; fi
+: > "$SANDBOX/ref-guard/refused"
+summary
+EOF
+  run env TMPDIR="$f15/tmp&amp" bash "$f15/tests/test_amp.sh"
+  check_contains "T15: under a TMPDIR holding '&' the refusal record is non-empty after a refused write" "$OUT" "RECORD=nonempty"
+else
+  echo "SKIP: T15 (patsub_replacement & in TMPDIR) needs bash >= 5.2; this is ${BASH_VERSION}"
+fi
+
+# ============================================================================================
 # T2 — arm a fresh fixture repo directly; branch/tag/update-ref/commit/fetch/worktree-add are all
 # refused; a refused worktree add leaves no admin dir and no branch (E6).
 # ============================================================================================
@@ -265,7 +293,7 @@ while [ "$i" -le 10 ]; do
 done
 exec __REALGIT__ "$@"
 '
-oldgit_body="${oldgit_body//__REALGIT__/$real_git_bin}"
+oldgit_body=${oldgit_body//__REALGIT__/"$real_git_bin"}
 printf '%s' "$oldgit_body" > "$oldgit_dir/git"
 chmod +x "$oldgit_dir/git"
 r6d="$(new_repo)"; git -C "$r6d" commit -q --allow-empty -m init
@@ -313,7 +341,7 @@ own_hook_body='#!/bin/sh
 touch "__MARKER__"
 exit 0
 '
-own_hook_body="${own_hook_body//__MARKER__/$marker12}"
+own_hook_body=${own_hook_body//__MARKER__/"$marker12"}
 printf '%s' "$own_hook_body" > "$SANDBOX/T12-ownhooks/pre-commit"
 chmod +x "$SANDBOX/T12-ownhooks/pre-commit"
 git -C "$sbx12" config core.hooksPath "$SANDBOX/T12-ownhooks"
@@ -334,7 +362,7 @@ case "$args" in
 esac
 exec __REALGIT__ "$@"
 '
-badcd_body="${badcd_body//__REALGIT__/$real_git_bin}"
+badcd_body=${badcd_body//__REALGIT__/"$real_git_bin"}
 printf '%s' "$badcd_body" > "$badcd_dir/git"
 chmod +x "$badcd_dir/git"
 r12c="$(new_repo)"; git -C "$r12c" commit -q --allow-empty -m init
