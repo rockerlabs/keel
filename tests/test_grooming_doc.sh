@@ -194,7 +194,8 @@ check_contains "docs/grooming.md G0 passes --since the previous scan's date (dir
 check_contains "docs/grooming.md G0 files the due class as [model-decay] (dir #853)" "$g0_flat" 'tagged `[model-decay]`'
 check_absent "docs/grooming.md G0 no longer implies a cursor (dir #853)" "$g0_flat" 'since the previous scan (a re-scan'
 cmd_flat="$(flatten_ws < "$cmd")"
-check_contains "groom.md G0 carries --since and no-cursor (dir #853)" "$cmd_flat" "scan --since <the previous G0 scan's date>"
+check_contains "groom.md G0 carries --since (dir #853)" "$cmd_flat" "scan --since <the previous G0 scan's date>"
+check_contains "groom.md G0 says no cursor (dir #853)" "$cmd_flat" '(no cursor;'
 check_contains "groom.md G0 carries FELT yes (dir #853)" "$cmd_flat" 'FELT `yes`'
 check_contains "groom.md G0 carries the init (dir #853)" "$cmd_flat" 'a one-time `accumulate.sh init`'
 check_contains "groom.md G0 carries the [model-decay] tag (dir #853)" "$cmd_flat" 'tagged `[model-decay]`'
