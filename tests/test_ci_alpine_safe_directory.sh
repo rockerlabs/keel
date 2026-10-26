@@ -135,7 +135,7 @@ if [ -n "$real_step" ]; then
     # migration) is the one case the explicit --global rejection exists for — the ordering check alone
     # would pass this, since the --system write is still present and still correctly ordered.
     stray_global_write="git config --global --add safe.directory \"*\" && ${config_call}"
-    stray_global="${real_step//"$config_call"/$stray_global_write}"
+    stray_global=${real_step//"$config_call"/"$stray_global_write"}
     expect_guard_rejects "$stray_global" "guard catches a stray --global write left alongside a correct --system one" \
       "guard passed a fixture with both a stale --global write and a correctly-ordered --system write"
 
@@ -144,7 +144,9 @@ if [ -n "$real_step" ]; then
     # the --global/--system checks, missing/reordered by the ordering split), so removing the
     # adjacency check entirely would leave this file's own mutation-proof suite green. This fixture
     # isolates it: same write, same position, `||` instead of `&&`.
-    or_joined="${real_step//"$config_call" && /$config_call || }"
+    or_and_pat="$config_call && "; or_or_rep="$config_call || "
+    # Quoted replacement, unquoted assignment: the ` && ` text must stay literal on bash >= 5.2 (dir #859).
+    or_joined=${real_step//"$or_and_pat"/"$or_or_rep"}
     expect_guard_rejects "$or_joined" "guard catches a ||-joined write short-circuiting the test run" \
       "guard passed a fixture where || would skip bash tests/run.sh entirely"
   fi

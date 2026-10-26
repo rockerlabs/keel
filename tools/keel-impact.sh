@@ -1158,7 +1158,7 @@ rollup_registry() {
   while IFS='|' read -r _lead _col1 col_path _rest; do
     path="$(printf '%s' "$col_path" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     case "$path" in ""|Path|*"<"*) continue ;; esac          # header / blank / placeholder row
-    path="${path/#\~/$HOME}"
+    path=${path/#\~/"$HOME"}
     shown=$(( shown + 1 ))
     # Deliberately NOT impact_ledger_path (which honours $KEEL_IMPACT_LEDGER): an env override must
     # not leak across every project in this sweep and point them all at the SAME file — each row

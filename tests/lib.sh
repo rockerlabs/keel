@@ -402,8 +402,10 @@ ref_guard_arm() {
   [ -e "$SANDBOX/ref-guard/refused" ] || : > "$SANDBOX/ref-guard/refused"
 
   # A POSIX sh reference-transaction hook (CLAUDE.md Linux trap 5: not bash). Built via bash
-  # parameter substitution, not sed -i or an unquoted heredoc, so the baked-in $SANDBOX path can
-  # contain no shell metacharacters that would need escaping either way.
+  # parameter substitution, not sed -i or an unquoted heredoc, so the baked-in $SANDBOX path needs no
+  # sed/heredoc escaping. The replacement is quoted and the assignment is not: bash >= 5.2
+  # (patsub_replacement, on by default) reads an unquoted `&` in a replacement as "the matched text",
+  # and TMPDIR may hold one; only this form leaves the `&` literal on bash 3.2 and 5.2 alike (dir #859).
   hook_src='#!/bin/sh
 # dir #318 -- refuses every ref write in the repository tests/lib.sh guards; see its header for the
 # remedy this refusal points back to.
@@ -415,7 +417,7 @@ if [ "$state" = "prepared" ]; then
 fi
 exit 0
 '
-  hook_src="${hook_src//__REFUSED__/$SANDBOX/ref-guard/refused}"
+  hook_src=${hook_src//__REFUSED__/"$SANDBOX/ref-guard/refused"}
   printf '%s' "$hook_src" > "$hooks_dir/reference-transaction"
   chmod +x "$hooks_dir/reference-transaction"
 
