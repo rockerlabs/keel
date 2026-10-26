@@ -916,7 +916,9 @@ the gate's reason, and not by the harness; the gate's own tests do not stand in 
 number that does not exist, since a missing floor lets it merge; it is repeated after any gate re-install),
 never a fallback case; a refusal the gate actually issues stays the fallback's case (2). The manager session
 also runs in a permission mode in which a passed-through `gh pr merge` does not prompt, set by the operator at
-its launch: a merge the operator answers a prompt for is an operator merge in the run record. **The mode is
+its launch: a merge the operator answers a prompt for is an operator merge in the run record. The operator
+launches the manager without `--agent`, because the merge rule reads a main session started with `--agent` as a subagent and refuses its merge (dir #862).
+**The mode is
 known on day one, not discovered at the first denial:** intake reads the policy line, then greps the permission
 settings for `gh pr merge`, and the R1 intake report names one mode, the first that applies, so a second
 obstacle is not reported (re-run intake after each fix): the first that applies of

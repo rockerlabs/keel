@@ -65,6 +65,7 @@ builds the train's worktree (R14, "The train: build"), then a train worker for t
 per train), then merge under R14's preconditions — merge commit, head pinned, one health line per merge. A
 lone ready PR merges alone. Where the project's policy leaves the merge with the operator, build the train
 the same way and hand over the merge as R9's block.
+A manager launched with `--agent` cannot merge, since the merge rule reads that session as a subagent; launch it without `--agent` (R14).
 
 **M8 — close checklist (R9).**
 Run your project's release-candidate delta audit — keel's own is `/delta-audit <version>` — before
