@@ -140,6 +140,37 @@ check_status "M1: --global --uninstall over a corrupt config → refused (exit 3
 run genv "$isg" --where --global
 check_contains "M1: --where --global reports the unreadable config" "$OUT" "read-error=1"
 
+# --- M1b: a global config git cannot read (a directory, a mode-000 file) is refused, not read as "unset" -------------
+mk_home unreadable-dir
+mkdir "$H/.gitconfig"
+run genv "$isg" --where --global
+check_contains "M1b: --where --global over a directory at ~/.gitconfig reports read-error=1" "$OUT" "read-error=1"
+for fl in "" "--force" "--uninstall"; do
+  run genv "$isg" --global ${fl:+"$fl"}
+  check_status "M1b: --global ${fl} over a directory at ~/.gitconfig → refused (exit 3)" 3 "$STATUS"
+  check_contains "M1b: ...with the M1 message" "$OUT" "git could not read the machine-wide config"
+  check_nodir "M1b: ...nothing written (no Keel hooks dir)" "$H/$kh_rel"
+  check_eq "M1b: ...the directory is untouched" "yes" "$([ -d "$H/.gitconfig" ] && [ -z "$(ls -A "$H/.gitconfig")" ] && echo yes || echo no)"
+done
+mk_home absent-cfg
+run genv "$isg" --where --global
+check_contains "M1b: an absent ~/.gitconfig still reads scope=none" "$OUT" "scope=none"
+check_contains "M1b: ...and set=0" "$OUT" "set=0"
+check_eq "M1b: ...with no read-error" 0 "$(printf '%s\n' "$OUT" | grep -c 'read-error' || true)"
+if [ "$(id -u 2>/dev/null)" = 0 ]; then
+  echo "SKIP M1b: mode-000 ~/.gitconfig (running as root: chmod 000 does not block a read, so there is no read error)"
+else
+  mk_home unreadable-file
+  printf '[core]\n\teditor = true\n' > "$H/.gitconfig"; chmod 000 "$H/.gitconfig"
+  run genv "$isg" --where --global
+  check_contains "M1b: --where --global over a mode-000 ~/.gitconfig reports read-error=1" "$OUT" "read-error=1"
+  run genv "$isg" --global
+  check_status "M1b: --global over a mode-000 ~/.gitconfig → refused (exit 3)" 3 "$STATUS"
+  check_contains "M1b: ...with the M1 message" "$OUT" "git could not read the machine-wide config"
+  check_nodir "M1b: ...nothing written (no Keel hooks dir)" "$H/$kh_rel"
+  chmod 600 "$H/.gitconfig"
+fi
+
 # --- M2: a core.hooksPath set twice in the global file ------------------------------------------------------------
 mk_home multi
 printf '[core]\n\thooksPath = %s/a\n\thooksPath = %s/b\n' "$H" "$H" > "$H/.gitconfig"
