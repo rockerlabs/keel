@@ -194,7 +194,7 @@ Steps, in order:
    why, a test plan); if `<keel-checkout>/tools/read-trace.sh` exists,
    include the line `bash <keel-checkout>/tools/read-trace.sh docs-line` prints. The body names every review
    mechanism that ACTUALLY RAN, not only the receipt's one. Invoking `/polish` IS the authorization to push
-   and open the PR; the merge stays the operator's. Return the PR URL. Waiting on CI: ONE backgrounded `gh pr checks <n> --watch` with a timeout; never wakeups, sleeps or short Monitors. *Rare — `gh pr create` fails (the PR
+   and open the PR; the merge stays the operator's. Return the PR URL. Waiting on CI: ONE backgrounded `until` loop with an iteration cap (guide, § Step 9); never wakeups, sleeps or short Monitors. *Rare — `gh pr create` fails (the PR
    is already open, or a non-gate failure that still spends the receipt chain), an add-on review's
    disclosure:* the guide, § Step 9 (§ Step 10 for the add-on summary forms).
 

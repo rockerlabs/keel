@@ -36,7 +36,7 @@ Known limits (by design — not vulnerabilities):
   supported tool performs — is a known limit, not a vulnerability: the guard's own register lists it (the
   [threat model by guard](#threat-model-by-guard) names each register). A realistic failure is in scope above.
 - The prose layer (`PRINCIPLES.md`, `FRAMEWORK.md`, the rails) biases an agent; it does not enforce
-  anything — the human is the trigger (see the README's *mechanized vs needs-you*).
+  anything — the human is the trigger (see the README's *What runs by itself, what only nudges*).
 - A server-side CI job backs up the local hook: `secret-scan.sh --range` also runs on every pull
   request and every push to `main`, so a contributor without the local hook (or a hand-crafted push
   straight to `main`) doesn't ship a secret unscanned there. It only checks key shapes and agent
@@ -116,7 +116,7 @@ realistic failure from a construction: a construction shown, a below-threshold s
 |---|---|---|---|---|---|
 | secret guard (`tools/secret-guard/`: the hooks, `secret-scan.sh`, the CI re-scan) | a key-shaped secret or a listed personal literal committed or pushed by mistake | data leaves the machine | 1a | the CI re-scan once a PR is open or on `main` (key shapes only, not personal literals) | `SECURITY.md` "Known limits" |
 | `public-audit` | a leak left in tree or history before a private→public flip | data leaves the machine | 1a | — | `SECURITY.md` "Known limits" |
-| installer / uninstaller (`install.sh`, `uninstall.sh`, `tools/lib/safe-write.sh`, the hook installers) | clobbering or mis-wiring a user's files or config on an ordinary setup | destroys user data | 1a | the `.pre-keel.bak` backup where one is made | `tools/lib/safe-write.sh` "Known bypasses (1b" |
+| installer / uninstaller (`install.sh`, `uninstall.sh`, `tools/lib/safe-write.sh`, the hook installers) | clobbering or mis-wiring a user's files or config on an ordinary setup | destroys user data | 1a | the `<file>.<UTC>.bak` backup where one is made (the secret-guard hook installer's `--force` writes `<hook>.pre-keel.bak`) | `tools/lib/safe-write.sh` "Known bypasses (1b" |
 | pre-PR gate — the push-bypass rule (`tools/pre-pr-gate.sh`) | an agent pushing with the pre-push secret scan bypassed, by habit | data leaves the machine | 1a | the CI re-scan once a PR is open (key shapes only); nothing before | `tools/pre-pr-gate.sh` "Named residuals" |
 | pre-PR gate — the PR rule (the same file) | an agent opening a PR without `/polish`, by habit | a workflow step skipped | 1b | the operator's merge | `tools/pre-pr-gate.sh` "Named residuals" |
 | subagent git floor (the same hook, dir #675) | a subagent mutating the session repository by mistake — refs, or the work tree (`checkout`, `reset`, `stash`, `clean`) | uncommitted work destroyed, or refs moved | 1a | the reflog, for refs only; nothing for destroyed uncommitted work | `tools/pre-pr-gate.sh` "Allowed by design" (the floor's block) |
