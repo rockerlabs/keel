@@ -166,6 +166,11 @@ check_eq "classes prints one line per shape row" "$n_rows" "$(grep -c ' new-clas
 check_contains "classes names the owner, threshold, window and counts" "$OUT" ' guards 2 90 felt'
 check_contains "classes writes into the configured data dir" "$OUT" "$SANDBOX/guards-acc-demo"
 check_nodir "classes created no data dir (it only prints)" "$SANDBOX/guards-acc-demo"
+check_eq "classes on a dir with no classes.tsv prints the init line first (dir #853)" \
+  "'$(dirname "$SCAN")/accumulate.sh' --dir '$SANDBOX/guards-acc-demo' init" "$(head -n 1 <<<"$OUT")"
+mkdir -p "$SANDBOX/guards-acc-ready" && : > "$SANDBOX/guards-acc-ready/classes.tsv"
+run env KEEL_GUARDS_ACCUM_DIR="$SANDBOX/guards-acc-ready" bash "$SCAN" classes
+check_absent "classes with a classes.tsv present prints no init line (dir #853)" "$OUT" ' init'
 run env KEEL_GUARDS_ACCUM_DIR="$SANDBOX/x" bash "$SCAN" data-dir
 check_eq "data-dir honours KEEL_GUARDS_ACCUM_DIR" "$SANDBOX/x" "$OUT"
 run env -u KEEL_GUARDS_ACCUM_DIR bash "$SCAN" data-dir

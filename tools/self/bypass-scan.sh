@@ -27,6 +27,7 @@
 #       prints one `accumulate.sh --dir <data dir> new-class …` command per class (owner guards, threshold 2, window 90,
 #       counts felt) — the operator-machine half of dir #842 slice 4; it runs nothing. The lines carry this checkout's
 #       path to accumulate.sh: run them now, before the checkout moves.
+#       On a fresh data dir (no classes.tsv) the `accumulate.sh --dir <data dir> init` line comes first.
 #   bypass-scan.sh data-dir        prints the guards' accumulator data dir ($KEEL_GUARDS_ACCUM_DIR, else
 #                                  the `guards-accumulator` store under keel's state root, $HOME/.keel — outside every
 #                                  repository, never committed).
@@ -132,6 +133,7 @@ cmd_classes() {
   dd="$(data_dir)" || exit 2
   acc="$self_dir/accumulate.sh"
   rows="$(shape_rows "$shapes")" || exit 2
+  [ -f "$dd/classes.tsv" ] || printf "'%s' --dir '%s' init\n" "$acc" "$dd"
   while IFS=$'\t' read -r cls reg _ _; do
     [ -n "$cls" ] || continue
     printf "'%s' --dir '%s' new-class '%s' 'a known-bypass register entry: %s' 'the guard %s: fix the reader for this shape, then delete the register entry and its pins (dir #842)' guards %s %s felt\n" \
