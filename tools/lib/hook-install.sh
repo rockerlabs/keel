@@ -123,11 +123,16 @@ hook_install_jq_defs() {
 # merged settings AND each hook's classification, from the same walk, so there is exactly one place that
 # decides what "already wired" means. Per spec, over EVERY entry on that event that `covers` the spec's
 # matcher (an adopter's settings can carry several; the first one is not special):
-#   SAME      our exact command is already in one of them — idempotent, nothing written.
 #   STALE     the same hook at a DIFFERENT path is there — the same script basename + the same arguments,
 #             e.g. a moved keel checkout. Appending would fire it twice (old path and new), so this is the
 #             one case the caller refuses without --force; forced, ONLY that command is swapped for ours,
-#             in place, and every sibling command in the entry stays (dir #468).
+#             in place, and every sibling command in the entry stays (dir #468). Tested BEFORE SAME (dir
+#             #861): a slot holding our exact command AND an old-path copy is STALE, not SAME — the exact
+#             command must not mask the stale one. After the swap our command is kept ONCE across every
+#             entry that covers the matcher (the first one in array order), and an entry the swap leaves
+#             with no hooks goes; an entry that never had a "hooks" array is left as it was.
+#   SAME      our exact command is already in one of them and no old-path copy is — idempotent, nothing
+#             written.
 #   APPENDED  a different hook already holds this event+matcher: ours goes in a SIBLING entry with the
 #             same matcher. The incumbent entry is never touched, so no adopter hook is lost to wire
 #             ours (dir #468).
@@ -143,7 +148,6 @@ hook_install_jq_defs() {
 hook_install_merge() {
   local merge_prog='
 def ident: if type == "string" then first(capture("(?<b>[^/\u0027 ]+\\.sh)\u0027?(?<r>( .*)?)$") | .b + .r) // null else null end;
-def dedup_ours($c): reduce .[] as $h ([]; if $h.command == $c and any(.[]; .command == $c) then . else . + [$h] end);
 {obj: (.hooks //= {}), report: []} |
 reduce $specs[] as $s (.;
   .obj.hooks[$s.event] //= [] |
@@ -151,11 +155,20 @@ reduce $specs[] as $s (.;
   ($s.command | ident) as $id |
   ([$arr[] | select(.matcher == $s.matcher)]) as $mine |
   ([$arr[] | select(covers($s.matcher)) | (.hooks // [])[] | .command]) as $cmds |
-  if ($cmds | index($s.command)) != null then
-    .report += [["SAME", $s.event, $s.matcher]]
-  elif $id != null and ($cmds | map(select(ident == $id)) | length) > 0 then
-    .obj.hooks[$s.event] |= map(if covers($s.matcher) then .hooks = ((.hooks // []) | map(if (.command | ident) == $id then .command = $s.command else . end) | dedup_ours($s.command)) else . end)
+  if $id != null and ($cmds | map(select(ident == $id and . != $s.command)) | length) > 0 then
+    .obj.hooks[$s.event] |= (
+      reduce .[] as $e ({seen: false, out: []};
+        if ($e | covers($s.matcher)) and ($e.hooks != null) then
+          ($e.hooks | map(if (.command | ident) == $id then .command = $s.command else . end)) as $sw |
+          (reduce $sw[] as $h ({seen: .seen, hs: []};
+            if $h.command == $s.command and .seen then . else (if $h.command == $s.command then .seen = true else . end) | .hs += [$h] end)) as $r |
+          .seen = $r.seen | .out += [if $r.hs == [] and ($e.hooks | length) > 0 then empty else $e | .hooks = $r.hs end]
+        else
+          .out += [$e]
+        end) | .out)
     | .report += [["STALE", $s.event, $s.matcher]]
+  elif ($cmds | index($s.command)) != null then
+    .report += [["SAME", $s.event, $s.matcher]]
   else
     .obj.hooks[$s.event] += [{matcher: $s.matcher, hooks: [{type: "command", command: $s.command}]}]
     | .report += [[(if ($mine | length) > 0 then "APPENDED" else "MISSING" end), $s.event, $s.matcher]]
