@@ -131,7 +131,7 @@ if [ "$check" = 0 ]; then
 fi
 
 bad=0
-backtick_dir_re='`[^`]*dir #[0-9]+[^`]*`'
+dir_cite_re='dir #[0-9]+'
 fail() { printf 'changelog.d/%s:%s: %s\n' "$1" "$2" "$3"; bad=1; }
 
 while IFS= read -r name; do
@@ -200,7 +200,10 @@ while IFS= read -r name; do
   ln=0
   while IFS= read -r line || [ -n "$line" ]; do
     ln=$((ln + 1))
-    if [[ $line =~ $backtick_dir_re ]]; then
+    # Code spans pair left to right, as extract_dir_tickets does (dir #795); a citation BETWEEN two spans is
+    # not inside one. Captured, not piped into grep -q (pipefail + SIGPIPE).
+    spans="$(grep -oE '`[^`]*`' <<<"$line" || true)"
+    if [[ $spans =~ $dir_cite_re ]]; then
       fail "$name" "$ln" "dir #N inside backticks — cite it in full, unwrapped, or doctor never sees the ticket"
     fi
   done <<< "$fenced"
