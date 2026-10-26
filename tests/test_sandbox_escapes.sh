@@ -58,12 +58,21 @@ for demo in "examples/tour.sh" "docs/demo/record-demo.sh --scenes"; do
     only_env KEEL_HOME "$kh" bash "$REPO_ROOT"/$demo
     check_status "S9-7: ${demo%% *} with only an ambient KEEL_HOME holding a store → exit 0" 0 "$STATUS"
     check_eq "${demo%% *} leaves the ambient KEEL_HOME's store byte-for-byte untouched" "$kh_before" "$(tree_sum "$kh")"
+    # dir #800: tour step 1 runs init-project.sh, which auto-registers into ${KEEL_INSTANCE:-...}. only_env keeps
+    # this one variable (tests/lib.sh unsets it for every test otherwise).
+    inst="$SANDBOX/esc-instance-$dn.md"; cp "$REPO_ROOT/templates/INSTANCE.md" "$inst"; inst_before="$(cksum < "$inst")"
+    # shellcheck disable=SC2086
+    only_env KEEL_INSTANCE "$inst" bash "$REPO_ROOT"/$demo
+    check_status "dir #800: ${demo%% *} with only an ambient KEEL_INSTANCE → exit 0" 0 "$STATUS"
+    check_eq "dir #800: ${demo%% *} leaves the ambient KEEL_INSTANCE registry byte-for-byte untouched" "$inst_before" "$(cksum < "$inst")"
   fi
 done
 # …and the structural half for record-demo.sh: it sources the one list of isolation variables and unsets ALL of it,
 # not a hand-picked pair (the mutant that kept KEEL_HOME exported passed every behavioural row above).
 pin "S9-7: record-demo.sh sources tools/lib/impact-store.sh for the isolation list" "$REPO_ROOT/docs/demo/record-demo.sh" \
   '. "$root/tools/lib/impact-store.sh"' "expected record-demo.sh to source the library that names every isolation variable"
+pin "dir #800: record-demo.sh unsets KEEL_INSTANCE (defence in depth: its --scenes mode runs no init-project)" "$REPO_ROOT/docs/demo/record-demo.sh" \
+  'unset KEEL_INSTANCE' "expected record-demo.sh to unset KEEL_INSTANCE beside its other ambient overrides"
 pin "S9-7: record-demo.sh unsets that whole list" "$REPO_ROOT/docs/demo/record-demo.sh" \
   'unset $IMPACT_ISOLATION_VARS' "expected record-demo.sh to unset every impact-store override, not a hand-picked subset"
 
