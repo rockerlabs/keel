@@ -376,12 +376,12 @@ do
   check_contains "Clause B demotion-ticket paragraph: $needle (dir #815)" "$cb_815" "$needle"
 done
 
-# dir #898: §11 class 2 cites no nonexistent R11; its routing names class 3's 10 KB bound, and class 3 says who keeps it.
+# dir #898: §11 class 2 cites no dangling R11; its routing names class 3's 10 KB bound, and class 3 says who keeps it.
 s11_898="$(section_body '## 11. The cross-vendor leg — four harness lessons, as classes' "$doc" | flatten_ws)"
-check_absent "section 11 does not cite a nonexistent R11 (dir #898)" "$s11_898" "per R11"
+check_absent "section 11 does not cite a dangling R11 (dir #898)" "$s11_898" "per R11"
 check_contains "section 11 class 2 routes to the non-reasoning model at class 3's 10 KB (dir #898)" "$s11_898" \
   "re-bundled at or under class 3's 10 KB with its quote cap, not resent as is"
 check_contains "section 11 class 3 leaves the bound to the caller, not vendor-review.sh (dir #898)" "$s11_898" \
-  "That bound is the caller's (or its client's) to keep, not \`tools/vendor-review.sh\`'s"
+  "The 10 KB bundle bound is the caller's (or its client's) to keep, not \`tools/vendor-review.sh\`'s"
 
 summary
