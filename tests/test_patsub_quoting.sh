@@ -17,41 +17,79 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
-# Reads files named on argv; prints `path<TAB>line number<TAB>trimmed line` per offending line. A replacement is the
-# text after the second unescaped, unbracketed, unquoted `/` of a `${name/pat/rep}` / `${name//pat/rep}` /
-# `${name/#pat/rep}` / `${name/%pat/rep}`; backslash escapes, '...', "..." and $'...' segments are dropped from it
-# first, and any `$` left over is an unquoted interpolation. Comment-only lines are skipped.
+# replacement_has_unquoted_dollar TEXT — TEXT is the part of a `${name/pat/rep}` body after the op. Walks it to the first
+# unescaped `/` outside '...', "...", and a [...] bracket expression (that ends the pattern), then walks the replacement
+# skipping backslash escapes, '...', $'...' and "..." segments; true when a `$` is left, i.e. an unquoted interpolation.
+replacement_has_unquoted_dollar() {
+  local t="$1" i=0 n c j
+  n=${#t}
+  while [ "$i" -lt "$n" ]; do
+    c="${t:i:1}"
+    case "$c" in
+      '\') i=$((i + 2)) ;;
+      "'") i=$((i + 1)); while [ "$i" -lt "$n" ] && [ "${t:i:1}" != "'" ]; do i=$((i + 1)); done; i=$((i + 1)) ;;
+      '"') i=$((i + 1)); while [ "$i" -lt "$n" ] && [ "${t:i:1}" != '"' ]; do
+             if [ "${t:i:1}" = '\' ]; then i=$((i + 2)); else i=$((i + 1)); fi
+           done; i=$((i + 1)) ;;
+      '[') j=$((i + 2)); while [ "$j" -lt "$n" ] && [ "${t:j:1}" != ']' ]; do j=$((j + 1)); done; i=$((j + 1)) ;;
+      /) i=$((i + 1)); break ;;
+      *) i=$((i + 1)) ;;
+    esac
+  done
+  [ "$i" -le "$n" ] || return 1
+  # no second `/` found (a plain `${v/pat}` deletion) leaves i at n: nothing to inspect
+  while [ "$i" -lt "$n" ]; do
+    c="${t:i:1}"
+    case "$c" in
+      '\') i=$((i + 2)) ;;
+      "'") i=$((i + 1)); while [ "$i" -lt "$n" ] && [ "${t:i:1}" != "'" ]; do i=$((i + 1)); done; i=$((i + 1)) ;;
+      '"') i=$((i + 1)); while [ "$i" -lt "$n" ] && [ "${t:i:1}" != '"' ]; do
+             if [ "${t:i:1}" = '\' ]; then i=$((i + 2)); else i=$((i + 1)); fi
+           done; i=$((i + 1)) ;;
+      '$')
+        if [ "${t:i+1:1}" = "'" ]; then
+          i=$((i + 2)); while [ "$i" -lt "$n" ] && [ "${t:i:1}" != "'" ]; do i=$((i + 1)); done; i=$((i + 1))
+        else
+          return 0
+        fi ;;
+      *) i=$((i + 1)) ;;
+    esac
+  done
+  return 1
+}
+
+# line_has_unquoted_replacement LINE — true when any `${name/pat/rep}`-shaped expansion on LINE carries an unquoted `$` in rep.
+line_has_unquoted_replacement() {
+  local rest="$1" body depth i n c
+  local re='^[!]?([A-Za-z_][A-Za-z_0-9]*|[0-9]+|[@*])(\[[^]]*\])?//?[#%]?'
+  while case "$rest" in *'${'*) true ;; *) false ;; esac; do
+    rest="${rest#*'${'}"
+    depth=1; i=0; n=${#rest}
+    while [ "$i" -lt "$n" ]; do
+      c="${rest:i:1}"
+      case "$c" in '{') depth=$((depth + 1)) ;; '}') depth=$((depth - 1)); [ "$depth" -gt 0 ] || break ;; esac
+      i=$((i + 1))
+    done
+    body="${rest:0:i}"
+    if [[ "$body" =~ $re ]]; then
+      replacement_has_unquoted_dollar "${body:${#BASH_REMATCH[0]}}" && return 0
+    fi
+  done
+  return 1
+}
+
+# scan_unquoted_replacements FILE... — one `path<TAB>line number<TAB>trimmed line` per offending line; comment-only lines are
+# skipped. grep prefilters the candidates so the character walk runs on a handful of lines, not on every line of tools/.
 scan_unquoted_replacements() {
-  perl -e '
-    my $b; $b = qr/(\$\{(?:[^{}]++|(?-1))*+\})/;
-    for my $f (@ARGV) {
-      open(my $h, "<", $f) or die "cannot read $f: $!";
-      my $n = 0;
-      while (my $l = <$h>) {
-        $n++; chomp $l;
-        next if $l =~ /^\s*#/;
-        my $hit = 0;
-        while ($l =~ /\$\{((?:[^{}]++|\{(?:[^{}]++|(?-1))*+\})*+)\}/g) {
-          my $body = $1;
-          next unless $body =~ m{^!?(?:[A-Za-z_][A-Za-z_0-9]*|[0-9]+|[@*])(?:\[[^\]]*\])?(//?[#%]?)(.*)$}s;
-          my $rest = $2; my ($pat, $rep) = ("", undef);
-          my ($i, $len, $br) = (0, length $rest, 0);
-          while ($i < $len) {
-            my $c = substr($rest, $i, 1);
-            if ($c eq "\\") { $i += 2; next }
-            if ($c eq "\x27") { my $j = index($rest, "\x27", $i + 1); $i = $j < 0 ? $len : $j + 1; next }
-            if ($c eq "\"") { $i++; while ($i < $len && substr($rest, $i, 1) ne "\"") { $i += substr($rest, $i, 1) eq "\\" ? 2 : 1 } $i++; next }
-            if ($c eq "[") { my $j = index($rest, "]", $i + 2); $i = $j < 0 ? $len : $j + 1; next }
-            if ($c eq "/") { $rep = substr($rest, $i + 1); last }
-            $i++;
-          }
-          next unless defined $rep;
-          $rep =~ s/\\.//gs; $rep =~ s/\$\x27[^\x27]*\x27//g; $rep =~ s/\x27[^\x27]*\x27//g; $rep =~ s/"[^"]*"//g;
-          $hit = 1 if $rep =~ /\$/;
-        }
-        if ($hit) { (my $t = $l) =~ s/^\s+|\s+$//g; print "$f\t$n\t$t\n" }
-      }
-    }' -- "$@"
+  local f num line t
+  for f in "$@"; do
+    while IFS= read -r line; do
+      num="${line%%:*}"; line="${line#*:}"
+      t="${line#"${line%%[![:space:]]*}"}"
+      case "$t" in '#'*) continue ;; esac
+      if line_has_unquoted_replacement "$line"; then printf '%s\t%s\t%s\n' "$f" "$num" "${t%"${t##*[![:space:]]}"}"; fi
+    done < <(grep -n -E '\$\{[!]?[A-Za-z_0-9@*]+(\[[^]]*\])?//?' "$f" || true)
+  done
 }
 
 # Replacements proven free of a `&`: `path<TAB>needle<TAB>reason`, matched when the offending line contains the needle.
