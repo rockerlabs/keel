@@ -339,6 +339,36 @@ run "$cr" "$d" --quiet
 check_status "a PR number cited as dir #N in a changelog.d fragment -> exit 1" 1 "$STATUS"
 check_contains "names the fragment as where it was first cited" "$OUT" "changelog.d/513-x.md"
 
+# --- dir #795: the [Unreleased] slice is cut from the fence-blanked CHANGELOG (a fenced `## [9.9.9]` line neither
+# ends the slice nor hides later citations), and a tracked fragment deleted from the working tree is skipped quietly
+d="$(mk_cl_repo "# Changelog
+
+## [Unreleased]
+
+- Example:
+
+\`\`\`
+## [9.9.9]
+\`\`\`
+
+- Cites dir #888, which has no heading anywhere.
+")"
+run "$cr" "$d" --quiet
+check_status "a citation after a fenced ## [9.9.9] inside [Unreleased] is still scanned -> exit 1" 1 "$STATUS"
+check_contains "...and reported DEAD" "$OUT" "DEAD dir #888"
+
+d="$(mk_cl_repo "# Changelog
+
+## [Unreleased]
+
+" "5-x.md" "- Cites dir #5, live.
+")"
+rm -f "$d/changelog.d/5-x.md"
+run "$cr" "$d" --quiet
+check_status "a tracked fragment removed from the working tree -> exit 0" 0 "$STATUS"
+check_absent "...with no awk error" "$OUT" "awk:"
+check_absent "...and no DEAD line" "$OUT" "DEAD"
+
 d="$(mk_cl_repo "$cl_pr")"
 rm -f "$d/BACKLOG.md"
 run "$cr" "$d"

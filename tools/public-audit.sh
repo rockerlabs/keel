@@ -573,6 +573,24 @@ if [ "$NO_HISTORY" = 0 ]; then
   fi
 fi
 
+# --- 1b. tracked files missing from the working tree, --no-history (GAP) -------------------------
+# A tracked file removed from the working tree but not from HEAD: git grep and the section 2 pass both skip
+# it, while HEAD — what would be published — still holds it. Default mode reads HEAD in the history pass.
+# Not gated on tokens or personal literals (dir #798): the content of a missing file was not audited either
+# way. A dangling tracked symlink is not missing (its tracked content is its link-text).
+# The spool is reused by section 2's binary pass, so a failed listing is reported here, once.
+wt_tracked_ok=0
+if [ "$NO_HISTORY" = 1 ]; then
+  if pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}"; then
+    wt_tracked_ok=1
+    while IFS= LC_ALL=C read -r -d '' f; do
+      [ -L "$DIR/$f" ] && continue
+      [ -e "$DIR/$f" ] && continue
+      gap "tracked file '$f' is missing from the working tree — its committed content was not audited (restore it or commit the removal)"
+    done < "$audit_tmp/wt.tracked"
+  fi
+fi
+
 # --- 2. declared-private tokens, in tree AND history (GAP) ---------------------------------------
 # The block also runs for personal literals alone (dir #719 B12): a binary holding one used to read clean.
 # Each token loop keeps its own non-empty test — bash 3.2 under `set -u` aborts on "${tokens[@]}" when empty.
@@ -603,8 +621,7 @@ if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
   wt_spool_kinds=()
   wt_prefix=""
   if [ "$NO_HISTORY" = 1 ]; then
-    pa_read "list the tracked files" "$audit_tmp/wt.tracked" git -C "$DIR" ls-files -z -- . "${excludes[@]}" \
-      && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(tracked); }
+    [ "$wt_tracked_ok" = 1 ] && { wt_spool_files+=("$audit_tmp/wt.tracked"); wt_spool_kinds+=(tracked); }
   elif git -C "$DIR" rev-parse --verify -q HEAD >/dev/null 2>&1; then
     pa_read "find the audited directory's prefix" "$audit_tmp/wt.prefix" git -C "$DIR" rev-parse --show-prefix \
       && { pa_first "$audit_tmp/wt.prefix"; wt_prefix="$pa_line"; } \
@@ -625,12 +642,7 @@ if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
     while IFS= LC_ALL=C read -r -d '' f; do
       [ "$wt_kind" = diff ] && f="${f#"$wt_prefix"}"
       [ -L "$DIR/$f" ] && continue          # a symlink's tracked content is its link-text, not its target
-      if [ ! -e "$DIR/$f" ]; then
-        # A tracked file removed from the working tree but not from HEAD: git grep and this pass both skip it,
-        # while HEAD — what would be published — still holds it. Default mode reads HEAD in the history pass.
-        [ "$wt_kind" = tracked ] && gap "tracked file '$f' is missing from the working tree — its committed content was not audited (restore it or commit the removal)"
-        continue
-      fi
+      [ -e "$DIR/$f" ] || continue          # missing: the GAP is raised once, in section 1b
       [ -f "$DIR/$f" ] || continue          # a directory (a submodule's gitlink), a fifo…
       fsize="$(wc -c 2>/dev/null < "$DIR/$f")" || { gap "could not read '$f' in the working tree (exit $?) — the audit is INCOMPLETE"; continue; }
       fsize="${fsize//[[:space:]]/}"

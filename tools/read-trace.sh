@@ -491,7 +491,7 @@ case "${1:-}" in
       ag_f="${ag_f#"${ag_root%/}"/}"
       _rt_in_doc_scope "$ag_f" && { ag_scoped=1; break; }
     done < <({ [ -f "$ag_root/BACKLOG.md" ] && printf '%s\n' "$ag_root/BACKLOG.md"
-               find "$ag_root/docs" "$ag_root/commands" -type f 2>/dev/null; })
+               find -L "$ag_root/docs" "$ag_root/commands" -type f 2>/dev/null; })
     if [ "$ag_scoped" -eq 0 ]; then
       printf "read-trace: nothing in this repository is in the trace's scope (docs/*, commands/*.md, BACKLOG.md) — an empty table here is permanent, not a quiet cycle\n"
     fi

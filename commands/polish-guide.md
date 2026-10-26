@@ -78,7 +78,7 @@ Steps, in order:
   A `/go` run also writes its handoff note under `go-guide.md` I3.4, with `next: /polish (compaction stop,
   dir #739)` and the hand-over file's absolute path in `carry:`.
 - (f) **Hand the run on — the first route that applies, then make no further tool call.** The continued run is
-  always the same skill call, `<call>`: invoke the `polish` skill with args `<--no-test if this run had it> after a
+  always the same skill call, `<call>`: invoke the `polish` skill with args `<the flags this run had, if any> after a
   compaction stop (dir #739): read <absolute hand-over file> first` (the skill call works wherever a leading `/polish`
   might not run as a command).
   - (1) **A turn the operator started** (a standalone `/go` or `/polish` they typed; a turn whose last instruction
@@ -101,7 +101,7 @@ Steps, in order:
     ```
 
     ```
-    /polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first
+    /polish <the flags this run had, if any> after a compaction stop (dir #739): read <absolute hand-over file> first
     ```
 
     The second line is a real `/polish` invocation, so the whole procedure reloads: a manual `/compact`
