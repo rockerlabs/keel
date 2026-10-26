@@ -10,10 +10,10 @@
 
 git config --global --add safe.directory '*'
 
-# mk_ck NAME — a scratch Keel checkout under $SANDBOX (a copy of this tree, its own git repo); prints its path.
+# mk_ck NAME — a scratch Keel checkout under $SANDBOX (a copy of the tracked tree, its own git repo); prints its path.
 mk_ck() {
   local ck="$SANDBOX/$1"
-  cp -R "$REPO_ROOT" "$ck" && rm -rf "$ck/.git"
+  tracked_tree_copy "$ck" || { kill -TERM $$; exit 1; }
   git -C "$ck" init -q
   git -C "$ck" add -A
   git -C "$ck" -c user.name=Alice -c user.email=alice@example.com commit -q -m fixture

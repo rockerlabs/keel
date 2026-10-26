@@ -117,7 +117,7 @@ tools/install-secret-guard.sh --global   # every repo on this machine, from now 
 
 *One of the tools, ~40 seconds, nothing mocked: install the hook → an API key is blocked on commit →
 your own name is blocked even inside a UTF-16 binary fixture. Reproduce it yourself:
-[`docs/demo/record-demo.sh`](docs/demo/record-demo.sh) (sandboxed, touches nothing).*
+[`docs/demo/record-demo.sh`](docs/demo/record-demo.sh) (the run is sandboxed; the default mode writes `docs/demo.gif` into your checkout).*
 
 ## The pre-PR gate — the agent can't lie about review
 
