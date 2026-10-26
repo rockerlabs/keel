@@ -818,8 +818,9 @@ real runs, stated as classes rather than tied to any one vendor's harness:
    identically, with `reasoning_tokens` = 64000 = the hard cap, on a 23.8K-token prompt — the
    reasoner's spend is not a function of prompt size, so a round the cap cannot rescue is not fixed by
    narrowing the bundle either. When the ceiling is met and `content` is still empty, report the leg
-   per R11 and let the sibling vendor cover that bundle, or route it to the vendor's non-reasoning
-   model — a vendor limit, not a gap a ticket closes; do not relaunch. **A later run
+   and let the sibling vendor cover that bundle, or route it to the vendor's non-reasoning model —
+   re-bundled at or under class 3's 10 KB with its quote cap, not resent as is — a vendor limit, not
+   a gap a ticket closes; do not relaunch. **A later run
    added the other half of this lesson:** capture the raw reply, `reasoning_content` included — one
    round's reasoning carried the correct analysis of a finding its own answer then stated backwards,
    and it was recoverable only because a raw-capture option happened to have shipped days earlier.
@@ -845,8 +846,10 @@ real runs, stated as classes rather than tied to any one vendor's harness:
    provisional (measured at ~7 KB and 20 KB+, nothing between); the quote cap is the real control. A
    truncated reply is a failed round, not a partial result: do not parse what arrived. Re-run once on a
    smaller bundle, split by coupling with the sibling manifest above; if it truncates again, report the
-   leg and let the sibling vendor cover that bundle — do not relaunch. This is the direct chat leg
-   only; the reasoning model's budget is class 2's.
+   leg and let the sibling vendor cover that bundle — do not relaunch. That bound is the caller's (or its
+   client's) to keep, not `tools/vendor-review.sh`'s: the tool knows no model, the figure is
+   provisional, and the quote cap is the real control. This is the direct chat leg only; the
+   reasoning model's budget is class 2's.
 
 4. **An unscriptable or non-integrated vendor is still a diversity leg — it just arrives through a
    packet, not an API call.** Feed `derive.sh`'s file list to `tools/audit-packet/export.sh`, hand
