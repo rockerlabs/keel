@@ -4,7 +4,8 @@
 #         working pre-commit used to read "OK" (a commit made with hooks bypassed then reached the remote); the same
 #         for a secret-scan.sh ABSENT beside Keel's hooks. A user's own hooks dir keeps its old bar.
 #   S3-1  the env-file floor's prune list (build out dist vendor target …) applies BELOW the audited root, never to it
-#   S3-2  --install checks every lib install.sh / uninstall.sh REQUIRE, safe-write.sh and artifact-cksum.sh included
+#   S3-2  --install checks every lib install.sh / uninstall.sh REQUIRE, safe-write.sh, artifact-cksum.sh and ledger.sh
+#         included; a census names any sourced lib doctor neither lists nor sources (dir #805)
 #   S3-5  an EMPTY core.hooksPath: the warning names it, and its advice clears it (the old advice was refused)
 #   S3-6/S3-7  the header names what the code says; the "state unknown" arm is pinned by its own text
 #   env   the floor's name set: <name>.env.<ext> backups and upper-case variants (and upper-case TEMPLATE words are
@@ -152,12 +153,16 @@ run "$REPO_ROOT/install.sh" --home "$dah" --no-hooks
 check_status "S3-2 fixture: copy install → exit 0" 0 "$STATUS"
 run "$cdoc" --install "$dah"
 check_absent "S3-2 control: intact libs → no G-REQUIRED-LIB" "$OUT" "[G-REQUIRED-LIB]"
-for lib in safe-write.sh artifact-cksum.sh; do
+for lib in safe-write.sh artifact-cksum.sh ledger.sh; do
   mv "$cp_root/tools/lib/$lib" "$cp_root/tools/lib/$lib.away"
   run "$cdoc" --install "$dah"
   check_contains "S3-2: a missing tools/lib/$lib → G-REQUIRED-LIB" "$OUT" "[G-REQUIRED-LIB]"
   check_contains "S3-2: ...naming it" "$(id_line G-REQUIRED-LIB)" "$lib"
   check_eq "S3-2: ...a GAP (exit 1), not a quiet OK" 1 "$STATUS"
+  if [ "$lib" = ledger.sh ]; then
+    check_contains "S3-2: ...ledger.sh's own wording (install.sh exits 1 at the ledger step)" "$(id_line G-REQUIRED-LIB)" "install.sh does its work, then exits 1 at the ledger step"
+    check_absent "S3-2: ...not the shared 'refuse to run' wording" "$(id_line G-REQUIRED-LIB)" "refuse to run without it"
+  fi
   mv "$cp_root/tools/lib/$lib.away" "$cp_root/tools/lib/$lib"
 done
 printf 'safe_write_x() {\n' > "$cp_root/tools/lib/safe-write.sh.corrupt"
@@ -166,6 +171,26 @@ cp "$cp_root/tools/lib/safe-write.sh.corrupt" "$cp_root/tools/lib/safe-write.sh"
 run "$cdoc" --install "$dah"
 check_contains "S3-2: a CORRUPT tools/lib/safe-write.sh → G-REQUIRED-LIB too" "$(id_line G-REQUIRED-LIB)" "safe-write.sh"
 cp "$cp_root/tools/lib/safe-write.sh.orig" "$cp_root/tools/lib/safe-write.sh"
+cp "$cp_root/tools/lib/ledger.sh" "$cp_root/tools/lib/ledger.sh.orig"
+: > "$cp_root/tools/lib/ledger.sh"
+run "$cdoc" --install "$dah"
+check_contains "S3-2: a ZERO-BYTE tools/lib/ledger.sh → G-REQUIRED-LIB too" "$(id_line G-REQUIRED-LIB)" "ledger.sh"
+cp "$cp_root/tools/lib/ledger.sh.orig" "$cp_root/tools/lib/ledger.sh"
+
+# --- S3-2 census (dir #805): every lib install.sh / uninstall.sh source is listed or sourced by doctor --install ---------
+# Pinned from the files, not derived at run time by the audit itself: a lib sourced there must be in doctor's ireq_lib
+# list or sourced in its --install block as `. "$tools_dir/lib/<x>.sh"`.
+census_missing=""
+census_libs="$(grep -hE '^[[:space:]]*\. "\$root/tools/lib/[a-z-]+\.sh"' "$REPO_ROOT/install.sh" "$REPO_ROOT/uninstall.sh" \
+  | sed -E 's|.*tools/lib/([a-z-]+\.sh)".*|\1|' | sort -u)"
+ireq_list="$(grep -E '^[[:space:]]*for ireq_lib in ' "$doctor" | sed -E 's/.* in (.*); do.*/\1/')"
+check_contains "S3-2 census: found the sourced libs (regex sanity: ledger.sh)" "$census_libs" "ledger.sh"
+check_eq "S3-2 census: the five real source lines, nothing else" 5 "$(printf '%s\n' "$census_libs" | grep -c .)"
+for x in $census_libs; do
+  case " $ireq_list " in *" $x "*) continue ;; esac
+  grep -qE "^[[:space:]]*\. \"\\\$tools_dir/lib/${x//./\\.}\"" "$doctor" || census_missing="$census_missing $x"
+done
+check_eq "S3-2 census: no sourced lib is missing from doctor --install (missing:${census_missing:- none})" "" "$census_missing"
 
 # --- S3-5: an EMPTY core.hooksPath ------------------------------------------------------------------------------------
 mk_home s35m

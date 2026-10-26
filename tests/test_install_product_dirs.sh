@@ -10,11 +10,11 @@
 git config --global --add safe.directory '*'
 
 # mk_ck NAME — a scratch Keel checkout under $SANDBOX (a copy of this tree, committed as its own git
-# repo so `git status` can prove the checkout is untouched); prints its path. The copy's .git is dropped
-# first: in a worktree it is a pointer file to the real repository.
+# repo so `git status` can prove the checkout is untouched); prints its path. The copy holds the tracked
+# tree only (no .git, private/ or worktrees).
 mk_ck() {
   local ck="$SANDBOX/$1"
-  cp -R "$REPO_ROOT" "$ck" && rm -rf "$ck/.git"
+  tracked_tree_copy "$ck" || { kill -TERM $$; exit 1; }
   git -C "$ck" init -q
   git -C "$ck" add -A
   git -C "$ck" -c user.name=Alice -c user.email=alice@example.com commit -q -m fixture

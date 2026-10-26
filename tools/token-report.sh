@@ -87,10 +87,13 @@ EOF
 # level down — see tools/lib/transcript-usage.sh's header note on project-directory slugs). Empty
 # output and non-zero status if nothing matches.
 _tr_resolve_session() {
-  local arg="$1" root hit
+  local arg="$1" root hits hit
   if [ -f "$arg" ]; then printf '%s' "$arg"; return 0; fi
   root="$(tu_projects_root)"
-  hit="$(find "$root" -mindepth 2 -maxdepth 2 -type f -name "$arg.jsonl" 2>/dev/null | head -1)"
+  # "$root/": find does not descend into a symlinked start path without the trailing slash. The whole output
+  # is captured before the first line is taken — nothing is piped into head (the dir #280 SIGPIPE shape).
+  hits="$(find "$root/" -mindepth 2 -maxdepth 2 -type f -name "$arg.jsonl" 2>/dev/null || true)"
+  hit="${hits%%$'\n'*}"
   [ -n "$hit" ] || return 1
   printf '%s' "$hit"
 }
@@ -540,6 +543,17 @@ main() {
       _tr_context
       exit 0
     fi
+  done
+  # -h/--help is usage, not a transcript mode: answered before the jq check, in option position only (the value
+  # after --session / --since is skipped, so `--session -h` keeps its meaning).
+  local -a rest=("$@")
+  local i=0
+  while [ "$i" -lt "${#rest[@]}" ]; do
+    case "${rest[$i]}" in
+      --session|--since) i=$((i + 2)) ;;
+      -h|--help) usage; exit 0 ;;
+      *) i=$((i + 1)) ;;
+    esac
   done
   if ! command -v jq >/dev/null 2>&1; then
     printf 'unavailable: keel tokens needs jq\n' >&2
