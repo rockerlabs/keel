@@ -571,14 +571,15 @@ _isg_machine_read() {
   return 0
 }
 # dir #802 (D1-1): `git config --get-all` exits 1 — "unset" — with only a warning when a global config file
-# EXISTS but cannot be read (mode 000, or a directory), so the read below took it for nothing set. Check the
+# EXISTS but cannot be read (mode 000, or a directory), so the read below took it for nothing set (or, with another scope setting the key, missed that a write would land in it). Check the
 # files git reads at global scope ($GIT_CONFIG_GLOBAL replaces them; else ~/.gitconfig and the XDG file): one that
 # exists but is a directory or unreadable is a read error (git's fatal 128), as a corrupt file already is
 # (dir #743 M1). An absent file stays unset.
 _isg_global_unreadable() {
   local f
   if [ -n "${GIT_CONFIG_GLOBAL:-}" ]; then set -- "$GIT_CONFIG_GLOBAL"
-  else set -- "$HOME/.gitconfig" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; fi
+  elif [ -n "${HOME:-}" ]; then set -- "$HOME/.gitconfig" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
+  else return 1; fi
   for f in "$@"; do
     if [ -e "$f" ] || [ -L "$f" ]; then
       if [ -d "$f" ] || [ ! -r "$f" ]; then return 0; fi
@@ -613,7 +614,7 @@ _isg_machine_read_files() {
     fi
   fi
   [ -z "$probe" ] || { rm -f "$probe/.isg-list" "$probe/.isg-value"; rmdir "$probe" 2>/dev/null; } || true
-  if [ "$m_err" = 0 ] && [ "$m_set" = 0 ] && _isg_global_unreadable; then m_err=128; fi
+  if [ "$m_err" = 0 ] && _isg_global_unreadable; then m_err=128; fi
 }
 
 # --- dir #717 (S5-1): the conditional [includeIf] includes ---------------------------------------------------
