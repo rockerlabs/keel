@@ -208,7 +208,8 @@ A finding — from an audit, a review, a `/polish` round, a groom, a wrap, or a 
      or a shape searched for in real session transcripts and found, by T3's actor and target, in
      fewer than two distinct real sessions within the 90 days before the finding (those sightings are
      counted; a search recorded in that window — on the register entry, its closed ticket or the
-     project's accumulator — serves, so a re-reported shape needs no new search). A shape a guard's doc
+     project's accumulator — serves, so a re-reported shape needs no new search). A recorded search is counts only (date, window in days, corpus size,
+     count): EVIDENCE and NOTE hold an id, a count or a date, never command text. A shape a guard's doc
      already names as a limit is not thereby 1b; this test judges it like any other. It goes into that
      guard's **known-bypass register** (the guard's own doc names it;
      [`SECURITY.md`](../SECURITY.md) "Threat model by guard" lists them all), dispositioned

@@ -35,6 +35,7 @@
 #   add DATE CLASS CONSUMER SOURCE FELT DANGER MODEL EVIDENCE [NOTE]
 #                                                                a duplicate (class, source, consumer) prints `dup`, exit 0;
 #                                                                a sighting of a `retired` class reopens it
+#                                                                EVIDENCE and NOTE hold an id, a count or a date, never command text
 #   count CLASS                                                  the distinct counting sources at the as-of day
 #   due --owner O [--verbose]                                    class ids due, one per line (--verbose: id, count, reason)
 #   status --owner O                                             open=N at-threshold-1=N retired-at-D=N promoted-seen-again=N
@@ -86,6 +87,7 @@ Usage: accumulate.sh --dir DIR [--as-of D] <subcommand> [args]
   init | lock | unlock | lint | retire | --selftest
   new-class CLASS TITLE FIX OWNER [THRESHOLD] [WINDOW] [COUNTS]
   add DATE CLASS CONSUMER SOURCE FELT DANGER MODEL EVIDENCE [NOTE]
+      (EVIDENCE and NOTE hold an id, a count or a date, never command text; a recorded search is counts only)
   count CLASS | due --owner O [--verbose] | status --owner O
   promote CLASS REF | fixed CLASS REF [--date D]
   closed CLASS --backlog PATH... --drafts DIR...

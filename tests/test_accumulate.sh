@@ -36,6 +36,9 @@ nlines() { wc -l < "$1" | tr -d ' '; }
 run bash "$ACC" --help
 check_status "--help -> exit 0" 0 "$STATUS"
 check_contains "--help prints usage" "$OUT" "Usage:"
+check_contains "--help says EVIDENCE and NOTE never hold command text (dir #853)" "$OUT" 'never command text'
+check_contains "the file header says it too (dir #853)" "$(cat "$ACC")" 'EVIDENCE and NOTE hold an id, a count or a date, never command text
+'
 run bash "$ACC" lint
 check_status "no --dir -> exit 2" 2 "$STATUS"
 d="$(mktemp -d "$SANDBOX/acc.XXXXXX")"
