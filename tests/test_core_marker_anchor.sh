@@ -138,7 +138,7 @@ fi
 # --- B12: the inline core-ownership fallback in install.sh is gone; the lib is REQUIRED ---------------------
 inline="$(grep -c -E '^[[:space:]]*keel_core_is_link\(\)' "$install" || true)"
 check_eq "B12: install.sh no longer defines keel_core_is_link inline (one definition, in the lib)" 0 "$inline"
-ck="$SANDBOX/b12-ck"; cp -R "$REPO_ROOT" "$ck"; rm -rf "$ck/.git"
+ck="$SANDBOX/b12-ck"; tracked_tree_copy "$ck" || exit 1
 rm -f "$ck/tools/lib/core-ownership.sh"
 h="$SANDBOX/b12-home"; mkdir -p "$h"
 run "$ck/install.sh" --home "$h" --no-hooks
