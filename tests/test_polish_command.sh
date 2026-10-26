@@ -397,7 +397,7 @@ check_contains "compaction stop (e): a /go run's handoff note says next: /polish
 check_contains "compaction stop (f): no tool call after the hand-off" "$g1" 'make no further tool call'
 # dir #845: the stop continues itself — three routes, the two operator lines only as the fallback.
 g1f="$(tr '\n' ' ' <<< "$g1" | tr -s ' ')"
-check_contains "compaction stop (f): the continued run is one skill call (works where a leading /polish may not)" "$g1f" 'invoke the `polish` skill with args `<--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first`'
+check_contains "compaction stop (f): the continued run is one skill call (works where a leading /polish may not)" "$g1f" 'invoke the `polish` skill with args `<the flags this run had, if any> after a compaction stop (dir #739): read <absolute hand-over file> first`'
 check_contains "compaction stop (f) route 1: an operator-started turn launches a successor with start_session" "$g1f" 'launch a successor with `start_session`'
 check_contains "compaction stop (f) route 1: the successor runs in the same worktree" "$g1f" '`use_worktree: false`'
 check_contains "compaction stop (f) route 2: a managed worker sends the manager COMPACT <token> <file>" "$g1f" 'send the manager `COMPACT <token> <absolute hand-over file>`'
@@ -427,9 +427,16 @@ fenced_blocks() {
     f && inb { sub(/^[[:space:]]+/, ""); blk = (blk == "" ? $0 : blk "|" $0) }' "$guide"
 }
 blocks="$(fenced_blocks)"
-tmpl='/polish <--no-test if this run had it> after a compaction stop (dir #739): read <absolute hand-over file> first'
+tmpl='/polish <the flags this run had, if any> after a compaction stop (dir #739): read <absolute hand-over file> first'
 check_eq "compaction stop (f): exactly one fenced block is the bare /compact line" "1" "$(grep -cxF '/compact' <<< "$blocks" || true)"
 check_eq "compaction stop (f): exactly one fenced block is the verbatim /polish template, alone" "1" "$(grep -cxF "$tmpl" <<< "$blocks" || true)"
+# dir #806: neither template line holds the literal flag step 3 acts on.
+call_line="$(grep -F 'invoke the `polish` skill with args' "$guide" || true)"
+tmpl_line="$(grep -E '^[[:space:]]*/polish .*after a compaction stop' "$guide" || true)"
+check_eq "compaction stop (f): the <call> line and the /polish template line are both found" "2" "$(grep -c . <<< "$call_line
+$tmpl_line" || true)"
+check_absent "compaction stop (f): the <call> line holds no --no-test" "$call_line" '--no-test'
+check_absent "compaction stop (f): the paste-ready /polish line holds no --no-test" "$tmpl_line" '--no-test'
 # dir #845: R11 and token-economy name the self-continuing stop, not the operator's `/compact`.
 rm_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/release-management.md" | tr -s ' ')"
 te_flat="$(tr '\n' ' ' < "$REPO_ROOT/docs/token-economy.md" | tr -s ' ')"

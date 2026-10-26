@@ -6,7 +6,8 @@
 #
 # Sandboxed like examples/tour.sh: HOME and the global git config are redirected into
 # a temp dir; the repo's tools are copied there so no local path leaks into the frames;
-# nothing on the recording machine is touched, and the sandbox is removed on exit.
+# the sandbox is removed on exit. The one write outside it: the default mode overwrites
+# docs/demo.gif in this checkout.
 #
 #   docs/demo/record-demo.sh            # record + render (needs: brew install asciinema agg)
 #   docs/demo/record-demo.sh --scenes   # inner mode: just play the scenes (what gets recorded)
@@ -50,6 +51,9 @@ unset $IMPACT_ISOLATION_VARS
 # guard NOT installed below and the key-shaped commit goes through. Unset, it falls back to
 # $HOME/.claude/secret-scan-personal under the sandbox HOME (absent: no personal half).
 unset SECRET_SCAN_PERSONAL_FILE
+# dir #800: init-project.sh auto-registers into ${KEEL_INSTANCE:-...}; an ambient value would take a row naming this
+# deleted sandbox. Unset, it falls back to the sandbox HOME.
+unset KEEL_INSTANCE
 # dir #753: HOME and GIT_CONFIG_GLOBAL are not the whole git-config surface — the GIT_CONFIG_COUNT/KEY_n/VALUE_n
 # triple (command scope, beats every file; git ignores KEY_n/VALUE_n once COUNT is gone), GIT_CONFIG_PARAMETERS
 # (what a parent `git -c k=v` exports to its children) and GIT_CONFIG_SYSTEM (an alternate system file) would
