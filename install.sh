@@ -299,7 +299,8 @@ fi
 # keel_link_import_path HOME — the path linked mode writes after its `@` for a home HOME (dir #801): the absolute
 # spelling of HOME + /keel/CORE.md, rewritten to the ~-form when it sits under $HOME. Pure string work, no disk
 # access, so the whitespace refusal below can run before anything is written, and the import line is built by this
-# same function — the check and the written line cannot drift. (${HOME:-} guard: --home/KEEL_HOME callers may
+# same function — one rule for the check and the written line. It reads the home as spelled (an unresolved `..`
+# through a spaced directory is refused although the resolved path would pass). (${HOME:-} guard: --home/KEEL_HOME callers may
 # legitimately run without $HOME.)
 keel_link_import_path() {
   local p="$1"
@@ -338,7 +339,7 @@ if [ "$LINK" = 1 ]; then
   # Absolute HOME_DIR (dir #801): the import line must not be cwd-relative, and every manifest record is
   # `${dest#"$HOME_DIR"/}` — an absolute $link_dir under a relative $HOME_DIR would drop every keel/… record. Logical
   # `pwd` (not -P): a symlinked $HOME must keep matching the ~-form.
-  HOME_DIR="$(CDPATH='' cd -- "$HOME_DIR" && pwd)" || exit 1
+  HOME_DIR="$(CDPATH='' cd -- "$HOME_DIR" && pwd)" || { echo "install: cannot resolve --home $HOME_DIR to an absolute path" >&2; exit 1; }
   link_dir="$HOME_DIR/keel"
   if [ "$link_dir" -ef "$root" ] 2>/dev/null; then
     echo "install: --link consumption dir ($link_dir) is the Keel checkout itself — refusing (it would" >&2
