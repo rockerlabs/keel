@@ -154,6 +154,10 @@ for needle in 'In doubt between 1a and 1b' 'known-bypass register' 'promoted to 
   pin_exact "dir #842 A3: the doc carries [$needle] on exactly one line" "$doc" "$needle" \
     "expected the 1a/1b rule's needle once — a second copy or a wrapped one breaks the pin"
 done
+pin_exact "dir #853: §4 says a recorded search is counts only, beside its recording homes" "$doc" \
+  'A recorded search is counts only (date, window in days, corpus size,' "expected the counts-only sentence once"
+pin_exact "dir #853: §4 says EVIDENCE and NOTE never hold command text" "$doc" \
+  'count): EVIDENCE and NOTE hold an id, a count or a date, never command text.' "expected the no-command-text clause once"
 check_count "dir #842 A4: 'no discretion' moved onto 1a — exactly one line" "$doc" 'no discretion' 1
 check_contains "dir #842 A4: that line is the 1a line" "$(grep 'no discretion' "$doc")" '1a'
 n_1a="$(grep -c 'condition 1a' "$doc")"

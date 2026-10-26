@@ -185,6 +185,20 @@ check_contains "docs/grooming.md G0 names the data-dir override KEEL_GUARDS_ACCU
 check_contains "docs/grooming.md G0 names accumulate.sh closed (a promoted class is looked up in the backlog)" "$g0_doc" 'accumulate.sh closed'
 check_contains "docs/grooming.md G0 names accumulate.sh fixed (without it a recurrence is never due)" "$g0_doc" 'accumulate.sh fixed'
 check_contains "docs/grooming.md G0 keeps the scan's candidates out of every repository" "$g0_doc" 'outside every'
+# dir #853: the recipe names FELT, the one-time init, the missing scan cursor and the ticket tag (delete one, test red)
+g0_flat="$(flatten_ws <<<"$g0_doc")"
+check_contains "docs/grooming.md G0 states FELT yes for a real session (dir #853)" "$g0_flat" 'FELT is `yes` for a real session'
+check_contains "docs/grooming.md G0 names the one-time init on the data dir (dir #853)" "$g0_flat" 'accumulate.sh --dir "$(bypass-scan.sh data-dir)" init'
+check_contains "docs/grooming.md G0 says scan keeps no cursor (dir #853)" "$g0_flat" '`scan` keeps no cursor'
+check_contains "docs/grooming.md G0 passes --since the previous scan's date (dir #853)" "$g0_flat" 'scan --since <the date the previous G0 scan ran>'
+check_contains "docs/grooming.md G0 files the due class as [model-decay] (dir #853)" "$g0_flat" 'tagged `[model-decay]`'
+check_absent "docs/grooming.md G0 no longer implies a cursor (dir #853)" "$g0_flat" 'since the previous scan (a re-scan'
+cmd_flat="$(flatten_ws < "$cmd")"
+check_contains "groom.md G0 carries --since (dir #853)" "$cmd_flat" "scan --since <the previous G0 scan's date>"
+check_contains "groom.md G0 says no cursor (dir #853)" "$cmd_flat" '(no cursor;'
+check_contains "groom.md G0 carries FELT yes (dir #853)" "$cmd_flat" 'FELT `yes`'
+check_contains "groom.md G0 carries the init (dir #853)" "$cmd_flat" 'a one-time `accumulate.sh init`'
+check_contains "groom.md G0 carries the [model-decay] tag (dir #853)" "$cmd_flat" 'tagged `[model-decay]`'
 
 # --- dir #860 A5: G5 scales a total by a measured counterfactual of a procedure change, and the command points at it -----
 b5_needle='**A procedure change between the two releases scales that total'

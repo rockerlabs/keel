@@ -27,11 +27,12 @@ exist on this project. Produce 2-3 process amendments and APPLY them directly in
 for exactly this) — a retro that only reports findings in chat has produced nothing. Confirm the
 just-closed audit run's harvest here too (G4(c)).
 Where the project keeps its guards' bypass registers on the accumulator (keel's own: `dir #842`; skip in
-one line where there are none): scan the sessions with `tools/self/bypass-scan.sh scan` into a scratch file outside
+one line where there are none): scan the sessions with `tools/self/bypass-scan.sh scan --since <the previous G0 scan's date>`
+(no cursor; a one-time `accumulate.sh init` first) into a scratch file outside
 every repository, adjudicate each candidate (a real session, the right actor, the real target → one
-`accumulate.sh add` between `lock` and `unlock` on `bypass-scan.sh data-dir`; a probe, audit, fixture or sandbox is
+`accumulate.sh add`, FELT `yes`, between `lock` and `unlock` on `bypass-scan.sh data-dir`; a probe, audit, fixture or sandbox is
 dropped), run `accumulate.sh closed`/`fixed` for each `promoted` class whose ticket closed, then
-`accumulate.sh due --owner guards` and file each class it lists ([grooming.md](../docs/grooming.md) G0 has the order).
+`accumulate.sh due --owner guards` and file each class it lists, tagged `[model-decay]` ([grooming.md](../docs/grooming.md) G0 has the order).
 
 **G1 — pains are the input.**
 A release row answers a named, currently-felt operator pain, stated in the operator's own words. Propose
