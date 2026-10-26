@@ -119,6 +119,18 @@ for shape in one two two-rev; do
 done
 m861c="$(hook_install_merge "$specs" "$(jq -nc --arg o "$ours_x" '{hooks:{PostToolUse:[{matcher:"Bash",hooks:[{type:"command",command:$o}]}]}}')")"
 check_status "merge #861: ours alone on the slot stays SAME" SAME "$(first_status "$m861c")"
+# Entries the swap must leave alone: one with no "hooks" key, one with an empty "hooks" array; and the match-all
+# shape (a matcher-less entry holding ours, the old copy in a specific one).
+odd861="$(jq -nc --arg o "$ours_x" --arg s "$old_x" '{hooks:{PostToolUse:[{matcher:"Bash"},{matcher:"Bash",hooks:[]},{matcher:"Bash",hooks:[{type:"command",command:$o},{type:"command",command:$s}]}]}}')"
+m861d="$(hook_install_merge "$specs" "$odd861")"
+check_status "merge #861: hookless and empty-hooks entries → STALE, both entries kept as they were" \
+  'STALE [{"matcher":"Bash"},{"matcher":"Bash","hooks":[]},{"matcher":"Bash","hooks":[{"type":"command","command":"'"$ours_x"'"}]}]' \
+  "$(first_status "$m861d") $(jq -c '.new.hooks.PostToolUse' <<<"$m861d")"
+ma861="$(jq -nc --arg o "$ours_x" --arg s "$old_x" '{hooks:{PostToolUse:[{hooks:[{type:"command",command:$o}]},{matcher:"Bash",hooks:[{type:"command",command:$s}]}]}}')"
+m861e="$(hook_install_merge "$specs" "$ma861")"
+check_status "merge #861: ours in a match-all entry + old copy in a Bash entry → STALE, ours once, no old path" \
+  'STALE 1 0' \
+  "$(first_status "$m861e") $(jq --arg o "$ours_x" '[.new.hooks.PostToolUse[].hooks[] | select(.command == $o)] | length' <<<"$m861e") $(jq '[.new.hooks.PostToolUse[].hooks[] | select(.command | contains("/old/"))] | length' <<<"$m861e")"
 
 # --- remove: our exact hook goes, a differing command on the slot is KEPT ------------------------------
 rm1="$(hook_install_remove "$specs" "$cur")"
