@@ -125,13 +125,13 @@ verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one 
 G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
-is recorded as lost rather than invented. The same applies to that run's harvest, which the harvest
+is recorded as lost rather than invented. The same applies to that run's harvest, which the G4(c)
 paragraph below already owns — check it there, not twice. **The releases record's row is checked
 too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
 describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
-**Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
+**Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip the
 read-trace inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
 mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
@@ -466,7 +466,7 @@ settled fact.
   byte, so take that copy before the first write. A compensation, since no checked writer has shipped;
   its remover is the parked `dir #193`, backlog writes as a mechanized guarantee.
 
-**Plus the accumulator triage** — four places findings and ideas already pile up and, without a named
+**Plus the accumulator triage** — the places findings and ideas already pile up and, without a named
 owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`
 per [`triage.md`](triage.md) — called by reference, never restated here (its verdicts, bound and
 horizon live there); (c) is unchanged, and the groom triages (d) itself. What stays here is why each
@@ -491,7 +491,7 @@ input is on the list:
   ends with "out of scope / follow-ups to file at close" — a deferred filing that assumes the
   *implementing* session will do bookkeeping at the moment (`/polish` → PR → close) it is least likely
   to, and that R8 centralizes away from workers in a managed release anyway. Any groom that runs between
-  a spec and its implementation triages that list itself: each item becomes a ticket
+  a spec and its implementation triages that list: each item becomes a ticket
   (with its re-open trigger on the row), a cross-write into the ticket that already owns it, or a drop
   with a one-line reason — and the spec's list is then annotated "all filed" so the implementer files
   nothing. The first groom to do this found six items on one spec: three tickets, three cross-writes,
