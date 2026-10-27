@@ -2764,25 +2764,34 @@ function sg_cd(i,   j, c, p) {
   ncd++; cd_pos[ncd] = segpos
   cd_row[ncd] = "subcd" SEP segpos SEP segscope SEP p
 }
+# sg_valopt(w) — is the long option w (no `=`, at least `--x`) a `git fetch` option whose value is the NEXT word? git
+# takes any unambiguous prefix (`--dep 1`), so a prefix of a listed name counts.
+function sg_valopt(w,   n, i, names) {
+  if (index(w, "=")) return 0
+  n = split("--jobs --depth --deepen --shallow-since --shallow-exclude --upload-pack --server-option --negotiation-tip --filter --refmap --recurse-submodules-default", names, " ")
+  for (i = 1; i <= n; i++) if (index(names[i], w) == 1) return 1
+  return 0
+}
 # The classification of one git invocation (B10). a = the index of the first word after the verb.
 # sg_mut(v, a) returns 1 for a repository-mutating form (a `fetch` whose refspec names a local :dst outside refs/remotes/ writes
 # a ref; dir #793); it may set sg_sub (the subcommand word, for the reason
 # text), sg_gd / sg_wt (a `config -f <file>` write names the file directory as the work tree and no git dir) and
 # sg_extra (a directory `init` names, appended to the -C chain).
-function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, del, nxt, d) {
+function sg_mut(v, a,   k, w, wr, rd, npos, eq, nm, first, glob, ffile, fmask, del, nxt, d, multi) {
   sg_sub = ""
   if (sg_in(v, "checkout switch restore reset clean commit add rm mv rebase merge cherry-pick revert am pull push update-ref update-index read-tree checkout-index gc prune repack filter-branch filter-repo replace sparse-checkout maintenance stage merge-file fast-import pack-refs")) return 1
   if (v == "fetch") {
-    npos = 0; del = 0
+    npos = 0; del = 0; multi = 0
     for (k = a; k <= ntok; k++) {
       w = tok[k]
       if (!del && w == "--") { del = 1; continue }
       if (!del && substr(w, 1, 1) == "-" && length(w) > 1) {
-        if (sg_in(w, "-j --jobs --depth --deepen --shallow-since --shallow-exclude --upload-pack --server-option -o --negotiation-tip --filter --refmap")) k++
+        if (w == "--multiple") multi = 1
+        else if (sg_in(w, "-j -o") || (length(w) > 2 && substr(w, 1, 2) == "--" && sg_valopt(w))) k++
         continue
       }
       npos++
-      if (npos > 1 && (eq = index(w, ":")) > 0) {
+      if (!multi && npos > 1 && (eq = index(w, ":")) > 0) {
         nm = substr(w, eq + 1)
         if (nm != "" && substr(nm, 1, 13) != "refs/remotes/") return 1
       }
@@ -3833,12 +3842,12 @@ sg_join() {
 sg_common_dir() {
   local raw
   raw="$(git -C "$1" rev-parse --git-common-dir 2>/dev/null)" || return 1
-  (cd "$1" 2>/dev/null && cd "$raw" 2>/dev/null && pwd -P)
+  (unset CDPATH; cd -- "$1" 2>/dev/null && cd -- "$raw" 2>/dev/null && pwd -P)
 }
 sg_gitdir_common() {
   local raw
   raw="$(git --git-dir="$1" rev-parse --git-common-dir 2>/dev/null)" || return 1
-  (cd "$raw" 2>/dev/null && pwd -P)
+  (unset CDPATH; cd -- "$raw" 2>/dev/null && pwd -P)
 }
 # sg_dir_hit DIR — is DIR (inside) the session repository? Each distinct dir is asked of git once.
 sg_dir_hit() {
