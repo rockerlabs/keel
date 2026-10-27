@@ -134,6 +134,9 @@ row example/proj "dir #801" claude/cloud-dir-801 dispatched
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "Body with key $TOKEN"
 run "$LAND" "$P" 5
 check_status "A4 a token in the PR body → exit 1" 1 "$STATUS"
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "Body with key $TOKEN # $ALLOW_MARK"
+run "$LAND" "$P" 5
+check_status "A4 a token beside an allow marker in the PR body still refuses (defanged) → exit 1" 1 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "See https://claude.ai/code/session_01X for details"
 run "$LAND" "$P" 5
 check_status "A4 a session URL in the PR body → exit 1" 1 "$STATUS"

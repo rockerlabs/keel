@@ -507,6 +507,10 @@ cb "$P" "dir #801"
 check_status "T12 a ghp_ token in the rails → exit 1" 1 "$STATUS"
 nothing_written "T12 rails"
 fx
+printf 'key %s # %s\n' "$TOKEN" "secret-scan:""allow" >> "$P/CLAUDE.md"
+cb "$P" "dir #801"
+check_status "T12 a token beside an allow marker still refuses (the marker is defanged) → exit 1" 1 "$STATUS"
+fx
 cb "$P" "dir #801" --out "$F/b801.md"
 check_status "T12 the clean ticket builds" 0 "$STATUS"
 b801="$(cat "$F/b801.md")"
@@ -684,6 +688,8 @@ printf 'refs/heads/x %s refs/heads/main %s\nrefs/heads/x %s refs/heads/%s %s\n' 
 check_ne "T3b the hook on two lines, the default one first → non-zero" 0 "$?"
 printf 'refs/heads/%s %s refs/heads/x %s\n' "$B" "$S" "$S" | "$hook" 2>/dev/null
 check_ne "T3b the hook keys on field 3 (the branch in field 1 pushed elsewhere → non-zero)" 0 "$?"
+printf 'refs/heads/x 0000000000000000000000000000000000000000 refs/heads/%s %s\n' "$B" "$S" | "$hook" 2>/dev/null
+check_ne "T3b an all-zero local sha to <branch> is a deletion (no \`(delete)\` spelling needed) → non-zero" 0 "$?"
 
 # --- T16: the keel commit, the engine, <repo> forms ----------------------------------------------------------------
 check_contains "T16 <keel-sha> is the merge-base with origin/main" "$proto" "checkout -q $ENG_PUBLISHED"
