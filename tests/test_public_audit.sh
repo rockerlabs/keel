@@ -1088,4 +1088,32 @@ check_contains "dir #761: ...found in the binary file" "$OUT" "private token /Mi
 run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-plain761" bash "$pa" --no-history "$d"
 check_status "dir #761 control: the literal 'michalek' does not match an l-stroke → exit 0" 0 "$STATUS"
 
+# dir #886: an inherited pathspec-mode variable must not change what the built-in/allow-path `:(exclude)`
+# pathspecs mean. Fixture D: the config scans nothing under vend/ (allow-path) and itself; the token sits
+# under vend/ and vend/deep/. Fixture E: the token sits only under Vend/ (never both in one fixture — a
+# case-insensitive filesystem collides them). Under LITERAL/NOGLOB the excludes read literally → false GAP;
+# under GLOB `*` stops at `/` (vend/deep/y.txt); under ICASE vend/* also swallows Vend/ → false CLEAN.
+d="$(repo_by dev@example.com)"
+printf 'token: zzpriv886\nallow-path: vend/*\n' > "$d/.public-audit"
+mkdir -p "$d/vend/deep"; printf 'zzpriv886\n' > "$d/vend/x.txt"; printf 'zzpriv886\n' > "$d/vend/deep/y.txt"
+commit_in "$d" "dir 886 fixture D"
+run bash "$pa" --no-history "$d"
+check_status "dir #886 control: an allow-path'd token with no pathspec env → exit 0" 0 "$STATUS"
+for pv886 in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do
+  run env "$pv886=1" bash "$pa" --no-history "$d"
+  check_status "dir #886: $pv886=1 does not change the audit verdict → exit 0" 0 "$STATUS"
+  check_absent "dir #886: $pv886=1 raises no false GAP" "$OUT" "GAP"
+done
+d="$(repo_by dev@example.com)"
+printf 'token: zzpriv886\nallow-path: vend/*\n' > "$d/.public-audit"
+mkdir -p "$d/Vend"; printf 'zzpriv886\n' > "$d/Vend/z.txt"
+commit_in "$d" "dir 886 fixture E"
+run bash "$pa" --no-history "$d"
+check_status "dir #886 control: a token under Vend/ (not allow-path'd vend/) → exit 1" 1 "$STATUS"
+for pv886 in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do
+  run env "$pv886=1" bash "$pa" --no-history "$d"
+  check_status "dir #886: $pv886=1 does not hide the Vend/ token → exit 1" 1 "$STATUS"
+  check_contains "dir #886: $pv886=1 still names Vend/z.txt" "$OUT" "Vend/z.txt"
+done
+
 summary

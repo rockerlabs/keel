@@ -90,6 +90,13 @@ check_contains "an over-threshold file batches SOLO" "$OUT" "big.md SOLO"
 check_contains "the historical-prose file is its own batch" "$OUT" "CHANGELOG.md SPECIAL"
 check_contains "ordinary files pack by directory" "$OUT" "batch 2: docs/guide.md (20 ln)"
 check_contains "a directory's files ride in one batch under the cap" "$OUT" "batch 2: docs/README.md"
+# dir #886: an inherited pathspec mode must not empty the default scope A (`*.md` read literally matches nothing).
+for pv886 in GIT_LITERAL_PATHSPECS GIT_NOGLOB_PATHSPECS; do
+  run_in "$r" env "$pv886=1" "$TOOL"
+  check_status "dir #886: $pv886=1 leaves the inventory exit 0" 0 "$STATUS"
+  check_contains "dir #886: $pv886=1 keeps scope A intact" "$OUT" "scope A total: 8 files, 651 lines"
+done
+run_in "$r" "$TOOL"   # restore the plain $OUT for the rows below
 check_contains "scope B packs under its own cap" "$OUT" "batch B2: scripts/other.sh (3 comment-ln)"
 check_contains "scope C counts whole-file lines, not just comments" "$OUT" "scripts/thing.sh${TAB}5 ln"
 check_contains "scope C picks up the same shebang-detected extensionless script as scope B" \
