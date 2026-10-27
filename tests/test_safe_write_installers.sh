@@ -107,7 +107,12 @@ if command -v script >/dev/null 2>&1; then
   ln "$dots/CLAUDE.md" "$dots/CLAUDE.other.md"
   ln -s "$dots/CLAUDE.md" "$h/CLAUDE.md"
   tty_run y "$install" --home "$h" --no-hooks
-  check_status "A36 a refresh answered y over a hard-linked target → exit 0" 0 "$STATUS"
+  check_contains "A36 a refresh answered y over a hard-linked target → exit 0: the run reached its \"Done\" line" "$OUT" "Done"
+  if [ "$(uname -s)" = Darwin ]; then
+    check_status "A36 a refresh answered y over a hard-linked target → exit 0" 0 "$STATUS"
+  else
+    echo "  skip  A36 a refresh answered y over a hard-linked target → exit 0 (tty_run's STATUS is trustworthy on macOS only)"
+  fi
   check_contains "A36 …left untouched" "$OUT" "left untouched"
   check_eq "A36 …no CLAUDE.md backup beside the link" 0 "$(bak_count "$h" CLAUDE.md)"
   check_eq "A36 …and none beside its target" 0 "$(bak_count "$dots" CLAUDE.md)"
