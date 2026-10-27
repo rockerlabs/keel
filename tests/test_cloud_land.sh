@@ -13,32 +13,7 @@ LAND="$REPO_ROOT/tools/cloud-land.sh"
 TOKEN="$(key ghp_ "$(rep A 36)")"
 ALLOW_MARK="secret-scan:""allow"
 
-mkdir -p "$SANDBOX/bin"
-cat > "$SANDBOX/bin/gh" <<'GH'
-#!/usr/bin/env bash
-d="${GH_FX:?}"
-echo "$*" >> "$d/calls"
-if [ "${1:-}" = api ]; then
-  path="$2"; shift 2; jqx="."
-  while [ $# -gt 0 ]; do case "$1" in --jq) jqx="$2"; shift ;; esac; shift; done
-  f="$d/api/$(printf '%s' "$path" | tr '/?&=:' '_____').json"
-  [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
-  jq -r "$jqx" "$f"
-  exit
-fi
-if [ "${1:-} ${2:-}" = "pr view" ]; then
-  n="$3" repo=""
-  shift 3
-  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift ;; esac; shift; done
-  f="$d/pr/$(printf '%s' "$repo" | tr '/' '_')-$n.json"
-  [ -f "$f" ] || { echo "no pull requests found" >&2; exit 1; }
-  cat "$f"
-  exit
-fi
-echo "stub gh: unhandled: $*" >&2
-exit 1
-GH
-chmod +x "$SANDBOX/bin/gh"
+gh_fixture_stub "$SANDBOX/bin"
 export PATH="$SANDBOX/bin:$PATH"
 
 LEDGER_HEADER="$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR')"

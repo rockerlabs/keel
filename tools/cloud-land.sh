@@ -34,8 +34,9 @@ abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$START_DIR" "$1"
 die() { local code="$1"; shift; printf 'cloud-land: %s\n' "$*" >&2; exit "$code"; }
 
 ENGINE="$(cd "$(dirname "$0")/.." && pwd -P)"
-for lib in backlog-blocks state-root cloud; do
-  [ -f "$ENGINE/tools/lib/$lib.sh" ] || die 2 "no $ENGINE/tools/lib/$lib.sh"
+for lib in state-root repo-top safe-write cloud; do
+  [ -s "$ENGINE/tools/lib/$lib.sh" ] && bash -n "$ENGINE/tools/lib/$lib.sh" 2>/dev/null \
+    || die 2 "$ENGINE/tools/lib/$lib.sh is missing or corrupted — re-clone or re-download Keel"
   # shellcheck source=/dev/null
   . "$ENGINE/tools/lib/$lib.sh"
 done
@@ -61,13 +62,10 @@ CLOUD_LEDGER="$(abs "$CLOUD_LEDGER")"
 SCANNER="$ENGINE/tools/secret-guard/secret-scan.sh"
 [ -f "$CLOUD_LEDGER" ] || die 2 "no ledger at $CLOUD_LEDGER"
 [ -f "$SCANNER" ] || die 2 "no scanner at $SCANNER"
-cloud_personal_file || die 2 "no personal-literals list at $SECRET_SCAN_PERSONAL_FILE — the scan fails closed; set SECRET_SCAN_PERSONAL_FILE to your list (or to /dev/null to opt out)"
+cloud_personal_file || die 2 "$CLOUD_ERR"
 
 # --- the repository: <repo>'s origin ------------------------------------------------------------------------------
-[ -d "$REPO_ARG" ] || die 2 "no directory $REPO_ARG"
-REPO_DIR="$(cd "$REPO_ARG" && pwd -P)" || die 2 "cannot enter $REPO_ARG"
-git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1 || die 2 "$REPO_DIR is not inside a git repository"
-MAIN="$(backlog_root_for "$REPO_DIR")"
+cloud_resolve_main "$REPO_ARG" || die 2 "$CLOUD_ERR"
 ORIGIN_URL="$(git -C "$MAIN" config --get remote.origin.url 2>/dev/null || true)"
 OR="$(cloud_github_slug "$ORIGIN_URL")" || die 2 "origin (${ORIGIN_URL:-none}) is not a github.com repository"
 OWNER="${OR%%/*}"
@@ -75,7 +73,7 @@ DEFAULT="$(cloud_gh_api "repos/$OR" --jq .default_branch)" && [ -n "$DEFAULT" ] 
   || die 2 "gh api cannot read the default branch of $OR"
 
 # --- the PR ---------------------------------------------------------------------------------------------------------
-PR_JSON="$(gh pr view "$PR" --repo "$OR" --json number,title,headRefName,isDraft,body,statusCheckRollup,headRefOid)" \
+PR_JSON="$(gh pr view "$PR" --repo "$OR" --json title,headRefName,body,statusCheckRollup,headRefOid)" \
   || die 2 "gh pr view $PR --repo $OR failed"
 BRANCH="$(jq -r '.headRefName // ""' <<< "$PR_JSON")"
 HEAD_OID="$(jq -r '.headRefOid // ""' <<< "$PR_JSON")"
@@ -137,16 +135,18 @@ fi
 git -C "$CLONE" checkout -q --detach "refs/remotes/origin/$DEFAULT" 2>/dev/null \
   || { echo "  scan error: cannot check out origin/$DEFAULT"; finish 1; }
 
+# report_scan LABEL RC OUTPUT — one scan's line; any non-zero exit fails the landing.
+report_scan() {
+  if [ "$2" -eq 0 ]; then echo "  $1: clean"; else echo "  $1: exit $2"; sed 's/^/    /' <<< "$3"; SCAN_FAIL=1; fi
+}
 rc=0
 out="$(cd "$CLONE" && bash "$SCANNER" --range "origin/$DEFAULT..origin/$BRANCH" 2>&1)" || rc=$?
-if [ "$rc" -eq 0 ]; then echo "  range scan: clean"; else echo "  range scan: exit $rc"; sed 's/^/    /' <<< "$out"; SCAN_FAIL=1; fi
+report_scan "range scan" "$rc" "$out"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
-mkdir "$WORK/empty"
-sed 's/secret-scan:allow/secret-scan-allow-stripped/g' "$WORK/pr-text.md" > "$WORK/pr-text.scan.md"
 rc=0
-out="$(cd "$WORK/empty" && bash "$SCANNER" -- "$WORK/pr-text.scan.md" 2>&1)" || rc=$?
-if [ "$rc" -eq 0 ]; then echo "  PR-text scan: clean"; else echo "  PR-text scan: exit $rc"; sed 's/^/    /' <<< "$out"; SCAN_FAIL=1; fi
+out="$(cloud_scan_file "$SCANNER" "$WORK/pr-text.md" "$WORK")" || rc=$?
+report_scan "PR-text scan" "$rc" "$out"
 if hits="$(grep -nE 'claude\.ai/code/session|-Session:' "$WORK/pr-text.md")"; then
   echo "  PR-text session grep: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else

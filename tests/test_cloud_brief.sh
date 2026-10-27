@@ -36,23 +36,7 @@ BRIEF_TOOL="$ENG/tools/cloud-brief.sh"
 check_ne "fixture: the engine has a local commit ahead of origin/main" "$ENG_PUBLISHED" "$ENG_HEAD"
 
 # --- stubs --------------------------------------------------------------------------------------------------
-mkdir -p "$SANDBOX/bin"
-cat > "$SANDBOX/bin/gh" <<'GH'
-#!/usr/bin/env bash
-d="${GH_FX:?}"
-echo "$*" >> "$d/calls"
-[ -f "$d/fail" ] && { echo "error connecting to api.github.com" >&2; exit 1; }
-if [ "${1:-}" = api ]; then
-  path="$2"; shift 2; jqx="."
-  while [ $# -gt 0 ]; do case "$1" in --jq) jqx="$2"; shift ;; esac; shift; done
-  f="$d/api/$(printf '%s' "$path" | tr '/?&=:' '_____').json"
-  [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
-  jq -r "$jqx" "$f"
-  exit
-fi
-echo "stub gh: unhandled: $*" >&2
-exit 1
-GH
+gh_fixture_stub "$SANDBOX/bin"
 cat > "$SANDBOX/bin/claude" <<'CLAUDE'
 #!/usr/bin/env bash
 d="${CLAUDE_FX:?}"
@@ -74,7 +58,7 @@ else
 fi
 exit "$rc"
 CLAUDE
-chmod +x "$SANDBOX/bin/gh" "$SANDBOX/bin/claude"
+chmod +x "$SANDBOX/bin/claude"
 export PATH="$SANDBOX/bin:$PATH"
 
 # --- the standard backlog ---------------------------------------------------------------------------------------
@@ -329,10 +313,11 @@ cb()  { run "$BRIEF_TOOL" "$@"; }                                         # merg
 cbo() { OUT="$("$BRIEF_TOOL" "$@" 2>"$F/stderr" </dev/null)"; STATUS=$?; ERR="$(cat "$F/stderr")"; }
 row_of()    { awk -F'\t' -v t="$1" 'NR > 1 && $3 == t' "$CLOUD_LEDGER" 2>/dev/null; }
 status_of() { row_of "$1" | cut -f8; }
-set_status() { # TICKET STATUS — edit the fixture ledger by hand, as an operator would
-  awk -F'\t' -v OFS='\t' -v t="$1" -v s="$2" 'NR > 1 && $3 == t { $8 = s } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
+set_cell() { # TICKET N VALUE — edit the fixture ledger by hand, as an operator would
+  awk -F'\t' -v OFS='\t' -v t="$1" -v n="$2" -v v="$3" 'NR > 1 && $3 == t { $n = v } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
   cat "$F/l.tmp" > "$CLOUD_LEDGER"
 }
+set_status() { set_cell "$1" 8 "$2"; } # TICKET STATUS
 part_of() { awk -v p="=== $2 ===" '$0 == p { f = 1; next } /^=== [a-z ]+ ===$/ { f = 0 } f' "$1"; }
 nothing_written() { # LABEL
   if [ -d "$CLOUD_BRIEF_DIR" ] && [ -n "$(ls -A "$CLOUD_BRIEF_DIR")" ]; then fail "$1: no brief" "found $(ls "$CLOUD_BRIEF_DIR")"; else pass "$1: no brief"; fi
@@ -362,7 +347,8 @@ cbo "$P" "dir #801"
 check_status "T1c lowercase 'keel-cloud' → exit 3" 3 "$STATUS"
 check_contains "T1c lowercase: G1 and the line" "$ERR" "line 3: keel-cloud"
 
-unprotect() { printf '{"protected":true,"protection":{"enabled":true}}\n' > "$GH_FX/api/repos_example_proj_branches_main.json"; }
+set_protection() { printf '%s\n' "$1" > "$GH_FX/api/repos_example_proj_branches_main.json"; } # SHAPE
+unprotect() { set_protection '{"protected":true,"protection":{"enabled":true}}'; }
 fx "KEEL-CLOUD
 KEEL-CLOUD unprotected-ok extra"
 unprotect
@@ -426,12 +412,12 @@ for shape in '{"protected":true,"protection":{"enabled":true}}' \
              '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"non_admins"}}}' \
              '{"protected":false}'; do
   fx
-  printf '%s\n' "$shape" > "$GH_FX/api/repos_example_proj_branches_main.json"
+  set_protection "$shape"
   cb "$P" "dir #801"
   check_status "T3 $shape without unprotected-ok → exit 3" 3 "$STATUS"
   check_contains "T3 $shape: G1b" "$OUT" "refused: G1b"
   fx "KEEL-CLOUD unprotected-ok"
-  printf '%s\n' "$shape" > "$GH_FX/api/repos_example_proj_branches_main.json"
+  set_protection "$shape"
   cb "$P" "dir #801"
   check_status "T3 $shape with unprotected-ok → 0" 0 "$STATUS"
 done
@@ -771,7 +757,7 @@ check_status "T20b --check on a dispatched row → 3" 3 "$STATUS"
 fx
 cb "$P" "dir #812"; set_status "dir #812" dispatched
 cb "$P" "dir #814"; set_status "dir #814" landed
-awk -F'\t' -v OFS='\t' 'NR > 1 && $3 == "dir #814" { $13 = "aaaa" } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"; cat "$F/l.tmp" > "$CLOUD_LEDGER"
+set_cell "dir #814" 13 aaaa
 printf '[{"number":7,"head":{"sha":"bbbb"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-814_state_all.json"
 printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
 cb "$P" "dir #815"; set_status "dir #815" dispatched
@@ -851,6 +837,10 @@ else
 fi
 
 # --- tools/lib/cloud.sh, directly ------------------------------------------------------------------------------
+# shellcheck source=tools/lib/repo-top.sh
+. "$REPO_ROOT/tools/lib/repo-top.sh"
+# shellcheck source=tools/lib/safe-write.sh
+. "$REPO_ROOT/tools/lib/safe-write.sh"
 # shellcheck source=tools/lib/cloud.sh
 . "$REPO_ROOT/tools/lib/cloud.sh"
 for pair in "https://github.com/o/r=o/r" "https://github.com/o/r.git=o/r" "https://github.com/o/r/=o/r" \
@@ -869,6 +859,12 @@ check_eq "lib cloud_ledger_set changes only the keyed row" "landed abc|built " \
   "$(awk -F'\t' 'NR > 1 { printf "%s %s|", $8, $13 }' "$L" | sed 's/|$//')"
 check_eq "lib … keeps 14 cells" "14" "$(cloud_ledger_row "$L" o/r "dir #1" | awk -F'\t' '{print NF}')"
 cloud_cell_ok "a$(printf '\t')b"; check_status "lib cloud_cell_ok refuses a tab" 1 "$?"
+mkdir -p "$SANDBOX/rel" && printf 'x\n' > "$SANDBOX/rel/list"
+check_eq "lib cloud_personal_file makes a relative list absolute (the scanner runs from another directory)" \
+  "$(cd "$SANDBOX/rel" && pwd)/list" \
+  "$(cd "$SANDBOX/rel" && SECRET_SCAN_PERSONAL_FILE=list && cloud_personal_file && printf '%s' "$SECRET_SCAN_PERSONAL_FILE")"
+(cd "$SANDBOX/rel" && SECRET_SCAN_PERSONAL_FILE=absent && cloud_personal_file)
+check_status "lib cloud_personal_file refuses a missing list" 1 "$?"
 
 # --- T0 ----------------------------------------------------------------------------------------------------------
 real_ledger_after="absent"; [ -f "$REAL_LEDGER" ] && real_ledger_after="$(cksum < "$REAL_LEDGER")"

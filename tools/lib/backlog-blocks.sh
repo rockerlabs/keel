@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # tools/lib/backlog-blocks.sh — adopter-usable (dir #359 + dir #360; adopter-facing since dir #900, when
-# tools/cloud-brief.sh and tools/cloud-land.sh began sourcing it against an adopter's own backlog): the one
+# tools/cloud-brief.sh began sourcing it against an adopter's own backlog): the one
 # shared BACKLOG.md ticket-block scanner both mechanisms need. dir #359's closed-ticket line-share
 # check and dir #360's pool report independently need the same heading/body-span logic
 # tools/self/doctor.sh's check 5 already worked out (dir #255/#352's wrapped-heading fix) —

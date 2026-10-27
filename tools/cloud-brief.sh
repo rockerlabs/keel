@@ -39,8 +39,9 @@ abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$START_DIR" "$1"
 die() { local code="$1"; shift; printf 'cloud-brief: %s\n' "$*" >&2; exit "$code"; }
 
 ENGINE="$(cd "$(dirname "$0")/.." && pwd -P)"
-for lib in fence-blank backlog-blocks state-root cloud; do
-  [ -f "$ENGINE/tools/lib/$lib.sh" ] || die 2 "no $ENGINE/tools/lib/$lib.sh"
+for lib in fence-blank backlog-blocks state-root repo-top nonneg-int safe-write cloud; do
+  [ -s "$ENGINE/tools/lib/$lib.sh" ] && bash -n "$ENGINE/tools/lib/$lib.sh" 2>/dev/null \
+    || die 2 "$ENGINE/tools/lib/$lib.sh is missing or corrupted — re-clone or re-download Keel"
   # shellcheck source=/dev/null
   . "$ENGINE/tools/lib/$lib.sh"
 done
@@ -72,7 +73,7 @@ else
   [ -n "$TICKET" ] || usage
 fi
 cloud_cell_ok "$TICKET" || die 2 "a ticket id holds no tab or newline"
-case "$CREDIT" in ''|*$'\t'*|*$'\n'*) die 2 "--credit-before takes a plain amount" ;; esac
+[ -n "$CREDIT" ] && cloud_cell_ok "$CREDIT" || die 2 "--credit-before takes a plain amount"
 
 STORE=""
 if [ -z "${CLOUD_LEDGER:-}" ] || [ -z "${CLOUD_BRIEF_DIR:-}" ]; then
@@ -84,16 +85,12 @@ CLOUD_TEMPLATE="$(abs "${CLOUD_TEMPLATE:-$ENGINE/templates/cloud-protocol.md}")"
 MAX_BYTES="${CLOUD_BRIEF_MAX_BYTES:-130000}"
 KEEL_ORIGIN="${CLOUD_KEEL_ORIGIN:-https://github.com/rockerlabs/keel}"
 SCANNER="$ENGINE/tools/secret-guard/secret-scan.sh"
-case "$MAX_BYTES" in ''|*[!0-9]*) die 2 "CLOUD_BRIEF_MAX_BYTES must be a number" ;; esac
+_nonneg_int_valid "$MAX_BYTES" || die 2 "CLOUD_BRIEF_MAX_BYTES must be a number"
 case "$KEEL_ORIGIN" in ''|*[[:space:]\'\"\`\$\\]*) die 2 "CLOUD_KEEL_ORIGIN must be a plain URL" ;; esac
 case "$KEEL_ORIGIN" in *://*|*@*:*) ;; *) KEEL_ORIGIN="$(abs "$KEEL_ORIGIN")" ;; esac
 
 # --- the project: its main checkout, the opt-in line, the GitHub repository ---------------------------------
-[ -d "$REPO_ARG" ] || die 2 "no directory $REPO_ARG"
-REPO_DIR="$(cd "$REPO_ARG" && pwd -P)" || die 2 "cannot enter $REPO_ARG"
-git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1 || die 2 "$REPO_DIR is not inside a git repository"
-MAIN="$(backlog_root_for "$REPO_DIR")"
-MAIN="$(cd "$MAIN" && pwd -P)" || die 2 "cannot resolve the main checkout of $REPO_DIR"
+cloud_resolve_main "$REPO_ARG" || die 2 "$CLOUD_ERR"
 
 today() { date +%F; }
 ORIGIN_URL="$(git -C "$MAIN" config --get remote.origin.url 2>/dev/null || true)"
@@ -164,13 +161,13 @@ if [ "$MODE" = sweep ]; then
     # Cells may be empty, and `read` collapses runs of a whitespace IFS: re-join on a unit separator first.
     while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_head; do
       [ "$r_repo" = "$OR" ] || continue
+      case "$r_status" in dispatched|landed) ;; *) continue ;; esac
+      pr="$(pr_of "$r_branch")"; label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
       case "$r_status" in
         dispatched)
-          pr="$(pr_of "$r_branch")"; label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
           printf '  dispatched\t%s\t%s\tsince %s (%s days)\t%s\n' "$r_ticket" "$r_branch" "$r_built" \
             "$(days_since "$r_built")" "$label" ;;
         landed)
-          pr="$(pr_of "$r_branch")"; label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
           if [ -n "$pr" ] && [ "${pr#* }" != "$r_head" ]; then state="STALE: the PR head is ${pr#* }, landed at $r_head"
           else state="current"; fi
           printf '  landed\t%s\t%s\t%s\t%s\n' "$r_ticket" "$r_branch" "$label" "$state" ;;
@@ -196,7 +193,7 @@ on_exit() {
 trap on_exit EXIT
 refuse() { die 3 "$TICKET refused: $1 — $2"; }
 
-cloud_personal_file || die 2 "no personal-literals list at $SECRET_SCAN_PERSONAL_FILE — the scan fails closed; set SECRET_SCAN_PERSONAL_FILE to your list (or to /dev/null to opt out)"
+cloud_personal_file || die 2 "$CLOUD_ERR"
 [ -f "$SCANNER" ] || die 2 "no scanner at $SCANNER"
 [ -f "$CLOUD_TEMPLATE" ] || die 2 "no protocol template at $CLOUD_TEMPLATE"
 
@@ -373,25 +370,25 @@ protocol=${protocol//"<keel-origin>"/"$KEEL_ORIGIN"}
 } > "$WORK/raw" || die 2 "cannot assemble the brief"
 
 # The home path in its three forms (the scanner does not catch a bare username, by design); the third occurs
-# only on macOS and is a no-op elsewhere.
-text="$(cat "$WORK/raw"; printf x)"
-text="${text%x}"
-if [ -n "${HOME:-}" ] && [ "$HOME" != / ]; then
-  text=${text//"$HOME"/"~"}
-fi
+# only on macOS and is a no-op elsewhere. One byte-wise awk pass: bash's own `${text//…}` on a brief holding
+# multibyte text costs time quadratic in its size (minutes near the byte cap on macOS).
+home="${HOME:-}"; [ "$home" != / ] || home=""
 user="$(id -un 2>/dev/null || true)"
-[ -z "$user" ] || text=${text//"-Users-$user-"/"-Users-x-"}
-scratch_root="/private/tmp/claude-$(id -u)/"
-text=${text//"$scratch_root"/"<tmp>/"}
-printf '%s' "$text" > "$WORK/brief" || die 2 "the home-path rewrite failed"
+CL_HOME="$home" CL_USER="${user:+-Users-$user-}" CL_SCRATCH="/private/tmp/claude-$(id -u)/" LC_ALL=C awk '
+  function rep(s, from, to,   out, i) {
+    if (from == "") return s
+    out = ""
+    while ((i = index(s, from)) > 0) { out = out substr(s, 1, i - 1) to; s = substr(s, i + length(from)) }
+    return out s
+  }
+  { print rep(rep(rep($0, ENVIRON["CL_HOME"], "~"), ENVIRON["CL_USER"], "-Users-x-"), ENVIRON["CL_SCRATCH"], "<tmp>/") }
+' "$WORK/raw" > "$WORK/brief" || die 2 "the home-path rewrite failed"
 
 BYTES="$(wc -c < "$WORK/brief" | tr -d ' ')"
 [ "$BYTES" -le "$MAX_BYTES" ] || refuse G6 "the brief is $BYTES bytes, over CLOUD_BRIEF_MAX_BYTES=$MAX_BYTES"
 
-mkdir "$WORK/empty"
-sed 's/secret-scan:allow/secret-scan-allow-stripped/g' "$WORK/brief" > "$WORK/scan-copy.md"
 scan_rc=0
-scan_out="$(cd "$WORK/empty" && bash "$SCANNER" -- "$WORK/scan-copy.md" 2>&1)" || scan_rc=$?
+scan_out="$(cloud_scan_file "$SCANNER" "$WORK/brief" "$WORK")" || scan_rc=$?
 if [ "$scan_rc" -ne 0 ]; then
   printf '%s\n' "$scan_out" >&2
   die 1 "$TICKET refused: the secret scan exited $scan_rc — nothing written"
@@ -434,7 +431,9 @@ LAND="$ENGINE/tools/cloud-land.sh $(printf '%q' "$MAIN") <PR#> --ticket $(printf
 SWEEP="$ENGINE/tools/cloud-brief.sh $(printf '%q' "$MAIN") --sweep"
 
 if [ "$MODE" != dispatch ]; then
-  [ "$MODE" != eligible ] || [ "$VERDICT" != none ] || printf '\nWrite this line into the ticket body, beside **Model rec:**:\n  **Cloud:** yes (%s, <who>)\n' "$(today)"
+  if [ "$MODE" = eligible ] && [ "$VERDICT" = none ]; then
+    printf '\nWrite this line into the ticket body, beside **Model rec:**:\n  **Cloud:** yes (%s, <who>)\n' "$(today)"
+  fi
   cat <<NEXT
 
 Dispatch, on the operator's yes (docs/cloud.md):
@@ -451,15 +450,13 @@ back_to_built() {
   cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$TICKET" 8=built || echo "cloud-brief: cannot set the row back to built" >&2
   cloud_ledger_unlock "$CLOUD_LEDGER"
 }
-cat > "$WORK/run-cli.sh" <<CLI
-cd $(printf '%q' "$MAIN") || exit 1
-exec claude --cloud "\$(cat $(printf '%q' "$DEST"))" --model $MODEL --effort $EFFORT
-CLI
+CLI_CMD="claude --cloud \"\$(cat $(printf '%q' "$DEST"))\" --model $MODEL --effort $EFFORT"
+printf 'cd %q || exit 1\nexec %s\n' "$MAIN" "$CLI_CMD" > "$WORK/run-cli.sh"
 cli_rc=0
 if ! command -v script >/dev/null 2>&1; then
   back_to_built
   die 5 "no \`script\` to give the CLI the terminal it requires — run this in a terminal, from $MAIN:
-  claude --cloud \"\$(cat $(printf '%q' "$DEST"))\" --model $MODEL --effort $EFFORT"
+  $CLI_CMD"
 fi
 case "$(uname -s)" in
   Darwin) script -q "$WORK/cli.out" bash "$WORK/run-cli.sh" < /dev/null > /dev/null 2>&1 || cli_rc=$? ;;
