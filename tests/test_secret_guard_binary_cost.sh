@@ -155,6 +155,7 @@ pers_start="$SANDBOX/personal.start"; printf '^zorbq\n' > "$pers_start"
 pers_end="$SANDBOX/personal.end"; printf 'zorbquux$\n' > "$pers_end"
 pers_esc="$SANDBOX/personal.esc"; printf 'zorb\\$quux\n' > "$pers_esc"
 pers_gnuwb="$SANDBOX/personal.gnuwb"; printf '\\<zorbquux\\>\n' > "$pers_gnuwb"
+pers_gnuend="$SANDBOX/personal.gnuend"; printf 'zorbquux\\'"'"'\n' > "$pers_gnuend"
 
 repo="$(range_blob_repo '\001\002zorbanchored\003\004\000tail')"
 SECRET_SCAN_PERSONAL_FILE="$pers_anchor" run_in "$repo" "$scan" --range HEAD~1..HEAD
@@ -175,6 +176,8 @@ SECRET_SCAN_PERSONAL_FILE="$pers_alt" run_in "$repo" "$scan" --range HEAD~1..HEA
 check_status "V7r: a (^|[^a-z])…(\$|[^a-z]) literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
 SECRET_SCAN_PERSONAL_FILE="$pers_gnuwb" run_in "$repo" "$scan" --range HEAD~1..HEAD
 check_status "V7r: a \\<…\\> word-boundary literal over --range → exit 1" 1 "$STATUS"
+SECRET_SCAN_PERSONAL_FILE="$pers_gnuend" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V7r: a GNU \\' end-of-buffer anchor literal over --range → exit 1" 1 "$STATUS"
 
 repo="$(range_blob_repo '\001\002zorbq-not-the-literal\003\000tail')"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --range HEAD~1..HEAD

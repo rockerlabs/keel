@@ -254,7 +254,7 @@ needle_wide() {
 # has_personal — at least one literal; personal_nonascii — one is wide (needle_wide: a non-ASCII byte, or an ERE
 # `.`/bracket/class escape that can stand for a non-ASCII letter), which skips --range's NUL-strip fast path and,
 # through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on emit_blob's built-in decoder.
-# personal_anchored — one holds an unescaped `^` or `$`, or a `\<` `\>` word boundary, which can match a printable run
+# personal_anchored — one holds an unescaped `^` or `$`, or a `\<` `\>` `` \` `` `\'` anchor, which can match a printable run
 # the NUL-stripped view joins to its neighbours; it skips --range's fast path too (dir #850) but, unlike a wide literal,
 # does not turn on the decoder.
 has_personal=""
@@ -269,7 +269,7 @@ if [ -n "$_personal_lines" ]; then
     if needle_wide "$_pl_line"; then personal_nonascii=1; fi
     _pl_stripped="${_pl_line//\\[![:alnum:]]/}"      # an escaped \^ or \$ is a literal, not an anchor
     case "$_pl_stripped" in *[\^\$]*) personal_anchored=1 ;; esac
-    case "$_pl_line" in *\\[\<\>]*) personal_anchored=1 ;; esac      # \< and \> are word boundaries; the strip above drops them
+    case "$_pl_line" in *\\[\<\>\`\']*) personal_anchored=1 ;; esac     # \< \> word boundaries, GNU \` \' buffer anchors; the strip above drops them
   done <<< "$_personal_lines"
 fi
 decode_nonascii="$personal_nonascii"
