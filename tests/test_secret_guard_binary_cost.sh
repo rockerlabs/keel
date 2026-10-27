@@ -121,6 +121,22 @@ else
   pass "V9 skipped (no UTF-8 locale on this host)"
 fi
 
+# the same multi-byte literal when the iconv sanitizer FAILS (the musl case): pu_grep must fall back to reading the run
+# file beside FILE, not drop it. A stub `iconv` that exits 1 makes that deterministic on any host; it still needs a
+# UTF-8 locale for the run to match, so it is skipped where the host has none (the alpine leg).
+if [ -n "$utf8_loc" ]; then
+  noic="$SANDBOX/noiconv"
+  mkdir -p "$noic"
+  printf '#!/bin/sh\nexit 1\n' > "$noic/iconv"
+  chmod +x "$noic/iconv"
+  anchored_blob "abc"
+  repo="$(blob_repo)"
+  SECRET_SCAN_PERSONAL_FILE="$pers_mb" run_in "$repo" env PATH="$noic:$PATH" LC_ALL="$utf8_loc" "$scan" --tracked
+  check_status "V10: ...and with a failing iconv sanitizer the run file is still read → exit 1" 1 "$STATUS"
+else
+  pass "V10 skipped (no UTF-8 locale on this host)"
+fi
+
 # --- (C) the bound ---------------------------------------------------------------------------------------------------
 # CEILING — seconds of CPU for the 20 MiB blob below, with two personal literals set. The scan measured ~55 s after
 # the fix (macOS, BSD grep) against ~217 s before it (~37 s and ~178 s with no personal literals); the ceiling sits
