@@ -125,13 +125,13 @@ verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one 
 G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
-is recorded as lost rather than invented. The same applies to that run's harvest, which the G4(c)
+is recorded as lost rather than invented. The same applies to that run's harvest, which G0's harvest
 paragraph below already owns — check it there, not twice. **The releases record's row is checked
 too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
 describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
-**Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip the
+**Degrade cleanly when it does not exist yet** (the aggregate), or where it was never installed: skip the
 read-trace inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
 mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
@@ -474,8 +474,8 @@ input is on the list:
 
 - **(a) The standing list.** Sub-bar `no-action` findings that name a real defect
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
-  an audit report body — that doc's own worked case is a defect noticed three separate times, each an aside in
-  an unrelated ticket's body, and never once scheduled. Keel's instance is a `## Standing list` section in
+  an audit report body — that doc's own worked case is a defect noticed three separate times, each an aside
+  in an unrelated ticket's body, and never once scheduled. Keel's instance is a `## Standing list` section in
   `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract.
   `commands/delta-audit.md`'s A6 already names that section and gives it its create-if-absent duty. A
   different project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a
