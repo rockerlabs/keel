@@ -367,6 +367,13 @@ run "$sd" "$d" --quiet
 check_status "an untested new tool trips the coverage ratchet -> exit 1" 1 "$STATUS"
 check_contains "still flags the orphan tool (that half stays advisory)" "$OUT" "orphan tool: no reference to $fake_orphan"
 check_contains "flags the ratchet GAP for zero test coverage" "$OUT" "ratchet (dir #142): $fake_orphan"
+# dir #886: an inherited pathspec mode must not blind the tracked-file scans (GLOB/ICASE rows are controls —
+# green either way on this fixture; LITERAL/NOGLOB read 'tools/*.sh' as a file name and lose the orphan).
+for pv886 in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do
+  run env "$pv886=1" "$sd" "$d" --quiet
+  check_status "dir #886: $pv886=1 still trips the coverage ratchet -> exit 1" 1 "$STATUS"
+  check_contains "dir #886: $pv886=1 still flags the ratchet GAP" "$OUT" "ratchet (dir #142): $fake_orphan"
+done
 
 # the same script, but LISTED in tools/self/legacy-untested.txt -> the soft-debt half of the ratchet:
 # WARN, not a hard GAP.

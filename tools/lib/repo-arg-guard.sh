@@ -61,6 +61,9 @@
 # to a `return` on the theory that the caller's `set -e` will catch it — a `return` value consumed
 # inside any of those exempted contexts would silently swallow the failure instead.
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# A second guard, not part of the repo-selector line above (dir #886): a pathspec mode (what a pattern means)
+# is a different class from a repo selector (which repo). Scripts that pass pathspecs inline it too.
+unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
 
 # keel_repo_arg_guard REPO — exit 2 with "not a git repo: REPO" (unchanged wording — the exact message
 # every caller printed before this file existed) if REPO is not a git repository. The env sanitizing
