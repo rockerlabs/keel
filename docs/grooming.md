@@ -11,8 +11,8 @@ doc is what gives that work one owner and one place to read it.
 
 **This is a doc, not a tool.** [`commands/groom.md`](../commands/groom.md) is a thin entrypoint over
 it — a checklist that resolves the target and runs the loop — the same split
-[`docs/release-management.md`](release-management.md) and [`docs/drydock.md`](drydock.md) use for
-their own procedure-plus-entrypoint shape. The doc is canonical; the command points at it. *(On an
+[`docs/release-management.md`](release-management.md) uses for its own
+procedure-plus-entrypoint shape. The doc is canonical; the command points at it. *(On an
 install where the adopter already owns the `/groom` name, `install.sh`'s generic collision-alias
 mechanism ships this command under the prefixed name keel-groom instead — same file, same behavior, no
 separate wiring.)*
@@ -61,7 +61,7 @@ denominator. So state the sensor's coverage before quoting
 either figure, and treat a surprising number as a question about the instrument first — that check is
 cheap, and it is also how the aggregate's own defects get found, which is what a first consuming cycle
 is for. **The instrument now says it itself:** `dir #430` and `dir #431`, both filed by the cycle
-described above, shipped this release. `tools/read-trace.sh aggregate` prints its own coverage
+described above, shipped in 0.9.1. `tools/read-trace.sh aggregate` prints its own coverage
 disclosure unconditionally, every run — the reads-column's per-session (not per-call) denominator and
 the harness-injected/shell-read blind spot named explicitly — and the worktree-path fragmentation that
 also produced this paragraph's three-gap finding is fixed structurally (a worktree session's reads now
@@ -75,8 +75,8 @@ evidence of felt pain than a `stated` one: the pain may recur only because the p
 kept proposing it, so a proposal repeated is not a pain persisting. A live re-check that still fails
 counts for either provenance, as the re-verification rule below requires.
 
-**An empty aggregate is the "surprising number" the paragraph above already tells you to treat as a
-question about the instrument — and the commonest answer is a rotation, not a dead tree.** Where the
+**An empty aggregate is the "surprising number" the coverage paragraph above already tells you to treat as
+a question about the instrument — and the commonest answer is a rotation, not a dead tree.** Where the
 read trace archives its logs at a release boundary, the cycle G0 exists to look at is in the archive by
 the time the next groom runs, and what the tool reports is the handful of hours since. **This is not a
 degraded sensor and must not be read as one: the data is intact.** The first groom to hit it recovered
@@ -125,14 +125,14 @@ verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one 
 G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
-is recorded as lost rather than invented. The same applies to that run's harvest, which the paragraph
-below already owns — check it there, not twice. **The releases record's row is checked
+is recorded as lost rather than invented. The same applies to that run's harvest, which the harvest
+paragraph below already owns — check it there, not twice. **The releases record's row is checked
 too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
 describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
 **Degrade cleanly when it does not exist yet**, or on a project that never installed it: skip both
-inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
+read-trace inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
 mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
 missing sensor. The first `/groom` run met exactly that: the fuses had
@@ -466,15 +466,16 @@ settled fact.
   byte, so take that copy before the first write. A compensation, since no checked writer has shipped;
   its remover is the parked `dir #193`, backlog writes as a mechanized guarantee.
 
-**Plus the accumulator triage** — three places findings and ideas already pile up and, without a named
+**Plus the accumulator triage** — four places findings and ideas already pile up and, without a named
 owner, never become anything. Inputs (a) and (b), plus the project's learnings file, run under `/triage`
 per [`triage.md`](triage.md) — called by reference, never restated here (its verdicts, bound and
-horizon live there); (c) is unchanged. What stays here is why each input is on the list:
+horizon live there); (c) is unchanged, and the groom triages (d) itself. What stays here is why each
+input is on the list:
 
 - **(a) The standing list.** Sub-bar `no-action` findings that name a real defect
   (`docs/verification-economics.md` §4's filing bar) belong on a durable, re-read list, never only in
-  an audit report body — that doc's own worked case is a defect noticed three separate times, in three
-  different report bodies, and never once scheduled. Keel's instance is a `## Standing list` section in
+  an audit report body — that doc's own worked case is a defect noticed three separate times, each an aside in
+  an unrelated ticket's body, and never once scheduled. Keel's instance is a `## Standing list` section in
   `BACKLOG.md` itself, the file this procedure already re-reads every cycle by contract.
   `commands/delta-audit.md`'s A6 already names that section and gives it its create-if-absent duty. A
   different project names its own durable, re-read list here instead — a `KNOWN ISSUES` section, a
@@ -490,13 +491,13 @@ horizon live there); (c) is unchanged. What stays here is why each input is on t
   ends with "out of scope / follow-ups to file at close" — a deferred filing that assumes the
   *implementing* session will do bookkeeping at the moment (`/polish` → PR → close) it is least likely
   to, and that R8 centralizes away from workers in a managed release anyway. Any groom that runs between
-  a spec and its implementation triages that list the same way as (a)–(c): each item becomes a ticket
+  a spec and its implementation triages that list itself: each item becomes a ticket
   (with its re-open trigger on the row), a cross-write into the ticket that already owns it, or a drop
   with a one-line reason — and the spec's list is then annotated "all filed" so the implementer files
   nothing. The first groom to do this found six items on one spec: three tickets, three cross-writes,
   zero drops.
 
-## G5 — every release row, five fields
+## G5 — every release row, seven fields and two report fields
 
 Name, the pain it answers (G1) with its provenance, a derived ticket list (G3), its size measured against the project's own
 per-release band, and named risks are the baseline fields any release row needs. Two more, sized from
@@ -575,8 +576,8 @@ on dir #855's turn cut. That combined figure is about 15% of that release's non-
 whole (360.5M), the audit untouched. A rule of the procedure, not a compensation.
 
 **When the operator's binding limit is a subscription window, state the estimate in window points
-too, as the gauge's start and end, and name the ratio it was converted at (the same groom; the form,
-the 0.17.0 re-cut).** A weighted figure alone does not say
+too, as the gauge's start and end, and name the ratio it was converted at (the 0.16.0 groom, reading
+the 0.15.0 row; the form, the 0.17.0 re-cut).** A weighted figure alone does not say
 whether a release fits the window it has to run in. 0.15.0 moved the weekly all-models window from 47%
 to 77% for 246.5M weighted, about 8.2M a point; its manager's intake calibration had assumed 10M a
 point, so it under-read the draw by about a fifth. The ratio is a release-wide average and errs low: the
@@ -735,7 +736,7 @@ shipped conventions:
   so) — the plan table is the assignment source and the census is the substitute for the tag read:
   the open set from the headings by the closure marker at a fixed position, the assignment from the
   table, and the reconciliation both ways (every open ticket in exactly one row; every row entry an
-  open ticket) with the three zero-checks G3 already names. The plan says it is doing this and why,
+  open ticket). The plan says it is doing this and why,
   and names the ticket that owns where a ticket lives (there, KB.118) — a table is a compensation
   for a tag the file cannot carry yet, not a second convention.
 - **A release-plan table or section** (keel keeps its plans in `RELEASES.md`, a sibling of
