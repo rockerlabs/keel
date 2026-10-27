@@ -12,13 +12,15 @@
 # of `git worktree list`. <ticket-id> is spelled as its backlog heading spells it (`dir #801`, `KB.34`) — quote it.
 #   (no mode)    build: write the brief and a `built` ledger row.
 #   --check      every row the tool can run (G9 aside), the brief assembled, sized and scanned in a temporary
-#                directory; writes nothing. Its last stdout line is `cloud-check: <exit> <ticket> <main HEAD>`.
+#                directory; writes nothing. Its last stdout line is `cloud-check: <exit> <ticket> <main HEAD>`
+#                (`?` for no ticket, `none` for no HEAD) — on every exit once `--check` was read, a usage error's too.
 #   --eligible   build a ticket that has no verdict yet, the judged rows confirmed; prints the `yes` line to
 #                write into the ticket.
 #   --dispatch   build, check G9, write the row as `dispatched`, run `claude --cloud` from the main checkout
 #                under a pseudo-terminal (the CLI refuses to run without one), print the claim to write.
 #   --sweep      read-only: every open R3/R4/📐 ticket with its verdict, and this repository's dispatched and
 #                landed ledger rows with their pull requests.
+#   --out FILE   write the brief to FILE, a regular file (a FIFO or /dev/stdout is refused), not the brief dir.
 # The tool never writes the backlog and never pushes.
 #
 # Exit: 0 done · 1 the secret scan refused the brief · 2 usage, not found, a gh/git failure, the ledger lock ·
@@ -53,6 +55,17 @@ usage() {
        cloud-brief.sh <repo> --sweep"
 }
 REPO_ARG="" TICKET="" MODE=build REDISPATCH="" CREDIT="?" OUT=""
+WORK="" MAIN=""
+on_exit() { # --check's receipt comes on every exit once `--check` was read, a usage error's too
+  local rc=$? head=none
+  [ -z "$WORK" ] || rm -rf "$WORK"
+  if [ "$MODE" = check ]; then
+    [ -z "$MAIN" ] || head="$(git -C "$MAIN" rev-parse HEAD 2>/dev/null)" || head=none
+    printf 'cloud-check: %s %s %s\n' "$rc" "${TICKET:-?}" "$head"
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
 set_mode() { [ "$MODE" = build ] || usage; MODE="$1"; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,18 +81,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-
-WORK="" MAIN=""
-on_exit() { # --check's receipt comes on every exit after the arguments parsed, an early refusal's too
-  local rc=$? head=none
-  [ -z "$WORK" ] || rm -rf "$WORK"
-  if [ "$MODE" = check ]; then
-    [ -z "$MAIN" ] || head="$(git -C "$MAIN" rev-parse HEAD 2>/dev/null)" || head=none
-    printf 'cloud-check: %s %s %s\n' "$rc" "$TICKET" "$head"
-  fi
-  exit "$rc"
-}
-trap on_exit EXIT
 
 [ -n "$REPO_ARG" ] || usage
 if [ "$MODE" = sweep ]; then
@@ -152,10 +153,14 @@ pr_of() { # BRANCH → "<number> <head sha>" of the newest PR from it, or nothin
 noon_epoch() { # YYYY-MM-DD → the epoch second of local noon that day (GNU/busybox date, else BSD)
   date -d "$1 12:00:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1 12:00:00" +%s 2>/dev/null
 }
-days_since() { # YYYY-MM-DD → whole days to today; both read at local noon and rounded, so no zone or DST shifts it
-  local s now
-  s="$(noon_epoch "$1")" && now="$(noon_epoch "$(today)")" || { echo "?"; return; }
-  echo $(( (now - s + 43200) / 86400 ))
+# days_since YYYY-MM-DD — whole days from it to today (NOON_TODAY, set once by the sweep); both read at local noon
+# and rounded half away from zero, so no zone or DST shifts it and a date one day ahead reads -1, not 0.
+NOON_TODAY=""
+days_since() {
+  local s d
+  [ -n "$NOON_TODAY" ] && s="$(noon_epoch "$1")" || { echo "?"; return; }
+  d=$((NOON_TODAY - s))
+  if [ "$d" -ge 0 ]; then echo $(( (d + 43200) / 86400 )); else echo $(( -((43200 - d) / 86400) )); fi
 }
 if [ "$MODE" = sweep ]; then
   printf 'cloud sweep: %s (%s)\n' "$MAIN" "${OR:-origin is not a github.com repository}"
@@ -176,15 +181,15 @@ if [ "$MODE" = sweep ]; then
   printf 'dispatches (ledger %s):\n' "$CLOUD_LEDGER"
   gh_failed=""
   if [ -f "$CLOUD_LEDGER" ] && [ -n "$OR" ]; then
+    NOON_TODAY="$(noon_epoch "$(today)")" || NOON_TODAY=""
     # Cells may be empty, and `read` collapses runs of a whitespace IFS: re-join on a unit separator first.
     while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_exit r_head; do
       [ "$r_repo" = "$OR" ] || continue
       case "$r_status" in dispatched|landed) ;; *) continue ;; esac
-      pr_known=1
       if pr="$(pr_of "$r_branch")"; then
         label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
       else
-        pr_known="" gh_failed=1 pr="" label="PR unknown (gh failed)"
+        gh_failed=1 pr="?" label="PR unknown (gh failed)" # `?`: no "<number> <sha>" pair is ever one word
       fi
       case "$r_status" in
         dispatched)
@@ -193,7 +198,7 @@ if [ "$MODE" = sweep ]; then
         landed)
           # A failed re-run records its head but leaves the row landed: its exit cell flags it.
           if [ -n "$r_exit" ] && [ "$r_exit" != 0 ]; then state="STALE: the last landing check exited $r_exit"
-          elif [ -z "$pr_known" ]; then state="unknown"
+          elif [ "$pr" = "?" ]; then state="unknown"
           elif [ -n "$pr" ] && [ "${pr#* }" != "$r_head" ]; then state="STALE: the PR head is ${pr#* }, landed at $r_head"
           else state="current"; fi
           printf '  landed\t%s\t%s\t%s\t%s\n' "$r_ticket" "$r_branch" "$label" "$state" ;;
@@ -238,10 +243,15 @@ while IFS=$'\t' read -r b_start b_end _ b_heading; do
   case "$b_heading" in "### $TICKET — "*) START="$b_start"; END="$b_end"; HEADING="$b_heading"; break ;; esac
 done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
-# The last block's END counts the fence-blanked text, whose trailing blank lines (a closing fenced block's, blanked)
-# a command substitution dropped: a block that ends there runs to the file's own last line.
+# The last block's END counts the fence-blanked text, whose trailing blank lines a command substitution dropped —
+# a closing fenced block's, blanked, or everything after an unclosed fence. A block that ends there runs to the
+# file's own last line, unless a backlog heading (`### `, `## `) follows END in the raw text: then an unclosed fence
+# hid it, and the block keeps its END rather than carry the tickets and sections after it.
 blanked_all="$(blank_fenced_blocks "$BACKLOG")"
-[ "$END" -lt "$(grep -c '' <<< "$blanked_all")" ] || END="$(awk 'END { print NR }' "$BACKLOG")"
+if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
+  after_end="$(tail -n +"$((END + 1))" "$BACKLOG")"
+  grep -qE '^(##|###) ' <<< "$after_end" || END="$(awk 'END { print NR }' "$BACKLOG")"
+fi
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
 
@@ -264,19 +274,22 @@ case "$VERDICT" in
   malformed*) refuse G2b "a malformed verdict: ${VERDICT#malformed } (docs/cloud.md: one line, yes or no — <row>)" ;;
 esac
 
-# G7: the first token after `Spec:` names a file in the main checkout — never one outside it (a `..` component, an
-# absolute path, or a directory symlinked out: the brief would carry that file to the VM).
+# G7: the first token after `Spec:` names a file in the main checkout, which the brief carries to the VM — so never
+# an absolute path, a file whose PHYSICAL directory lies outside $MAIN (a `..` that climbs out, a directory symlinked
+# out), a file that is itself a symlink, or anything under a `.git` directory (the repository's config, its auth).
+# A `..` that stays inside is no refusal: the physical directory decides.
 SPEC_REL="" SPEC_FILE=""
 SPEC_LINE="$(grep -m1 -E '^(\*\*)?Spec:(\*\*)?[[:space:]]' <<< "$BLANKED" | tr -d '\r' || true)"
 if [ -n "$SPEC_LINE" ]; then
   SPEC_REL="$(sed -E 's/^(\*\*)?Spec:(\*\*)?[[:space:]]+//' <<< "$SPEC_LINE" | awk '{print $1}' | tr -d '`')"
   SPEC_FILE="$MAIN/$SPEC_REL"
   case "$SPEC_REL" in /*) refuse G7 "Spec: $SPEC_REL is outside $MAIN" ;; esac
-  case "/$SPEC_REL/" in */../*) refuse G7 "Spec: $SPEC_REL is outside $MAIN" ;; esac
+  case "/$SPEC_REL/" in */.git/*) refuse G7 "Spec: $SPEC_REL is inside a .git directory" ;; esac
   [ -n "$SPEC_REL" ] && [ -f "$SPEC_FILE" ] || refuse G7 "Spec: ${SPEC_REL:-?} is not a file in $MAIN"
-  [ ! -L "$SPEC_FILE" ] || refuse G7 "Spec: $SPEC_REL is a symlink, which may lead outside $MAIN"
-  spec_dir="$(CDPATH='' cd -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
-  case "$spec_dir/" in "$MAIN"/*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
+  [ ! -L "$SPEC_FILE" ] || refuse G7 "Spec: $SPEC_REL is a symlink"
+  spec_dir="$(CDPATH='' cd -P -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
+  case "$spec_dir/" in "${MAIN%/}/"*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
+  case "${spec_dir#"${MAIN%/}"}/" in */.git/*) refuse G7 "Spec: $SPEC_REL is inside a .git directory (its directory is $spec_dir)" ;; esac
 fi
 
 # G8 (its two mechanical phrases), then the model mapping.
@@ -328,8 +341,12 @@ gh_or_refuse() { # ROW WHAT ARGS... — gh api's stdout; 404/403 refuses ROW, an
 }
 DEFAULT="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq .default_branch)" || exit $?
 [ -n "$DEFAULT" ] || die 2 "gh api gave no default branch for $OR"
-# The name goes unquoted into the VM's shell commands (the protocol's <default>): plain ref characters only.
-case "$DEFAULT" in *[!A-Za-z0-9._/-]*) die 2 "gh api gave the default branch name '$DEFAULT' for $OR — outside [A-Za-z0-9._/-]" ;; esac
+# The name goes unquoted into the VM's shell commands (the protocol's <default>): ref characters a shell passes as
+# they are, spelled out — a bracket range follows the locale's collation in bash 3.2.
+case "$DEFAULT" in
+  *[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/+-]*)
+    refuse G1 "the default branch name '$DEFAULT' has a character the cloud protocol cannot pass to a shell" ;;
+esac
 LEVEL="$(gh_or_refuse G1b "the protection of $OR:$DEFAULT" "repos/$OR/branches/$DEFAULT" \
   --jq '.protection.required_status_checks.enforcement_level // ""')" || exit $?
 if [ "$LEVEL" != everyone ] && [ -z "$UNPROTECTED_OK" ]; then
@@ -393,45 +410,79 @@ part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a n
   printf '%s\n' "$protocol"
   echo "=== ticket ==="
   printf '%s\n' "$BLOCK"
-  if [ -n "$SPEC_FILE" ]; then echo "=== spec ==="; part "$SPEC_FILE"; fi
+  # A part that cannot be read stops the build (the group runs in this shell: `die` exits the tool).
+  if [ -n "$SPEC_FILE" ]; then echo "=== spec ==="; part "$SPEC_FILE" || die 2 "cannot read $SPEC_FILE"; fi
   echo "=== rails ==="
-  [ ! -f "$MAIN/CLAUDE.md" ] || part "$MAIN/CLAUDE.md"
+  [ ! -f "$MAIN/CLAUDE.md" ] || part "$MAIN/CLAUDE.md" || die 2 "cannot read $MAIN/CLAUDE.md"
   echo "=== end of brief ==="
 } > "$WORK/raw" || die 2 "cannot assemble the brief"
 
-# The home path in each form a brief carries it (the scanner does not catch a bare username, by design), for $HOME
-# and its physical path when that differs, the longer first (one may hold the other): the path itself → `~`;
-# Claude Code's project-directory name for it — every `/` and `.` → `-`, as tools/lib/transcript-usage.sh's
-# tu_project_slug — plus `-` → `-Users-x-`; then the session scratch roots → `<tmp>/`, the longer first.
-# rewrite FROM TO [FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order. One
-# byte-wise awk pass: bash's own `${text//…}` on a brief holding multibyte text costs time quadratic in its size
-# (minutes near the byte cap on macOS). A subshell, so the pairs never reach the CLI's environment.
+# The home path in each form a brief carries it (the scanner does not catch a bare username, by design). The homes:
+# $HOME and the passwd entry's home (HOME may be unset, or `/`), each with its physical path, every one without its
+# trailing `/`, `/` itself and duplicates dropped, all of them longer first (one may hold another). For each:
+#   - the path itself → `~`, wherever it occurs (privacy first: HOME=/root also turns `/rootfs` into `~fs`, and
+#     a sibling `/Users/alice2` becomes `~2` — the login never survives as a prefix);
+#   - Claude Code's project-directory name for it → `-Users-x`. The CLI's encoder turns every character outside
+#     [A-Za-z0-9] into `-` (`replace(/[^a-zA-Z0-9]/g, "-")`); this one works per byte, so a non-ASCII home comes
+#     out longer than the CLI's (one `-` per UTF-16 unit there) and goes unrewritten — a known limit. The name is
+#     matched only where it starts a token (the byte before it is not one of [A-Za-z0-9-]), so `-Users-alice/…`,
+#     `-Users-alice-proj` and a sibling's `-Users-alice2-…` (→ `-Users-x2-…`) are rewritten, while HOME=/root's
+#     `-root` never hits `state-root-migrate`, `non-root-user` or `claude/cloud-root-12`.
+# Then the session scratch roots → `<tmp>/`, the longer first.
+# rewrite MODE FROM TO [MODE FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order;
+# MODE `p` replaces every occurrence, `a` only one that starts a token (above). One byte-wise awk pass: bash's own
+# `${text//…}` on a brief holding multibyte text costs time quadratic in its size (minutes near the byte cap on
+# macOS). A subshell, so the pairs never reach the CLI's environment.
 rewrite() (
   i=0
-  while [ $# -ge 2 ]; do
-    [ -z "$1" ] || { i=$((i + 1)); export "CL_FROM_$i=$1" "CL_TO_$i=$2"; }
-    shift 2
+  while [ $# -ge 3 ]; do
+    [ -z "$2" ] || { i=$((i + 1)); export "CL_MODE_$i=$1" "CL_FROM_$i=$2" "CL_TO_$i=$3"; }
+    shift 3
   done
   CL_PAIRS="$i" LC_ALL=C awk '
-    function rep(s, from, to,   out, i) {
-      out = ""
-      while ((i = index(s, from)) > 0) { out = out substr(s, 1, i - 1) to; s = substr(s, i + length(from)) }
+    function rep(s, from, to, alone,   out, i, n, prev, b) {
+      out = ""; n = length(from); prev = ""
+      while ((i = index(s, from)) > 0) {
+        if (alone) {
+          b = (i > 1) ? substr(s, i - 1, 1) : prev
+          if (b ~ /[A-Za-z0-9-]/) {
+            out = out substr(s, 1, i); prev = substr(s, i, 1); s = substr(s, i + 1); continue
+          }
+        }
+        out = out substr(s, 1, i - 1) to; prev = substr(from, n, 1); s = substr(s, i + n)
+      }
       return out s
     }
-    BEGIN { n = ENVIRON["CL_PAIRS"] + 0; fp = "CL_FROM_"; tp = "CL_TO_" }
-    { for (k = 1; k <= n; k++) $0 = rep($0, ENVIRON[fp k], ENVIRON[tp k]); print }'
+    BEGIN { n = ENVIRON["CL_PAIRS"] + 0; mp = "CL_MODE_"; fp = "CL_FROM_"; tp = "CL_TO_" }
+    { for (k = 1; k <= n; k++) $0 = rep($0, ENVIRON[fp k], ENVIRON[tp k], ENVIRON[mp k] == "a"); print }'
 )
-home_a="${HOME:-}"; [ "$home_a" != / ] || home_a=""
-home_b=""; [ -z "$home_a" ] || home_b="$(CDPATH='' cd -- "$home_a" 2>/dev/null && pwd -P)" || home_b=""
-[ "$home_b" != "$home_a" ] && [ "$home_b" != / ] || home_b=""
-if [ "${#home_b}" -gt "${#home_a}" ]; then h="$home_a"; home_a="$home_b"; home_b="$h"; fi
-slug_a="" slug_b=""
-[ -z "$home_a" ] || slug_a="$(printf '%s' "$home_a" | tr '/.' '--')-"
-[ -z "$home_b" ] || slug_b="$(printf '%s' "$home_b" | tr '/.' '--')-"
+# passwd_home — the passwd entry's home: `~` with HOME unset (bash then reads the entry), when absolute.
+passwd_home() ( unset HOME; h=~; case "$h" in /*) printf '%s' "$h" ;; esac )
+homes=""
+add_home() { # PATH — add PATH, trailing slashes dropped, to the newline-separated list $homes; `/` and repeats skipped
+  local h="$1"
+  while [ "${h%/}" != "$h" ]; do h="${h%/}"; done
+  [ -n "$h" ] || return 0
+  case $'\n'"$homes" in *$'\n'"$h"$'\n'*) return 0 ;; esac
+  homes="$homes$h"$'\n'
+}
+for h in "${HOME:-}" "$(passwd_home)"; do
+  add_home "$h"
+  [ -z "$h" ] || add_home "$(CDPATH='' cd -P -- "$h" 2>/dev/null && pwd -P)"
+done
+pairs=()
+while IFS= read -r h; do
+  [ -z "$h" ] || pairs+=(p "$h" '~')
+done < <(printf '%s' "$homes" | LC_ALL=C awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)
+# The encoding keeps every byte's place, so the names come in the paths' own longer-first order.
+n_paths="${#pairs[@]}" k=1
+while [ "$k" -lt "$n_paths" ]; do
+  pairs+=(a "$(printf '%s' "${pairs[$k]}" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')" -Users-x)
+  k=$((k + 3))
+done
 uid="$(id -u)"
-rewrite "$home_a" '~' "$home_b" '~' "$slug_a" -Users-x- "$slug_b" -Users-x- \
-  "/private/tmp/claude-$uid/" '<tmp>/' "/tmp/claude-$uid/" '<tmp>/' < "$WORK/raw" > "$WORK/brief" \
-  || die 2 "the home-path rewrite failed"
+rewrite ${pairs[@]+"${pairs[@]}"} p "/private/tmp/claude-$uid/" '<tmp>/' p "/tmp/claude-$uid/" '<tmp>/' \
+  < "$WORK/raw" > "$WORK/brief" || die 2 "the home-path rewrite failed"
 
 BYTES="$(wc -c < "$WORK/brief" | tr -d ' ')"
 [ "$BYTES" -le "$MAX_BYTES" ] || refuse G6 "the brief is $BYTES bytes, over CLOUD_BRIEF_MAX_BYTES=$MAX_BYTES"

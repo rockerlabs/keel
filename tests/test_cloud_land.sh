@@ -106,6 +106,13 @@ check_contains "A4 the ready line names the repo" "$OUT" "gh pr ready 5 --repo e
 check_contains "A4 the Landing notes are shown" "$OUT" "- PR #5 from claude/cloud-dir-801"
 check_contains "A4 the PR was read from the row's repository" "$(cat "$GH_FX/calls")" "pr view 5 --repo example/proj"
 
+# A caller environment that forces gh's color or TTY (the stub then colorizes its JSON, as gh does) still reads
+# plain JSON.
+CLICOLOR_FORCE=1 run "$LAND" "$P" 5
+check_status "A4 CLICOLOR_FORCE=1 in the caller's environment → still exit 0" 0 "$STATUS"
+GH_FORCE_TTY=1 run "$LAND" "$P" 5
+check_status "A4 GH_FORCE_TTY=1 in the caller's environment → still exit 0" 0 "$STATUS"
+
 # A landed row re-run at a later head with CI red stays landed, its exit and head updated, its landed date kept.
 set_cell example/proj 'dir #801' 11 2026-01-01
 git -C "$P" checkout -q claude/cloud-dir-801
@@ -244,6 +251,48 @@ pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
 run "$LAND" "$P" 5
 check_status "A4 an added marker in a file the default branch marks -diff → exit 1" 1 "$STATUS"
 
+# An orphan root commit merged into the branch: its patch is read whatever the caller's log.showRoot (the merge's
+# own --cc diff does not carry a line taken unchanged from one parent).
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+blob="$(printf 'key %s # %s\n' "$TOKEN" "$ALLOW_MARK" | git -C "$P" hash-object -w --stdin)"
+root="$(git -C "$P" commit-tree -m "orphan root" "$(printf '100644 blob %s\troot.txt\n' "$blob" | git -C "$P" mktree)")"
+git -C "$P" checkout -q claude/cloud-dir-801
+git -C "$P" merge -q --allow-unrelated-histories -m "merge orphan" "$root"
+git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+TIP="$(git -C "$P" rev-parse HEAD)"
+git -C "$P" checkout -q main
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+git config --global log.showRoot false
+run "$LAND" "$P" 5
+git config --global --unset log.showRoot
+check_status "A4 a marker in a merged orphan root commit under log.showRoot=false → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
+# A byte that is not valid UTF-8 before the marker does not hide it under a UTF-8 locale.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit latin1.txt "$(printf 'caf\351 key %s # %s' "$TOKEN" "$ALLOW_MARK")" "latin1"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+utf8_locale="$(pick_utf8_locale)" || utf8_locale="en_US.UTF-8"
+LC_ALL="$utf8_locale" run "$LAND" "$P" 5
+check_status "A4 a marker after an invalid UTF-8 byte, under $utf8_locale → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
+# A commit that only renames a file to a path carrying the marker (rename detection would show no `+++` line).
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+git -C "$P" checkout -q claude/cloud-dir-801
+git -C "$P" mv work.txt "work-$ALLOW_MARK.txt"
+git -C "$P" commit -qm "rename"
+git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+TIP="$(git -C "$P" rev-parse HEAD)"
+git -C "$P" checkout -q main
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a pure rename to a path carrying the marker → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
 # A tag named like the remote-tracking branch cannot shadow the range.
 fx
 row example/proj "dir #801" claude/cloud-dir-801 dispatched
@@ -297,6 +346,15 @@ check_status "A4 a row whose branch differs is not found by branch → exit 2" 2
 run "$LAND" "$P" 5 --ticket "dir #801"
 check_status "A4 --ticket binds a row whose branch cell differs → 0" 0 "$STATUS"
 check_eq "A4 … and corrects its branch cell" "claude/cloud-dir-801" "$(cell example/proj 'dir #801' 4)"
+
+# A non-zero run records only the landing exit, head SHA and PR: the branch cell is corrected on exit 0 only (B14).
+fx
+row example/proj "dir #801" claude/harness-named dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$RED"
+run "$LAND" "$P" 5 --ticket "dir #801"
+check_status "A4 --ticket, CI red → exit 3" 3 "$STATUS"
+check_eq "A4 … the branch cell is left as it was" "claude/harness-named" "$(cell example/proj 'dir #801' 4)"
+check_eq "A4 … the PR is recorded" "5" "$(cell example/proj 'dir #801' 14)"
 
 # Ticket ids compare as strings: 2.1 is not 2.10.
 fx

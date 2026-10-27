@@ -7,22 +7,22 @@
 #
 # <repo> is any path inside the project; its `origin` names the GitHub repository, which must equal the ledger
 # row's repo cell. The row is found by the PR's head branch, or by --ticket when the session pushed another
-# branch (the row's branch cell is then corrected). The scans are decided BEFORE CI is read:
+# branch (an exit 0 then corrects the row's branch cell). The scans are decided BEFORE CI is read:
 #   1. in a fresh full clone without tags (never the project's checkout), the fetched branch tip must equal the
 #      PR's head SHA, and keel's scanner `--range refs/remotes/origin/<default>..refs/remotes/origin/<branch>`
 #      must exit 0 (keys, personal literals, session trailers in commit messages);
 #   2. the PR title + body must pass the scanner's file mode (marker defanged, from an empty directory) and a
 #      grep for a session URL or a `-Session:` line, which file mode does not look for;
-#   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv) and no line of any
-#      commit message in the range may carry the scanner's inline allow marker.
-# Then CI: a non-empty check rollup, every check completed and successful, and at least one succeeded (a
-# rollup of skipped checks is not green).
+#   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv, the root commit's
+#      included) and no line of any commit message in the range may carry the scanner's inline allow marker.
+# Then CI: every check in the rollup completed as a success, neutral or skipped (a commit status: a success), and
+# at least one succeeded — so an empty or all-skipped rollup is not green.
 #
 # Exit: 0 scans clean and CI green · 1 a scan hit or a scan error · 2 usage, a gh failure, no ledger row, a
 # repository mismatch, a PR whose base is not the default branch · 3 CI not green, or the branch moved after the
-# PR was read. A run that found its row records its landing exit, head SHA, PR and branch; only exit 0 sets the
-# status to `landed` and the landed date — "the check passed at that head", not "merged". No merge without an
-# exit 0 for the exact head SHA merged: the printed merge command pins it.
+# PR was read. A run that found its row records its landing exit, head SHA and PR; only exit 0 also corrects the
+# branch and sets the status to `landed` and the landed date — "the check passed at that head", not "merged". No
+# merge without an exit 0 for the exact head SHA merged: the printed merge command pins it.
 #
 # Env (relative values are made absolute against the start directory): CLOUD_LEDGER
 # ($(keel_store_root cloud)/ledger.tsv) · CLOUD_ORIGIN (unset: https://github.com/<repo cell>.git; tests point it
@@ -110,9 +110,9 @@ ROW_REPO="${KEY%%$'\t'*}" ROW_TICKET="${KEY#*$'\t'}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cloud-land.XXXXXX")" || die 2 "mktemp failed"
 trap 'rm -rf "$WORK"' EXIT
 
-finish() { # EXIT — record this run on the row, then exit; the status and the landed date only on exit 0
-  local cells=("4=$BRANCH" "12=$1" "13=$HEAD_OID" "14=$PR")
-  [ "$1" -ne 0 ] || cells+=("8=landed" "11=$(date +%F)")
+finish() { # EXIT — record this run on the row, then exit; the branch, status and landed date only on exit 0 (B14)
+  local cells=("12=$1" "13=$HEAD_OID" "14=$PR")
+  [ "$1" -ne 0 ] || cells+=("4=$BRANCH" "8=landed" "11=$(date +%F)")
   if cloud_ledger_lock "$CLOUD_LEDGER"; then
     cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$ROW_TICKET" "${cells[@]}" || echo "cloud-land: cannot update the ledger row" >&2
     cloud_ledger_unlock "$CLOUD_LEDGER"
@@ -128,6 +128,7 @@ CLONE_URL="${CLOUD_ORIGIN:-https://github.com/$OR.git}"
 case "$CLONE_URL" in *://*|*@*:*) ;; *) CLONE_URL="$(abs "$CLONE_URL")" ;; esac
 SCAN_FAIL=""
 CLONE="$WORK/clone"
+RANGE="refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH"
 # No tags (a tag named `origin/<branch>` would shadow the remote-tracking ref) and the remote pinned to `origin`
 # (clone.defaultRemoteName); every ref below is spelled in full.
 if ! git clone -q --no-tags -o origin "$CLONE_URL" "$CLONE" 2> "$WORK/clone.err" \
@@ -151,7 +152,7 @@ report_scan() {
   if [ "$2" -eq 0 ]; then echo "  $1: clean"; else echo "  $1: exit $2"; sed 's/^/    /' <<< "$3"; SCAN_FAIL=1; fi
 }
 rc=0
-out="$(CDPATH='' cd -- "$CLONE" && bash "$SCANNER" --range "refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH" 2>&1)" || rc=$?
+out="$(CDPATH='' cd -- "$CLONE" && bash "$SCANNER" --range "$RANGE" 2>&1)" || rc=$?
 report_scan "range scan" "$rc" "$out"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
@@ -166,23 +167,31 @@ fi
 
 # A marker added in the range would hide its own line from the range scan, which reads every commit's blobs and
 # message — so this reads every commit's patch (not the net diff: a line added then deleted still ships), as text,
-# uncolored, with no diff driver or textconv, and every commit message. Every `+` line counts, the `+++` file
-# headers included: a path carrying the marker refuses too (--no-renames: a renamed path shows as one). A merge
-# commit's own changes are its dense combined diff (--cc), where a line new against every parent reads `++`; a line
-# taken unchanged from one parent is not the merge's own and does not count.
-RANGE="refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH"
-log_out="" merge_out=""
-if ! log_out="$(git -C "$CLONE" log -p --no-merges --format= --no-color --no-ext-diff --no-textconv --no-renames --text "$RANGE" 2>&1)" \
-   || ! merge_out="$(git -C "$CLONE" log -p --merges --cc --format= --no-color --no-ext-diff --no-textconv --no-renames --text "$RANGE" 2>&1)"; then
-  echo "  scan error: cannot read the range's patches"; sed 's/^/    /' <<< "$log_out$merge_out"; SCAN_FAIL=1
-elif hits="$(grep -nE '^\+.*secret-scan:allow' <<< "$log_out"; grep -nE '^\+\+.*secret-scan:allow' <<< "$merge_out")" || [ -n "$hits" ]; then
+# uncolored, with no diff driver or textconv, the root commit's included whatever the caller's log.showRoot, and
+# every commit message. Every `+` line counts, the `+++` file headers included: a path carrying the marker refuses
+# too (--no-renames: a renamed path shows as one). A merge commit's own changes are its dense combined diff (--cc),
+# where a line new against every parent reads `++`; a line taken unchanged from one parent is not the merge's own
+# and does not count. git's output goes to files and is grepped as bytes (LC_ALL=C -a): under a UTF-8 locale a
+# byte that is not valid UTF-8 would stop `.*` short of the marker.
+# range_log OUT ERR ARG… — `git log ARG… $RANGE` in the clone with the shared flags; stdout to OUT, stderr to ERR.
+range_log() {
+  local out="$1" err="$2"; shift 2
+  git -C "$CLONE" -c log.showRoot=true log --root --no-color --no-ext-diff --no-textconv --no-renames --text "$@" "$RANGE" \
+    > "$out" 2> "$err"
+}
+if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
+   || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc --format=; then
+  echo "  scan error: cannot read the range's patches"; cat "$WORK/patch.err" "$WORK/merge.err" 2>/dev/null | sed 's/^/    /'
+  SCAN_FAIL=1
+elif hits="$(LC_ALL=C grep -anE '^\+.*secret-scan:allow' "$WORK/patch.out"
+             LC_ALL=C grep -anE '^\+\+.*secret-scan:allow' "$WORK/merge.out")" || [ -n "$hits" ]; then
   echo "  added allow marker: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else
   echo "  added allow marker: none"
 fi
-if ! msg_out="$(git -C "$CLONE" log --format=%B --no-color "$RANGE" 2>&1)"; then
-  echo "  scan error: cannot read the range's commit messages"; sed 's/^/    /' <<< "$msg_out"; SCAN_FAIL=1
-elif hits="$(grep -n 'secret-scan:allow' <<< "$msg_out")"; then
+if ! range_log "$WORK/msg.out" "$WORK/msg.err" --format=%B; then
+  echo "  scan error: cannot read the range's commit messages"; sed 's/^/    /' "$WORK/msg.err"; SCAN_FAIL=1
+elif hits="$(LC_ALL=C grep -an 'secret-scan:allow' "$WORK/msg.out")"; then
   echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else
   echo "  allow marker in a commit message: none"

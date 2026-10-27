@@ -30,8 +30,8 @@ cloud_absolutize_env() {
   _leak_gate_absolutize_env
 }
 
-# cloud_resolve_main REPO — set MAIN, the physical path of REPO's main checkout: the first `git worktree list`
-# entry, else (a bare main repository) REPO's own toplevel. rc 1 with CLOUD_ERR set when REPO is not a directory
+# cloud_resolve_main REPO — set MAIN, the physical path of REPO's main checkout: keel_repo_top's answer (the first
+# `git worktree list` entry, else — a bare main repository — REPO's own toplevel). rc 1 with CLOUD_ERR set when REPO is not a directory
 # inside a git repository. Every `cd` here and in the tools runs with CDPATH empty: a CDPATH entry holding a
 # same-named directory would win over the relative path, and `cd` would print it into the capture.
 cloud_resolve_main() {
@@ -40,8 +40,7 @@ cloud_resolve_main() {
   [ -d "$1" ] || { CLOUD_ERR="no directory $1"; return 1; }
   repo_dir="$(CDPATH='' cd -- "$1" && pwd -P)" || { CLOUD_ERR="cannot enter $1"; return 1; }
   git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || { CLOUD_ERR="$repo_dir is not inside a git repository"; return 1; }
-  top="$(keel_repo_main_top "$repo_dir")"
-  [ -n "$top" ] || top="$(keel_repo_own_top "$repo_dir")"
+  top="$(keel_repo_top "$repo_dir")"
   # shellcheck disable=SC2034  # read by the caller
   MAIN="$(CDPATH='' cd -- "$top" && pwd -P)" || { CLOUD_ERR="cannot resolve the main checkout of $repo_dir"; return 1; }
 }
@@ -82,7 +81,8 @@ _cloud_safe_write_loaded() {
 }
 
 # cloud_ledger_init LEDGER — create the ledger (and its directory) with its header when absent, as a STATE write
-# like cloud_ledger_put's (so both refuse a ledger that resolves into the Keel checkout); rc 1 on failure.
+# like cloud_ledger_put's: both refuse a ledger FILE that is a symlink into the Keel checkout (a ledger reached
+# through a linked DIRECTORY is not refused — keel_write_state checks the file's own link only); rc 1 on failure.
 cloud_ledger_init() {
   local f="$1"
   [ -f "$f" ] && return 0

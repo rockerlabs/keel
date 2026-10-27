@@ -739,8 +739,10 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
 # gh_fixture_stub DIR — write DIR/gh, a stub `gh` that answers from the fixture dir $GH_FX, never the network.
 # Every call is appended to $GH_FX/calls; a $GH_FX/fail file makes every call a connection error. `api PATH
 # [--jq EXPR]` prints jq EXPR over $GH_FX/api/<PATH, each of / ? & = : as _>.json, else fails as HTTP 404;
-# `pr view N --repo OWNER/NAME` prints $GH_FX/pr/<OWNER_NAME>-N.json. Promoted here once dir #900's two cloud
-# tests (tests/test_cloud_brief.sh, tests/test_cloud_land.sh) each carried a copy.
+# `pr view N --repo OWNER/NAME` prints $GH_FX/pr/<OWNER_NAME>-N.json — wrapped in an ANSI color escape, as gh
+# colorizes JSON, when the environment forces gh's color: CLICOLOR_FORCE set and not 0 (which wins over NO_COLOR),
+# or GH_FORCE_TTY set with NO_COLOR unset and CLICOLOR not 0. Promoted here once dir #900's two cloud tests
+# (tests/test_cloud_brief.sh, tests/test_cloud_land.sh) each carried a copy.
 gh_fixture_stub() {
   mkdir -p "$1"
   cat > "$1/gh" <<'GH'
@@ -762,7 +764,10 @@ if [ "${1:-} ${2:-}" = "pr view" ]; then
   while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift ;; esac; shift; done
   f="$d/pr/$(printf '%s' "$repo" | tr '/' '_')-$n.json"
   [ -f "$f" ] || { echo "no pull requests found" >&2; exit 1; }
-  cat "$f"
+  color=""
+  case "${CLICOLOR_FORCE:-0}" in 0) ;; *) color=1 ;; esac
+  [ -n "${GH_FORCE_TTY:-}" ] && [ -z "${NO_COLOR:-}" ] && [ "${CLICOLOR:-}" != 0 ] && color=1
+  if [ -n "$color" ]; then printf '\033[1;38m%s\033[m\n' "$(cat "$f")"; else cat "$f"; fi
   exit
 fi
 echo "stub gh: unhandled: $*" >&2

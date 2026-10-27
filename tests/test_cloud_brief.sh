@@ -278,8 +278,8 @@ gh_ok() {
   printf '{"total_count":1}\n' > "$d/api/${key}_actions_workflows.json"
 }
 
-# home_slug DIR — Claude Code's project-directory encoding of DIR (every `/` and `.` → `-`).
-home_slug() { printf '%s' "$1" | tr '/.' '--'; }
+# home_slug DIR — Claude Code's project-directory encoding of DIR (every byte outside [A-Za-z0-9] → `-`).
+home_slug() { printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g'; }
 
 # fx [OPTIN-LINE] — a fresh fixture: $F, $P (the project's main checkout), $GH_FX, $CLAUDE_FX, the ledger.
 fx() {
@@ -492,13 +492,34 @@ add_ticket '\n### dir #854 — a spec through a symlinked dir — R4 — → poo
 add_ticket '\n### dir #857 — a spec that is a symlink out — R4 — → pool\n\nSpec: docs/specs/linked.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
 add_ticket "\\n### dir #855 — an absolute spec — R4 — → pool\\n\\nSpec: $F/outside.md\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
 add_ticket '\n### dir #853 — a CRLF block — R4 — → pool\r\n\r\nSpec: docs/specs/s801.md\r\n\r\n**Cloud:** yes (2026-10-27, fixture)\r\n'
-for t in 850 854 855 857; do
+add_ticket '\n### dir #858 — a spec under a symlinked dir, then .. — R4 — → pool\n\nSpec: docs/alink/../outside.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+ln -s "$F/outside-dir" "$P/docs/alink"
+for t in 850 854 855 858; do
   cb "$P" "dir #$t"
   check_status "T10c dir #$t: a Spec: outside the main checkout → exit 3" 3 "$STATUS"
   check_contains "T10c dir #$t: G7, outside \$MAIN" "$OUT" "refused: G7"
   check_contains "T10c dir #$t: … says outside" "$OUT" "outside $(cd "$P" && pwd -P)"
 done
+cb "$P" "dir #857"
+check_status "T10c dir #857: a Spec: that is itself a symlink → exit 3" 3 "$STATUS"
+check_contains "T10c dir #857: G7, a symlink" "$OUT" "refused: G7 — Spec: docs/specs/linked.md is a symlink"
+check_absent "T10c dir #857: … with no claim about where it leads" "$OUT" "outside"
+# A `.git` component — named, or reached through a symlinked directory — never travels (the repo's own config).
+ln -s ../.git "$P/docs/g"
+add_ticket '\n### dir #859 — a spec in .git — R4 — → pool\n\nSpec: .git/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #864 — a spec in .git through a link — R4 — → pool\n\nSpec: docs/g/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+for t in 859 864; do
+  cb "$P" "dir #$t"
+  check_status "T10c dir #$t: a Spec: inside .git → exit 3" 3 "$STATUS"
+  check_contains "T10c dir #$t: G7, .git" "$OUT" "refused: G7"
+  check_contains "T10c dir #$t: … names .git" "$OUT" ".git"
+done
 nothing_written "T10c"
+# A `..` that stays inside the main checkout is no refusal: the physical directory decides.
+add_ticket '\n### dir #865 — a spec spelled with .. inside — R4 — → pool\n\nSpec: docs/../docs/specs/s801.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+cb "$P" "dir #865" --out "$F/b865.md"
+check_status "T10c Spec: docs/../docs/specs/s801.md (inside) passes G7" 0 "$STATUS"
+check_contains "T10c … and its spec travels" "$(part_of "$F/b865.md" spec)" "A1 the thing works."
 cb "$P" "dir #853" --out "$F/b853.md"
 check_status "T10c a CRLF Spec: line passes G7" 0 "$STATUS"
 check_contains "T10c … and its spec travels" "$(part_of "$F/b853.md" spec)" "A1 the thing works."
@@ -515,6 +536,27 @@ check_eq "T15c a spec with no final newline: the rails marker is a line of its o
 cb "$P" "dir #851" --out "$F/b851.md"
 check_status "T15c the last ticket builds" 0 "$STATUS"
 check_contains "T15c the last ticket's trailing fence travels" "$(part_of "$F/b851.md" ticket)" "fenced tail content"
+# An unclosed fence blanks the rest of the file: the block must not run on over the tickets and sections after it.
+fx
+add_ticket '\n### dir #862 — an unclosed fence — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\nunclosed fence body\n\n### dir #863 — after the fence — R4 — → pool\n\nBody of 863.\n\n## Archive\n\n### dir #700 — archived — R4 — ✅ DONE\n'
+cb "$P" "dir #862" --out "$F/b862.md"
+check_status "T15c a ticket with an unclosed fence builds" 0 "$STATUS"
+t862="$(part_of "$F/b862.md" ticket)"
+check_contains "T15c … its own heading travels" "$t862" "### dir #862 — an unclosed fence"
+for gone in "dir #863" "Body of 863." "## Archive" "dir #700"; do
+  check_absent "T15c … the ticket part carries no '$gone' from after the unclosed fence" "$t862" "$gone"
+done
+
+# --- T15d: a part that cannot be read stops the build -------------------------------------------------------------
+fx
+chmod 000 "$P/docs/specs/s801.md"
+cb "$P" "dir #801" --out "$F/unreadable.md"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then # root reads a mode-000 file (CLAUDE.md Linux-leg trap 2)
+  check_status "T15d an unreadable spec → exit 2" 2 "$STATUS"
+  check_contains "T15d … named" "$OUT" "cannot read"
+  check_nofile "T15d … no brief written" "$F/unreadable.md"
+fi
+chmod 644 "$P/docs/specs/s801.md"
 
 # --- T11 G6 --------------------------------------------------------------------------------------------------------
 fx
@@ -563,6 +605,9 @@ check_contains "T12 the /private/tmp/claude-<uid>/ form rewritten" "$b801" "scra
 check_contains "T12 the /tmp/claude-<uid>/ form rewritten" "$b801" "tmp <tmp>/y"
 check_absent "T12 the physical home path rewritten" "$b801" "$(cd "$HOME" && pwd -P)"
 check_absent "T12 no home slug left" "$b801" "$(home_slug "$HOME")"
+# The longer path first: on macOS the physical home (/private/var/…) holds the logical one (/var/…).
+# shellcheck disable=SC2088
+check_contains "T12 the physical home, rewritten whole (the longer form first)" "$b801" "Physical home: ~/notes/phys.md"
 HOME_SAVED="$HOME"
 export HOME="$SANDBOX/home.dotted"
 mkdir -p "$HOME"
@@ -573,7 +618,54 @@ dotted="$(cat "$F/dotted.md")"
 check_absent "T12 the dotted HOME's slug rewritten" "$dotted" "$(home_slug "$HOME")"
 check_contains "T12 … to -Users-x-" "$dotted" "-Users-x-proj"
 check_absent "T12 the dotted HOME's path rewritten" "$dotted" "home.dotted"
+# Every byte outside [A-Za-z0-9] is a `-` in Claude Code's project-dir name, an `_` too; the bare slug before a `/`.
+export HOME="$SANDBOX/x/first_last"
+mkdir -p "$HOME"
+fx
+add_ticket "\\n### dir #866 — the home's own project dir — R4 — → pool\\n\\nMemory: $(home_slug "$HOME")/memory/MEMORY.md\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+cb "$P" "dir #866" --out "$F/fl.md"
+check_status "T12 a HOME named first_last builds" 0 "$STATUS"
+fl="$(cat "$F/fl.md")"
+check_contains "T12 … its CLI-style slug (first-last) rewritten" "$fl" "Claude project dir: -Users-x-proj"
+check_absent "T12 … no slug left" "$fl" "first-last"
+check_contains "T12 the bare home slug before a / → -Users-x/" "$fl" "Memory: -Users-x/memory/MEMORY.md"
+# A short home's slug (HOME=/root → -root) must not hit ordinary words: it is rewritten only where it starts a token
+# (privacy first: one glued before a letter is still rewritten, so a sibling's `-root2-…` hides the login too).
+export HOME="$SANDBOX/x/root"
+mkdir -p "$HOME"
+fx
+rs="$(home_slug "$HOME")"
+add_ticket "\\n### dir #867 — slug-shaped words — R4 — → pool\\n\\nRun tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12.\\nGlued: tools/state${rs}-migrate.sh as a non${rs}-user; ${rs}2-proj hides.\\nReal: ${rs}-proj and ${rs}/memory.\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+cb "$P" "dir #867" --out "$F/root.md"
+check_status "T12 a HOME named root builds" 0 "$STATUS"
+rt="$(part_of "$F/root.md" ticket)"
+check_contains "T12 state-root-migrate, non-root-user, cloud-root-12 unchanged" "$rt" "Run tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12."
+check_contains "T12 the slug glued after a letter unchanged; a sibling's slug rewritten" "$rt" "Glued: tools/state${rs}-migrate.sh as a non${rs}-user; -Users-x2-proj hides."
+check_contains "T12 the slug standing alone rewritten" "$rt" "Real: -Users-x-proj and -Users-x/memory."
+# A HOME with a trailing slash is the same home: `~/notes`, never `~notes`.
+export HOME="$SANDBOX/home.slash/"
+mkdir -p "$HOME"
+fx
+add_ticket "\\n### dir #868 — a trailing-slash home — R4 — → pool\\n\\nNotes: ${HOME%/}/notes/slash.md and $(home_slug "${HOME%/}")-proj\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+cb "$P" "dir #868" --out "$F/slash.md"
+check_status "T12 a HOME with a trailing slash builds" 0 "$STATUS"
+sl="$(cat "$F/slash.md")"
+# shellcheck disable=SC2088
+check_contains "T12 … its path → ~/notes" "$sl" "Notes: ~/notes/slash.md and -Users-x-proj"
+check_absent "T12 … never ~notes" "$sl" "~notes"
 export HOME="$HOME_SAVED"
+# HOME unset: the passwd entry's home is still a home to rewrite.
+fx
+pw_home="$(unset HOME; CDPATH='' cd ~ 2>/dev/null && pwd)" || pw_home=""
+if [ -n "$pw_home" ] && [ "$pw_home" != / ]; then
+  add_ticket "\\n### dir #869 — the passwd home — R4 — → pool\\n\\nPasswd: ${pw_home}/notes/pw.md and $(home_slug "$pw_home")-proj\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+  OUT="$(env -u HOME "$BRIEF_TOOL" "$P" "dir #869" --out "$F/pw.md" 2>&1 </dev/null)"; STATUS=$?
+  check_status "T12 HOME unset builds" 0 "$STATUS"
+  # shellcheck disable=SC2088
+  check_contains "T12 HOME unset: the passwd home's path and slug rewritten" "$(part_of "$F/pw.md" ticket)" "Passwd: ~/notes/pw.md and -Users-x-proj"
+else
+  echo "  SKIP  T12 HOME unset: this user's passwd entry has no usable home"
+fi
 fx
 unset SECRET_SCAN_PERSONAL_FILE
 cb "$P" "dir #801"
@@ -826,6 +918,12 @@ mkdir -p "$F/plain"
 GIT_CEILING_DIRECTORIES="$F" cbo "$F/plain" "dir #801" --check
 check_status "T20b --check on a directory that is no git repository → 2" 2 "$STATUS"
 check_eq "T20b … its receipt still comes, with head none" "cloud-check: 2 dir #801 none" "$(tail -n 1 <<< "$OUT")"
+cbo "$P" --check
+check_status "T20b --check with no ticket → 2" 2 "$STATUS"
+check_eq "T20b … its receipt, the ticket ?" "cloud-check: 2 ? none" "$(tail -n 1 <<< "$OUT")"
+cbo "$P" x --check --bogus
+check_status "T20b --check then an unknown flag → 2" 2 "$STATUS"
+check_contains "T20b … its receipt still comes" "$(tail -n 1 <<< "$OUT")" "cloud-check: 2 "
 
 # --- T17: --sweep --------------------------------------------------------------------------------------------------
 fx
@@ -873,6 +971,15 @@ for zone in Pacific/Kiritimati XXX+12; do
   TZ="$zone" cbo "$P" --sweep
   check_contains "T17 TZ=$zone: a row built today is 0 days old" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $(TZ="$zone" date +%F) (0 days)"
 done
+# A row dated tomorrow (a clock set back since) reads -1 days, not 0: the rounding is symmetric.
+fx
+cb "$P" "dir #812"; set_status "dir #812" dispatched
+printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
+e=$(( $(date +%s) + 86400 ))
+tomorrow="$(date -d "@$e" +%F 2>/dev/null || date -r "$e" +%F)"
+set_cell "dir #812" 1 "$tomorrow"
+cbo "$P" --sweep
+check_contains "T17 a row dated tomorrow is -1 days old" "$OUT" "since $tomorrow (-1 days)"
 fx
 printf '# Backlog\n\n## Open\n\n### dir #1 — closed — R4 — ✅ DONE\n' > "$P/BACKLOG.md"
 cbo "$P" --sweep
@@ -895,9 +1002,15 @@ check_nofile "T18 no CLI call on a G9 refusal" "$CLAUDE_FX/calls"
 fx
 printf '{"default_branch":"dev%sx"}\n' "'" > "$GH_FX/api/repos_example_proj.json"
 cb "$P" "dir #801"
-check_status "T18 a default branch name outside [A-Za-z0-9._/-] → exit 2" 2 "$STATUS"
-check_contains "T18 … named" "$OUT" "default branch"
+check_status "T18 a default branch name with a shell character → exit 3" 3 "$STATUS"
+check_contains "T18 … refused as G1, the name given" "$OUT" "refused: G1 — the default branch name 'dev'x'"
 nothing_written "T18 default branch"
+fx
+printf '{"default_branch":"release+1"}\n' > "$GH_FX/api/repos_example_proj.json"
+printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' \
+  > "$GH_FX/api/repos_example_proj_branches_release+1.json"
+cb "$P" "dir #801"
+check_status "T18 a default branch named release+1 passes" 0 "$STATUS"
 fx
 path_farm "$F/farm" script
 PATH="$F/farm" cb "$P" "dir #801" --dispatch
