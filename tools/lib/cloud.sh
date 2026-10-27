@@ -2,29 +2,48 @@
 # tools/lib/cloud.sh — adopter-usable: the pieces tools/cloud-brief.sh and tools/cloud-land.sh share — the
 # dispatch ledger, its lock, resolving a project's main checkout, reading a GitHub `owner/name` out of a remote
 # URL, and the scanner's file mode (dir #900). The rules they serve live in docs/cloud.md. Sourced, not executed;
-# no `set -e`/`set -u` assumption. The caller sources tools/lib/repo-top.sh and tools/lib/safe-write.sh first.
+# no `set -e`/`set -u` assumption. The caller sources tools/lib/repo-top.sh, tools/lib/safe-write.sh and
+# tools/lib/leak-gate.sh first.
 #
 # The ledger is one tab-separated file, a header line then one row per (repo, ticket), 14 cells:
 #   built · repo · ticket · branch · model/effort · brief bytes · credit before · status · credit after ·
 #   overlap · landed · landing exit · head SHA · PR
 # Status: built → dispatched → landed, or abandoned (set by hand). A cell never holds a tab or a newline.
-# Values reach awk through ENVIRON, never `-v`, which would read a backslash in them as an escape.
+# Values reach awk through ENVIRON, never `-v`, which would read a backslash in them as an escape; keys compare as
+# strings (`($3 "") == (t "")`), since awk compares two numeric-looking values as numbers (`2.1` = `2.10`).
 
 CLOUD_LEDGER_HEADER="$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR')"
 CLOUD_LOCK_WAIT=10        # seconds a second writer waits for the lock
 CLOUD_LOCK_STALE_MIN=10   # minutes after which a held lock is named stale (never removed by a tool)
 CLOUD_ERR=""              # why the last cloud_resolve_main or cloud_personal_file call failed
 
-# cloud_resolve_main REPO — set REPO_DIR (REPO's physical path) and MAIN (the physical path of its main
-# checkout: the first `git worktree list` entry, else REPO_DIR). rc 1 with CLOUD_ERR set when REPO is not a
-# directory inside a git repository.
+# cloud_absolutize_env — make the scanner's path-valued variables (tools/lib/leak-gate.sh's _LEAK_GATE_PATH_ENV:
+# TMPDIR, HOME, the personal list, the impact log) absolute against the current directory, exported. Call it
+# first thing, before any `mktemp`: the scan runs from another directory, where a relative value means another
+# file (a relative TMPDIR would also make the tool's own work directory relative).
+# rc 1 when tools/lib/leak-gate.sh is not loaded.
+cloud_absolutize_env() {
+  if ! command -v _leak_gate_absolutize_env >/dev/null 2>&1; then
+    echo "cloud: tools/lib/leak-gate.sh is not loaded — the caller must source it first." >&2
+    return 1
+  fi
+  _leak_gate_absolutize_env
+}
+
+# cloud_resolve_main REPO — set MAIN, the physical path of REPO's main checkout: the first `git worktree list`
+# entry, else (a bare main repository) REPO's own toplevel. rc 1 with CLOUD_ERR set when REPO is not a directory
+# inside a git repository. Every `cd` here and in the tools runs with CDPATH empty: a CDPATH entry holding a
+# same-named directory would win over the relative path, and `cd` would print it into the capture.
 cloud_resolve_main() {
+  local repo_dir top
   CLOUD_ERR=""
   [ -d "$1" ] || { CLOUD_ERR="no directory $1"; return 1; }
-  REPO_DIR="$(cd "$1" && pwd -P)" || { CLOUD_ERR="cannot enter $1"; return 1; }
-  git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1 || { CLOUD_ERR="$REPO_DIR is not inside a git repository"; return 1; }
-  MAIN="$(keel_repo_main_top "$REPO_DIR")"
-  MAIN="$(cd "${MAIN:-$REPO_DIR}" && pwd -P)" || { CLOUD_ERR="cannot resolve the main checkout of $REPO_DIR"; return 1; }
+  repo_dir="$(CDPATH='' cd -- "$1" && pwd -P)" || { CLOUD_ERR="cannot enter $1"; return 1; }
+  git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || { CLOUD_ERR="$repo_dir is not inside a git repository"; return 1; }
+  top="$(keel_repo_main_top "$repo_dir")"
+  [ -n "$top" ] || top="$(keel_repo_own_top "$repo_dir")"
+  # shellcheck disable=SC2034  # read by the caller
+  MAIN="$(CDPATH='' cd -- "$top" && pwd -P)" || { CLOUD_ERR="cannot resolve the main checkout of $repo_dir"; return 1; }
 }
 
 # cloud_github_slug URL — print `owner/name` for a github.com remote URL (https, ssh or scp form; a trailing
@@ -55,12 +74,21 @@ cloud_cell_ok() {
   return 0
 }
 
-# cloud_ledger_init LEDGER — create the ledger (and its directory) with its header when absent; rc 1 on failure.
+# _cloud_safe_write_loaded — rc 0 when tools/lib/safe-write.sh is loaded, else rc 1 and one line on stderr.
+_cloud_safe_write_loaded() {
+  command -v keel_write_state >/dev/null 2>&1 && return 0
+  echo "cloud: tools/lib/safe-write.sh is not loaded — the caller must source it first; nothing was written." >&2
+  return 1
+}
+
+# cloud_ledger_init LEDGER — create the ledger (and its directory) with its header when absent, as a STATE write
+# like cloud_ledger_put's (so both refuse a ledger that resolves into the Keel checkout); rc 1 on failure.
 cloud_ledger_init() {
   local f="$1"
   [ -f "$f" ] && return 0
+  _cloud_safe_write_loaded || return 1
   mkdir -p "$(dirname "$f")" || return 1
-  printf '%s\n' "$CLOUD_LEDGER_HEADER" > "$f"
+  keel_write_state "$f" printf '%s\n' "$CLOUD_LEDGER_HEADER"
 }
 
 # cloud_ledger_lock LEDGER — take `<ledger dir>/ledger.lock` (a mkdir lock: portable, `flock` is absent on stock
@@ -94,7 +122,7 @@ cloud_ledger_unlock() {
 cloud_ledger_row() {
   [ -f "$1" ] || return 1
   CL_R="$2" CL_T="$3" awk -F'\t' 'BEGIN { r = ENVIRON["CL_R"]; t = ENVIRON["CL_T"] }
-    NR > 1 && $2 == r && $3 == t { print; found = 1; exit } END { exit !found }' "$1"
+    NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { print; found = 1; exit } END { exit !found }' "$1"
 }
 
 # cloud_ledger_cell ROW N — print cell N (1-based) of a row.
@@ -106,13 +134,10 @@ cloud_ledger_cell() {
 # write (tools/lib/safe-write.sh: a rename, so a reader without the lock never sees half a file). Call it
 # holding the lock. rc 1 on a write failure.
 cloud_ledger_put() {
-  if ! command -v keel_write_state >/dev/null 2>&1; then
-    echo "cloud: tools/lib/safe-write.sh is not loaded — the caller must source it first; nothing was written." >&2
-    return 1
-  fi
+  _cloud_safe_write_loaded || return 1
   keel_write_state "$1" env CL_R="$2" CL_T="$3" CL_ROW="$4" awk -F'\t' '
     BEGIN { r = ENVIRON["CL_R"]; t = ENVIRON["CL_T"]; row = ENVIRON["CL_ROW"] }
-    NR > 1 && $2 == r && $3 == t && !done { print row; done = 1; next }
+    NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") && !done { print row; done = 1; next }
     { print }
     END { if (!done) print row }' "$1"
 }
@@ -158,8 +183,8 @@ cloud_personal_file() {
 cloud_scan_file() {
   local scanner="$1" copy="$3/scan.${2##*/}"
   mkdir -p "$3/scan-empty" || return 2
-  sed 's/secret-scan:allow/secret-scan-allow-stripped/g' "$2" > "$copy" || return 2
-  (cd "$3/scan-empty" && bash "$scanner" -- "$copy" 2>&1)
+  LC_ALL=C sed 's/secret-scan:allow/secret-scan-allow-stripped/g' "$2" > "$copy" || return 2
+  (CDPATH='' cd -- "$3/scan-empty" && bash "$scanner" -- "$copy" 2>&1)
 }
 
 # cloud_gh_api ARGS... — `gh api ARGS`, its stdout on stdout. rc 0 ok · rc 4 GitHub answered 404 or 403 (the

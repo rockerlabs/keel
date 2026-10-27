@@ -42,22 +42,44 @@ proj() {
   printf '{"default_branch":"%s"}\n' "$3" > "$GH_FX/api/$key.json"
 }
 
-# pr_json OWNER/REPO NUMBER BRANCH HEAD CI-JSON [BODY] — the stub's `gh pr view` answer.
+# pr_json OWNER/REPO NUMBER BRANCH HEAD CI-JSON [BODY] [TITLE] [BASE] — the stub's `gh pr view` answer, the
+# fields the tool requests (an empty BODY or TITLE takes the default; BASE defaults to main).
 pr_json() {
-  jq -n --argjson n "$2" --arg b "$3" --arg h "$4" --argjson ci "$5" --arg body "${6:-Summary.
+  jq -n --arg b "$3" --arg h "$4" --argjson ci "$5" --arg body "${6:-Summary.
 
 ## Landing notes
 - PR #$2 from $3
-}" '{number: $n, title: "Cloud work", headRefName: $b, isDraft: true, body: $body, statusCheckRollup: $ci, headRefOid: $h}' \
+}" --arg t "${7:-Cloud work}" --arg base "${8:-main}" \
+    '{title: $t, headRefName: $b, baseRefName: $base, body: $body, statusCheckRollup: $ci, headRefOid: $h}' \
     > "$GH_FX/pr/$(printf '%s' "$1" | tr '/' '_')-$2.json"
 }
 GREEN='[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]'
 RED='[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"FAILURE"}]'
 PENDING='[{"__typename":"CheckRun","name":"ci","status":"IN_PROGRESS","conclusion":null}]'
+SKIPPED='[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SKIPPED"},{"__typename":"CheckRun","name":"b","status":"COMPLETED","conclusion":"SKIPPED"}]'
+TRAILER="Claude-""Session"
 
 # row REPO TICKET BRANCH STATUS — append a ledger row.
 row() { printf '2026-10-27\t%s\t%s\t%s\tsonnet/high\t1000\t?\t%s\t\t\t\t\t\t\n' "$1" "$2" "$3" "$4" >> "$CLOUD_LEDGER"; }
-cell() { awk -F'\t' -v r="$1" -v t="$2" -v n="$3" 'NR > 1 && $2 == r && $3 == t { print $n }' "$CLOUD_LEDGER"; }
+# cell REPO TICKET N — print cell N of the row; set_cell REPO TICKET N VALUE — set it. String compares: a ticket
+# `2.1` is not `2.10`.
+cell() { awk -F'\t' -v r="$1" -v t="$2" -v n="$3" 'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { print $n }' "$CLOUD_LEDGER"; }
+set_cell() {
+  awk -F'\t' -v OFS='\t' -v r="$1" -v t="$2" -v n="$3" -v val="$4" \
+    'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { $n = val } { print }' "$CLOUD_LEDGER" > "$CLOUD_LEDGER.new" \
+    && mv "$CLOUD_LEDGER.new" "$CLOUD_LEDGER"
+}
+
+# bcommit FILE CONTENT MESSAGE — commit FILE (CONTENT) on $P's cloud branch and push it; sets $TIP to the new tip.
+bcommit() {
+  git -C "$P" checkout -q claude/cloud-dir-801
+  printf '%s\n' "$2" > "$P/$1"
+  git -C "$P" add "$1"
+  git -C "$P" commit -qm "$3"
+  git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+  TIP="$(git -C "$P" rev-parse HEAD)"
+  git -C "$P" checkout -q main
+}
 
 fx() {
   F="$(mktemp -d "$SANDBOX/fx.XXXXXX")"; require_sandbox_path "$F" fx
@@ -84,7 +106,8 @@ check_contains "A4 the ready line names the repo" "$OUT" "gh pr ready 5 --repo e
 check_contains "A4 the Landing notes are shown" "$OUT" "- PR #5 from claude/cloud-dir-801"
 check_contains "A4 the PR was read from the row's repository" "$(cat "$GH_FX/calls")" "pr view 5 --repo example/proj"
 
-# A landed row re-run at a later head with CI red stays landed, its exit and head updated.
+# A landed row re-run at a later head with CI red stays landed, its exit and head updated, its landed date kept.
+set_cell example/proj 'dir #801' 11 2026-01-01
 git -C "$P" checkout -q claude/cloud-dir-801
 git -C "$P" commit -q --allow-empty -m "later"
 git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
@@ -96,6 +119,7 @@ check_status "A4 CI red → exit 3" 3 "$STATUS"
 check_eq "A4 a landed row re-run with exit 3 stays landed" "landed" "$(cell example/proj 'dir #801' 8)"
 check_eq "A4 … its landing exit is 3" "3" "$(cell example/proj 'dir #801' 12)"
 check_eq "A4 … its head SHA is the new head" "$HEAD2" "$(cell example/proj 'dir #801' 13)"
+check_eq "A4 … its landed date is the one exit 0 wrote" "2026-01-01" "$(cell example/proj 'dir #801' 11)"
 
 # --- CI pending, head moved: exit 3, a dispatched row stays dispatched -------------------------------------------
 fx
@@ -106,6 +130,10 @@ check_status "A4 CI pending → exit 3" 3 "$STATUS"
 check_eq "A4 a dispatched row stays dispatched on exit 3" "dispatched" "$(cell example/proj 'dir #801' 8)"
 check_eq "A4 … its landing exit is 3" "3" "$(cell example/proj 'dir #801' 12)"
 check_eq "A4 … its head SHA recorded" "$HEAD" "$(cell example/proj 'dir #801' 13)"
+check_eq "A4 … no landed date on a non-zero exit" "" "$(cell example/proj 'dir #801' 11)"
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$SKIPPED"
+run "$LAND" "$P" 5
+check_status "A4 a rollup whose every check was skipped → exit 3" 3 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" '[]'
 run "$LAND" "$P" 5
 check_status "A4 an empty check rollup → exit 3" 3 "$STATUS"
@@ -154,6 +182,110 @@ run "$LAND" "$P" 5
 check_status "A4 an added allow marker → exit 1" 1 "$STATUS"
 check_contains "A4 … named" "$OUT" "added allow marker: hit"
 
+# The marker check reads every commit's patch and message, not the net diff.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit hidden.txt "key $TOKEN # $ALLOW_MARK" "hide"
+git -C "$P" checkout -q claude/cloud-dir-801
+git -C "$P" rm -q hidden.txt
+git -C "$P" commit -qm "unhide"
+git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+git -C "$P" checkout -q main
+pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/cloud-dir-801)" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a marked token added in one commit and deleted in the next → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit m.txt "plain" "Add m.txt
+
+key $TOKEN # $ALLOW_MARK"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a marked token on a commit-message line → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "allow marker in a commit message: hit"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit c.txt "key $TOKEN # $ALLOW_MARK" "colored"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+git config --global color.ui always
+run "$LAND" "$P" 5
+git config --global --unset color.ui
+check_status "A4 an added marker under color.ui=always → exit 1" 1 "$STATUS"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+printf 'main moves\n' > "$P/main.txt"
+git -C "$P" add main.txt
+git -C "$P" commit -qm "main moves"
+git -C "$P" push -q "$O" HEAD:refs/heads/main
+git -C "$P" checkout -q claude/cloud-dir-801
+git -C "$P" merge -q --no-ff --no-commit main
+printf 'key %s # %s\n' "$TOKEN" "$ALLOW_MARK" > "$P/m.txt"
+git -C "$P" add m.txt
+git -C "$P" commit -qm "merge main"
+git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+TIP="$(git -C "$P" rev-parse HEAD)"
+git -C "$P" checkout -q main
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 an allow marker added only in a merge commit's resolution → exit 1" 1 "$STATUS"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+printf '*.dat -diff\n' > "$P/.gitattributes"
+git -C "$P" add .gitattributes
+git -C "$P" commit -qm attrs
+git -C "$P" push -q "$O" HEAD:refs/heads/main
+bcommit x.dat "key $TOKEN # $ALLOW_MARK" "data"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 an added marker in a file the default branch marks -diff → exit 1" 1 "$STATUS"
+
+# A tag named like the remote-tracking branch cannot shadow the range.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+git -C "$O" tag origin/claude/cloud-dir-801 main
+bcommit leak.txt "key $TOKEN" "leak"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a token in the range, a tag origin/<branch> at the default tip → exit 1" 1 "$STATUS"
+
+# KB.172's T14 cases.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit b.txt "two" "Add b.txt
+
+$TRAILER: https://claude.ai/code/session_x"
+bcommit c.txt "three" "Add c.txt"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 (T14) a session trailer in an interior commit → exit 1" 1 "$STATUS"
+check_contains "A4 (T14) … the trailer line is named" "$OUT" "$TRAILER: https://claude.ai/code/session_x"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit owner.txt "owner zzfixturezz" "owner"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 (T14e) a commit adding the personal literal → exit 1" 1 "$STATUS"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$RED"
+run "$LAND" "$P" 5
+check_status "A4 (T14d) a scan hit and a failing check → exit 1 (scans first)" 1 "$STATUS"
+check_eq "A4 (T14d) … the row records exit 1" "1" "$(cell example/proj 'dir #801' 12)"
+
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "" "Fix it $TOKEN"
+run "$LAND" "$P" 5
+check_status "A4 (T14h) a ghp_ token in the PR title only → exit 1" 1 "$STATUS"
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "Summary.
+$TRAILER: abc"
+run "$LAND" "$P" 5
+check_status "A4 (T14i) a body line '$TRAILER: abc' (no URL) → exit 1" 1 "$STATUS"
+
 # --- the row: absent, by --ticket, the repository match -----------------------------------------------------------
 fx
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
@@ -165,6 +297,25 @@ check_status "A4 a row whose branch differs is not found by branch → exit 2" 2
 run "$LAND" "$P" 5 --ticket "dir #801"
 check_status "A4 --ticket binds a row whose branch cell differs → 0" 0 "$STATUS"
 check_eq "A4 … and corrects its branch cell" "claude/cloud-dir-801" "$(cell example/proj 'dir #801' 4)"
+
+# Ticket ids compare as strings: 2.1 is not 2.10.
+fx
+row example/proj 2.10 claude/other-210 dispatched
+row example/proj 2.1 claude/harness-named dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
+run "$LAND" "$P" 5 --ticket 2.1
+check_status "A4 --ticket 2.1 with a 2.10 row above it → 0" 0 "$STATUS"
+check_eq "A4 … binds 2.1's row" "claude/cloud-dir-801" "$(cell example/proj 2.1 4)"
+check_eq "A4 … 2.10's row untouched" "claude/other-210 dispatched" "$(cell example/proj 2.10 4) $(cell example/proj 2.10 8)"
+
+# The PR must target the default branch.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "" "" release-1
+run "$LAND" "$P" 5
+check_status "A4 a PR whose base is not the default branch → exit 2" 2 "$STATUS"
+check_contains "A4 … names the base" "$OUT" "release-1"
+check_contains "A4 … and the default branch" "$OUT" "default branch main"
 
 fx
 row example/other "dir #801" claude/cloud-dir-801 dispatched
@@ -196,7 +347,7 @@ fx
 proj legacy example/legacy master
 export CLOUD_ORIGIN="$O"
 row example/legacy "dir #801" claude/cloud-dir-801 dispatched
-pr_json example/legacy 3 claude/cloud-dir-801 "$HEAD" "$GREEN"
+pr_json example/legacy 3 claude/cloud-dir-801 "$HEAD" "$GREEN" "" "" master
 run "$LAND" "$P" 3
 check_status "A4 a default branch named master lands" 0 "$STATUS"
 check_contains "A4 … the range is read against master" "$OUT" "range scan: clean"

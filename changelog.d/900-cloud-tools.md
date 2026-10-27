@@ -8,7 +8,8 @@
   each dispatch in a ledger under `~/.keel/cloud/` behind a lock. `--check` writes nothing and ends with a
   `cloud-check:` receipt line; `--dispatch` runs `claude --cloud` from the main checkout under a pseudo-terminal
   (the CLI refuses to run without one) and prints the claim to write; `--sweep` lists open tickets with their
-  verdicts and every dispatch still without a PR. The protocol has the cloud session clone keel's tools at a
+  verdicts, every dispatched row with its PR if it has one, and every landed row, flagged stale when its PR's head
+  moved or its last landing check failed. The protocol has the cloud session clone keel's tools at a
   pinned published commit, install and prove a pre-push guard that allows exactly its `claude/cloud-<slug>`
   branch, and scan before every push. `tools/cloud-land.sh <repo> <PR#>` is the model-free landing check before
   the operator merges: a range scan, a PR-text scan, the added-allow-marker check and a green CI rollup at the

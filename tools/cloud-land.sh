@@ -8,19 +8,21 @@
 # <repo> is any path inside the project; its `origin` names the GitHub repository, which must equal the ledger
 # row's repo cell. The row is found by the PR's head branch, or by --ticket when the session pushed another
 # branch (the row's branch cell is then corrected). The scans are decided BEFORE CI is read:
-#   1. in a fresh full clone (never the project's checkout), the fetched branch tip must equal the PR's head SHA,
-#      and keel's scanner `--range origin/<default>..origin/<branch>` must exit 0 (keys, personal literals,
-#      session trailers in commit messages);
+#   1. in a fresh full clone without tags (never the project's checkout), the fetched branch tip must equal the
+#      PR's head SHA, and keel's scanner `--range refs/remotes/origin/<default>..refs/remotes/origin/<branch>`
+#      must exit 0 (keys, personal literals, session trailers in commit messages);
 #   2. the PR title + body must pass the scanner's file mode (marker defanged, from an empty directory) and a
 #      grep for a session URL or a `-Session:` line, which file mode does not look for;
-#   3. no added line in the range may carry the scanner's inline allow marker.
-# Then CI: a non-empty check rollup, every check completed and successful.
+#   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv) and no line of any
+#      commit message in the range may carry the scanner's inline allow marker.
+# Then CI: a non-empty check rollup, every check completed and successful, and at least one succeeded (a
+# rollup of skipped checks is not green).
 #
 # Exit: 0 scans clean and CI green · 1 a scan hit or a scan error · 2 usage, a gh failure, no ledger row, a
-# repository mismatch · 3 CI not green, or the branch moved after the PR was read. A run that found its row
-# records its landing exit, head SHA and PR; only exit 0 sets the status to `landed` — "the check passed at
-# that head", not "merged". No merge without an exit 0 for the exact head SHA merged: the printed merge
-# command pins it.
+# repository mismatch, a PR whose base is not the default branch · 3 CI not green, or the branch moved after the
+# PR was read. A run that found its row records its landing exit, head SHA, PR and branch; only exit 0 sets the
+# status to `landed` and the landed date — "the check passed at that head", not "merged". No merge without an
+# exit 0 for the exact head SHA merged: the printed merge command pins it.
 #
 # Env (relative values are made absolute against the start directory): CLOUD_LEDGER
 # ($(keel_store_root cloud)/ledger.tsv) · CLOUD_ORIGIN (unset: https://github.com/<repo cell>.git; tests point it
@@ -33,13 +35,14 @@ START_DIR="$PWD"
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$START_DIR" "$1" ;; esac; }
 die() { local code="$1"; shift; printf 'cloud-land: %s\n' "$*" >&2; exit "$code"; }
 
-ENGINE="$(cd "$(dirname "$0")/.." && pwd -P)"
-for lib in state-root repo-top safe-write cloud; do
+ENGINE="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"
+for lib in state-root repo-top safe-write leak-gate cloud; do
   [ -s "$ENGINE/tools/lib/$lib.sh" ] && bash -n "$ENGINE/tools/lib/$lib.sh" 2>/dev/null \
     || die 2 "$ENGINE/tools/lib/$lib.sh is missing or corrupted — re-clone or re-download Keel"
   # shellcheck source=/dev/null
   . "$ENGINE/tools/lib/$lib.sh"
 done
+cloud_absolutize_env || die 2 "cannot make the path variables absolute"
 
 usage() { die 2 "usage: cloud-land.sh <repo> <PR#> [--ticket <id>]"; }
 REPO_ARG="" PR="" TICKET=""
@@ -73,19 +76,25 @@ DEFAULT="$(cloud_gh_api "repos/$OR" --jq .default_branch)" && [ -n "$DEFAULT" ] 
   || die 2 "gh api cannot read the default branch of $OR"
 
 # --- the PR ---------------------------------------------------------------------------------------------------------
-PR_JSON="$(gh pr view "$PR" --repo "$OR" --json title,headRefName,body,statusCheckRollup,headRefOid)" \
+# Plain JSON whatever the caller's environment asks of gh: a forced TTY or forced color would colorize it.
+PR_JSON="$(env -u GH_FORCE_TTY CLICOLOR_FORCE=0 NO_COLOR=1 \
+  gh pr view "$PR" --repo "$OR" --json title,headRefName,baseRefName,body,statusCheckRollup,headRefOid)" \
   || die 2 "gh pr view $PR --repo $OR failed"
 BRANCH="$(jq -r '.headRefName // ""' <<< "$PR_JSON")"
 HEAD_OID="$(jq -r '.headRefOid // ""' <<< "$PR_JSON")"
+BASE="$(jq -r '.baseRefName // ""' <<< "$PR_JSON")"
 [ -n "$BRANCH" ] && [ -n "$HEAD_OID" ] || die 2 "PR $PR has no head branch or head SHA in gh's answer"
+[ "$BASE" = "$DEFAULT" ] || die 2 "PR $PR targets '$BASE', not $OR's default branch $DEFAULT — the scans read the range against $DEFAULT"
 cloud_cell_ok "$BRANCH" || die 2 "head branch '$BRANCH' cannot be a ledger cell"
 git check-ref-format --branch "$BRANCH" >/dev/null 2>&1 || die 2 "head branch '$BRANCH' is not a valid branch name"
 
 # --- the ledger row: by --ticket, else by head branch; this repository's row first ----------------------------------
+# Every key compare is a string compare (`x ""`): awk compares two numeric-looking strings as numbers, so ticket
+# `2.1` would match a row `2.10`.
 find_row() { # COLUMN VALUE → "<repo>\t<ticket>" of the matching row, this repository's first
   CL_C="$1" CL_V="$2" CL_R="$OR" awk -F'\t' '
-    BEGIN { c = ENVIRON["CL_C"] + 0; v = ENVIRON["CL_V"]; r = ENVIRON["CL_R"] }
-    NR > 1 && $c == v { if ($2 == r) { print $2 "\t" $3; found = 1; exit } if (!other) other = $2 "\t" $3 }
+    BEGIN { c = ENVIRON["CL_C"] + 0; v = ENVIRON["CL_V"] ""; r = ENVIRON["CL_R"] "" }
+    NR > 1 && ($c "") == v { if (($2 "") == r) { print $2 "\t" $3; found = 1; exit } if (!other) other = $2 "\t" $3 }
     END { if (!found && other) print other }' "$CLOUD_LEDGER"
 }
 if [ -n "$TICKET" ]; then
@@ -101,9 +110,9 @@ ROW_REPO="${KEY%%$'\t'*}" ROW_TICKET="${KEY#*$'\t'}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cloud-land.XXXXXX")" || die 2 "mktemp failed"
 trap 'rm -rf "$WORK"' EXIT
 
-finish() { # EXIT — record this run on the row, then exit
-  local cells=("4=$BRANCH" "11=$(date +%F)" "12=$1" "13=$HEAD_OID" "14=$PR")
-  [ "$1" -ne 0 ] || cells+=("8=landed")
+finish() { # EXIT — record this run on the row, then exit; the status and the landed date only on exit 0
+  local cells=("4=$BRANCH" "12=$1" "13=$HEAD_OID" "14=$PR")
+  [ "$1" -ne 0 ] || cells+=("8=landed" "11=$(date +%F)")
   if cloud_ledger_lock "$CLOUD_LEDGER"; then
     cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$ROW_TICKET" "${cells[@]}" || echo "cloud-land: cannot update the ledger row" >&2
     cloud_ledger_unlock "$CLOUD_LEDGER"
@@ -119,8 +128,10 @@ CLONE_URL="${CLOUD_ORIGIN:-https://github.com/$OR.git}"
 case "$CLONE_URL" in *://*|*@*:*) ;; *) CLONE_URL="$(abs "$CLONE_URL")" ;; esac
 SCAN_FAIL=""
 CLONE="$WORK/clone"
-if ! git clone -q "$CLONE_URL" "$CLONE" 2> "$WORK/clone.err" \
-   || ! git -C "$CLONE" fetch -q origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" \
+# No tags (a tag named `origin/<branch>` would shadow the remote-tracking ref) and the remote pinned to `origin`
+# (clone.defaultRemoteName); every ref below is spelled in full.
+if ! git clone -q --no-tags -o origin "$CLONE_URL" "$CLONE" 2> "$WORK/clone.err" \
+   || ! git -C "$CLONE" fetch -q --no-tags origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" \
         "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>> "$WORK/clone.err"; then
   sed 's/^/  /' "$WORK/clone.err"
   echo "  scan error: cannot clone $CLONE_URL or fetch $DEFAULT and $BRANCH"
@@ -140,7 +151,7 @@ report_scan() {
   if [ "$2" -eq 0 ]; then echo "  $1: clean"; else echo "  $1: exit $2"; sed 's/^/    /' <<< "$3"; SCAN_FAIL=1; fi
 }
 rc=0
-out="$(cd "$CLONE" && bash "$SCANNER" --range "origin/$DEFAULT..origin/$BRANCH" 2>&1)" || rc=$?
+out="$(CDPATH='' cd -- "$CLONE" && bash "$SCANNER" --range "refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH" 2>&1)" || rc=$?
 report_scan "range scan" "$rc" "$out"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
@@ -153,26 +164,43 @@ else
   echo "  PR-text session grep: clean"
 fi
 
-# A marker added in the range would hide its own line from the range scan. Every `+` line counts, the `+++` file
-# headers included: a path carrying the marker refuses too.
-if ! diff_out="$(git -C "$CLONE" diff "refs/remotes/origin/$DEFAULT...refs/remotes/origin/$BRANCH" 2>&1)"; then
-  echo "  scan error: cannot diff the range"; sed 's/^/    /' <<< "$diff_out"; SCAN_FAIL=1
-elif hits="$(grep -nE '^\+.*secret-scan:allow' <<< "$diff_out")"; then
+# A marker added in the range would hide its own line from the range scan, which reads every commit's blobs and
+# message — so this reads every commit's patch (not the net diff: a line added then deleted still ships), as text,
+# uncolored, with no diff driver or textconv, and every commit message. Every `+` line counts, the `+++` file
+# headers included: a path carrying the marker refuses too (--no-renames: a renamed path shows as one). A merge
+# commit's own changes are its dense combined diff (--cc), where a line new against every parent reads `++`; a line
+# taken unchanged from one parent is not the merge's own and does not count.
+RANGE="refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH"
+log_out="" merge_out=""
+if ! log_out="$(git -C "$CLONE" log -p --no-merges --format= --no-color --no-ext-diff --no-textconv --no-renames --text "$RANGE" 2>&1)" \
+   || ! merge_out="$(git -C "$CLONE" log -p --merges --cc --format= --no-color --no-ext-diff --no-textconv --no-renames --text "$RANGE" 2>&1)"; then
+  echo "  scan error: cannot read the range's patches"; sed 's/^/    /' <<< "$log_out$merge_out"; SCAN_FAIL=1
+elif hits="$(grep -nE '^\+.*secret-scan:allow' <<< "$log_out"; grep -nE '^\+\+.*secret-scan:allow' <<< "$merge_out")" || [ -n "$hits" ]; then
   echo "  added allow marker: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else
   echo "  added allow marker: none"
+fi
+if ! msg_out="$(git -C "$CLONE" log --format=%B --no-color "$RANGE" 2>&1)"; then
+  echo "  scan error: cannot read the range's commit messages"; sed 's/^/    /' <<< "$msg_out"; SCAN_FAIL=1
+elif hits="$(grep -n 'secret-scan:allow' <<< "$msg_out")"; then
+  echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
+else
+  echo "  allow marker in a commit message: none"
 fi
 
 # --- CI ---------------------------------------------------------------------------------------------------------------
 echo "== CI rollup"
 jq -r '.statusCheckRollup[]? | "  \(.name // .context // "?"): \(.status // "-") \(.conclusion // .state // "-")"' <<< "$PR_JSON"
 CI_GREEN=""
-jq -e '(.statusCheckRollup // []) as $r | ($r | length) > 0 and ($r | all(
-         if .__typename == "StatusContext" or (has("state") and (has("status") | not))
-         then .state == "SUCCESS"
-         else .status == "COMPLETED" and ((.conclusion // "") | IN("SUCCESS", "NEUTRAL", "SKIPPED"))
-         end))' <<< "$PR_JSON" >/dev/null && CI_GREEN=1
-if [ -n "$CI_GREEN" ]; then echo "  green"; else echo "  NOT green (a failing, pending or missing check)"; fi
+# Every check passed (a check run may also be neutral or skipped) and at least one succeeded — which also makes
+# an empty rollup not green.
+jq -e 'def status_context: .__typename == "StatusContext" or (has("state") and (has("status") | not));
+       (.statusCheckRollup // []) as $r
+       | ($r | all(if status_context then .state == "SUCCESS"
+                   else .status == "COMPLETED" and ((.conclusion // "") | IN("SUCCESS", "NEUTRAL", "SKIPPED")) end))
+         and ($r | any(if status_context then .state == "SUCCESS" else .conclusion == "SUCCESS" end))' \
+  <<< "$PR_JSON" >/dev/null && CI_GREEN=1
+if [ -n "$CI_GREEN" ]; then echo "  green"; else echo "  NOT green (a failing, pending or missing check, or none succeeded)"; fi
 
 echo "== Landing notes"
 notes="$(jq -r '.body // ""' <<< "$PR_JSON" | awk '/^## Landing notes[[:space:]]*$/ {f = 1; print; next} f && /^## / {exit} f')"

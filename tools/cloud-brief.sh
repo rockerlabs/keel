@@ -23,9 +23,10 @@
 #
 # Exit: 0 done · 1 the secret scan refused the brief · 2 usage, not found, a gh/git failure, the ledger lock ·
 # 3 a mechanical row, the model mapping or the ledger refused · 4 judged rows unconfirmed (no verdict) ·
-# 5 the dispatch itself failed (the row goes back to `built`). Every refusal comes before the brief is written.
+# 5 the dispatch itself failed (the row goes back to `built`). Every refusal comes before the brief is written
+# but one: the ledger row's re-check under the lock (another run changed the row meanwhile) comes after it.
 #
-# Env (relative values are made absolute against the start directory): CLOUD_LEDGER
+# Env (relative values — these, TMPDIR and HOME — are made absolute against the start directory): CLOUD_LEDGER
 # ($(keel_store_root cloud)/ledger.tsv) · CLOUD_BRIEF_DIR ($(keel_store_root cloud)/briefs) · CLOUD_TEMPLATE
 # (<engine>/templates/cloud-protocol.md) · CLOUD_BRIEF_MAX_BYTES (130000 — Linux caps one argument at 131071
 # bytes) · CLOUD_KEEL_ORIGIN (https://github.com/rockerlabs/keel — what the VM clones) · SECRET_SCAN_PERSONAL_FILE
@@ -38,13 +39,14 @@ START_DIR="$PWD"
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$START_DIR" "$1" ;; esac; }
 die() { local code="$1"; shift; printf 'cloud-brief: %s\n' "$*" >&2; exit "$code"; }
 
-ENGINE="$(cd "$(dirname "$0")/.." && pwd -P)"
-for lib in fence-blank backlog-blocks state-root repo-top nonneg-int safe-write cloud; do
+ENGINE="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"
+for lib in fence-blank backlog-blocks state-root repo-top nonneg-int safe-write leak-gate cloud; do
   [ -s "$ENGINE/tools/lib/$lib.sh" ] && bash -n "$ENGINE/tools/lib/$lib.sh" 2>/dev/null \
     || die 2 "$ENGINE/tools/lib/$lib.sh is missing or corrupted — re-clone or re-download Keel"
   # shellcheck source=/dev/null
   . "$ENGINE/tools/lib/$lib.sh"
 done
+cloud_absolutize_env || die 2 "cannot make the path variables absolute"
 
 usage() {
   die 2 "usage: cloud-brief.sh <repo> <ticket-id> [--check | --eligible | --dispatch] [--credit-before <amount>] [--redispatch] [--out FILE]
@@ -66,6 +68,19 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+WORK="" MAIN=""
+on_exit() { # --check's receipt comes on every exit after the arguments parsed, an early refusal's too
+  local rc=$? head=none
+  [ -z "$WORK" ] || rm -rf "$WORK"
+  if [ "$MODE" = check ]; then
+    [ -z "$MAIN" ] || head="$(git -C "$MAIN" rev-parse HEAD 2>/dev/null)" || head=none
+    printf 'cloud-check: %s %s %s\n' "$rc" "$TICKET" "$head"
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+
 [ -n "$REPO_ARG" ] || usage
 if [ "$MODE" = sweep ]; then
   [ -z "$TICKET" ] || usage
@@ -85,7 +100,7 @@ CLOUD_TEMPLATE="$(abs "${CLOUD_TEMPLATE:-$ENGINE/templates/cloud-protocol.md}")"
 MAX_BYTES="${CLOUD_BRIEF_MAX_BYTES:-130000}"
 KEEL_ORIGIN="${CLOUD_KEEL_ORIGIN:-https://github.com/rockerlabs/keel}"
 SCANNER="$ENGINE/tools/secret-guard/secret-scan.sh"
-_nonneg_int_valid "$MAX_BYTES" || die 2 "CLOUD_BRIEF_MAX_BYTES must be a number"
+_nonneg_int_valid "$MAX_BYTES" 19 || die 2 "CLOUD_BRIEF_MAX_BYTES must be a number"
 case "$KEEL_ORIGIN" in ''|*[[:space:]\'\"\`\$\\]*) die 2 "CLOUD_KEEL_ORIGIN must be a plain URL" ;; esac
 case "$KEEL_ORIGIN" in *://*|*@*:*) ;; *) KEEL_ORIGIN="$(abs "$KEEL_ORIGIN")" ;; esac
 
@@ -130,15 +145,17 @@ verdict_of() {
 grade_of() { grep -oE '— R[0-9]([^a-zA-Z0-9]|$)' <<< "$1" | tail -1 | grep -oE 'R[0-9]' || true; }
 
 # --- --sweep: read-only listing ------------------------------------------------------------------------------
-pr_of() { # BRANCH → "<number> <head sha>" of the newest PR from it, or nothing
+pr_of() { # BRANCH → "<number> <head sha>" of the newest PR from it, or nothing; rc 1 when gh failed (its stderr kept)
   [ -n "$OR" ] || return 0
-  cloud_gh_api "repos/$OR/pulls?head=$OWNER:$1&state=all" --jq '.[0] // empty | "\(.number) \(.head.sha)"' 2>/dev/null || true
+  cloud_gh_api "repos/$OR/pulls?head=$OWNER:$1&state=all" --jq '.[0] // empty | "\(.number) \(.head.sha)"' || return 1
 }
-days_since() {
+noon_epoch() { # YYYY-MM-DD → the epoch second of local noon that day (GNU/busybox date, else BSD)
+  date -d "$1 12:00:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1 12:00:00" +%s 2>/dev/null
+}
+days_since() { # YYYY-MM-DD → whole days to today; both read at local noon and rounded, so no zone or DST shifts it
   local s now
-  s="$(date -u -d "$1" +%s 2>/dev/null || date -u -j -f %Y-%m-%d "$1" +%s 2>/dev/null)" || { echo "?"; return; }
-  now="$(date -u +%s)"
-  echo $(( (now - s) / 86400 ))
+  s="$(noon_epoch "$1")" && now="$(noon_epoch "$(today)")" || { echo "?"; return; }
+  echo $(( (now - s + 43200) / 86400 ))
 }
 if [ "$MODE" = sweep ]; then
   printf 'cloud sweep: %s (%s)\n' "$MAIN" "${OR:-origin is not a github.com repository}"
@@ -157,23 +174,33 @@ if [ "$MODE" = sweep ]; then
     done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
   fi
   printf 'dispatches (ledger %s):\n' "$CLOUD_LEDGER"
+  gh_failed=""
   if [ -f "$CLOUD_LEDGER" ] && [ -n "$OR" ]; then
     # Cells may be empty, and `read` collapses runs of a whitespace IFS: re-join on a unit separator first.
-    while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_head; do
+    while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_exit r_head; do
       [ "$r_repo" = "$OR" ] || continue
       case "$r_status" in dispatched|landed) ;; *) continue ;; esac
-      pr="$(pr_of "$r_branch")"; label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
+      pr_known=1
+      if pr="$(pr_of "$r_branch")"; then
+        label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
+      else
+        pr_known="" gh_failed=1 pr="" label="PR unknown (gh failed)"
+      fi
       case "$r_status" in
         dispatched)
           printf '  dispatched\t%s\t%s\tsince %s (%s days)\t%s\n' "$r_ticket" "$r_branch" "$r_built" \
             "$(days_since "$r_built")" "$label" ;;
         landed)
-          if [ -n "$pr" ] && [ "${pr#* }" != "$r_head" ]; then state="STALE: the PR head is ${pr#* }, landed at $r_head"
+          # A failed re-run records its head but leaves the row landed: its exit cell flags it.
+          if [ -n "$r_exit" ] && [ "$r_exit" != 0 ]; then state="STALE: the last landing check exited $r_exit"
+          elif [ -z "$pr_known" ]; then state="unknown"
+          elif [ -n "$pr" ] && [ "${pr#* }" != "$r_head" ]; then state="STALE: the PR head is ${pr#* }, landed at $r_head"
           else state="current"; fi
           printf '  landed\t%s\t%s\t%s\t%s\n' "$r_ticket" "$r_branch" "$label" "$state" ;;
       esac
-    done < <(awk -F'\t' -v OFS='\037' 'NR > 1 { print $1, $2, $3, $4, $8, $13 }' "$CLOUD_LEDGER")
+    done < <(awk -F'\t' -v OFS='\037' 'NR > 1 { print $1, $2, $3, $4, $8, $12, $13 }' "$CLOUD_LEDGER")
   fi
+  [ -z "$gh_failed" ] || die 2 "gh failed: the PR columns above marked unknown are not known (network, auth or gh itself)"
   exit 0
 fi
 
@@ -181,16 +208,6 @@ fi
 SLUG="$(slug_of "$TICKET")"
 [ -n "$SLUG" ] || die 2 "the ticket id '$TICKET' has no letter or digit"
 BRANCH="claude/cloud-$SLUG"
-WORK=""
-on_exit() {
-  local rc=$?
-  [ -z "$WORK" ] || rm -rf "$WORK"
-  if [ "$MODE" = check ]; then
-    printf 'cloud-check: %s %s %s\n' "$rc" "$TICKET" "$(git -C "$MAIN" rev-parse HEAD 2>/dev/null || echo none)"
-  fi
-  exit "$rc"
-}
-trap on_exit EXIT
 refuse() { die 3 "$TICKET refused: $1 — $2"; }
 
 cloud_personal_file || die 2 "$CLOUD_ERR"
@@ -221,8 +238,12 @@ while IFS=$'\t' read -r b_start b_end _ b_heading; do
   case "$b_heading" in "### $TICKET — "*) START="$b_start"; END="$b_end"; HEADING="$b_heading"; break ;; esac
 done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
+# The last block's END counts the fence-blanked text, whose trailing blank lines (a closing fenced block's, blanked)
+# a command substitution dropped: a block that ends there runs to the file's own last line.
+blanked_all="$(blank_fenced_blocks "$BACKLOG")"
+[ "$END" -lt "$(grep -c '' <<< "$blanked_all")" ] || END="$(awk 'END { print NR }' "$BACKLOG")"
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
-BLANKED="$(blank_fenced_blocks "$BACKLOG" | sed -n "${START},${END}p")"
+BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
 
 # G2: open, R3/R4 or 📐 — the LAST `— R<d>` token decides; markers count on the heading only.
 if grep -qE '✅|❌|SUPERSEDED|RETRACTED|⏳|⛔' <<< "$HEADING"; then
@@ -243,13 +264,19 @@ case "$VERDICT" in
   malformed*) refuse G2b "a malformed verdict: ${VERDICT#malformed } (docs/cloud.md: one line, yes or no — <row>)" ;;
 esac
 
-# G7: the first token after `Spec:` names a file in the main checkout.
+# G7: the first token after `Spec:` names a file in the main checkout — never one outside it (a `..` component, an
+# absolute path, or a directory symlinked out: the brief would carry that file to the VM).
 SPEC_REL="" SPEC_FILE=""
-SPEC_LINE="$(grep -m1 -E '^(\*\*)?Spec:(\*\*)?[[:space:]]' <<< "$BLANKED" || true)"
+SPEC_LINE="$(grep -m1 -E '^(\*\*)?Spec:(\*\*)?[[:space:]]' <<< "$BLANKED" | tr -d '\r' || true)"
 if [ -n "$SPEC_LINE" ]; then
   SPEC_REL="$(sed -E 's/^(\*\*)?Spec:(\*\*)?[[:space:]]+//' <<< "$SPEC_LINE" | awk '{print $1}' | tr -d '`')"
   SPEC_FILE="$MAIN/$SPEC_REL"
+  case "$SPEC_REL" in /*) refuse G7 "Spec: $SPEC_REL is outside $MAIN" ;; esac
+  case "/$SPEC_REL/" in */../*) refuse G7 "Spec: $SPEC_REL is outside $MAIN" ;; esac
   [ -n "$SPEC_REL" ] && [ -f "$SPEC_FILE" ] || refuse G7 "Spec: ${SPEC_REL:-?} is not a file in $MAIN"
+  [ ! -L "$SPEC_FILE" ] || refuse G7 "Spec: $SPEC_REL is a symlink, which may lead outside $MAIN"
+  spec_dir="$(CDPATH='' cd -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
+  case "$spec_dir/" in "$MAIN"/*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
 fi
 
 # G8 (its two mechanical phrases), then the model mapping.
@@ -301,6 +328,8 @@ gh_or_refuse() { # ROW WHAT ARGS... — gh api's stdout; 404/403 refuses ROW, an
 }
 DEFAULT="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq .default_branch)" || exit $?
 [ -n "$DEFAULT" ] || die 2 "gh api gave no default branch for $OR"
+# The name goes unquoted into the VM's shell commands (the protocol's <default>): plain ref characters only.
+case "$DEFAULT" in *[!A-Za-z0-9._/-]*) die 2 "gh api gave the default branch name '$DEFAULT' for $OR — outside [A-Za-z0-9._/-]" ;; esac
 LEVEL="$(gh_or_refuse G1b "the protection of $OR:$DEFAULT" "repos/$OR/branches/$DEFAULT" \
   --jq '.protection.required_status_checks.enforcement_level // ""')" || exit $?
 if [ "$LEVEL" != everyone ] && [ -z "$UNPROTECTED_OK" ]; then
@@ -358,31 +387,51 @@ protocol=${protocol//"<branch>"/"$BRANCH"}
 protocol=${protocol//"<default>"/"$DEFAULT"}
 protocol=${protocol//"<keel-sha>"/"$KEEL_SHA"}
 protocol=${protocol//"<keel-origin>"/"$KEEL_ORIGIN"}
+part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a newline when it lacks a final one
 {
   echo "=== protocol ==="
   printf '%s\n' "$protocol"
   echo "=== ticket ==="
   printf '%s\n' "$BLOCK"
-  if [ -n "$SPEC_FILE" ]; then echo "=== spec ==="; cat "$SPEC_FILE"; fi
+  if [ -n "$SPEC_FILE" ]; then echo "=== spec ==="; part "$SPEC_FILE"; fi
   echo "=== rails ==="
-  [ ! -f "$MAIN/CLAUDE.md" ] || cat "$MAIN/CLAUDE.md"
+  [ ! -f "$MAIN/CLAUDE.md" ] || part "$MAIN/CLAUDE.md"
   echo "=== end of brief ==="
 } > "$WORK/raw" || die 2 "cannot assemble the brief"
 
-# The home path in its three forms (the scanner does not catch a bare username, by design); the third occurs
-# only on macOS and is a no-op elsewhere. One byte-wise awk pass: bash's own `${text//…}` on a brief holding
-# multibyte text costs time quadratic in its size (minutes near the byte cap on macOS).
-home="${HOME:-}"; [ "$home" != / ] || home=""
-user="$(id -un 2>/dev/null || true)"
-CL_HOME="$home" CL_USER="${user:+-Users-$user-}" CL_SCRATCH="/private/tmp/claude-$(id -u)/" LC_ALL=C awk '
-  function rep(s, from, to,   out, i) {
-    if (from == "") return s
-    out = ""
-    while ((i = index(s, from)) > 0) { out = out substr(s, 1, i - 1) to; s = substr(s, i + length(from)) }
-    return out s
-  }
-  { print rep(rep(rep($0, ENVIRON["CL_HOME"], "~"), ENVIRON["CL_USER"], "-Users-x-"), ENVIRON["CL_SCRATCH"], "<tmp>/") }
-' "$WORK/raw" > "$WORK/brief" || die 2 "the home-path rewrite failed"
+# The home path in each form a brief carries it (the scanner does not catch a bare username, by design), for $HOME
+# and its physical path when that differs, the longer first (one may hold the other): the path itself → `~`;
+# Claude Code's project-directory name for it — every `/` and `.` → `-`, as tools/lib/transcript-usage.sh's
+# tu_project_slug — plus `-` → `-Users-x-`; then the session scratch roots → `<tmp>/`, the longer first.
+# rewrite FROM TO [FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order. One
+# byte-wise awk pass: bash's own `${text//…}` on a brief holding multibyte text costs time quadratic in its size
+# (minutes near the byte cap on macOS). A subshell, so the pairs never reach the CLI's environment.
+rewrite() (
+  i=0
+  while [ $# -ge 2 ]; do
+    [ -z "$1" ] || { i=$((i + 1)); export "CL_FROM_$i=$1" "CL_TO_$i=$2"; }
+    shift 2
+  done
+  CL_PAIRS="$i" LC_ALL=C awk '
+    function rep(s, from, to,   out, i) {
+      out = ""
+      while ((i = index(s, from)) > 0) { out = out substr(s, 1, i - 1) to; s = substr(s, i + length(from)) }
+      return out s
+    }
+    BEGIN { n = ENVIRON["CL_PAIRS"] + 0; fp = "CL_FROM_"; tp = "CL_TO_" }
+    { for (k = 1; k <= n; k++) $0 = rep($0, ENVIRON[fp k], ENVIRON[tp k]); print }'
+)
+home_a="${HOME:-}"; [ "$home_a" != / ] || home_a=""
+home_b=""; [ -z "$home_a" ] || home_b="$(CDPATH='' cd -- "$home_a" 2>/dev/null && pwd -P)" || home_b=""
+[ "$home_b" != "$home_a" ] && [ "$home_b" != / ] || home_b=""
+if [ "${#home_b}" -gt "${#home_a}" ]; then h="$home_a"; home_a="$home_b"; home_b="$h"; fi
+slug_a="" slug_b=""
+[ -z "$home_a" ] || slug_a="$(printf '%s' "$home_a" | tr '/.' '--')-"
+[ -z "$home_b" ] || slug_b="$(printf '%s' "$home_b" | tr '/.' '--')-"
+uid="$(id -u)"
+rewrite "$home_a" '~' "$home_b" '~' "$slug_a" -Users-x- "$slug_b" -Users-x- \
+  "/private/tmp/claude-$uid/" '<tmp>/' "/tmp/claude-$uid/" '<tmp>/' < "$WORK/raw" > "$WORK/brief" \
+  || die 2 "the home-path rewrite failed"
 
 BYTES="$(wc -c < "$WORK/brief" | tr -d ' ')"
 [ "$BYTES" -le "$MAX_BYTES" ] || refuse G6 "the brief is $BYTES bytes, over CLOUD_BRIEF_MAX_BYTES=$MAX_BYTES"
@@ -412,8 +461,9 @@ fi
 # --- write the brief, then the ledger row under the lock -------------------------------------------------------
 DEST="${OUT:-$CLOUD_BRIEF_DIR/$(slug_of "$OR")--$SLUG.md}"
 mkdir -p "$(dirname "$DEST")" || die 2 "cannot create $(dirname "$DEST")"
-cat "$WORK/brief" > "$DEST" || die 2 "cannot write $DEST"
-DEST="$(cd "$(dirname "$DEST")" && pwd -P)/$(basename "$DEST")"
+# Temp + rename: a CLI still reading an earlier brief at this path keeps its own file.
+keel_write_state "$DEST" cat "$WORK/brief" || die 2 "cannot write $DEST"
+DEST="$(CDPATH='' cd -- "$(dirname -- "$DEST")" && pwd -P)/$(basename -- "$DEST")"
 printf 'brief: %s (%s bytes)\n' "$DEST" "$BYTES"
 [ -z "$WARN" ] || printf 'cloud-brief: warning: %s\n' "$WARN" >&2
 
@@ -427,8 +477,9 @@ if [ -n "$reason" ]; then cloud_ledger_unlock "$CLOUD_LEDGER"; refuse ledger "$r
 cloud_ledger_put "$CLOUD_LEDGER" "$OR" "$TICKET" "$ROW" || { cloud_ledger_unlock "$CLOUD_LEDGER"; die 2 "cannot write $CLOUD_LEDGER"; }
 cloud_ledger_unlock "$CLOUD_LEDGER"
 
-LAND="$ENGINE/tools/cloud-land.sh $(printf '%q' "$MAIN") <PR#> --ticket $(printf '%q' "$TICKET")"
-SWEEP="$ENGINE/tools/cloud-brief.sh $(printf '%q' "$MAIN") --sweep"
+Q_ENGINE="$(printf '%q' "$ENGINE")" Q_MAIN="$(printf '%q' "$MAIN")" Q_TICKET="$(printf '%q' "$TICKET")"
+LAND="$Q_ENGINE/tools/cloud-land.sh $Q_MAIN <PR#> --ticket $Q_TICKET"
+SWEEP="$Q_ENGINE/tools/cloud-brief.sh $Q_MAIN --sweep"
 
 if [ "$MODE" != dispatch ]; then
   if [ "$MODE" = eligible ] && [ "$VERDICT" = none ]; then
@@ -437,7 +488,7 @@ if [ "$MODE" != dispatch ]; then
   cat <<NEXT
 
 Dispatch, on the operator's yes (docs/cloud.md):
-  $ENGINE/tools/cloud-brief.sh $(printf '%q' "$MAIN") $(printf '%q' "$TICKET") --dispatch
+  $Q_ENGINE/tools/cloud-brief.sh $Q_MAIN $Q_TICKET --dispatch
 Land, once the session's draft PR exists:
   $LAND
 NEXT
@@ -475,6 +526,21 @@ printf '%s\n' "$CLI_OUT"
 
 SESSION="$(grep -oE 'session_[A-Za-z0-9]+' <<< "$CLI_OUT" | head -1 || true)"
 CLAIM="⏳ IN FLIGHT ($(today), branch $BRANCH, cloud)"
+# The claim goes after the heading's LAST physical line: re-walk backlog_ticket_blocks' wrapped-heading rule over
+# the block, and trust the walk only when it rebuilds the flattened HEADING exactly.
+claim_at=""
+{
+  IFS= read -r so_far
+  so_far="$(sed -E 's/`[^`]*`//g' <<< "$so_far")"
+  n=0
+  while [ "$n" -lt 50 ] && IFS= read -r ln; do
+    ln="$(sed -E 's/`[^`]*`//g' <<< "$ln")"
+    [ -n "$ln" ] && bb_heading_continues "$so_far" "$ln" || break
+    so_far+=$'\n'"$ln"; n=$((n + 1))
+  done
+  [ "$(tr '\n\t' '  ' <<< "$so_far")" != "$HEADING" ] || claim_at="$(sed -n "$((START + n))p" "$BACKLOG" | tr -d '\r') — $CLAIM"
+} <<< "$BLANKED"
+[ -n "$claim_at" ] || claim_at="(append \` — $CLAIM\` to the end of the heading — its last line)"
 LOG="Log: $(today) — dispatched to a cloud session on $BRANCH ($MODEL/$EFFORT)"
 if [ -n "$SESSION" ] && git -C "$MAIN" check-ignore -q "$BACKLOG" 2>/dev/null; then
   LOG="$LOG, session $SESSION"
@@ -483,7 +549,7 @@ cat <<NEXT
 
 Claim — append to the heading with an edit tool, then add the Log line to the body:
   $CLAIM
-  $(sed -n "${START}p" "$BACKLOG") — $CLAIM
+  $claim_at
   $LOG
 The PR will appear on $BRANCH. Land it (the operator, or a local session the operator asks):
   $LAND

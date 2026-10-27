@@ -278,6 +278,9 @@ gh_ok() {
   printf '{"total_count":1}\n' > "$d/api/${key}_actions_workflows.json"
 }
 
+# home_slug DIR — Claude Code's project-directory encoding of DIR (every `/` and `.` → `-`).
+home_slug() { printf '%s' "$1" | tr '/.' '--'; }
+
 # fx [OPTIN-LINE] — a fresh fixture: $F, $P (the project's main checkout), $GH_FX, $CLAUDE_FX, the ledger.
 fx() {
   F="$(mktemp -d "$SANDBOX/fx.XXXXXX")"; require_sandbox_path "$F" fx
@@ -292,7 +295,9 @@ fx() {
     printf '# proj — project context (fixture)\n\n'
     printf '%s\n' "${1-KEEL-CLOUD}"
     printf '\nTest command: bash tests/run.sh. Notes live at %s/notes/rails.md.\n' "$HOME"
-    printf 'Claude project dir: -Users-%s-proj; scratch /private/tmp/claude-%s/x\n' "$(id -un)" "$(id -u)"
+    printf 'Claude project dir: %s-proj; scratch /private/tmp/claude-%s/x; tmp /tmp/claude-%s/y\n' \
+      "$(home_slug "$HOME")" "$(id -u)" "$(id -u)"
+    printf 'Physical home: %s/notes/phys.md\n' "$(cd "$HOME" && pwd -P)"
   } > "$P/CLAUDE.md"
   std_backlog > "$P/BACKLOG.md"
   printf '# spec 801\nBaseline: abc1234\nRead %s/notes/s801.md first.\nA1 the thing works.\n' "$HOME" > "$P/docs/specs/s801.md"
@@ -475,6 +480,42 @@ check_status "T10b a Model rec 'For the Design' → exit 3" 3 "$STATUS"
 check_contains "T10b model rec: G8" "$OUT" "refused: G8"
 nothing_written "T5–T10b"
 
+# --- T10c: a Spec: path outside the main checkout, a CRLF Spec: line ------------------------------------------
+add_ticket() { printf '%b' "$1" >> "$P/BACKLOG.md"; } # TEXT (printf %b escapes) — appended to the fixture backlog
+fx
+printf '# outside\n' > "$F/outside.md"
+mkdir -p "$F/outside-dir" && printf '# linked\n' > "$F/outside-dir/s.md"
+ln -s "$F/outside-dir" "$P/docs/link"
+ln -s "$F/outside.md" "$P/docs/specs/linked.md"
+add_ticket '\n### dir #850 — a spec beside the checkout — R4 — → pool\n\nSpec: ../outside.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #854 — a spec through a symlinked dir — R4 — → pool\n\nSpec: docs/link/s.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #857 — a spec that is a symlink out — R4 — → pool\n\nSpec: docs/specs/linked.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket "\\n### dir #855 — an absolute spec — R4 — → pool\\n\\nSpec: $F/outside.md\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+add_ticket '\n### dir #853 — a CRLF block — R4 — → pool\r\n\r\nSpec: docs/specs/s801.md\r\n\r\n**Cloud:** yes (2026-10-27, fixture)\r\n'
+for t in 850 854 855 857; do
+  cb "$P" "dir #$t"
+  check_status "T10c dir #$t: a Spec: outside the main checkout → exit 3" 3 "$STATUS"
+  check_contains "T10c dir #$t: G7, outside \$MAIN" "$OUT" "refused: G7"
+  check_contains "T10c dir #$t: … says outside" "$OUT" "outside $(cd "$P" && pwd -P)"
+done
+nothing_written "T10c"
+cb "$P" "dir #853" --out "$F/b853.md"
+check_status "T10c a CRLF Spec: line passes G7" 0 "$STATUS"
+check_contains "T10c … and its spec travels" "$(part_of "$F/b853.md" spec)" "A1 the thing works."
+
+# --- T15c: a part with no final newline, a last ticket ending in a fence ------------------------------------
+fx
+printf '%s' "$(cat "$P/CLAUDE.md")" > "$F/c" && cat "$F/c" > "$P/CLAUDE.md"
+printf '# spec 801\nA1 the thing works.' > "$P/docs/specs/s801.md"
+add_ticket '\n### dir #851 — the last ticket ends in a fence — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\nfenced tail content\n```\n'
+cb "$P" "dir #801" --out "$F/nl.md"
+check_status "T15c parts with no final newline build" 0 "$STATUS"
+check_eq "T15c a rails file with no final newline: the last line is the end marker" "=== end of brief ===" "$(tail -n 1 "$F/nl.md")"
+check_eq "T15c a spec with no final newline: the rails marker is a line of its own" "1" "$(grep -cx '=== rails ===' "$F/nl.md")"
+cb "$P" "dir #851" --out "$F/b851.md"
+check_status "T15c the last ticket builds" 0 "$STATUS"
+check_contains "T15c the last ticket's trailing fence travels" "$(part_of "$F/b851.md" ticket)" "fenced tail content"
+
 # --- T11 G6 --------------------------------------------------------------------------------------------------------
 fx
 cb "$P" "dir #829"
@@ -519,6 +560,20 @@ check_absent "T12 \$HOME rewritten" "$b801" "$HOME"
 check_contains "T12 \$HOME became ~" "$b801" "~/notes/rails.md"
 check_contains "T12 the -Users-<user>- form rewritten" "$b801" "-Users-x-proj"
 check_contains "T12 the /private/tmp/claude-<uid>/ form rewritten" "$b801" "scratch <tmp>/x"
+check_contains "T12 the /tmp/claude-<uid>/ form rewritten" "$b801" "tmp <tmp>/y"
+check_absent "T12 the physical home path rewritten" "$b801" "$(cd "$HOME" && pwd -P)"
+check_absent "T12 no home slug left" "$b801" "$(home_slug "$HOME")"
+HOME_SAVED="$HOME"
+export HOME="$SANDBOX/home.dotted"
+mkdir -p "$HOME"
+fx
+cb "$P" "dir #801" --out "$F/dotted.md"
+check_status "T12 a HOME with a dot in its name builds" 0 "$STATUS"
+dotted="$(cat "$F/dotted.md")"
+check_absent "T12 the dotted HOME's slug rewritten" "$dotted" "$(home_slug "$HOME")"
+check_contains "T12 … to -Users-x-" "$dotted" "-Users-x-proj"
+check_absent "T12 the dotted HOME's path rewritten" "$dotted" "home.dotted"
+export HOME="$HOME_SAVED"
 fx
 unset SECRET_SCAN_PERSONAL_FILE
 cb "$P" "dir #801"
@@ -587,8 +642,10 @@ check_status "T14b a lock older than 10 minutes → exit 2" 2 "$STATUS"
 check_contains "T14b stderr says stale" "$OUT" "stale"
 check_dir "T14b the stale lock is left in place" "$LOCK"
 rmdir "$LOCK"
-# The row check sits inside the lock: a row set to dispatched while --dispatch waits refuses it.
+# The row check sits inside the lock: a row set to dispatched while --dispatch waits refuses it. The old brief
+# goes first, so the wait below sees this run's own write (it comes after the first row check, before the lock).
 mkdir "$LOCK"
+rm -f "$CLOUD_BRIEF_DIR/example-proj--dir-801.md"
 ( "$BRIEF_TOOL" "$P" "dir #801" --dispatch > "$F/bg.out" 2>&1 </dev/null; echo $? > "$F/bg.rc" ) &
 n=0; while [ ! -f "$CLOUD_BRIEF_DIR/example-proj--dir-801.md" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
 set_status "dir #801" dispatched
@@ -715,6 +772,13 @@ run_in "$F" "$BRIEF_TOOL" proj "dir #801"
 check_status "T16 <repo> given as a relative path → 0" 0 "$STATUS"
 CLOUD_LEDGER=store/rel.tsv run_in "$F" "$BRIEF_TOOL" proj "dir #801"
 check_file "T16 a relative CLOUD_LEDGER is made absolute against the start directory" "$F/store/rel.tsv"
+mkdir -p "$F/reltmp"
+TMPDIR=reltmp run_in "$F" "$BRIEF_TOOL" proj "dir #801"
+check_status "T16 a relative TMPDIR → 0 (made absolute before the scan's cd)" 0 "$STATUS"
+mkdir -p "$F/decoy/proj"
+CDPATH="$F/decoy" run_in "$F" "$BRIEF_TOOL" proj "dir #801"
+check_status "T16 an exported CDPATH naming a same-named dir → 0" 0 "$STATUS"
+check_contains "T16 … the relative <repo> still resolves to the right checkout" "$OUT" "$(cd "$P" && pwd -P) <PR#>"
 
 # --- T19: slugs ---------------------------------------------------------------------------------------------------
 fx
@@ -758,6 +822,10 @@ cb "$P" "dir #801"
 set_status "dir #801" dispatched
 cb "$P" "dir #801" --check
 check_status "T20b --check on a dispatched row → 3" 3 "$STATUS"
+mkdir -p "$F/plain"
+GIT_CEILING_DIRECTORIES="$F" cbo "$F/plain" "dir #801" --check
+check_status "T20b --check on a directory that is no git repository → 2" 2 "$STATUS"
+check_eq "T20b … its receipt still comes, with head none" "cloud-check: 2 dir #801 none" "$(tail -n 1 <<< "$OUT")"
 
 # --- T17: --sweep --------------------------------------------------------------------------------------------------
 fx
@@ -782,6 +850,29 @@ check_contains "T17 a dispatched row with the stub gh's PR answer" "$OUT" "dispa
 check_contains "T17 a landed row whose head moved is stale" "$OUT" "STALE: the PR head is bbbb, landed at aaaa"
 check_eq "T17 the backlog unchanged" "$bl_before" "$(cksum_of "$P/BACKLOG.md")"
 check_eq "T17 the ledger unchanged" "$lg_before" "$(cksum_of "$CLOUD_LEDGER")"
+touch "$GH_FX/fail"
+cbo "$P" --sweep
+check_status "T17 gh failing during --sweep → exit 2" 2 "$STATUS"
+check_contains "T17 … the dispatched row's PR is unknown" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $TODAY (0 days)	PR unknown (gh failed)"
+check_contains "T17 … the landed row's state is unknown" "$OUT" "landed	dir #814	claude/cloud-dir-814	PR unknown (gh failed)	unknown"
+check_contains "T17 … gh's own stderr passes through" "$ERR" "error connecting"
+check_contains "T17 … and the failure is named" "$ERR" "PR columns"
+rm "$GH_FX/fail"
+printf '[{"number":7,"head":{"sha":"aaaa"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-814_state_all.json"
+cbo "$P" --sweep
+check_contains "T17 a landed row at its PR head is current" "$OUT" "landed	dir #814	claude/cloud-dir-814	PR #7	current"
+set_cell "dir #814" 12 3
+cbo "$P" --sweep
+check_contains "T17 a landed row whose last landing check failed is stale" "$OUT" "STALE: the last landing check exited 3"
+# A same-day row is 0 days in every zone: a zone 14 h ahead of UTC (no tzdata: UTC, still passing) and a POSIX
+# zone 12 h behind it (no tzdata needed), the build and the sweep both in it.
+for zone in Pacific/Kiritimati XXX+12; do
+  fx
+  TZ="$zone" cb "$P" "dir #812"; set_status "dir #812" dispatched
+  printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
+  TZ="$zone" cbo "$P" --sweep
+  check_contains "T17 TZ=$zone: a row built today is 0 days old" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $(TZ="$zone" date +%F) (0 days)"
+done
 fx
 printf '# Backlog\n\n## Open\n\n### dir #1 — closed — R4 — ✅ DONE\n' > "$P/BACKLOG.md"
 cbo "$P" --sweep
@@ -801,6 +892,19 @@ cb "$P" "dir #801" --dispatch
 check_status "T18 an existing origin claude/cloud-<slug> → exit 3" 3 "$STATUS"
 check_contains "T18 … G9 names the branch" "$OUT" "origin already has claude/cloud-dir-801"
 check_nofile "T18 no CLI call on a G9 refusal" "$CLAUDE_FX/calls"
+fx
+printf '{"default_branch":"dev%sx"}\n' "'" > "$GH_FX/api/repos_example_proj.json"
+cb "$P" "dir #801"
+check_status "T18 a default branch name outside [A-Za-z0-9._/-] → exit 2" 2 "$STATUS"
+check_contains "T18 … named" "$OUT" "default branch"
+nothing_written "T18 default branch"
+fx
+path_farm "$F/farm" script
+PATH="$F/farm" cb "$P" "dir #801" --dispatch
+check_status "T18 no \`script\` on PATH → exit 5" 5 "$STATUS"
+check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
+check_contains "T18 … the manual command named" "$OUT" "claude --cloud"
+check_nofile "T18 … the CLI never ran" "$CLAUDE_FX/calls"
 if [ -n "$HAVE_SCRIPT" ]; then
   fx
   cb "$P" "dir #801" --dispatch
@@ -838,6 +942,13 @@ if [ -n "$HAVE_SCRIPT" ]; then
   cb "$P" "dir #801" --dispatch
   check_status "T18 a tracked backlog dispatches" 0 "$STATUS"
   check_absent "T18 a tracked backlog's Log line carries no session" "$OUT" "session session_01FIXTURE"
+  fx
+  add_ticket '\n### dir #852 — a wrapped heading whose title runs\non — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+  cb "$P" "dir #852" --dispatch
+  check_status "T21 a wrapped heading dispatches" 0 "$STATUS"
+  check_contains "T21 the claim goes after the heading's last line" "$OUT" "
+  on — R4 — → pool — ⏳ IN FLIGHT ($TODAY, branch claude/cloud-dir-852, cloud)"
+  check_absent "T21 … not after its first line" "$OUT" "runs — ⏳"
 else
   echo "  SKIP  T18/T21 dispatch cases: no \`script\` on this host (the CLI needs a pseudo-terminal)"
 fi
@@ -871,6 +982,37 @@ check_eq "lib cloud_personal_file makes a relative list absolute (the scanner ru
   "$(cd "$SANDBOX/rel" && SECRET_SCAN_PERSONAL_FILE=list && cloud_personal_file && printf '%s' "$SECRET_SCAN_PERSONAL_FILE")"
 (cd "$SANDBOX/rel" && SECRET_SCAN_PERSONAL_FILE=absent && cloud_personal_file)
 check_status "lib cloud_personal_file refuses a missing list" 1 "$?"
+# Keys compare as strings: `2.1` and `2.10`, `34` and `34.` are four tickets, not two.
+L2="$SANDBOX/lib-ledger2/ledger.tsv"
+cloud_ledger_init "$L2"
+for t in 2.1 2.10 34 34.; do
+  cloud_ledger_put "$L2" o/r "$t" "$(printf 'd\to/r\t%s\tb\tm\t1\t?\tbuilt-%s\t\t\t\t\t\t' "$t" "$t")"
+done
+check_eq "lib cloud_ledger_put keeps numerically-equal keys apart" "4" "$(tail -n +2 "$L2" | grep -c '')"
+for t in 2.1 2.10 34 34.; do
+  check_eq "lib cloud_ledger_row finds $t, not its numeric twin" "built-$t" "$(cloud_ledger_cell "$(cloud_ledger_row "$L2" o/r "$t")" 8)"
+done
+# The defang runs byte-wise, whatever the caller's locale; a source that cannot be read is rc 2.
+mkdir -p "$SANDBOX/scan" && printf 'caf\351\n' > "$SANDBOX/scan/latin1.txt"
+mkdir -p "$SANDBOX/scan/w1" "$SANDBOX/scan/w2"
+SECRET_SCAN_PERSONAL_FILE=/dev/null LC_ALL=en_US.UTF-8 cloud_scan_file "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$SANDBOX/scan/latin1.txt" "$SANDBOX/scan/w1" >/dev/null
+check_status "lib cloud_scan_file on a Latin-1 byte under a UTF-8 locale → 0" 0 "$?"
+SECRET_SCAN_PERSONAL_FILE=/dev/null cloud_scan_file "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$SANDBOX/scan/absent.txt" "$SANDBOX/scan/w2" >/dev/null 2>&1
+check_status "lib cloud_scan_file on a missing source → 2" 2 "$?"
+# A ledger that resolves into the Keel checkout is refused by init as by put.
+fake_ck="$SANDBOX/fake-checkout"; mkdir -p "$fake_ck" "$SANDBOX/lib-ledger3"
+ln -s "$fake_ck/ledger.tsv" "$SANDBOX/lib-ledger3/ledger.tsv"
+saved_ck="$KEEL_SAFE_WRITE_CHECKOUT"; KEEL_SAFE_WRITE_CHECKOUT="$fake_ck"
+cloud_ledger_init "$SANDBOX/lib-ledger3/ledger.tsv" 2>/dev/null
+check_status "lib cloud_ledger_init refuses a ledger linked into the Keel checkout" 1 "$?"
+check_nofile "lib … and writes nothing there" "$fake_ck/ledger.tsv"
+KEEL_SAFE_WRITE_CHECKOUT="$saved_ck"
+# A worktree of a bare repository: the main checkout falls back to the worktree's own top, not the given subdir.
+git clone -q --bare "$P" "$SANDBOX/bare.git"
+git -C "$SANDBOX/bare.git" worktree add -q "$SANDBOX/bwt" -b bx 2>/dev/null
+mkdir -p "$SANDBOX/bwt/sub"
+check_eq "lib cloud_resolve_main on a bare repo's worktree subdir → the worktree's top" \
+  "$(cd "$SANDBOX/bwt" && pwd -P)" "$(cloud_resolve_main "$SANDBOX/bwt/sub" && printf '%s' "$MAIN")"
 
 # --- T0 ----------------------------------------------------------------------------------------------------------
 real_ledger_after="absent"; [ -f "$REAL_LEDGER" ] && real_ledger_after="$(cksum < "$REAL_LEDGER")"
