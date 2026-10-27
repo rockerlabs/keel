@@ -294,9 +294,11 @@ check_nofile "...and nothing was created there" "$other_repo/c.tsv"
 # a checkout copy that is NOT itself a work tree isolates the repo_root clause from the git clause
 nogit="$SANDBOX/nogit-checkout"
 mkdir -p "$nogit"
+if git -C "$nogit" rev-parse --is-inside-work-tree >/dev/null 2>&1; then fail "the checkout copy is not inside a git work tree" "$nogit"; else pass "the checkout copy is not inside a git work tree"; fi
 cp -R "$REPO_ROOT/tools" "$nogit/tools"
 run bash "$nogit/tools/self/bypass-scan.sh" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$nogit/c.tsv"
 check_status "--out inside the checkout, with no work tree around it, is refused (exit 2)" 2 "$STATUS"
+check_contains "...naming the work tree" "$OUT" "inside a git work tree"
 check_nofile "...and nothing was created there" "$nogit/c.tsv"
 # no --out: a TMPDIR inside a work tree is refused, and the scratch file the scan made is removed again
 mkdir -p "$other_repo/tmp"
