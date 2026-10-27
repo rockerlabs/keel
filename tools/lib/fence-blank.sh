@@ -1,7 +1,7 @@
 # shellcheck shell=bash
-# tools/lib/fence-blank.sh — keel-self-maintenance (dir #68): markdown-noise-blanking helpers shared
-# across keel-self-maintenance tools with no consumer-facing counterpart (install.sh never ships any of
-# them, so this lib never reaches an adopter's install either) — among them tools/self/doctor.sh (its
+# tools/lib/fence-blank.sh — adopter-usable (dir #68): markdown-noise-blanking helpers. Since dir #900 an
+# adopter-facing tool sources it — tools/cloud-brief.sh, which an adopter runs from their keel checkout
+# against their own backlog — beside the keel-self-maintenance tools that use it: tools/self/doctor.sh (its
 # BACKLOG.md/CHANGELOG.md heading scans), tools/self/prose-drift.sh (its md line-length signal and its
 # dead-link signal, dir #240), and tools/self/line-citations.sh (its fenced-example exclusion); NOT an
 # exhaustive list of callers (a prior header version named only these three as if it were — corrected by

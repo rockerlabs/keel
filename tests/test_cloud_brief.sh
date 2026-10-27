@@ -1,0 +1,877 @@
+#!/usr/bin/env bash
+# test_cloud_brief.sh (dir #900) — tools/cloud-brief.sh and templates/cloud-protocol.md: the opt-in line, the
+# eligibility rows G1–G9, the verdict line, the brief's shape and scan, the ledger and its lock, --check,
+# --sweep, --dispatch, and the protocol's push guard run for real (spec docs/specs/900-cloud-ticket-routing.md,
+# A1 T0–T21 and A3/T15b). Every case runs on fixtures under the sandbox: an engine copy of this tree committed
+# to its own bare origin, a project with a bare origin, a stub `gh` and a stub `claude` on PATH, a fixture
+# ledger and personal list — never the network, never the real ledger (T0).
+REAL_LEDGER="${HOME:-/nonexistent}/.keel/cloud/ledger.tsv"
+real_ledger_before="absent"; [ -f "$REAL_LEDGER" ] && real_ledger_before="$(cksum < "$REAL_LEDGER")"
+# shellcheck source=tests/lib.sh
+. "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
+
+echo "cloud-brief.sh (dir #900)"
+
+TODAY="$(date +%F)"
+TOKEN="$(key ghp_ "$(rep A 36)")"
+LITERAL=zzfixturezz
+HAVE_SCRIPT=""; command -v script >/dev/null 2>&1 && HAVE_SCRIPT=1
+
+# --- the engine: this tree's tools and template, committed, pushed to a bare origin, plus one local commit ----
+ENG="$SANDBOX/engine"
+mkdir -p "$ENG/templates"
+cp -R "$REPO_ROOT/tools" "$ENG/"
+cp "$REPO_ROOT/templates/cloud-protocol.md" "$ENG/templates/"
+git init -q "$ENG"
+git -C "$ENG" add -A
+git -C "$ENG" commit -qm "engine fixture"
+git init -q --bare "$SANDBOX/keel-origin.git"
+git -C "$ENG" remote add origin https://github.com/rockerlabs/keel.git
+git -C "$ENG" config url."$SANDBOX/keel-origin.git".insteadOf https://github.com/rockerlabs/keel.git
+git -C "$ENG" push -q origin HEAD:refs/heads/main
+ENG_PUBLISHED="$(git -C "$ENG" rev-parse HEAD)"
+git -C "$ENG" commit -q --allow-empty -m "local only"
+ENG_HEAD="$(git -C "$ENG" rev-parse HEAD)"
+BRIEF_TOOL="$ENG/tools/cloud-brief.sh"
+check_ne "fixture: the engine has a local commit ahead of origin/main" "$ENG_PUBLISHED" "$ENG_HEAD"
+
+# --- stubs --------------------------------------------------------------------------------------------------
+mkdir -p "$SANDBOX/bin"
+cat > "$SANDBOX/bin/gh" <<'GH'
+#!/usr/bin/env bash
+d="${GH_FX:?}"
+echo "$*" >> "$d/calls"
+[ -f "$d/fail" ] && { echo "error connecting to api.github.com" >&2; exit 1; }
+if [ "${1:-}" = api ]; then
+  path="$2"; shift 2; jqx="."
+  while [ $# -gt 0 ]; do case "$1" in --jq) jqx="$2"; shift ;; esac; shift; done
+  f="$d/api/$(printf '%s' "$path" | tr '/?&=:' '_____').json"
+  [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+  jq -r "$jqx" "$f"
+  exit
+fi
+echo "stub gh: unhandled: $*" >&2
+exit 1
+GH
+cat > "$SANDBOX/bin/claude" <<'CLAUDE'
+#!/usr/bin/env bash
+d="${CLAUDE_FX:?}"
+echo called >> "$d/calls"
+pwd -P > "$d/cwd"
+printf '%s' "$#" > "$d/argc"
+printf '%s' "${1:-}" > "$d/arg1"
+printf '%s' "${2:-}" > "$d/brief"
+printf '%s %s %s %s' "${3:-}" "${4:-}" "${5:-}" "${6:-}" > "$d/rest"
+cp "$CLOUD_LEDGER" "$d/ledger-at-call"
+if [ -d "$(dirname "$CLOUD_LEDGER")/ledger.lock" ]; then echo held; else echo free; fi > "$d/lock-at-call"
+rc="$(cat "$d/exit" 2>/dev/null || echo 0)"
+if [ "$rc" = 0 ]; then
+  echo "Created cloud session: Fixture"
+  echo "View: https://claude.ai/code/session_01FIXTURE?from=cli&m=0"
+else
+  echo "stub stdout line"
+  echo "stub stderr line" >&2
+fi
+exit "$rc"
+CLAUDE
+chmod +x "$SANDBOX/bin/gh" "$SANDBOX/bin/claude"
+export PATH="$SANDBOX/bin:$PATH"
+
+# --- the standard backlog ---------------------------------------------------------------------------------------
+std_backlog() {
+  cat <<BACKLOG
+# Backlog
+
+## Open
+
+### dir #801 — eligible, verdict yes, with a spec — R4 — → pool — 📐 SPEC-READY
+
+Spec: docs/specs/s801.md (gitignored — main checkout only)
+
+**Model rec:** mid tier + high — fixture.
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #802 — no verdict yet — R4 — → pool
+
+**Model rec:** top tier + xhigh
+
+### dir #803 — verdict no — R3 — → pool
+
+**Cloud:** no — G4: needs a live device (2026-10-27, fixture)
+
+### dir #804 — closed — R4 — ✅ DONE (PR #1)
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #805 — retracted — R4 — RETRACTED
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #806 — superseded — R4 — ❌ SUPERSEDED by dir #1
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #807 — in flight — R4 — ⏳ IN FLIGHT (2026-10-27, branch x)
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #808 — blocked — R4 — ⛔ BLOCKED by dir #1
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #809 — not ready — R2 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #810 — no grade — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #811 — a contradiction — R2 — 📐 SPEC-READY
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #812 — spec-ready alone — 📐 SPEC-READY
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #813 — last token low — R4 rewrite — R2
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #814 — last token high — R2 idea — R4
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #815 — a body Log line with a check mark — R4 — → pool
+
+Log: 2026-10-01 — ✅ DONE the first half
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #816 — two verdict lines — R4 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #817 — a fenced example above a real no — R4 — → pool
+
+\`\`\`
+**Cloud:** yes (2026-10-27, example)
+\`\`\`
+
+**Cloud:** no — G4: needs a simulator (2026-10-27, fixture)
+
+### dir #818 — maybe — R4 — → pool
+
+**Cloud:** maybe
+
+### dir #819 — yes with no date — R4 — → pool
+
+**Cloud:** yes
+
+### dir #820 — a missing spec — R4 — → pool
+
+Spec: docs/specs/missing.md
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #821 — a design question — R4 — → pool
+
+**Question for a /design pass:** which way?
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #822 — a design model rec — R4 — → pool
+
+**Model rec:** top tier + high, For the Design pass
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #823 — a token in the ticket — R4 — → pool
+
+The key $TOKEN leaked here.
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #824 — light tier — R4 — → pool
+
+**Model rec:** light tier + low
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #825 — no model rec — R4 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #826 — an unmapped tier — R4 — → pool
+
+**Model rec:** huge tier + high
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #827 — a personal literal in the spec — R4 — → pool
+
+Spec: docs/specs/s827.md
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #828 — a token in the spec — R4 — → pool
+
+Spec: docs/specs/s828.md
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #829 — a big spec — R4 — → pool
+
+Spec: docs/specs/big.md
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #830 — rejected alone — R4 — ❌ WONTFIX
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #831 — superseded alone — R4 — SUPERSEDED by dir #1
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #832 — maximum care — R4 — → pool
+
+**Model rec:** top tier + maximum care
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #833 — no effort word — R4 — → pool
+
+**Model rec:** mid tier, careful
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #834 — two tiers — R4 — → pool
+
+**Model rec:** mid tier + high (top tier + xhigh if the gate route is taken)
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### dir #840 — no verdict, then a sibling with one — R4 — → pool
+
+Body of 840.
+
+### dir #841 — the sibling — R4 — → pool
+
+Body of 841.
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### KB.34 — a KB-shaped id — R4 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### H.130 — an H-shaped id — R4 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### 34. — a numbered id — R4 — → pool
+
+**Cloud:** yes (2026-10-27, fixture)
+
+### 35. a legacy heading with no dash after the id — R4
+
+**Cloud:** yes (2026-10-27, fixture)
+BACKLOG
+}
+
+# gh_ok DIR OWNER/NAME — the stub answers for a readable, protected repository with CI.
+gh_ok() {
+  local d="$1" key
+  key="$(printf '%s' "repos/$2" | tr '/' '_')"
+  mkdir -p "$d/api"
+  printf '{"default_branch":"main"}\n' > "$d/api/$key.json"
+  printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' > "$d/api/${key}_branches_main.json"
+  printf '{"total_count":1}\n' > "$d/api/${key}_actions_workflows.json"
+}
+
+# fx [OPTIN-LINE] — a fresh fixture: $F, $P (the project's main checkout), $GH_FX, $CLAUDE_FX, the ledger.
+fx() {
+  F="$(mktemp -d "$SANDBOX/fx.XXXXXX")"; require_sandbox_path "$F" fx
+  P="$F/proj"
+  mkdir -p "$P/docs/specs" "$F/gh" "$F/claude" "$F/store"
+  export GH_FX="$F/gh" CLAUDE_FX="$F/claude"
+  export CLOUD_LEDGER="$F/store/ledger.tsv" CLOUD_BRIEF_DIR="$F/store/briefs" SECRET_SCAN_PERSONAL_FILE="$F/personal"
+  unset CLOUD_TEMPLATE CLOUD_BRIEF_MAX_BYTES CLOUD_KEEL_ORIGIN
+  printf '%s\n' "$LITERAL" > "$F/personal"
+  gh_ok "$GH_FX" example/proj
+  {
+    printf '# proj — project context (fixture)\n\n'
+    printf '%s\n' "${1-KEEL-CLOUD}"
+    printf '\nTest command: bash tests/run.sh. Notes live at %s/notes/rails.md.\n' "$HOME"
+    printf 'Claude project dir: -Users-%s-proj; scratch /private/tmp/claude-%s/x\n' "$(id -un)" "$(id -u)"
+  } > "$P/CLAUDE.md"
+  std_backlog > "$P/BACKLOG.md"
+  printf '# spec 801\nBaseline: abc1234\nRead %s/notes/s801.md first.\nA1 the thing works.\n' "$HOME" > "$P/docs/specs/s801.md"
+  printf '# spec 827\nowner %s here\n' "$LITERAL" > "$P/docs/specs/s827.md"
+  printf '# spec 828\ntoken %s\n' "$TOKEN" > "$P/docs/specs/s828.md"
+  { printf '# big spec\n'; rep x 135000; printf '\n'; } > "$P/docs/specs/big.md"
+  printf 'BACKLOG.md\nCLAUDE.md\ndocs/specs/\n' > "$P/.gitignore"
+  git init -q "$P"
+  git -C "$P" add .gitignore
+  git -C "$P" commit -qm init
+  git init -q --bare "$F/proj-origin.git"
+  git -C "$P" remote add origin https://github.com/example/proj.git
+  git -C "$P" config url."$F/proj-origin.git".insteadOf https://github.com/example/proj.git
+  git -C "$P" push -q origin HEAD:refs/heads/main
+}
+
+cb()  { run "$BRIEF_TOOL" "$@"; }                                         # merged stdout+stderr
+cbo() { OUT="$("$BRIEF_TOOL" "$@" 2>"$F/stderr" </dev/null)"; STATUS=$?; ERR="$(cat "$F/stderr")"; }
+row_of()    { awk -F'\t' -v t="$1" 'NR > 1 && $3 == t' "$CLOUD_LEDGER" 2>/dev/null; }
+status_of() { row_of "$1" | cut -f8; }
+set_status() { # TICKET STATUS — edit the fixture ledger by hand, as an operator would
+  awk -F'\t' -v OFS='\t' -v t="$1" -v s="$2" 'NR > 1 && $3 == t { $8 = s } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
+  cat "$F/l.tmp" > "$CLOUD_LEDGER"
+}
+part_of() { awk -v p="=== $2 ===" '$0 == p { f = 1; next } /^=== [a-z ]+ ===$/ { f = 0 } f' "$1"; }
+nothing_written() { # LABEL
+  if [ -d "$CLOUD_BRIEF_DIR" ] && [ -n "$(ls -A "$CLOUD_BRIEF_DIR")" ]; then fail "$1: no brief" "found $(ls "$CLOUD_BRIEF_DIR")"; else pass "$1: no brief"; fi
+  if [ -s "$CLOUD_LEDGER" ] && [ -n "$(tail -n +2 "$CLOUD_LEDGER")" ]; then fail "$1: no ledger row" "$(cat "$CLOUD_LEDGER")"; else pass "$1: no ledger row"; fi
+}
+
+# --- T1 / T1c: the opt-in line ------------------------------------------------------------------------------------
+fx ""
+cb "$P" "dir #801"
+check_status "T1 no KEEL-CLOUD line → exit 3" 3 "$STATUS"
+check_contains "T1 names G1" "$OUT" "refused: G1"
+nothing_written "T1"
+
+fx "This project uses KEEL-CLOUD for its tickets."
+cbo "$P" "dir #801"
+check_status "T1 the token only mid-paragraph → exit 3" 3 "$STATUS"
+check_contains "T1 mid-paragraph: G1" "$ERR" "refused: G1"
+check_contains "T1 mid-paragraph: stderr names the line" "$ERR" "line 3: This project uses KEEL-CLOUD"
+
+fx "KEEL-CLOUD unprotected-ok extra"
+cbo "$P" "dir #801"
+check_status "T1c 'KEEL-CLOUD unprotected-ok extra' → exit 3" 3 "$STATUS"
+check_contains "T1c near-miss: G1" "$ERR" "refused: G1"
+check_contains "T1c near-miss: stderr names the line" "$ERR" "KEEL-CLOUD unprotected-ok extra"
+fx "keel-cloud"
+cbo "$P" "dir #801"
+check_status "T1c lowercase 'keel-cloud' → exit 3" 3 "$STATUS"
+check_contains "T1c lowercase: G1 and the line" "$ERR" "line 3: keel-cloud"
+
+unprotect() { printf '{"protected":true,"protection":{"enabled":true}}\n' > "$GH_FX/api/repos_example_proj_branches_main.json"; }
+fx "KEEL-CLOUD
+KEEL-CLOUD unprotected-ok extra"
+unprotect
+cbo "$P" "dir #801"
+check_status "T1c a plain line + a near-miss unprotected-ok line, unprotected branch → exit 3" 3 "$STATUS"
+check_contains "T1c the near-miss line does not opt in: G1b" "$ERR" "refused: G1b"
+fx "KEEL-CLOUD
+We are fine with unprotected-ok here."
+unprotect
+cbo "$P" "dir #801"
+check_contains "T1c prose naming unprotected-ok does not opt in: G1b" "$ERR" "refused: G1b"
+fx "$(printf 'KEEL-CLOUD\r')"
+cb "$P" "dir #801"
+check_status "T1c a CRLF KEEL-CLOUD line passes" 0 "$STATUS"
+
+# --- T1b / T1d: finding the ticket --------------------------------------------------------------------------------
+fx
+cb "$P" "dir #999"
+check_status "T1b an unknown id → exit 2" 2 "$STATUS"
+cb "$P" "dir #80"
+check_status "T1d 'dir #80' when only dir #801 exists → exit 2" 2 "$STATUS"
+cb "$P" "35."
+check_status "T1b a legacy heading with no ' — ' after the id → exit 2" 2 "$STATUS"
+fx
+mv "$P/BACKLOG.md" "$F/away.md"
+cb "$P" "dir #801"
+check_status "T1b a project with no backlog → exit 2" 2 "$STATUS"
+check_contains "T1b no backlog: spec mode named" "$OUT" "spec-mode tickets are not dispatched"
+
+fx
+cb "$P" "dir #840"
+check_status "T1d dir #840 with no verdict, its sibling dir #841 carrying one → exit 4" 4 "$STATUS"
+cb "$P" "dir #840" --eligible --out "$F/b840.md"
+check_status "T1d dir #840 --eligible → exit 0" 0 "$STATUS"
+t840="$(part_of "$F/b840.md" ticket)"
+check_contains "T1d the ticket part holds dir #840" "$t840" "Body of 840."
+check_absent "T1d the ticket part holds no dir #841 text" "$t840" "dir #841"
+check_absent "T1d the ticket part holds no sibling body" "$t840" "Body of 841."
+
+# --- T2: origin and gh ------------------------------------------------------------------------------------------
+fx
+git -C "$P" remote set-url origin https://gitlab.com/example/proj.git
+cb "$P" "dir #801"
+check_status "T2 origin not on github.com → exit 3" 3 "$STATUS"
+check_contains "T2 not github: G1" "$OUT" "refused: G1"
+fx
+touch "$GH_FX/fail"
+cb "$P" "dir #801"
+check_status "T2 gh fails for transport → exit 2" 2 "$STATUS"
+fx
+rm "$GH_FX/api/repos_example_proj.json"
+cb "$P" "dir #801"
+check_status "T2 gh answers 404 for the repository → exit 3" 3 "$STATUS"
+check_contains "T2 404: G1" "$OUT" "refused: G1"
+
+# --- T3 / T3c: protection and CI ---------------------------------------------------------------------------------
+fx
+cb "$P" "dir #801"
+check_status "T3 enforcement_level everyone → passes" 0 "$STATUS"
+for shape in '{"protected":true,"protection":{"enabled":true}}' \
+             '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"non_admins"}}}' \
+             '{"protected":false}'; do
+  fx
+  printf '%s\n' "$shape" > "$GH_FX/api/repos_example_proj_branches_main.json"
+  cb "$P" "dir #801"
+  check_status "T3 $shape without unprotected-ok → exit 3" 3 "$STATUS"
+  check_contains "T3 $shape: G1b" "$OUT" "refused: G1b"
+  fx "KEEL-CLOUD unprotected-ok"
+  printf '%s\n' "$shape" > "$GH_FX/api/repos_example_proj_branches_main.json"
+  cb "$P" "dir #801"
+  check_status "T3 $shape with unprotected-ok → 0" 0 "$STATUS"
+done
+fx
+printf '{"total_count":0}\n' > "$GH_FX/api/repos_example_proj_actions_workflows.json"
+cb "$P" "dir #801"
+check_status "T3c no workflow → exit 3" 3 "$STATUS"
+check_contains "T3c names G1c" "$OUT" "refused: G1c"
+nothing_written "T3c"
+
+# --- T4: G2 ---------------------------------------------------------------------------------------------------
+fx
+for t in 804 805 806 807 808 809 810 811 813 830 831; do
+  cb "$P" "dir #$t"
+  check_status "T4 dir #$t → exit 3" 3 "$STATUS"
+  check_contains "T4 dir #$t: G2" "$OUT" "refused: G2 "
+done
+for t in 812 814 815; do
+  cb "$P" "dir #$t"
+  check_status "T4 dir #$t passes G2" 0 "$STATUS"
+done
+
+# --- T5–T10b: the verdict line, G7, G8 -------------------------------------------------------------------------
+fx
+cb "$P" "dir #803"
+check_status "T5 a no — G4 verdict → exit 3" 3 "$STATUS"
+check_contains "T5 stderr names G4 and the reason" "$OUT" "G4: needs a live device"
+nothing_written "T5"
+cb "$P" "dir #801"
+check_status "T6 a yes verdict builds without --eligible" 0 "$STATUS"
+fx
+cb "$P" "dir #802"
+check_status "T7 no verdict → exit 4" 4 "$STATUS"
+for r in G3 G3b G4 G5 G8; do check_contains "T7 prints $r" "$OUT" "  $r "; done
+check_contains "T7 prints the yes template" "$OUT" "**Cloud:** yes ($TODAY, <who>)"
+check_contains "T7 prints the no template" "$OUT" "**Cloud:** no — <G3|G3b|G4|G5|G8>: <reason> ($TODAY, <who>)"
+nothing_written "T7"
+cb "$P" "dir #816"
+check_status "T8 two verdict lines → exit 3" 3 "$STATUS"
+cb "$P" "dir #817"
+check_status "T8 a fenced yes above a real no — G4 → exit 3" 3 "$STATUS"
+check_contains "T8 the value is read from the blanked block: G4" "$OUT" "G4: needs a simulator"
+cb "$P" "dir #818"
+check_status "T9 **Cloud:** maybe → exit 3" 3 "$STATUS"
+cb "$P" "dir #819"
+check_status "T9 **Cloud:** yes with no (date, who) → exit 3" 3 "$STATUS"
+cb "$P" "dir #820"
+check_status "T10 Spec: a missing file → exit 3" 3 "$STATUS"
+check_contains "T10 names G7" "$OUT" "refused: G7"
+cb "$P" "dir #821"
+check_status "T10b 'Question for a /design pass' → exit 3" 3 "$STATUS"
+check_contains "T10b question: G8" "$OUT" "refused: G8"
+cb "$P" "dir #822"
+check_status "T10b a Model rec 'For the Design' → exit 3" 3 "$STATUS"
+check_contains "T10b model rec: G8" "$OUT" "refused: G8"
+nothing_written "T5–T10b"
+
+# --- T11 G6 --------------------------------------------------------------------------------------------------------
+fx
+cb "$P" "dir #829"
+check_status "T11 a brief over the default cap → exit 3" 3 "$STATUS"
+check_contains "T11 names G6 and the default 130000" "$OUT" "CLOUD_BRIEF_MAX_BYTES=130000"
+cb "$P" "dir #801" --out "$F/size.md"
+size="$(wc -c < "$F/size.md" | tr -d ' ')"
+CLOUD_BRIEF_MAX_BYTES="$size" cb "$P" "dir #801" --out "$F/size2.md"
+check_status "T11 a cap equal to the rewritten size → 0" 0 "$STATUS"
+CLOUD_BRIEF_MAX_BYTES="$((size - 1))" cb "$P" "dir #801" --out "$F/size3.md"
+check_status "T11 one byte less → exit 3" 3 "$STATUS"
+rm -f "$F/size.md" "$F/size2.md"
+fx
+CLOUD_BRIEF_MAX_BYTES=1000 cb "$P" "dir #801"
+check_status "T11 a brief over CLOUD_BRIEF_MAX_BYTES → exit 3" 3 "$STATUS"
+check_contains "T11 override: G6" "$OUT" "refused: G6"
+nothing_written "T11"
+
+# --- T12: the scan, the home path, the personal list -----------------------------------------------------------
+fx
+cb "$P" "dir #823"
+check_status "T12 a ghp_ token in the ticket → exit 1" 1 "$STATUS"
+cb "$P" "dir #828"
+check_status "T12 a ghp_ token in the spec → exit 1" 1 "$STATUS"
+cb "$P" "dir #827"
+check_status "T12 a personal literal in the spec → exit 1" 1 "$STATUS"
+nothing_written "T12"
+printf 'key %s\n' "$TOKEN" >> "$P/CLAUDE.md"
+cb "$P" "dir #801"
+check_status "T12 a ghp_ token in the rails → exit 1" 1 "$STATUS"
+nothing_written "T12 rails"
+fx
+cb "$P" "dir #801" --out "$F/b801.md"
+check_status "T12 the clean ticket builds" 0 "$STATUS"
+b801="$(cat "$F/b801.md")"
+check_absent "T12 \$HOME rewritten" "$b801" "$HOME"
+# shellcheck disable=SC2088  # the LITERAL ~ is the point: the rewrite writes it verbatim
+check_contains "T12 \$HOME became ~" "$b801" "~/notes/rails.md"
+check_contains "T12 the -Users-<user>- form rewritten" "$b801" "-Users-x-proj"
+check_contains "T12 the /private/tmp/claude-<uid>/ form rewritten" "$b801" "scratch <tmp>/x"
+fx
+unset SECRET_SCAN_PERSONAL_FILE
+cb "$P" "dir #801"
+check_status "T12 SECRET_SCAN_PERSONAL_FILE unset, no default file → exit 2" 2 "$STATUS"
+check_contains "T12 fail-closed names the list" "$OUT" "personal-literals list"
+nothing_written "T12 fail-closed"
+export SECRET_SCAN_PERSONAL_FILE=/dev/null
+cb "$P" "dir #801"
+check_status "T12 /dev/null opts out → 0" 0 "$STATUS"
+
+# --- T13: the model mapping (read back from the ledger row) -----------------------------------------------------
+fx
+cb "$P" "dir #801"; check_eq "T13 mid tier + high → sonnet/high" "sonnet/high" "$(row_of 'dir #801' | cut -f5)"
+cb "$P" "dir #802" --eligible; check_eq "T13 top tier + xhigh → opus/xhigh" "opus/xhigh" "$(row_of 'dir #802' | cut -f5)"
+cb "$P" "dir #824"; check_eq "T13 light tier + low → haiku/low" "haiku/low" "$(row_of 'dir #824' | cut -f5)"
+cb "$P" "dir #825"; check_eq "T13 no Model rec → sonnet/medium" "sonnet/medium" "$(row_of 'dir #825' | cut -f5)"
+check_contains "T13 no Model rec warns" "$OUT" "sonnet + medium, the default"
+cb "$P" "dir #826"
+check_status "T13 an unmapped tier → exit 3" 3 "$STATUS"
+cb "$P" "dir #832"; check_eq "T13 'maximum care' is not the effort max → opus/medium" "opus/medium" "$(row_of 'dir #832' | cut -f5)"
+cb "$P" "dir #833"; check_eq "T13 mid tier, no effort word → sonnet/medium" "sonnet/medium" "$(row_of 'dir #833' | cut -f5)"
+check_contains "T13 no effort word warns" "$OUT" "no effort word"
+cb "$P" "dir #834"; check_eq "T13 two tiers: the first decides → sonnet/high" "sonnet/high" "$(row_of 'dir #834' | cut -f5)"
+
+# --- T14: the ledger ----------------------------------------------------------------------------------------------
+fx
+cb "$P" "dir #801" --credit-before 200
+check_eq "T14 a build writes one built row" "built" "$(status_of 'dir #801')"
+check_eq "T14 the row is keyed by repo" "example/proj" "$(row_of 'dir #801' | cut -f2)"
+check_eq "T14 the credit cell" "200" "$(row_of 'dir #801' | cut -f7)"
+check_eq "T14 a row has 14 cells" "14" "$(row_of 'dir #801' | awk -F'\t' '{print NF}')"
+check_eq "T14 the header" "$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR')" "$(head -1 "$CLOUD_LEDGER")"
+cb "$P" "dir #801"
+check_eq "T14 a rebuild replaces the built row: one row" "1" "$(row_of 'dir #801' | grep -c '')"
+check_eq "T14 the rebuild's credit cell is fresh" "?" "$(row_of 'dir #801' | cut -f7)"
+for s in dispatched abandoned; do
+  set_status "dir #801" "$s"
+  cb "$P" "dir #801"
+  check_status "T14 a $s row refuses a build without --redispatch" 3 "$STATUS"
+  cb "$P" "dir #801" --redispatch
+  check_status "T14 a $s row builds with --redispatch" 0 "$STATUS"
+  check_eq "T14 $s + --redispatch: one row" "1" "$(row_of 'dir #801' | grep -c '')"
+done
+set_status "dir #801" landed
+cb "$P" "dir #801" --redispatch
+check_status "T14 a landed row always refuses" 3 "$STATUS"
+
+# --- T14b: the lock -----------------------------------------------------------------------------------------------
+fx
+cb "$P" "dir #801"
+LOCK="$F/store/ledger.lock"
+mkdir "$LOCK"
+before="$(cksum_of "$CLOUD_LEDGER")"
+cb "$P" "dir #801"
+check_status "T14b a held lock → the second writer exits 2" 2 "$STATUS"
+check_contains "T14b it names the lock" "$OUT" "ledger.lock"
+check_eq "T14b the row untouched" "$before" "$(cksum_of "$CLOUD_LEDGER")"
+( sleep 3; rmdir "$LOCK" ) &
+cb "$P" "dir #801"
+wait
+check_status "T14b a lock released after 3 s lets it proceed" 0 "$STATUS"
+mkdir "$LOCK"
+touch -t 202001010000 "$LOCK"
+cb "$P" "dir #801"
+check_status "T14b a lock older than 10 minutes → exit 2" 2 "$STATUS"
+check_contains "T14b stderr says stale" "$OUT" "stale"
+check_dir "T14b the stale lock is left in place" "$LOCK"
+rmdir "$LOCK"
+# The row check sits inside the lock: a row set to dispatched while --dispatch waits refuses it.
+mkdir "$LOCK"
+( "$BRIEF_TOOL" "$P" "dir #801" --dispatch > "$F/bg.out" 2>&1 </dev/null; echo $? > "$F/bg.rc" ) &
+n=0; while [ ! -f "$CLOUD_BRIEF_DIR/example-proj--dir-801.md" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+set_status "dir #801" dispatched
+rmdir "$LOCK"
+wait
+check_eq "T14b a row set to dispatched while --dispatch waited → exit 3" "3" "$(cat "$F/bg.rc")"
+check_nofile "T14b the stub claude was never called" "$CLAUDE_FX/calls"
+
+# --- T15 / T15b (A3): the brief's shape and the protocol's pins ----------------------------------------------------
+fx
+cb "$P" "dir #801" --out "$F/b801.md"
+markers="$(grep -E '^=== [a-z ]+ ===$' "$F/b801.md" | tr '\n' '|')"
+check_eq "T15 part markers in order" "=== protocol ===|=== ticket ===|=== spec ===|=== rails ===|=== end of brief ===|" "$markers"
+check_eq "T15 the last line" "=== end of brief ===" "$(tail -n 1 "$F/b801.md")"
+proto="$(part_of "$F/b801.md" protocol)"
+for ph in '<repo>' '<ticket>' '<branch>' '<default>' '<keel-sha>' '<keel-origin>'; do
+  check_absent "T15 no $ph left in the protocol part" "$proto" "$ph"
+done
+flat="$(flatten_ws <<< "$proto")"
+B=claude/cloud-dir-801
+for needle in \
+  "the brief's very LAST line must be \`=== end of brief ===\`" \
+  "git clone https://github.com/rockerlabs/keel \"\$KT/keel\" && git -C \"\$KT/keel\" checkout -q $ENG_PUBLISHED" \
+  "check that the printed sha equals \`$ENG_PUBLISHED\`" \
+  "a sha mismatch (never retried): push nothing, end per (j)'s no-PR form, stop" \
+  "git config --local core.hooksPath \"\$KT/keel-guard\"" \
+  "printf 'refs/heads/x %s refs/heads/main %s\\n' \"\$S\" \"\$S\" | \"\$KT/keel-guard/pre-push\"\` exits non-zero" \
+  "printf 'refs/heads/$B %s refs/heads/main %s\\n' \"\$S\" \"\$S\" | \"\$KT/keel-guard/pre-push\"\` exits non-zero" \
+  "printf '(delete) 0000000000000000000000000000000000000000 refs/heads/$B %s\\n' \"\$S\" | \"\$KT/keel-guard/pre-push\"\` exits non-zero" \
+  "printf 'refs/heads/x %s refs/heads/$B %s\\n' \"\$S\" \"\$S\" | \"\$KT/keel-guard/pre-push\"\` exits 0" \
+  "Before every later push, beside the scan, re-check that \`git config --get core.hooksPath\` still prints \`\$KT/keel-guard\` and that \`\$KT/keel-guard/pre-push\` is still an executable file" \
+  "re-run (a1) and (a3) with a fresh \`\$KT\`" \
+  "What to push: only \`HEAD:refs/heads/$B\`" \
+  "Before every push, \`\"\$KT/keel/tools/secret-guard/secret-scan.sh\" --range \"origin/main..HEAD\"\` must exit 0" \
+  "\`git commit --amend\` with the message minus that line" \
+  "Never write the text \`secret-scan:allow\` anywhere" \
+  "Run \`/code-review high\`" \
+  "\`draft=true\`" \
+  "You never merge, never mark a PR ready and never close one" \
+  "\`## Landing notes\`" \
+  "ask it once in chat — one message with the options and your recommendation — AND write it into Landing notes' open questions" \
+  "never pass \`--no-verify\` to any git command" \
+  "\`no PR: <the step> — <the reason>\`" \
+  "\`abandon: docs/cloud.md, Abandoning — ledger row example/proj dir #801\`" \
+  "\"\$KT/keel/tools/secret-guard/secret-scan.sh\" -- <file>\` must exit 0" \
+  "\`gh api repos/example/proj/pulls\`"; do
+  check_contains "T15b pin: ${needle:0:70}" "$flat" "$needle"
+done
+check_absent "T15b no 'Russian' in the protocol part" "$proto" "Russian"
+g_ids="$(grep -nE '(^|[^A-Za-z0-9])G[0-9]b?([^A-Za-z0-9]|$)' <<< "$proto" || true)"
+check_eq "T15b no G-row id in the protocol part" "" "$g_ids"
+check_eq "T15b no ticket id in the template" "0" "$(grep -cE 'dir #[0-9]|KB\.[0-9]' "$REPO_ROOT/templates/cloud-protocol.md")"
+check_eq "T15b rockerlabs/keel occurs once in the protocol part" "1" "$(grep -c 'rockerlabs/keel' <<< "$proto")"
+check_contains "T15b … and only as <keel-origin> in the (a1) clone line" "$(grep 'rockerlabs/keel' <<< "$proto")" "git clone https://github.com/rockerlabs/keel \"\$KT/keel\""
+check_contains "T15b the work repository is the fixture's" "$flat" "on a clone of \`example/proj\`"
+
+# --- T3b: the guard, installed by the protocol's own block, against real pushes -----------------------------------
+block="$(awk '/^\(a3\)/ { a = 1 } a && /^```sh$/ { f = 1; next } f && /^```$/ { exit } f' <<< "$proto")"
+check_contains "T3b the install block was extracted" "$block" "KEEL_CLOUD_GUARD"
+C="$F/vm"
+KT="$F/kt"
+git clone -q "$F/proj-origin.git" "$C"
+git -C "$C" checkout -q -B "$B" origin/main
+( cd "$C" && KT="$KT" bash -c "$block" )
+check_status "T3b the install block runs" 0 "$?"
+check_eq "T3b core.hooksPath names the guard" "$KT/keel-guard" "$(git -C "$C" config --get core.hooksPath)"
+S="$(git -C "$C" rev-parse HEAD)"
+proof_rcs=""
+while IFS= read -r cmd; do
+  ( cd "$C" && KT="$KT" S="$S" bash -c "$cmd" ) >/dev/null 2>&1
+  proof_rcs="$proof_rcs$?,"
+done < <(grep -oE "^- \`printf '[^\`]*\`" <<< "$proto" | sed -e 's/^- `//' -e 's/`$//')
+check_eq "T3b the proof, in git's field order: non-zero, non-zero, non-zero, 0" "1,1,1,0," "$proof_rcs"
+main_before="$(git -C "$F/proj-origin.git" rev-parse refs/heads/main)"
+git -C "$C" commit -q --allow-empty -m "vm work"
+run git -C "$C" push origin HEAD:refs/heads/main
+check_ne "T3b a push to the default branch is refused" 0 "$STATUS"
+check_contains "T3b … by the guard" "$OUT" "keel cloud guard: refused"
+run git -C "$C" push origin HEAD:refs/heads/other
+check_ne "T3b a push to another ref is refused" 0 "$STATUS"
+run git -C "$C" push origin "HEAD:refs/heads/$B-x"
+check_ne "T3b a push to <branch>-x is refused (no prefix match)" 0 "$STATUS"
+run git -C "$C" push origin "HEAD:refs/heads/$B" HEAD:refs/heads/main
+check_ne "T3b two refspecs, the branch first, are refused" 0 "$STATUS"
+run git -C "$C" push origin HEAD:refs/heads/main "HEAD:refs/heads/$B"
+check_ne "T3b two refspecs, the default first, are refused" 0 "$STATUS"
+check_eq "T3b the default branch never moved" "$main_before" "$(git -C "$F/proj-origin.git" rev-parse refs/heads/main)"
+run git -C "$C" push origin "HEAD:refs/heads/$B"
+check_status "T3b a push to <branch> is accepted" 0 "$STATUS"
+run git -C "$C" push origin ":refs/heads/$B"
+check_ne "T3b deleting <branch> is refused" 0 "$STATUS"
+check_eq "T3b <branch> still exists" "$(git -C "$C" rev-parse HEAD)" "$(git -C "$F/proj-origin.git" rev-parse "refs/heads/$B" 2>/dev/null)"
+hook="$KT/keel-guard/pre-push"
+printf 'refs/heads/x %s refs/heads/%s %s\nrefs/heads/x %s refs/heads/main %s\n' "$S" "$B" "$S" "$S" "$S" | "$hook" 2>/dev/null
+check_ne "T3b the hook on two lines, the allowed one first → non-zero" 0 "$?"
+printf 'refs/heads/x %s refs/heads/main %s\nrefs/heads/x %s refs/heads/%s %s\n' "$S" "$S" "$S" "$B" "$S" | "$hook" 2>/dev/null
+check_ne "T3b the hook on two lines, the default one first → non-zero" 0 "$?"
+printf 'refs/heads/%s %s refs/heads/x %s\n' "$B" "$S" "$S" | "$hook" 2>/dev/null
+check_ne "T3b the hook keys on field 3 (the branch in field 1 pushed elsewhere → non-zero)" 0 "$?"
+
+# --- T16: the keel commit, the engine, <repo> forms ----------------------------------------------------------------
+check_contains "T16 <keel-sha> is the merge-base with origin/main" "$proto" "checkout -q $ENG_PUBLISHED"
+check_absent "T16 … not the engine's local HEAD" "$proto" "$ENG_HEAD"
+pass "T16 an engine origin with a .git suffix matches the default CLOUD_KEEL_ORIGIN (the build above)"
+fx
+CLOUD_KEEL_ORIGIN=https://github.com/someone/fork cb "$P" "dir #801"
+check_status "T16 an engine whose origin is not CLOUD_KEEL_ORIGIN → exit 2" 2 "$STATUS"
+check_contains "T16 … no published keel commit" "$OUT" "no published keel commit"
+TARBALL="$F/tarball"
+mkdir -p "$TARBALL/templates"
+cp -R "$ENG/tools" "$TARBALL/"
+cp "$ENG/templates/cloud-protocol.md" "$TARBALL/templates/"
+run "$TARBALL/tools/cloud-brief.sh" "$P" "dir #801"
+check_status "T16 an engine with no .git → exit 2" 2 "$STATUS"
+check_contains "T16 … no git checkout" "$OUT" "is no git checkout"
+nothing_written "T16"
+git -C "$P" worktree add -q "$F/wt" -b wt-branch
+cb "$F/wt" "dir #801"
+check_status "T16 <repo> given as a worktree path → 0" 0 "$STATUS"
+check_contains "T16 … resolved to the main checkout" "$OUT" "$(cd "$P" && pwd -P)"
+run_in "$F" "$BRIEF_TOOL" proj "dir #801"
+check_status "T16 <repo> given as a relative path → 0" 0 "$STATUS"
+CLOUD_LEDGER=store/rel.tsv run_in "$F" "$BRIEF_TOOL" proj "dir #801"
+check_file "T16 a relative CLOUD_LEDGER is made absolute against the start directory" "$F/store/rel.tsv"
+
+# --- T19: slugs ---------------------------------------------------------------------------------------------------
+fx
+for pair in "dir #801=claude/cloud-dir-801" "KB.34=claude/cloud-kb-34" "H.130=claude/cloud-h-130" "34.=claude/cloud-34"; do
+  id="${pair%%=*}" want="${pair#*=}"
+  cb "$P" "$id"
+  check_eq "T19 $id → $want" "$want" "$(row_of "$id" | cut -f4)"
+done
+
+# --- T20 / T20b: --check --------------------------------------------------------------------------------------------
+fx
+cbo "$P" "dir #802" --check
+check_status "T20 --check on a no-verdict ticket → 4" 4 "$STATUS"
+check_contains "T20 … its receipt" "$(tail -n 1 <<< "$OUT")" "cloud-check: 4 dir #802 "
+cbo "$P" "dir #801" --check
+check_status "T20 --check on an eligible ticket → 0" 0 "$STATUS"
+check_eq "T20 the last stdout line is the receipt" "cloud-check: 0 dir #801 $(git -C "$P" rev-parse HEAD)" "$(tail -n 1 <<< "$OUT")"
+nothing_written "T20 eligible"
+cbo "$P" "dir #809" --check
+check_status "T20 --check on a refusal → 3" 3 "$STATUS"
+check_contains "T20 a refusal's receipt" "$(tail -n 1 <<< "$OUT")" "cloud-check: 3 "
+git -C "$P" checkout -q -b elsewhere
+cbo "$P" "dir #801" --check
+check_status "T20 --check with the main checkout on another branch → 0 (no G9)" 0 "$STATUS"
+git -C "$P" checkout -q main
+cbo "$P" "dir #823" --check
+check_status "T20 --check with a token in the ticket → 1" 1 "$STATUS"
+cbo "$P" "dir #822" --check
+check_status "T20 --check on a 'for the design' Model rec → 3" 3 "$STATUS"
+check_contains "T20 … G8" "$ERR" "refused: G8"
+cbo "$P" "dir #829" --check
+check_status "T20 --check on a G6 refusal → 3" 3 "$STATUS"
+check_contains "T20 … G6" "$ERR" "refused: G6"
+unprotect
+cbo "$P" "dir #801" --check
+check_status "T20 --check on a G1b refusal → 3" 3 "$STATUS"
+check_contains "T20 … G1b" "$ERR" "refused: G1b"
+nothing_written "T20"
+gh_ok "$GH_FX" example/proj
+cb "$P" "dir #801"
+set_status "dir #801" dispatched
+cb "$P" "dir #801" --check
+check_status "T20b --check on a dispatched row → 3" 3 "$STATUS"
+
+# --- T17: --sweep --------------------------------------------------------------------------------------------------
+fx
+cb "$P" "dir #812"; set_status "dir #812" dispatched
+cb "$P" "dir #814"; set_status "dir #814" landed
+awk -F'\t' -v OFS='\t' 'NR > 1 && $3 == "dir #814" { $13 = "aaaa" } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"; cat "$F/l.tmp" > "$CLOUD_LEDGER"
+printf '[{"number":7,"head":{"sha":"bbbb"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-814_state_all.json"
+printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
+cb "$P" "dir #815"; set_status "dir #815" dispatched
+printf '[{"number":4,"head":{"sha":"cccc"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-815_state_all.json"
+bl_before="$(cksum_of "$P/BACKLOG.md")" lg_before="$(cksum_of "$CLOUD_LEDGER")"
+cbo "$P" --sweep
+check_status "T17 --sweep → 0" 0 "$STATUS"
+check_contains "T17 lists a yes ticket" "$OUT" "dir #801	R4	yes"
+check_contains "T17 lists a no-verdict ticket with —" "$OUT" "dir #802	R4	—"
+check_contains "T17 lists a no ticket with its row" "$OUT" "dir #803	R3	no — G4"
+check_contains "T17 lists a 📐-only ticket" "$OUT" "dir #812	📐	yes"
+check_absent "T17 skips a closed ticket" "$OUT" "dir #804"
+check_absent "T17 skips an R2 ticket" "$OUT" "dir #809	"
+check_contains "T17 a dispatched row with its age and no PR" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $TODAY (0 days)	no PR"
+check_contains "T17 a dispatched row with the stub gh's PR answer" "$OUT" "dispatched	dir #815	claude/cloud-dir-815	since $TODAY (0 days)	PR #4"
+check_contains "T17 a landed row whose head moved is stale" "$OUT" "STALE: the PR head is bbbb, landed at aaaa"
+check_eq "T17 the backlog unchanged" "$bl_before" "$(cksum_of "$P/BACKLOG.md")"
+check_eq "T17 the ledger unchanged" "$lg_before" "$(cksum_of "$CLOUD_LEDGER")"
+fx
+printf '# Backlog\n\n## Open\n\n### dir #1 — closed — R4 — ✅ DONE\n' > "$P/BACKLOG.md"
+cbo "$P" --sweep
+check_status "T17 a sweep with no open R3/R4/📐 ticket → 0" 0 "$STATUS"
+check_eq "T17 … a header and no ticket rows" "0" "$(grep -c '^  dir #' <<< "$OUT")"
+
+# --- T18 / T21: --dispatch -----------------------------------------------------------------------------------------
+fx
+git -C "$P" checkout -q -b elsewhere
+cb "$P" "dir #801" --dispatch
+check_status "T18 off the default branch → exit 3" 3 "$STATUS"
+check_contains "T18 … G9" "$OUT" "refused: G9"
+check_eq "T18 a G9 refusal leaves no dispatched row" "" "$(status_of 'dir #801')"
+git -C "$P" checkout -q main
+git -C "$P" push -q origin HEAD:refs/heads/claude/cloud-dir-801
+cb "$P" "dir #801" --dispatch
+check_status "T18 an existing origin claude/cloud-<slug> → exit 3" 3 "$STATUS"
+check_contains "T18 … G9 names the branch" "$OUT" "origin already has claude/cloud-dir-801"
+check_nofile "T18 no CLI call on a G9 refusal" "$CLAUDE_FX/calls"
+if [ -n "$HAVE_SCRIPT" ]; then
+  fx
+  cb "$P" "dir #801" --dispatch
+  check_status "T18 --dispatch → 0" 0 "$STATUS"
+  check_eq "T18 the stub claude got --cloud first" "--cloud" "$(cat "$CLAUDE_FX/arg1")"
+  check_eq "T18 … the brief text right after it" "$(cat "$CLOUD_BRIEF_DIR/example-proj--dir-801.md")" "$(cat "$CLAUDE_FX/brief")"
+  check_eq "T18 … then --model and --effort" "--model sonnet --effort high" "$(cat "$CLAUDE_FX/rest")"
+  check_eq "T18 … six arguments" "6" "$(cat "$CLAUDE_FX/argc")"
+  check_eq "T18 … from the main checkout" "$(cd "$P" && pwd -P)" "$(cat "$CLAUDE_FX/cwd")"
+  check_eq "T18 the row was already dispatched when the CLI ran" "dispatched" "$(awk -F'\t' '$3 == "dir #801" { print $8 }' "$CLAUDE_FX/ledger-at-call")"
+  check_eq "T14b the CLI runs with no ledger.lock held" "free" "$(cat "$CLAUDE_FX/lock-at-call")"
+  check_eq "T18 the row stays dispatched" "dispatched" "$(status_of 'dir #801')"
+  check_contains "T18 the CLI's stdout is printed" "$OUT" "Created cloud session: Fixture"
+  check_contains "T21 the claim text" "$OUT" "⏳ IN FLIGHT ($TODAY, branch claude/cloud-dir-801, cloud)"
+  check_contains "T21 the heading with the claim appended, 📐 kept" "$OUT" "### dir #801 — eligible, verdict yes, with a spec — R4 — → pool — 📐 SPEC-READY — ⏳ IN FLIGHT ($TODAY, branch claude/cloud-dir-801, cloud)"
+  check_contains "T18 a gitignored backlog's Log line carries the session" "$OUT" "session session_01FIXTURE"
+  check_contains "T18 the landing command is printed" "$OUT" "tools/cloud-land.sh"
+  cb "$P" "dir #801" --dispatch
+  check_status "T18 a second dispatch without --redispatch → 3" 3 "$STATUS"
+  rm -f "$CLAUDE_FX/calls"
+  cb "$P" "dir #801" --dispatch --redispatch
+  check_status "T18 --redispatch on a dispatched row → 0" 0 "$STATUS"
+  check_eq "T18 … one row" "1" "$(row_of 'dir #801' | grep -c '')"
+  check_file "T18 … and the CLI ran again" "$CLAUDE_FX/calls"
+  fx
+  printf '1' > "$CLAUDE_FX/exit"
+  cb "$P" "dir #801" --dispatch
+  check_status "T18 the CLI exits 1 → 5" 5 "$STATUS"
+  check_contains "T18 … its stdout passed through" "$OUT" "stub stdout line"
+  check_contains "T18 … its stderr passed through" "$OUT" "stub stderr line"
+  check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
+  check_absent "T18 … no claim printed" "$OUT" "IN FLIGHT"
+  fx
+  sed 's#^docs/specs/$##; s#^BACKLOG.md$##' "$P/.gitignore" > "$F/gi"; cat "$F/gi" > "$P/.gitignore"
+  cb "$P" "dir #801" --dispatch
+  check_status "T18 a tracked backlog dispatches" 0 "$STATUS"
+  check_absent "T18 a tracked backlog's Log line carries no session" "$OUT" "session session_01FIXTURE"
+else
+  echo "  SKIP  T18/T21 dispatch cases: no \`script\` on this host (the CLI needs a pseudo-terminal)"
+fi
+
+# --- tools/lib/cloud.sh, directly ------------------------------------------------------------------------------
+# shellcheck source=tools/lib/cloud.sh
+. "$REPO_ROOT/tools/lib/cloud.sh"
+for pair in "https://github.com/o/r=o/r" "https://github.com/o/r.git=o/r" "https://github.com/o/r/=o/r" \
+            "git@github.com:o/r.git=o/r" "ssh://git@github.com/o/r.git=o/r" "https://gitlab.com/o/r=" \
+            "https://github.com/o=" "https://github.com/o/r/x=" "/srv/o/r.git="; do
+  url="${pair%=*}" want="${pair##*=}"
+  check_eq "lib cloud_github_slug $url" "$want" "$(cloud_github_slug "$url" || true)"
+done
+L="$SANDBOX/lib-ledger/ledger.tsv"
+cloud_ledger_init "$L"
+check_eq "lib cloud_ledger_init writes the header" "$CLOUD_LEDGER_HEADER" "$(cat "$L")"
+cloud_ledger_put "$L" o/r "dir #1" "$(printf 'd\to/r\tdir #1\tb\tm\t1\t?\tbuilt\t\t\t\t\t\t')"
+cloud_ledger_put "$L" o/s "dir #1" "$(printf 'd\to/s\tdir #1\tb\tm\t1\t?\tbuilt\t\t\t\t\t\t')"
+cloud_ledger_set "$L" o/r "dir #1" 8=landed 13=abc
+check_eq "lib cloud_ledger_set changes only the keyed row" "landed abc|built " \
+  "$(awk -F'\t' 'NR > 1 { printf "%s %s|", $8, $13 }' "$L" | sed 's/|$//')"
+check_eq "lib … keeps 14 cells" "14" "$(cloud_ledger_row "$L" o/r "dir #1" | awk -F'\t' '{print NF}')"
+cloud_cell_ok "a$(printf '\t')b"; check_status "lib cloud_cell_ok refuses a tab" 1 "$?"
+
+# --- T0 ----------------------------------------------------------------------------------------------------------
+real_ledger_after="absent"; [ -f "$REAL_LEDGER" ] && real_ledger_after="$(cksum < "$REAL_LEDGER")"
+check_eq "T0 the real ~/.keel/cloud/ledger.tsv untouched" "$real_ledger_before" "$real_ledger_after"
+
+summary
