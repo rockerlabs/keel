@@ -124,4 +124,44 @@ plain="$(mktemp -d "$SANDBOX/plain.XXXXXX")"
 run env TMPDIR="$tmproot" bash "$sim" --repo "$plain"
 check_status "a directory that is not a git repo -> exit 2" 2 "$STATUS"
 
+# --- dir #808: an already-cut HEAD (the cut PR itself) is skipped, not cut again ---------------------------
+# mk_cut_src BODY — mk_src, then the real cut committed WITHOUT a tag (a cut PR checkout). Suite body `exit 1`
+# below: exit 0 proves the suite was not run.
+mk_cut_src() {
+  local d; d="$(mk_src "$1")"
+  bash "$d/tools/self/changelog-cut.sh" --repo "$d" 1.1.0 2026-01-01 >/dev/null
+  git -C "$d" add -A
+  git -C "$d" -c user.name=fx -c user.email=fx@example.invalid commit -qm cut
+  printf '%s' "$d"
+}
+cut_src="$(mk_cut_src 'exit 1')"
+before="$(snap "$cut_src")"
+run env TMPDIR="$tmproot" bash "$sim" --repo "$cut_src"
+check_status "an already-cut HEAD -> exit 0 (the suite, which would fail, is not run)" 0 "$STATUS"
+check_contains "...naming the already-cut state" "$OUT" "HEAD is already cut ([1.1.0] has no tag"
+check_contains "...with the SKIP verdict" "$OUT" "the suite on the cut shape: SKIP"
+check_eq "...and the source repo is unchanged" "$before" "$(snap "$cut_src")"
+check_eq "...and nothing is left in the temp root" "" "$(ls -A "$tmproot")"
+
+tagged_cut="$(mk_cut_src 'exit 1')"
+git -C "$tagged_cut" tag v1.1.0
+run env TMPDIR="$tmproot" bash "$sim" --repo "$tagged_cut"
+check_status "a cut whose newest section IS tagged still simulates -> exit 1" 1 "$STATUS"
+check_contains "...cutting 9999.0.0" "$OUT" "cut-sim: cutting 9999.0.0"
+
+frag_cut="$(mk_cut_src 'exit 1')"
+printf '%s\n' '- dir #2: b' > "$frag_cut/changelog.d/2-b.md"
+git -C "$frag_cut" add -A
+git -C "$frag_cut" -c user.name=fx -c user.email=fx@example.invalid commit -qm frag
+run env TMPDIR="$tmproot" bash "$sim" --repo "$frag_cut"
+check_status "an untagged cut plus a committed fragment still simulates -> exit 1" 1 "$STATUS"
+
+unrel_cut="$(mk_cut_src 'exit 1')"
+awk '{ print } /^## \[Unreleased\]/ { print ""; print "- late bullet" }' "$unrel_cut/CHANGELOG.md" > "$unrel_cut/c.new" && mv "$unrel_cut/c.new" "$unrel_cut/CHANGELOG.md"
+git -C "$unrel_cut" add -A
+git -C "$unrel_cut" -c user.name=fx -c user.email=fx@example.invalid commit -qm unrel
+run env TMPDIR="$tmproot" bash "$sim" --repo "$unrel_cut"
+check_status "an untagged cut plus [Unreleased] text still simulates -> exit 1" 1 "$STATUS"
+check_eq "...and the temp root is empty after all four" "" "$(ls -A "$tmproot")"
+
 summary

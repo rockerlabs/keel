@@ -1,0 +1,1 @@
+- `tools/self/cut-sim.sh` now recognises an already-cut HEAD (newest `## [x.y.z]` section untagged, `[Unreleased]` empty, no fragment left): it prints `HEAD is already cut` and a `SKIP` verdict and exits 0 instead of cutting `9999.0.0` a second time, so the non-required `cut-simulation` job is no longer red on a release cut PR; `docs/release-audit.md` Phase 7 says so (dir #808).
