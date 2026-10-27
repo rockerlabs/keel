@@ -176,8 +176,13 @@ SECRET_SCAN_PERSONAL_FILE="$pers_alt" run_in "$repo" "$scan" --range HEAD~1..HEA
 check_status "V7r: a (^|[^a-z])…(\$|[^a-z]) literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
 SECRET_SCAN_PERSONAL_FILE="$pers_gnuwb" run_in "$repo" "$scan" --range HEAD~1..HEAD
 check_status "V7r: a \\<…\\> word-boundary literal over --range → exit 1" 1 "$STATUS"
-SECRET_SCAN_PERSONAL_FILE="$pers_gnuend" run_in "$repo" "$scan" --range HEAD~1..HEAD
-check_status "V7r: a GNU \\' end-of-buffer anchor literal over --range → exit 1" 1 "$STATUS"
+# \' is an end-of-buffer anchor for GNU grep only (BSD and busybox read it differently), so the row needs a grep that has it
+if printf 'xa\n' | LC_ALL=C grep -qE "a\\'"; then
+  SECRET_SCAN_PERSONAL_FILE="$pers_gnuend" run_in "$repo" "$scan" --range HEAD~1..HEAD
+  check_status "V7r: a GNU \\' end-of-buffer anchor literal over --range → exit 1" 1 "$STATUS"
+else
+  pass "V7r \\' row skipped (this grep has no \\' anchor)"
+fi
 
 repo="$(range_blob_repo '\001\002zorbq-not-the-literal\003\000tail')"
 SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --range HEAD~1..HEAD
