@@ -26,11 +26,18 @@
 # simulated (a NOTE says so): the cut reads tracked fragments of the committed HEAD. The suite runs with stdin
 # from /dev/null and in its own process group (so it can be stopped whole); a test that branches on a terminal
 # stdin takes its non-interactive path here, as it does in CI.
+#
+# Already-cut HEAD (dir #808): when the committed HEAD IS the cut — its newest `## [x.y.z]` section has no `v*`
+# tag, `## [Unreleased]` is empty and no fragment is left — the tool prints `HEAD is already cut`, the verdict
+# `SKIP` and exits 0 without cloning or running the suite (a second cut would leave two untagged sections and
+# turn doctor red); the cut PR's own test legs run the suite on that tree.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/fence-blank.sh
+. "$self_dir/../lib/fence-blank.sh"
 repo_dir="$(cd "$self_dir/../.." && pwd)"
 
 die_args() { echo "cut-sim.sh: $1" >&2; echo "usage: cut-sim.sh [--repo DIR]" >&2; exit 2; }
@@ -109,6 +116,20 @@ head_sha="$(git -C "$repo_dir" rev-parse HEAD)"
 dirty="$(git -C "$repo_dir" status --porcelain)"
 nl=$'\n'
 [ -z "$dirty" ] || echo "cut-sim: NOTE: $repo_dir has uncommitted or untracked changes (first: ${dirty%%"$nl"*}) — only the committed HEAD is simulated" >&2
+
+# dir #808: an already-cut HEAD is not cut again. All four must hold, else the ordinary path runs unchanged.
+if git -C "$repo_dir" show HEAD:CHANGELOG.md > "$work/head-changelog.raw.md" 2>/dev/null; then
+  blank_fenced_blocks "$work/head-changelog.raw.md" > "$work/head-changelog.md"
+  newest="$(awk '/^## \[[0-9]+\.[0-9]+\.[0-9]+\]/ { s = $2; sub(/^\[/, "", s); sub(/\].*$/, "", s); print s; exit }' "$work/head-changelog.md")"
+  has_unreleased="$(awk '/^## \[Unreleased\]/ { print "yes"; exit }' "$work/head-changelog.md")"
+  unreleased_text="$(awk '/^## \[Unreleased\]/ { p = 1; next } p && /^## / { exit } p && /[^[:space:]]/ { print; exit }' "$work/head-changelog.md")"
+  frags="$(git -C "$repo_dir" ls-tree -r --name-only HEAD -- changelog.d | grep -vxF changelog.d/README.md || true)"
+  if [ -n "$newest" ] && [ -n "$has_unreleased" ] && [ -z "$unreleased_text" ] && [ -z "$frags" ] && ! grep -qxF "v$newest" <<< "$tags"; then
+    echo "cut-sim (dir #808): HEAD is already cut ([$newest] has no tag, [Unreleased] is empty, no fragment is left) — nothing to cut again"
+    echo "cut-sim (dir #722): the suite on the cut shape: SKIP (this tree IS the cut shape; the ordinary test legs run on it)"
+    exit 0
+  fi
+fi
 git clone -q --no-hardlinks "$repo_dir" "$clone"
 git -C "$clone" checkout -q --detach "$head_sha"
 
