@@ -286,9 +286,24 @@ check_absent "...and prints no new-class line" "$OUT" ' new-class '
 run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$REPO_ROOT/bypass-candidates.tsv"
 check_status "--out inside the repository is refused (exit 2)" 2 "$STATUS"
 check_nofile "...and nothing was created there" "$REPO_ROOT/bypass-candidates.tsv"
-new_repo "$SANDBOX/some-other-repo" >/dev/null 2>&1
-run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$SANDBOX/some-other-repo/c.tsv"
-check_status "--out inside ANY git work tree is refused" 2 "$STATUS"
+other_repo="$(new_repo)"
+run bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$other_repo/c.tsv"
+check_status "--out inside a second git work tree is refused (exit 2)" 2 "$STATUS"
+check_contains "...naming the work tree" "$OUT" "inside a git work tree"
+check_nofile "...and nothing was created there" "$other_repo/c.tsv"
+# a checkout copy that is NOT itself a work tree isolates the repo_root clause from the git clause
+nogit="$SANDBOX/nogit-checkout"
+mkdir -p "$nogit"
+cp -R "$REPO_ROOT/tools" "$nogit/tools"
+run bash "$nogit/tools/self/bypass-scan.sh" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30 --out "$nogit/c.tsv"
+check_status "--out inside the checkout, with no work tree around it, is refused (exit 2)" 2 "$STATUS"
+check_nofile "...and nothing was created there" "$nogit/c.tsv"
+# no --out: a TMPDIR inside a work tree is refused, and the scratch file the scan made is removed again
+mkdir -p "$other_repo/tmp"
+run env TMPDIR="$other_repo/tmp" bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30
+check_status "a TMPDIR inside a git work tree -> exit 2" 2 "$STATUS"
+check_contains "...naming the scratch dir" "$OUT" "scratch dir"
+check_eq "...and no scratch file is left behind" "" "$(ls -A "$other_repo/tmp")"
 mkdir -p "$SANDBOX/scratch-tmp"
 run env TMPDIR="$SANDBOX/scratch-tmp" bash "$SCAN" scan --transcripts "$SANDBOX/transcripts" --as-of 2026-09-15 --days 30
 check_status "no --out -> a scratch file, exit 0" 0 "$STATUS"
