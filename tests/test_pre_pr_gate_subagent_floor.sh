@@ -84,11 +84,36 @@ done
 # --- D1, every V-mut verb (B10) in R: one list, so a verb dropped from the build fails its own row ---------------------
 VMUT=(checkout switch restore reset clean commit add rm mv rebase merge cherry-pick revert am pull push update-ref
       update-index read-tree checkout-index gc prune repack filter-branch filter-repo replace sparse-checkout
-      maintenance stage merge-file init)
+      maintenance stage merge-file fast-import pack-refs init)
 for v in "${VMUT[@]}"; do
   sf_deny "D1: git $v" "git $v"
   [ "$v" = init ] || sf_deny "D1: git $v f" "git $v f"
 done
+
+# --- FT1–FT2, git fetch (dir #793): a refspec with a local :dst (not refs/remotes/*) writes a ref of the session repository ---
+for c in 'git fetch origin +main:b' 'git fetch . a:b' 'git fetch --depth 1 origin a:b' 'git fetch -j 4 origin a:b' \
+         'git fetch origin +refs/heads/*:refs/heads/*' 'git fetch --filter blob:none origin a:b' 'git fetch origin -- a:b' 'git fetch origin :b'; do
+  sf_deny "FT1: $c" "$c"
+done
+for c in 'git fetch' 'git fetch origin' 'git fetch origin main' 'git fetch origin refs/heads/*:refs/remotes/origin/*' 'git fetch git@example.com:r.git' \
+         'git fetch origin --filter blob:none' 'git fetch --depth 1 origin main' 'git fetch --all' 'git fetch origin +main:refs/remotes/origin/main'; do
+  sf_allow "FT2: $c" "$c"
+done
+
+# --- SH1, a git older than 2.31 rejects --path-format: a shim stands in for it (exit 129) — the floor must still hold -------
+SHIM="$S/shim"; mkdir -p "$SHIM"
+REAL_GIT="$(type -P git)"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = "--path-format=absolute" ] && exit 129; done\nexec %s "$@"\n' "$REAL_GIT" > "$SHIM/git"
+chmod +x "$SHIM/git"
+for c in 'git commit -m x' 'git push origin main' 'git stash'; do
+  sf_hook "$R" "$c" a1 "PATH=$SHIM:$PATH"
+  case "$OUT" in
+    *'"permissionDecision":"deny"'*"$needle"*) pass "SH1: with a git that rejects --path-format, the floor denies: $c" ;;
+    *) fail "SH1: with a git that rejects --path-format, the floor denies: $c" "got: ${OUT:-<empty>}" ;;
+  esac
+done
+sf_hook "$NOGIT" 'git commit -m x' a1 "PATH=$SHIM:$PATH"
+check_eq "SH2: ...and a payload cwd that is no repository stays allowed under the same git" "" "$OUT"
 
 # --- D2–D14, V-sub write forms in R, each paired with its read form -----------------------------------------------------
 for c in 'git stash' 'git stash -u' 'git stash push -- f' 'git stash pop' "git worktree add ../w" "git worktree remove --force $R2" \
@@ -230,7 +255,7 @@ sf_allow "E2: a payload cwd that is not a repository" 'git checkout -- f' "$NOGI
 # --- the deny itself: reason, the log event, and nothing run ---------------------------------------------------------------
 sf_hook "$R" 'git -C '"$R2"' stash pop' a1
 check_contains "the deny names the verb and its subcommand" "$OUT" "'git stash pop'"
-check_contains "the deny names the session repository" "$OUT" "$(git -C "$R" rev-parse --path-format=absolute --git-common-dir)"
+check_contains "the deny names the session repository" "$OUT" "$(cd "$R" && cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 check_contains "the deny tells a subagent what to do instead" "$OUT" "work only through 'git -C <your clone>'"
 check_eq "the fixture's dirty file is untouched (the hook only decides)" "dirty" "$(tail -n 1 "$R/f")"
 

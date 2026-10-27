@@ -384,7 +384,8 @@ against the session's repository, and item 3 names what that leaves), an adopter
    as `timeout` or `sudo`, a `GIT_DIR` exported in an earlier command, `cd -`, a `cd` that may not run
    (`false && cd X; git …`), a write aimed at the session repository as a plain argument (`git -C <clone> push
    <session repo> main`), a plain `rm` of tracked files or a machine-global config write
-   (`tools/machine-watch.sh` detects those). A subagent started with
+   (`tools/machine-watch.sh` detects those), `git subtree`, `git fetch --tags` / `fetch origin tag <t>`, `fetch --set-upstream`
+   or a refspec set only by config (`remote.<n>.fetch`). A subagent started with
    `isolation: "worktree"` is denied its own commits too (its worktree shares the repository) — the escape is the
    switch above.
 
