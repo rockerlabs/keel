@@ -1,0 +1,1 @@
+- Test hygiene (dir #799): the four `tty_run` STATUS rows (A49 x3, A36) now also assert a "reached its Done line" row on every platform and keep the exit-status row on macOS only (a printed skip elsewhere), and the canary gets a store row that actually runs against an enabled ambient store entry with the other isolation variables unset. Test-only.
