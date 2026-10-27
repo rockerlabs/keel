@@ -210,6 +210,7 @@ check_contains "Phase 7's cut paragraph tells a cite check to read the fragment 
 check_contains "Phase 7's cut paragraph keeps the no-test-may-pin-it rule" "$cut_para" "no test may pin"
 check_contains "Phase 7's cut paragraph names the cut-shape check (dir #722)" "$cut_para" "tools/self/cut-sim.sh"
 check_contains "...and says to run it before the cut PR is opened" "$cut_para" "Before the cut PR is opened"
+check_contains "...and says the cut PR itself, already cut, gets SKIP rather than a second cut (dir #808)" "$cut_para" 'already the cut, it prints `SKIP` '
 check_contains "Phase 7's cut paragraph runs the numeric-claim lint on the cut section (dir #810)" "$cut_para" "changelog-claims.sh --section"
 check_contains "...under --strict (dir #810)" "$cut_para" "--strict"
 check_contains "Phase 7's cut paragraph says what to do with a number whose source is gitignored or moves after the cut (dir #846)" "$cut_para" "A number whose source is gitignored"
