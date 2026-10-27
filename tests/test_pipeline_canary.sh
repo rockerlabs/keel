@@ -112,9 +112,10 @@ run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE -u KEEL
   -u KEEL_MACHINE_WATCH_STORE HOME="$SANDBOX/cv3b-home" KEEL_IMPACT_STORE="$cv3b_store" \
   PATH="$cv3b_bin:$PATH" KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
 check_status "demo-bypass with only an enabled ambient store set → still exit 0" 0 "$STATUS"
-# positive control: the shim handed the pre-enabled toy dir to demo-bypass (else the row below is vacuous)
-check_eq "demo-bypass ran in the shim-provided toy dir (the enabled entry matches its slug)" yes \
-  "$([ -d "$cv3b_dir/.git" ] && echo yes || echo no)"
+# positive control: the shim fired and demo-bypass used (then rm -rf'd) the pre-enabled toy dir as its repo,
+# else the row below is vacuous
+check_eq "demo-bypass took the shim-provided toy dir and cleaned it up (the enabled entry matched its slug)" yes \
+  "$([ -e "$cv3b_once" ] && [ ! -e "$cv3b_dir" ] && echo yes || echo no)"
 check_nofile "demo-bypass writes no event into an ENABLED ambient store entry" "$cv3b_entry/impact-events.log"
 
 # --- setup: builds the sandbox -----------------------------------------------------------------
