@@ -117,6 +117,11 @@ cloud_ledger_put() {
     END { if (!done) print row }' "$1"
 }
 
+# _cloud_set_cell N VALUE — the row on stdin with cell N set to VALUE.
+_cloud_set_cell() {
+  CL_N="$1" CL_V="$2" awk -F'\t' -v OFS='\t' '{ $(ENVIRON["CL_N"] + 0) = ENVIRON["CL_V"]; print }'
+}
+
 # cloud_ledger_set LEDGER REPO TICKET N=VALUE... — set cells of the (REPO, TICKET) row in place. Call it holding
 # the lock. rc 1 when there is no such row or the write fails.
 cloud_ledger_set() {
@@ -125,7 +130,7 @@ cloud_ledger_set() {
   row="$(cloud_ledger_row "$f" "$r" "$t")" || return 1
   for a in "$@"; do
     n="${a%%=*}" v="${a#*=}"
-    row="$(CL_N="$n" CL_V="$v" awk -F'\t' -v OFS='\t' '{ $(ENVIRON["CL_N"] + 0) = ENVIRON["CL_V"]; print }' <<< "$row")"
+    row="$(_cloud_set_cell "$n" "$v" <<< "$row")"
   done
   cloud_ledger_put "$f" "$r" "$t" "$row"
 }
