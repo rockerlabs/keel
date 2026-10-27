@@ -131,8 +131,8 @@ too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
 describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
-**Degrade cleanly when it does not exist yet** (the aggregate), or where it was never installed: skip the
-read-trace inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
+**Degrade cleanly when it does not exist yet**, or on a project that never installed the read trace:
+skip its inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
 mechanism nobody turned on reports nothing** — and that emptiness is not a dead-doc signal, it is a
 missing sensor. The first `/groom` run met exactly that: the fuses had
