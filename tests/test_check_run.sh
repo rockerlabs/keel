@@ -108,6 +108,36 @@ cr verify "$SANDBOX/rd.bad5" true
 check_status "A1 vii: verify without -- → 2" 2 "$STATUS"
 check_nodir "A1 vii: a refused run created no dir" "$SANDBOX/rd.bad1"
 
+# --- dir #883: <dir> must not be the work-tree root, nor hold a tracked file named like a record -----------------
+# `run` writes and removes head/tree/cmd/log/secs/exit in <dir>; in a repo root that is six untracked records
+# (or four tracked files replaced). Refuse with 2 and touch nothing.
+rootrepo="$(mkrepo)"
+run_in "$rootrepo" bash "$tool" run . -- true
+check_status "dir #883: run . at the work-tree root → 2" 2 "$STATUS"
+check_contains "dir #883: …says why" "$OUT" "work-tree root"
+check_eq "dir #883: …and wrote no record in the root" "" "$(ls "$rootrepo")"
+run_in "$rootrepo" bash "$tool" run "$rootrepo" -- true
+check_status "dir #883: run <absolute root> → 2" 2 "$STATUS"
+run_in "$SANDBOX" bash "$tool" run "$rootrepo" -- true
+check_status "dir #883: run <root> from another directory → 2" 2 "$STATUS"
+mkdir "$rootrepo/sub"
+run_in "$rootrepo" bash "$tool" run sub/../ -- true
+check_status "dir #883: a root spelled sub/../ → 2" 2 "$STATUS"
+run_in "$rootrepo" bash "$tool" run sub -- true
+check_status "dir #883: a subdirectory of the work tree is allowed" 0 "$STATUS"
+for n in log cmd exit secs; do printf 'x\n' > "$rootrepo/sub/$n"; done
+git -C "$rootrepo" add sub && git -C "$rootrepo" commit -qm tracked
+before="$(cat "$rootrepo/sub/log")"
+run_in "$rootrepo" bash "$tool" run sub -- true
+check_status "dir #883: a <dir> holding TRACKED log/cmd/exit/secs → 2" 2 "$STATUS"
+check_contains "dir #883: …names the file" "$OUT" "tracked"
+check_eq "dir #883: …and left the tracked file as it was" "$before" "$(cat "$rootrepo/sub/log")"
+mkdir -p "$SANDBOX/rd.dirlog/log"
+cr run "$SANDBOX/rd.dirlog" -- true
+check_status "dir #883: a directory named like a record → 2" 2 "$STATUS"
+cr run "$SANDBOX/rd.pass" -- true
+check_status "dir #883: a rerun over its own records is still fine" 0 "$STATUS"
+
 # --- A2 (i): green, same HEAD / tree / command → 0 ------------------------------------------------------------
 vd="$SANDBOX/vd.green"
 cr run "$vd" -- bash -c 'echo ok'

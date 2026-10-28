@@ -27,7 +27,8 @@
 # Otherwise it prints one reason line and exits 1: `not run` (no dir), `incomplete` (no exit), `exit=<n>`,
 # `not a git repository`, `head moved <a> → <b>`, `tree changed`, `command differs`.
 #
-# Exit codes: 0 ok · 1 verify refused · 2 bad usage (a missing `--`, dir or command, an unknown subcommand)
+# Exit codes: 0 ok · 1 verify refused · 2 bad usage (a missing `--`, dir or command, an unknown subcommand,
+# or a `run` <dir> that is the work-tree root or holds a tracked/directory entry named like a record, dir #883)
 # · otherwise `run` returns the command's status. Reads and writes no gate state; only the dir it is given.
 # `verify` is deliberately stricter than the gate's own test-relevance rule (`_test_relevant_tree_hash`, dir #123):
 # any tracked edit after the run refuses, a documentation-only one included. Residuals, accepted (dir #855):
@@ -60,6 +61,21 @@ tree_state() {
 
 case "$sub" in
   run)
+    # dir #883: refuse the work-tree root and a <dir> whose record names are tracked files or directories.
+    if [ -d "$dir" ]; then
+      phys="$(cd "$dir" 2>/dev/null && pwd -P)" || exit 2
+      top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || top=
+      if [ -n "$top" ] && [ "$phys" = "$(cd "$top" && pwd -P)" ]; then
+        printf 'check-run: refused: <dir> %s is the work-tree root; use a fresh mktemp -d\n' "$dir" >&2
+        exit 2
+      fi
+      for f in head tree cmd log secs exit; do
+        if [ -d "$dir/$f" ] || [ -L "$dir/$f" ] || git -C "$dir" ls-files --error-unmatch -- "$f" > /dev/null 2>&1; then
+          printf 'check-run: refused: <dir>/%s is a tracked file or a directory, not a record; use a fresh mktemp -d\n' "$f" >&2
+          exit 2
+        fi
+      done
+    fi
     mkdir -p "$dir" || exit 2
     rm -f "$dir/exit" "$dir/log" "$dir/secs"
     head="$(git rev-parse HEAD 2>/dev/null)" || head=none
