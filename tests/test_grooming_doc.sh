@@ -72,7 +72,7 @@ for g in \
   "## G1 — pains are the input, and only the operator supplies them" \
   "## G2 — read ticket bodies, not headings" \
   "## G4 — the hygiene sweep" \
-  "## G5 — every release row, five fields" \
+  "## G5 — every release row, seven fields and two report fields" \
   "## G7 — the releases cross-run record" \
   "## G8 — cadence-bound, never a daemon" \
   "## G9 — portability"
@@ -214,7 +214,7 @@ pin "groom.md G5 points at the measured-counterfactual rule (dir #860)" "$cmd" \
 # Every check runs on whitespace-joined text (a para_of paragraph, or a section_body piped through `tr`), so a needle may
 # wrap in the doc; only the para_of anchors below must each sit on one line. Whole clauses, not one-word needles: a
 # reversed clause ("never under" for "expected under", the band's ends swapped) must fail here.
-g5_872="$(section_body '## G5 — every release row, five fields' "$doc" | flatten_ws)"
+g5_872="$(section_body '## G5 — every release row, seven fields and two report fields' "$doc" | flatten_ws)"
 check_contains "G5 carries the two-part audit price (dir #872)" "$g5_872" \
   '**Price the audit in two parts, a fixed part per run and a part per ticket'
 b872="$(para_of "$doc" '**Price the audit in two parts')"
