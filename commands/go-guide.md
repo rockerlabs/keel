@@ -87,7 +87,7 @@ undefined path, a rule that contradicts another rule or a pinned test — anythi
 from the design or complete it. A sign-off still to come is not an escape (I6). Count each once; one line each, in the format `go.md` step 8 gives.
 None → the count is `0`; still write the line.
 
-**I6 — conform table.** One row per spec rule id, then one row per `**Acceptance:**` item:
+**I6 — conform table.** One row per spec rule id, then one row per `**Acceptance:**` item and ticket `Fix:` clause. Evidence: run or quote.
 `| <id> | done — <file:line or evidence> |`, `| <id> | escape <n> |`, or — only for a check a named
 person must pass — `| <id> | pending — <who> |`, which `Operator next:` then asks for. A spec without rule ids → one
 row per section of its Rules. A red row → back to I3 until green, or an escape if the check itself is

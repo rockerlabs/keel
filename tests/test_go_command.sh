@@ -174,6 +174,7 @@ needle_rules=(
   "dir #696 B6: resume there is an offer, not a write"
   "dir #696 B6: the successor writes and claims nothing"
   "dir #696 B6: the count is read from the sibling's path"
+  "dir #874: conform walks the ticket's Fix: clauses"
 )
 # Each needle is distinguishing on its own line — not shared with an unrelated clause that would
 # still satisfy the pin after the actual clause was dropped (a mutation-verified false-negative:
@@ -222,6 +223,7 @@ needle_texts=(
   "resume there"
   "in that path; you write and claim nothing"
   "git -C <path> status --porcelain"
+  "and \`Fix:\` clause"
 )
 # T5 (spec §5.4): every needle must match exactly one line, not merely be present — checked uniformly
 # for every row here, old and new alike (verified live: every needle below already satisfies this,
@@ -626,5 +628,12 @@ append_line "$c696d_copy" "offer to continue it or pick another"
 assert_case_turns_red "(g) mutation: dir #696 retired 'continue it' sentence re-added" \
   "(g) dir #696: step 4 no longer promises 'continue it' across worktrees" \
   "KEEL_GO_MD=$c696d_copy"
+
+# dir #874: step 9 walks the ticket's Fix: clauses, not only spec rules and Acceptance items.
+c874_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c874_copy" "Walk every spec rule" "and \`Fix:\` clause" ""
+assert_case_turns_red "(g) mutation: dir #874 conform's Fix: clause removed" \
+  "(g) needle [dir #874: conform walks the ticket's Fix: clauses]: 'and \`Fix:\` clause' matches exactly one line" \
+  "KEEL_GO_MD=$c874_copy"
 
 summary

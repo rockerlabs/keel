@@ -82,7 +82,7 @@ Self-reported — like `/polish`'s `skipped:<reason>` receipts, with no receipt,
 and put the same lines in the PR body (or the report); the guide defines an escape. Inside a
 managed release the spec write goes through the manager, as the claim does.
 
-**9. conform.** Walk every spec rule by its id and every `**Acceptance:**` item, per the guide; paste
+**9. conform.** Walk every spec rule by its id, every `**Acceptance:**` item and `Fix:` clause, per the guide; paste
 the results into the PR body (or the report); a red check → back to step 7 until green, or
 escape if the check itself is wrong. `conform` always runs — the project-agnostic floor.
 
