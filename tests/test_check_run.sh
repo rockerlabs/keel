@@ -135,6 +135,12 @@ check_eq "dir #883: …and left the tracked file as it was" "$before" "$(cat "$r
 mkdir -p "$SANDBOX/rd.dirlog/log"
 cr run "$SANDBOX/rd.dirlog" -- true
 check_status "dir #883: a directory named like a record → 2" 2 "$STATUS"
+ln -s "$rootrepo/sub" "$SANDBOX/rd.link"
+run_in "$rootrepo" bash "$tool" run "$SANDBOX/rd.link/.." -- true
+check_status "dir #883: a root reached through a symlink and .. → 2" 2 "$STATUS"
+run_in "$rootrepo" bash "$tool" run nonexistent/.. -- true
+check_status "dir #883: .. through a missing directory → 2" 2 "$STATUS"
+check_nodir "dir #883: …and created nothing" "$rootrepo/nonexistent"
 cr run "$SANDBOX/rd.pass" -- true
 check_status "dir #883: a rerun over its own records is still fine" 0 "$STATUS"
 

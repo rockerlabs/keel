@@ -63,7 +63,7 @@ case "$sub" in
   run)
     # dir #883: refuse the work-tree root and a <dir> whose record names are tracked files or directories.
     if [ -d "$dir" ]; then
-      phys="$(cd "$dir" 2>/dev/null && pwd -P)" || exit 2
+      phys="$(cd -P -- "$dir" 2>/dev/null && pwd -P)" || exit 2
       top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || top=
       if [ -n "$top" ] && [ "$phys" = "$(cd "$top" && pwd -P)" ]; then
         printf 'check-run: refused: <dir> %s is the work-tree root; use a fresh mktemp -d\n' "$dir" >&2
@@ -75,6 +75,14 @@ case "$sub" in
           exit 2
         fi
       done
+    fi
+    # a `..` through a directory that does not exist yet cannot be resolved before mkdir: refuse it
+    if [ ! -d "$dir" ]; then
+      case "/$dir/" in
+        */../*)
+          printf 'check-run: refused: <dir> %s has a .. component through a missing directory; use a fresh mktemp -d\n' "$dir" >&2
+          exit 2 ;;
+      esac
     fi
     mkdir -p "$dir" || exit 2
     rm -f "$dir/exit" "$dir/log" "$dir/secs"
