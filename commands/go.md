@@ -83,8 +83,8 @@ and put the same lines in the PR body (or the report); the guide defines an esca
 managed release the spec write goes through the manager, as the claim does.
 
 **9. conform.** Walk every spec rule by its id, every `**Acceptance:**` item and `Fix:` clause, per the guide; paste
-the results into the PR body (or the report); a red check → back to step 7 until green, or
-escape if the check itself is wrong. `conform` always runs — the project-agnostic floor.
+the results into the PR body (or report); a red check → back to step 7 until green, or
+escape if the check itself is wrong. `conform` always runs — project-agnostic floor.
 
 **10. close.** Close through `/polish` where installed — the pre-PR pass; it opens the PR itself, and
 its gate, where wired, denies a bare `gh pr create`. A project whose `CLAUDE.md` records a
