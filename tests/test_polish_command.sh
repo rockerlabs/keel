@@ -120,7 +120,8 @@ check_contains "core: step 8's unlock receipt is chained behind the push" "$(ste
   '`git push -u <remote> <branch> && tools/pre-pr-gate.sh receipt polish.8-unlock "$(git rev-parse HEAD)"`'
 pinf "core: step 3 runs the suite in ONE check-run.sh call, foreground" \
   'in ONE `tools/check-run.sh run <dir> -- <command>` call, foreground, timeout 600000'
-pinf "core: step 3 names <dir> as a fresh mktemp -d (dir #883)" '`<dir>` is a fresh `mktemp -d`.'
+pinf "core: step 3 names its dir (dir #883)" '`<dir>` is a fresh'
+pinf "core: step 3 names its dir as fresh, dir 883" '`<dir>` is a fresh'
 pinf "core: step 3 points a suite over 9 minutes at the guide" '(a suite over 9 minutes: the guide, § Step 3)'
 pinf "core: step 3 still shows output before claiming a pass" 'Show its summary; never claim "passed" without it.'
 check_contains "core: step 3's receipt is chained after check-run.sh verify" "$(step_text 3)" 'chained after `tools/check-run.sh verify'
