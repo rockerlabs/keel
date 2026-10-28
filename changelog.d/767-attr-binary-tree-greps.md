@@ -1,0 +1,1 @@
+- `tools/public-audit.sh --no-history` now reads a tracked file that a `-diff` or `binary` attribute marks binary but that holds no NUL (e.g. `*.svg -diff`): the token grep, the personal-literal grep and the Cyrillic grep each get a second `-a` leg over those files, where `git grep -I` used to skip them and read clean; a NUL-bearing one stays a binary (dir #767).

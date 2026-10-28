@@ -91,6 +91,8 @@ needle_rules=(
   "GUIDE4 old item 4 kept"
   "dir #696 B9: I1 item 0 points at step 4's offer"
   "dir #696 B9: the offer is made once per session"
+  "dir #874: I6 walks the ticket Fix: clauses"
+  "dir #874: a done row is evidenced by a run or a quote"
 )
 needle_texts=(
   "\`go.md\` wins"
@@ -118,6 +120,8 @@ needle_texts=(
   "Run the project's full test command"
   "step 4's offer"
   "unless step 4 already did"
+  "ticket \`Fix:\` clause"
+  "Evidence: run or quote"
 )
 i=0
 while [ "$i" -lt "${#needle_rules[@]}" ]; do
@@ -492,5 +496,17 @@ append_line "$b9c_copy" "continue there (absolute paths, git -C)"
 assert_case_turns_red "(f) mutation: dir #696 retired absolute-path offer re-added" \
   "(f) dir #696: I1 item 0 no longer offers 'continue there (absolute paths'" \
   "KEEL_GO_GUIDE_MD=$b9c_copy"
+
+# dir #874: I6 walks the ticket's Fix: clauses and a done row's evidence is a run or a quote.
+g874a_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$g874a_copy" "conform table.**" "ticket \`Fix:\` clause" "ticket note"
+assert_case_turns_red "(f) mutation: dir #874 I6 Fix: clause removed" \
+  "(f) needle [dir #874: I6 walks the ticket Fix: clauses]: 'ticket \`Fix:\` clause' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$g874a_copy"
+g874b_copy="$(scratch_copy "$guide_md" go-guide.md)"
+replace_in_line_containing "$g874b_copy" "conform table.**" "Evidence: run or quote." ""
+assert_case_turns_red "(f) mutation: dir #874 I6 evidence rule removed" \
+  "(f) needle [dir #874: a done row is evidenced by a run or a quote]: 'Evidence: run or quote' matches exactly one line" \
+  "KEEL_GO_GUIDE_MD=$g874b_copy"
 
 summary

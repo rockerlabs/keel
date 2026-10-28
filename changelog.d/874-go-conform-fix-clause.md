@@ -1,0 +1,1 @@
+- `/go` conform (step 9, guide I6) now also walks the ticket's `Fix:` clauses, and a `done` row must name a check that ran or a line quoted, so a clause contradicted by a sibling check cannot be marked done by re-reading (dir #874).

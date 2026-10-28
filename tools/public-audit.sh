@@ -276,7 +276,23 @@ pa_check_ids() {
   done < "$1"
 }
 # pa_tree PATTERN — git grep -nIE over the tracked tree (caller's locale: git grep is not affected).
-pa_tree() { git -C "$DIR" grep -nIE -e "$1" -- . "${excludes[@]}"; }
+pa_tree() { pa_tree_g nE -e "$1"; }
+# pa_tree_g FLAGS GREP-ARGS… — the tree grep in two legs (dir #767): `-FLAGS I` over the tree, then `-FLAGS a`
+# over pa_nd, the tracked files a `-diff`/`binary` attribute marks binary though they hold no NUL (git grep -I
+# trusts the attribute over the bytes and skips them). The legs are disjoint. Status 0 = a hit, 1 = none, other
+# = error (returned untouched, so the pa_report/pa_match error-to-GAP contract holds).
+pa_tree_g() {
+  local f="$1" rc=0 rc2=0
+  shift
+  git -C "$DIR" grep "-${f}I" "$@" -- . "${excludes[@]}" || rc=$?
+  [ "$rc" -le 1 ] || return "$rc"
+  [ "${#pa_nd[@]}" -gt 0 ] || return "$rc"   # bash 3.2 + set -u: never expand an empty array
+  git -C "$DIR" grep "-${f}a" "$@" -- "${pa_nd[@]}" || rc2=$?
+  [ "$rc2" -le 1 ] || return "$rc2"
+  [ "$rc" -eq 0 ] || [ "$rc2" -eq 0 ] || return 1
+  return 0
+}
+pa_nd=()
 # pa_log_p ARGS… — `git log -p` for the content greps, NUL-stripped. --text/--no-textconv/--no-ext-diff: a
 # `-diff` attribute or a textconv driver otherwise replaces the bytes (a literal behind one reads 0 hits).
 # The NUL strip keeps `grep -I`-free greps reading a history that holds one NUL (a bash variable dropped it).
@@ -396,6 +412,19 @@ fi
 excludes=( ":(exclude).public-audit" )
 if [ "${#allow_paths[@]}" -gt 0 ]; then
   for g in "${allow_paths[@]}"; do [ -n "$g" ] && excludes+=( ":(exclude)$g" ); done
+fi
+
+# The tracked files a `-diff`/`binary` attribute marks binary but that hold no NUL (dir #767): the tree greps
+# read them as text in pa_tree_g's second leg. A NUL-bearing one stays a binary for sections 2 and 5b. The
+# listing runs under -a (git drops attribute-binary files otherwise) and through pa_match: exit 1 = none, a
+# normal outcome. A missing file or a symlink is skipped (section 1b GAPs a missing one). `:(literal)` keeps a
+# glob-character name from widening to a sibling. A `diff=<driver>` with `diff.<driver>.binary` in git CONFIG
+# (not a tracked file) is not seen.
+if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" git -C "$DIR" grep -l -z -a -e '' -- ':(attr:-diff)' "${excludes[@]}"; then
+  while IFS= LC_ALL=C read -r -d '' f; do
+    [ -f "$DIR/$f" ] && [ ! -L "$DIR/$f" ] || continue
+    LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && pa_nd+=( ":(literal)$f" )
+  done < "$audit_tmp/nd.list"
 fi
 
 # Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read
@@ -695,7 +724,7 @@ fi
 # --- 2b. personal literals (local secret-scan-personal), in tree text (GAP) ----------------------
 if [ "$has_personal" = 1 ]; then
   pa_report gap "search the tracked tree for the personal literals" "$audit_tmp/per.tree" "personal literal (secret-scan-personal) in tracked tree" \
-    git -C "$DIR" grep -inIE -f "$personal_pat" -- . "${excludes[@]}"
+    pa_tree_g inE -f "$personal_pat"
 fi
 
 # --- 3. heuristic content scans (WARN) -----------------------------------------------------------
@@ -709,7 +738,7 @@ pa_match "search the tracked tree for emails" "$audit_tmp/s3.em1" pa_tree "$EMAI
 # the bytes; an `xargs grep` pipeline maps grep's "no match" to 123, so its status could not be read.
 cyr_pat=$'[\xd0-\xd3][\x80-\xbf]'
 pa_report warn "search the tracked tree for Cyrillic" "$audit_tmp/s3.cyr" "Cyrillic text in tracked file" \
-  pa_c git -C "$DIR" grep -lI -e "$cyr_pat" -- . "${excludes[@]}"
+  pa_c pa_tree_g l -e "$cyr_pat"
 
 # --- 4. agent tooling / session metadata (WARN) --------------------------------------------------
 # The per-session trailers a coding agent appends to commits (and the same shape in tracked files).
