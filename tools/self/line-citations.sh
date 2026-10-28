@@ -241,7 +241,7 @@ candidates="$work/candidates"
 # BSD grep already refused to match past the NUL here too, which is why the fixtured case was never
 # caught locally — one-true-awk's own truncation would have hidden the same bug a second way besides.)
 #
-# `-I` also trusts a `diff` gitattribute over the bytes (dir #767 follow-up): a tracked text file marked `-diff`
+# `-I` also trusts a `diff` gitattribute over the bytes (dir #904, follow-up of dir #767): a tracked text file marked `-diff`
 # or `binary` (e.g. `*.svg -diff`) is skipped though it holds no NUL. So the NUL-less ones among them get a
 # second `-a` leg just below; a file with a NUL under such an attribute stays skipped, as above.
 #
@@ -268,7 +268,7 @@ if [ "$grep_rc" -gt 1 ]; then
   exit 2
 fi
 
-# dir #767 follow-up: `-I` above trusts a `-diff`/`binary` gitattribute over the bytes, so a tracked text file
+# dir #904, follow-up of dir #767: `-I` above trusts a `-diff`/`binary` gitattribute over the bytes, so a tracked text file
 # carrying one (e.g. `*.svg -diff`) and no NUL was never scanned — a bogus citation in it read clean. A second
 # `-a` leg reads exactly those files (tools/lib/attr-binary.sh); a NUL-bearing one stays a binary. The legs are
 # disjoint, so no de-duplication. Same exit contract: 1 = no match, anything else = a failure. Known limit: a

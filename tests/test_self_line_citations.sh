@@ -232,7 +232,7 @@ printf 'See src/widget.sh:2 here.\n' > "$d/changelog.d/README.md"
 run "$lc" "$d"
 check_status "A29: the same token in changelog.d/README.md is NOT history -> exit 1" 1 "$STATUS"
 
-# --- dir #767 follow-up: a NUL-less tracked file a `-diff`/`binary` attribute marks binary is still scanned ---
+# --- dir #904, follow-up of dir #767: a NUL-less tracked file a `-diff`/`binary` attribute marks binary is still scanned ---
 # `git grep -I` trusts the attribute over the bytes, so `*.svg -diff` hid a bogus citation. The second `-a`
 # leg (tools/lib/attr-binary.sh) reads it; a NUL-bearing file under the same attribute stays skipped.
 d="$(mk_repo 'Clean prose.')"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_attr_binary_lib.sh — tools/lib/attr-binary.sh (dir #767 follow-up): the listing of tracked files a
+# test_attr_binary_lib.sh — tools/lib/attr-binary.sh (dir #904, follow-up of dir #767): the listing of tracked files a
 # `-diff`/`binary` attribute marks binary (attr_nd_list) and the NUL-less filter that turns them into
 # `:(literal)` pathspecs (attr_nd_filter). Its two consumers, tools/public-audit.sh and
 # tools/self/line-citations.sh, are pinned at the source level, as test_fence_blank_lib.sh does for its lib.

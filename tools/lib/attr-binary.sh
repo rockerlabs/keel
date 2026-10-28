@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # tools/lib/attr-binary.sh — the tracked files a `-diff`/`binary` gitattribute marks binary though their bytes
-# hold no NUL (dir #767, line-citations.sh follow-up). `git grep -I` trusts the attribute over the bytes and
+# hold no NUL (dir #904, follow-up of dir #767). `git grep -I` trusts the attribute over the bytes and
 # skips such a file (e.g. `*.svg -diff`), so a tree grep run with -I reads it as clean. A caller runs its
 # -I grep over the tree, then a second `-a` grep over attr_nd_filter's pathspecs; the two legs are disjoint.
 #
