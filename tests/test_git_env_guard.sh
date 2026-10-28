@@ -578,6 +578,40 @@ t_blob="$(printf 'pin661' | git -C "$t_d" hash-object -w --stdin)"
 printf 'pin661' | env GIT_ALTERNATE_OBJECT_DIRECTORIES="$t_d/.git/objects" bash -c "$GUARD"'; git -C "$1" hash-object -w --stdin >/dev/null' _ "$t_a" >/dev/null 2>&1
 if git -C "$t_a" cat-file -e "$t_blob" 2>/dev/null; then pass "dir #661 S5-3: an inherited GIT_ALTERNATE_OBJECT_DIRECTORIES no longer hides a write behind a foreign store"; else fail "dir #661 S5-3: an inherited GIT_ALTERNATE_OBJECT_DIRECTORIES no longer hides a write behind a foreign store" "the blob never reached the target's own store"; fi
 
+# B6 (dir #886) — the second guard: the four pathspec-mode variables. A repo selector (which repo) and a
+# pathspec mode (what a pattern means) are different classes, so they are two lines; the lib carries the
+# second one, and every tool that passes a magic/glob pathspec inlines it (executing, column 0, before its
+# first git-reaching line), the same convention as the seven-variable line.
+PSGUARD="$(grep -m1 '^unset GIT_LITERAL_PATHSPECS' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
+check_eq "B6: the lib's second unset line is the four-variable pathspec-mode line" \
+  "unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS" "$PSGUARD"
+ps_hand="tools/doctor.sh tools/public-audit.sh tools/self/doctor.sh tools/self/citation-resolvability.sh tools/self/prose-drift.sh tools/drydock/inventory.sh"
+ps_magic=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  if awk '/^[ \t]*#/ { next } /:[(](exclude|glob|literal|icase|top|attr)/ { found = 1 } END { exit !found }' "$REPO_ROOT/$f" 2>/dev/null; then
+    ps_magic="$ps_magic$f
+"
+  fi
+done <<< "$real_reach"
+if has_line "$ps_magic" tools/doctor.sh && has_line "$ps_magic" tools/public-audit.sh; then pass "B6 floor: the magic-pathspec detector finds tools/doctor.sh and tools/public-audit.sh"; else fail "B6 floor: the magic-pathspec detector finds tools/doctor.sh and tools/public-audit.sh" "detector found: $ps_magic"; fi
+ps_req="$(printf '%s\n' $ps_hand $ps_magic | sort -u)"
+GUARD_SEVEN="$GUARD"
+GUARD="$PSGUARD"
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  first="$(first_reach "$REPO_ROOT/$f" "$real_libs")"
+  g="$(guard_line "$REPO_ROOT/$f")"
+  if [ -z "$g" ]; then
+    fail "B6: $f carries an executing column-0 pathspec-mode unset" "no '$PSGUARD' line"
+  elif [ -n "$first" ] && [ "$g" -gt "$first" ]; then
+    fail "B6: $f carries an executing column-0 pathspec-mode unset" "guard at line $g comes after the first git-reaching line ($first)"
+  else
+    pass "B6: $f carries an executing column-0 pathspec-mode unset before its first git line"
+  fi
+done <<< "$ps_req"
+GUARD="$GUARD_SEVEN"
+
 # A8 — the lib's header: the superseded "NOT a complete census" clause is gone and the census is named.
 check_eq "A8: tools/lib/repo-arg-guard.sh no longer carries the 'NOT a complete census' clause" 0 "$(grep -c 'NOT a complete census' "$REPO_ROOT/tools/lib/repo-arg-guard.sh")"
 check_contains "A8: the lib's header names the census test" "$(cat "$REPO_ROOT/tools/lib/repo-arg-guard.sh")" "tests/test_git_env_guard.sh"

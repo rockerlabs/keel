@@ -95,6 +95,28 @@ check_status "demo-bypass with a stand-in real HOME → still exit 0" 0 "$STATUS
 check_eq "demo-bypass leaves nothing under the real HOME" "" "$(find "$cv3_home" -type f 2>/dev/null)"
 check_nodir "demo-bypass does not create the ambient impact store" "$cv3_store"
 check_nofile "demo-bypass does not write the ambient impact log" "$cv3_log"
+# The store row above is vacuous on its own: KEEL_IMPACT_LOG (set beside it) wins in impact_log_path before
+# the store is consulted, and a store takes an event only when its per-project entry already exists — the toy
+# repo is a mktemp -d inside demo-bypass, so its slug is unknown. Close both: set the store ALONE (the other
+# five isolation variables env -u; KEEL_HOME is already unset by lib.sh), hand the FIRST mktemp call a known
+# empty dir through a one-shot shim, and pre-create that project's ENABLED entry.
+cv3b_dir="$SANDBOX/cv3b-toy"; cv3b_store="$SANDBOX/cv3b-store"; cv3b_bin="$SANDBOX/cv3b-bin"
+cv3b_once="$SANDBOX/cv3b-once"; cv3b_real="$(command -v mktemp)"
+mkdir -p "$cv3b_dir" "$cv3b_bin" "$SANDBOX/cv3b-home"
+printf '#!/bin/sh\nif [ ! -e "%s" ]; then : > "%s"; printf "%%s\\n" "%s"; exit 0; fi\nexec "%s" "$@"\n' \
+  "$cv3b_once" "$cv3b_once" "$cv3b_dir" "$cv3b_real" > "$cv3b_bin/mktemp"
+chmod +x "$cv3b_bin/mktemp"
+cv3b_entry="$cv3b_store/$(cd -P "$cv3b_dir" && pwd -P | tr '/' '-')"
+mkdir -p "$cv3b_entry"
+run env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE -u KEEL_READ_TRACE_STORE \
+  -u KEEL_MACHINE_WATCH_STORE HOME="$SANDBOX/cv3b-home" KEEL_IMPACT_STORE="$cv3b_store" \
+  PATH="$cv3b_bin:$PATH" KEEL_CANARY_STATE="$STATE" bash "$canary" demo-bypass
+check_status "demo-bypass with only an enabled ambient store set → still exit 0" 0 "$STATUS"
+# positive control: the shim fired and demo-bypass used (then rm -rf'd) the pre-enabled toy dir as its repo,
+# else the row below is vacuous
+check_eq "demo-bypass took the shim-provided toy dir and cleaned it up (the enabled entry matched its slug)" yes \
+  "$([ -e "$cv3b_once" ] && [ ! -e "$cv3b_dir" ] && echo yes || echo no)"
+check_nofile "demo-bypass writes no event into an ENABLED ambient store entry" "$cv3b_entry/impact-events.log"
 
 # --- setup: builds the sandbox -----------------------------------------------------------------
 run env KEEL_CANARY_STATE="$STATE" bash "$canary" setup

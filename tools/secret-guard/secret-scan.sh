@@ -254,8 +254,12 @@ needle_wide() {
 # has_personal — at least one literal; personal_nonascii — one is wide (needle_wide: a non-ASCII byte, or an ERE
 # `.`/bracket/class escape that can stand for a non-ASCII letter), which skips --range's NUL-strip fast path and,
 # through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on emit_blob's built-in decoder.
+# personal_anchored — one holds an unescaped `^` or `$`, or a `\<` `\>` `` \` `` `\'` anchor, which can match a printable run
+# the NUL-stripped view joins to its neighbours; it skips --range's fast path too (dir #850) but, unlike a wide literal,
+# does not turn on the decoder.
 has_personal=""
 personal_nonascii=""
+personal_anchored=""
 personal_pat="$SCRATCH/personal.pat"
 if [ -n "$_personal_lines" ]; then
   has_personal=1
@@ -263,6 +267,9 @@ if [ -n "$_personal_lines" ]; then
   # one literal per call: a plain literal beside a wide one must not hide in the whole file's text
   while IFS= LC_ALL=C read -r _pl_line; do
     if needle_wide "$_pl_line"; then personal_nonascii=1; fi
+    _pl_stripped="${_pl_line//\\[![:alnum:]]/}"      # an escaped \^ or \$ is a literal, not an anchor
+    case "$_pl_stripped" in *[\^\$]*) personal_anchored=1 ;; esac
+    case "$_pl_line" in *\\[\<\>\`\']*) personal_anchored=1 ;; esac     # \< \> word boundaries, GNU \` \' buffer anchors; the strip above drops them
   done <<< "$_personal_lines"
 fi
 decode_nonascii="$personal_nonascii"
@@ -921,7 +928,9 @@ case "$mode" in
       # a wide personal literal (needle_wide: a non-ASCII byte, or a `.`/bracket that can stand for a non-ASCII
       # letter) is invisible to the NUL-strip fast view of UTF-16 bytes — skip the fast path and let the
       # detailed scan's decode passes see it (dir #761).
-      if [ -z "$personal_nonascii" ]; then
+      # An anchored literal (personal_anchored: ^, $, \< or \>) is skipped the same way: it can match a printable run
+      # that the NUL-stripped view joins to its neighbours (dir #850).
+      if [ -z "$personal_nonascii" ] && [ -z "$personal_anchored" ]; then
         rtmp="$(spool)"; rerr="$(spool)"
         awk '{print $2}' <<< "$blobs" \
           | git cat-file --batch 2>"$rerr" | LC_ALL=C tr -d '\000' > "$rtmp" \

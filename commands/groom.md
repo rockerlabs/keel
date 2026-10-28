@@ -62,9 +62,9 @@ backlog write here, deletions included, goes through a checked writer
 **Plus the accumulator triage:** (a) re-read the project's standing list (keel: `## Standing list` in
 `BACKLOG.md`), (b) the project's ideas file, and the project's learnings file — all three run under
 `/triage` ([`docs/triage.md`](../docs/triage.md)), called by reference: its verdicts decide each
-entry; (c) confirmed at G0, not repeated here.
+entry; (c) confirmed at G0, not repeated here; (d) a spec's follow-up list, triaged by the groom itself.
 
-**G5 — every release row, five-plus-two fields.**
+**G5 — every release row, seven fields and two report fields.**
 Name, pain (G1), derived ticket list (G3), size against the project's own per-release band, named
 risks — plus a budget estimate sized from the project's own cost-measurement data where it exists (the
 estimate names its weights, and the release's actual is summed at the same ones; where the binding

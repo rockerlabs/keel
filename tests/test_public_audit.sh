@@ -1088,4 +1088,81 @@ check_contains "dir #761: ...found in the binary file" "$OUT" "private token /Mi
 run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-plain761" bash "$pa" --no-history "$d"
 check_status "dir #761 control: the literal 'michalek' does not match an l-stroke → exit 0" 0 "$STATUS"
 
+# dir #886: an inherited pathspec-mode variable must not change what the built-in/allow-path `:(exclude)`
+# pathspecs mean. Fixture D: the config scans nothing under vend/ (allow-path) and itself; the token sits
+# under vend/ and vend/deep/. Fixture E: the token sits only under Vend/ (never both in one fixture — a
+# case-insensitive filesystem collides them). Under LITERAL/NOGLOB the excludes read literally → false GAP;
+# under GLOB `*` stops at `/` (vend/deep/y.txt); under ICASE vend/* also swallows Vend/ → false CLEAN.
+d="$(repo_by dev@example.com)"
+printf 'token: zzpriv886\nallow-path: vend/*\n' > "$d/.public-audit"
+mkdir -p "$d/vend/deep"; printf 'zzpriv886\n' > "$d/vend/x.txt"; printf 'zzpriv886\n' > "$d/vend/deep/y.txt"
+commit_in "$d" "dir 886 fixture D"
+run bash "$pa" --no-history "$d"
+check_status "dir #886 control: an allow-path'd token with no pathspec env → exit 0" 0 "$STATUS"
+for pv886 in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do
+  run env "$pv886=1" bash "$pa" --no-history "$d"
+  check_status "dir #886: $pv886=1 does not change the audit verdict → exit 0" 0 "$STATUS"
+  check_absent "dir #886: $pv886=1 raises no false GAP" "$OUT" "GAP"
+done
+d="$(repo_by dev@example.com)"
+printf 'token: zzpriv886\nallow-path: vend/*\n' > "$d/.public-audit"
+mkdir -p "$d/Vend"; printf 'zzpriv886\n' > "$d/Vend/z.txt"
+commit_in "$d" "dir 886 fixture E"
+run bash "$pa" --no-history "$d"
+check_status "dir #886 control: a token under Vend/ (not allow-path'd vend/) → exit 1" 1 "$STATUS"
+for pv886 in GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS; do
+  run env "$pv886=1" bash "$pa" --no-history "$d"
+  check_status "dir #886: $pv886=1 does not hide the Vend/ token → exit 1" 1 "$STATUS"
+  check_contains "dir #886: $pv886=1 still names Vend/z.txt" "$OUT" "Vend/z.txt"
+done
+
+# dir #767: a tracked file a `-diff`/`binary` attribute marks binary but that holds NO NUL is text git grep -I
+# skips; --no-history read clean over it. One fixture per class: a token (also under a glob-character name),
+# a personal literal, a home path, Cyrillic. The NUL-bearing -diff file is the control: it stays a binary.
+d="$(repo_by dev@example.com)"
+printf '*.svg -diff\n*.dat binary\n' > "$d/.gitattributes"
+printf 'token: zzpriv767\n' > "$d/.public-audit"
+printf '<svg>zzpriv767</svg>\n' > "$d/a.svg"
+commit_in "$d" "dir 767 fixture token"
+run bash "$pa" --no-history "$d"
+check_status "dir #767: a token only in -diff/binary NUL-less files → GAP exit 1" 1 "$STATUS"
+check_contains "dir #767: names the -diff svg" "$OUT" "a.svg:1:<svg>zzpriv767"
+# a second fixture: only the `binary`-macro file, under a glob-character name (only the first hit is shown)
+d="$(repo_by dev@example.com)"
+printf '*.dat binary\n' > "$d/.gitattributes"
+printf 'token: zzpriv767\n' > "$d/.public-audit"
+printf 'zzpriv767\n' > "$d/b[1].dat"
+commit_in "$d" "dir 767 fixture binary macro"
+run bash "$pa" --no-history "$d"
+check_status "dir #767: a token only in a binary-macro, glob-named file → GAP exit 1" 1 "$STATUS"
+check_contains "dir #767: names the binary-macro file" "$OUT" "b[1].dat:1:zzpriv767"
+d="$(repo_by dev@example.com)"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf 'author: jane q public\n' > "$d/p.svg"
+commit_in "$d" "dir 767 fixture personal"
+run env SECRET_SCAN_PERSONAL_FILE="$pfile" bash "$pa" --no-history "$d"
+check_status "dir #767: a personal literal only in a -diff file → GAP exit 1" 1 "$STATUS"
+check_contains "dir #767: the personal hit is labeled" "$OUT" "personal literal (secret-scan-personal) in tracked tree"
+d="$(repo_by dev@example.com)"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>/Users/alice/keys</svg>\n' > "$d/h.svg"
+printf '<svg>\xd0\xb7\xd0\xb0\xd0\xbc</svg>\n' > "$d/ru.svg"
+commit_in "$d" "dir 767 fixture warn"
+run bash "$pa" --no-history "$d"
+check_status "dir #767: WARN-only content in -diff files → exit 0" 0 "$STATUS"
+check_contains "dir #767: the home path in a -diff svg is warned" "$OUT" "absolute home path in tracked tree — e.g. h.svg:1"
+check_contains "dir #767: the Cyrillic in a -diff svg is warned" "$OUT" "Cyrillic text in tracked file — e.g. ru.svg"
+
+# The controls, each alone (the report shows only the first hit): a NUL-bearing -diff file stays a binary (no
+# text WARN), and a glob-character name (`n*.svg`, NUL-less) does not widen to its NUL-bearing sibling `nx.svg`.
+d="$(repo_by dev@example.com)"
+printf '*.png -diff\n*.svg -diff\n' > "$d/.gitattributes"
+printf 'x\000/Users/bob/keys\n' > "$d/n.png"
+printf 'plain\n' > "$d/n*.svg"
+printf 'x\000/Users/carol/keys\n' > "$d/nx.svg"
+commit_in "$d" "dir 767 fixture controls"
+run bash "$pa" --no-history "$d"
+check_status "dir #767 control: NUL-bearing -diff files only → exit 0" 0 "$STATUS"
+check_absent "dir #767 control: a NUL-bearing -diff file stays a binary, not text-scanned" "$OUT" "absolute home path"
+
 summary

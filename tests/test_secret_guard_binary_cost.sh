@@ -121,6 +121,81 @@ else
   pass "V9 skipped (no UTF-8 locale on this host)"
 fi
 
+# the same multi-byte literal when the iconv sanitizer FAILS (the musl case): pu_grep must fall back to reading the run
+# file beside FILE, not drop it. A stub `iconv` that exits 1 makes that deterministic on any host; it still needs a
+# UTF-8 locale for the run to match, so it is skipped where the host has none (the alpine leg).
+if [ -n "$utf8_loc" ]; then
+  noic="$SANDBOX/noiconv"
+  mkdir -p "$noic"
+  printf '#!/bin/sh\nexit 1\n' > "$noic/iconv"
+  chmod +x "$noic/iconv"
+  anchored_blob "abc"
+  repo="$(blob_repo)"
+  SECRET_SCAN_PERSONAL_FILE="$pers_mb" run_in "$repo" env PATH="$noic:$PATH" LC_ALL="$utf8_loc" "$scan" --tracked
+  check_status "V10: ...and with a failing iconv sanitizer the run file is still read → exit 1" 1 "$STATUS"
+else
+  pass "V10 skipped (no UTF-8 locale on this host)"
+fi
+
+# --- (R) the same verdicts over --range (dir #850) ---------------------------------------------------------------------
+# --range counts matches on a NUL-stripped stream before it runs the detailed scan, so a personal literal that matches
+# only a printable run (an unescaped `^` or `$`, a `\<` `\>` word boundary) reads clean there unless the fast path is
+# skipped. Each blob is added by the last commit of the range; `--tracked` already answered these (V6–V8 above).
+range_blob_repo() {  # $1 = the blob's printf format; prints a repo whose HEAD~1..HEAD adds it as data.bin
+  local d; d="$(new_repo)"
+  git -C "$d" commit -q --allow-empty -m base
+  printf "$1" > "$d/data.bin"
+  git -C "$d" add data.bin
+  git -C "$d" commit -q -m blob
+  printf '%s' "$d"
+}
+pers_wb="$SANDBOX/personal.wb";   printf '\\bzorbquux\\b\n' > "$pers_wb"
+pers_alt="$SANDBOX/personal.alt"; printf '(^|[^a-z])zorbquux($|[^a-z])\n' > "$pers_alt"
+pers_start="$SANDBOX/personal.start"; printf '^zorbq\n' > "$pers_start"
+pers_end="$SANDBOX/personal.end"; printf 'zorbquux$\n' > "$pers_end"
+pers_esc="$SANDBOX/personal.esc"; printf 'zorb\\$quux\n' > "$pers_esc"
+pers_gnuwb="$SANDBOX/personal.gnuwb"; printf '\\<zorbquux\\>\n' > "$pers_gnuwb"
+pers_gnuend="$SANDBOX/personal.gnuend"; printf 'zorbquux\\'"'"'\n' > "$pers_gnuend"
+
+repo="$(range_blob_repo '\001\002zorbanchored\003\004\000tail')"
+SECRET_SCAN_PERSONAL_FILE="$pers_anchor" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V6r: an ^…\$ literal found only in the printable runs, over --range → exit 1" 1 "$STATUS"
+check_contains "V6r: ...naming the blob" "$OUT" "data.bin"
+
+repo="$(range_blob_repo '\001\002zorbq-extra\003\000tail')"
+SECRET_SCAN_PERSONAL_FILE="$pers_start" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V6r: a lone leading ^ literal (^zorbq) over --range → exit 1" 1 "$STATUS"
+
+wbblob='hdr\000abc\000zorbquux\000defg\000end\000'
+repo="$(range_blob_repo "$wbblob")"
+SECRET_SCAN_PERSONAL_FILE="$pers_end" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V7r: a trailing \$ literal (zorbquux\$) over --range → exit 1" 1 "$STATUS"
+SECRET_SCAN_PERSONAL_FILE="$pers_wb" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V7r: a \\b word-boundary literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
+SECRET_SCAN_PERSONAL_FILE="$pers_alt" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V7r: a (^|[^a-z])…(\$|[^a-z]) literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
+SECRET_SCAN_PERSONAL_FILE="$pers_gnuwb" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V7r: a \\<…\\> word-boundary literal over --range → exit 1" 1 "$STATUS"
+# \' is an end-of-buffer anchor for GNU grep only (BSD and busybox read it differently), so the row needs a grep that has it
+if printf 'xa\n' | LC_ALL=C grep -qE "a\\'"; then
+  SECRET_SCAN_PERSONAL_FILE="$pers_gnuend" run_in "$repo" "$scan" --range HEAD~1..HEAD
+  check_status "V7r: a GNU \\' end-of-buffer anchor literal over --range → exit 1" 1 "$STATUS"
+else
+  pass "V7r \\' row skipped (this grep has no \\' anchor)"
+fi
+
+repo="$(range_blob_repo '\001\002zorbq-not-the-literal\003\000tail')"
+SECRET_SCAN_PERSONAL_FILE="$pers_short" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V8r: ...and an ^…\$ literal inside a longer run is not, over --range → exit 0" 0 "$STATUS"
+
+# behaviour rows: an escaped \$ is a literal, and the detailed scan answers it either way
+repo="$(range_blob_repo 'a\000zorbquux\000zorb$quux\000')"
+SECRET_SCAN_PERSONAL_FILE="$pers_esc" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V8r: an escaped \\\$ literal matches the literal dollar sign over --range → exit 1" 1 "$STATUS"
+repo="$(range_blob_repo 'a\000zorbquux\000')"
+SECRET_SCAN_PERSONAL_FILE="$pers_esc" run_in "$repo" "$scan" --range HEAD~1..HEAD
+check_status "V8r: ...and not the same bytes without the dollar sign → exit 0" 0 "$STATUS"
+
 # --- (C) the bound ---------------------------------------------------------------------------------------------------
 # CEILING — seconds of CPU for the 20 MiB blob below, with two personal literals set. The scan measured ~55 s after
 # the fix (macOS, BSD grep) against ~217 s before it (~37 s and ~178 s with no personal literals); the ceiling sits
