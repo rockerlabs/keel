@@ -115,6 +115,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # fail-open-ok: a fail
 . "$_pa_dir/lib/impact-store.sh"
 # shellcheck source=tools/lib/personal-literals.sh
 . "$_pa_dir/lib/personal-literals.sh"
+# shellcheck source=tools/lib/attr-binary.sh
+. "$_pa_dir/lib/attr-binary.sh"
 unset _pa_dir
 
 # Temp refs from the host-PR-ref scan (section 6) must never outlive the run. Clean them on EXIT/INT/TERM
@@ -416,15 +418,10 @@ fi
 
 # The tracked files a `-diff`/`binary` attribute marks binary but that hold no NUL (dir #767): the tree greps
 # read them as text in pa_tree_g's second leg. A NUL-bearing one stays a binary for sections 2 and 5b. The
-# listing runs under -a (git drops attribute-binary files otherwise) and through pa_match: exit 1 = none, a
-# normal outcome. A missing file or a symlink is skipped (section 1b GAPs a missing one). `:(literal)` keeps a
-# glob-character name from widening to a sibling. A `diff=<driver>` with `diff.<driver>.binary` in git CONFIG
-# (not a tracked file) is not seen.
-if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" git -C "$DIR" grep -l -z -a -e '' -- ':(attr:-diff)' "${excludes[@]}"; then
-  while IFS= LC_ALL=C read -r -d '' f; do
-    [ -f "$DIR/$f" ] && [ ! -L "$DIR/$f" ] || continue
-    LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && pa_nd+=( ":(literal)$f" )
-  done < "$audit_tmp/nd.list"
+# listing and filter are tools/lib/attr-binary.sh's; the listing goes through pa_match: exit 1 = none, a
+# normal outcome. A missing file or a symlink is skipped (section 1b GAPs a missing one).
+if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" attr_nd_list "$DIR" "${excludes[@]}"; then
+  while IFS= LC_ALL=C read -r -d '' f; do pa_nd+=( "$f" ); done < <(attr_nd_filter "$DIR" < "$audit_tmp/nd.list")   # fail-open-ok: attr_nd_filter has no failing outcome (a file it cannot read is skipped)
 fi
 
 # Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read

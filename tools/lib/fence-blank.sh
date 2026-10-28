@@ -30,7 +30,9 @@
 # list (a binary file can't plausibly carry that extension in this tree), and line-citations.sh's own
 # unfiltered `git ls-files` walk (the one caller with no such filter) instead excludes a binary tracked
 # file at its own prefilter, via `git grep -I`, before it ever reaches here — though that exclusion is
-# itself bounded to git's own binary-detection prefix (see line-citations.sh's own comment). A future
+# itself bounded to git's own binary-detection prefix (see line-citations.sh's own comment). A NUL-less
+# file a `-diff`/`binary` attribute marks binary is not excluded: its second `-a` leg (tools/lib/attr-binary.sh)
+# feeds it here as the text it is. A future
 # caller that walks tracked files without a text/extension filter needs the same kind of exclusion at
 # ITS OWN boundary — this function does not provide it, and nothing here enforces that a future caller
 # remembers to add one.

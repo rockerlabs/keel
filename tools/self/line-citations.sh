@@ -85,6 +85,8 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/fence-blank.sh
 . "$self_dir/../lib/fence-blank.sh"
+# shellcheck source=tools/lib/attr-binary.sh
+. "$self_dir/../lib/attr-binary.sh"
 
 QUIET=0
 usage() {
@@ -239,6 +241,10 @@ candidates="$work/candidates"
 # BSD grep already refused to match past the NUL here too, which is why the fixtured case was never
 # caught locally — one-true-awk's own truncation would have hidden the same bug a second way besides.)
 #
+# `-I` also trusts a `diff` gitattribute over the bytes (dir #767 follow-up): a tracked text file marked `-diff`
+# or `binary` (e.g. `*.svg -diff`) is skipped though it holds no NUL. So the NUL-less ones among them get a
+# second `-a` leg just below; a file with a NUL under such an attribute stays skipped, as above.
+#
 # ONE batched call over the whole tree, not one `git grep` fork per tracked file (`/simplify`'s own
 # efficiency pass on this ticket, dir #568): `git grep` pays repo-resolution, config, and gitattributes
 # loading on every invocation, and this loop otherwise runs that once per tracked file — hundreds of
@@ -260,6 +266,29 @@ git -C "$repo_dir" grep -Ilz -E "$TOKEN_RE" 2>"$grep_err" | tr '\0' '\n' > "$can
 if [ "$grep_rc" -gt 1 ]; then
   echo "line-citations.sh: git grep failed while scanning for citations: $(cat "$grep_err")" >&2
   exit 2
+fi
+
+# dir #767 follow-up: `-I` above trusts a `-diff`/`binary` gitattribute over the bytes, so a tracked text file
+# carrying one (e.g. `*.svg -diff`) and no NUL was never scanned — a bogus citation in it read clean. A second
+# `-a` leg reads exactly those files (tools/lib/attr-binary.sh); a NUL-bearing one stays a binary. The legs are
+# disjoint, so no de-duplication. Same exit contract: 1 = no match, anything else = a failure. Known limit: a
+# `diff=<driver>` with `diff.<driver>.binary=true` set only in git config is not seen.
+nd_list="$work/nd.list"
+nd_rc=0
+attr_nd_list "$repo_dir" 2>"$grep_err" > "$nd_list" || nd_rc=$?
+if [ "$nd_rc" -gt 1 ]; then
+  echo "line-citations.sh: git grep failed while listing attribute-binary files: $(cat "$grep_err")" >&2
+  exit 2
+fi
+nd_specs=()
+while IFS= LC_ALL=C read -r -d '' p; do nd_specs+=( "$p" ); done < <(attr_nd_filter "$repo_dir" < "$nd_list")
+if [ "${#nd_specs[@]}" -gt 0 ]; then   # bash 3.2 + set -u: never expand an empty array
+  grep_rc=0
+  git -C "$repo_dir" grep -alz -E "$TOKEN_RE" -- "${nd_specs[@]}" 2>"$grep_err" | tr '\0' '\n' >> "$candidates" || grep_rc=$?
+  if [ "$grep_rc" -gt 1 ]; then
+    echo "line-citations.sh: git grep failed while scanning attribute-binary files: $(cat "$grep_err")" >&2
+    exit 2
+  fi
 fi
 
 while IFS= read -r f; do

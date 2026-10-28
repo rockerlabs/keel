@@ -232,4 +232,34 @@ printf 'See src/widget.sh:2 here.\n' > "$d/changelog.d/README.md"
 run "$lc" "$d"
 check_status "A29: the same token in changelog.d/README.md is NOT history -> exit 1" 1 "$STATUS"
 
+# --- dir #767 follow-up: a NUL-less tracked file a `-diff`/`binary` attribute marks binary is still scanned ---
+# `git grep -I` trusts the attribute over the bytes, so `*.svg -diff` hid a bogus citation. The second `-a`
+# leg (tools/lib/attr-binary.sh) reads it; a NUL-bearing file under the same attribute stays skipped.
+d="$(mk_repo 'Clean prose.')"
+printf '*.svg -diff\n*.dat binary\n' > "$d/.gitattributes"
+printf '<svg>See src/widget.sh:2 here.</svg>\n' > "$d/a.svg"
+( cd "$d" && git add -A && git commit -q -m attr-nulless )
+run "$lc" "$d"
+check_status "attr: a citation in a NUL-less -diff file -> exit 1" 1 "$STATUS"
+check_contains "attr: names the -diff file and the token" "$OUT" "a.svg:1 cites src/widget.sh:2"
+printf 'See src/widget.sh:2 here.\n' > "$d/b.dat"
+( cd "$d" && git add -A && git commit -q -m attr-binary-macro )
+run "$lc" "$d"
+check_contains "attr: the 'binary' macro file is read too" "$OUT" "b.dat:1 cites src/widget.sh:2"
+d="$(mk_repo 'Clean prose.')"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>x\0src/widget.sh:2\0y</svg>\n' > "$d/nul.svg"
+( cd "$d" && git add -A && git commit -q -m attr-nul )
+run "$lc" "$d"
+check_status "attr control: a NUL-bearing -diff file stays skipped -> exit 0" 0 "$STATUS"
+check_contains "attr control: and is not counted as in scope" "$OUT" "0 citation(s) in scope"
+d="$(mk_repo 'Clean prose.')"
+printf '\\*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>Clean.</svg>\n' > "$d/*.svg"
+printf '<svg>See src/widget.sh:2</svg>\n' > "$d/z.svg"
+( cd "$d" && git add -A && git commit -q -m attr-glob )
+run "$lc" "$d"
+check_status "attr: a glob-character name (*.svg) is read -> exit 1" 1 "$STATUS"
+check_eq "attr: z.svg is reported once (:(literal) keeps '*.svg' from widening to it for a second leg)" "1" "$(printf '%s\n' "$OUT" | grep -c 'z.svg:1 cites')"
+
 summary
