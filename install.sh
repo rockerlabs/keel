@@ -2241,6 +2241,7 @@ keel_hooks_is "$hp" && hp_is_keel=1
 keel_hook_state() {
   case "$(wm_get "$1")" in
     keel|keel-link) echo 1 ;;
+    keel-modified|keel-modified-link) echo 3 ;;
     absent|"") echo 0 ;;
     *) echo 2 ;;
   esac
@@ -2255,7 +2256,7 @@ keel_hook_link_note() {
 }
 pc_state=0 pp_state=0
 if [ "$hp_is_keel" = 1 ]; then pc_state="$(keel_hook_state pre-commit)"; pp_state="$(keel_hook_state pre-push)"; fi
-if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit" ] && [ "$pp_state" != 2 ]; then
+if [ "$hp_is_keel" = 1 ] && [ "$pc_state" = 1 ] && [ -x "$keel_hooks/pre-commit" ] && [ "$pp_state" != 2 ] && [ "$pp_state" != 3 ]; then
   # Presence is not function: also run the installed scanner's selftest, so a wired-but-broken
   # gate (e.g. a regressed copy on a re-run) is flagged here instead of degrading silently.
   # stderr is captured, not dropped (dir #695): since dir #680 a malformed personal-literals file hard-fails
@@ -2287,6 +2288,14 @@ elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 2 ] || [ "$pp_state" = 2 ]; }; t
   echo "  WARN secret-guard NOT wired — a hook in $keel_hooks is not Keel's (its marker line differs);"
   echo "       install-secret-guard.sh --global refuses to overwrite it. Move it aside, or re-run that with"
   echo "       --force to back it up (.pre-keel.bak) and replace it."
+elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 3 ] || [ "$pp_state" = 3 ]; }; then
+  # dir #791: Keel's marker but a body no shipped version has — edited after install. It still runs, but the
+  # installer refuses to refresh it on EVERY plain run, so say that and the command that works.
+  echo "  WARN secret-guard wired, but a hook in $keel_hooks was edited after install (Keel's marker, a body no shipped"
+  echo "       version has); install-secret-guard.sh --global refuses to refresh it. Re-run that with --force to back"
+  echo "       it up (.pre-keel.bak) and replace it, or keep your edit."
+  keel_hook_link_note
+  [ ! -x "$keel_hooks/pre-commit" ] || guard_ok=1   # it still runs: keep the closing line truthful
 elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then
   # A foreign global hooksPath is set — we did NOT wire Keel's guard (and didn't clobber theirs).
   # Reported BEFORE the --no-hooks arm below, and regardless of DO_HOOKS: this is the reason the guard

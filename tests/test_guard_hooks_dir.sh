@@ -144,6 +144,17 @@ check_eq "a user's hook that only names the tool: foreign" "foreign" "$(wkey pre
 mv "$H/stdir/pre-commit" "$H/stdir/real-pre-commit"; ln -s "$H/stdir/real-pre-commit" "$H/stdir/pre-commit"
 run genv "$isg" --where "$strepo"
 check_eq "a symlinked Keel hook: keel-link" "keel-link" "$(wkey pre-commit)"
+# dir #791: a Keel-marked hook whose body is no shipped version is the user's — the install refuses it, so the
+# resolver says keel-modified (-link suffixed when linked), never keel.
+printf '\n# my edit\n' >> "$H/stdir/real-pre-commit"
+run genv "$isg" --where "$strepo"
+check_eq "dir #791: an edited, symlinked Keel hook: keel-modified-link" "keel-modified-link" "$(wkey pre-commit)"
+rm "$H/stdir/pre-commit"; mv "$H/stdir/real-pre-commit" "$H/stdir/pre-commit"
+run genv "$isg" --where "$strepo"
+check_eq "dir #791: an edited Keel hook (marker kept): keel-modified" "keel-modified" "$(wkey pre-commit)"
+cp "$shipped/pre-commit" "$H/stdir/pre-commit"
+run genv "$isg" --where "$strepo"
+check_eq "dir #791: ...and the shipped body again: keel" "keel" "$(wkey pre-commit)"
 
 # =================================================================================================
 # 2. The resolver, machine side: `--where --global` — git's EFFECTIVE machine-wide hooksPath, which a
@@ -446,6 +457,25 @@ mv "$kd/pre-commit" "$kd/pre-commit.keel"; ln -s "$kd/pre-commit.keel" "$kd/pre-
 inst_run genv --no-hooks
 check_contains "install.sh Verify: a symlinked Keel pre-commit is disclosed" "$OUT" "symlink"
 check_contains "install.sh Verify: ...the guard itself still reads as wired (it runs)" "$OUT" "OK   secret-guard"
+
+# dir #791: an EDITED Keel hook (marker kept, body no shipped version) is not "OK": the installer refuses to refresh
+# it, so Verify names the edit and the command that works (--force), and that command, run as printed, succeeds.
+mk_home i-edit
+run genv "$isg" --global
+kd="$H/.config/git/keel-hooks"
+printf '\n# my edit\n' >> "$kd/pre-commit"
+inst_run genv --no-hooks
+check_contains "dir #791 install.sh Verify: an edited Keel pre-commit is disclosed as edited" "$OUT" "was edited after install"
+check_contains "dir #791 install.sh Verify: ...advice names --force" "$OUT" "--force to back"
+check_absent "dir #791 install.sh Verify: ...not a bare OK" "$OUT" "OK   secret-guard"
+check_absent "dir #791 install.sh Verify: ...nor the foreign-hook wording" "$OUT" "marker line differs"
+check_absent "dir #791 install.sh Verify: ...and the closing line does not claim the guard is unwired" "$OUT" "secret-guard is NOT wired"
+run genv "$isg" --global
+check_status "dir #791: a plain re-run over the edited hook is refused (3)" 3 "$STATUS"
+run genv "$isg" --global --force
+check_status "dir #791: the advised --force succeeds" 0 "$STATUS"
+inst_run genv --no-hooks
+check_contains "dir #791 install.sh Verify: ...after it Verify reads OK" "$OUT" "OK   secret-guard"
 
 # dir #695: a wired guard whose selftest FAILS says WHY — the scanner's first stderr line rides on the WARN, so
 # a malformed personal-literals file (which hard-fails the scanner since dir #680) is named, not a bare "FAILS".
