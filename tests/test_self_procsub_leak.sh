@@ -46,7 +46,17 @@ cat > "$d/clean.sh" <<'EOF'
 #!/usr/bin/env bash
 ok_external() { local f; for f in "$@"; do cat < <(printf '%s\n' "$f"); grep -c x <(printf '%s\n' "$f"); done; }
 ok_subshell() { local f; for f in "$@"; do ( read -r x; echo "$x" ) < <(printf '%s\n' "$f"); done; }
+ok_subshell_one() { local f; for f in "$@"; do ( read -r x ) < <(printf '%s\n' "$f"); done; }
+ok_command_external() { local f; for f in "$@"; do command cat < <(printf '%s\n' "$f"); done; }
 ok_cmdsubst() { local f y; for f in "$@"; do y="$(while read -r x; do echo "$x"; done < <(printf '%s\n' "$f"))"; echo "$y"; done; }
+ok_cmdsubst_multi() {
+  local f y
+  for f in "$@"; do
+    y="$(while read -r x; do
+      echo "$x"
+    done < <(printf '%s\n' "$f"))"
+  done
+}
 ok_once() { while read -r x; do echo "$x"; done < <(printf 'a\n'); }
 ok_fixed() {
   local f out
@@ -91,7 +101,8 @@ done
 check_contains "follows a call into a sourced lib's function" "$OUT" "calls.sh leak_via_lib(): calls helper_opens_one()"
 check_contains "follows a call two levels deep (a function that calls a one-fd function once)" "$OUT" \
   "calls.sh leak_two_deep(): calls once_wrapper()"
-for fn in ok_external ok_subshell ok_cmdsubst ok_once ok_fixed ok_comment ok_heredoc \
+for fn in ok_external ok_subshell ok_subshell_one ok_command_external ok_cmdsubst ok_cmdsubst_multi ok_once \
+          ok_fixed ok_comment ok_heredoc \
           once_wrapper ok_call_in_cmdsubst ok_call_in_pipeline ok_call_once helper_opens_one; do
   check_absent "does not flag $fn()" "$OUT" " $fn():"
 done
