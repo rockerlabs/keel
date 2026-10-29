@@ -47,11 +47,13 @@
 #   tools/self/procsub-leak.sh [REPO_DIR] [--quiet]
 #   tools/self/procsub-leak.sh -h | --help
 #
-# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found; 2 on a usage error, a
-# directory that is no git checkout, or a script bash cannot parse (named UNPARSED, never passed as clean).
-# KNOWN LIMIT (dir #906): the awk reader can still lose its place partway through a file that bash parsed
+# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found; 2 on a usage error, when the
+# scan cannot run (REPO_DIR is no directory or no git checkout, it tracks no shell script, bash lists no
+# builtins), or for a script bash cannot parse (named UNPARSED, never passed as clean).
+# KNOWN LIMIT (dir #906): the awk reader can still lose its place partway through a script bash parsed
 # (quoting it mis-reads, a `case` pattern's `)` inside a multi-line `$(…)`, a `<<word` inside a string).
-# It then checks nothing after that point, and the file is NOT yet reported: exit 0 is not full coverage.
+# From there on it can miss a leak or report one that is not there, and nothing says the place was lost:
+# neither exit 0 nor a LEAK line is proof on its own until that ticket lands.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -69,8 +71,9 @@ Usage:
   tools/self/procsub-leak.sh --quiet      print only LEAK lines
   tools/self/procsub-leak.sh -h | --help
 
-Exit 0 unless a leak is found; 2 on a usage error, a non-git directory or an unparseable
-script. Not yet reported: a file the reader loses its place in partway (dir #906).
+Exit 0 unless a leak is found; 2 on a usage error, when the scan cannot run, or for an
+unparseable script. Known limit: the reader can lose its place partway through a script,
+then miss a leak or report a false one, without saying so (dir #906).
 EOF
 }
 
