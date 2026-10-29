@@ -53,6 +53,39 @@ a100="$(rep a 100)"
 b100="$(rep b 100)"
 c140="$(rep c 140)"
 
+# --- signal 1 holds no fd per scanned file (dir #904) ----------------------------------------------
+# A per-file `done < <(…)` inside report_hits held one fd per file on bash 3.2 until the function returned,
+# and the fd that reached 256 hit bash 3.2's heap off-by-one: macos-14 CI crashed at random (exit 134). The
+# crash is luck-dependent; fd exhaustion is not. Under `ulimit -n 64`, 80 files per mode run a leaking loop
+# out of fds: the rest go unscanned ("Too many open files", a short WARN count, exit still 0). Each fixture
+# file carries exactly one anomalous line, so the count is exact. Only bash 3.2 leaks; a newer bash passes
+# either way.
+args=()
+i=0
+while [ "$i" -lt 80 ]; do
+  args+=("$(key tools/many "$i.sh")" "#!/usr/bin/env bash
+# $a100
+# $b100
+# $c140
+echo done
+" "many$i.md" "# doc
+
+$a100
+$b100
+$c140
+")
+  i=$((i + 1))
+done
+d="$(mk_repo_with "${args[@]}")"
+# Run under /bin/bash where it exists, not the shebang's PATH bash: on macOS that is the 3.2 that leaks, even
+# when a newer bash comes first on PATH and would let a leaking loop pass.
+b=bash
+[ -x /bin/bash ] && b=/bin/bash
+run "$b" -c 'ulimit -n 64 && exec "$0" "$@"' "$b" "$pd" "$d" --quiet
+check_status "160 files under ulimit -n 64 -> exit 0" 0 "$STATUS"
+check_absent "no fd exhaustion under ulimit -n 64" "$OUT" "Too many open files"
+check_eq "every one of the 160 files is scanned (one WARN each)" 160 "$(match "$OUT" -c '^  WARN')"
+
 # --- signal 1: a plain wrapped paragraph, one line running well past its neighbors -> WARN --------
 d="$(mk_repo_with doc.md "# doc
 
