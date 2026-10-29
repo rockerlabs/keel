@@ -21,6 +21,7 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 nogit="$SANDBOX/not-a-checkout"; mkdir -p "$nogit"
 run "$pl" "$nogit"
 check_status "a directory that is no git checkout -> exit 2" 2 "$STATUS"
+check_contains "...and says why" "$OUT" "could not list the tracked shell scripts"
 
 # --- one fixture repo, one function per case; each case is asserted by its function's name ------------
 d="$(new_repo)"
@@ -34,12 +35,17 @@ leak_out() { local f; for f in "$@"; do echo "$f" > >(cat); done; }
 leak_builtin() { local f x; for f in "$@"; do builtin read -r x < <(printf '%s\n' "$f"); done; }
 leak_command() { local f x; for f in "$@"; do command read -r x < <(printf '%s\n' "$f"); done; }
 leak_source() { local f; for f in "$@"; do source <(printf 'y=%s\n' "$f"); done; }
-leak_after_quoted_heredoc() {
+leak_after_heredoc_with_quoted_word() {
   local f
   cat > "$HOME/x" <<DOC
 text
 DOC
   for f in "$@"; do while read -r x; do :; done < <(printf '%s\n' "$f"); done
+}
+leak_after_quoted_text() {
+  local f
+  echo "write <<'X' then the text"
+  for f in "$@"; do while read -r x; do :; done < <(printf a); done
 }
 leak_after_shift() { local f; echo $((1<<f)); for f in "$@"; do while read -r x; do :; done < <(printf a); done; }
 leak_while_outer() {
@@ -69,6 +75,15 @@ ok_cmdsubst_multi() {
     done < <(printf '%s\n' "$f"))"
   done
 }
+ok_heredoc_in_cmdsubst() {
+  local y
+  y="$(cat <<DOC
+1) step one
+for each item, do
+DOC
+)"
+  while read -r x; do :; done < <(printf '%s\n' "$y")
+}
 ok_once() { while read -r x; do echo "$x"; done < <(printf 'a\n'); }
 ok_fixed() {
   local f out
@@ -91,14 +106,42 @@ EOF
 cat > "$d/lib-helper.sh" <<'EOF'
 #!/usr/bin/env bash
 helper_opens_one() { while read -r x; do echo "$x"; done < <(printf '%s\n' "$1"); }
+shadowed() { read -r x < <(printf a); }
 EOF
 cat > "$d/calls.sh" <<'EOF'
 #!/usr/bin/env bash
+shadowed() { :; }
 . ./lib-helper.sh
 once_wrapper() { helper_opens_one "$1"; }
 redirected_whole() { read -r x; } < <(printf a)
 leak_via_whole_redirect() { local f; for f in "$@"; do redirected_whole; done; }
 leak_in_condition() { while helper_opens_one a; do :; done; }
+scan_quoted() {
+  while read -r x; do :; done < <(printf a | awk '
+    BEGIN { n = 1 }
+    /[(]/ { n++ }
+    !($0 in seen)')
+}
+outer_with_nested() {
+  inner_nested() {
+    read -r x
+  } < <(
+    for f in a b; do
+      helper_opens_one "$f"
+    done
+  )
+  inner_nested
+}
+leak_calls_scan_quoted() { local f; for f in "$@"; do scan_quoted; done; }
+leak_shadowed() { local f; for f in "$@"; do shadowed; done; }
+leak_after_multiline_cmdsubst() {
+  local f y
+  for f in "$@"; do
+    y="$(
+      echo "$f"
+    )" && helper_opens_one "$y"
+  done
+}
 leak_after_cmdsubst() { local f y; for f in "$@"; do y=$(echo "$f") && helper_opens_one "$y"; done; }
 leak_via_lib() { local f; for f in "$@"; do helper_opens_one "$f"; done; }
 leak_two_deep() { local f; for f in "$@"; do [ -n "$f" ] && once_wrapper "$f"; done; }
@@ -112,7 +155,7 @@ EOF
 run "$pl" "$d" --quiet
 check_status "leaking fixture -> exit 1" 1 "$STATUS"
 for fn in leak_done leak_group leak_read leak_if leak_out leak_builtin leak_command leak_source \
-          leak_after_quoted_heredoc leak_after_shift leak_while_outer; do
+          leak_after_heredoc_with_quoted_word leak_after_quoted_text leak_after_shift leak_while_outer; do
   check_contains "flags $fn()" "$OUT" "leaks.sh $fn():"
 done
 check_contains "follows a call into a sourced lib's function" "$OUT" "calls.sh leak_via_lib(): calls helper_opens_one()"
@@ -120,15 +163,21 @@ check_contains "follows a call to a function whose whole body is redirected" "$O
   "calls.sh leak_via_whole_redirect(): calls redirected_whole()"
 check_contains "a while condition runs every pass" "$OUT" "calls.sh leak_in_condition(): calls helper_opens_one()"
 check_contains "a call after a \$(…) in the same list" "$OUT" "calls.sh leak_after_cmdsubst(): calls helper_opens_one()"
+check_contains "a call after a multi-line \$(…) closes" "$OUT" \
+  "calls.sh leak_after_multiline_cmdsubst(): calls helper_opens_one()"
+check_contains "a multi-line quoted program inside <(…) closes where it ends" "$OUT" \
+  "calls.sh leak_calls_scan_quoted(): calls scan_quoted()"
+check_contains "a sourced lib's leaking definition counts over a local one" "$OUT" "calls.sh leak_shadowed(): calls shadowed()"
 check_contains "follows a call two levels deep (a function that calls a one-fd function once)" "$OUT" \
   "calls.sh leak_two_deep(): calls once_wrapper()"
-for fn in ok_external ok_subshell ok_subshell_one ok_command_external ok_cmdsubst ok_cmdsubst_multi ok_once \
-          ok_fixed ok_comment ok_heredoc \
-          once_wrapper ok_call_in_cmdsubst ok_call_in_pipeline ok_call_once helper_opens_one; do
+for fn in ok_external ok_subshell ok_subshell_one ok_command_external ok_cmdsubst ok_cmdsubst_multi \
+          ok_heredoc_in_cmdsubst ok_once ok_fixed ok_comment ok_heredoc once_wrapper redirected_whole scan_quoted \
+          outer_with_nested inner_nested \
+          ok_call_in_cmdsubst ok_call_in_pipeline ok_call_once helper_opens_one; do
   check_absent "does not flag $fn()" "$OUT" " $fn():"
 done
 check_absent "a loop at a script's top level is never flagged" "$OUT" "__keel_wrap"
-check_eq "exactly the sixteen leaks, nothing else" 16 "$(match "$OUT" -c '^  LEAK ')"
+check_eq "exactly the twenty leaks, nothing else" 20 "$(match "$OUT" -c '^  LEAK ')"
 
 # the fix shape, applied to every flagged function, turns the tree clean
 d2="$(new_repo)"
