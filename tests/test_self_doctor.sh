@@ -31,6 +31,13 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 # (the doctor job + the shellcheck job), so the smoke skips it via the documented knob.
 run env KEEL_SELF_DOCTOR_SKIP_SHELLCHECK=1 "$sd" --quiet
 check_status_out "the real keel checkout is clean (no GAP)" 0
+# check_status_out shows the first 40 lines, which on this tree are all advisory WARN lines (PR #722's macos-14
+# shard: the GAP never reached the log). A red also prints every non-WARN line after the check heading it belongs to.
+if [ "$STATUS" -ne 0 ]; then
+  printf '        non-WARN lines, each under its check heading:\n'
+  awk '/^● / { h = $0; next } /^[[:space:]]*WARN/ { next } NF { if (h != "") { print h; h = "" } print }' <<< "$OUT" \
+    | head -n 60 | sed 's/^/          /'
+fi
 
 # --- synthetic sandbox: a minimal, fully-passing mini-repo; each test mutates a fresh copy --------
 # Fixture scripts hold only what the checks under test actually need: doctor.sh's ship-skip check
