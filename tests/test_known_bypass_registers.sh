@@ -10,7 +10,8 @@
 # copy: deliberately broken copies must each turn it red, or a green real run would prove nothing.
 #
 # Keel-self-maintenance: it reads keel's own register files (tools/pre-pr-gate.sh, tests/lib.sh,
-# tools/lib/safe-write.sh), which an adopter does not carry.
+# tools/lib/safe-write.sh, tools/self/bypass-scan.sh, tools/branch-cleanup.sh, tools/self/changelog-fragments.sh),
+# which an adopter does not carry.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -84,6 +85,14 @@ regcheck() {
   grep -qF -- 'traps TERM' "$root/tests/lib.sh" || echo "fail:d:tests/lib.sh lacks 'traps TERM'"
   grep -qF -- 'planted at the claimed temp path' "$root/tools/lib/safe-write.sh" || echo "fail:d:tools/lib/safe-write.sh lacks 'planted at the claimed temp path'"
 
+  # (d2) the registers of the tools that are not guards (dir #863): in the tool's own header, not in SECURITY.md's table.
+  grep -qF -- 'in_git_tree reads "git failed"' "$root/tools/self/bypass-scan.sh" || echo "fail:d:tools/self/bypass-scan.sh lacks its S9-5 entry"
+  grep -qF -- 'is unpinned — the short name in its place survives' "$root/tools/branch-cleanup.sh" || echo "fail:d:tools/branch-cleanup.sh lacks its S10-5 entry"
+  grep -qF -- 'a tracked symlink in changelog.d/ named' "$root/tools/self/changelog-fragments.sh" || echo "fail:d:tools/self/changelog-fragments.sh lacks its S8-7 entry"
+  for phrase in tools/self/bypass-scan.sh tools/branch-cleanup.sh tools/self/changelog-fragments.sh; do
+    sed -n '1,/^[^#]/p' "$root/$phrase" | grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' || echo "fail:d:$phrase holds no register heading in its header"
+  done
+
   # (e) the Scope clause.
   line="$(section_body '## Scope — what counts' "$sec")"
   grep -qF -- 'holds only for a constructed input' <<<"$line" || echo "fail:e:SECURITY.md Scope lacks the 1b clause"
@@ -94,10 +103,10 @@ check_eq "the real tree: every register rule holds" "" "$(regcheck "$REPO_ROOT")
 
 # --- three broken copies, each must turn its own rule red -------------------------------------------------------------
 copy="$SANDBOX/registers-copy"
-mkdir -p "$copy/tools/lib" "$copy/tests"
+mkdir -p "$copy/tools/lib" "$copy/tools/self" "$copy/tests"
 fresh_copy() {
   local f
-  for f in SECURITY.md tools/pre-pr-gate.sh tools/lib/safe-write.sh tests/lib.sh; do cp "$REPO_ROOT/$f" "$copy/$f"; done
+  for f in SECURITY.md tools/pre-pr-gate.sh tools/lib/safe-write.sh tests/lib.sh tools/self/bypass-scan.sh tools/branch-cleanup.sh tools/self/changelog-fragments.sh; do cp "$REPO_ROOT/$f" "$copy/$f"; done
 }
 
 fresh_copy; delete_line_containing "$copy/tests/lib.sh" 'Known bypasses (1b'
@@ -117,5 +126,19 @@ check_contains "mutant: Named residuals loses its heredoc entry → (d) fails" "
 
 fresh_copy; delete_line_containing "$copy/tools/lib/safe-write.sh" 'planted at the claimed temp path'
 check_contains "mutant: safe-write.sh loses its test-gap entry → (d) fails" "$(regcheck "$copy")" 'fail:d:tools/lib/safe-write.sh'
+
+fresh_copy; delete_line_containing "$copy/tools/self/bypass-scan.sh" 'in_git_tree reads "git failed"'
+check_contains "mutant: bypass-scan.sh loses its S9-5 entry → (d) fails" "$(regcheck "$copy")" 'fail:d:tools/self/bypass-scan.sh lacks'
+
+fresh_copy; delete_line_containing "$copy/tools/branch-cleanup.sh" 'is unpinned — the short name in its place survives'
+check_contains "mutant: branch-cleanup.sh loses its S10-5 entry → (d) fails" "$(regcheck "$copy")" 'fail:d:tools/branch-cleanup.sh lacks'
+
+fresh_copy; delete_line_containing "$copy/tools/self/changelog-fragments.sh" 'a tracked symlink in changelog.d/ named'
+check_contains "mutant: changelog-fragments.sh loses its S8-7 entry → (d) fails" "$(regcheck "$copy")" 'fail:d:tools/self/changelog-fragments.sh lacks'
+
+for tool863 in tools/self/bypass-scan.sh tools/branch-cleanup.sh tools/self/changelog-fragments.sh; do
+  fresh_copy; delete_line_containing "$copy/$tool863" 'Known bypasses (1b'
+  check_contains "mutant: $tool863 loses its register heading → (d) fails" "$(regcheck "$copy")" "fail:d:$tool863 holds no register heading"
+done
 
 summary
