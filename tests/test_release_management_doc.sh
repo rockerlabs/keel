@@ -334,6 +334,17 @@ pin "release-management.md names tools/self/changelog-claims.sh at the cut (dir 
   'changelog-claims.sh' \
   "expected the Roles brief's figure paragraph to name the claim lint"
 
+# --- dir #844: the sentence says what the verification block is checked for, not a re-derivation it never had ---
+if grep -qF 'the verification block is not,' "$doc" || grep -qF 'the split-off ticket, dir #844' "$doc"; then
+  fail "release-management.md does not promise a verification-block re-derivation that no tool performs (dir #844)" \
+    "the 'is not, yet' / 'split-off ticket' promise is back in the doc"
+else
+  pass "release-management.md does not promise a verification-block re-derivation that no tool performs (dir #844)"
+fi
+pin "release-management.md states the verification block is hand-written, no tool re-derives its figures (dir #844)" "$doc" \
+  'The verification block is hand-written and no tool re-derives its figures:' \
+  "expected the Roles brief's figure paragraph to say what is actually checked of the block"
+
 # --- dir #811 S1 (A1, A2): R14 — the release train, and the merge; the manager merges where the policy allows --------
 # A section is cut by awk into a variable, then matched with a here-string (no producer piped into a `grep -q`: the
 # dir #280 SIGPIPE race). A needle must sit on ONE line of the doc (`pin` is a line-mode `grep -F`).
