@@ -27,7 +27,15 @@ check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
 run "$pd" "$REPO_ROOT" --quiet
 check_status "the real keel checkout has no dead relative link (no GAP)" 0 "$STATUS"
 # On a red, show what the script found (its GAP lines): `run` captured them and a bare exit code names nothing.
-[ "$STATUS" -eq 0 ] || printf '%s\n' "$OUT" | grep -v '^  WARN'
+# A crash prints no GAP line at all (PR #722's macos-14 runner: exit 134, SIGABRT, nothing in OUT), so a red also
+# re-runs the script under `bash -x` and shows the trace's tail — the last command before the crash.
+if [ "$STATUS" -ne 0 ]; then
+  printf '%s\n' "$OUT" | grep -v '^  WARN'
+  printf '        bash -x re-run, exit and the last 40 trace/stderr lines:\n'
+  trace="$(bash -x "$pd" "$REPO_ROOT" --quiet 2>&1 >/dev/null </dev/null)"
+  printf '          exit %s\n' "$?"
+  printf '%s\n' "$trace" | tail -n 40 | sed 's/^/          /'
+fi
 
 # --- fixture builder: a throwaway repo with the given files, committed -----------------------------
 mk_repo_with() {   # mk_repo_with REL_PATH CONTENT [REL_PATH CONTENT ...]
