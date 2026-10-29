@@ -86,7 +86,7 @@ pin "G0 states the read-trace aggregate is consumed generically, by pointer" \
   "$doc" 'by pointing at' \
   "expected G0 to consume the read-trace aggregate by pointing at its tool, never by hardcoding a path or format"
 pin "G0 states the read-trace input degrades cleanly when absent" \
-  "$doc" 'Degrade cleanly when it does not exist yet' \
+  "$doc" 'Degrade cleanly when the read-trace aggregate does not exist yet' \
   "expected G0 to say explicitly what happens when the aggregate mechanism isn't installed"
 
 # --- G4(a): the standing list is named, and its own filing-bar source is cited ----------------------
