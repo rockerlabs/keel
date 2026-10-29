@@ -125,6 +125,6 @@ instruction of this step, gated on a conditional — the exact position a step g
 the wrap-fuse measured it being dropped even on sessions that demonstrably persisted. Folding it into
 the call this step already makes for the report line removes the separate, model-remembered step
 instead of asking the model to keep remembering it — the wrap-fuse (a mutating session that ends with
-no `/wrap`) won't flag this session. When the tool is absent, nothing runs — skip this paragraph
+no `/wrap`) won't flag this session. When the tool is absent, skip this paragraph
 entirely rather than block on it. When only its log is absent (the hook is opt-in per repo, per
 `tools/install-read-trace.sh`), the call still prints `docs read: none` and still writes the stamp.

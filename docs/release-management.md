@@ -12,7 +12,7 @@ this one application, and are linked rather than duplicated.
 
 **This is a doc, not a tool.** [`commands/manage-release.md`](../commands/manage-release.md) is a
 thin entrypoint over it — a checklist that resolves the release, loads this doc, and runs the loop —
-the same split [`docs/grooming.md`](grooming.md) uses for its own procedure-plus-entrypoint shape. The
+the same split [`docs/delta-audit.md`](delta-audit.md) uses for its own procedure-plus-entrypoint shape. The
 doc is canonical; the command points at it. *(On an install where the adopter already owns the
 `/manage-release` name, `install.sh`'s generic collision-alias mechanism ships this command under the
 prefixed name keel-manage-release instead — same file, same behavior, no separate wiring.)*
