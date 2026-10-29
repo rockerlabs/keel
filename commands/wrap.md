@@ -25,8 +25,8 @@ the install/sync step so the installed copies aren't left running the old versio
 your **Keel checkout's** copy, never one inside the project (nothing is copied in), so spell it
 `<keel-checkout>/tools/branch-cleanup.sh` when the session's cwd is elsewhere. Zero-dep, it reuses the
 fetch above and grades each local branch by how safe deletion provably is: **AUTO** (merged + older than
-`--days` + ephemeral name — a free
-branch is a redundant pointer, and a worktree that is provably *dead* (clean of tracked/untracked work and
+`--days` + ephemeral name — a free branch is a redundant pointer, and a worktree that is provably *dead*
+(clean of tracked/untracked work and
 holding no valued gitignored content) is removed along with it; deletion is lossless), **ASK** (merged but
 not provably safe — a recent/off-pattern free branch, or a clean worktree that's recent/off-pattern or holds
 non-disposable gitignored content like `private/` — confirm), **FLAG** (a worktree with LIVE work — either
@@ -34,8 +34,8 @@ uncommitted/untracked files that `git worktree remove` would refuse, or clean bu
 `--live-hours`: a worktree merged today can be a parallel session still mid-wrap, not a stale leftover —
 or a running process whose cwd is inside it, a session working elsewhere such as the main checkout —
 surfaced for review, no destructive command, since forcing it could discard that work or race a live
-session); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with
-`--prune-safe`, act on ASK only after a yes, review FLAG by hand.
+session); see the tool's `-h` for exact rules. Auto-delete/-remove AUTO with `--prune-safe`, act on ASK
+only after a yes, review FLAG by hand.
 Never the current branch/worktree or an unmerged branch. Run it **from the session's own worktree** so it
 excludes the worktree you're in; if you reconciled from the main checkout, prefix
 `KEEL_KEEP_WORKTREE="$(git -C <session-worktree> rev-parse --show-toplevel)"` so it never suggests removing
@@ -59,16 +59,16 @@ loose-end that surfaced but isn't persisted — **including incident signals**: 
 `git revert` / `reset --hard`, a history rewrite, or a command that failed and was redone differently are
 mechanical traces of a lesson — each becomes a backlog ticket, a promoted rule, a
 `LEARNINGS.md` candidate (bump its `[n×]`; at the 2nd hit promote in-session when it is a `PROMOTE-RULE`
-([`docs/triage.md`](../docs/triage.md) T2), else leave it at `[2×]` — `/triage` owns the promote-due set), an `IDEAS.md` entry, or an explicit
-recorded drop. Never end
+([`docs/triage.md`](../docs/triage.md) T2), else leave it at `[2×]` — `/triage` owns the promote-due set),
+an `IDEAS.md` entry, or an explicit recorded drop. Never end
 with floating chat-only ideas (the next session starts cold; you forget); if any remain, flag them
 prominently rather than closing silently. **A `/code-review` report relayed after the PR already
 opened** gets the same classification and verdict as an in-flow one, per FRAMEWORK.md's "Classifying a
 finding" section, with `source relayed` — this is the post-PR entry point for that classification. A
 `product-code × breaks` finding found this way is not a wrap note: name it as a new round or a numbered
-follow-up ticket instead — subject, like any finding, to `docs/verification-economics.md` §4's filing
-bar; below it, a standing-list line, not a ticket
-(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — `docs/verification-economics.md` §4).
+follow-up ticket instead — subject, like any finding, to `docs/verification-economics.md` §4's filing bar;
+below it, a standing-list line, not a ticket (a `no-action(1b — …)` finding goes to its guard's
+known-bypass register instead — `docs/verification-economics.md` §4).
 
 **3. Memory** — only reusable invariants not present in code/git. One file = one topic; update the existing
 file, don't spawn duplicates; the index carries a one-line hook, not a copy of the content.
