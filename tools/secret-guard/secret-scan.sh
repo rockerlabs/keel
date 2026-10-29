@@ -252,14 +252,11 @@ needle_wide() {
   return 1
 }
 # has_personal — at least one literal; personal_nonascii — one is wide (needle_wide: a non-ASCII byte, or an ERE
-# `.`/bracket/class escape that can stand for a non-ASCII letter), which skips --range's NUL-strip fast path and,
-# through decode_nonascii (the name the recipe twin in public-audit.sh reads), turns on emit_blob's built-in decoder.
-# personal_anchored — one holds an unescaped `^` or `$`, or a `\<` `\>` `` \` `` `\'` anchor, which can match a printable run
-# the NUL-stripped view joins to its neighbours; it skips --range's fast path too (dir #850) but, unlike a wide literal,
-# does not turn on the decoder.
+# `.`/bracket/class escape that can stand for a non-ASCII letter), which, through decode_nonascii (the name the recipe
+# twin in public-audit.sh reads), turns on emit_blob's built-in decoder.
+# --range's NUL-strip fast path is gated on the stream, not on a literal (dir #897): see the gate in --range below.
 has_personal=""
 personal_nonascii=""
-personal_anchored=""
 personal_pat="$SCRATCH/personal.pat"
 if [ -n "$_personal_lines" ]; then
   has_personal=1
@@ -267,9 +264,6 @@ if [ -n "$_personal_lines" ]; then
   # one literal per call: a plain literal beside a wide one must not hide in the whole file's text
   while IFS= LC_ALL=C read -r _pl_line; do
     if needle_wide "$_pl_line"; then personal_nonascii=1; fi
-    _pl_stripped="${_pl_line//\\[![:alnum:]]/}"      # an escaped \^ or \$ is a literal, not an anchor
-    case "$_pl_stripped" in *[\^\$]*) personal_anchored=1 ;; esac
-    case "$_pl_line" in *\\[\<\>\`\']*) personal_anchored=1 ;; esac     # \< \> word boundaries, GNU \` \' buffer anchors; the strip above drops them
   done <<< "$_personal_lines"
 fi
 decode_nonascii="$personal_nonascii"
@@ -925,19 +919,23 @@ case "$mode" in
     if [ -z "$blobs" ]; then
       range_hits=0
     else
-      # a wide personal literal (needle_wide: a non-ASCII byte, or a `.`/bracket that can stand for a non-ASCII
-      # letter) is invisible to the NUL-strip fast view of UTF-16 bytes — skip the fast path and let the
-      # detailed scan's decode passes see it (dir #761).
-      # An anchored literal (personal_anchored: ^, $, \< or \>) is skipped the same way: it can match a printable run
-      # that the NUL-stripped view joins to its neighbours (dir #850).
-      if [ -z "$personal_nonascii" ] && [ -z "$personal_anchored" ]; then
-        rtmp="$(spool)"; rerr="$(spool)"
-        awk '{print $2}' <<< "$blobs" \
-          | git cat-file --batch 2>"$rerr" | LC_ALL=C tr -d '\000' > "$rtmp" \
-          || _fail_closed "read the range's blobs" $? "$rerr"
+      # The fast view is the NUL-stripped stream. For a blob WITHOUT a NUL it is the blob itself, so the counts equal the
+      # detailed scan's. A blob WITH a NUL is decoded (UTF-16/32) or read as printable runs by the detailed scan, and a
+      # personal literal sees things the stripped view lacks: a wide one (`.`, a bracket, a non-ASCII byte: dir #761), an
+      # anchored one (`^`, `$`, `\<`: dir #850), and any letter the host's `grep -i` folds to a non-ASCII one (`s` to
+      # U+017F, `i` to U+0131 on GNU grep; dir #897). So when the stream holds a NUL and a personal literal is set, skip the
+      # count and let the detailed scan run; every other range keeps the fast path, whatever the literals look like.
+      rraw="$(spool)"; rtmp="$(spool)"; rerr="$(spool)"
+      awk '{print $2}' <<< "$blobs" \
+        | git cat-file --batch 2>"$rerr" > "$rraw" \
+        || _fail_closed "read the range's blobs" $? "$rerr"
+      LC_ALL=C tr -d '\000' < "$rraw" > "$rtmp" || _fail_closed "strip the NUL bytes of the range's blobs" $?
+      rcmp=0; cmp -s "$rraw" "$rtmp" || rcmp=$?        # 0: tr removed nothing, the stream holds no NUL
+      [ "$rcmp" -le 1 ] || _fail_closed "compare the range's blob stream" "$rcmp"
+      if [ -z "$has_personal" ] || [ "$rcmp" -eq 0 ]; then
         range_hits="$(count_matches "$rtmp")" || _fail_closed "count matches in the range's blobs" $?
-        rm -f "$rtmp" "$rerr"
       fi
+      rm -f "$rraw" "$rtmp" "$rerr"
     fi
     if [ "${range_hits:-0}" -gt 0 ]; then
       btmp="$(spool)"; berr="$(spool)"
