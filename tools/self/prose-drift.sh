@@ -213,7 +213,7 @@ scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on 
 # is a legitimate case (e.g. a repo with no tracked shell scripts) and returns with no output, rather
 # than looping once over an empty line.
 report_hits() {
-  local mode="$1" files="$2" f
+  local mode="$1" files="$2" f hits
   [ -n "$files" ] || return 0
   # sh reads its file directly via redirection rather than through `cat` — scan_line_length is
   # stdin-based, so a `cat |` here would spawn a process purely to move bytes for every sh file (a
@@ -222,17 +222,21 @@ report_hits() {
   # subprocess) rather than hoisted above the loop — a hoisted variable would have to carry two
   # DIFFERENT pipeline shapes (one command vs. two piped together), which reads as more indirection
   # than the plain per-file branch it would replace.
+  # Each file's hits are captured, never read through a per-file `done < <(…)`: bash 3.2 (macOS's
+  # /bin/bash) holds a process substitution's fd until the enclosing function returns, and one fd per
+  # file ran into its fd-256 heap off-by-one, a random crash (dir #904). `|| true` keeps the old
+  # contract: a file the scan cannot read is skipped, not fatal under `set -e`.
   while IFS= read -r f; do
+    if [ "$mode" = md ]; then
+      hits="$(blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode")" || true
+    else
+      hits="$(scan_line_length "$mode" < "$repo_dir/$f")" || true
+    fi
+    [ -n "$hits" ] || continue
     while IFS=$'\t' read -r ln len base; do
       warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
       ll_hits=$((ll_hits + 1))
-    done < <(
-      if [ "$mode" = md ]; then
-        blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode"
-      else
-        scan_line_length "$mode" < "$repo_dir/$f"
-      fi
-    )
+    done <<< "$hits"
   done <<< "$files"
 }
 
@@ -376,7 +380,8 @@ anchor_warns=0
 # Same empty-list guard as report_hits()'s `[ -n "$files" ] || return 0` above — an `<<<` herestring
 # on an empty variable feeds one spurious empty-string iteration rather than zero. Shaped as an `if`
 # here instead of an early return because this is top-level script body, not a function: `return`
-# is only valid inside one.
+# is only valid inside one. Keep this loop at top level: inside a function its per-file `done < <(…)`
+# would hold one fd per md file on bash 3.2, the leak report_hits() had (dir #904).
 if [ -n "$md_files" ]; then
   while IFS= read -r f; do
     dir=$(dirname "$f")

@@ -4,9 +4,11 @@ argument-hint: <task-id, spec path, or one sentence>
 effort: high
 ---
 Implement $ARGUMENTS autonomously; ask only at a real fork the code, the notes or common sense cannot
-resolve. An obstacle only the operator can clear (access, approval, outage) blocking every remaining step → stop; otherwise mark that step unverified, name it in the report, finish the rest. A defect outside the ticket: record it
-in the PR body or a new ticket (step 6's override, in a managed release); do not fix it. Without git, `<root>` is the project
-directory; `inflight-check`, `worktree` and the PR in `close` do not run — except a `⏳` marker not yours
+resolve. An obstacle only the operator can clear (access, approval, outage) blocking every remaining
+step → stop; otherwise mark that step unverified, name it in the report, finish the rest. A defect
+outside the ticket: record it in the PR body or a new ticket (step 6's override, in a managed release);
+do not fix it. Without git, `<root>` is the project directory; `inflight-check`, `worktree` and the PR
+in `close` do not run — except a `⏳` marker not yours
 still stops you first; the claim is still written; closing runs step 9's `conform` walk, reported by hand. `[tag]` → `## Notes`.
 
 **1. resolve.** Backlog source the way `/backlog` resolves it: `<root>/BACKLOG.md`, else the inline
@@ -63,18 +65,19 @@ whose branch is gone → if its PR merged, stop: done, the heading is stale.
 Re-check every ticket; run every git write with `git -C <working-tree-path>`.
 
 **6. claim.** Write `⏳ IN FLIGHT (YYYY-MM-DD, branch <name>)` onto the ticket's heading at `<root>`
-(spec mode: its `Status:` line, added if absent; closed per the guide); `/wrap`'s closing sweep replaces it with ✅ on merge — never leave both. **Named override
+(spec mode: its `Status:` line, added if absent; closed per the guide); `/wrap`'s closing sweep
+replaces it with ✅ on merge — never leave both. **Named override
 inside a managed release (`dir #367` R8)** — or under any brief that names a single backlog writer: a
 worker does NOT write the marker, a ticket or any backlog entry; request them through that writer.
 This step as written is the standalone default. Once step 7 decides, append `, tests: first` or
-`, tests: infeasible — <reason>` after the marker's closing parenthesis, never inside it. 
-
+`, tests: infeasible — <reason>` after the marker's closing parenthesis, never inside it.
 
 **7. acceptance-tests.** First load the implementer guide — the `go-guide` skill (`keel-go-guide` if
 aliased), else `go-guide.md` beside this file; it runs steps 7–9. Derive acceptance tests from the
 ticket's `**Acceptance:**` line or its
 spec's (else its done-criterion), write them, show them red, then implement to green (`FRAMEWORK.md`
-design principles); no runnable surface → the guide's checklist, still `tests: first`. Record it twice: the PR test plan (`tests: first` / `tests: infeasible — <reason>`) and the claim marker.
+design principles); no runnable surface → the guide's checklist, still `tests: first`. Record it
+twice: the PR test plan (`tests: first` / `tests: infeasible — <reason>`) and the claim marker.
 Self-reported — like `/polish`'s `skipped:<reason>` receipts, with no receipt, no gate.
 
 **8. escapes.** A ticket with a spec file: before closing, append one line to the end of the spec —
