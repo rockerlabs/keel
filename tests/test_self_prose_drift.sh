@@ -53,6 +53,28 @@ a100="$(rep a 100)"
 b100="$(rep b 100)"
 c140="$(rep c 140)"
 
+# --- signal 1 holds no fd per scanned file (dir #904) ----------------------------------------------
+# bash 3.2 (macOS's /bin/bash) keeps a process substitution's fd open until the enclosing function returns,
+# so a per-file `done < <(…)` in report_hits held one fd per file; at 251 tracked shell scripts one landed on
+# fd 256 and hit bash 3.2's dev_fd_list off-by-one, a heap overwrite that crashed macos-14 CI at random
+# (exit 134). A crash is luck-dependent; fd exhaustion is not: under `ulimit -n 64`, 80 files per mode run
+# a leaking loop out of fds, and the files past that point go unscanned (a "Too many open files" error, a
+# short WARN count, exit still 0). Every fixture file carries exactly one anomalous line, so the count is
+# exact. Only bash 3.2 leaks; on a newer bash this passes either way.
+d="$(new_repo)"
+mkdir -p "$d/tools"
+i=0
+while [ "$i" -lt 80 ]; do
+  printf '#!/usr/bin/env bash\n# %s\n# %s\n# %s\necho done\n' "$a100" "$b100" "$c140" > "$d/$(key tools/many "$i.sh")"
+  printf '# doc\n\n%s\n%s\n%s\n' "$a100" "$b100" "$c140" > "$d/many$i.md"
+  i=$((i + 1))
+done
+( cd "$d" && git add -A && git commit -q -m fixture )
+run bash -c 'ulimit -n 64 && exec "$@"' _ "$pd" "$d" --quiet
+check_status "160 files under ulimit -n 64 -> exit 0" 0 "$STATUS"
+check_absent "no fd exhaustion under ulimit -n 64" "$OUT" "Too many open files"
+check_eq "every one of the 160 files is scanned (one WARN each)" 160 "$(printf '%s\n' "$OUT" | grep -c '^  WARN')"
+
 # --- signal 1: a plain wrapped paragraph, one line running well past its neighbors -> WARN --------
 d="$(mk_repo_with doc.md "# doc
 

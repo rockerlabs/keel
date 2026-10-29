@@ -213,7 +213,7 @@ scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on 
 # is a legitimate case (e.g. a repo with no tracked shell scripts) and returns with no output, rather
 # than looping once over an empty line.
 report_hits() {
-  local mode="$1" files="$2" f
+  local mode="$1" files="$2" f hits
   [ -n "$files" ] || return 0
   # sh reads its file directly via redirection rather than through `cat` — scan_line_length is
   # stdin-based, so a `cat |` here would spawn a process purely to move bytes for every sh file (a
@@ -222,17 +222,23 @@ report_hits() {
   # subprocess) rather than hoisted above the loop — a hoisted variable would have to carry two
   # DIFFERENT pipeline shapes (one command vs. two piped together), which reads as more indirection
   # than the plain per-file branch it would replace.
+  # Each file's hits are captured, not read through a per-file `done < <(…)` (dir #904): bash 3.2 (macOS's
+  # /bin/bash) keeps a process substitution's fd open until the enclosing FUNCTION returns, so this loop
+  # held one fd per file — ~250 at 251 tracked shell scripts — and the fd that landed on 256 hit bash 3.2's
+  # off-by-one in add_fifo_list (dev_fd_list[256] written past a 256-byte buffer): a heap overwrite that
+  # crashed the script at random, SIGABRT on the macos-14 runners. `|| true` keeps the process
+  # substitution's old contract: a file the scan cannot read is skipped, not fatal under `set -e`.
   while IFS= read -r f; do
+    if [ "$mode" = md ]; then
+      hits="$(blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode")" || true
+    else
+      hits="$(scan_line_length "$mode" < "$repo_dir/$f")" || true
+    fi
+    [ -n "$hits" ] || continue
     while IFS=$'\t' read -r ln len base; do
       warn "$f:$ln ($len ch, block wrap ~$base ch) — runs well past its wrapped neighbors"
       ll_hits=$((ll_hits + 1))
-    done < <(
-      if [ "$mode" = md ]; then
-        blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode"
-      else
-        scan_line_length "$mode" < "$repo_dir/$f"
-      fi
-    )
+    done <<< "$hits"
   done <<< "$files"
 }
 
