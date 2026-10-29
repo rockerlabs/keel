@@ -18,6 +18,9 @@ run "$pl" --bogus
 check_status "unknown flag -> exit 2" 2 "$STATUS"
 run "$pl" /no/such/dir
 check_status "missing REPO_DIR -> exit 2" 2 "$STATUS"
+nogit="$SANDBOX/not-a-checkout"; mkdir -p "$nogit"
+run "$pl" "$nogit"
+check_status "a directory that is no git checkout -> exit 2" 2 "$STATUS"
 
 # --- one fixture repo, one function per case; each case is asserted by its function's name ------------
 d="$(new_repo)"
@@ -30,6 +33,15 @@ leak_if() { local f; for f in "$@"; do if read -r x; then echo "$x"; fi < <(prin
 leak_out() { local f; for f in "$@"; do echo "$f" > >(cat); done; }
 leak_builtin() { local f x; for f in "$@"; do builtin read -r x < <(printf '%s\n' "$f"); done; }
 leak_command() { local f x; for f in "$@"; do command read -r x < <(printf '%s\n' "$f"); done; }
+leak_source() { local f; for f in "$@"; do source <(printf 'y=%s\n' "$f"); done; }
+leak_after_quoted_heredoc() {
+  local f
+  cat > "$HOME/x" <<DOC
+text
+DOC
+  for f in "$@"; do while read -r x; do :; done < <(printf '%s\n' "$f"); done
+}
+leak_after_shift() { local f; echo $((1<<f)); for f in "$@"; do while read -r x; do :; done < <(printf a); done; }
 leak_while_outer() {
   local i=0
   while [ "$i" -lt 3 ]; do
@@ -84,6 +96,10 @@ cat > "$d/calls.sh" <<'EOF'
 #!/usr/bin/env bash
 . ./lib-helper.sh
 once_wrapper() { helper_opens_one "$1"; }
+redirected_whole() { read -r x; } < <(printf a)
+leak_via_whole_redirect() { local f; for f in "$@"; do redirected_whole; done; }
+leak_in_condition() { while helper_opens_one a; do :; done; }
+leak_after_cmdsubst() { local f y; for f in "$@"; do y=$(echo "$f") && helper_opens_one "$y"; done; }
 leak_via_lib() { local f; for f in "$@"; do helper_opens_one "$f"; done; }
 leak_two_deep() { local f; for f in "$@"; do [ -n "$f" ] && once_wrapper "$f"; done; }
 ok_call_in_cmdsubst() { local f y; for f in "$@"; do y="$(helper_opens_one "$f")"; echo "$y"; done; }
@@ -95,10 +111,15 @@ EOF
 
 run "$pl" "$d" --quiet
 check_status "leaking fixture -> exit 1" 1 "$STATUS"
-for fn in leak_done leak_group leak_read leak_if leak_out leak_builtin leak_command leak_while_outer; do
+for fn in leak_done leak_group leak_read leak_if leak_out leak_builtin leak_command leak_source \
+          leak_after_quoted_heredoc leak_after_shift leak_while_outer; do
   check_contains "flags $fn()" "$OUT" "leaks.sh $fn():"
 done
 check_contains "follows a call into a sourced lib's function" "$OUT" "calls.sh leak_via_lib(): calls helper_opens_one()"
+check_contains "follows a call to a function whose whole body is redirected" "$OUT" \
+  "calls.sh leak_via_whole_redirect(): calls redirected_whole()"
+check_contains "a while condition runs every pass" "$OUT" "calls.sh leak_in_condition(): calls helper_opens_one()"
+check_contains "a call after a \$(…) in the same list" "$OUT" "calls.sh leak_after_cmdsubst(): calls helper_opens_one()"
 check_contains "follows a call two levels deep (a function that calls a one-fd function once)" "$OUT" \
   "calls.sh leak_two_deep(): calls once_wrapper()"
 for fn in ok_external ok_subshell ok_subshell_one ok_command_external ok_cmdsubst ok_cmdsubst_multi ok_once \
@@ -107,7 +128,7 @@ for fn in ok_external ok_subshell ok_subshell_one ok_command_external ok_cmdsubs
   check_absent "does not flag $fn()" "$OUT" " $fn():"
 done
 check_absent "a loop at a script's top level is never flagged" "$OUT" "__keel_wrap"
-check_eq "exactly the ten leaks, nothing else" 10 "$(match "$OUT" -c '^  LEAK ')"
+check_eq "exactly the sixteen leaks, nothing else" 16 "$(match "$OUT" -c '^  LEAK ')"
 
 # the fix shape, applied to every flagged function, turns the tree clean
 d2="$(new_repo)"
@@ -145,7 +166,8 @@ if [ -x /bin/bash ] && /bin/bash -c '[ "${BASH_VERSINFO[0]}" -lt 4 ]'; then
   }
   for shape in 'while read -r x; do :; done < <(echo a)' '{ read -r x; } < <(echo a)' 'read -r x < <(echo a)' \
                'if read -r x; then :; fi < <(echo a)' 'echo a > >(cat >/dev/null)' 'g < <(echo a)' \
-               'builtin read -r x < <(echo a)' 'command read -r x < <(echo a)'; do
+               'builtin read -r x < <(echo a)' 'command read -r x < <(echo a)' 'source <(echo :)' \
+               'h() { :; } < <(echo a); h'; do
     check_eq "bash 3.2 leaks on: $shape" leaks "$(gt "$shape")"
   done
   for shape in 'cat < <(echo a) >/dev/null' 'grep -q a <(echo a)' '( read -r x ) < <(echo a)' \

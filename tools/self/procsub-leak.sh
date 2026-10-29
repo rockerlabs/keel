@@ -12,7 +12,8 @@
 #
 # WHAT LEAKS, measured on 3.2.57 with `lsof` (40 passes of a loop inside a function, 9 fds at rest):
 #   leaks, +1 fd per pass   `done < <(…)`, `} < <(…)`, `fi < <(…)`, `esac < <(…)`, `read x < <(…)`,
-#                           `myfunc < <(…)`, `echo x > >(…)` — a command the shell runs in itself
+#                           `myfunc < <(…)`, `echo x > >(…)`, `source <(…)` — a command the shell runs
+#                           in itself; also a call to `f() { …; } < <(…)`, whose redirect is per call
 #   holds at 9              `cat < <(…)`, `grep x <(…)`, `( … ) < <(…)`, `x=$(… < <(…))` — a child
 #                           process owns the fd and takes it with it when it exits
 #   holds at 9              any of the above in a loop at the top level of a script
@@ -28,10 +29,13 @@
 # with `declare -f` (parsing alone runs nothing). That output has comments stripped and one command per
 # line, with `do`/`done` and a function's braces on lines of their own, which a small awk reader can
 # follow. Lines inside a multi-line `$(…)`, `<(…)` or `( … )` run in a subshell and are skipped. The
-# wrapper's body is the script's top level, and is never a function.
+# wrapper's body is the script's top level, and is never a function. A `while`/`until` condition counts as
+# inside its loop: it runs every pass.
 #
 # AXIS, named: a call is seen only when the function's name is the command word of a line segment
-# outside a pipeline and outside `$(…)`; a call through a variable, `eval` or a pipeline is not followed.
+# outside a pipeline, a `( … )` and a `$(…)`; a call through a variable, `eval` or a pipeline is not
+# followed. Sourcing is not traced either: a call goes to its own file's function, else to any tracked
+# file's function of that name, so a name defined anywhere counts. That can over-report, never under-report.
 # The input is keel's own tracked scripts, which the suite runs anyway; the wrap would let a crafted file
 # close its brace early and run code, so this is no checker for untrusted trees.
 #
@@ -83,7 +87,8 @@ repo_dir="$(cd "$repo_dir" && pwd)"
 say() { [ "$QUIET" = 1 ] || echo "$@"; }
 say "● process substitutions held open per loop pass ($repo_dir)"
 
-files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir")"
+files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir")" ||
+  { echo "procsub-leak.sh: could not list the tracked shell scripts under $repo_dir (not a git checkout?)" >&2; exit 2; }
 [ -n "$files" ] || { echo "procsub-leak.sh: no tracked shell scripts under $repo_dir" >&2; exit 2; }
 
 normalized="$(mktemp)"
@@ -121,15 +126,29 @@ builtins="$(compgen -b | tr '\n' ' ')"
 case " $builtins " in *" read "*) ;; *) echo "procsub-leak.sh: could not list bash's builtins" >&2; exit 2 ;; esac
 
 # The reader. Stack entries: T (the wrapper, i.e. top level), F (a function), L (a loop), each with the
-# indent of the line that opened it. A site is a process substitution on a command the shell runs itself;
-# a call is a function name in command position. END resolves calls against the defined functions
-# (same file first, then any file's, as a sourced lib's), widens "opens an fd per call" to every
-# function that calls one such, and reports a site or a call that sits in a loop inside a function.
+# indent of the line that opened it. Each line is split into its list segments (`&&`, `||`, `;`) after
+# every complete `( … )` on it is folded into one placeholder: \003 for a `<(…)` or `>(…)`, \002 for a
+# `$(…)`, an arithmetic `$((…))` or a subshell. A site is a segment that holds a \003 and whose command
+# runs in this shell; a call is a function name in command position. END resolves calls (a same-file
+# function first, else any tracked file's of that name), widens "opens an fd per call" to every function
+# that calls one such, and reports a site or a call that sits in a loop inside a function.
 hits="$(awk -v blist="$builtins" '
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 function unquote(s) { gsub(/\\./, "", s); gsub(/\047[^\047]*\047/, "", s); gsub(/"[^"]*"/, "", s); return s }
 # parens S — the count of `(` minus the count of `)` in S.
 function parens(s,   t) { t = s; return gsub(/[(]/, "", t) - gsub(/[)]/, "", s) }
+# fold S — S with each complete `( … )`, innermost first, and each backtick pair folded into a placeholder;
+# the text from a `(` the line leaves open onward is cut, since it runs in a subshell (a `<(`/`>(` cut so
+# still leaves its \003).
+function fold(s,   c) {
+  while (match(s, /[(][^()]*[)]/)) {
+    c = (RSTART > 1) ? substr(s, RSTART - 1, 1) : ""
+    s = substr(s, 1, RSTART - 1) ((c == "<" || c == ">") ? "\003" : "\002") substr(s, RSTART + RLENGTH)
+  }
+  gsub(/`[^`]*`/, "\002", s)
+  if (match(s, /[$<>]?[(]|`/)) { c = substr(s, RSTART, 1); s = substr(s, 1, RSTART - 1) ((c == "<" || c == ">") ? "\003" : "") }
+  return s
+}
 function owner(   k) { for (k = sp; k >= 1; k--) if (st[k] == "F") return k; return 0 }
 function looped(fk,   k) { for (k = sp; k > fk; k--) if (st[k] == "L") return 1; return 0 }
 # cmdword SEG — the command word of one list segment: leading keywords, `!`, and VAR=value words dropped.
@@ -137,12 +156,16 @@ function cmdword(seg,   w) {
   seg = trim(seg)
   while (seg != "") {
     w = seg; sub(/[ \t].*/, "", w)
-    if (w ~ /^(if|then|else|elif|do|while|until|time|builtin|command|!|[{]|[(])$/ || w ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?=/) {
+    if (w ~ /^(if|then|else|elif|do|while|until|time|builtin|command|!|[{])$/ || w ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?=/) {
       seg = substr(seg, length(w) + 1); seg = trim(seg); continue
     }
     return w
   }
   return ""
+}
+function site(fn, inloop, w, text) {
+  site_n++; s_file[site_n] = file; s_fn[site_n] = fn; s_loop[site_n] = inloop; s_cmd[site_n] = w
+  s_text[site_n] = trim(text)
 }
 BEGIN { n = split(blist, b, " "); for (i = 1; i <= n; i++) isb[b[i]] = 1 }
 /^\001FILE / { file = substr($0, 7); sp = 0; hd = ""; cs = 0; pend = ""; next }
@@ -151,18 +174,20 @@ BEGIN { n = split(blist, b, " "); for (i = 1; i <= n; i++) isb[b[i]] = 1 }
   if (hd != "") { t = line; if (hdtab) sub(/^\t+/, "", t); if (t == hd) hd = ""; next }
   u = unquote(line)
   # A here-document starting on this line: its body follows, verbatim, until the terminator. Only the
-  # check above reads hd, so setting it here skips the lines after this one, whatever this line is.
-  if (match(u, /(^|[^<])<<-?[ ]*[A-Za-z_][A-Za-z0-9_]*/) || match(line, /(^|[^<])<<-?[ ]*[\047"][A-Za-z_][A-Za-z0-9_]*[\047"]/)) {
-    hd = substr(line, RSTART, RLENGTH); hdtab = (hd ~ /<<-/)
-    sub(/^[^<]*<<-?[ ]*/, "", hd); gsub(/[\047"]/, "", hd)
-  }
+  # check above reads hd, so setting it here skips the lines after this one, whatever this line is. An
+  # unquoted delimiter is read from the folded text (no `$((1<<n))` shift), a quoted one from the line.
+  h = fold(u)
+  if (match(h, /(^|[^<])<<-?[ ]*[A-Za-z_][A-Za-z0-9_]*/)) h = substr(h, RSTART, RLENGTH)
+  else if (match(line, /(^|[^<])<<-?[ ]*[\047"][A-Za-z_][A-Za-z0-9_]*[\047"]/)) h = substr(line, RSTART, RLENGTH)
+  else h = ""
+  if (h != "") { hdtab = (h ~ /<<-/); sub(/^[^<]*<<-?[ ]*/, "", h); gsub(/[\047"]/, "", h); hd = h }
   d = parens(u)
   if (cs > 0) { cs += d; if (cs < 0) cs = 0; next }
   match(line, /^ */); ind = RLENGTH
   if (pend != "") {
     if (line ~ /^ *[{] *$/) {
       sp++; st[sp] = (pend == "__keel_wrap") ? "T" : "F"; si[sp] = pind; sn[sp] = pend
-      if (st[sp] == "F") def[file SUBSEP pend] = 1
+      if (st[sp] == "F") { def[file SUBSEP pend] = 1; isfn[pend] = 1 }
       pend = ""; next
     }
     pend = ""
@@ -171,58 +196,49 @@ BEGIN { n = split(blist, b, " "); for (i = 1; i <= n; i++) isb[b[i]] = 1 }
     pend = trim(line); sub(/^function +/, "", pend); sub(/ +[(][)].*/, "", pend); pind = ind; next
   }
   if (sp > 0 && (st[sp] == "F" || st[sp] == "T") && ind == si[sp] && line ~ /^ *[}]/) {
+    # `f() { …; } < <(…)`: a redirect on the whole function, one fd per call.
+    if (st[sp] == "F" && fold(u) ~ /\003/) site(sn[sp], 0, "", line)
     sp--; next
   }
   fk = owner()
-  closer = 0
-  if (line ~ /^ *done([ ;]|$)/) { closer = 1; if (sp > 0 && st[sp] == "L") sp-- }
-  else if (line ~ /^ *([}]|fi|esac)([ ;]|$)/) closer = 1
-  # The line up to its first substitution: what runs in this shell. A pipeline and a `( … )` line run in
-  # subshells.
-  pre = u
-  if (match(pre, /[$<>][(]|`/)) pre = substr(pre, 1, RSTART - 1)
-  piped = (pre ~ /(^|[^|])[|]([^|]|$)/ || trim(pre) ~ /^[(]/)
-  if (fk > 0 && (u ~ /< <[(]/ || u ~ /> >[(]/) && !piped) {
-    w = closer ? "" : cmdword(pre)
-    site_n++; s_file[site_n] = file; s_fn[site_n] = sn[fk]; s_loop[site_n] = looped(fk)
-    s_cmd[site_n] = w; s_text[site_n] = trim(line)
-  }
-  if (fk > 0 && !piped) {
-    nseg = split(pre, segs, /&&|[|][|]|;/)
+  if (line ~ /^ *done([ ;]|$)/ && sp > 0 && st[sp] == "L") sp--
+  # A line that leaves a substitution open ends inside it: a `do` there belongs to a loop in that subshell.
+  # A `while`/`until` condition runs every pass, so its loop opens before the line is read.
+  opens = (d <= 0 && line ~ /(^|[ ;])do *$/)
+  if (opens && line ~ /^ *(while|until) /) { sp++; st[sp] = "L"; si[sp] = ind; opens = 0 }
+  if (fk > 0) {
+    nseg = split(fold(u), segs, /&&|[|][|]|;/)
     for (i = 1; i <= nseg; i++) {
+      # A pipeline runs in subshells. A `( … )` folds to \002, which no builtin or function name matches.
+      if (segs[i] ~ /(^|[^|])[|]([^|]|$)/) continue
       w = cmdword(segs[i])
+      if (segs[i] ~ /\003/) site(sn[fk], looped(fk), (w ~ /^(done|fi|esac|[}])$/) ? "" : w, line)
       if (w == "" || w ~ /^(done|fi|esac|[}]|for|case|select|local|return|break|continue)$/) continue
       call_n++; c_file[call_n] = file; c_fn[call_n] = sn[fk]; c_loop[call_n] = looped(fk); c_to[call_n] = w
     }
   }
-  # A line that leaves a substitution open ends inside it: a `do` there belongs to a loop in that subshell.
-  if (d <= 0 && line ~ /(^|[ ;])do *$/) { sp++; st[sp] = "L"; si[sp] = ind }
+  if (opens) { sp++; st[sp] = "L"; si[sp] = ind }
   if (d > 0) cs = d
 }
-# resolve FILE NAME — the key of the function a call to NAME from FILE runs, or "".
-function resolve(f, n) {
-  if ((f SUBSEP n) in def) return f SUBSEP n
-  return (n in byname) ? byname[n] : ""
-}
+# mark K — K (file SUBSEP name) opens an fd per call; 1 if that is news.
+function mark(k,   kp) { if (k in leaky) return 0; leaky[k] = 1; split(k, kp, SUBSEP); lname[kp[2]] = 1; return 1 }
+# calls I — call I runs a function that opens an fd per call: the one in its own file, else one of that
+# name in any file (sourcing is not traced, so a name defined anywhere counts: an over-report, never under).
+function calls(i,   k) { k = c_file[i] SUBSEP c_to[i]; return (k in def) ? (k in leaky) : (c_to[i] in lname) }
 END {
-  for (k in def) { split(k, kp, SUBSEP); byname[kp[2]] = k }
   for (i = 1; i <= site_n; i++) {
-    if (s_cmd[i] == "" || (s_cmd[i] in isb) || resolve(s_file[i], s_cmd[i]) != "") {
-      leaky[s_file[i] SUBSEP s_fn[i]] = 1
+    if (s_cmd[i] == "" || (s_cmd[i] in isb) || (s_cmd[i] in isfn)) {
+      mark(s_file[i] SUBSEP s_fn[i])
       if (s_loop[i]) printf "%s\t%s()\t%s\n", s_file[i], s_fn[i], s_text[i]
     }
   }
-  for (i = 1; i <= call_n; i++) c_key[i] = resolve(c_file[i], c_to[i])
   changed = 1
   while (changed) {
     changed = 0
-    for (i = 1; i <= call_n; i++) {
-      k = c_file[i] SUBSEP c_fn[i]
-      if (c_key[i] != "" && (c_key[i] in leaky) && !(k in leaky)) { leaky[k] = 1; changed = 1 }
-    }
+    for (i = 1; i <= call_n; i++) if (calls(i) && mark(c_file[i] SUBSEP c_fn[i])) changed = 1
   }
   for (i = 1; i <= call_n; i++)
-    if (c_loop[i] && c_key[i] != "" && (c_key[i] in leaky))
+    if (c_loop[i] && calls(i))
       printf "%s\t%s()\tcalls %s() in a loop, and each call leaves an fd open\n", c_file[i], c_fn[i], c_to[i]
 }
 ' "$normalized" | LC_ALL=C sort -u)"
