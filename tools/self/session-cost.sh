@@ -207,7 +207,7 @@ _sc_manifest_rows() {
   # once (at real process exit, not per function return) and did not reproduce that same failure in
   # testing, this file now sticks to ONE cleanup idiom everywhere rather than trusting a second,
   # less-exercised one under time pressure.
-  local ticket tier model files_csv
+  local ticket tier model files_csv uniq
   while IFS=$'\t' read -r ticket tier model files_csv || [ -n "$ticket" ]; do
     case "$ticket" in ''|'#'*) continue ;; esac
     [ -n "$tier" ] && [ -n "$model" ] && [ -n "$files_csv" ] || {
@@ -220,10 +220,13 @@ _sc_manifest_rows() {
     # inflation moved one layer up from the dedupe bug this whole ticket exists to fix. Portable
     # first-occurrence dedupe (`awk '!seen[$0]++'`), not a bash associative array — this codebase
     # avoids `declare -A` for bash 3.2 compatibility (see citation-resolvability.sh's own note).
+    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per manifest line
+    # (dir #905).
     local -a files=()
+    uniq="$(printf '%s' "$files_csv" | tr ',' '\n' | awk '!seen[$0]++')" || true
     while IFS= read -r ff; do
       [ -n "$ff" ] && files+=("$ff")
-    done < <(printf '%s' "$files_csv" | tr ',' '\n' | awk '!seen[$0]++')
+    done <<< "$uniq"
     # A line whose FILE column names no file (`,`) is priced as zero with a note: an empty array under `set -u`
     # aborts bash 3.2 (dir #852), and one degenerate line must not take the other tickets' rows down.
     if [ "${#files[@]}" -eq 0 ]; then
@@ -455,7 +458,7 @@ cmd_tail() {
     + (if .status == "open" then " open" else "" end),
     (.subagents[] | "  agent \(.agent_id) parent=\(.parent_agent_id // "-") depth=\(.depth // "-") turns=\(.turns) cost=\(.cost)"
                     + (if .review then " review" else "" end) + " \(.first_line)")'
-  local sid s meta ok=0 d
+  local sid s subs meta ok=0 d
   d="$(mktemp -d)" || exit 1
   for f in "$@"; do
     sid="$(basename "$f" .jsonl)"
@@ -466,11 +469,13 @@ cmd_tail() {
     _sc_tail_pr_results < "$d/results" > "$d/prs" || ok=1
     _sc_tail_init_results < "$d/results" > "$d/inits" || ok=1
     : > "$d/agents"
+    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per FILE (dir #905).
+    subs="$(tu_subagent_files "$f")" || true
     while IFS= read -r s; do
       [ -n "$s" ] || continue
       meta="$(tu_subagent_meta "$s")" || { ok=1; continue; }
       tu_turns subagent "$s" | _sc_tail_agent_row "$meta" >> "$d/agents" || ok=1
-    done < <(tu_subagent_files "$f")
+    done <<< "$subs"
     [ "$ok" -eq 0 ] || break
     _sc_tail_windows "$sid" "$d/turns" "$d/calls" "$d/prs" "$d/inits" "$d/agents" > "$d/wins" || ok=1
     if [ "$json" -eq 1 ]; then

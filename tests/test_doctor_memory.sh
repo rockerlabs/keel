@@ -202,4 +202,24 @@ check_status   "non-git project still GAPs on its own" 1 "$STATUS"
 check_absent   "non-git project → no staleness finding" "$OUT" "H-MEMORY-STALE"
 check_contains "...but the deterministic memory checks still run" "$OUT" "[W-MEMORY-ORPHAN] orph.md"
 
+# ---- the staleness loop holds no fd per note (dir #905) ----
+# Its per-note `done < <(_backtick_tokens …)` held one fd per memory file on bash 3.2 until memory_checks
+# returned (the real keel memory dir, 101 notes, peaked at 107 open fds); the fd that reaches 256 crashes 3.2
+# at random (dir #904). Under `ulimit -n 64`, 80 notes ran a leaking loop out of fds and the rest went
+# unchecked. Each note is stale, so the count is exact. Run under /bin/bash where it exists: only 3.2 leaks.
+d="$(cleanproj)"; m="$(newmem)"
+mkdir -p "$d/src"; printf 'c\n' > "$d/src/c.sh"; commit_at "$d" src/c.sh 2024-06-01
+: > "$m/MEMORY.md"
+i=0
+while [ "$i" -lt 80 ]; do
+  printf -- '- [N](n%s.md) — x\n' "$i" >> "$m/MEMORY.md"
+  printf -- '---\nmetadata:\n  modified: 2001-01-01\n---\nSee `src/c.sh`.\n' > "$m/n$i.md"
+  i=$((i + 1))
+done
+b=bash
+[ -x /bin/bash ] && b=/bin/bash
+run env "KEEL_MEMORY_DIR=$m" "$b" -c 'ulimit -n 64 && exec "$0" "$@"' "$b" "$doctor" --memory-age "$d"
+check_absent "no fd exhaustion over 80 notes under ulimit -n 64" "$OUT" "Too many open files"
+check_eq     "every one of the 80 notes is checked (one H-MEMORY-STALE each)" 80 "$(count_of 'H-MEMORY-STALE')"
+
 summary

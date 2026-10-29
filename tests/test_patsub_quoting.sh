@@ -81,14 +81,17 @@ line_has_unquoted_replacement() {
 # scan_unquoted_replacements FILE... — one `path<TAB>line number<TAB>trimmed line` per offending line; comment-only lines are
 # skipped. grep prefilters the candidates so the character walk runs on a handful of lines, not on every line of tools/.
 scan_unquoted_replacements() {
-  local f num line t
+  local f hits num line t
   for f in "$@"; do
+    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per file (dir #905)
+    hits="$(grep -n -E '\$\{[!]?[A-Za-z_0-9@*]+(\[[^]]*\])?//?' "$f" || true)"
+    [ -n "$hits" ] || continue
     while IFS= read -r line; do
       num="${line%%:*}"; line="${line#*:}"
       t="${line#"${line%%[![:space:]]*}"}"
       case "$t" in '#'*) continue ;; esac
       if line_has_unquoted_replacement "$line"; then printf '%s\t%s\t%s\n' "$f" "$num" "${t%"${t##*[![:space:]]}"}"; fi
-    done < <(grep -n -E '\$\{[!]?[A-Za-z_0-9@*]+(\[[^]]*\])?//?' "$f" || true)
+    done <<< "$hits"
   done
 }
 

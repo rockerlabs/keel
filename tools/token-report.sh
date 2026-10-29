@@ -137,7 +137,7 @@ _tr_build_report() {
   # pass). Non-capturing guards use this function's own `CMD || { warn; continue; }` idiom (already
   # established above for the mktemp chain); `tu_session_totals` alone needs `if/else` since it
   # captures a value for its success branch.
-  local f totals sf
+  local f totals subs sf
   for f in "${files[@]:-}"; do
     [ -f "$f" ] || continue
 
@@ -161,6 +161,9 @@ _tr_build_report() {
       continue
     }
 
+    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per session
+    # (dir #905).
+    subs="$(tu_subagent_files "$f")" || true
     while IFS= read -r sf; do
       [ -n "$sf" ] || continue
       tu_tool_calls subagent "$sf" >> "$tmp_calls" || {
@@ -171,7 +174,7 @@ _tr_build_report() {
         printf 'token-report.sh: could not read self-check for subagent %s — skipped\n' "$sf" >&2
         continue
       }
-    done < <(tu_subagent_files "$f")
+    done <<< "$subs"
   done
 
   local read_at out status=0

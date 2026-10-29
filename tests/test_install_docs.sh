@@ -132,23 +132,26 @@ check_nodir  "A6b: no docs/zzsub dir is created" "$b_home/docs/zzsub"
 # The command glob is `<home>/commands/*.md` — every shipped command, so a hidden companion command a
 # later ticket adds (dir #670's polish-guide.md) is guarded the day it lands.
 guard_home() {
-  local docs_dir="$1" fw="$2" f tok rel d dd t base srcdir cand
+  local docs_dir="$1" fw="$2" f hits tok rel d dd t base srcdir cand
   shift 2
   local texts=("$@" "$fw")
   for f in "$(dirname "$docs_dir")"/commands/*.md; do [ -f "$f" ] && texts+=("$f"); done
   for f in "$docs_dir"/*.md "$docs_dir"/drydock/*.md; do [ -f "$f" ] && texts+=("$f"); done
   for f in "${texts[@]}"; do
     [ -f "$f" ] || continue
+    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per doc (dir #905)
+    hits="$(grep -o -E '(^|[^A-Za-z0-9_./-])(\.\./)?docs/[A-Za-z0-9_/-]+\.md' "$f" 2>/dev/null \
+               | sed -E 's|^.*docs/|docs/|' | sort -u)" || true
     while IFS= read -r tok; do
       [ -n "$tok" ] || continue
       [ -f "$docs_dir/${tok#docs/}" ] || echo "token docs/${tok#docs/} (in ${f#"$SANDBOX"/}) does not resolve at $docs_dir/${tok#docs/}"
-    done < <(grep -o -E '(^|[^A-Za-z0-9_./-])(\.\./)?docs/[A-Za-z0-9_/-]+\.md' "$f" 2>/dev/null \
-               | sed -E 's|^.*docs/|docs/|' | sort -u)
+    done <<< "$hits"
   done
   for f in "$docs_dir"/*.md "$docs_dir"/drydock/*.md; do
     [ -f "$f" ] || continue
     rel="${f#"$docs_dir"/}"; dd="$(dirname "$rel")"      # "." for a top-level doc, "drydock" below
     d="$(dirname "$f")"
+    hits="$(grep -o -E '\]\([^) ]+\.md[^) ]*\)' "$f" 2>/dev/null | sed -E 's/^\]\(//; s/\)$//')" || true
     while IFS= read -r t; do
       case "$t" in *://*|"") continue ;; esac
       t="${t%%#*}"; [ -n "$t" ] || continue
@@ -166,7 +169,7 @@ guard_home() {
         *) continue ;;
       esac
       [ -e "$d/$t" ] || echo "link ]($t) in ${rel} does not resolve from $d"
-    done < <(grep -o -E '\]\([^) ]+\.md[^) ]*\)' "$f" 2>/dev/null | sed -E 's/^\]\(//; s/\)$//')
+    done <<< "$hits"
   done
 }
 

@@ -144,4 +144,22 @@ check_status "table with a duplicated manifest file entry exits 0" "0" "$STATUS"
 check_contains "table dedupes a repeated file: msgs stays 2 (the file's own turn count), not 4" "$OUT" "dirDup"
 check_contains "table dedupes a repeated file: output stays 150 (100+50), not 300" "$OUT" "150"
 
+# --- dir #905: table holds no fd per manifest line ------------------------------------------------
+# _sc_manifest_rows read each line's file list through `done < <(…)`, which bash 3.2 holds until the function
+# returns: one fd per ticket, and the fd that reaches 256 crashes 3.2 at random (dir #904). Under `ulimit -n 64`,
+# 80 lines ran a leaking loop out of fds. Run under /bin/bash where it exists: only 3.2 leaks.
+many_manifest="$SANDBOX/many-manifest.tsv"
+: > "$many_manifest"
+i=0
+while [ "$i" -lt 80 ]; do
+  printf 'fdrow%s\tR1\tsonnet\t%s\n' "$i" "$sess_file2" >> "$many_manifest"
+  i=$((i + 1))
+done
+b=bash
+[ -x /bin/bash ] && b=/bin/bash
+run "$b" -c 'ulimit -n 64 && exec "$0" "$@"' "$b" "$tool" table "$many_manifest"
+check_status "table over 80 manifest lines under ulimit -n 64 exits 0" "0" "$STATUS"
+check_absent "no fd exhaustion over 80 manifest lines" "$OUT" "Too many open files"
+check_eq "every one of the 80 tickets gets its row" 80 "$(printf '%s\n' "$OUT" | grep -cE 'fdrow[0-9]+' || true)"
+
 summary
