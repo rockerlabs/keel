@@ -12,7 +12,7 @@ this one application, and are linked rather than duplicated.
 
 **This is a doc, not a tool.** [`commands/manage-release.md`](../commands/manage-release.md) is a
 thin entrypoint over it — a checklist that resolves the release, loads this doc, and runs the loop —
-the same split [`docs/drydock.md`](drydock.md) uses for its own procedure-plus-entrypoint shape. The
+the same split [`docs/grooming.md`](grooming.md) uses for its own procedure-plus-entrypoint shape. The
 doc is canonical; the command points at it. *(On an install where the adopter already owns the
 `/manage-release` name, `install.sh`'s generic collision-alias mechanism ships this command under the
 prefixed name keel-manage-release instead — same file, same behavior, no separate wiring.)*
@@ -1082,10 +1082,10 @@ manager honest about which of those two loads it's actually reducing.
 [`docs/delegation.md`](delegation.md) for the read-only subagent fan-out this pattern deliberately
 does not use for mutation, and [`docs/parallel-sessions.md`](parallel-sessions.md) for the generic
 concurrency rails (worktree isolation, push-verify, recovery tiers) every worker session in a release
-still needs regardless of who launched it. [`docs/drydock.md`](drydock.md) and
-[`docs/delta-audit.md`](delta-audit.md) are this same procedure-plus-entrypoint shape applied to
-auditing rather than release coordination — worth a look for the file-contract and role-prompt
-mechanics this doc leaves to those siblings rather than re-deriving.
+still needs regardless of who launched it. [`docs/delta-audit.md`](delta-audit.md) is this same
+procedure-plus-entrypoint shape applied to auditing rather than release coordination; it and
+[`docs/drydock.md`](drydock.md) are worth a look for the file-contract and role-prompt mechanics this
+doc leaves to those siblings rather than re-deriving.
 
 This document is subject to its own R4: where a real run's practice disagrees with what's written
 here, the correction belongs in this doc, proposed by whoever ran into the disagreement — the same
