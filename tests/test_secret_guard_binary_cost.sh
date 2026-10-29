@@ -139,8 +139,8 @@ fi
 
 # --- (R) the same verdicts over --range (dir #850) ---------------------------------------------------------------------
 # --range counts matches on a NUL-stripped stream before it runs the detailed scan, so a personal literal that matches
-# only a printable run (an unescaped `^` or `$`, a `\<` `\>` word boundary) reads clean there unless the fast path is
-# skipped. Each blob is added by the last commit of the range; `--tracked` already answered these (V6–V8 above).
+# only a printable run (an unescaped `^` or `$`, a `\<` `\>` word boundary) reads clean there unless the count is
+# skipped (a NUL in the range does it, dir #897). Each blob is added by the last commit of the range; `--tracked` already answered these (V6–V8 above).
 range_blob_repo() {  # $1 = the blob's printf format; prints a repo whose HEAD~1..HEAD adds it as data.bin
   local d; d="$(new_repo)"
   git -C "$d" commit -q --allow-empty -m base
@@ -171,9 +171,9 @@ repo="$(range_blob_repo "$wbblob")"
 SECRET_SCAN_PERSONAL_FILE="$pers_end" run_in "$repo" "$scan" --range HEAD~1..HEAD
 check_status "V7r: a trailing \$ literal (zorbquux\$) over --range → exit 1" 1 "$STATUS"
 SECRET_SCAN_PERSONAL_FILE="$pers_wb" run_in "$repo" "$scan" --range HEAD~1..HEAD
-check_status "V7r: a \\b word-boundary literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
+check_status "V7r: a \\b word-boundary literal over --range → exit 1 (the NUL gate sends a range holding a NUL to the detailed scan)" 1 "$STATUS"
 SECRET_SCAN_PERSONAL_FILE="$pers_alt" run_in "$repo" "$scan" --range HEAD~1..HEAD
-check_status "V7r: a (^|[^a-z])…(\$|[^a-z]) literal over --range → exit 1 (the wide skip already caught it)" 1 "$STATUS"
+check_status "V7r: a (^|[^a-z])…(\$|[^a-z]) literal over --range → exit 1 (the NUL gate sends a range holding a NUL to the detailed scan)" 1 "$STATUS"
 SECRET_SCAN_PERSONAL_FILE="$pers_gnuwb" run_in "$repo" "$scan" --range HEAD~1..HEAD
 check_status "V7r: a \\<…\\> word-boundary literal over --range → exit 1" 1 "$STATUS"
 # \' is an end-of-buffer anchor for GNU grep only (BSD and busybox read it differently), so the row needs a grep that has it
