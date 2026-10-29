@@ -28,6 +28,8 @@
 #              machine-watch, machine-watch.paths   (tools/machine-watch.sh: the baseline store, and the
 #                           user-authored extra-paths file; dir #437 PR2)
 #              vendor-review (tools/vendor-review.sh: the default --out for round dirs; dir #662)
+#              cloud        (tools/cloud-brief.sh, tools/cloud-land.sh: the dispatch ledger `ledger.tsv`, its
+#                           `ledger.lock`, and `briefs/`; dir #900)
 #              guards-accumulator (tools/self/bypass-scan.sh data-dir: the guards' bypass-register accumulator,
 #                           dir #842 slice 4; KEEL_GUARDS_ACCUM_DIR overrides it)
 #   reserved:  config, config.d                      (dir #257)
