@@ -222,12 +222,10 @@ report_hits() {
   # subprocess) rather than hoisted above the loop — a hoisted variable would have to carry two
   # DIFFERENT pipeline shapes (one command vs. two piped together), which reads as more indirection
   # than the plain per-file branch it would replace.
-  # Each file's hits are captured, not read through a per-file `done < <(…)` (dir #904): bash 3.2 (macOS's
-  # /bin/bash) keeps a process substitution's fd open until the enclosing FUNCTION returns, so this loop
-  # held one fd per file — ~250 at 251 tracked shell scripts — and the fd that landed on 256 hit bash 3.2's
-  # off-by-one in add_fifo_list (dev_fd_list[256] written past a 256-byte buffer): a heap overwrite that
-  # crashed the script at random, SIGABRT on the macos-14 runners. `|| true` keeps the process
-  # substitution's old contract: a file the scan cannot read is skipped, not fatal under `set -e`.
+  # Each file's hits are captured, never read through a per-file `done < <(…)`: bash 3.2 (macOS's
+  # /bin/bash) holds a process substitution's fd until the enclosing function returns, and one fd per
+  # file ran into its fd-256 heap off-by-one, a random crash (dir #904). `|| true` keeps the old
+  # contract: a file the scan cannot read is skipped, not fatal under `set -e`.
   while IFS= read -r f; do
     if [ "$mode" = md ]; then
       hits="$(blank_fenced_blocks "$repo_dir/$f" | scan_line_length "$mode")" || true
