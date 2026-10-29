@@ -61,7 +61,8 @@ context at each sweep against the hand-over threshold (R6).
 
 **M7a — the train and the merge (R14).**
 Where two or more PRs are ready, cut a train (R14): the composition from the freeze lines, the manager
-builds the train's worktree (R14, "The train: build"), then a train worker for the verification and the seam review (its `/polish` step-4 dialog is the operator's one decision
+builds the train's worktree (R14, "The train: build"), then a train worker for the verification and the
+seam review (its `/polish` step-4 dialog is the operator's one decision
 per train), then merge under R14's preconditions — merge commit, head pinned, one health line per merge. A
 lone ready PR merges alone.
 A manager launched with `--agent` cannot merge, since the merge rule reads that session as a subagent; launch it without `--agent` (R14).

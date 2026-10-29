@@ -224,8 +224,9 @@ data off the machine or destroys it (a near-miss, due at once), `no` for a workf
 closures:** for every `promoted` class, `accumulate.sh closed <class> --backlog <path> --drafts <dir>` and, when its
 ticket is closed, `accumulate.sh fixed <class> <ref> --date <closure date>` — without it a class stays `promoted` and a
 recurrence is never due. **(4) `accumulate.sh due --owner guards`:** this groom files each class listed as a ticket
-tagged `[model-decay]` (`accumulate.sh promote` records it); the tool never files. A shape row added to the table is registered once with `tools/self/bypass-scan.sh classes` (it prints the
-`accumulate.sh new-class` lines and runs nothing). Run the scan more often than the harness keeps transcripts
+tagged `[model-decay]` (`accumulate.sh promote` records it); the tool never files. A shape row added to the table
+is registered once with `tools/self/bypass-scan.sh classes` (it prints the `accumulate.sh new-class` lines and runs
+nothing). Run the scan more often than the harness keeps transcripts
 (Claude Code's `cleanupPeriodDays`, 30 days by default, checked 2026-10-15), or a sighting is lost before anyone reads it.
 
 **Every amendment that compensates for a defect names the ticket that will remove it.** A retro's
@@ -246,8 +247,9 @@ deliverable, not a description of one.
 **The just-closed audit run's harvest confirmation happens here too.** This is G4(c) below, restated in
 this phase because a doc author compressing G0 from a shorter read of this section alone must not drop
 it: confirm that the just-closed delta-audit run's `no-action` leads and findings were harvested onto
-the standing list (G4(a)) and that its own staged-tickets file is empty or filed
-(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — [`verification-economics.md`](verification-economics.md) §4). Older, already-closed
+the standing list (G4(a)) and that its own staged-tickets file is empty or filed (a `no-action(1b — …)`
+finding goes to its guard's known-bypass register instead —
+[`verification-economics.md`](verification-economics.md) §4). Older, already-closed
 audit-run directories get one catch-up harvest the first time this procedure runs on a project, then
 are archive, not backlog — no groom re-opens them a second time. **Check it; do not assume a closed run
 did it.** A groom found two of the previous run's `no-action` findings unharvested a full cycle after
@@ -284,8 +286,8 @@ the parked file had a price, then priced it and asked again).
 groom, 2026-09-23).** The session before that groom had surfaced five pooled defects and the agent
 recommended a patch release for three of them. Asked "should we fix the tails first?", the operator
 accepted; the day before, the same case had been put to them and declined. The decision was real and the
-operator's, but the wording and the argument were the agent's, which fits neither of the two states above (an operator-stated pain in the operator's words, and
-"carried-over theme, not a sprint").
+operator's, but the wording and the argument were the agent's, which fits neither of the two states above
+(an operator-stated pain in the operator's words, and "carried-over theme, not a sprint").
 Recording it as operator-stated overstates what the next G0 reads, since a pain that recurs because the
 agent keeps proposing it looks felt; refusing it discards a genuine decision. One field settles it:
 
@@ -378,8 +380,9 @@ rules, one paragraph apiece, so it is not restated here. **Run it twice — once
 sweep and once after the last heading edit (G4) — and reconcile any disagreement before writing a
 count**; the second run is nearly free and is the only step that catches a predicate that is wrong, as
 opposed to a file that has moved. Where the mechanism or its equivalent has not shipped on a project,
-this rule names the gap rather than asserting an unshipped tool's own rules as settled fact — derive
-these three by hand, and persist the predicate you used beside the backlog (an unrecorded one leaves a count unrecoverable), and re-derive on every cycle, not once and carry forward. **A backlog whose
+this rule names the gap rather than asserting an unshipped tool's own rules as settled fact — derive these
+three by hand, and persist the predicate you used beside the backlog (an unrecorded one leaves a count
+unrecoverable), and re-derive on every cycle, not once and carry forward. **A backlog whose
 tickets use another uniform heading token (`### B.N`, `### KB.N`) is not that gap:** keel's census takes
 it as `--ticket-token 'B\.[0-9]+'` (dir #605) and prints the captured token under `--list`. A pool kept
 as a `## Pool` section rather than a `→ pool` tag is still not read; derive it from the section. Its
@@ -499,8 +502,9 @@ input is on the list:
 
 ## G5 — every release row, seven fields and two report fields
 
-Name, the pain it answers (G1) with its provenance, a derived ticket list (G3), its size measured against the project's own
-per-release band, and named risks are the baseline fields any release row needs. Two more, sized from
+Name, the pain it answers (G1) with its provenance, a derived ticket list (G3), its size measured
+against the project's own per-release band, and named risks are the baseline fields any release row
+needs. Two more, sized from
 what a project's own cost-measurement work has already put on disk (where that work exists — see
 `dir #313` for keel's own instance): a rough **budget estimate** for the release, and its **value
 claim** stated plainly enough to be wrong in public. Design economics — the cost of the cycle's design
@@ -533,8 +537,9 @@ rule of the procedure, not a compensation.
 0.15.0 row).** The 0.15.0 estimate gave the audit about 6M, the raw tokens its Sonnet legs read. At the
 estimate's own weights the audit cost 65.4M — most of that release's miss against its 145–180M estimate —
 because the orchestrator holds the release in context across many turns, the same mechanism that makes
-the manager expensive ([`docs/release-management.md`](release-management.md) R7). So an audit priced as its own line takes the previous audit session's
-measured total, orchestrator and legs together, at the estimate's weights. Subtract that total from the
+the manager expensive ([`docs/release-management.md`](release-management.md) R7). So an audit priced as its
+own line takes the previous audit session's measured total, orchestrator and legs together, at the
+estimate's weights. Subtract that total from the
 release total before the per-unit division above, or the audit is counted twice; the next rule splits it
 into a fixed part and a part per ticket. A rule of the procedure; `tools/self/session-cost.sh weighted` sums
 sessions at those weights ([`docs/session-cost.md`](session-cost.md)).
