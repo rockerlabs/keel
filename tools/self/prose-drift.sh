@@ -380,7 +380,8 @@ anchor_warns=0
 # Same empty-list guard as report_hits()'s `[ -n "$files" ] || return 0` above — an `<<<` herestring
 # on an empty variable feeds one spurious empty-string iteration rather than zero. Shaped as an `if`
 # here instead of an early return because this is top-level script body, not a function: `return`
-# is only valid inside one.
+# is only valid inside one. Keep this loop at top level: inside a function its per-file `done < <(…)`
+# would hold one fd per md file on bash 3.2, the leak report_hits() had (dir #904).
 if [ -n "$md_files" ]; then
   while IFS= read -r f; do
     dir=$(dirname "$f")
