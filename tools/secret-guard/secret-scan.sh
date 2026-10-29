@@ -21,8 +21,8 @@
 # LE/BE when iconv is available (needed for non-ASCII literals, e.g. a Cyrillic name) plus a
 # raw-printable pass — a real name inside a UTF-16/UTF-32 binary fixture is invisible to a plain-text grep.
 # The decode resumes after an invalid unit (iconv -c; a slower built-in decoder where the host's iconv
-# cannot, or where there is none). A UTF-16/UTF-32 payload that does not start on a unit boundary of the
-# file is not decoded.
+# cannot, or where there is none). A payload that starts at an odd byte offset is decoded from the file's
+# second byte too (dir #762); UTF-32 at an offset of 2 mod 4 is read by the UTF-16 pass.
 #
 # It does NOT catch passwords, opaque/custom tokens, or base64 blobs: it is a backstop to .gitignore +
 # env vars, NOT a complete DLP. Mark that boundary honestly (P1).
@@ -441,9 +441,9 @@ collect_matches() {
 # the rest (macOS libiconv, glibc). musl's iconv stops anyway and ignores -c, so where the host's iconv does not
 # resume — or there is none — and a personal literal is wide (needle_wide: non-ASCII, or an ERE `.`/bracket/class
 # escape that can stand for a non-ASCII letter; any other ASCII literal survives the NUL-strip pass), a built-in decoder (od + awk) decodes the four encodings unit by unit: an invalid unit becomes a newline,
-# surrogates pair, code point 0 is dropped. It costs about 24 s per MiB on busybox and never runs on macOS or
+# surrogates pair, code point 0 is dropped. One pass costs about 24 s per MiB on busybox and never runs on macOS or
 # glibc. Every pass but the best-effort iconv ones ends `|| exit $?`: a missing od, awk or tr ends the group,
-# and the caller exits 2 naming the file. A payload that does not start on a unit boundary is not decoded.
+# and the caller exits 2 naming the file. An odd-offset payload is read by a second pass from the file's second byte (dir #762); the built-in decoder, run twice, then costs about 48 s per MiB.
 #
 # The whole joined stream is NUL-stripped once, after every pass below (dir #250): decoding UTF-32
 # data through the UTF-16LE/BE converters (needed so a non-ASCII UTF-32 literal decodes at all — see
@@ -454,9 +454,9 @@ collect_matches() {
 # non-ASCII literals under UTF-8 (pinning `LC_ALL=C` around the grep instead would fix the miss but
 # lose that folding — C-locale `-i` only folds ASCII), and — unlike stripping after each individual
 # pass — covers any pass added here later for free, with no line to remember to re-append.
-# The decode file ($dec) holds every decoded view of the blob: ~5.6x its size for incompressible data (a 20 MiB blob
-# made ~113 MB: the NUL-stripped bytes, two UTF-16 and two UTF-32 conversions, which turn random bytes into larger
-# text; before dir #830 it also held a 20 MB printable-runs view, hence the ~133 MB seen). That is inherent to
+# The decode file ($dec) holds every decoded view of the blob: several times its size for incompressible data (the
+# NUL-stripped bytes, the UTF-16 and UTF-32 conversions and, since dir #762, two shifted UTF-16 ones, which turn random
+# bytes into larger text; before dir #830 it also held a printable-runs view). That is inherent to
 # decoding every encoding, and linear. The runs view was the problem (its per-line cost, not its size), see above.
 emit_blob() {  # $1 = record label (path)
   local label="$1" tmp dec
@@ -473,10 +473,15 @@ emit_blob() {  # $1 = record label (path)
       # NON-ASCII one (multi-byte code point) does not — decode it explicitly, symmetric with UTF-16.
       iconv -c -f UTF-32LE -t UTF-8 "$tmp" 2>/dev/null || true; echo
       iconv -c -f UTF-32BE -t UTF-8 "$tmp" 2>/dev/null || true; echo
+      # a payload that starts at an ODD byte offset (dir #762) is no unit of the file: decode the file again from its
+      # second byte (UTF-16, both byte orders; this also decodes a BMP UTF-32 payload at an odd offset).
+      tail -c +2 "$tmp" | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null || true; echo
+      tail -c +2 "$tmp" | iconv -c -f UTF-16BE -t UTF-8 2>/dev/null || true; echo
     fi
     # the built-in decoder, only where iconv cannot resume and a needle is wide (needle_wide: non-ASCII, or a `.`/bracket that can stand for a non-ASCII letter)
     if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
-      od -An -v -tu1 < "$tmp" | LC_ALL=C awk '
+      for skip in 1 2; do                                         # the whole file, then from its second byte (dir #762)
+      tail -c +"$skip" "$tmp" | od -An -v -tu1 | LC_ALL=C awk '
         function o(v, k) {
           if (v < 128) { if (v) s[k] = s[k] sprintf("%c", v) }
           else if (v < 2048) s[k] = s[k] sprintf("%c%c", 192 + int(v / 64), 128 + v % 64)
@@ -500,6 +505,7 @@ emit_blob() {  # $1 = record label (path)
         }
         END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
       ' || exit $?; echo
+      done
     fi
   } | LC_ALL=C tr -d '\000' > "$dec" || return $?
   # the personal passes also read the printable runs, one line per maximal run (the comment above $personal_more).
