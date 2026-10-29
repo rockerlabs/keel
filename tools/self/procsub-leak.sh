@@ -47,8 +47,11 @@
 #   tools/self/procsub-leak.sh [REPO_DIR] [--quiet]
 #   tools/self/procsub-leak.sh -h | --help
 #
-# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found, 2 on a usage error or when a
-# script cannot be parsed (a blind spot is reported, never passed as clean).
+# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found; 2 on a usage error, a
+# directory that is no git checkout, or a script bash cannot parse (named UNPARSED, never passed as clean).
+# KNOWN LIMIT (dir #906): the awk reader can still lose its place partway through a file that bash parsed
+# (quoting it mis-reads, a `case` pattern's `)` inside a multi-line `$(…)`, a `<<word` inside a string).
+# It then checks nothing after that point, and the file is NOT yet reported: exit 0 is not full coverage.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -66,7 +69,8 @@ Usage:
   tools/self/procsub-leak.sh --quiet      print only LEAK lines
   tools/self/procsub-leak.sh -h | --help
 
-Exit 0 unless a leak is found; 2 on a usage error or an unparseable script.
+Exit 0 unless a leak is found; 2 on a usage error, a non-git directory or an unparseable
+script. Not yet reported: a file the reader loses its place in partway (dir #906).
 EOF
 }
 
