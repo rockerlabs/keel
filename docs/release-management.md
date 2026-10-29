@@ -12,7 +12,7 @@ this one application, and are linked rather than duplicated.
 
 **This is a doc, not a tool.** [`commands/manage-release.md`](../commands/manage-release.md) is a
 thin entrypoint over it — a checklist that resolves the release, loads this doc, and runs the loop —
-the same split [`docs/drydock.md`](drydock.md) uses for its own procedure-plus-entrypoint shape. The
+the same split [`docs/delta-audit.md`](delta-audit.md) uses for its own procedure-plus-entrypoint shape. The
 doc is canonical; the command points at it. *(On an install where the adopter already owns the
 `/manage-release` name, `install.sh`'s generic collision-alias mechanism ships this command under the
 prefixed name keel-manage-release instead — same file, same behavior, no separate wiring.)*
@@ -222,10 +222,12 @@ conventions that happen to look similar, it's one convention applied at two poin
    each by a *different* party than the last. Cheap machinery beats a more careful author — confirmed
    again the next release, four more propagated figures caught by three different parties (the
    release's own record carries the list). The cut's verification block is the last artifact every
-   figure passes through, so a re-derivation there would catch the most. At the cut,
-   `tools/self/changelog-claims.sh --section` re-derives the `CHANGELOG.md` section's bound numbers and, under
-   `--strict`, makes every other digit number be sourced or dropped (dir #810); the verification block is not,
-   yet, and that is the split-off ticket, dir #844.
+   figure passes through. At the cut, `tools/self/changelog-claims.sh --section` re-derives the
+   `CHANGELOG.md` section's bound numbers and, under `--strict`, makes every other digit number be sourced or
+   dropped (dir #810). The verification block is hand-written and no tool re-derives its figures:
+   `tests/test_release_history.sh` checks only that the block is present, carries its nine bold labels (from
+   v0.9.0 on) and that no block cites a `private/` path or `dir #N` ticket. Any re-derivation of its figures
+   is the cut author's own, by hand, at the cut commit (dir #844).
 2. **The slate/coupling table.** For a whole-wave brief: ticket, surface, coupling with siblings. For
    a single-worker brief: the ticket plus the neighboring tickets it touches a file or a question with.
    Either way, the point is naming coupling explicitly rather than trusting a worker to notice it from
@@ -1082,10 +1084,10 @@ manager honest about which of those two loads it's actually reducing.
 [`docs/delegation.md`](delegation.md) for the read-only subagent fan-out this pattern deliberately
 does not use for mutation, and [`docs/parallel-sessions.md`](parallel-sessions.md) for the generic
 concurrency rails (worktree isolation, push-verify, recovery tiers) every worker session in a release
-still needs regardless of who launched it. [`docs/drydock.md`](drydock.md) and
-[`docs/delta-audit.md`](delta-audit.md) are this same procedure-plus-entrypoint shape applied to
-auditing rather than release coordination — worth a look for the file-contract and role-prompt
-mechanics this doc leaves to those siblings rather than re-deriving.
+still needs regardless of who launched it. [`docs/delta-audit.md`](delta-audit.md) is this same
+procedure-plus-entrypoint shape applied to auditing rather than release coordination; it and
+[`docs/drydock.md`](drydock.md) are worth a look for the file-contract and role-prompt mechanics this
+doc leaves to those siblings rather than re-deriving.
 
 This document is subject to its own R4: where a real run's practice disagrees with what's written
 here, the correction belongs in this doc, proposed by whoever ran into the disagreement — the same
