@@ -118,7 +118,7 @@ a3_check() {
   while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     file="${spec%%:*}"; func="${spec#*:}"
-    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per target (dir #905)
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     vars="$(sed -n "/^${func}() {/,/^}/p" "$file" | grep -oE "$pattern" | sed -E 's/^\$\{?//' | sort -u)" || true
     while IFS= read -r var; do
       [ -n "$var" ] || continue

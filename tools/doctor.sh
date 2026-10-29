@@ -419,7 +419,7 @@ alwayson_chain() {
     next=""
     while IFS=$'\t' read -r f fdisp; do
       [ -n "$f" ] || continue
-      # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per file (dir #905).
+      # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
       toks="$(_alwayson_imports "$f")" || true
       while IFS= read -r tok; do
         [ -n "$tok" ] || continue
@@ -1963,8 +1963,7 @@ memory_checks() {
     [ -n "$nd_pair" ] || continue
     nd="${nd_pair%% *}"; src="${nd_pair##* }"
     newest=""; newest_p=""
-    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per memory file,
-    # and the fd that reaches 256 crashes it (dir #904, dir #905).
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     toks="$(_backtick_tokens "$f" 1)" || true
     while IFS= read -r tok; do
       p="$(_mem_path_token "$tok" "$d")"

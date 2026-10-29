@@ -100,7 +100,7 @@ inherited_reads() {
     # non-comment lines only, so a name that appears in prose alone is not a read
     local code; code="$(grep -avE '^[[:space:]]*#' "$f" 2>/dev/null)"
     [ -n "$code" ] || continue
-    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per file (dir #905)
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     local names; names="$(printf '%s\n' "$code" \
       | grep -aoE '(\$\{?|ENVIRON\["|printenv +)KEEL_[A-Z0-9_]+' | grep -aoE 'KEEL_[A-Z0-9_]+' | LC_ALL=C sort -u)" || true
     while IFS= read -r name; do
@@ -121,7 +121,7 @@ inherited_other_reads() {
   while IFS= read -r f; do
     code="$(grep -avE '^[[:space:]]*#' "$f" 2>/dev/null)"
     [ -n "$code" ] || continue
-    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per file (dir #905)
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     names="$({
       printf '%s\n' "$code" \
         | grep -aoE '(\$\{[A-Z][A-Z0-9_]*:?[-=?+]|ENVIRON\["[A-Z][A-Z0-9_]*|printenv +[A-Z][A-Z0-9_]*)' \

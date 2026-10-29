@@ -161,8 +161,7 @@ _tr_build_report() {
       continue
     }
 
-    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per session
-    # (dir #905).
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     subs="$(tu_subagent_files "$f")" || true
     while IFS= read -r sf; do
       [ -n "$sf" ] || continue

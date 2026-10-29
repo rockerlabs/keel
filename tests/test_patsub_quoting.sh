@@ -83,7 +83,7 @@ line_has_unquoted_replacement() {
 scan_unquoted_replacements() {
   local f hits num line t
   for f in "$@"; do
-    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per file (dir #905)
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     hits="$(grep -n -E '\$\{[!]?[A-Za-z_0-9@*]+(\[[^]]*\])?//?' "$f" || true)"
     [ -n "$hits" ] || continue
     while IFS= read -r line; do

@@ -407,8 +407,7 @@ tu_session_totals() {
   local _tu_bad=0
   tu_require_jq || return 1
   tmp="$(mktemp)" || return 1
-  # Captured, never `done < <(…)`: bash 3.2 holds that fd until the CALLER's top-level command ends, so a
-  # caller looping over sessions (session-cost.sh's _sc_ticket_cost) held one per session (dir #905).
+  # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
   subs="$(tu_subagent_files "$session_file")" || true
   {
     tu_turns primary "$session_file" || _tu_bad=1

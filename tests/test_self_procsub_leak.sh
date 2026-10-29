@@ -28,6 +28,8 @@ leak_group() { local f; for f in "$@"; do { read -r x; echo "$x"; } < <(printf '
 leak_read() { local f x; for f in "$@"; do read -r x < <(printf '%s\n' "$f"); echo "$x"; done; }
 leak_if() { local f; for f in "$@"; do if read -r x; then echo "$x"; fi < <(printf '%s\n' "$f"); done; }
 leak_out() { local f; for f in "$@"; do echo "$f" > >(cat); done; }
+leak_builtin() { local f x; for f in "$@"; do builtin read -r x < <(printf '%s\n' "$f"); done; }
+leak_command() { local f x; for f in "$@"; do command read -r x < <(printf '%s\n' "$f"); done; }
 leak_while_outer() {
   local i=0
   while [ "$i" -lt 3 ]; do
@@ -83,7 +85,7 @@ EOF
 
 run "$pl" "$d" --quiet
 check_status "leaking fixture -> exit 1" 1 "$STATUS"
-for fn in leak_done leak_group leak_read leak_if leak_out leak_while_outer; do
+for fn in leak_done leak_group leak_read leak_if leak_out leak_builtin leak_command leak_while_outer; do
   check_contains "flags $fn()" "$OUT" "leaks.sh $fn():"
 done
 check_contains "follows a call into a sourced lib's function" "$OUT" "calls.sh leak_via_lib(): calls helper_opens_one()"
@@ -94,7 +96,7 @@ for fn in ok_external ok_subshell ok_cmdsubst ok_once ok_fixed ok_comment ok_her
   check_absent "does not flag $fn()" "$OUT" " $fn():"
 done
 check_absent "a loop at a script's top level is never flagged" "$OUT" "__keel_wrap"
-check_eq "exactly the eight leaks, nothing else" 8 "$(match "$OUT" -c '^  LEAK ')"
+check_eq "exactly the ten leaks, nothing else" 10 "$(match "$OUT" -c '^  LEAK ')"
 
 # the fix shape, applied to every flagged function, turns the tree clean
 d2="$(new_repo)"
@@ -131,7 +133,8 @@ if [ -x /bin/bash ] && /bin/bash -c '[ "${BASH_VERSINFO[0]}" -lt 4 ]'; then
     case "$out" in *'Too many open files'*) echo leaks ;; *) echo holds ;; esac
   }
   for shape in 'while read -r x; do :; done < <(echo a)' '{ read -r x; } < <(echo a)' 'read -r x < <(echo a)' \
-               'if read -r x; then :; fi < <(echo a)' 'echo a > >(cat >/dev/null)' 'g < <(echo a)'; do
+               'if read -r x; then :; fi < <(echo a)' 'echo a > >(cat >/dev/null)' 'g < <(echo a)' \
+               'builtin read -r x < <(echo a)' 'command read -r x < <(echo a)'; do
     check_eq "bash 3.2 leaks on: $shape" leaks "$(gt "$shape")"
   done
   for shape in 'cat < <(echo a) >/dev/null' 'grep -q a <(echo a)' '( read -r x ) < <(echo a)' \

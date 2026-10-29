@@ -66,7 +66,7 @@ Exit 0 unless a leak is found; 2 on a usage error or an unparseable script.
 EOF
 }
 
-REPO_ARG=""
+REPO_ARG=.
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --quiet) QUIET=1 ;;
@@ -76,7 +76,7 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
-repo_dir="${REPO_ARG:-.}"
+repo_dir="$REPO_ARG"
 [ -d "$repo_dir" ] || { echo "procsub-leak.sh: not a directory: $repo_dir" >&2; exit 2; }
 repo_dir="$(cd "$repo_dir" && pwd)"
 
@@ -105,7 +105,7 @@ nfiles=0
 while IFS= read -r f; do
   nfiles=$((nfiles + 1))
   if body="$(bash -c 'shopt -s extglob; eval "__keel_wrap() {
-$(cat "$1")
+$(<"$1")
 }" && declare -f __keel_wrap' _ "$repo_dir/$f" 2>/dev/null)"; then
     printf '\001FILE %s\n%s\n' "$f" "$body" >> "$normalized"
   else
@@ -114,15 +114,22 @@ $(cat "$1")
   fi
 done <<< "$files"
 
+# What the shell runs in itself: bash's own builtins, asked of bash rather than kept by hand (a hand-kept
+# list missed `getopts`, `let`, `trap`, …). A command word that is neither one nor a defined function runs
+# as a child process, which takes its fd with it.
+builtins="$(compgen -b | tr '\n' ' ')"
+case " $builtins " in *" read "*) ;; *) echo "procsub-leak.sh: could not list bash's builtins" >&2; exit 2 ;; esac
+
 # The reader. Stack entries: T (the wrapper, i.e. top level), F (a function), L (a loop), each with the
 # indent of the line that opened it. A site is a process substitution on a command the shell runs itself;
 # a call is a function name in command position. END resolves calls against the defined functions
 # (same file first, then any file's, as a sourced lib's), widens "opens an fd per call" to every
 # function that calls one such, and reports a site or a call that sits in a loop inside a function.
-hits="$(awk '
+hits="$(awk -v blist="$builtins" '
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 function unquote(s) { gsub(/\\./, "", s); gsub(/\047[^\047]*\047/, "", s); gsub(/"[^"]*"/, "", s); return s }
-function nchar(s, c,   n, i) { n = 0; for (i = 1; i <= length(s); i++) if (substr(s, i, 1) == c) n++; return n }
+# parens S — the count of `(` minus the count of `)` in S.
+function parens(s,   t) { t = s; return gsub(/[(]/, "", t) - gsub(/[)]/, "", s) }
 function owner(   k) { for (k = sp; k >= 1; k--) if (st[k] == "F") return k; return 0 }
 function looped(fk,   k) { for (k = sp; k > fk; k--) if (st[k] == "L") return 1; return 0 }
 # cmdword SEG — the command word of one list segment: leading keywords, `!`, and VAR=value words dropped.
@@ -130,34 +137,31 @@ function cmdword(seg,   w) {
   seg = trim(seg)
   while (seg != "") {
     w = seg; sub(/[ \t].*/, "", w)
-    if (w ~ /^(if|then|else|elif|do|while|until|time|!|[{]|[(])$/ || w ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?=/) {
+    if (w ~ /^(if|then|else|elif|do|while|until|time|builtin|command|!|[{]|[(])$/ || w ~ /^[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?=/) {
       seg = substr(seg, length(w) + 1); seg = trim(seg); continue
     }
     return w
   }
   return ""
 }
-BEGIN { FUNCS = 0 }
+BEGIN { n = split(blist, b, " "); for (i = 1; i <= n; i++) isb[b[i]] = 1 }
 /^\001FILE / { file = substr($0, 7); sp = 0; hd = ""; cs = 0; pend = ""; next }
 {
   line = $0
   if (hd != "") { t = line; if (hdtab) sub(/^\t+/, "", t); if (t == hd) hd = ""; next }
   u = unquote(line)
-  # A here-document starting on this line: its body follows, verbatim, until the terminator.
-  nhd = ""
+  # A here-document starting on this line: its body follows, verbatim, until the terminator. Only the
+  # check above reads hd, so setting it here skips the lines after this one, whatever this line is.
   if (match(u, /(^|[^<])<<-?[ ]*[A-Za-z_][A-Za-z0-9_]*/) || match(line, /(^|[^<])<<-?[ ]*[\047"][A-Za-z_][A-Za-z0-9_]*[\047"]/)) {
-    nhd = substr(line, RSTART, RLENGTH); hdtabn = (nhd ~ /<<-/)
-    sub(/^[^<]*<<-?[ ]*/, "", nhd); gsub(/[\047"]/, "", nhd)
+    hd = substr(line, RSTART, RLENGTH); hdtab = (hd ~ /<<-/)
+    sub(/^[^<]*<<-?[ ]*/, "", hd); gsub(/[\047"]/, "", hd)
   }
-  if (cs > 0) {
-    cs += nchar(u, "(") - nchar(u, ")"); if (cs < 0) cs = 0
-    if (nhd != "") { hd = nhd; hdtab = hdtabn }
-    next
-  }
+  d = parens(u)
+  if (cs > 0) { cs += d; if (cs < 0) cs = 0; next }
   match(line, /^ */); ind = RLENGTH
   if (pend != "") {
     if (line ~ /^ *[{] *$/) {
-      sp++; st[sp] = (FUNCS++ == 0 || pend == "__keel_wrap") ? "T" : "F"; si[sp] = pind; sn[sp] = pend
+      sp++; st[sp] = (pend == "__keel_wrap") ? "T" : "F"; si[sp] = pind; sn[sp] = pend
       if (st[sp] == "F") def[file SUBSEP pend] = 1
       pend = ""; next
     }
@@ -167,7 +171,7 @@ BEGIN { FUNCS = 0 }
     pend = trim(line); sub(/^function +/, "", pend); sub(/ +[(][)].*/, "", pend); pind = ind; next
   }
   if (sp > 0 && (st[sp] == "F" || st[sp] == "T") && ind == si[sp] && line ~ /^ *[}]/) {
-    sp--; if (nhd != "") { hd = nhd; hdtab = hdtabn }; next
+    sp--; next
   }
   fk = owner()
   closer = 0
@@ -192,10 +196,8 @@ BEGIN { FUNCS = 0 }
     }
   }
   # A line that leaves a substitution open ends inside it: a `do` there belongs to a loop in that subshell.
-  d = nchar(u, "(") - nchar(u, ")")
   if (d <= 0 && line ~ /(^|[ ;])do *$/) { sp++; st[sp] = "L"; si[sp] = ind }
   if (d > 0) cs = d
-  if (nhd != "") { hd = nhd; hdtab = hdtabn }
 }
 # resolve FILE NAME — the key of the function a call to NAME from FILE runs, or "".
 function resolve(f, n) {
@@ -204,10 +206,10 @@ function resolve(f, n) {
 }
 END {
   for (k in def) { split(k, kp, SUBSEP); byname[kp[2]] = k }
-  BUILTIN = "^(read|source|[.]|mapfile|readarray|echo|printf|eval|exec|set|declare|local|export|unset|shift|wait|cd|pushd|popd|test|[[]|[[][[]|true|false|:)$"
   for (i = 1; i <= site_n; i++) {
-    if (s_cmd[i] == "" || s_cmd[i] ~ BUILTIN || resolve(s_file[i], s_cmd[i]) != "") {
-      s_ok[i] = 1; leaky[s_file[i] SUBSEP s_fn[i]] = 1
+    if (s_cmd[i] == "" || (s_cmd[i] in isb) || resolve(s_file[i], s_cmd[i]) != "") {
+      leaky[s_file[i] SUBSEP s_fn[i]] = 1
+      if (s_loop[i]) printf "%s\t%s()\t%s\n", s_file[i], s_fn[i], s_text[i]
     }
   }
   for (i = 1; i <= call_n; i++) c_key[i] = resolve(c_file[i], c_to[i])
@@ -219,8 +221,6 @@ END {
       if (c_key[i] != "" && (c_key[i] in leaky) && !(k in leaky)) { leaky[k] = 1; changed = 1 }
     }
   }
-  for (i = 1; i <= site_n; i++)
-    if (s_ok[i] && s_loop[i]) printf "%s\t%s()\t%s\n", s_file[i], s_fn[i], s_text[i]
   for (i = 1; i <= call_n; i++)
     if (c_loop[i] && c_key[i] != "" && (c_key[i] in leaky))
       printf "%s\t%s()\tcalls %s() in a loop, and each call leaves an fd open\n", c_file[i], c_fn[i], c_to[i]
@@ -228,12 +228,10 @@ END {
 ' "$normalized" | LC_ALL=C sort -u)"
 
 nhits=0
-if [ -n "$hits" ]; then
-  while IFS=$'\t' read -r hf hfn htext; do
-    echo "  LEAK  $hf $hfn: $htext"
-    nhits=$((nhits + 1))
-  done <<< "$hits"
-fi
+[ -z "$hits" ] || while IFS=$'\t' read -r hf hfn htext; do
+  echo "  LEAK  $hf $hfn: $htext"
+  nhits=$((nhits + 1))
+done <<< "$hits"
 if [ "$nhits" -gt 0 ]; then
   say "  $nhits leak(s) in $nfiles script(s) — capture the output and read it with \`<<<\` (see this script's header)"
   exit 1

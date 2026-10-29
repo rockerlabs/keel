@@ -220,8 +220,7 @@ _sc_manifest_rows() {
     # inflation moved one layer up from the dedupe bug this whole ticket exists to fix. Portable
     # first-occurrence dedupe (`awk '!seen[$0]++'`), not a bash associative array — this codebase
     # avoids `declare -A` for bash 3.2 compatibility (see citation-resolvability.sh's own note).
-    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per manifest line
-    # (dir #905).
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     local -a files=()
     uniq="$(printf '%s' "$files_csv" | tr ',' '\n' | awk '!seen[$0]++')" || true
     while IFS= read -r ff; do
@@ -469,7 +468,7 @@ cmd_tail() {
     _sc_tail_pr_results < "$d/results" > "$d/prs" || ok=1
     _sc_tail_init_results < "$d/results" > "$d/inits" || ok=1
     : > "$d/agents"
-    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per FILE (dir #905).
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     subs="$(tu_subagent_files "$f")" || true
     while IFS= read -r s; do
       [ -n "$s" ] || continue

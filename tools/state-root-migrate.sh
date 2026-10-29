@@ -98,7 +98,7 @@ srm_main() {
     tgt_root="$root/$name"
     # The legacy root IS the target root (a compat link to it, or the same directory): nothing to move.
     if [ "$src" -ef "$tgt_root" ]; then continue; fi
-    # Captured, never `done < <(…)`: bash 3.2 holds that fd until the function returns, one per store (dir #905).
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     entries="$(keel_legacy_store_entries "$name" "$from")" || true
     [ -n "$entries" ] || continue
     while IFS= read -r e; do

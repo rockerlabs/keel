@@ -139,7 +139,7 @@ guard_home() {
   for f in "$docs_dir"/*.md "$docs_dir"/drydock/*.md; do [ -f "$f" ] && texts+=("$f"); done
   for f in "${texts[@]}"; do
     [ -f "$f" ] || continue
-    # captured, not `done < <(…)`: bash 3.2 holds that fd until the function returns, one per doc (dir #905)
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
     hits="$(grep -o -E '(^|[^A-Za-z0-9_./-])(\.\./)?docs/[A-Za-z0-9_/-]+\.md' "$f" 2>/dev/null \
                | sed -E 's|^.*docs/|docs/|' | sort -u)" || true
     while IFS= read -r tok; do

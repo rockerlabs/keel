@@ -239,7 +239,7 @@ mw_scan_tree() {
   local tier="$1" id="$2" root="$3" stamp="$4" setfile="$5" hits hit n=0 more=0
   [ -f "$stamp" ] || return 0
   mw_find_newer_flag
-  # Captured, never `done < <(…)`: bash 3.2 holds that fd until mw_check returns, one per tree (dir #905).
+  # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
   hits="$(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null | awk -v sf="$setfile" '
     BEGIN { FS = "\t"; while ((getline l < sf) > 0) { split(l, a, "\t"); if (a[3] == "file") skip[a[4]] = 1 } }
     !($0 in skip)')" || true
