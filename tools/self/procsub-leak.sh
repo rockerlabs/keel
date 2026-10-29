@@ -20,6 +20,9 @@
 # (the call returns, the fd stays): tools/lib/transcript-usage.sh's tu_session_totals() did, under
 # tools/self/session-cost.sh's _sc_ticket_cost(). So the check follows calls, across files too, since a
 # lib's functions run in the shell that sources it.
+# One thing hides the leak: an external command the function runs itself (not inside `$(…)`) makes 3.2
+# close every fd held so far, so a loop body that runs `jq` never piles them up. The check does not credit
+# that. It is a side effect, and moving the `jq` into a `$(…)` brings the leak back.
 #
 # HOW IT READS A SCRIPT. Bash parses it, not a regex: each file is wrapped in a function and printed back
 # with `declare -f` (parsing alone runs nothing). That output has comments stripped and one command per
