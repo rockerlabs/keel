@@ -14,7 +14,7 @@ decoded (NUL-strip + iconv UTF-16/UTF-32 LE/BE + raw-printable) and scanned with
 personal name UTF-16/UTF-32-encoded inside a binary fixture no longer hides behind "Binary files
 differ". The decode resumes after an invalid unit (iconv `-c`; a slower built-in decoder where the
 host's iconv cannot); a payload that starts at an odd byte offset of the file is decoded too (the file is
-read again from its second byte). A bare
+read again from its second byte; a non-BMP UTF-32 character at an odd offset stays undecoded). A bare
 personal name in a message body isn't a hard GAP, so hunt declared tokens with `--token` before a flip.
 This page is the **procedure** to fix what it finds and flip without churn.
 

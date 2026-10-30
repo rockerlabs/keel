@@ -22,7 +22,8 @@
 # raw-printable pass — a real name inside a UTF-16/UTF-32 binary fixture is invisible to a plain-text grep.
 # The decode resumes after an invalid unit (iconv -c; a slower built-in decoder where the host's iconv
 # cannot, or where there is none). A payload that starts at an odd byte offset is decoded from the file's
-# second byte too (dir #762); UTF-32 at an offset of 2 mod 4 is read by the UTF-16 pass.
+# second byte too (dir #762); UTF-32 at an offset of 2 mod 4 is read by the UTF-16 pass. A non-BMP UTF-32
+# character at an odd offset stays undecoded.
 #
 # It does NOT catch passwords, opaque/custom tokens, or base64 blobs: it is a backstop to .gitignore +
 # env vars, NOT a complete DLP. Mark that boundary honestly (P1).
