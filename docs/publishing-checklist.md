@@ -55,6 +55,8 @@ An empty About box makes a repo look abandoned at a glance. All three are one `g
 ## 4. A real release
 
 - [ ] **A version tag + GitHub release** — so people can pin a version and read what changed. **[you]**
+      Run `tools/self/tag-ready.sh <sha>` on that SHA first; tag only on exit 0 (no `[PLACEHOLDER` marker left in
+      `docs/release-history.md` or `CHANGELOG.md`, dir #867).
       Create and push the tag YOURSELF, annotated, on the exact SHA the release audit named
       ([`release-audit.md`](release-audit.md) phase 7 stops at "tag ready to cut" and names that SHA;
       v0.6.1's tag is this shape, an annotated tag on the named merge commit):
