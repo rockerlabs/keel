@@ -15,9 +15,14 @@
 # a pool census has no such exemption — a legacy-numbered ticket still holds real lines and can
 # still sit `→ pool` — so this scanner's heading regex matches both shapes.
 #
-# backlog_ticket_blocks <path> [ticket_token_ere]
+# backlog_ticket_blocks <path> [ticket_token_ere] [lookup_id]
 #   dir #605: the optional ERE (default `dir #[0-9]+|[0-9]+\.`) names the heading token after `### `; it must
 #   compile and match alike under `grep -E` and bash `=~` (backlog-census.sh --ticket-token validates it).
+#   dir #915: the optional lookup_id (a ticket id exactly as it follows `### `, e.g. `dir #915`) is the lookup mode:
+#   only the first heading that starts `### <lookup_id> — ` is walked, so nothing is forked for the other headings,
+#   and no closure work is done for it either: its `closed` field is `-`, a placeholder (an empty field would be
+#   collapsed by `IFS=$'\t' read`). One row, or none when no heading carries that id. An empty ticket_token_ere
+#   keeps the default.
 #   Emits one line per ticket heading found, TAB-separated:
 #     start_line  end_line  closed(0|1)  heading_block
 #   heading_block is the heading's own text (the `### ...` line plus any wrapped continuation
@@ -25,7 +30,9 @@
 #   dir #839) with internal newlines flattened to spaces so
 #   the whole record stays one line — safe to read with `IFS=$'\t' read -r`. end_line is the
 #   ticket's full body-span end (next ticket heading or a `## ` section break, whichever comes
-#   first), the same span rule doctor.sh check 5 uses. closed=1 iff the heading block
+#   first), the same span rule doctor.sh check 5 uses. The last block ends at the file's last line that is not
+#   empty, a fenced one included (dir #915: a last ticket ending in a fenced block used to lose it); trailing
+#   empty lines stay out. closed=1 iff the heading block
 #   carries its OWN closure tag — `(✅|❌) (DONE|CLOSED|ABSORBED|EXECUTED|SUPERSEDED|DUPLICATE|
 #   BUILT)`, an em-dash before it optional (dir #432's widened, honestly-enumerated vocabulary —
 #   see the function body's own header comment for the shapes measured live and the ones
@@ -191,15 +198,24 @@ backlog_ticket_blocks() {
   local file="$1"
   # dir #605: optional ERE heading token (default = keel's two shapes); see backlog-census.sh --ticket-token.
   local ticket_re="${2:-dir #[0-9]+|[0-9]+\.}"
+  # dir #915: the optional lookup id (see the header): walk the one heading that starts `### <id> — `, skip the rest.
+  local lookup="${3:-}"
   [ -f "$file" ] && [ -r "$file" ] || return 0
 
   local fence_blanked
   fence_blanked="$(blank_fenced_blocks "$file")"
 
+  # dir #915: the scan lines come straight off the pipe, not through a command substitution — that dropped the
+  # trailing blank lines a closing fence leaves in the blanked text, so a last ticket ending in a fenced block was
+  # cut short. The array now holds every line of the file, which also keeps the heading-continuation walk below
+  # inside it (bash 3.2 under `set -u` aborts on an unset index: `a[5]: unbound variable`).
   local stripped_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do stripped_lines+=("$ln"); done \
-    < <(sed -E 's/`[^`]*`//g' <<< "$fence_blanked")
-  local total_lines="${#stripped_lines[@]}"
+    < <(blank_fenced_blocks "$file" | sed -E 's/`[^`]*`//g')
+  # The last block ends at the file's last line that is not empty, read off the raw file: fenced lines count, and
+  # trailing empty lines stay out (NR, not `wc -l`: a last line with no newline is counted).
+  local total_lines
+  total_lines="$(awk '$0 != "" { n = NR } END { print n + 0 }' "$file")"
 
   # One grep pass covering both the heading and boundary regexes (the heading regex is a
   # strict subset), then split in memory — a second full-file grep pass bought nothing since
@@ -233,19 +249,21 @@ backlog_ticket_blocks() {
   local own_num stripped_block
 
   for start in "${heading_lines[@]}"; do
+    heading_line="${stripped_lines[$((start - 1))]}"
+    # dir #915: lookup mode passes every other heading at the cost of one pattern test.
+    if [ -n "$lookup" ] && [[ "$heading_line" != "### $lookup — "* ]]; then
+      continue
+    fi
+
     while [ "$bidx" -lt "$nb" ] && [ "${boundary_lines[$bidx]}" -le "$start" ]; do
       bidx=$((bidx + 1))
     done
     end="$total_lines"
     [ "$bidx" -lt "$nb" ] && end=$(( boundary_lines[bidx] - 1 ))
 
-    heading_line="${stripped_lines[$((start - 1))]}"
-
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
-    own_num="$(bb_own_ticket_num "$heading_line")"
-
     probe=$((start + 1))
     block_scan_end="$end"
     [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
@@ -349,14 +367,57 @@ backlog_ticket_blocks() {
     # `([^a-zA-Z]|$)` is the portable word-boundary substitute this project already uses for the
     # identical reason in harvest.sh's F-01 fix.
     closed=0
-    stripped_block="$(bb_strip_foreign_citations "$heading_block" "$own_num" "$BB_CLOSURE_TAG_PATTERN")"
-    if [[ "$stripped_block" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
-      closed=1
+    if [ -n "$lookup" ]; then
+      closed="-"
+    else
+      own_num="$(bb_own_ticket_num "$heading_line")"
+      stripped_block="$(bb_strip_foreign_citations "$heading_block" "$own_num" "$BB_CLOSURE_TAG_PATTERN")"
+      if [[ "$stripped_block" =~ (—[[:space:]]*)?${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then
+        closed=1
+      fi
     fi
 
     flat="$(tr '\n\t' '  ' <<< "$heading_block")"
     printf '%s\t%s\t%s\t%s\n' "$start" "$end" "$closed" "$flat"
+    [ -z "$lookup" ] || return 0
   done
+}
+
+# bb_last_block_fence_end <path> <start> <end> [ticket_token_ere]
+#   dir #915 (retires tools/cloud-brief.sh's own fence-marker count): where a caller that carries the ticket's text
+#   elsewhere (cloud-brief.sh builds a brief from it) should end the block that backlog_ticket_blocks gave as
+#   <start>..<end>. Only the LAST block can differ from <end>: when <end> is the file's last non-empty line and an odd
+#   number of fence markers follows the heading, a fence is open at the end of the file, the blanking has hidden
+#   everything after its opener, and <end> runs over the tickets and sections that follow. No marker says which
+#   fence is the open one (a later section's closed fence pairs with the ticket's opener), so:
+#     - no heading-shaped line (`## ` or a ticket heading) after <start>: <end> as given;
+#     - a heading-shaped line after <start> with VISIBLE text after it: the toggle and the headings disagree about
+#       where the fence is, and any cut would drop text the blanking reads as the ticket's own. Prints that line's
+#       number and returns 1;
+#     - otherwise (everything after it is fenced): the line before the first heading-shaped line after the LAST
+#       marker, the open fence's opener, or <end> when none follows. A closed fence before the opener travels whole,
+#       a heading-shaped line in it included.
+#   Every other case prints <end> and returns 0. An EVEN count is not looked at: it is read as "every fence closed", and
+#   an unclosed opener plus one stray marker in a later section is even too, so that block runs to the file's last
+#   line and carries the section (accepted: telling the two apart needs a fence grammar — char, length, info string).
+#   Needs fence_marker_lines and blank_fenced_blocks (tools/lib/fence-blank.sh), sourced by the caller.
+bb_last_block_fence_end() {
+  local file="$1" start="$2" end="$3" ticket_re="${4:-dir #[0-9]+|[0-9]+\.}"
+  local last opener visible_end boundaries first_boundary after_opener
+  last="$(awk '$0 != "" { n = NR } END { print n + 0 }' "$file")"
+  if [ "$end" -lt "$last" ]; then printf '%s' "$end"; return 0; fi
+  # The heading sits outside every fence, so the parity of the markers after it is the toggle's state at the file's end;
+  # the last marker is the opener of the fence it left open.
+  opener="$(fence_marker_lines "$file" | awk -v s="$start" '$1 > s { n++; m = $1 } END { if (n % 2) print m }')"
+  if [ -z "$opener" ]; then printf '%s' "$end"; return 0; fi
+  visible_end="$(blank_fenced_blocks "$file" | awk '$0 != "" { n = NR } END { print n + 0 }')"
+  boundaries="$(LC_ALL=C grep -nE "^(## |### ($ticket_re) — )" "$file" | cut -d: -f1 \
+    | awk -v s="$start" -v o="$opener" '$1 > s { if (!first) first = $1; if ($1 > o && !after) after = $1 } END { print first + 0, after + 0 }')"
+  first_boundary="${boundaries% *}"
+  after_opener="${boundaries#* }"
+  if [ "$first_boundary" -eq 0 ]; then printf '%s' "$end"; return 0; fi
+  if [ "$first_boundary" -le "$visible_end" ]; then printf '%s' "$first_boundary"; return 1; fi
+  if [ "$after_opener" -eq 0 ]; then printf '%s' "$end"; else printf '%s' "$((after_opener - 1))"; fi
 }
 
 # backlog_root_for REPO_ROOT — resolves BACKLOG.md's home the same way

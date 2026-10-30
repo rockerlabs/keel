@@ -251,28 +251,19 @@ fi
 
 # --- the ticket block --------------------------------------------------------------------------------------------
 [ -n "$BACKLOG" ] || die 2 "no backlog in $MAIN (no BACKLOG.md, no inline ticket section in CLAUDE.md) — spec-mode tickets are not dispatched"
+# The lookup mode of the scanner: this one heading's row, none of the others walked or closure-tested.
 START="" END="" HEADING=""
-while IFS=$'\t' read -r b_start b_end _ b_heading; do
-  case "$b_heading" in "### $TICKET — "*) START="$b_start"; END="$b_end"; HEADING="$b_heading"; break ;; esac
-done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
+IFS=$'\t' read -r START END _ HEADING < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE" "$TICKET") || true
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
-# For the last block, the fence markers after its heading decide (fence_marker_lines, the blanking's own toggle; the
-# heading sits outside every fence): an even count closes every fence, and the block runs to the file's own last
-# line, a heading-shaped line inside a fence included. An odd count leaves a fence open that may hide the backlog's
-# own headings, and the markers cannot say which one opened it (a later section's closed fence pairs with the
-# ticket's opener), so the block then runs to the line before the first section (`## `) or ticket heading after
-# its own, fenced or not — never carrying the tickets and sections after it — or to the last line when none follows.
-# A cut before END, the blanked text's last line, would drop text the blanking reads as the ticket's own (a G8
-# phrase, say): that backlog is refused instead, until its fences pair up.
-blanked_all="$(blank_fenced_blocks "$BACKLOG")"
-if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
-  odd="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++ } END { print n % 2 }')"
-  cut_end="$(LC_ALL=C awk -v s="$START" -v odd="$odd" -v re="^(## |### ($TICKET_ERE) — )" \
-    'odd && NR > s && $0 ~ re { print NR - 1; cut = 1; exit } END { if (!cut) print NR }' "$BACKLOG")"
-  [ "$cut_end" -ge "$END" ] || die 2 "$TICKET: the fence markers after its heading do not pair up, and the heading" \
-    "at line $((cut_end + 1)) of $BACKLOG lies inside the ticket's text — close the unclosed fence"
-  END="$cut_end"
+# The scanner's END runs a last ticket to the file's last line, a fenced tail included. An odd fence-marker count after
+# its heading leaves a fence open that hides the tickets and sections after it: bb_last_block_fence_end cuts the block
+# there, or refuses when a cut would drop text the blanking reads as the ticket's own (a G8 phrase, say).
+if ! CUT="$(bb_last_block_fence_end "$BACKLOG" "$START" "$END" "$TICKET_ERE")"; then
+  die 2 "$TICKET: the fence markers after its heading do not pair up, and the heading at line $CUT of $BACKLOG" \
+    "lies inside the ticket's text — close the unclosed fence inside the ticket, before line $CUT"
 fi
+END="$CUT"
+blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
 

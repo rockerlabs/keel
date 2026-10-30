@@ -631,6 +631,39 @@ cb "$P" "dir #887" --out "$F/b887.md"
 check_status "T15c a fenced section line before the ticket's own text, then an unclosed fence → exit 2" 2 "$STATUS"
 check_contains "T15c … it names the unpaired fences" "$OUT" "the fence markers after its heading do not pair up"
 check_nofile "T15c … no brief written" "$F/b887.md"
+# dir #915: the end of a last ticket is the scanner's (tools/lib/backlog-blocks.sh), not a count kept here. A closed fence
+# holding a section-shaped line, then an unclosed fence, with nothing visible after the ticket's own text: the cut used
+# to fall inside the closed fence and the brief silently lost the rest of it. Now the closed fence travels whole, and the
+# cut falls only inside the unclosed one.
+fx
+add_ticket '\n### dir #890 — a closed fence holding a section line, then an unclosed one — R4 — → pool\n\n**Cloud:** yes (2026-10-31, fixture)\n\n```\n## an example section\nfenced line after the section line\n```\n\n```\nunclosed tail 890\n'
+cb "$P" "dir #890" --out "$F/b890.md"
+check_status "T15c a closed fence holding a section line, then an unclosed fence, builds" 0 "$STATUS"
+t890="$(part_of "$F/b890.md" ticket)"
+check_contains "T15c … the closed fence's section-shaped line travels" "$t890" "## an example section"
+check_contains "T15c … so does the rest of that fence" "$t890" "fenced line after the section line"
+check_eq "T15c … and its closing marker (the fence is whole)" "3" "$(grep -c '^```' <<< "$t890")"
+check_contains "T15c … then the unclosed fence's text" "$t890" "unclosed tail 890"
+# The refusal names where to close the fence: inside the ticket, before the heading the unclosed fence hides. Closing it at
+# the end of the file would make the count even and carry the sections after it.
+fx
+add_ticket '\n### dir #891 — an unclosed fence before a section — R4 — → pool\n\n**Cloud:** yes (2026-10-31, fixture)\n\n```\nunclosed body 891\n\n## Archive\n\n```sh\narchived code 891\n```\n\ntail text\n'
+cb "$P" "dir #891" --out "$F/b891.md"
+check_status "T15c an unclosed fence before a section with fenced code → exit 2" 2 "$STATUS"
+n891="$(grep -n '^## Archive' "$P/BACKLOG.md" | tail -n 1 | cut -d: -f1)"
+check_contains "T15c … it says to close the fence inside the ticket, before the hidden heading's line" "$OUT" \
+  "close the unclosed fence inside the ticket, before line $n891"
+check_contains "T15c … and names that heading's line as inside the ticket's text" "$OUT" "the heading at line $n891 of"
+# Accepted limit, recorded: an unclosed opener plus ONE stray marker in a later section is an even count, which the toggle
+# reads as "every fence closed" — the block then runs to the scanner's END, the file's last line, and carries that section.
+# Telling this apart from a ticket whose fences all close needs a fence grammar (char, length, info string).
+fx
+add_ticket '\n### dir #892 — an unclosed fence and a stray marker later — R4 — → pool\n\n**Cloud:** yes (2026-10-31, fixture)\n\n```\nunclosed body 892\n\n## Later section\n\ntext of the later section\n\n```\nafter the stray marker\n'
+cb "$P" "dir #892" --out "$F/b892.md"
+check_status "T15c an unclosed fence and one stray marker later (even count) builds" 0 "$STATUS"
+t892="$(part_of "$F/b892.md" ticket)"
+check_contains "T15c … the block runs to the scanner's END, the file's last line" "$t892" "after the stray marker"
+check_contains "T15c … carrying the later section (accepted limit: needs a fence grammar)" "$t892" "text of the later section"
 
 # --- T15d: a part that cannot be read stops the build -------------------------------------------------------------
 fx
