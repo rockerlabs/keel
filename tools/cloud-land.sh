@@ -7,14 +7,18 @@
 #
 # <repo> is any path inside the project; its `origin` names the GitHub repository, which must equal the ledger
 # row's repo cell. The row is found by the PR's head branch, or by --ticket when the session pushed another
-# branch (an exit 0 then corrects the row's branch cell). The scans are decided BEFORE CI is read:
+# branch (an exit 0 then corrects the row's branch cell). The scans are decided BEFORE CI is read, each with the
+# scanner's inline allow marker off (SECRET_SCAN_NO_INLINE_ALLOW=1):
 #   1. in a fresh full clone without tags (never the project's checkout), the fetched branch tip must equal the
 #      PR's head SHA, and keel's scanner `--range refs/remotes/origin/<default>..refs/remotes/origin/<branch>`
-#      must exit 0 (keys, personal literals, session trailers in commit messages);
-#   2. the PR title + body must pass the scanner's file mode (marker defanged, from an empty directory) and a
-#      grep for a session URL or a `-Session:` line, which file mode does not look for;
+#      must exit 0 (keys, personal literals, session trailers in commit messages) — it reads each blob the range
+#      introduces whole, so a file the range changes refuses on a line already on <default> that only an inline
+#      marker exempts (the default branch's .secret-scan-allow still applies);
+#   2. the PR title + body must pass the scanner's file mode (from an empty directory) and a grep for a session
+#      URL or a `-Session:` line, which file mode does not look for;
 #   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv, the root commit's
-#      included) and no line of any commit message in the range may carry the scanner's inline allow marker.
+#      included) and no line of any commit message in the range may carry the scanner's inline allow marker — a
+#      grep that fails is a scan error.
 # Then CI: every check in the rollup completed as a success, neutral or skipped (a commit status: a success), and
 # at least one succeeded — so an empty or all-skipped rollup is not green.
 #
@@ -152,8 +156,13 @@ report_scan() {
   if [ "$2" -eq 0 ]; then echo "  $1: clean"; else echo "  $1: exit $2"; sed 's/^/    /' <<< "$3"; SCAN_FAIL=1; fi
 }
 rc=0
-out="$(CDPATH='' cd -- "$CLONE" && bash "$SCANNER" --range "$RANGE" 2>&1)" || rc=$?
+out="$(CDPATH='' cd -- "$CLONE" && SECRET_SCAN_NO_INLINE_ALLOW=1 bash "$SCANNER" --range "$RANGE" 2>&1)" || rc=$?
 report_scan "range scan" "$rc" "$out"
+# --range reads each blob the range introduces whole, so a line already on the default branch that only an inline
+# marker exempts counts as soon as the range changes its file; the allowlist file is the exemption that holds here.
+# Named only when a hit carries the marker: for a bare key or a trailer, an allowlist entry is never the remedy.
+[ "$rc" -ne 1 ] || ! grep -qF 'secret-scan:allow' <<< "$out" \
+  || echo "    (a hit above carries an inline allow marker, which exempts nothing here: if it is a fixture already on $DEFAULT, list it in $DEFAULT's .secret-scan-allow)"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
 rc=0
@@ -165,8 +174,9 @@ else
   echo "  PR-text session grep: clean"
 fi
 
-# A marker added in the range would hide its own line from the range scan, which reads every commit's blobs and
-# message — so this reads every commit's patch (not the net diff: a line added then deleted still ships), as text,
+# The scans above read with the marker off, but a marker that lands would exempt its line from every
+# later local scan, so a PR that adds one never lands (the protocol forbids writing it). This reads
+# every commit's patch (not the net diff: a line added then deleted still ships), as text,
 # uncolored, with no diff driver or textconv, the root commit's included whatever the caller's log.showRoot, and
 # every commit message. Every `+` line counts, the `+++` file headers included: a path carrying the marker refuses
 # too (--no-renames: a renamed path shows as one). A merge commit's own changes are its dense combined diff (--cc),
@@ -179,22 +189,36 @@ range_log() {
   git -C "$CLONE" -c log.showRoot=true log --root --no-color --no-ext-diff --no-textconv --no-renames --text "$@" "$RANGE" \
     > "$out" 2> "$err"
 }
+# marker_grep FILE ERE — FILE's lines matching ERE, numbered, on stdout; grep's status (≥ 2: it failed).
+marker_grep() { LC_ALL=C grep -anE -e "$2" "$1"; }
+p_rc=0 m_rc=0
 if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
    || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc --format=; then
   echo "  scan error: cannot read the range's patches"; cat "$WORK/patch.err" "$WORK/merge.err" 2>/dev/null | sed 's/^/    /'
   SCAN_FAIL=1
-elif hits="$(LC_ALL=C grep -anE '^\+.*secret-scan:allow' "$WORK/patch.out"
-             LC_ALL=C grep -anE '^\+\+.*secret-scan:allow' "$WORK/merge.out")" || [ -n "$hits" ]; then
-  echo "  added allow marker: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else
-  echo "  added allow marker: none"
+  p_hits="$(marker_grep "$WORK/patch.out" '^\+.*secret-scan:allow')" || p_rc=$?
+  m_hits="$(marker_grep "$WORK/merge.out" '^\+\+.*secret-scan:allow')" || m_rc=$?
+  if [ "$p_rc" -gt 1 ] || [ "$m_rc" -gt 1 ]; then
+    echo "  scan error: a marker grep failed over the range's patches (exit $p_rc, $m_rc)"; SCAN_FAIL=1
+  elif [ -n "$p_hits$m_hits" ]; then
+    echo "  added allow marker: hit"; printf '%s\n' "$p_hits" "$m_hits" | sed -e '/^$/d' -e 's/^/    /'; SCAN_FAIL=1
+  else
+    echo "  added allow marker: none"
+  fi
 fi
+g_rc=0
 if ! range_log "$WORK/msg.out" "$WORK/msg.err" --format=%B; then
   echo "  scan error: cannot read the range's commit messages"; sed 's/^/    /' "$WORK/msg.err"; SCAN_FAIL=1
-elif hits="$(LC_ALL=C grep -an 'secret-scan:allow' "$WORK/msg.out")"; then
-  echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$hits"; SCAN_FAIL=1
 else
-  echo "  allow marker in a commit message: none"
+  g_hits="$(marker_grep "$WORK/msg.out" 'secret-scan:allow')" || g_rc=$?
+  if [ "$g_rc" -gt 1 ]; then
+    echo "  scan error: a marker grep failed over the range's commit messages (exit $g_rc)"; SCAN_FAIL=1
+  elif [ -n "$g_hits" ]; then
+    echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$g_hits"; SCAN_FAIL=1
+  else
+    echo "  allow marker in a commit message: none"
+  fi
 fi
 
 # --- CI ---------------------------------------------------------------------------------------------------------------

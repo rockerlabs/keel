@@ -68,6 +68,10 @@ d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
 printf 'tok = %s  # secret-scan:allow\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
 run "$scan" "$d/f.txt"
 check_status "inline allow comment → exit 0" 0 "$STATUS"
+# dir #907: SECRET_SCAN_NO_INLINE_ALLOW=1 turns this channel off, for a caller scanning text it does not trust.
+SECRET_SCAN_NO_INLINE_ALLOW=1 run "$scan" "$d/f.txt"
+check_status "inline allow comment under SECRET_SCAN_NO_INLINE_ALLOW=1 → exit 1" 1 "$STATUS"
+check_contains "… BLOCKED" "$OUT" "BLOCKED"
 
 # --- allowlist channel 2: an ERE entry in .secret-scan-allow ------------------------------------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
@@ -75,6 +79,8 @@ printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
 printf '%s\n' "$(key 'ghp_' 'A')" > "$d/.secret-scan-allow"   # ERE matching the planted token
 run_in "$d" "$scan" f.txt
 check_status "ERE allowlist entry → exit 0" 0 "$STATUS"
+SECRET_SCAN_NO_INLINE_ALLOW=1 run_in "$d" "$scan" f.txt
+check_status "ERE allowlist entry under SECRET_SCAN_NO_INLINE_ALLOW=1 → still exit 0" 0 "$STATUS"
 
 # --- allowlist channel 3: a path:<glob> exclusion -----------------------------------------------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
@@ -859,6 +865,11 @@ if command -v iconv >/dev/null 2>&1; then
   check_contains "--selftest checks the UTF-16 blob catch" "$OUT" "UTF-16LE blob"
 fi
 check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
+# dir #907: the switch exported in the caller's environment does not reach the probes, whose inline-allow probe
+# verifies the scanner's default.
+run env SECRET_SCAN_NO_INLINE_ALLOW=1 "$scan" --selftest
+check_status "--selftest with SECRET_SCAN_NO_INLINE_ALLOW=1 exported → exit 0" 0 "$STATUS"
+check_absent "--selftest with the switch exported reports no FAIL" "$OUT" "FAIL"
 
 # dir #849: the fail-closed probe feeds grep a FILE, not a pipe — grep exits on the malformed ERE before reading,
 # so a `printf | grep` producer gets SIGPIPE and prints "printf: write error: Broken pipe" to stderr (the dir #280

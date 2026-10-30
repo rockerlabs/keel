@@ -112,6 +112,22 @@ CLICOLOR_FORCE=1 run "$LAND" "$P" 5
 check_status "A4 CLICOLOR_FORCE=1 in the caller's environment → still exit 0" 0 "$STATUS"
 GH_FORCE_TTY=1 run "$LAND" "$P" 5
 check_status "A4 GH_FORCE_TTY=1 in the caller's environment → still exit 0" 0 "$STATUS"
+# The stub colors as gh does (go-gh's term.FromEnv): under GH_FORCE_TTY, NO_COLOR or CLICOLOR=0 turns color off
+# whatever CLICOLOR_FORCE says; with no TTY, a CLICOLOR_FORCE that is not 0 forces it, NO_COLOR notwithstanding.
+esc="$(printf '\033')"
+check_absent "the gh stub: GH_FORCE_TTY, NO_COLOR and CLICOLOR_FORCE=1 → plain" \
+  "$(GH_FORCE_TTY=1 NO_COLOR=1 CLICOLOR_FORCE=1 gh pr view 5 --repo example/proj)" "$esc"
+check_absent "the gh stub: GH_FORCE_TTY, CLICOLOR=0 and CLICOLOR_FORCE=1 → plain" \
+  "$(GH_FORCE_TTY=1 CLICOLOR=0 CLICOLOR_FORCE=1 gh pr view 5 --repo example/proj)" "$esc"
+check_contains "the gh stub: GH_FORCE_TTY alone → colored" "$(GH_FORCE_TTY=1 gh pr view 5 --repo example/proj)" "$esc"
+check_contains "the gh stub: CLICOLOR_FORCE=1 and NO_COLOR, no TTY → colored" \
+  "$(CLICOLOR_FORCE=1 NO_COLOR=1 gh pr view 5 --repo example/proj)" "$esc"
+check_absent "the gh stub: nothing set → plain" "$(gh pr view 5 --repo example/proj)" "$esc"
+# tests/lib.sh unsets gh's color switches, so an operator's exported value never decides what the stub prints.
+leaked="$(env NO_COLOR=x CLICOLOR=x CLICOLOR_FORCE=x GH_FORCE_TTY=x bash -c '. "$1" >/dev/null 2>&1 || exit 99
+  for v in CLICOLOR CLICOLOR_FORCE GH_FORCE_TTY NO_COLOR; do [ -z "${!v+x}" ] || printf "%s " "$v"; done' _ "$TESTS_DIR/lib.sh")"
+check_status "tests/lib.sh sources in a child" 0 "$?"
+check_eq "tests/lib.sh unsets CLICOLOR, CLICOLOR_FORCE, GH_FORCE_TTY and NO_COLOR" "" "$leaked"
 
 # A landed row re-run at a later head with CI red stays landed, its exit and head updated, its landed date kept.
 set_cell example/proj 'dir #801' 11 2026-01-01
@@ -161,6 +177,7 @@ git -C "$P" checkout -q main
 pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/cloud-dir-801)" "$GREEN"
 run "$LAND" "$P" 5
 check_status "A4 a token in the pushed range → exit 1" 1 "$STATUS"
+check_absent "A4 … a hit with no allow marker gets no allowlist remedy" "$OUT" ".secret-scan-allow"
 check_eq "A4 … the row stays dispatched" "dispatched" "$(cell example/proj 'dir #801' 8)"
 check_eq "A4 … its landing exit is 1" "1" "$(cell example/proj 'dir #801' 12)"
 
@@ -171,7 +188,7 @@ run "$LAND" "$P" 5
 check_status "A4 a token in the PR body → exit 1" 1 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "Body with key $TOKEN # $ALLOW_MARK"
 run "$LAND" "$P" 5
-check_status "A4 a token beside an allow marker in the PR body still refuses (defanged) → exit 1" 1 "$STATUS"
+check_status "A4 a token beside an allow marker in the PR body still refuses (the marker is off) → exit 1" 1 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "See https://claude.ai/code/session_01X for details"
 run "$LAND" "$P" 5
 check_status "A4 a session URL in the PR body → exit 1" 1 "$STATUS"
@@ -278,6 +295,66 @@ utf8_locale="$(pick_utf8_locale)" || utf8_locale="en_US.UTF-8"
 LC_ALL="$utf8_locale" run "$LAND" "$P" 5
 check_status "A4 a marker after an invalid UTF-8 byte, under $utf8_locale → exit 1" 1 "$STATUS"
 check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
+# The range scan reads with the inline allow marker off: a marker split by an invalid byte, which no byte grep sees
+# but the scanner's caller-locale personal pass reads whole after `iconv -c` (the one pass that finds a non-ASCII
+# literal's case variant), hides nothing.
+if real_utf8="$(pick_utf8_locale)"; then
+  fx
+  printf 'ёлкаfixture\n' >> "$F/personal"
+  row example/proj "dir #801" claude/cloud-dir-801 dispatched
+  bcommit variant.txt "owner ЁЛКАFIXTURE here" "variant"
+  pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+  LC_ALL="$real_utf8" run "$LAND" "$P" 5
+  check_status "A4 a commit adding a non-ASCII literal's case variant, under $real_utf8 → exit 1" 1 "$STATUS"
+  fx
+  printf 'ёлкаfixture\n' >> "$F/personal"
+  row example/proj "dir #801" claude/cloud-dir-801 dispatched
+  bcommit split.txt "$(printf 'owner ЁЛКАFIXTURE here # secret-scan:al\377low')" "split"
+  pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+  LC_ALL="$real_utf8" run "$LAND" "$P" 5
+  check_status "A4 … beside an allow marker split by an invalid byte → still exit 1" 1 "$STATUS"
+  check_contains "A4 … the range scan names the hit" "$OUT" "range scan: exit 1"
+  # (The PR text comes through gh's JSON, which cannot carry an invalid byte: jq writes U+FFFD for one.)
+else
+  echo "  SKIP  A4 split allow marker: this host has no UTF-8 locale"
+fi
+
+# With the marker off, a line already on the default branch that only an inline marker exempts counts too once the
+# range changes its file: the landing refuses, though the PR added no marker, and names the remedy.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+printf 'key %s # %s\nother 1\n' "$TOKEN" "$ALLOW_MARK" > "$P/fixture.txt"
+git -C "$P" add fixture.txt && git -C "$P" commit -qm "a fixture" && git -C "$P" push -q "$O" HEAD:refs/heads/main
+git -C "$P" checkout -q claude/cloud-dir-801 && git -C "$P" merge -q --no-edit main && git -C "$P" checkout -q main
+bcommit fixture.txt "$(printf 'key %s # %s\nother 2' "$TOKEN" "$ALLOW_MARK")" "change the fixture's other line"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a range changing a file whose default-branch line only a marker exempts → exit 1" 1 "$STATUS"
+check_contains "A4 … the range scan names the hit" "$OUT" "range scan: exit 1"
+check_contains "A4 … the PR added no marker" "$OUT" "added allow marker: none"
+check_contains "A4 … and the remedy is named" "$OUT" "main's .secret-scan-allow"
+
+# A marker grep that fails (exit 2) is a scan error, never "none": a grep shim fails on one output file at a time.
+REAL_GREP="$(command -v grep)"
+mkdir -p "$SANDBOX/grepshim"
+cat > "$SANDBOX/grepshim/grep" <<SHIM
+#!/usr/bin/env bash
+for last in "\$@"; do :; done
+[ "\${last##*/}" != "\${GREP_SHIM_FAIL:-}" ] || { echo "grep shim: failing on \$last" >&2; exit 2; }
+exec "$REAL_GREP" "\$@"
+SHIM
+chmod +x "$SANDBOX/grepshim/grep"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
+for spool in patch.out merge.out msg.out; do
+  GREP_SHIM_FAIL="$spool" PATH="$SANDBOX/grepshim:$PATH" run "$LAND" "$P" 5
+  check_status "A4 the marker grep failing on $spool → exit 1 (fail closed)" 1 "$STATUS"
+  check_contains "A4 … named a scan error" "$OUT" "scan error: a marker grep failed"
+done
+PATH="$SANDBOX/grepshim:$PATH" run "$LAND" "$P" 5
+check_status "A4 … the shim that fails nothing lands the same PR" 0 "$STATUS"
 
 # A commit that only renames a file to a path carrying the marker (rename detection would show no `+++` line).
 fx

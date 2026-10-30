@@ -234,12 +234,16 @@ unset \
 # reasoning and the same gate (tests/test_env_census.sh derives them from the shipped scripts and poisons each
 # in a child that sources this file); PATH and TMPDIR are the only names it exempts, with their reasons.
 # HOME and GIT_CONFIG_GLOBAL are redirected into the sandbox above, XDG_CONFIG_HOME is unset there. A test that
-# needs one of these sets it itself, per case, after this file is sourced. One name per line on purpose.
+# needs one of these sets it itself, per case, after this file is sourced. One name per line on purpose. gh's
+# color switches (CLICOLOR, CLICOLOR_FORCE, GH_FORCE_TTY, NO_COLOR) are here too, though no tool reads them: gh
+# does, and the gh stub (gh_fixture_stub, below) colors by them (dir #907).
 unset \
   AGY_BIN \
   AGY_MODEL \
   AGY_PRINT_TIMEOUT \
   CLAUDE_CODE_SESSION_ID \
+  CLICOLOR \
+  CLICOLOR_FORCE \
   CLOUD_BRIEF_DIR \
   CLOUD_BRIEF_MAX_BYTES \
   CLOUD_KEEL_ORIGIN \
@@ -262,14 +266,17 @@ unset \
   DRYDOCK_SCOPE_C \
   DRYDOCK_SOLO_LINES \
   EDITOR \
+  GH_FORCE_TTY \
   GITHUB_BASE_SHA \
   GITHUB_EVENT_AFTER \
   GITHUB_EVENT_BEFORE \
   GITHUB_EVENT_NAME \
   GITHUB_HEAD_SHA \
   LEAK_GATE_CWD \
+  NO_COLOR \
   SECRET_SCAN_CI_FORCE_PUSH_BASELINE \
   SECRET_SCAN_LOCAL_PUSH \
+  SECRET_SCAN_NO_INLINE_ALLOW \
   SECRET_SCAN_PERSONAL_FILE
 
 # Same reasoning, for install.sh/install-pre-pr-gate.sh's checkout-side install ledger (dir #125):
@@ -752,9 +759,10 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
 # Every call is appended to $GH_FX/calls; a $GH_FX/fail file makes every call a connection error. `api PATH
 # [--jq EXPR]` prints jq EXPR over $GH_FX/api/<PATH, each of / ? & = : as _>.json, else fails as HTTP 404;
 # `pr view N --repo OWNER/NAME` prints $GH_FX/pr/<OWNER_NAME>-N.json — wrapped in an ANSI color escape, as gh
-# colorizes JSON, when the environment forces gh's color: CLICOLOR_FORCE set and not 0 (which wins over NO_COLOR),
-# or GH_FORCE_TTY set with NO_COLOR unset and CLICOLOR not 0. Promoted here once dir #900's two cloud tests
-# (tests/test_cloud_brief.sh, tests/test_cloud_land.sh) each carried a copy.
+# colorizes JSON, when the environment gives gh color the way go-gh's term.FromEnv decides it: with GH_FORCE_TTY
+# set, when NO_COLOR is unset and CLICOLOR is not 0 (CLICOLOR_FORCE is not read then); without it (stdout is a
+# capture, never a terminal), when CLICOLOR_FORCE is set and not 0 (which wins over NO_COLOR). Promoted here once
+# dir #900's two cloud tests (tests/test_cloud_brief.sh, tests/test_cloud_land.sh) each carried a copy.
 gh_fixture_stub() {
   mkdir -p "$1"
   cat > "$1/gh" <<'GH'
@@ -777,8 +785,11 @@ if [ "${1:-} ${2:-}" = "pr view" ]; then
   f="$d/pr/$(printf '%s' "$repo" | tr '/' '_')-$n.json"
   [ -f "$f" ] || { echo "no pull requests found" >&2; exit 1; }
   color=""
-  case "${CLICOLOR_FORCE:-0}" in 0) ;; *) color=1 ;; esac
-  [ -n "${GH_FORCE_TTY:-}" ] && [ -z "${NO_COLOR:-}" ] && [ "${CLICOLOR:-}" != 0 ] && color=1
+  if [ -n "${GH_FORCE_TTY:-}" ]; then
+    [ -z "${NO_COLOR:-}" ] && [ "${CLICOLOR:-}" != 0 ] && color=1
+  else
+    case "${CLICOLOR_FORCE:-0}" in 0) ;; *) color=1 ;; esac
+  fi
   if [ -n "$color" ]; then printf '\033[1;38m%s\033[m\n' "$(cat "$f")"; else cat "$f"; fi
   exit
 fi

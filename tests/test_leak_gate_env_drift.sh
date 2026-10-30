@@ -23,8 +23,9 @@ gate_lib="$REPO_ROOT/tools/lib/leak-gate.sh"
 scanner="$REPO_ROOT/tools/secret-guard/secret-scan.sh"
 range_lib="$REPO_ROOT/tools/secret-guard/range-lib.sh"
 
-# Read by the scanner but not a path: SECRET_SCAN_LOCAL_PUSH is a presence flag (`[ -n "${...:-}" ]`).
-NON_PATH_ENV="SECRET_SCAN_LOCAL_PUSH"
+# Read by the scanner but not a path: SECRET_SCAN_LOCAL_PUSH and SECRET_SCAN_NO_INLINE_ALLOW (dir #907) are
+# presence flags (`[ -n "${...:-}" ]`, `[ -z "${...:-}" ]`).
+NON_PATH_ENV="SECRET_SCAN_LOCAL_PUSH SECRET_SCAN_NO_INLINE_ALLOW"
 
 # env_reads FILE... — sorted unique environment names the files read, one per line.
 env_reads() {

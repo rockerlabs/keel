@@ -70,7 +70,7 @@ All must hold. Mechanical rows the tool decides; judged rows are the grader's, r
 
 | id | row | decided |
 |---|---|---|
-| G1 | The project is cloud-capable (the opt-in line above) and `origin` resolves to a github.com repository `gh api` can read. A default-branch name outside `[A-Za-z0-9._/+-]` is refused here too — the protocol pastes it unquoted into the VM's shell. | mech |
+| G1 | The project is cloud-capable (the opt-in line above) and `origin` resolves to a github.com repository `gh api` can read. A default-branch name outside `[A-Za-z0-9._/+-]` is refused here too — the protocol pastes it unquoted into the VM's shell — and so is one starting with `+` or `-`, which its git commands would read as a refspec flag or an option. | mech |
 | G1b | The default branch is protected (`enforcement_level` is `everyone`), or the `KEEL-CLOUD` line carries `unprotected-ok`. | mech |
 | G1c | The repository has CI the landing check can read: `gh api repos/<o>/<r>/actions/workflows --jq .total_count` is above 0. No CI is refused before any credit is spent: the landing check needs a non-empty, green check rollup. | mech |
 | G2 | The ticket is open and R3, R4 or `📐 SPEC-READY` (the LAST `— R<d>` token of the heading decides; `📐` with no grade passes; `📐` beside R0–R2 is refused — a contradiction), with none of ✅ · ❌ · `SUPERSEDED` · `RETRACTED` · `⏳ IN FLIGHT` · `⛔ BLOCKED` on the heading. Markers count on the heading only. | mech |
@@ -80,7 +80,7 @@ All must hold. Mechanical rows the tool decides; judged rows are the grader's, r
 | G4 | Every check that decides the work runs on an Ubuntu VM with no key, device or live account; a final live check alone is done locally at landing. | judged |
 | G5 | The ticket is not itself a managed-release role (manager, train worker, auditor). A slate ticket may run as a cloud worker. | judged |
 | G6 | The rewritten brief is at most `CLOUD_BRIEF_MAX_BYTES` (default 130000: the dispatch passes it as ONE argument, and Linux caps one argument at 131071 bytes). | mech |
-| G7 | A `Spec:` line's first token names a file in the main checkout. No `Spec:` line passes. Never an absolute path, a symlink, a directory symlinked out of the checkout, or a path through `.git` — the repository's git config, auth headers included, would ship to the VM. | mech |
+| G7 | A `Spec:` line's first token names a file in the main checkout. No `Spec:` line passes. Never an absolute path, a symlink, a directory symlinked out of the checkout, or git data: a `.git` component in any case (`.GIT` on macOS, a gitfile), a `*.git` directory, or any directory git itself reads as a git directory (a bare clone named `vendor/upstream`), one git cannot answer for included — a git config, auth headers included, would ship to the VM. | mech |
 | G8 | The ticket does not ask for a design pass first. | mech for two phrases, each alone sufficient — "Question for a /design pass" in the body, "for the design" (case-insensitive) on the `**Model rec:**` line · judged otherwise |
 | G9 | `--dispatch` only: the main checkout is on the default branch, and `origin` has no `claude/cloud-<slug>` branch. | mech |
 
@@ -99,7 +99,7 @@ quote it. The backlog is resolved the `/backlog` way: `<root>/BACKLOG.md`, else 
 | mode | what it does |
 |---|---|
 | (none) | builds the brief and writes a `built` ledger row |
-| `--check` | every row above except G9, plus the model mapping, the ledger refusal, and G6 and the secret scan on a brief assembled in a temporary directory; **writes nothing**. Its last stdout line is `cloud-check: <exit> <ticket> <head sha of the main checkout>` — the receipt a wave plan quotes |
+| `--check` | every row above except G9, plus the model mapping, the ledger refusal, and G6 and the secret scan on a brief assembled in a temporary directory; **writes nothing**. Its last stdout line is `cloud-check: <exit> <ticket> <head sha of the main checkout>` — the receipt a wave plan quotes — on every exit once `--check` is read, a usage error's too; a ticket id holding a tab or a newline prints as `?` |
 | `--eligible` | builds a ticket that has no verdict yet, the judged rows taken as confirmed, and prints the `yes` line to write |
 | `--dispatch` | builds, checks G9, writes the row as `dispatched`, runs `claude --cloud` and prints the claim to write |
 | `--sweep` | read-only: the open tickets with their verdicts, and this repository's `dispatched` and `landed` rows with their PRs |
@@ -119,9 +119,10 @@ naming no mapped tier is refused.
 `=== end of brief ===`. Before anything is written:
 
 - the home path is rewritten — `$HOME` and the passwd home, each logical and physical, become `~`; Claude
-  Code's project-directory encoding of each becomes `-Users-x`; the session scratch roots become `<tmp>/`.
-  A path is replaced wherever it occurs, so with HOME=/root a path beginning /rootfs also becomes ~fs;
-- the whole brief goes through `tools/secret-guard/secret-scan.sh`, the allow marker defanged, from an empty
+  Code's project-directory encoding of each, and the `/` and `.` → `-` form, becomes `-Users-x` where it starts
+  a token, nested after a `-` included; the session scratch roots become `<tmp>/`. A path is replaced wherever it
+  occurs, so with HOME=/root a path beginning /rootfs also becomes ~fs, and an option `--root` becomes `--Users-x`;
+- the whole brief goes through `tools/secret-guard/secret-scan.sh`, the inline allow marker off, from an empty
   directory. The personal check is **fail-closed**: the tool exports `SECRET_SCAN_PERSONAL_FILE` — its value
   when set, else the scanner's default `~/.claude/secret-scan-personal` — and refuses (exit 2, nothing
   written) when that path is not a regular file, unless it is `/dev/null`, the scanner's deliberate opt-out.
@@ -254,14 +255,17 @@ cloud-land.sh <repo> <PR#> [--ticket <id>]
 The repository is `<repo>`'s `origin`, asserted equal to the ledger row's repository (a mismatch is exit 2);
 the default branch is resolved from GitHub, never assumed to be `main`. The row is found by the PR's head
 branch, or by `--ticket` when the session pushed another branch (an exit 0 then corrects the row's branch).
-The scans are decided before CI is read, in a fresh full clone of the repository:
+The scans are decided before CI is read, in a fresh full clone of the repository, each with the scanner's inline
+allow marker off (`SECRET_SCAN_NO_INLINE_ALLOW=1`):
 
 1. the fetched branch tip must equal the PR's head SHA, and the scanner's `--range` over the branch against
-   the default branch must exit 0 (keys, personal literals, session trailers in commit messages);
+   the default branch must exit 0 (keys, personal literals, session trailers in commit messages). It reads
+   each blob the range introduces whole, so a file the range changes refuses on a line already on the default
+   branch that only an inline marker exempts: such a fixture belongs in the default branch's `.secret-scan-allow`;
 2. the PR title and body pass the scanner's file mode, and carry no session URL or `Claude-Session:` line;
 3. no line any commit in the range adds — its patch, merge commits' own combined diff included — and no line
    of any commit message in the range, carries the scanner's allow marker. Every commit is read, not the net
-   diff, so a marker added and later deleted still refuses.
+   diff, so a marker added and later deleted still refuses; a marker check that fails is a scan error.
 
 Then CI: every check in the rollup completed as success, neutral or skipped, **and at least one succeeded** —
 so an empty or all-skipped rollup is not green. A draft PR whose expensive workflow skips drafts can read
@@ -300,8 +304,9 @@ overlap · landed · landing exit · head SHA · PR`. Credit cells are optional 
   minutes is named stale and never removed by a tool.
 - **`--sweep`** lists the open R3/R4/`📐` tickets with their verdicts, then each `dispatched` row of this
   repository with its age and its PR, and each `landed` row marked `STALE` when the PR's head is no longer the
-  head it landed at, or when its last landing check exited non-zero. It looks the PR up by the row's branch, so
-  a "no PR" on a row you landed with `--ticket` is worth a `gh pr list` before you abandon anything.
+  head it landed at, or when its last landing check exited non-zero. It looks the PR up by the PR number a landing
+  recorded first, else by the row's branch, so a "no PR" on a `dispatched` row whose session pushed another branch
+  is worth a `gh pr list` before you abandon anything.
 
 ## Abandoning
 

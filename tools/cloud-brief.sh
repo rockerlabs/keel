@@ -13,7 +13,8 @@
 #   (no mode)    build: write the brief and a `built` ledger row.
 #   --check      every row the tool can run (G9 aside), the brief assembled, sized and scanned in a temporary
 #                directory; writes nothing. Its last stdout line is `cloud-check: <exit> <ticket> <main HEAD>`
-#                (`?` for no ticket, `none` for no HEAD) — on every exit once `--check` was read, a usage error's too.
+#                (`?` for no ticket or one holding a tab or a newline, `none` for no HEAD) — on every exit once
+#                `--check` was read, a usage error's too.
 #   --eligible   build a ticket that has no verdict yet, the judged rows confirmed; prints the `yes` line to
 #                write into the ticket.
 #   --dispatch   build, check G9, write the row as `dispatched`, run `claude --cloud` from the main checkout
@@ -54,14 +55,19 @@ usage() {
   die 2 "usage: cloud-brief.sh <repo> <ticket-id> [--check | --eligible | --dispatch] [--credit-before <amount>] [--redispatch] [--out FILE]
        cloud-brief.sh <repo> --sweep"
 }
-REPO_ARG="" TICKET="" MODE=build REDISPATCH="" CREDIT="?" OUT=""
+REPO_ARG="" TICKET="" MODE=build REDISPATCH="" CREDIT="?" OUT="" RECEIPT=""
 WORK="" MAIN=""
-on_exit() { # --check's receipt comes on every exit once `--check` was read, a usage error's too
-  local rc=$? head=none
+# --check's receipt comes on every exit once `--check` was read, a usage error's too, on fd 3 — the caller's stdout,
+# opened when `--check` is read (before any redirect), so an exit from inside a redirected group (the brief's
+# assembly) reaches it; no other mode opens fd 3, so no child of theirs (--dispatch's CLI) holds the caller's stdout.
+# Never with a ticket id that could print a line of its own.
+on_exit() {
+  local rc=$? head=none ticket="${TICKET:-?}"
   [ -z "$WORK" ] || rm -rf "$WORK"
-  if [ "$MODE" = check ]; then
+  if [ -n "$RECEIPT" ]; then
     [ -z "$MAIN" ] || head="$(git -C "$MAIN" rev-parse HEAD 2>/dev/null)" || head=none
-    printf 'cloud-check: %s %s %s\n' "$rc" "${TICKET:-?}" "$head"
+    cloud_cell_ok "$ticket" || ticket="?"
+    printf 'cloud-check: %s %s %s\n' "$rc" "$ticket" "$head" >&3
   fi
   exit "$rc"
 }
@@ -69,7 +75,7 @@ trap on_exit EXIT
 set_mode() { [ "$MODE" = build ] || usage; MODE="$1"; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check) set_mode check ;;
+    --check) exec 3>&1; RECEIPT=1; set_mode check ;;
     --eligible) set_mode eligible ;;
     --dispatch) set_mode dispatch ;;
     --sweep) set_mode sweep ;;
@@ -113,15 +119,15 @@ ORIGIN_URL="$(git -C "$MAIN" config --get remote.origin.url 2>/dev/null || true)
 OR="$(cloud_github_slug "$ORIGIN_URL" || true)"
 OWNER="${OR%%/*}"
 
+# Every `### ` ticket heading bounds a block, whatever its id shape (`dir #801`, `KB.34`, `34.`).
+TICKET_ERE='[^[:space:]]+( #[0-9]+)?'
 # The backlog, the /backlog way: <main>/BACKLOG.md, else CLAUDE.md's inline section.
 BACKLOG=""
 if [ -f "$MAIN/BACKLOG.md" ]; then
   BACKLOG="$MAIN/BACKLOG.md"
-elif [ -f "$MAIN/CLAUDE.md" ] && grep -qE '^### [^[:space:]]+( #[0-9]+)? — ' "$MAIN/CLAUDE.md"; then
+elif [ -f "$MAIN/CLAUDE.md" ] && grep -qE "^### ($TICKET_ERE) — " "$MAIN/CLAUDE.md"; then
   BACKLOG="$MAIN/CLAUDE.md"
 fi
-# Every `### ` ticket heading bounds a block, whatever its id shape (`dir #801`, `KB.34`, `34.`).
-TICKET_ERE='[^[:space:]]+( #[0-9]+)?'
 
 # slug_of ID — lowercased, every run outside [a-z0-9] one `-`, trimmed.
 slug_of() { printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'; }
@@ -146,8 +152,15 @@ verdict_of() {
 grade_of() { grep -oE '— R[0-9]([^a-zA-Z0-9]|$)' <<< "$1" | tail -1 | grep -oE 'R[0-9]' || true; }
 
 # --- --sweep: read-only listing ------------------------------------------------------------------------------
-pr_of() { # BRANCH → "<number> <head sha>" of the newest PR from it, or nothing; rc 1 when gh failed (its stderr kept)
+# pr_of BRANCH [PR] → "<number> <head sha>" of PR when the row records one (a failed `cloud-land.sh --ticket` run
+# records the PR but leaves the branch cell), else of the newest PR from BRANCH, or nothing; rc 1 when gh failed
+# (its stderr kept).
+pr_of() {
   [ -n "$OR" ] || return 0
+  if [ -n "${2:-}" ]; then
+    cloud_gh_api "repos/$OR/pulls/$2" --jq '"\(.number) \(.head.sha)"' || return 1
+    return 0
+  fi
   cloud_gh_api "repos/$OR/pulls?head=$OWNER:$1&state=all" --jq '.[0] // empty | "\(.number) \(.head.sha)"' || return 1
 }
 noon_epoch() { # YYYY-MM-DD → the epoch second of local noon that day (GNU/busybox date, else BSD)
@@ -183,10 +196,10 @@ if [ "$MODE" = sweep ]; then
   if [ -f "$CLOUD_LEDGER" ] && [ -n "$OR" ]; then
     NOON_TODAY="$(noon_epoch "$(today)")" || NOON_TODAY=""
     # Cells may be empty, and `read` collapses runs of a whitespace IFS: re-join on a unit separator first.
-    while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_exit r_head; do
+    while IFS=$'\037' read -r r_built r_repo r_ticket r_branch r_status r_exit r_head r_pr; do
       [ "$r_repo" = "$OR" ] || continue
       case "$r_status" in dispatched|landed) ;; *) continue ;; esac
-      if pr="$(pr_of "$r_branch")"; then
+      if pr="$(pr_of "$r_branch" "$r_pr")"; then
         label="no PR"; [ -z "$pr" ] || label="PR #${pr%% *}"
       else
         gh_failed=1 pr="?" label="PR unknown (gh failed)" # `?`: no "<number> <sha>" pair is ever one word
@@ -203,7 +216,7 @@ if [ "$MODE" = sweep ]; then
           else state="current"; fi
           printf '  landed\t%s\t%s\t%s\t%s\n' "$r_ticket" "$r_branch" "$label" "$state" ;;
       esac
-    done < <(awk -F'\t' -v OFS='\037' 'NR > 1 { print $1, $2, $3, $4, $8, $12, $13 }' "$CLOUD_LEDGER")
+    done < <(awk -F'\t' -v OFS='\037' 'NR > 1 { print $1, $2, $3, $4, $8, $12, $13, $14 }' "$CLOUD_LEDGER")
   fi
   [ -z "$gh_failed" ] || die 2 "gh failed: the PR columns above marked unknown are not known (network, auth or gh itself)"
   exit 0
@@ -243,14 +256,22 @@ while IFS=$'\t' read -r b_start b_end _ b_heading; do
   case "$b_heading" in "### $TICKET — "*) START="$b_start"; END="$b_end"; HEADING="$b_heading"; break ;; esac
 done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
-# The last block's END counts the fence-blanked text, whose trailing blank lines a command substitution dropped —
-# a closing fenced block's, blanked, or everything after an unclosed fence. A block that ends there runs to the
-# file's own last line, unless a backlog heading (`### `, `## `) follows END in the raw text: then an unclosed fence
-# hid it, and the block keeps its END rather than carry the tickets and sections after it.
+# For the last block, the fence markers after its heading decide (fence_marker_lines, the blanking's own toggle; the
+# heading sits outside every fence): an even count closes every fence, and the block runs to the file's own last
+# line, a heading-shaped line inside a fence included. An odd count leaves a fence open that may hide the backlog's
+# own headings, and the markers cannot say which one opened it (a later section's closed fence pairs with the
+# ticket's opener), so the block then runs to the line before the first section (`## `) or ticket heading after
+# its own, fenced or not — never carrying the tickets and sections after it — or to the last line when none follows.
+# A cut before END, the blanked text's last line, would drop text the blanking reads as the ticket's own (a G8
+# phrase, say): that backlog is refused instead, until its fences pair up.
 blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
-  after_end="$(tail -n +"$((END + 1))" "$BACKLOG")"
-  grep -qE '^(##|###) ' <<< "$after_end" || END="$(awk 'END { print NR }' "$BACKLOG")"
+  odd="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++ } END { print n % 2 }')"
+  cut_end="$(LC_ALL=C awk -v s="$START" -v odd="$odd" -v re="^(## |### ($TICKET_ERE) — )" \
+    'odd && NR > s && $0 ~ re { print NR - 1; cut = 1; exit } END { if (!cut) print NR }' "$BACKLOG")"
+  [ "$cut_end" -ge "$END" ] || die 2 "$TICKET: the fence markers after its heading do not pair up, and the heading" \
+    "at line $((cut_end + 1)) of $BACKLOG lies inside the ticket's text — close the unclosed fence"
+  END="$cut_end"
 fi
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
@@ -276,7 +297,11 @@ esac
 
 # G7: the first token after `Spec:` names a file in the main checkout, which the brief carries to the VM — so never
 # an absolute path, a file whose PHYSICAL directory lies outside $MAIN (a `..` that climbs out, a directory symlinked
-# out), a file that is itself a symlink, or anything under a `.git` directory (the repository's config, its auth).
+# out), a file that is itself a symlink, or git data (a config, its auth), in any case — a case-insensitive file
+# system (macOS) reads `.GIT` as `.git`: no `.git` component as written (a gitfile too), no `.git` or `*.git`
+# component in the physical directory (a bare repository inside the checkout is `<name>.git`), and, whatever its
+# name, no directory git itself reads as a git directory (a bare clone `vendor/upstream`, a --separate-git-dir) —
+# one git cannot answer for (a bare repository under safe.bareRepository=explicit) refuses too.
 # A `..` that stays inside is no refusal: the physical directory decides.
 SPEC_REL="" SPEC_FILE=""
 SPEC_LINE="$(grep -m1 -E '^(\*\*)?Spec:(\*\*)?[[:space:]]' <<< "$BLANKED" | tr -d '\r' || true)"
@@ -284,12 +309,15 @@ if [ -n "$SPEC_LINE" ]; then
   SPEC_REL="$(sed -E 's/^(\*\*)?Spec:(\*\*)?[[:space:]]+//' <<< "$SPEC_LINE" | awk '{print $1}' | tr -d '`')"
   SPEC_FILE="$MAIN/$SPEC_REL"
   case "$SPEC_REL" in /*) refuse G7 "Spec: $SPEC_REL is outside $MAIN" ;; esac
-  case "/$SPEC_REL/" in */.git/*) refuse G7 "Spec: $SPEC_REL is inside a .git directory" ;; esac
+  case "/$SPEC_REL/" in */.[Gg][Ii][Tt]/*) refuse G7 "Spec: $SPEC_REL has a .git component (the repository's git data)" ;; esac
   [ -n "$SPEC_REL" ] && [ -f "$SPEC_FILE" ] || refuse G7 "Spec: ${SPEC_REL:-?} is not a file in $MAIN"
   [ ! -L "$SPEC_FILE" ] || refuse G7 "Spec: $SPEC_REL is a symlink"
   spec_dir="$(CDPATH='' cd -P -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
   case "$spec_dir/" in "${MAIN%/}/"*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
-  case "${spec_dir#"${MAIN%/}"}/" in */.git/*) refuse G7 "Spec: $SPEC_REL is inside a .git directory (its directory is $spec_dir)" ;; esac
+  case "${spec_dir#"${MAIN%/}"}/" in *.[Gg][Ii][Tt]/*) refuse G7 "Spec: $SPEC_REL is inside a git directory (its directory is $spec_dir)" ;; esac
+  in_git="$(git -C "$spec_dir" rev-parse --is-inside-git-dir 2>/dev/null)" \
+    || refuse G7 "Spec: $SPEC_REL — git cannot tell whether its directory ($spec_dir) is a git directory"
+  [ "$in_git" = false ] || refuse G7 "Spec: $SPEC_REL is inside a git directory (git reads $spec_dir as one)"
 fi
 
 # G8 (its two mechanical phrases), then the model mapping.
@@ -342,8 +370,11 @@ gh_or_refuse() { # ROW WHAT ARGS... — gh api's stdout; 404/403 refuses ROW, an
 DEFAULT="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq .default_branch)" || exit $?
 [ -n "$DEFAULT" ] || die 2 "gh api gave no default branch for $OR"
 # The name goes unquoted into the VM's shell commands (the protocol's <default>): ref characters a shell passes as
-# they are, spelled out — a bracket range follows the locale's collation in bash 3.2.
+# they are, spelled out — a bracket range follows the locale's collation in bash 3.2 — and no leading `+` or `-`,
+# which `git fetch origin <default>` would read as a forced refspec or an option.
 case "$DEFAULT" in
+  [+-]*)
+    refuse G1 "the default branch name '$DEFAULT' starts with a + or a -, which the cloud protocol's git commands would read as a refspec flag or an option" ;;
   *[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/+-]*)
     refuse G1 "the default branch name '$DEFAULT' has a character the cloud protocol cannot pass to a shell" ;;
 esac
@@ -422,12 +453,15 @@ part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a n
 # trailing `/`, `/` itself and duplicates dropped, all of them longer first (one may hold another). For each:
 #   - the path itself → `~`, wherever it occurs (privacy first: HOME=/root also turns `/rootfs` into `~fs`, and
 #     a sibling `/Users/alice2` becomes `~2` — the login never survives as a prefix);
-#   - Claude Code's project-directory name for it → `-Users-x`. The CLI's encoder turns every character outside
-#     [A-Za-z0-9] into `-` (`replace(/[^a-zA-Z0-9]/g, "-")`); this one works per byte, so a non-ASCII home comes
-#     out longer than the CLI's (one `-` per UTF-16 unit there) and goes unrewritten — a known limit. The name is
-#     matched only where it starts a token (the byte before it is not one of [A-Za-z0-9-]), so `-Users-alice/…`,
-#     `-Users-alice-proj` and a sibling's `-Users-alice2-…` (→ `-Users-x2-…`) are rewritten, while HOME=/root's
-#     `-root` never hits `state-root-migrate`, `non-root-user` or `claude/cloud-root-12`.
+#   - its project-directory names → `-Users-x`: Claude Code's (the CLI's encoder turns every character outside
+#     [A-Za-z0-9] into `-`, `replace(/[^a-zA-Z0-9]/g, "-")`) and tools/lib/transcript-usage.sh's tu_project_slug
+#     form (only `/` and `.` → `-`, so a home holding `_` keeps it). Both work per byte here, so a non-ASCII home
+#     comes out longer than the CLI's (one `-` per UTF-16 unit there) and goes unrewritten — a known limit. A name
+#     is matched only where it starts a token (the byte before it is not one of [A-Za-z0-9]), so `-Users-alice/…`,
+#     `-Users-alice-proj`, a sibling's `-Users-alice2-…` (→ `-Users-x2-…`) and a name nested in another project
+#     directory's (`-private-tmp-claude-501--Users-alice-…`) are rewritten, while HOME=/root's `-root` never hits
+#     `state-root-migrate`, `non-root-user` or `claude/cloud-root-12`. A known cost of catching the nested name: an
+#     option spelled like one, HOME=/root's `git log --root`, becomes `--Users-x` too (dir #908).
 # Then the session scratch roots → `<tmp>/`, the longer first.
 # rewrite MODE FROM TO [MODE FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order;
 # MODE `p` replaces every occurrence, `a` only one that starts a token (above). One byte-wise awk pass: bash's own
@@ -445,7 +479,7 @@ rewrite() (
       while ((i = index(s, from)) > 0) {
         if (alone) {
           b = (i > 1) ? substr(s, i - 1, 1) : prev
-          if (b ~ /[A-Za-z0-9-]/) {
+          if (b ~ /[A-Za-z0-9]/) {
             out = out substr(s, 1, i); prev = substr(s, i, 1); s = substr(s, i + 1); continue
           }
         }
@@ -474,10 +508,11 @@ pairs=()
 while IFS= read -r h; do
   [ -z "$h" ] || pairs+=(p "$h" '~')
 done < <(printf '%s' "$homes" | LC_ALL=C awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)
-# The encoding keeps every byte's place, so the names come in the paths' own longer-first order.
+# Both encodings keep every byte's place, so the names come in the paths' own longer-first order.
 n_paths="${#pairs[@]}" k=1
 while [ "$k" -lt "$n_paths" ]; do
   pairs+=(a "$(printf '%s' "${pairs[$k]}" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')" -Users-x)
+  pairs+=(a "$(printf '%s' "${pairs[$k]}" | LC_ALL=C tr '/.' '--')" -Users-x)
   k=$((k + 3))
 done
 uid="$(id -u)"
@@ -567,13 +602,12 @@ esac
 esc="$(printf '\033')"
 CLI_OUT="$(LC_ALL=C sed -e "s/${esc}\[[0-9;?<>=]*[A-Za-z]//g" -e "s/${esc}[()][A-Za-z0-9]//g" -e "s/${esc}[0-9=>]//g" \
   -e 's/\^D//g' "$WORK/cli.out" 2>/dev/null | LC_ALL=C tr -d '\r\010')"
+printf '%s\n' "$CLI_OUT"
 # util-linux `script` may answer with its own status, so success also needs the CLI's own line.
 if [ "$cli_rc" -ne 0 ] || ! grep -q 'Created cloud session' <<< "$CLI_OUT"; then
-  printf '%s\n' "$CLI_OUT"
   back_to_built
   die 5 "the dispatch failed (exit $cli_rc) — the row is back to built; nothing was claimed"
 fi
-printf '%s\n' "$CLI_OUT"
 
 SESSION="$(grep -oE 'session_[A-Za-z0-9]+' <<< "$CLI_OUT" | head -1 || true)"
 CLAIM="⏳ IN FLIGHT ($(today), branch $BRANCH, cloud)"
