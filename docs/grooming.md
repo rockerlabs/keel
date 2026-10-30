@@ -327,6 +327,11 @@ caught only by a 17-finding adjudication round (G6). A heading understates or ov
 real size and scope often enough that a heading-only read mis-sizes the plan it produces — read the
 body of every ticket entering the slate before it is assigned anywhere.
 
+**In a project with a `KEEL-CLOUD` line, the groom also fills the cloud-verdict gaps in its slate.** It writes
+the `**Cloud:**` line ([`docs/cloud.md`](cloud.md)) for every slate ticket that lacks one, in the same pass that
+reads its body — a slate ticket graded without a verdict is a gap, and `cloud-brief.sh <repo> --sweep` lists
+the open R3/R4 tickets that still lack one.
+
 **When the previous groom read every body and the file's diff since then is enumerable, the duty
 concentrates rather than lapses — and it says which rule it applied (adopter run 2, 2026-09-18).** A
 3 000-line backlog re-read whole ten days after a body-read groom, on a diff that is insertions

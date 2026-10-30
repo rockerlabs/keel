@@ -23,6 +23,8 @@ found → say so and stop; a blank beats a wrong guess.
 Read every slate ticket's BODY and re-verify its claims and line citations against the live tree
 before briefing anyone — never assign from headings alone. Read the merge mode (R14: the project's
 `KEEL-MANAGER-MERGES` line, the harness deny on `gh pr merge`) and state it in the intake report.
+Where the project has a `KEEL-CLOUD` line, judge and write any missing `**Cloud:**` verdict for a slate
+ticket (R1; [`docs/cloud.md`](../docs/cloud.md)).
 
 **M3 — wave plan (R2).**
 Cut waves by file overlap. Assume every PR collides in `CHANGELOG.md` at the `[Unreleased]` anchor,
@@ -30,13 +32,16 @@ unless the project keeps changelog fragments (keel does, dir #744) —
 merges serialize as a consequence (strict up-to-date still forces it); a train pays that price once per
 wave (R14), and where the project's policy leaves the merge with the operator, a train is the operator's
 alternative to serial merging — name each option's price (R2), with R5 on every constituent head. Show the
-operator the wave plan before wave 1 starts.
+operator the wave plan before wave 1 starts; in a cloud-capable project it carries R2's route column, each
+`cloud` ticket passed `--check` and its `cloud-check:` receipt quoted.
 
 **M4 — launch workers (R3), one brief shape (see the doc's worker-brief section), single writer to
 the backlog (R8).**
 Where the harness can launch a real, gated session directly, launch it yourself — one health-line
 report per launch, operator can revoke to manual at any time; a launch needs a turn the operator started. A next
 ticket never goes to a warm session: clear an idle finished worker first (R3).
+A ticket the plan routes to the cloud is dispatched under R3's cloud exception
+([`docs/cloud.md`](../docs/cloud.md)) — its gate is the landing check, and the operator merges.
 State the model/effort call as the FIRST line of the launch, not the brief's tail. Every brief states
 explicitly that backlog writes of any kind (a marker, a Log line, a ticket) route through you, not
 through the worker's own `/go` claim step. Every brief carries: state to

@@ -58,7 +58,10 @@ pin "(h) close: 'close through /polish' rule is pinned (dir #636/#639/#641)" "$g
 # Raised 1125 -> 1250 (operator decision D5, 2026-10-04, dir #670's design; consumed by dir #668,
 # docs/specs/668-go-seam-step.md B10): the managed-release carve-out cite, step 5's two bullets and the
 # marker-placement rule; dir #401 adds none to go.md, so this PR raises it alone.
-GO_MD_WORD_BUDGET=1250
+# Raised 1250 -> 1305 (operator decision GO11, 2026-10-26, dir #900 D-F10; consumed by dir #900's slice 2,
+# docs/specs/900-cloud-ticket-routing.md B11): the one cloud-route sentence after step 2's override
+# sentence, 54 words; the live file counts 1302.
+GO_MD_WORD_BUDGET=1305
 word_count="$(wc -w < "$go_md" | tr -d ' ')"
 if [ "$word_count" -le "$GO_MD_WORD_BUDGET" ]; then
   pass "(a) budget: go.md is <= $GO_MD_WORD_BUDGET words (got $word_count)"
@@ -246,6 +249,24 @@ if grep -qF -- 'offer to continue it or pick another' "$go_md"; then
 else
   pass "(g) dir #696: step 4 no longer promises 'continue it' across worktrees"
 fi
+
+# --- (i) the cloud route (dir #900 slice 2, docs/specs/900-cloud-ticket-routing.md B11 / A6) -------------
+# The sentence sits as its own line right after step 2's override sentence (the one ending "or R0; name it
+# in your first reply."), so the managed-release exception and "or here" are both held by one byte-for-byte
+# compare of the NEXT line — the position pin the spec calls decisive.
+cloud_sentence='Cloud: where `<root>/CLAUDE.md` has a `KEEL-CLOUD` line and no managed-release or single-writer brief applies — no `**Cloud:**` line → judge it (`docs/cloud.md`) and write it; `yes` → before step 4, that doc'"'"'s check, then offer once: cloud or here; cloud → its dispatch and claim, then stop; `no` → name its reason; go on.'
+cloud_next_line="$(awk 'found { print; exit } /or R0; name it in your first reply\.$/ { found = 1 }' "$go_md")"
+if [ "$cloud_next_line" = "$cloud_sentence" ]; then
+  pass "(i) cloud route: the line after step 2's override sentence is the cloud sentence, byte for byte"
+else
+  fail "(i) cloud route: the line after step 2's override sentence is the cloud sentence, byte for byte" \
+    "got: ${cloud_next_line:-<no line after the anchor>}"
+fi
+pin_exact "(i) cloud route: the cloud sentence occurs on exactly one line" "$go_md" "$cloud_sentence" \
+  "expected B11's sentence verbatim in $go_md"
+pin "(i) cloud route: backlog.md's legend fence carries the **Cloud:** line" "$backlog_md" \
+  '**Cloud:** — the ticket'"'"'s cloud verdict (docs/cloud.md)' \
+  "expected the go-contract fence to name **Cloud:**"
 
 # =====================================================================================================
 # Mutation proof: each case above is shown red first — never on a tracked file (spec A1). scratch_copy,
@@ -635,5 +656,31 @@ replace_in_line_containing "$c874_copy" "Walk every spec rule" "and \`Fix:\` cla
 assert_case_turns_red "(g) mutation: dir #874 conform's Fix: clause removed" \
   "(g) needle [dir #874: conform walks the ticket's Fix: clauses]: 'and \`Fix:\` clause' matches exactly one line" \
   "KEEL_GO_MD=$c874_copy"
+
+# dir #900 A6: the cloud sentence is pinned by position — deleting it, or moving it off the line right after
+# step 2's override sentence, turns the case red.
+c900a_copy="$(scratch_copy "$go_md" go.md)"
+delete_line_containing "$c900a_copy" "Cloud: where \`<root>/CLAUDE.md\` has a \`KEEL-CLOUD\` line"
+assert_case_turns_red "(i) mutation: dir #900 cloud sentence deleted" \
+  "(i) cloud route: the line after step 2's override sentence is the cloud sentence, byte for byte" \
+  "KEEL_GO_MD=$c900a_copy"
+
+c900b_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c900b_copy" "Cloud: where \`<root>/CLAUDE.md\`" "and no managed-release or single-writer brief applies" "and no brief applies"
+assert_case_turns_red "(i) mutation: dir #900 managed-release exception dropped from the cloud sentence" \
+  "(i) cloud route: the line after step 2's override sentence is the cloud sentence, byte for byte" \
+  "KEEL_GO_MD=$c900b_copy"
+
+c900c_copy="$(scratch_copy "$go_md" go.md)"
+replace_in_line_containing "$c900c_copy" "Cloud: where \`<root>/CLAUDE.md\`" "then offer once: cloud or here" "then dispatch"
+assert_case_turns_red "(i) mutation: dir #900 'or here' dropped from the cloud sentence" \
+  "(i) cloud route: the line after step 2's override sentence is the cloud sentence, byte for byte" \
+  "KEEL_GO_MD=$c900c_copy"
+
+c900d_copy="$(scratch_copy "$backlog_md" backlog.md)"
+delete_line_containing "$c900d_copy" '**Cloud:** — the ticket'
+assert_case_turns_red "(i) mutation: dir #900 legend fence line removed" \
+  "(i) cloud route: backlog.md's legend fence carries the **Cloud:** line" \
+  "KEEL_BACKLOG_MD=$c900d_copy"
 
 summary
