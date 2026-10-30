@@ -176,15 +176,14 @@ cloud_personal_file() {
   return 1
 }
 
-# cloud_scan_file SCANNER FILE WORKDIR — run the scanner's file mode over a copy of FILE with every
-# `secret-scan:allow` marker defanged (a marker would hide its own line), from an empty directory under
-# WORKDIR (the file mode trusts a `./.secret-scan-allow` in its cwd). The scanner's stdout and stderr on stdout;
-# its exit status, or 2 when the copy cannot be made.
+# cloud_scan_file SCANNER FILE WORKDIR — run the scanner's file mode over FILE (an absolute path) with the inline
+# allow marker off (SECRET_SCAN_NO_INLINE_ALLOW=1: a marker in the text would hide its own line, however it is
+# spelled — one split by an invalid byte reads whole in the scanner's caller-locale personal pass), from an empty
+# directory under WORKDIR (the file mode trusts a `./.secret-scan-allow` in its cwd). The scanner's stdout and
+# stderr on stdout; its exit status, or 2 when the directory cannot be made.
 cloud_scan_file() {
-  local scanner="$1" copy="$3/scan.${2##*/}"
   mkdir -p "$3/scan-empty" || return 2
-  LC_ALL=C sed 's/secret-scan:allow/secret-scan-allow-stripped/g' "$2" > "$copy" || return 2
-  (CDPATH='' cd -- "$3/scan-empty" && bash "$scanner" -- "$copy" 2>&1)
+  (CDPATH='' cd -- "$3/scan-empty" && SECRET_SCAN_NO_INLINE_ALLOW=1 bash "$1" -- "$2" 2>&1)
 }
 
 # cloud_gh_api ARGS... — `gh api ARGS`, its stdout on stdout. rc 0 ok · rc 4 GitHub answered 404 or 403 (the

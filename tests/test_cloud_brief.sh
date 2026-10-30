@@ -288,7 +288,6 @@ fx() {
   mkdir -p "$P/docs/specs" "$F/gh" "$F/claude" "$F/store"
   export GH_FX="$F/gh" CLAUDE_FX="$F/claude"
   export CLOUD_LEDGER="$F/store/ledger.tsv" CLOUD_BRIEF_DIR="$F/store/briefs" SECRET_SCAN_PERSONAL_FILE="$F/personal"
-  unset CLOUD_TEMPLATE CLOUD_BRIEF_MAX_BYTES CLOUD_KEEL_ORIGIN
   printf '%s\n' "$LITERAL" > "$F/personal"
   gh_ok "$GH_FX" example/proj
   {
@@ -316,10 +315,11 @@ fx() {
 
 cb()  { run "$BRIEF_TOOL" "$@"; }                                         # merged stdout+stderr
 cbo() { OUT="$("$BRIEF_TOOL" "$@" 2>"$F/stderr" </dev/null)"; STATUS=$?; ERR="$(cat "$F/stderr")"; }
-row_of()    { awk -F'\t' -v t="$1" 'NR > 1 && $3 == t' "$CLOUD_LEDGER" 2>/dev/null; }
+# Ticket ids compare as strings: awk compares two numeric-looking values as numbers (`34.` = `34`).
+row_of()    { awk -F'\t' -v t="$1" 'NR > 1 && ($3 "") == (t "")' "$CLOUD_LEDGER" 2>/dev/null; }
 status_of() { row_of "$1" | cut -f8; }
 set_cell() { # TICKET N VALUE — edit the fixture ledger by hand, as an operator would
-  awk -F'\t' -v OFS='\t' -v t="$1" -v n="$2" -v v="$3" 'NR > 1 && $3 == t { $n = v } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
+  awk -F'\t' -v OFS='\t' -v t="$1" -v n="$2" -v v="$3" 'NR > 1 && ($3 "") == (t "") { $n = v } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
   cat "$F/l.tmp" > "$CLOUD_LEDGER"
 }
 set_status() { set_cell "$1" 8 "$2"; } # TICKET STATUS
@@ -514,6 +514,32 @@ for t in 859 864; do
   check_contains "T10c dir #$t: G7, .git" "$OUT" "refused: G7"
   check_contains "T10c dir #$t: … names .git" "$OUT" ".git"
 done
+# In any case — a case-insensitive file system (macOS) reads `.GIT` as the repository's own `.git`. As written, a
+# `.git` component refuses (a gitfile too, which no directory check sees); physically, a `.git` or `*.git` directory
+# (a bare repository inside the checkout), named or reached through a symlinked directory.
+mkdir -p "$P/mirror.git" "$P/docs/sub" && printf '[core]\n\tbare = true\n' > "$P/mirror.git/config"
+printf 'gitdir: /nonexistent-fixture\n' > "$P/docs/sub/.git"
+ln -s ../mirror.git "$P/docs/m"
+add_ticket '\n### dir #873 — a spec in .GIT — R4 — → pool\n\nSpec: .GIT/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #881 — a gitfile spec — R4 — → pool\n\nSpec: docs/sub/.git\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #874 — a spec in a bare repository inside the checkout — R4 — → pool\n\nSpec: mirror.git/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #875 — a spec in a bare repository through a link — R4 — → pool\n\nSpec: docs/m/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+written="873 881" physical="874 875"
+if [ -f "$P/.GIT/config" ]; then # a case-insensitive file system: `.GIT` reached through a link (not `docs/G`:
+  ln -s ../.GIT "$P/docs/upper"  # that name IS docs/g there, and ln would put the link inside it), a gitfile as .GIT
+  add_ticket '\n### dir #876 — a spec in .GIT through a link — R4 — → pool\n\nSpec: docs/upper/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+  add_ticket '\n### dir #882 — a gitfile spec as .GIT — R4 — → pool\n\nSpec: docs/sub/.GIT\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+  written="$written 882" physical="$physical 876"
+else
+  echo "  SKIP  T10c dir #876, dir #882 (.GIT through a link, a gitfile as .GIT): this file system is case-sensitive"
+fi
+for t in $written $physical; do
+  case " $physical " in *" $t "*) want="inside a git directory (its directory is" ;; *) want="has a .git component" ;; esac
+  cb "$P" "dir #$t"
+  check_status "T10c dir #$t: a Spec: in the repository's git data → exit 3" 3 "$STATUS"
+  check_contains "T10c dir #$t: G7, '$want'" "$OUT" "refused: G7 — Spec: "
+  check_contains "T10c dir #$t: … '$want'" "$OUT" "$want"
+done
 nothing_written "T10c"
 # A `..` that stays inside the main checkout is no refusal: the physical directory decides.
 add_ticket '\n### dir #865 — a spec spelled with .. inside — R4 — → pool\n\nSpec: docs/../docs/specs/s801.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
@@ -543,9 +569,34 @@ cb "$P" "dir #862" --out "$F/b862.md"
 check_status "T15c a ticket with an unclosed fence builds" 0 "$STATUS"
 t862="$(part_of "$F/b862.md" ticket)"
 check_contains "T15c … its own heading travels" "$t862" "### dir #862 — an unclosed fence"
+check_contains "T15c … and its own text after the unclosed opener" "$t862" "unclosed fence body"
 for gone in "dir #863" "Body of 863." "## Archive" "dir #700"; do
   check_absent "T15c … the ticket part carries no '$gone' from after the unclosed fence" "$t862" "$gone"
 done
+# A heading-shaped line inside the last ticket's CLOSED fence is fenced text: the fence travels whole.
+fx
+add_ticket '\n### dir #870 — a closing fence holding a heading — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\n### an example heading\nafter the example heading\n```\n'
+cb "$P" "dir #870" --out "$F/b870.md"
+check_status "T15c a last ticket whose closing fence holds a heading-shaped line builds" 0 "$STATUS"
+t870="$(part_of "$F/b870.md" ticket)"
+check_contains "T15c … the fenced heading-shaped line travels" "$t870" "### an example heading"
+check_contains "T15c … and the fence's last line" "$t870" "after the example heading"
+# A closed fence, then an unclosed one: the closed fence travels, the unclosed fence's text up to the first heading.
+fx
+add_ticket '\n### dir #871 — a closed fence, then an unclosed one — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\n### a fenced example\n```\n\n```\nunclosed body 871\n\n### dir #872 — hidden by the unclosed fence — R4 — → pool\n\nBody of 872.\n'
+cb "$P" "dir #871" --out "$F/b871.md"
+check_status "T15c a closed fence, then an unclosed one, builds" 0 "$STATUS"
+t871="$(part_of "$F/b871.md" ticket)"
+check_contains "T15c … the closed fence's heading-shaped line travels" "$t871" "### a fenced example"
+check_contains "T15c … the unclosed fence's own text travels" "$t871" "unclosed body 871"
+check_absent "T15c … the heading it hid does not" "$t871" "dir #872"
+check_absent "T15c … nor that heading's body" "$t871" "Body of 872."
+# An unclosed fence with no heading after it: the block runs to the file's last line.
+fx
+add_ticket '\n### dir #880 — an unclosed fence at the end — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\nunclosed tail 880\nits last line\n'
+cb "$P" "dir #880" --out "$F/b880.md"
+check_status "T15c an unclosed fence at the end of the file builds" 0 "$STATUS"
+check_contains "T15c … its text to the file's last line travels" "$(part_of "$F/b880.md" ticket)" "its last line"
 
 # --- T15d: a part that cannot be read stops the build -------------------------------------------------------------
 fx
@@ -592,7 +643,25 @@ nothing_written "T12 rails"
 fx
 printf 'key %s # %s\n' "$TOKEN" "secret-scan:""allow" >> "$P/CLAUDE.md"
 cb "$P" "dir #801"
-check_status "T12 a token beside an allow marker still refuses (the marker is defanged) → exit 1" 1 "$STATUS"
+check_status "T12 a token beside an allow marker still refuses (the brief's scan reads markers as text) → exit 1" 1 "$STATUS"
+# A marker split by an invalid byte reads whole in the scanner's caller-locale personal pass (after `iconv -c`),
+# the one pass that finds a non-ASCII literal's case variant: it hides nothing either.
+utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+if [ -n "$utf8_locale" ]; then
+  fx
+  printf 'ёлкаfixture\n' >> "$F/personal"
+  printf '# spec 878\nowner ЁЛКАFIXTURE here\n' > "$P/docs/specs/s878.md"
+  printf '# spec 879\nowner ЁЛКАFIXTURE here # secret-scan:al\377low\n' > "$P/docs/specs/s879.md"
+  add_ticket '\n### dir #878 — a literal case variant in the spec — R4 — → pool\n\nSpec: docs/specs/s878.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+  add_ticket '\n### dir #879 — the same beside a split allow marker — R4 — → pool\n\nSpec: docs/specs/s879.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+  LC_ALL="$utf8_locale" cb "$P" "dir #878"
+  check_status "T12 a non-ASCII literal's case variant in the spec, under $utf8_locale → exit 1" 1 "$STATUS"
+  LC_ALL="$utf8_locale" cb "$P" "dir #879"
+  check_status "T12 … beside an allow marker split by an invalid byte → still exit 1" 1 "$STATUS"
+  nothing_written "T12 split marker"
+else
+  echo "  SKIP  T12 split allow marker: this host has no UTF-8 locale"
+fi
 fx
 cb "$P" "dir #801" --out "$F/b801.md"
 check_status "T12 the clean ticket builds" 0 "$STATUS"
@@ -622,26 +691,44 @@ check_absent "T12 the dotted HOME's path rewritten" "$dotted" "home.dotted"
 export HOME="$SANDBOX/x/first_last"
 mkdir -p "$HOME"
 fx
-add_ticket "\\n### dir #866 — the home's own project dir — R4 — → pool\\n\\nMemory: $(home_slug "$HOME")/memory/MEMORY.md\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+# A slug nested in another project-dir name (a session started under a scratch root) follows a `-`; the
+# `/` and `.` → `-` form (tools/lib/transcript-usage.sh's tu_project_slug) keeps the `_`.
+nested="$(home_slug "/private/tmp/claude-$(id -u)/$(home_slug "$HOME")-proj")"
+tu_form="$(printf '%s' "$HOME" | tr '/.' '--')"
+add_ticket "\\n### dir #866 — the home's own project dir — R4 — → pool\\n\\nMemory: $(home_slug "$HOME")/memory/MEMORY.md\\nNested: $nested/memory\\nTranscripts: $tu_form/s.jsonl\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
 cb "$P" "dir #866" --out "$F/fl.md"
 check_status "T12 a HOME named first_last builds" 0 "$STATUS"
 fl="$(cat "$F/fl.md")"
 check_contains "T12 … its CLI-style slug (first-last) rewritten" "$fl" "Claude project dir: -Users-x-proj"
 check_absent "T12 … no slug left" "$fl" "first-last"
 check_contains "T12 the bare home slug before a / → -Users-x/" "$fl" "Memory: -Users-x/memory/MEMORY.md"
-# A short home's slug (HOME=/root → -root) must not hit ordinary words: it is rewritten only where it starts a token
-# (privacy first: one glued before a letter is still rewritten, so a sibling's `-root2-…` hides the login too).
+check_contains "T12 a slug nested after a - rewritten" "$fl" "Nested: -private-tmp-claude-$(id -u)--Users-x-proj/memory"
+check_contains "T12 the tu_project_slug form (first_last kept) rewritten" "$fl" "Transcripts: -Users-x/s.jsonl"
+check_absent "T12 … no tu form left" "$fl" "first_last"
+# A home's slug is rewritten only where it starts a token: never glued after a letter or digit (privacy first: one
+# glued before a letter is still rewritten, so a sibling's `-…-root2-…` hides the login too).
 export HOME="$SANDBOX/x/root"
 mkdir -p "$HOME"
 fx
 rs="$(home_slug "$HOME")"
-add_ticket "\\n### dir #867 — slug-shaped words — R4 — → pool\\n\\nRun tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12.\\nGlued: tools/state${rs}-migrate.sh as a non${rs}-user; ${rs}2-proj hides.\\nReal: ${rs}-proj and ${rs}/memory.\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+add_ticket "\\n### dir #867 — slug-shaped words — R4 — → pool\\n\\nGlued: tools/state${rs}-migrate.sh as a non${rs}-user; ${rs}2-proj hides.\\nReal: ${rs}-proj and ${rs}/memory.\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
 cb "$P" "dir #867" --out "$F/root.md"
 check_status "T12 a HOME named root builds" 0 "$STATUS"
 rt="$(part_of "$F/root.md" ticket)"
-check_contains "T12 state-root-migrate, non-root-user, cloud-root-12 unchanged" "$rt" "Run tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12."
 check_contains "T12 the slug glued after a letter unchanged; a sibling's slug rewritten" "$rt" "Glued: tools/state${rs}-migrate.sh as a non${rs}-user; -Users-x2-proj hides."
 check_contains "T12 the slug standing alone rewritten" "$rt" "Real: -Users-x-proj and -Users-x/memory."
+# HOME=/root itself: its slug `-root` sits inside ordinary words, which a sandbox home's long slug never could. Only
+# HOME changes for this one run: every path the tool or the scanner writes under HOME is pinned into the sandbox
+# (the ledger and briefs by fx, the impact store and log by tests/lib.sh), and git's global config stays the
+# sandbox file tests/lib.sh exported.
+fx
+add_ticket "\\n### dir #877 — HOME=/root's slug in words — R4 — → pool\\n\\nRun tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12.\\nSibling: -root2-proj hides; real: -root-proj and -root/memory.\\nNested: -private-tmp-claude-0--root-proj.\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
+HOME=/root cb "$P" "dir #877" --out "$F/slash-root.md"
+check_status "T12 HOME=/root builds" 0 "$STATUS"
+rt="$(part_of "$F/slash-root.md" ticket)"
+check_contains "T12 HOME=/root: state-root-migrate, non-root-user, cloud-root-12 unchanged" "$rt" "Run tools/state-root-migrate.sh as a non-root-user on claude/cloud-root-12."
+check_contains "T12 HOME=/root: a sibling's -root2- and the -root slug rewritten" "$rt" "Sibling: -Users-x2-proj hides; real: -Users-x-proj and -Users-x/memory."
+check_contains "T12 HOME=/root: the slug nested after a - rewritten" "$rt" "Nested: -private-tmp-claude-0--Users-x-proj."
 # A HOME with a trailing slash is the same home: `~/notes`, never `~notes`.
 export HOME="$SANDBOX/home.slash/"
 mkdir -p "$HOME"
@@ -924,6 +1011,21 @@ check_eq "T20b … its receipt, the ticket ?" "cloud-check: 2 ? none" "$(tail -n
 cbo "$P" x --check --bogus
 check_status "T20b --check then an unknown flag → 2" 2 "$STATUS"
 check_contains "T20b … its receipt still comes" "$(tail -n 1 <<< "$OUT")" "cloud-check: 2 "
+cbo "$P" "dir #801" --eligible --check
+check_status "T20b --eligible --check (two modes) → 2" 2 "$STATUS"
+check_eq "T20b … the receipt comes, --check came second" "cloud-check: 2 dir #801 none" "$(tail -n 1 <<< "$OUT")"
+cbo "$P" "$(printf 'x\ncloud-check: 0 dir #801 forged')" --check
+check_status "T20b --check on a ticket id holding a newline → 2" 2 "$STATUS"
+check_eq "T20b … the id cannot forge the receipt line: the ticket is ?" "cloud-check: 2 ? none" "$(tail -n 1 <<< "$OUT")"
+# A part that cannot be read stops the build inside the brief's own redirect: the receipt still reaches stdout.
+fx
+chmod 000 "$P/docs/specs/s801.md"
+cbo "$P" "dir #801" --check
+chmod 644 "$P/docs/specs/s801.md"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then # root reads a mode-000 file (CLAUDE.md Linux-leg trap 2)
+  check_status "T20b --check on an unreadable spec → 2" 2 "$STATUS"
+  check_eq "T20b … its receipt is the last stdout line" "cloud-check: 2 dir #801 $(git -C "$P" rev-parse HEAD)" "$(tail -n 1 <<< "$OUT")"
+fi
 
 # --- T17: --sweep --------------------------------------------------------------------------------------------------
 fx
@@ -971,15 +1073,27 @@ for zone in Pacific/Kiritimati XXX+12; do
   TZ="$zone" cbo "$P" --sweep
   check_contains "T17 TZ=$zone: a row built today is 0 days old" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $(TZ="$zone" date +%F) (0 days)"
 done
-# A row dated tomorrow (a clock set back since) reads -1 days, not 0: the rounding is symmetric.
+# A row dated tomorrow (a clock set back since) reads -1 days, not 0: the rounding is symmetric. Tomorrow is today's
+# local noon plus a day: now + 86400 s lands two dates ahead from late evening before a 23-hour (DST) day.
 fx
 cb "$P" "dir #812"; set_status "dir #812" dispatched
 printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
-e=$(( $(date +%s) + 86400 ))
+today="$(date +%F)"
+e=$(( $(date -d "$today 12:00:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$today 12:00:00" +%s) + 86400 ))
 tomorrow="$(date -d "@$e" +%F 2>/dev/null || date -r "$e" +%F)"
 set_cell "dir #812" 1 "$tomorrow"
 cbo "$P" --sweep
 check_contains "T17 a row dated tomorrow is -1 days old" "$OUT" "since $tomorrow (-1 days)"
+# A failed `cloud-land.sh --ticket` run records the PR (cell 14) but leaves the branch cell: the sweep reads the
+# recorded PR first, so a PR from another branch never reads as "no PR" (the abandon trigger).
+fx
+cb "$P" "dir #812"; set_status "dir #812" dispatched
+set_cell "dir #812" 12 3; set_cell "dir #812" 13 eeee; set_cell "dir #812" 14 9
+printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
+printf '{"number":9,"head":{"sha":"eeee"}}\n' > "$GH_FX/api/repos_example_proj_pulls_9.json"
+cbo "$P" --sweep
+check_status "T17 a dispatched row with a recorded PR → 0" 0 "$STATUS"
+check_contains "T17 … shows the recorded PR, not its branch's (none)" "$OUT" "dispatched	dir #812	claude/cloud-dir-812	since $TODAY (0 days)	PR #9"
 fx
 printf '# Backlog\n\n## Open\n\n### dir #1 — closed — R4 — ✅ DONE\n' > "$P/BACKLOG.md"
 cbo "$P" --sweep
@@ -1011,6 +1125,16 @@ printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_l
   > "$GH_FX/api/repos_example_proj_branches_release+1.json"
 cb "$P" "dir #801"
 check_status "T18 a default branch named release+1 passes" 0 "$STATUS"
+# A leading `+` is a forced refspec to `git fetch origin <default>` in the VM, a leading `-` an option.
+for name in +release -release; do
+  fx
+  printf '{"default_branch":"%s"}\n' "$name" > "$GH_FX/api/repos_example_proj.json"
+  printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' \
+    > "$GH_FX/api/repos_example_proj_branches_${name}.json"
+  cb "$P" "dir #801"
+  check_status "T18 a default branch named $name → exit 3" 3 "$STATUS"
+  check_contains "T18 … refused as G1, the name given" "$OUT" "refused: G1 — the default branch name '$name'"
+done
 fx
 path_farm "$F/farm" script
 PATH="$F/farm" cb "$P" "dir #801" --dispatch
@@ -1105,7 +1229,7 @@ check_eq "lib cloud_ledger_put keeps numerically-equal keys apart" "4" "$(tail -
 for t in 2.1 2.10 34 34.; do
   check_eq "lib cloud_ledger_row finds $t, not its numeric twin" "built-$t" "$(cloud_ledger_cell "$(cloud_ledger_row "$L2" o/r "$t")" 8)"
 done
-# The defang runs byte-wise, whatever the caller's locale; a source that cannot be read is rc 2.
+# A Latin-1 byte under a UTF-8 locale scans clean; a source that cannot be read is rc 2.
 mkdir -p "$SANDBOX/scan" && printf 'caf\351\n' > "$SANDBOX/scan/latin1.txt"
 mkdir -p "$SANDBOX/scan/w1" "$SANDBOX/scan/w2"
 SECRET_SCAN_PERSONAL_FILE=/dev/null LC_ALL=en_US.UTF-8 cloud_scan_file "$REPO_ROOT/tools/secret-guard/secret-scan.sh" "$SANDBOX/scan/latin1.txt" "$SANDBOX/scan/w1" >/dev/null

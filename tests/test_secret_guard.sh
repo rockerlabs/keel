@@ -68,6 +68,10 @@ d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
 printf 'tok = %s  # secret-scan:allow\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
 run "$scan" "$d/f.txt"
 check_status "inline allow comment → exit 0" 0 "$STATUS"
+# dir #907: SECRET_SCAN_NO_INLINE_ALLOW=1 turns this channel off, for a caller scanning text it does not trust.
+SECRET_SCAN_NO_INLINE_ALLOW=1 run "$scan" "$d/f.txt"
+check_status "inline allow comment under SECRET_SCAN_NO_INLINE_ALLOW=1 → exit 1" 1 "$STATUS"
+check_contains "… BLOCKED" "$OUT" "BLOCKED"
 
 # --- allowlist channel 2: an ERE entry in .secret-scan-allow ------------------------------------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"
@@ -75,6 +79,8 @@ printf 'tok = %s\n' "$(key 'ghp_' "$(rep A 36)")" > "$d/f.txt"
 printf '%s\n' "$(key 'ghp_' 'A')" > "$d/.secret-scan-allow"   # ERE matching the planted token
 run_in "$d" "$scan" f.txt
 check_status "ERE allowlist entry → exit 0" 0 "$STATUS"
+SECRET_SCAN_NO_INLINE_ALLOW=1 run_in "$d" "$scan" f.txt
+check_status "ERE allowlist entry under SECRET_SCAN_NO_INLINE_ALLOW=1 → still exit 0" 0 "$STATUS"
 
 # --- allowlist channel 3: a path:<glob> exclusion -----------------------------------------------
 d="$(mktemp -d "$SANDBOX/sg.XXXXXX")"

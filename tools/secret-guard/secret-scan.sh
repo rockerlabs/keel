@@ -51,13 +51,19 @@
 #   by construction (interior commits brought in by a merge commonly already are — dir #569); unsafe
 #   post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
 #
+# SECRET_SCAN_NO_INLINE_ALLOW=1 (env, every mode): the inline `secret-scan:allow` marker exempts nothing; the
+#   .secret-scan-allow file still applies. For a caller scanning text it does not trust (dir #907: the cloud
+#   route's landing range scan and its brief and PR-text scans), where a marker in the text would hide its own
+#   line however it is spelled — the personal pass in the caller's locale reads a marker split by an invalid
+#   byte whole, after `iconv -c`.
+#
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
 #   a repo-root .secret-scan-allow file:
 #     <ERE>          drop a hit whose matched line matches (the line's content only — never its path or
 #                    line number; dir #741)
 #     path:<glob>    exclude a path
-#   or an inline  secret-scan:allow  comment on the offending line.
+#   or an inline  secret-scan:allow  comment on the offending line (off under SECRET_SCAN_NO_INLINE_ALLOW=1).
 #
 # Exit 0 = clean; 1 = a secret-shaped string or personal data found; 2 = usage/config error, or a read
 # the scan could not complete (fails closed: `secret-scan: could not <step> … — refusing to report it clean`).
@@ -1347,15 +1353,17 @@ if [ -f "$ALLOW_FILE" ]; then
   done < "$ALLOW_FILE"
 fi
 
-# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow` marker, or an ERE
-# entry. A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
+# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow` marker (unless
+# SECRET_SCAN_NO_INLINE_ALLOW is set, dir #907), or an ERE entry. A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
 # SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a false "not allowlisted"
 # under load (dir #280). `-e` (dir #746 B2): an entry starting with `-` is a pattern — `-e.` read positionally
 # was the option -e with the pattern `.`, exempting every record. LC_ALL=C (B5): bytes, as the records are; a
 # non-ASCII entry using `.` or a bracket can only over-block.
 allowed_text() {
   local re
-  case "$1" in *secret-scan:allow*) return 0 ;; esac
+  if [ -z "${SECRET_SCAN_NO_INLINE_ALLOW:-}" ]; then
+    case "$1" in *secret-scan:allow*) return 0 ;; esac
+  fi
   for re in "${drop_res[@]:-}"; do
     [ -n "$re" ] || continue
     LC_ALL=C grep -qE -e "$re" <<< "$1" && return 0
