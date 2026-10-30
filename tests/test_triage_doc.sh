@@ -64,4 +64,6 @@ for f in "$doc" "$cmd"; do
   check_absent "$label carries no absolute keel-checkout path" "$body" '/Users/'
 done
 
+pin "dir #807: triage.md T0 says a named tier narrows the pass" "$doc" "A named tier in the command's argument narrows the pass to it." "expected T0 to carry commands/triage.md's named-tier sentence"
+
 summary

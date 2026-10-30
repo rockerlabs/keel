@@ -24,6 +24,17 @@ check_status "unknown flag -> exit 2" 2 "$STATUS"
 run "$vc" "$SANDBOX/no-such-releases.md"
 check_status "missing RELEASES.md -> exit 0 (skip, not an error)" 0 "$STATUS"
 check_contains "prints a skip line" "$OUT" "no readable RELEASES.md"
+run "$vc" 9.9.9
+check_status "a lone version -> exit 0" 0 "$STATUS"
+check_absent "a lone version is not read as a RELEASES.md path" "$OUT" "at 9.9.9"
+run "$vc" 9.9.9 9.8.7
+check_contains "two arguments keep the documented order: the first is the path" "$OUT" "at 9.9.9"
+run "$vc" v9.9.9
+check_absent "a lone vX.Y.Z is not read as a path either" "$OUT" "at v9.9.9"
+vdir="$(mktemp -d "$SANDBOX/vf.XXXXXX")"
+printf '## v1.2.3 — x\n\n| value claim | bare claim |\n' > "$vdir/1.2.3"
+run bash -c 'cd "$1" && bash "$2" 1.2.3' _ "$vdir" "$vc"
+check_contains "an existing file named x.y.z is still a path" "$OUT" "1 value-claim cell(s), 1 lacking a subject set"
 
 # --- the done-when: the 0.14.0 plan as first written is flagged, as fixed it passes -------------------
 first_written="## v0.14.0 — cut readiness (groomed 2026-10-04)

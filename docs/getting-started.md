@@ -318,7 +318,7 @@ rest of the install lives in `DIR`. Per-repo wiring is unaffected.
   seatbelt, not a sandbox: a script, `sh -c`, an alias or a variable path are not seen.
   `KEEL_SUBAGENT_GIT_FLOOR=off` in the session environment turns it off.
 - **Costs:** `jq` on PATH (required — without it the installer prints the hooks JSON to paste in by hand
-  instead of writing anything), a few small `/tmp` state files per repo, and a few extra minutes per PR
+  instead of writing anything), a few small state files per repo under `$HOME/.keel/tmp/pre-pr-gate/`, and a few extra minutes per PR
   for the review pass itself.
 
 Never clobbers a hook you already have on the same slot: a foreign hook is left alone and ours is

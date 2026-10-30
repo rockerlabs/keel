@@ -276,4 +276,7 @@ missed 0.16.0 by -12% and 0.17.0 by -6%
 missed them by +23% and -32%
 EOF
 
+pin "dir #807: grooming.md G5 names the lint without a RELEASES.md path argument" "$doc" 'tools/self/value-claim-lint.sh <version>` (dir #672)' "expected the lint invocation to take a lone version"
+check_absent "dir #807: grooming.md no longer passes the relative RELEASES.md to the lint" "$(cat "$doc")" 'value-claim-lint.sh RELEASES.md'
+
 summary

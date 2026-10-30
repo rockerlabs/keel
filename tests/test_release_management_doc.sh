@@ -575,4 +575,7 @@ pin "M7a says a --agent manager cannot merge and points at R14 (dir #862)" "$cmd
   'A manager launched with `--agent` cannot merge, since the merge rule reads that session as a subagent; launch it without `--agent` (R14).' \
   "expected M7a to carry the launch-without---agent sentence, pointing at R14 (dir #862)"
 
+pin "dir #807: R9 routes the audit's closing records through the manager" "$doc" 'closing records route through the manager (dir #807).**' "expected the R9 paragraph on the audit's closing records"
+pin "dir #807: M8 has the manager write the audit's records" "$cmd" 'you write them under R8 before the GO is recorded (R9, dir #807).' "expected M8 to carry the manager-writes sentence"
+
 summary

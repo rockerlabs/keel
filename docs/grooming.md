@@ -327,6 +327,11 @@ caught only by a 17-finding adjudication round (G6). A heading understates or ov
 real size and scope often enough that a heading-only read mis-sizes the plan it produces — read the
 body of every ticket entering the slate before it is assigned anywhere.
 
+**In a project with a `KEEL-CLOUD` line, the groom also fills the cloud-verdict gaps in its slate.** It writes
+the `**Cloud:**` line ([`docs/cloud.md`](cloud.md)) for every slate ticket that lacks one, in the same pass that
+reads its body — a slate ticket graded without a verdict is a gap, and `cloud-brief.sh <repo> --sweep` lists
+the open R3/R4 tickets that still lack one.
+
 **When the previous groom read every body and the file's diff since then is enumerable, the duty
 concentrates rather than lapses — and it says which rule it applied (adopter run 2, 2026-09-18).** A
 3 000-line backlog re-read whole ten days after a body-read groom, on a diff that is insertions
@@ -610,7 +615,8 @@ the diff of that set against the slate's live ticket list (G3), and the residue 
 number with a one-line reason per item. A row with an empty residue says so; a row with a
 non-empty one has just stated where it will be wrong in public, which is the field's whole purpose.
 This is a rule of the procedure, not a compensation for a defect — no ticket removes it. Before G6, run (keel's instance)
-`tools/self/value-claim-lint.sh RELEASES.md <version>` (dir #672): advisory, it flags each value-claim cell with
+`tools/self/value-claim-lint.sh <version>` (dir #672): advisory, it reads the main checkout's `RELEASES.md` (so it runs
+from a worktree) and flags each value-claim cell with
 none of this rule's forms (a `Subject set:` clause, a `Residue:` clause, `no claim`, or
 `no subject set — <why>`), so the reviewer's budget goes to what a lint cannot see.
 
