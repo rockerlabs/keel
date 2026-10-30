@@ -185,9 +185,11 @@ fi
 # and does not count. git's output goes to files and is grepped as bytes (LC_ALL=C -a): under a UTF-8 locale a
 # byte that is not valid UTF-8 would stop `.*` short of the marker.
 # range_log OUT ERR ARG… — `git log ARG… $RANGE` in the clone with the shared flags; stdout to OUT, stderr to ERR.
+# With $VIEW_CMD set the patches are those of each blob converted by that command (git's textconv), not of its bytes.
 range_log() {
-  local out="$1" err="$2"; shift 2
-  git -C "$CLONE" -c log.showRoot=true log --root --no-color --no-ext-diff --no-textconv --no-renames --text "$@" "$RANGE" \
+  local out="$1" err="$2" tc=(--no-textconv) conf=(); shift 2
+  if [ -n "${VIEW_CMD:-}" ]; then tc=(--textconv); conf=(-c "diff.keelview.textconv=$VIEW_CMD"); fi
+  git -C "$CLONE" "${conf[@]}" -c log.showRoot=true log --root --no-color --no-ext-diff "${tc[@]}" --no-renames --text "$@" "$RANGE" \
     > "$out" 2> "$err"
 }
 # The scanner matches the inline marker in decoded views (NUL-stripped; `iconv -c` in the caller's locale, so a marker
@@ -221,7 +223,36 @@ marker_grep() {
   [ -n "$hits" ] || return 1
   printf '%s\n' "$hits"
 }
-p_rc=0 m_rc=0
+# The scanner also decodes a blob as UTF-16/UTF-32 (`iconv -c`, both byte orders; UTF-16 again from the blob's second
+# byte), dropping an invalid unit whose bytes are not NUL, so a NUL-strip of the patch cannot rejoin a marker split by
+# one. A patch is not one aligned stream, so git decodes each blob itself: textconv through an info/attributes entry
+# (it beats the repository's own .gitattributes), once per decode, the patches of the converted blobs grepped.
+# Where there is no iconv the scanner has no such decode either. conv_grep KIND ERE — the hits of every view of the
+# KIND (patch|merge) spool; grep's status (≥ 2: something failed).
+VIEWS=""
+if command -v iconv >/dev/null 2>&1; then
+  if mkdir -p "$CLONE/.git/info" && printf '* diff=keelview\n' > "$CLONE/.git/info/attributes"; then
+    VIEWS="UTF-16LE:1 UTF-16BE:1 UTF-32LE:1 UTF-32BE:1 UTF-16LE:2 UTF-16BE:2"
+  else
+    echo "  scan error: cannot set up the decoded patch views"; SCAN_FAIL=1
+  fi
+fi
+conv_grep() {
+  local kind="$1" re="$2" spec enc skip sh out hits="" rc
+  for spec in $VIEWS; do
+    enc="${spec%:*}" skip="${spec#*:}" sh="$WORK/view-$enc-$skip.sh"
+    printf '#!/bin/sh\ntail -c +%s "$1" | iconv -c -f %s -t UTF-8 2>/dev/null || true\n' "$skip" "$enc" > "$sh" || return 2
+    case "$kind" in
+      patch) VIEW_CMD="sh $sh" range_log "$WORK/$kind.$enc.$skip.out" "$WORK/$kind.err" -p --no-merges --format= || return 2 ;;
+      *) VIEW_CMD="sh $sh" range_log "$WORK/$kind.$enc.$skip.out" "$WORK/$kind.err" -p --merges --cc --format= || return 2 ;;
+    esac
+    out="$(LC_ALL=C grep -anE -e "$re" "$WORK/$kind.$enc.$skip.out")" || { rc=$?; [ "$rc" -le 1 ] || return "$rc"; continue; }
+    hits="${hits:+$hits$'\n'}$(sed "s/^/$enc+$skip: /" <<< "$out")"
+  done
+  [ -n "$hits" ] || return 1
+  printf '%s\n' "$hits"
+}
+p_rc=0 m_rc=0 c_rc=0
 if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
    || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc --format=; then
   echo "  scan error: cannot read the range's patches"; cat "$WORK/patch.err" "$WORK/merge.err" 2>/dev/null | sed 's/^/    /'
@@ -229,6 +260,13 @@ if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
 else
   p_hits="$(marker_grep "$WORK/patch.out" '^\+.*secret-scan:allow')" || p_rc=$?
   m_hits="$(marker_grep "$WORK/merge.out" '^\+\+.*secret-scan:allow')" || m_rc=$?
+  if [ "$p_rc" -le 1 ] && [ "$m_rc" -le 1 ]; then
+    c_rc=0 cp_hits="" cm_hits=""
+    cp_hits="$(conv_grep patch '^\+.*secret-scan:allow')" || c_rc=$?
+    [ "$c_rc" -gt 1 ] || cm_hits="$(conv_grep merge '^\+\+.*secret-scan:allow')" || c_rc=$?
+    [ "$c_rc" -le 1 ] || p_rc=$c_rc
+    p_hits="$p_hits$cp_hits" m_hits="$m_hits$cm_hits"
+  fi
   if [ "$p_rc" -gt 1 ] || [ "$m_rc" -gt 1 ]; then
     echo "  scan error: a marker grep failed over the range's patches (exit $p_rc, $m_rc)"; SCAN_FAIL=1
   elif [ -n "$p_hits$m_hits" ]; then

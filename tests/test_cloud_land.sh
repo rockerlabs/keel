@@ -346,6 +346,24 @@ fx
 row example/proj "dir #801" claude/cloud-dir-801 dispatched
 bcommit_bytes u16split.txt "utf-16 split" < <({ printf '\377\376'; wide 'harmless # secret-scan:al' '\0'; printf '\377\0'; wide 'low' '\0'; })
 landed_marker_case "an added marker written in UTF-16 and split by an invalid byte"
+# An invalid code unit whose bytes are not NUL (a lone surrogate, a UTF-32 value past U+10FFFF) splits the marker for
+# the scanner's `iconv -c -f UTF-16/32` decodes, not for a NUL-strip: the grep reads the decoded blob too.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes surr16.txt "lone surrogate" < <({ printf '\377\376'; wide 'harmless # secret-scan:al' '\0'; printf '\001\330'; wide 'low' '\0'; })
+landed_marker_case "an added marker in UTF-16LE split by a lone surrogate"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes surr16be.txt "lone surrogate be" < <({ printf '\376\377'; wide 'harmless # secret-scan:al' '' '\0'; printf '\330\001'; wide 'low' '' '\0'; })
+landed_marker_case "an added marker in UTF-16BE split by a lone surrogate"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes surr16odd.txt "lone surrogate, odd offset" < <({ printf 'x\377\376'; wide 'harmless # secret-scan:al' '\0'; printf 'A\330'; wide 'low' '\0'; })
+landed_marker_case "an added marker in UTF-16LE at an odd offset, split by a lone surrogate"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes big32.txt "past U+10FFFF" < <({ printf '\377\376\0\0'; wide 'harmless # secret-scan:al' '\0\0\0'; printf '\0\0\021\0'; wide 'low' '\0\0\0'; })
+landed_marker_case "an added marker in UTF-32LE split by a value past U+10FFFF"
 # (A commit message cannot carry an invalid byte through `git log`: it prints one as a valid UTF-8 character, which
 # splits the marker for the scanner too.)
 # The same on a host whose iconv cannot resume after an invalid byte (musl's), or has none: a shim that fails.
@@ -415,6 +433,11 @@ pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
 for spool in patch.out merge.out msg.out; do
   GREP_SHIM_FAIL="$spool" PATH="$SANDBOX/grepshim:$PATH" run "$LAND" "$P" 5
   check_status "A4 the marker grep failing on $spool → exit 1 (fail closed)" 1 "$STATUS"
+  check_contains "A4 … named a scan error" "$OUT" "scan error: a marker grep failed"
+done
+for spool in patch.UTF-16LE.1.out merge.UTF-32BE.1.out; do
+  GREP_SHIM_FAIL="$spool" PATH="$SANDBOX/grepshim:$PATH" run "$LAND" "$P" 5
+  check_status "A4 the marker grep failing on the decoded view $spool → exit 1 (fail closed)" 1 "$STATUS"
   check_contains "A4 … named a scan error" "$OUT" "scan error: a marker grep failed"
 done
 PATH="$SANDBOX/grepshim:$PATH" run "$LAND" "$P" 5
