@@ -33,7 +33,9 @@
 # ($(keel_store_root cloud)/ledger.tsv) · CLOUD_BRIEF_DIR ($(keel_store_root cloud)/briefs) · CLOUD_TEMPLATE
 # (<engine>/templates/cloud-protocol.md) · CLOUD_BRIEF_MAX_BYTES (130000 — Linux caps one argument at 131071
 # bytes) · CLOUD_KEEL_ORIGIN (https://github.com/rockerlabs/keel — what the VM clones) · SECRET_SCAN_PERSONAL_FILE
-# (the scanner's default; a path that is not a regular file refuses, /dev/null opts out).
+# (the scanner's default; a path that is not a regular file refuses, /dev/null opts out) · CLOUD_BACKLOG (unset:
+# <main>/BACKLOG.md, else CLAUDE.md's inline section; set: the backlog file itself — a mirror of an adopter's
+# tickets in the heading canon — which must be a readable regular file, else exit 2).
 set -uo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
@@ -123,7 +125,10 @@ OWNER="${OR%%/*}"
 TICKET_ERE='[^[:space:]]+( #[0-9]+)?'
 # The backlog, the /backlog way: <main>/BACKLOG.md, else CLAUDE.md's inline section.
 BACKLOG=""
-if [ -f "$MAIN/BACKLOG.md" ]; then
+if [ -n "${CLOUD_BACKLOG:-}" ]; then
+  BACKLOG="$(abs "$CLOUD_BACKLOG")"
+  [ -f "$BACKLOG" ] && [ -r "$BACKLOG" ] || die 2 "CLOUD_BACKLOG is not a readable regular file: $BACKLOG"
+elif [ -f "$MAIN/BACKLOG.md" ]; then
   BACKLOG="$MAIN/BACKLOG.md"
 elif [ -f "$MAIN/CLAUDE.md" ] && grep -qE "^### ($TICKET_ERE) — " "$MAIN/CLAUDE.md"; then
   BACKLOG="$MAIN/CLAUDE.md"

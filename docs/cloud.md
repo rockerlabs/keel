@@ -77,7 +77,7 @@ All must hold. Mechanical rows the tool decides; judged rows are the grader's, r
 | G2b | The ticket's verdict is not `no`; `yes` confirms the judged rows; no verdict needs `--eligible`. A malformed verdict is refused. | mech |
 | G3 | Every file the work writes is tracked in the project — never a gitignored or untracked file, the backlog, the rails file when it is gitignored, anything outside the repository. | judged |
 | G3b | Every file the work must read is tracked, or travels in the brief (the ticket, its spec, the rails). | judged |
-| G4 | Every check that decides the work runs on an Ubuntu VM with no key, device or live account; a final live check alone is done locally at landing. | judged |
+| G4 | Every check that decides the work runs on an Ubuntu VM with no key, device or live account; a final live check alone is done locally at landing. A check the VM cannot run (Xcode, a simulator, a device) is decided by the project's CI on the PR (a self-hosted runner counts), read by the session and again by the landing check. | judged |
 | G5 | The ticket is not itself a managed-release role (manager, train worker, auditor). A slate ticket may run as a cloud worker. | judged |
 | G6 | The rewritten brief is at most `CLOUD_BRIEF_MAX_BYTES` (default 130000: the dispatch passes it as ONE argument, and Linux caps one argument at 131071 bytes). | mech |
 | G7 | A `Spec:` line's first token names a file in the main checkout. No `Spec:` line passes. Never an absolute path, a symlink, a directory symlinked out of the checkout, or git data: a `.git` component in any case (`.GIT` on macOS, a gitfile), a `*.git` directory, or any directory git itself reads as a git directory (a bare clone named `vendor/upstream`), one git cannot answer for included — a git config, auth headers included, would ship to the VM. | mech |
@@ -135,6 +135,7 @@ is `CLOUD_LEDGER`. Both default under keel's state root (`~/.keel/cloud/`). Envi
 |---|---|---|
 | `CLOUD_LEDGER` | `~/.keel/cloud/ledger.tsv` | both tools |
 | `CLOUD_BRIEF_DIR` | `~/.keel/cloud/briefs` | brief |
+| `CLOUD_BACKLOG` | unset: `<main>/BACKLOG.md`, else the inline section of `CLAUDE.md` | brief, all modes — the backlog file itself (an adopter's tickets mirrored in the heading canon); not a readable regular file → exit 2 |
 | `CLOUD_TEMPLATE` | `<keel-checkout>/templates/cloud-protocol.md` | brief |
 | `CLOUD_BRIEF_MAX_BYTES` | `130000` | brief (G6) |
 | `CLOUD_KEEL_ORIGIN` | `https://github.com/rockerlabs/keel` | brief — the URL the VM clones keel from; a fork's adopters set it |
