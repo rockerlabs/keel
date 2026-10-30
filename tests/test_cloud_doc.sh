@@ -23,33 +23,24 @@ MUTATION_SKIP_VAR="KEEL_CLOUD_DOC_TEST_SKIP_MUTATIONS"
 check_file "docs/cloud.md exists" "$doc"
 check_file "commands/backlog.md exists" "$backlog_md"
 
-# flat FILE — the file as one line, runs of whitespace collapsed to one space.
-flat() { tr '\n' ' ' < "$1" | sed -E 's/[[:space:]]+/ /g'; }
 # section FILE START_ERE END_ERE — the lines from the first match of START up to (not including) the next
 # match of END, flattened.
-section() { awk -v s="$2" -v e="$3" '$0 ~ s && !on { on = 1; print; next } on && $0 ~ e { exit } on' "$1" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g'; }
-# has LABEL HAYSTACK NEEDLE — a fixed-string containment check on already-flattened text.
-has() {
-  case "$2" in
-    *"$3"*) pass "$1" ;;
-    *) fail "$1" "expected: $3" ;;
-  esac
-}
+section() { awk -v s="$2" -v e="$3" '$0 ~ s && !on { on = 1; print; next } on && $0 ~ e { exit } on' "$1" | flatten_ws; }
 
-doc_flat="$(flat "$doc")"
+doc_flat="$(flatten_ws < "$doc")"
 
 # --- the B4 table: each row exactly once as a table row, its decisive clause inside THAT row ----------------
 row_text() { awk -v id="$1" 'index($0, "| " id " |") == 1' "$doc"; }
 check_row() { # ID CLAUSE
   local id="$1" clause="$2" n text
-  n="$(row_text "$id" | grep -c '')"
+  text="$(row_text "$id")"
+  n="$(printf '%s' "$text" | grep -c '')"
   if [ "$n" -ne 1 ]; then
     fail "(A7) eligibility row $id appears exactly once as a table row" "found $n rows"
     return
   fi
   pass "(A7) eligibility row $id appears exactly once as a table row"
-  text="$(row_text "$id")"
-  has "(A7) row $id carries its decisive clause" "$text" "$clause"
+  check_contains "(A7) row $id carries its decisive clause" "$text" "$clause"
 }
 check_row G1  'default-branch name outside `[A-Za-z0-9._/+-]` is refused here too'
 check_row G1b '`enforcement_level`'
@@ -66,33 +57,33 @@ check_row G8  '"Question for a /design pass" in the body, "for the design" (case
 check_row G9  '`--dispatch` only'
 
 # --- the verdict, the opt-in and who dispatches -------------------------------------------------------------
-has "(A7) B2: the yes line form" "$doc_flat" '**Cloud:** yes (YYYY-MM-DD, <who>)'
-has "(A7) B2: the no line form" "$doc_flat" '**Cloud:** no — <row>: <reason> (YYYY-MM-DD, <who>)'
-has "(A7) B1: the opt-in line shape" "$doc_flat" '^KEEL-CLOUD( unprotected-ok)?[[:space:]]*$'
-has "(A7) B1: unprotected-ok is named" "$doc_flat" '`unprotected-ok` lets row G1b pass'
-has "(A7) B10: who may dispatch, and when" "$doc_flat" \
+check_contains "(A7) B2: the yes line form" "$doc_flat" '**Cloud:** yes (YYYY-MM-DD, <who>)'
+check_contains "(A7) B2: the no line form" "$doc_flat" '**Cloud:** no — <row>: <reason> (YYYY-MM-DD, <who>)'
+check_contains "(A7) B1: the opt-in line shape" "$doc_flat" '^KEEL-CLOUD( unprotected-ok)?[[:space:]]*$'
+check_contains "(A7) B1: unprotected-ok is named" "$doc_flat" '`unprotected-ok` lets row G1b pass'
+check_contains "(A7) B10: who may dispatch, and when" "$doc_flat" \
   "A session runs \`--dispatch\` only in a turn the operator started, and only after the operator's yes in that session to a question that named the ticket — or to a wave plan that lists it as cloud."
-has "(A7) B10: a yes covers one dispatch" "$doc_flat" 'A yes covers one dispatch'
-has "(A7) B11: /go goes on locally on a refusal, with no offer" "$doc_flat" \
+check_contains "(A7) B10: a yes covers one dispatch" "$doc_flat" 'A yes covers one dispatch'
+check_contains "(A7) B11: /go goes on locally on a refusal, with no offer" "$doc_flat" \
   'a refusal is named and `/go` goes on locally, with no offer'
-has "(A7) B11: the offer comes before /go's own claim" "$doc_flat" \
+check_contains "(A7) B11: the offer comes before /go's own claim" "$doc_flat" \
   "the offer comes before \`/go\`'s own claim (step 6)"
-has "(A7) B9: the Log line carries the session id only for a gitignored backlog" "$doc_flat" \
+check_contains "(A7) B9: the Log line carries the session id only for a gitignored backlog" "$doc_flat" \
   'only when the backlog file is gitignored'
 
 # --- B12: the manager's duties and the wave-peer rule ---------------------------------------------------------
-has "(A7) B12: a wave peer keeps a ticket local" "$doc_flat" \
+check_contains "(A7) B12: a wave peer keeps a ticket local" "$doc_flat" \
   'A ticket that shares a file with another ticket in the same wave does not go to the cloud in that wave'
-has "(A7) B12: a ticket that names no file counts as sharing" "$doc_flat" 'a ticket that names none counts as sharing'
-has "(A7) B12: the plan quotes the cloud-check receipt" "$doc_flat" 'the plan quotes its `cloud-check:` receipt line'
+check_contains "(A7) B12: a ticket that names no file counts as sharing" "$doc_flat" 'a ticket that names none counts as sharing'
+check_contains "(A7) B12: the plan quotes the cloud-check receipt" "$doc_flat" 'the plan quotes its `cloud-check:` receipt line'
 
 # --- B13: landing and the merge ---------------------------------------------------------------------------------
-has "(A7) B13: the operator merges" "$doc_flat" '**The operator merges.**'
-has "(A7) B13: a cloud PR is never a constituent of the manager's train" "$doc_flat" \
+check_contains "(A7) B13: the operator merges" "$doc_flat" '**The operator merges.**'
+check_contains "(A7) B13: a cloud PR is never a constituent of the manager's train" "$doc_flat" \
   'a cloud PR is never a constituent of a train the manager merges'
-has "(A7) B13: outside a release, who lands" "$doc_flat" \
+check_contains "(A7) B13: outside a release, who lands" "$doc_flat" \
   'The operator, or a local session the operator asks, runs the landing check'
-has "(A7) B13: the merge is pinned to the head" "$doc_flat" '--match-head-commit <sha>'
+check_contains "(A7) B13: the merge is pinned to the head" "$doc_flat" '--match-head-commit <sha>'
 
 # --- B14: abandoning, under its own heading ---------------------------------------------------------------------
 if grep -qx '## Abandoning' "$doc"; then
@@ -101,54 +92,54 @@ else
   fail "(A7) B14: a section headed Abandoning exists" "expected a '## Abandoning' heading in $doc"
 fi
 aband="$(section "$doc" '^## Abandoning' '^## ')"
-has "(A7) B14: who carries abandoning out" "$aband" \
+check_contains "(A7) B14: who carries abandoning out" "$aband" \
   'carried out by the manager inside a managed release, else by a local session the operator asks'
-has "(A7) B14: abandoning clears the claim" "$aband" 'clear the claim marker'
-has "(A7) B14: abandoning sets the row to abandoned" "$aband" "set the ledger row's status to \`abandoned\`"
-has "(A7) B14: abandoning deletes the remote branch" "$aband" 'delete the remote `claude/cloud-<slug>` branch'
+check_contains "(A7) B14: abandoning clears the claim" "$aband" 'clear the claim marker'
+check_contains "(A7) B14: abandoning sets the row to abandoned" "$aband" "set the ledger row's status to \`abandoned\`"
+check_contains "(A7) B14: abandoning deletes the remote branch" "$aband" 'delete the remote `claude/cloud-<slug>` branch'
 
 # --- the tools as shipped (slice 1's escapes), not as the spec first described them -------------------------------
-has "(A7) shipped: dispatch runs the CLI under script, for the terminal it requires" "$doc_flat" \
+check_contains "(A7) shipped: dispatch runs the CLI under script, for the terminal it requires" "$doc_flat" \
   'the tool runs it under `script` (a pseudo-terminal)'
-has "(A7) shipped: steering goes through the web view or claude --cloud from a terminal" "$doc_flat" \
+check_contains "(A7) shipped: steering goes through the web view or claude --cloud from a terminal" "$doc_flat" \
   'or `claude --cloud <session id>` from a terminal'
-has "(A7) shipped: landing refuses a PR whose base is not the default branch" "$doc_flat" \
+check_contains "(A7) shipped: landing refuses a PR whose base is not the default branch" "$doc_flat" \
   'a PR whose base is not the default branch'
-has "(A7) shipped: CI is green only when at least one check succeeded" "$doc_flat" '**and at least one succeeded**'
-has "(A7) shipped: --sweep marks a landed row stale on a non-zero landing exit" "$doc_flat" \
+check_contains "(A7) shipped: CI is green only when at least one check succeeded" "$doc_flat" '**and at least one succeeded**'
+check_contains "(A7) shipped: --sweep marks a landed row stale on a non-zero landing exit" "$doc_flat" \
   'when its last landing check exited non-zero'
-has "(A7) shipped: the marker check reads every commit" "$doc_flat" 'Every commit is read, not the net diff'
-has "(A7) shipped: the home rewrite is wider than one form" "$doc_flat" \
+check_contains "(A7) shipped: the marker check reads every commit" "$doc_flat" 'Every commit is read, not the net diff'
+check_contains "(A7) shipped: the home rewrite is wider than one form" "$doc_flat" \
   'each logical and physical'
-has "(A7) shipped: the personal check is fail-closed" "$doc_flat" 'The personal check is **fail-closed**'
+check_contains "(A7) shipped: the personal check is fail-closed" "$doc_flat" 'The personal check is **fail-closed**'
 
 # --- the places that point at the doc ------------------------------------------------------------------------------
 headline="$(section "$backlog_md" '^\*\*Headline discipline' '^\*\*Readiness & field legend')"
-has "(A7) B3: backlog.md's headline-discipline block carries the cloud-verdict rule" "$headline" \
+check_contains "(A7) B3: backlog.md's headline-discipline block carries the cloud-verdict rule" "$headline" \
   '**The cloud verdict (docs/cloud.md).**'
-has "(A7) B3: ...with both line forms" "$headline" \
+check_contains "(A7) B3: ...with both line forms" "$headline" \
   '`**Cloud:** yes (YYYY-MM-DD, <who>)` or `**Cloud:** no — <row>: <reason> (YYYY-MM-DD, <who>)`'
-has "(A7) B3: ...as a body line, never a heading marker" "$headline" 'a body line, never a heading marker'
+check_contains "(A7) B3: ...as a body line, never a heading marker" "$headline" 'a body line, never a heading marker'
 
 r1="$(section "$rm_doc" '^## R1 ' '^## R2 ')"
 r2="$(section "$rm_doc" '^## R2 ' '^## R3 ')"
 r3="$(section "$rm_doc" '^## R3 ' '^## The worker brief')"
-has "(A7) B12: R1 carries the verdict duty" "$r1" "intake also settles each slate ticket's cloud verdict"
-has "(A7) B12: R2 carries the route column" "$r2" 'the wave plan carries a route column'
-has "(A7) B12: R2 names --check and its receipt" "$r2" '`cloud-check:` receipt line'
-has "(A7) B12: R3 carries the cloud exception" "$r3" 'Named exception — a cloud worker'
-has "(A7) B12: R3 keeps the operator as the merger" "$r3" 'never a constituent of a train the manager merges'
+check_contains "(A7) B12: R1 carries the verdict duty" "$r1" "intake also settles each slate ticket's cloud verdict"
+check_contains "(A7) B12: R2 carries the route column" "$r2" 'the wave plan carries a route column'
+check_contains "(A7) B12: R2 names --check and its receipt" "$r2" '`cloud-check:` receipt line'
+check_contains "(A7) B12: R3 carries the cloud exception" "$r3" 'Named exception — a cloud worker'
+check_contains "(A7) B12: R3 keeps the operator as the merger" "$r3" 'never a constituent of a train the manager merges'
 
 m2="$(section "$mr_cmd" '^\*\*M2 ' '^\*\*M3 ')"
 m3="$(section "$mr_cmd" '^\*\*M3 ' '^\*\*M4 ')"
 m4="$(section "$mr_cmd" '^\*\*M4 ' '^\*\*M5 ')"
-has "(A7) B12: manage-release M2 points at the cloud doc" "$m2" 'docs/cloud.md'
-has "(A7) B12: manage-release M3 points at the route column" "$m3" "R2's route column"
-has "(A7) B12: manage-release M4 points at the cloud exception" "$m4" "R3's cloud exception"
+check_contains "(A7) B12: manage-release M2 points at the cloud doc" "$m2" 'docs/cloud.md'
+check_contains "(A7) B12: manage-release M3 points at the route column" "$m3" "R2's route column"
+check_contains "(A7) B12: manage-release M4 points at the cloud exception" "$m4" "R3's cloud exception"
 
-has "(A7) B12: delegation.md's named override has the cloud sentence" "$(flat "$deleg_doc")" \
+check_contains "(A7) B12: delegation.md's named override has the cloud sentence" "$(flatten_ws < "$deleg_doc")" \
   "A cloud worker is launched under [\`docs/cloud.md\`](cloud.md)'s own gate"
-has "(A7) B3: grooming.md carries the gap-fill" "$(flat "$groom_doc")" \
+check_contains "(A7) B3: grooming.md carries the gap-fill" "$(flatten_ws < "$groom_doc")" \
   'the groom also fills the cloud-verdict gaps in its slate'
 
 pin "(A7) docs/reference.md lists docs/cloud.md" "$REPO_ROOT/docs/reference.md" '[`docs/cloud.md`](cloud.md)' \
@@ -173,7 +164,7 @@ fi
 
 # Wrong build 1: G5 listed twice (the old and the new wording) fails "exactly once".
 m1="$(scratch_copy "$doc" cloud.md)"
-printf '%s\n' '| G5 | The ticket is not itself a managed-release role. | judged |' >> "$m1"
+append_line "$m1" '| G5 | The ticket is not itself a managed-release role. | judged |'
 assert_case_turns_red "(A7) mutation: G5 listed twice" \
   "(A7) eligibility row G5 appears exactly once as a table row" "KEEL_CLOUD_DOC=$m1"
 
