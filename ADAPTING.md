@@ -109,6 +109,10 @@ keep them around and paste the one you need when you need it.
   steps are still worth running by hand or as a prompt, but nothing will block a PR if you skip them. The
   same installer's seventh hook, which injects `docs/delegation.md`'s worker rails into every subagent at
   start, is a Claude Code `SubagentStart` feature and does not port either.
+- **The cloud route** (`docs/cloud.md`, `tools/cloud-brief.sh`, `tools/cloud-land.sh`) — runs a ticket in a
+  Claude Code cloud session through `claude --cloud`, and uses GitHub and the `gh` CLI. It **does not port**:
+  the dispatch is Claude Code's, and the VM protocol assumes its tools. On another harness the ticket
+  verdict and the landing check are still plain Bash and prose, but nothing starts the session for you.
 - **The restricted review agent** — `agents/keel-polish-reviewer.md` (`tools: Read, Grep, Glob`, no
   shell) is `/polish`'s review subagent (step 5 and its second-opinion add-on), wired by `install.sh` into `<home>/agents/`. The tool allowlist
   is a Claude Code feature (`agents/*.md` with a `tools:` list). On another harness `/polish`'s review has

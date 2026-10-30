@@ -236,9 +236,14 @@ mw_diff_file() {
 # FILE (SETFILE: the resolved set) is filtered out of find's output in ONE awk pass (a fork per hit would cost
 # thousands on a bulk change) — its own row already reports it, under its own tier. Capped at 20 lines.
 mw_scan_tree() {
-  local tier="$1" id="$2" root="$3" stamp="$4" setfile="$5" hit n=0 more=0
+  local tier="$1" id="$2" root="$3" stamp="$4" setfile="$5" hits hit n=0 more=0
   [ -f "$stamp" ] || return 0
   mw_find_newer_flag
+  # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+  hits="$(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null | awk -v sf="$setfile" '
+    BEGIN { FS = "\t"; while ((getline l < sf) > 0) { split(l, a, "\t"); if (a[3] == "file") skip[a[4]] = 1 } }
+    !($0 in skip)')" || true
+  [ -n "$hits" ] || return 0
   while IFS= read -r hit; do
     if [ -d "$hit" ] && [ ! -L "$hit" ]; then
       if [ -n "$(find "$hit/.DS_Store" -maxdepth 0 "$MW_NEWER" "$stamp" 2>/dev/null)" ]; then continue; fi
@@ -246,9 +251,7 @@ mw_scan_tree() {
     else
       if [ "$n" -lt 20 ]; then n=$((n + 1)); mw_line "$tier" "$id" "$hit" "changed"; else more=$((more + 1)); fi
     fi
-  done < <(find "$root" "$MW_NEWER" "$stamp" ! -name .DS_Store 2>/dev/null | awk -v sf="$setfile" '
-    BEGIN { FS = "\t"; while ((getline l < sf) > 0) { split(l, a, "\t"); if (a[3] == "file") skip[a[4]] = 1 } }
-    !($0 in skip)')
+  done <<< "$hits"
   if [ "$more" -gt 0 ]; then mw_line "$tier" "$id" "$root" "…and $more more entries changed"; fi
 }
 

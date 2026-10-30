@@ -406,7 +406,7 @@ _alwayson_imports() {
 # dir #252 owns Antigravity's). STOP_SET: a newline-framed set of real paths not followed or counted (the per-project
 # run passes the global chain's, so a global file is never counted or judged twice).
 alwayson_chain() {
-  local root="$1" stop="${2-}" max_hop=4 hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
+  local root="$1" stop="${2-}" max_hop=4 hop=0 queue next f fdisp toks tok abs real pr seen=$'\n' dseen=$'\n'
   [ -f "$root" ] || return 0
   if [ ! -r "$root" ]; then printf 'UNREAD\t%s\n' "$root"; return 0; fi
   real="$(_real_path "$root")" || real="$root"
@@ -419,6 +419,8 @@ alwayson_chain() {
     next=""
     while IFS=$'\t' read -r f fdisp; do
       [ -n "$f" ] || continue
+      # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+      toks="$(_alwayson_imports "$f")" || true
       while IFS= read -r tok; do
         [ -n "$tok" ] || continue
         case "$tok" in
@@ -442,7 +444,7 @@ alwayson_chain() {
         pr="$(_parent_real "$abs")" || pr="$abs"
         printf 'LOAD\t%s\t%s\t%s\t%s\t%s\t%s\n' "$((hop + 1))" "$real" "$pr" "$(_char_count "$abs")" "$abs" "$fdisp"
         next="$next$real	$abs"$'\n'
-      done < <(_alwayson_imports "$f")
+      done <<<"$toks"
     done <<<"$queue"
     queue="$next"; hop=$((hop + 1))
   done
@@ -1947,7 +1949,7 @@ memory_checks() {
   # the NEWEST code path it backticks; a note naming no tracked path has no code date and never fires.
   [ "$MEMORY_AGE" = 1 ] || return 0
   git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  local nd_pair nd src p cdate newest newest_p tok code_cache=""
+  local nd_pair nd src p cdate newest newest_p toks tok code_cache=""
   local git_dates=""
   if git -C "$mem_real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # newest-first log: the first sighting of a name is its last commit; a file with no commit is absent.
@@ -1961,6 +1963,8 @@ memory_checks() {
     [ -n "$nd_pair" ] || continue
     nd="${nd_pair%% *}"; src="${nd_pair##* }"
     newest=""; newest_p=""
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    toks="$(_backtick_tokens "$f" 1)" || true
     while IFS= read -r tok; do
       p="$(_mem_path_token "$tok" "$d")"
       [ -n "$p" ] || continue
@@ -1970,7 +1974,7 @@ memory_checks() {
       fi
       [ -n "$cdate" ] || continue
       if [ -z "$newest" ] || [[ "$newest" < "$cdate" ]]; then newest="$cdate"; newest_p="$p"; fi
-    done < <(_backtick_tokens "$f" 1)
+    done <<<"$toks"
     if [ -n "$newest" ] && [[ "$nd" < "$newest" ]]; then
       hint H-MEMORY-STALE "$base (${nd}[${src}] < $newest for $newest_p) — the note is older than the code it names: re-verify it, then refresh or delete it (FRAMEWORK.md \"Staleness check\")"
     fi

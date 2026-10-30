@@ -68,6 +68,11 @@ an intake check, never a cap this doc sets for you — an operator who sees both
 the larger slate has made a real decision, and that choice belongs on the release row as a named risk
 rather than as a surprise mid-run.
 
+**In a cloud-capable project, intake also settles each slate ticket's cloud verdict.** A project whose main
+checkout's `CLAUDE.md` carries a `KEEL-CLOUD` line can run a ticket in a Claude Code cloud session
+([`docs/cloud.md`](cloud.md)). Intake therefore judges and writes any missing `**Cloud:**` verdict line for a
+slate ticket — the manager is the single backlog writer (R8) — before the wave plan routes anything.
+
 ## R2 — wave plan by file overlap, merges serialized
 
 Cut waves by file overlap — a ticket whose surface is "every file matching X" (a citation sweep, a
@@ -101,6 +106,14 @@ worker's `--force-with-lease` replaced a head the button had already merged to a
 already identical, nothing is pushed. The manager's own `gh pr update-branch` (R14) moves the head the same way
 and falls under the same rule.
 
+**In a cloud-capable project the wave plan carries a route column ([`docs/cloud.md`](cloud.md)).** Each
+ticket reads `cloud` or `local — <why>` (`no — <row>`, no verdict, a wave peer, a `--check` refusal). Each
+`cloud` ticket passed `cloud-brief.sh <repo> "<id>" --check` before the plan is shown, and the plan quotes its
+`cloud-check:` receipt line. A ticket that shares a file with another ticket in the same wave, or names no
+file at all, does not go to the cloud in that wave — the manager cannot message a cloud worker, so R10's seams
+duty has no channel there — and the manager may move a ticket to a later wave to free it, saying so in the
+plan. The operator's yes on the plan is the yes for each listed cloud ticket, one dispatch each.
+
 ## R3 — worker launches, soft form
 
 Where the harness can launch a real, gated session directly, **the manager launches worker sessions
@@ -113,10 +126,19 @@ launching itself has no operator left to appear as bounded. Two conditions keep 
 - **The operator can revoke to manual launching at any time.**
 
 The gates are untouched by who typed the launch: a manager-launched real session passes through the
-exact same `/polish`/gate/PR flow a human-launched one would. What
+exact same `/polish`/gate/PR flow a human-launched one would — a cloud worker (below) is the one named exception. What
 [`docs/delegation.md`](delegation.md)'s Mutator row actually protects is **gatedness**, not who typed
 the command that started the session — see the cross-edit at the bottom of this doc's R3 section in
 `docs/delegation.md` itself, which now states this exception by name.
+
+**Named exception — a cloud worker ([`docs/cloud.md`](cloud.md)).** A slate ticket the plan routes to the
+cloud is launched by the manager running `cloud-brief.sh --dispatch`, not `start_session`, and its gate is not the
+local flow above: the session's own review, the VM's pre-push scans, CI, and `cloud-land.sh` exit 0 for the
+exact head, then the operator merges — never the manager, and a cloud PR is never a constituent of a train
+the manager merges. The manager writes the claim (R8), learns the PR exists at each R10/R11 sweep, runs the
+landing check and reports its exit on the R6 channel; a dispatch refused after a passed `--check` sends that
+ticket local this wave. A cloud worker writes no backlog entry, and its PR body's Landing notes are its
+checkpoint report (R13). A manager, train worker or auditor never runs in the cloud.
 
 **Model recommendations belong at launch, not buried in a brief's tail** — a practice note, not its own
 numbered requirement: state the model/effort call as the first line of the launch gesture, since a

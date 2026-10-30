@@ -74,7 +74,7 @@ srm_keep_hint() {
 
 srm_main() {
   set -u
-  local from="" dry=0 root name src tgt_root e base t from_home
+  local from="" dry=0 root name src tgt_root entries e base t from_home
   local moved=0 kept=0 problems=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -98,6 +98,9 @@ srm_main() {
     tgt_root="$root/$name"
     # The legacy root IS the target root (a compat link to it, or the same directory): nothing to move.
     if [ "$src" -ef "$tgt_root" ]; then continue; fi
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    entries="$(keel_legacy_store_entries "$name" "$from")" || true
+    [ -n "$entries" ] || continue
     while IFS= read -r e; do
       base="${e##*/}"
       t="$tgt_root/$base"
@@ -125,7 +128,7 @@ srm_main() {
       else
         problems=$((problems + 1))
       fi
-    done < <(keel_legacy_store_entries "$name" "$from")
+    done <<< "$entries"
   done
 
   if [ "$moved" -eq 0 ] && [ "$kept" -eq 0 ] && [ "$problems" -eq 0 ]; then

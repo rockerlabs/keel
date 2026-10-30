@@ -114,10 +114,12 @@ a3_floor_vars="KEEL_HOME KEEL_IMPACT_STORE KEEL_IMPACT_LOG KEEL_READ_TRACE_STORE
 # combined extraction never saw every $a3_floor_vars entry (the guard that stops a broken PATTERN, or a
 # TARGETS list that resolves nothing, from passing on zero matches).
 a3_check() {
-  local targets="$1" pattern="$2" spec file func var bad=0 seen=""
+  local targets="$1" pattern="$2" spec file func vars var bad=0 seen=""
   while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     file="${spec%%:*}"; func="${spec#*:}"
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    vars="$(sed -n "/^${func}() {/,/^}/p" "$file" | grep -oE "$pattern" | sed -E 's/^\$\{?//' | sort -u)" || true
     while IFS= read -r var; do
       [ -n "$var" ] || continue
       printf '%s\n' "$var"
@@ -126,7 +128,7 @@ a3_check() {
         *) [ "$var" = "HOME" ] || bad=1 ;;
       esac
       case " $a3_floor_vars " in *" $var "*) seen="$seen $var " ;; esac
-    done < <(sed -n "/^${func}() {/,/^}/p" "$file" | grep -oE "$pattern" | sed -E 's/^\$\{?//' | sort -u)
+    done <<< "$vars"
   done <<< "$targets"
   for var in $a3_floor_vars; do
     case "$seen" in *" $var "*) ;; *) bad=1 ;; esac
