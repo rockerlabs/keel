@@ -64,6 +64,14 @@ check_contains "the line after the fence survives" "$out" "after"
 check_absent "the fenced long line is blanked out" "$out" "fenced long line"
 check_absent "the fence markers themselves are blanked too" "$out" '```'
 
+# --- fence_marker_lines (dir #907) lists exactly the lines blank_fenced_blocks toggles on: rebuilding the blanked
+# text by toggling at the listed lines gives blank_fenced_blocks' own output, every marker shape included ----------
+printf 'text\n```sh\ncode\n```\nbetween\n  ~~~\ntilde code\n~~~\nafter\n````\ninner\n````\ntail\n' > "$d/m.md"
+check_eq "fence_marker_lines lists every marker line" "2 4 6 8 10 12" "$(fence_marker_lines "$d/m.md" | tr '\n' ' ' | sed 's/ $//')"
+rebuilt="$(fence_marker_lines "$d/m.md" | awk 'NR == FNR { m[$1] = 1; next }
+  FNR in m { f = !f; print ""; next } f { print ""; next } { print }' - "$d/m.md")"
+check_eq "toggling at those lines reproduces blank_fenced_blocks' output" "$(blank_fenced_blocks "$d/m.md")" "$rebuilt"
+
 # --- blank_inline_code_spans (dir #240 item 3): drops an INLINE `code span` on a line; text outside
 # any span, on the same or a different line, survives --------------------------------------------
 out="$(printf 'before `[x](#nope)` after\nplain line\n' | blank_inline_code_spans)"

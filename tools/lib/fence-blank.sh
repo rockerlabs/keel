@@ -8,9 +8,10 @@
 # this ticket's own `/code-review high` pass, cross-file angle — grep this repo for
 # `blank_fenced_blocks`/`blank_inline_code_spans` for the current, real set, which also includes
 # tools/self/citation-resolvability.sh, tools/self/pool-report.sh, tools/lib/backlog-blocks.sh, and
-# tools/delta-audit/harvest.sh). Two functions, two different scopes: blank_fenced_blocks() below is the
-# ONE fenced-code-block toggle (a multi-line region), blank_inline_code_spans() further down is the ONE
-# inline-code-span stripper (a single-line span) — both exist so a heading-, wrap-, or link-shaped line
+# tools/delta-audit/harvest.sh). Two scopes: blank_fenced_blocks() below is the ONE fenced-code-block
+# toggle (a multi-line region; fence_marker_lines() beside it lists the lines that toggle reads),
+# blank_inline_code_spans() further down is the ONE inline-code-span stripper (a single-line span) — both
+# exist so a heading-, wrap-, or link-shaped line
 # living inside a code example never reads as real content, while every other line's number stays
 # aligned with the original file. doctor.sh's own comment on blank_fenced_blocks() already records one
 # prior instance of that exact toggle drifting apart between two checks in the SAME file before being
@@ -36,6 +37,14 @@
 # remembers to add one.
 blank_fenced_blocks() {
   awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }' "$1"
+}
+
+# fence_marker_lines FILE — the line number of every line blank_fenced_blocks() above toggles on, one per line in
+# file order: for a caller that needs the fence structure itself rather than the blanked text (dir #907:
+# tools/cloud-brief.sh reads the markers after the last ticket's END to tell a closed fence from an unclosed one).
+# The pattern is blank_fenced_blocks()' own, byte for byte; tests/test_fence_blank_lib.sh pins that the two agree.
+fence_marker_lines() {
+  awk '/^[[:space:]]*(```|~~~)/ { print NR }' "$1"
 }
 
 # blank_inline_code_spans — drop every INLINE `code span` (backticks included) from each line on
