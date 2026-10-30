@@ -39,6 +39,7 @@
 # blank_inline_code_spans() reads stdin and adds no line, so it keeps no strip of its own: feed it the
 # (already NUL-free) output of the functions above.
 blank_fenced_blocks() {
+  [ -r "$1" ] || { echo "fence-blank: cannot read $1" >&2; return 2; }  # the redirect below would hide it from the pipe
   tr -d '\000' < "$1" | awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } infence { print ""; next } { print }'
 }
 
@@ -47,6 +48,7 @@ blank_fenced_blocks() {
 # tools/cloud-brief.sh reads the markers after the last ticket's END to tell a closed fence from an unclosed one).
 # The pattern is blank_fenced_blocks()' own, byte for byte; tests/test_fence_blank_lib.sh pins that the two agree.
 fence_marker_lines() {
+  [ -r "$1" ] || { echo "fence-blank: cannot read $1" >&2; return 2; }
   tr -d '\000' < "$1" | awk '/^[[:space:]]*(```|~~~)/ { print NR }'
 }
 

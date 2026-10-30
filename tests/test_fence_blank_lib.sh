@@ -98,6 +98,12 @@ else
   pass "no busybox binary on this host: the busybox-awk NUL legs run on the alpine CI leg (system awk there IS busybox)"
 fi
 
+# --- an unreadable input still fails (awk's exit 2 before the NUL strip), it is not read as an empty file
+rc=0; blank_fenced_blocks "$d/absent.md" >/dev/null 2>&1 || rc=$?
+check_eq "blank_fenced_blocks on a missing file exits 2" 2 "$rc"
+rc=0; fence_marker_lines "$d/absent.md" >/dev/null 2>&1 || rc=$?
+check_eq "fence_marker_lines on a missing file exits 2" 2 "$rc"
+
 # --- header census (dir #917): every file under tools/ and commands/ that mentions blank_fenced_blocks is named in the
 # lib's header, so a new caller (or a rename) cannot leave the adopter-facing-callers list stale -----------------------
 header="$(sed -n '/^[^#]/q;p' "$lib")"
