@@ -33,6 +33,13 @@
 #                                  repository, never committed).
 #   bypass-scan.sh -h | --help
 # Environment: KEEL_TRANSCRIPTS_DIR (default ${KEEL_HOME:-$HOME/.claude}/projects), KEEL_GUARDS_ACCUM_DIR. Needs jq.
+#
+# Known bypasses (1b, docs/verification-economics.md §4): this tool's register — a shape no ordinary run produces, kept
+# here instead of a ticket. The tool is a sensor, not a guard, so SECURITY.md "Threat model by guard" does not list it.
+# A bypass: --out inside a work tree that git refuses to open (another uid owns it, or git is not installed) is not
+# refused — in_git_tree reads "git failed" as "not a work tree", and the 0600 candidate file is written there (no
+# [bypass:] key: not a command shape; reproduced with GIT_TEST_ASSUME_DIFFERENT_OWNER=1) — dir #842, delta-audit
+# 0.17.0 S9-5. The fix that makes a failing git refuse deletes this entry.
 set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE

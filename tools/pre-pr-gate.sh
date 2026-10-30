@@ -35,8 +35,8 @@
 # an alias or wrapper script; a whole command inside a quoted argument (`sh -c '…'`, `eval "…"`); a quoted subcommand
 # word (`gh "pr" create`, `git "push"`); a word the shell assembles at run time — a brace expansion
 # (`git push {--no-verify,}`) or an expansion glued to a bypass (`--no-verify$(true)`); a `git config` write in an
-# earlier segment; a leading word outside the skip set [bypass:gate-push:wrapper-outside-skip-set] (`sudo`, `timeout`,
-# `env -C`, `/usr/bin/env …`, zsh's `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`,
+# earlier segment; a leading word outside the skip set [bypass:gate-push:wrapper-outside-skip-set] (`sudo`, `timeout`, `nice -n 5`,
+# `env -C`, `/usr/bin/env …`, zsh's `noglob`, bash's `coproc`) and a wrapper's own flags (`exec -a x`, `xargs -r`, `xargs -n1`,
 # `nohup --`, an env argument whose name is no identifier); a `case` header split over lines behind a prefix word
 # (`coproc NAME case x`, newline, `in`) or an `esac` as the first pattern on its own line, inside `$(…)`;
 # an array assignment's `(…)` (read as commands: a false deny, fail-safe);
