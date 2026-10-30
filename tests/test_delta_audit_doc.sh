@@ -384,4 +384,6 @@ check_contains "section 11 class 2 routes to the non-reasoning model at class 3'
 check_contains "section 11 class 3 leaves the bound to the caller, not vendor-review.sh (dir #898)" "$s11_898" \
   "The 10 KB bundle bound is the caller's (or its client's) to keep, not \`tools/vendor-review.sh\`'s"
 
+pin "dir #807: delta-audit.md section 8 routes a BACKLOG.md-resident record through the manager" "$doc" 'manager is the one `BACKLOG.md` writer, so a record the project keeps there' "expected section 8 to name the manager as the writer in a managed release"
+
 summary

@@ -27,8 +27,8 @@ paying for. So [`grooming.md`](grooming.md) G4 and `/global-review` *call* this 
 **T0 — resolve inputs.** The backlog the `/go` way (`dir #N` for a project, `KB.x` for a knowledge
 base). The three tiers come from the project's `CLAUDE.md` map: the learnings file, the ideas file, and
 the standing list (keel: the `## Standing list` section of `BACKLOG.md`; another project names its own
-durable re-read list, or `none`). An input that is absent → one line saying so, skip it; this pass never
-creates a tier.
+durable re-read list, or `none`). A named tier in the command's argument narrows the pass to it. An input that is
+absent → one line saying so, skip it; this pass never creates a tier.
 
 **T1 — order of work, bounded.** In this order: (1) every learnings entry at `[2×]` or more — the
 promote-due set, highest value; (2) standing-list lines that recur across cycles; (3) ideas entries;

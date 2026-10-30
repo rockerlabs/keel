@@ -195,6 +195,7 @@ check_contains "dir #611: the refusal names the parent repo" "$OUT" "inside the 
 check_contains "dir #611: the refusal prints the working --nested command" "$OUT" "--nested \"$(cd "$site" && pwd -P)\""
 check_nofile "dir #611: refusal writes no CLAUDE.md" "$site/CLAUDE.md"
 check_nofile "dir #611: refusal writes no .gitignore" "$site/.gitignore"
+check_eq "dir #807: a refused absent target is left as an empty directory, no file written" "" "$(ls -A "$site")"
 check_nodir "dir #611: refusal creates no repo in the target" "$site/.git"
 check_nodir "dir #611: the parent gained no impact-store entry" "$KEEL_IMPACT_STORE/$zone_id"
 check_nofile "dir #611: the parent gained no .gitignore" "$zone/.gitignore"
@@ -219,5 +220,7 @@ sub="$zone/repos/other"; mkdir -p "$sub"
 run bash -c 'cd "$1" && "$2" --no-register' _ "$sub" "$init"
 check_status "dir #611: cwd default inside another repo → exit 2" 2 "$STATUS"
 check_nofile "dir #611: cwd-default refusal writes no CLAUDE.md" "$sub/CLAUDE.md"
+
+pin "dir #807: the command doc says before any FILE is written" "$REPO_ROOT/commands/init-project.md" 'is refused before any file is written (an absent target directory is created empty first)' "expected the doc to match the refusal's real effect"
 
 summary

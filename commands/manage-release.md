@@ -72,7 +72,8 @@ the same way and hand over the merge as R9's block.
 **M8 — close checklist (R9).**
 Run your project's release-candidate delta audit — keel's own is `/delta-audit <version>` — before
 cutting the tag; fall back to reading the release-readiness doc directly where the entrypoint doesn't
-exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses. The cut PR carries the
+exist yet. Hand the auditor a starting brief in the same five-part shape M4 uses; its report carries the audit's `no-action`
+findings and staged-ticket drafts inline, and you write them under R8 before the GO is recorded (R9, dir #807). The cut PR carries the
 release-record entry (keel: `docs/release-history.md`; R9, dir #866). Compose the release
 notes yourself from the `CHANGELOG.md` section at the verified GO SHA, before the tag exists; hand the
 operator every remaining action (tag, publish, and install where the build has a daily-use

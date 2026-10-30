@@ -33,7 +33,7 @@ CLAUDE.md, an AGENTS.md vendor sibling symlinked to it for Codex/Cursor), opts t
 project into impact tracking (an external store entry, dir #251 — nothing is written
 into the project's own tree), auto-registers the project in your INSTANCE.md, and
 reports — it never overwrites a file you have. A PROJECT_DIR inside another git
-repo is refused with nothing scaffolded, unless --nested makes it a repo of its own.
+repo is refused before any file is written, unless --nested makes it a repo of its own.
 EOF
       exit 0 ;;
     --no-register) REGISTER=0 ;;

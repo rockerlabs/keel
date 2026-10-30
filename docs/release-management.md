@@ -557,6 +557,11 @@ set is unchanged from [`docs/delegation.md`](delegation.md) — the release itse
 install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
 (keel does).
 
+**The audit's closing records route through the manager (dir #807).** The auditor the brief launches is the audit's orchestrator
+([`docs/delta-audit.md`](delta-audit.md) §8), and R8 keeps it out of `BACKLOG.md`. Its report therefore carries, inline (R13), the
+`no-action` findings bound for the standing list and the staged-ticket drafts, and the manager writes them under R8 before the GO is
+recorded; the close checklist is not done until it has. The run's row in the cross-run record is not a `BACKLOG.md` write and stays the orchestrator's.
+
 **An audit-heavy worker reaches `/polish`'s compaction stop at its fix loop (dir #828).** One RC-audit worker stood at
 457k tokens of context at `/polish` step 1 (the threshold then was 250k) after four auditors and a thirteen-commit
 fix loop, and a worker cannot type `/compact`: the pause cost a manager-to-operator round trip and a hand-written

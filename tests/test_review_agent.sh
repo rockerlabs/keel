@@ -54,4 +54,7 @@ run agent_floor_problem "$SANDBOX/two.md" "Read, Grep, Glob"; check_ne "a second
 mk ag 'tools: Read, Grep, Glob, Agent';    run agent_floor_problem "$SANDBOX/ag.md" "Read, Grep, Glob"; check_ne "Agent in tools is flagged" "" "$OUT"
 mk ro 'tools: Glob, Read, Grep';           run agent_floor_problem "$SANDBOX/ro.md" "Read, Grep, Glob"; check_eq "the same set in another order is accepted" "" "$OUT"
 run agent_floor_problem "$SANDBOX/does-not-exist.md" "Read, Grep, Glob"; check_ne "a missing file is flagged" "" "$OUT"
+pin "dir #807: ADAPTING.md names both /polish uses of the review agent" "$REPO_ROOT/ADAPTING.md" 'review subagent (step 5 and its second-opinion add-on)' "expected ADAPTING.md to match agents/keel-polish-reviewer.md"
+pin "dir #807: docs/reference.md names both /polish uses of the review agent" "$REPO_ROOT/docs/reference.md" 'review subagent (step 5 and its second-opinion add-on)' "expected docs/reference.md to match agents/keel-polish-reviewer.md"
+
 summary

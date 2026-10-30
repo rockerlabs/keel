@@ -110,7 +110,7 @@ keep them around and paste the one you need when you need it.
   same installer's seventh hook, which injects `docs/delegation.md`'s worker rails into every subagent at
   start, is a Claude Code `SubagentStart` feature and does not port either.
 - **The restricted review agent** — `agents/keel-polish-reviewer.md` (`tools: Read, Grep, Glob`, no
-  shell) is `/polish`'s review subagent, wired by `install.sh` into `<home>/agents/`. The tool allowlist
+  shell) is `/polish`'s review subagent (step 5 and its second-opinion add-on), wired by `install.sh` into `<home>/agents/`. The tool allowlist
   is a Claude Code feature (`agents/*.md` with a `tools:` list). On another harness `/polish`'s review has
   no structural floor: the prose rails stay the only containment, and the trace gate does not port anyway —
   use your tool's own read-only or sandboxed subagent mode if it has one.

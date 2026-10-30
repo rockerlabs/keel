@@ -324,4 +324,7 @@ check_contains "A12: --help states the one CLAUDE.md exception" "$OUT" "refresh 
 check_contains "A12: the linked keel/README.md heredoc lists docs/" "$(cat "$mig_home/keel/README.md")" '`docs/`'
 check_contains "A12: the ephemeral summary's by-hand removal names docs/" "$ih" "(FRAMEWORK.md, PRINCIPLES.md, docs/, the"
 
+pin "dir #807: getting-started names the real state-file location" "$REPO_ROOT/docs/getting-started.md" 'state files per repo under `$HOME/.keel/tmp/pre-pr-gate/`' "expected the footprint prose to name tools/pre-pr-gate.sh's real state dir"
+check_absent "dir #807: getting-started no longer says /tmp state files" "$(cat "$REPO_ROOT/docs/getting-started.md")" '`/tmp` state files'
+
 summary

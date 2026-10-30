@@ -35,6 +35,7 @@
 # VERSION (e.g. 0.14.0, a leading `v` allowed) limits the check to that release's plan section(s);
 # without it every `## v<X.Y.Z>` section is checked. RELEASES_PATH defaults to the MAIN checkout's
 # RELEASES.md (the same resolution pool-report.sh uses for BACKLOG.md).
+# A lone `x.y.z` argument (no such file) is read as the VERSION: `value-claim-lint.sh 0.14.0` (dir #807).
 #
 # Always exits 0 (advisory — run at G5 before G6); a missing/unreadable RELEASES.md is a skip,
 # not an error, like every keel-self-maintenance check that reads a gitignored file.
@@ -62,14 +63,18 @@ Flags every value-claim cell in a RELEASES.md plan section that carries none of 
 `Subject set:` clause, a `Residue:` clause (the source/diff/residue vocabulary), `no claim ...`,
 or `no subject set — <why>` (dir #672). Covers `| value claim ... |` table rows and
 the bullets under a `**Value claims ...**` lead-in. VERSION (e.g. 0.14.0) limits the check to
-that release's section. Advisory: always exits 0.
+that release's section; a lone x.y.z that is not an existing file is read as the VERSION (only when it is the last
+argument). Advisory: always exits 0.
 EOF
       exit 0 ;;
     -*)
       echo "value-claim-lint: unknown flag: $1" >&2
       exit 2 ;;
     *)
-      if [ -z "$releases_arg" ]; then releases_arg="$1"
+      # A lone `x.y.z` (a leading `v` allowed) that is not an existing file is the VERSION, so the default
+      # RELEASES.md (the main checkout's) is read from a worktree too (dir #807).
+      if [ -z "$releases_arg" ] && [ $# -eq 1 ] && [ ! -e "$1" ] && [[ "$1" =~ ^v?[0-9]+[.][0-9]+[.][0-9]+$ ]]; then version="${1#v}"
+      elif [ -z "$releases_arg" ]; then releases_arg="$1"
       elif [ -z "$version" ]; then version="${1#v}"
       else echo "value-claim-lint: too many arguments" >&2; exit 2
       fi

@@ -137,7 +137,7 @@ case "$cmd" in
   # Verb admission rule (dir #314 §9.4): a verb here is a BARE command an adopter types standalone,
   # with no other Keel doc/skill as its canonical entry point. tools/keel-impact.sh, pre-pr-gate.sh,
   # branch-cleanup.sh, changelog-section.sh, delta-audit/derive.sh, pipeline-canary.sh,
-  # drydock/inventory.sh and the two install-*.sh installers are each reached through a documented
+  # drydock/inventory.sh and the four tools/install-*.sh installers are each reached through a documented
   # procedure that already names its own invocation (commands/keel-score.md's "Append the row" step is
   # explicit about
   # spelling out the full tools/ path rather than a shortcut) — so they stay off this list. `tokens`
