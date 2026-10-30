@@ -100,14 +100,16 @@ inherited_reads() {
     # non-comment lines only, so a name that appears in prose alone is not a read
     local code; code="$(grep -avE '^[[:space:]]*#' "$f" 2>/dev/null)"
     [ -n "$code" ] || continue
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    local names; names="$(printf '%s\n' "$code" \
+      | grep -aoE '(\$\{?|ENVIRON\["|printenv +)KEEL_[A-Z0-9_]+' | grep -aoE 'KEEL_[A-Z0-9_]+' | LC_ALL=C sort -u)" || true
     while IFS= read -r name; do
       [ -n "$name" ] || continue
       # a here-string, not a pipe: owns_name exits at its first match, and a producer killed by SIGPIPE
       # flips the pipeline's status under pipefail — an owned name would fall through as an inherited read
       owns_name "$name" <<<"$code" && continue
       printf '%s\n' "$name"
-    done < <(printf '%s\n' "$code" \
-      | grep -aoE '(\$\{?|ENVIRON\["|printenv +)KEEL_[A-Z0-9_]+' | grep -aoE 'KEEL_[A-Z0-9_]+' | LC_ALL=C sort -u)
+    done <<<"$names"
   done | LC_ALL=C sort -u
 }
 
@@ -115,21 +117,23 @@ inherited_reads() {
 # one per line, sorted: the signals an intended read leaves (see the header) on non-comment lines, minus any
 # name the same file ASSIGNS without reading it back (owns_name — the verdict is per file, as above).
 inherited_other_reads() {
-  local f name code
+  local f name code names
   while IFS= read -r f; do
     code="$(grep -avE '^[[:space:]]*#' "$f" 2>/dev/null)"
     [ -n "$code" ] || continue
-    while IFS= read -r name; do
-      [ -n "$name" ] || continue
-      owns_name "$name" <<<"$code" && continue
-      printf '%s\n' "$name"
-    done < <({
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    names="$({
       printf '%s\n' "$code" \
         | grep -aoE '(\$\{[A-Z][A-Z0-9_]*:?[-=?+]|ENVIRON\["[A-Z][A-Z0-9_]*|printenv +[A-Z][A-Z0-9_]*)' \
         | sed -E 's/^\$\{//; s/:?[-=?+]$//; s/^ENVIRON\["//; s/^printenv +//'
       printf '%s\n' "$code" \
         | grep -aoE '\$\{?[A-Z][A-Z0-9_]*' | sed -E 's/^\$\{?//' | grep -aE '_(API_KEY|TOKEN|SECRET|PASSWORD)$'
-    } | grep -avE '^KEEL_' | LC_ALL=C sort -u)
+    } | grep -avE '^KEEL_' | LC_ALL=C sort -u)" || true
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      owns_name "$name" <<<"$code" && continue
+      printf '%s\n' "$name"
+    done <<<"$names"
   done < <(census_files "$@") | LC_ALL=C sort -u
 }
 
