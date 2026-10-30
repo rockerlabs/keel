@@ -424,7 +424,7 @@ fi
 if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" attr_binary_list "$DIR" "${excludes[@]}"; then
   while IFS= LC_ALL=C read -r -d '' f; do
     pa_nd+=( "$f" )
-  done < <(attr_binary_nulless "$DIR" < "$audit_tmp/nd.list")
+  done < <(attr_binary_nulless "$DIR" < "$audit_tmp/nd.list")   # fail-open-ok: the filter skips a vanished file and cannot fail; the listing above already went through pa_match
 fi
 
 # Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read
