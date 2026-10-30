@@ -203,6 +203,22 @@ run "$pl" "$d2"
 check_status "an unparseable script -> exit 2" 2 "$STATUS"
 check_contains "...and names it" "$OUT" "UNPARSED  broken.sh"
 
+# a script holding bytes that are no valid UTF-8 reads the same under a UTF-8 locale (CI's): macOS awk
+# aborted on them and gawk warned, until the reader ran under LC_ALL=C
+utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
+if [ -n "$utf8_locale" ]; then
+  d3="$(new_repo)"
+  printf '#!/usr/bin/env bash
+raw() { tr "\320-\321" x; }
+' > "$d3/raw.sh"
+  ( cd "$d3" && git add -A && git commit -q -m raw )
+  run env LC_ALL="$utf8_locale" "$pl" "$d3" --quiet
+  check_status "invalid UTF-8 bytes under $utf8_locale -> exit 0" 0 "$STATUS"
+  check_eq "invalid UTF-8 bytes under $utf8_locale: no output" "" "$OUT"
+else
+  pass "UTF-8 leg skipped: this host has no UTF-8 locale"
+fi
+
 # --- ground truth: the shapes above behave on bash 3.2 the way the check classifies them -----------------
 # The check's leak/no-leak table is a measurement of 3.2.57 (see its header). Where the host's /bin/bash is
 # a 3.x (macOS), re-measure it: 40 passes under `ulimit -n 30` run a leaking shape out of fds, and must not

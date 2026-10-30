@@ -139,7 +139,9 @@ case " $builtins " in *" read "*) ;; *) echo "procsub-leak.sh: could not list ba
 # runs in this shell; a call is a function name in command position. END widens "opens an fd per call"
 # to every function that calls one such (by name, across files), and reports a site or a call that sits
 # in a loop inside a function.
-hits="$(awk -v blist="$builtins" '
+# LC_ALL=C: the reader is byte-wise ASCII, and a tracked script may hold bytes that are no valid UTF-8 —
+# under a UTF-8 locale macOS awk aborts on them ("towc: multibyte conversion failure") and gawk warns.
+hits="$(LC_ALL=C awk -v blist="$builtins" '
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 # dequote S — S with the quotes around a here-document delimiter (`<<\047X\047`, `<<"X"`) dropped, so that
 # unquote then keeps the delimiter and removes only real strings, a `<<\047X\047` inside one included.
