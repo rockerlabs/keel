@@ -305,7 +305,8 @@ overlap · landed · landing exit · head SHA · PR`. Credit cells are optional 
 - **`--sweep`** lists the open R3/R4/`📐` tickets with their verdicts, then each `dispatched` row of this
   repository with its age and its PR, and each `landed` row marked `STALE` when the PR's head is no longer the
   head it landed at, or when its last landing check exited non-zero. It looks the PR up by the PR number a landing
-  recorded first, else by the row's branch.
+  recorded first, else by the row's branch, so a "no PR" on a `dispatched` row whose session pushed another branch
+  is worth a `gh pr list` before you abandon anything.
 
 ## Abandoning
 

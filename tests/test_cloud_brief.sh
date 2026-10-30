@@ -48,6 +48,7 @@ printf '%s' "${2:-}" > "$d/brief"
 printf '%s %s %s %s' "${3:-}" "${4:-}" "${5:-}" "${6:-}" > "$d/rest"
 cp "$CLOUD_LEDGER" "$d/ledger-at-call"
 if [ -d "$(dirname "$CLOUD_LEDGER")/ledger.lock" ]; then echo held; else echo free; fi > "$d/lock-at-call"
+if { : >&3; } 2>/dev/null; then echo open; else echo closed; fi > "$d/fd3-at-call"
 rc="$(cat "$d/exit" 2>/dev/null || echo 0)"
 if [ "$rc" = 0 ]; then
   echo "Created cloud session: Fixture"
@@ -613,17 +614,23 @@ cb "$P" "dir #880" --out "$F/b880.md"
 check_status "T15c an unclosed fence at the end of the file builds" 0 "$STATUS"
 check_contains "T15c … its text to the file's last line travels" "$(part_of "$F/b880.md" ticket)" "its last line"
 # An unclosed fence, then a section holding its own closed fence: the toggle pairs the ticket's opener with that
-# fence's first marker, so no marker tells which fence is open — the block stops at the first section or ticket
-# heading after its own.
+# fence's first marker, so no marker tells which fence is open, and the archive's code reads as the ticket's own
+# text. Cutting at the first section heading would drop text the blanking shows as the ticket's, so the build
+# refuses (exit 2) and names the fix, rather than carrying the archive or silently shortening the ticket.
 fx
 add_ticket '\n### dir #884 — an unclosed fence before a fenced archive — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\nunclosed body 884\n\n## Archive\n\n### dir #885 — archived — R4 — ✅ DONE\n\n```sh\narchived code 885\n```\n\n### dir #886 — archived too — R4 — ✅ DONE\n\nBody of 886.\n'
 cb "$P" "dir #884" --out "$F/b884.md"
-check_status "T15c an unclosed fence before a fenced archive builds" 0 "$STATUS"
-t884="$(part_of "$F/b884.md" ticket)"
-check_contains "T15c … its own text after the unclosed opener travels" "$t884" "unclosed body 884"
-for gone in "## Archive" "dir #885" "archived code 885" "dir #886" "Body of 886."; do
-  check_absent "T15c … the ticket part carries no '$gone' from the fenced archive" "$t884" "$gone"
-done
+check_status "T15c an unclosed fence before a fenced archive → exit 2" 2 "$STATUS"
+check_contains "T15c … it names the unpaired fences" "$OUT" "the fence markers after its heading do not pair up"
+check_nofile "T15c … no brief written" "$F/b884.md"
+# The same ambiguity inside the ticket: a closed fence holding a section-shaped line, the ticket's own text after
+# it (a G8 phrase), then an unclosed fence. A cut would drop that text, and G8 with it: the build refuses instead.
+fx
+add_ticket '\n### dir #887 — a fenced section line, then an unclosed fence — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\n## an example section\n```\n\nQuestion for a /design pass: which shape?\n\n```\nunclosed tail 887\n'
+cb "$P" "dir #887" --out "$F/b887.md"
+check_status "T15c a fenced section line before the ticket's own text, then an unclosed fence → exit 2" 2 "$STATUS"
+check_contains "T15c … it names the unpaired fences" "$OUT" "the fence markers after its heading do not pair up"
+check_nofile "T15c … no brief written" "$F/b887.md"
 
 # --- T15d: a part that cannot be read stops the build -------------------------------------------------------------
 fx
@@ -1185,8 +1192,9 @@ check_contains "T18 … the manual command named" "$OUT" "claude --cloud"
 check_nofile "T18 … the CLI never ran" "$CLAUDE_FX/calls"
 if [ -n "$HAVE_SCRIPT" ]; then
   fx
-  cb "$P" "dir #801" --dispatch
+  cb "$P" "dir #801" --dispatch 3>&-
   check_status "T18 --dispatch → 0" 0 "$STATUS"
+  check_eq "T18 the CLI holds no fd 3 (the caller's stdout stays the receipt's)" "closed" "$(cat "$CLAUDE_FX/fd3-at-call")"
   check_eq "T18 the stub claude got --cloud first" "--cloud" "$(cat "$CLAUDE_FX/arg1")"
   check_eq "T18 … the brief text right after it" "$(cat "$CLOUD_BRIEF_DIR/example-proj--dir-801.md")" "$(cat "$CLAUDE_FX/brief")"
   check_eq "T18 … then --model and --effort" "--model sonnet --effort high" "$(cat "$CLAUDE_FX/rest")"

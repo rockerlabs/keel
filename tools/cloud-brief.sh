@@ -262,11 +262,16 @@ done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 # own headings, and the markers cannot say which one opened it (a later section's closed fence pairs with the
 # ticket's opener), so the block then runs to the line before the first section (`## `) or ticket heading after
 # its own, fenced or not — never carrying the tickets and sections after it — or to the last line when none follows.
+# A cut before END, the blanked text's last line, would drop text the blanking reads as the ticket's own (a G8
+# phrase, say): that backlog is refused instead, until its fences pair up.
 blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
   odd="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++ } END { print n % 2 }')"
-  END="$(LC_ALL=C awk -v s="$START" -v odd="$odd" -v re="^(## |### ($TICKET_ERE) — )" \
+  cut_end="$(LC_ALL=C awk -v s="$START" -v odd="$odd" -v re="^(## |### ($TICKET_ERE) — )" \
     'odd && NR > s && $0 ~ re { print NR - 1; cut = 1; exit } END { if (!cut) print NR }' "$BACKLOG")"
+  [ "$cut_end" -ge "$END" ] || die 2 "$TICKET: the fence markers after its heading do not pair up, and the heading" \
+    "at line $((cut_end + 1)) of $BACKLOG lies inside the ticket's text — close the unclosed fence"
+  END="$cut_end"
 fi
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"

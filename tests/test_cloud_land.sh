@@ -177,6 +177,7 @@ git -C "$P" checkout -q main
 pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/cloud-dir-801)" "$GREEN"
 run "$LAND" "$P" 5
 check_status "A4 a token in the pushed range → exit 1" 1 "$STATUS"
+check_absent "A4 … a hit with no allow marker gets no allowlist remedy" "$OUT" ".secret-scan-allow"
 check_eq "A4 … the row stays dispatched" "dispatched" "$(cell example/proj 'dir #801' 8)"
 check_eq "A4 … its landing exit is 1" "1" "$(cell example/proj 'dir #801' 12)"
 

@@ -160,8 +160,9 @@ out="$(CDPATH='' cd -- "$CLONE" && SECRET_SCAN_NO_INLINE_ALLOW=1 bash "$SCANNER"
 report_scan "range scan" "$rc" "$out"
 # --range reads each blob the range introduces whole, so a line already on the default branch that only an inline
 # marker exempts counts as soon as the range changes its file; the allowlist file is the exemption that holds here.
-[ "$rc" -ne 1 ] \
-  || echo "    (an inline allow marker exempts nothing here, on $DEFAULT's own lines too: put a fixture in $DEFAULT's .secret-scan-allow)"
+# Named only when a hit carries the marker: for a bare key or a trailer, an allowlist entry is never the remedy.
+[ "$rc" -ne 1 ] || ! grep -qF 'secret-scan:allow' <<< "$out" \
+  || echo "    (a hit above carries an inline allow marker, which exempts nothing here: if it is a fixture already on $DEFAULT, list it in $DEFAULT's .secret-scan-allow)"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
 rc=0
