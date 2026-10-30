@@ -32,6 +32,7 @@ open-work section of `<root>/CLAUDE.md`, where `<root>` is the MAIN checkout —
 - R4 or `📐 SPEC-READY` → proceed. No grade → proceed; say so.
 An explicit go-ahead from the operator in chat, or a managed-release brief assigning the ticket,
 overrides only R1 and R2 — never `✅`, standing `⛔ BLOCKED`, or R0; name it in your first reply.
+Cloud: where `<root>/CLAUDE.md` has a `KEEL-CLOUD` line and no managed-release or single-writer brief applies — no `**Cloud:**` line → judge it (`docs/cloud.md`) and write it; `yes` → before step 4, that doc's check, then offer once: cloud or here; cloud → its dispatch and claim, then stop; `no` → name its reason; go on.
 
 **3. read.** ONLY that ticket's section, the sections it cross-links, and its spec: the file its `Spec:`
 line names (or a `docs/specs/` file the body names as its spec) — absent from your

@@ -94,6 +94,9 @@ the tighter ~120. **At most one non-terminal marker** — a specced-then-closed 
 keeps both (`📐 SPEC-READY — … — ✅ CLOSED (…)`), never a stack of every marker it ever carried. **The
 tag is not required last** — step 3b above already covers this.
 
+**The cloud verdict (docs/cloud.md).** In a project that opted in to the cloud route, whoever sets a ticket's
+grade to R3 or R4, or its status to `📐 SPEC-READY`, writes or refreshes its body line `**Cloud:** yes (YYYY-MM-DD, <who>)` or `**Cloud:** no — <row>: <reason> (YYYY-MM-DD, <who>)` in the same edit — a body line, never a heading marker.
+
 Everything else — re-tags and their reasons, re-grades, corrections, origin, PR links — goes into the
 ticket's BODY as dated `Log:` lines, never back into the heading. A ticket's own spec content nests
 under `####` and deeper — never `##` / `###`, which are this file's own section structure — or lives in
@@ -125,6 +128,7 @@ R4 — ready to implement
 ✅ — closed
 ⏳ IN FLIGHT — claimed (YYYY-MM-DD, branch `<name>`)
 Spec: — the ticket's spec file, relative to the project root
+**Cloud:** — the ticket's cloud verdict (docs/cloud.md)
 **Acceptance:** — the ticket's falsifiable done-checks
 Status: — a spec-only ticket's marker line (no backlog; see go.md step 1)
 <!-- go-contract:end -->

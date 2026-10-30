@@ -19,6 +19,7 @@ Every file, tool, and command — grouped, one line each.
 | [`templates/project-CLAUDE.md`](../templates/project-CLAUDE.md) | Per-project notes. |
 | [`templates/LEARNINGS.md`](../templates/LEARNINGS.md) | Holding place for tips not yet worth a full rule. |
 | [`templates/IDEAS.md`](../templates/IDEAS.md) | Free-form scratchpad for raw ideas — the lowest-commitment staging tier, one step before `LEARNINGS.md`. |
+| [`templates/cloud-protocol.md`](../templates/cloud-protocol.md) | What a [cloud session](cloud.md) is told: the first part of the brief `tools/cloud-brief.sh` builds — a truncation check, a keel clone at a pinned commit, a pre-push guard that allows exactly one branch, a draft PR with Landing notes. Filled in by the tool; not a file you copy. |
 
 ## ⚙️ Tools — run by themselves, zero context cost
 
@@ -53,6 +54,8 @@ Every file, tool, and command — grouped, one line each.
 | [`tools/go-handoff.sh`](../tools/go-handoff.sh) | The `/go` handoff note (dir #401): `write`/`read`/`clear` one small three-field note (`done`, `next`, `carry`) per ticket, in `$HOME/.keel/tmp/go-handoff/`, so a `/go` session that stops before `/polish` — context limit, crash, a deleted worktree — does not take its plan with it. Keyed by the ticket's canonical id, shared by every worktree of the repo; `read` ends with a `verdict:` line (`fresh`, `behind n`, `ahead n`, `unrelated`, `unknown`) saying how far HEAD has moved since. A dated hint, never a gate; never committed; notes older than `KEEL_GO_HANDOFF_PRUNE_DAYS` (30) are pruned. Needs a kept checkout, so a copy-mode install has no note. |
 | [`tools/read-trace.sh`](../tools/read-trace.sh) | The read-trace fuses (dir #387): hook-driven, silent logging of which docs and files a session actually read or edited, so "did the agent open the spec?" is answerable afterwards. Prints only the short `docs read:` line `/wrap` and `/polish` embed (`docs-line`), a cross-release `aggregate` table the [grooming](grooming.md) retro reads, and — once, at the next session's start — a note when a session that changed files ended without `/wrap`. Nothing it records is read by the model. |
 | [`tools/install-read-trace.sh`](../tools/install-read-trace.sh) | Wires `read-trace.sh`'s 3 hooks into a project's `.claude/settings.json` (project scope, the default) or `--global` / `--home DIR`. Opt-in and separate from `install.sh`; appends beside a hook already on the same event, `--force` replaces only a stale copy of its own, `--uninstall` removes exactly what it wired. |
+| [`tools/cloud-brief.sh`](../tools/cloud-brief.sh) | The [cloud route](cloud.md)'s front half (Claude Code only; opt-in per project with a `KEEL-CLOUD` line in `CLAUDE.md`): checks a backlog ticket against the eligibility rows, builds one self-contained brief (the protocol, the ticket, its spec, the project's rails; home paths rewritten, secret-scanned, the personal list fail-closed), and — on your yes — dispatches it with `claude --cloud` and records it in a ledger under `~/.keel/cloud/`. `--check` writes nothing and ends with a receipt line; `--sweep` lists open tickets with their verdicts and the dispatched ones with their PRs. |
+| [`tools/cloud-land.sh`](../tools/cloud-land.sh) | The cloud route's landing check: for the draft PR a cloud session opened, a range scan, a PR-text scan, an added-allow-marker check and a green CI rollup at the exact head SHA, in a fresh clone — never your checkout. Exit 0 prints the `--match-head-commit`-pinned merge command; the merge is yours. |
 | [`tools/delta-audit/harvest.sh`](../tools/delta-audit/harvest.sh) | Fills the mechanically derivable rows of a delta-audit run record (`run-record.md`, which `derive.sh` emits as a stub) from the run's own files: the records listing and per-leg cost, copied from the orchestrator's cost table — a leg it cannot find is `unmeasured`, never `0` — and the induced-defects rate from the marks in the reports. The judgement rows stay yours. |
 
 *secret-guard is a safety net for known key shapes plus your listed literals — not a catch-all. It won't
@@ -135,6 +138,8 @@ Every adopter-facing doc, one line each — the README lists only the few to sta
   ideas, the standing list): one verdict per entry, filed or deleted in the same pass.
 - [`docs/parallel-sessions.md`](parallel-sessions.md) — running 2+ agent sessions against one
   repo safely: what a worktree does and doesn't isolate, the failure catalog, and the rails.
+- [`docs/cloud.md`](cloud.md) — running a backlog ticket in a Claude Code cloud session: the opt-in
+  line, the `**Cloud:**` verdict, the eligibility rows, dispatch, and the landing check before you merge.
 - [`docs/memory-layers.md`](memory-layers.md) — what Keel does (and doesn't) do about memory, and the stale or
   unreachable memory file `doctor` reports.
 - [`docs/secrets-in-the-working-tree.md`](secrets-in-the-working-tree.md) — keeping a plaintext secrets

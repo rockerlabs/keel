@@ -47,7 +47,9 @@ protects is **gatedness** — a Mutator passing through your project's own commi
 literally who typed the launch command. See [`docs/release-management.md`](release-management.md) R3
 for the full requirement. The same holds for the merge: in a managed release the manager is the orchestrator,
 so its gated merge under R14 (merge commit, head pinned, behind the project's policy line) stays inside the
-orchestrator's own session, while every other session — a Mutator included — never merges.
+orchestrator's own session, while every other session — a Mutator included — never merges. A cloud
+worker is launched under [`docs/cloud.md`](cloud.md)'s own gate (the landing check; the operator merges), not
+the project's local gates.
 
 **A launch-time requirement that follows from the same soft form:** whoever launches a real worker
 session this way can surface a model/effort recommendation. A direct launch (`start_session`) can preset
