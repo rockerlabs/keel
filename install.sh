@@ -2288,12 +2288,16 @@ elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 2 ] || [ "$pp_state" = 2 ]; }; t
   echo "  WARN secret-guard NOT wired — a hook in $keel_hooks is not Keel's (its marker line differs);"
   echo "       install-secret-guard.sh --global refuses to overwrite it. Move it aside, or re-run that with"
   echo "       --force to back it up (.pre-keel.bak) and replace it."
-elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 3 ] || [ "$pp_state" = 3 ]; }; then
+elif [ "$hp_is_keel" = 1 ] && { [ "$pc_state" = 3 ] || { [ "$pc_state" = 1 ] && [ "$pp_state" = 3 ]; }; }; then
   # dir #791: Keel's marker but a body no shipped version has — edited after install. It still runs, but the
-  # installer refuses to refresh it on EVERY plain run, so say that and the command that works.
+  # installer refuses to refresh it on EVERY plain run, so say that and the command that works. A symlinked hook
+  # is refused even with --force, so there the link note stands in for that advice.
   echo "  WARN secret-guard wired, but a hook in $keel_hooks was edited after install (Keel's marker, a body no shipped"
-  echo "       version has); install-secret-guard.sh --global refuses to refresh it. Re-run that with --force to back"
-  echo "       it up (.pre-keel.bak) and replace it, or keep your edit."
+  echo "       version has); install-secret-guard.sh --global refuses to refresh it."
+  case "$(wm_get pre-commit)$(wm_get pre-push)" in
+    *-link*) ;;
+    *) echo "       Re-run that with --force to back it up (.pre-keel.bak) and replace it, or keep your edit." ;;
+  esac
   keel_hook_link_note
   [ ! -x "$keel_hooks/pre-commit" ] || guard_ok=1   # it still runs: keep the closing line truthful
 elif [ -n "$hp" ] && [ -n "$keel_hooks" ] && [ "$hp_is_keel" != 1 ]; then

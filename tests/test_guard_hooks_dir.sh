@@ -477,6 +477,27 @@ check_status "dir #791: the advised --force succeeds" 0 "$STATUS"
 inst_run genv --no-hooks
 check_contains "dir #791 install.sh Verify: ...after it Verify reads OK" "$OUT" "OK   secret-guard"
 
+# A linked, edited hook is refused even with --force, so Verify must not advise it; the link note says why.
+mk_home i-edit-link
+run genv "$isg" --global
+kd="$H/.config/git/keel-hooks"
+printf '\n# my edit\n' >> "$kd/pre-commit"
+mv "$kd/pre-commit" "$kd/pre-commit.keel"; ln -s "$kd/pre-commit.keel" "$kd/pre-commit"
+inst_run genv --no-hooks
+check_contains "dir #791 install.sh Verify: an edited, linked pre-commit is disclosed as edited" "$OUT" "was edited after install"
+check_absent "dir #791 install.sh Verify: ...without advising a --force the installer would refuse" "$OUT" "--force to back"
+check_contains "dir #791 install.sh Verify: ...and the link note explains it" "$OUT" "symlink"
+
+# An edited pre-push beside an ABSENT pre-commit is not "wired": nothing runs at commit time.
+mk_home i-edit-pp
+run genv "$isg" --global
+kd="$H/.config/git/keel-hooks"
+printf '\n# my edit\n' >> "$kd/pre-push"
+rm "$kd/pre-commit"
+inst_run genv --no-hooks
+check_absent "dir #791 install.sh Verify: an edited pre-push with no pre-commit is not reported wired" "$OUT" "wired, but a hook"
+check_absent "dir #791 install.sh Verify: ...nor OK" "$OUT" "OK   secret-guard"
+
 # dir #695: a wired guard whose selftest FAILS says WHY — the scanner's first stderr line rides on the WARN, so
 # a malformed personal-literals file (which hard-fails the scanner since dir #680) is named, not a bare "FAILS".
 mk_home i-sfail

@@ -2252,7 +2252,7 @@ for d in "${DIRS[@]}"; do
   # hooks`), so it could judge a dir the installer never wrote and advise vendoring into a repo whose own
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
-  # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
+  # setting and its file, keel-dir, pre-commit = absent|keel|keel-modified|foreign (+ -link).
   w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
