@@ -232,4 +232,28 @@ printf 'See src/widget.sh:2 here.\n' > "$d/changelog.d/README.md"
 run "$lc" "$d"
 check_status "A29: the same token in changelog.d/README.md is NOT history -> exit 1" 1 "$STATUS"
 
+# --- dir #903: git grep -I trusts a -diff/binary attribute over the bytes -------------------------------------
+# A NUL-less tracked file under `*.svg -diff` is text to a reader but binary to `git grep -I`, so a bogus
+# citation in it used to read clean. A NUL-bearing -diff file stays skipped (the control).
+d="$(mk_repo 'Clean prose.')"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>See src/widget.sh:2 for the echo.</svg>\n' > "$d/a.svg"
+( cd "$d" && git add -A && git commit -q -m "dir 903 fixture" )
+run "$lc" "$d"
+check_status "dir #903: a citation in a NUL-less -diff file -> exit 1" 1 "$STATUS"
+check_contains "dir #903: names the -diff file" "$OUT" "a.svg:1 cites src/widget.sh:2"
+printf '*.svg -diff\n*.dat binary\n' > "$d/.gitattributes"
+printf 'See src/widget.sh:2 here\n\000\n' > "$d/b.dat"
+printf 'Clean prose.\n' > "$d/a.svg"
+( cd "$d" && git add -A && git commit -q -m "dir 903 control" )
+run "$lc" "$d"
+check_status "dir #903: a NUL-bearing -diff/binary file stays skipped -> exit 0" 0 "$STATUS"
+d="$(mk_repo 'Clean prose.')"
+printf '*.svg -diff\n' > "$d/.gitattributes"
+printf '<svg>See src/widget.sh:2</svg>\n' > "$d/we[ir]d.svg"
+printf '<svg>clean</svg>\n' > "$d/weid.svg"
+( cd "$d" && git add -A && git commit -q -m "dir 903 glob name" )
+run "$lc" "$d"
+check_contains "dir #903: a glob-character name is matched literally" "$OUT" "we[ir]d.svg:1 cites src/widget.sh:2"
+
 summary
