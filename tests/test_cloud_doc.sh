@@ -129,7 +129,7 @@ check_contains "(A7) shipped: the home rewrite is wider than one form" "$doc_fla
 check_contains "(A7) shipped: the personal check is fail-closed" "$doc_flat" 'The personal check is **fail-closed**'
 
 # --- the places that point at the doc ------------------------------------------------------------------------------
-headline="$(section "$backlog_md" '^\*\*Headline discipline' '^\*\*Readiness & field legend')"
+headline="$(section "$backlog_md" '^[*][*]Headline discipline' '^[*][*]Readiness & field legend')"
 check_contains "(A7) B3: backlog.md's headline-discipline block carries the cloud-verdict rule" "$headline" \
   '**The cloud verdict (docs/cloud.md).**'
 check_contains "(A7) B3: ...with both line forms" "$headline" \
@@ -146,9 +146,9 @@ check_contains "(A7) B12: R2 names --check and its receipt" "$r2" '`cloud-check:
 check_contains "(A7) B12: R3 carries the cloud exception" "$r3" 'Named exception — a cloud worker'
 check_contains "(A7) B12: R3 keeps the operator as the merger" "$r3" 'never a constituent of a train the manager merges'
 
-m2="$(section "$mr_cmd" '^\*\*M2 ' '^\*\*M3 ')"
-m3="$(section "$mr_cmd" '^\*\*M3 ' '^\*\*M4 ')"
-m4="$(section "$mr_cmd" '^\*\*M4 ' '^\*\*M5 ')"
+m2="$(section "$mr_cmd" '^[*][*]M2 ' '^[*][*]M3 ')"
+m3="$(section "$mr_cmd" '^[*][*]M3 ' '^[*][*]M4 ')"
+m4="$(section "$mr_cmd" '^[*][*]M4 ' '^[*][*]M5 ')"
 check_contains "(A7) B12: manage-release M2 points at the cloud doc" "$m2" 'docs/cloud.md'
 check_contains "(A7) B12: manage-release M3 points at the route column" "$m3" "R2's route column"
 check_contains "(A7) B12: manage-release M4 points at the cloud exception" "$m4" "R3's cloud exception"
