@@ -2459,7 +2459,7 @@ _keel_test_pause_after merge-write
 manifest_artifact_lines=()
 # Fail LOUD if the merge temp vanished between the write above and this read. Whether bash errexits on
 # a failed `done < file` redirection is VERSION-DEPENDENT, measured on the snippet itself: bash 3.2.57
-# (macOS's own, the macos-14 leg) prints AFTER and exits 0, while bash 5.2 (ubuntu-24.04's, and the
+# (macOS's own, the macOS CI leg) prints AFTER and exits 0, while bash 5.2 (ubuntu-24.04's, and the
 # alpine leg's apk bash) aborts. So on macOS the loop would simply never run and the manifest would be
 # written with zero artifact records while the files sit on disk — an exit-0 success summary over an
 # install uninstall can no longer see. This guard normalizes all three legs and names the cause instead
