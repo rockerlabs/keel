@@ -26,7 +26,7 @@ case "${1:-}" in
   -*) printf 'tag-ready: unknown option %s\n' "$1" >&2; exit 2 ;;
 esac
 [ "$#" -le 1 ] || { printf 'tag-ready: at most one REV\n' >&2; exit 2; }
-rev="${1:-HEAD}"
+rev=HEAD; [ "$#" -eq 1 ] && rev="$1"
 
 git rev-parse --is-inside-work-tree > /dev/null 2>&1 || { printf 'tag-ready: not inside a git work tree\n' >&2; exit 2; }
 commit="$(git rev-parse --verify --quiet "$rev^{commit}")" || { printf 'tag-ready: %s is not a commit\n' "$rev" >&2; exit 2; }

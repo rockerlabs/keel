@@ -32,6 +32,8 @@ run_in "$fx" bash "$tool" --bogus
 check_status "unknown flag -> exit 2" 2 "$STATUS"
 run_in "$fx" bash "$tool" HEAD HEAD
 check_status "two revs -> exit 2" 2 "$STATUS"
+run_in "$fx" bash "$tool" ""
+check_status "an empty rev (an unset \$SHA) -> exit 2, never HEAD" 2 "$STATUS"
 run_in "$fx" bash "$tool" no-such-rev
 check_status "an unresolvable rev -> exit 2" 2 "$STATUS"
 notrepo="$(mktemp -d "$SANDBOX/plain.XXXXXX")"
