@@ -85,6 +85,8 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/fence-blank.sh
 . "$self_dir/../lib/fence-blank.sh"
+# shellcheck source=tools/lib/attr-binary.sh
+. "$self_dir/../lib/attr-binary.sh"
 
 QUIET=0
 usage() {
@@ -239,6 +241,12 @@ candidates="$work/candidates"
 # BSD grep already refused to match past the NUL here too, which is why the fixtured case was never
 # caught locally — one-true-awk's own truncation would have hidden the same bug a second way besides.)
 #
+# `-I` trusts a `-diff`/`binary` attribute over the bytes, so it also skips a NUL-less text file under e.g.
+# `*.svg -diff`, and a bogus citation in it read clean (dir #903). A second `-a` leg therefore greps the
+# NUL-less attribute-binary files (tools/lib/attr-binary.sh, shared with tools/public-audit.sh's dir #767
+# fix); the legs are disjoint, and a NUL-bearing attribute-binary file stays skipped. Known limit: a
+# `diff=<driver>` with `diff.<driver>.binary=true` set only in git CONFIG is not seen.
+#
 # ONE batched call over the whole tree, not one `git grep` fork per tracked file (`/simplify`'s own
 # efficiency pass on this ticket, dir #568): `git grep` pays repo-resolution, config, and gitattributes
 # loading on every invocation, and this loop otherwise runs that once per tracked file — hundreds of
@@ -260,6 +268,28 @@ git -C "$repo_dir" grep -Ilz -E "$TOKEN_RE" 2>"$grep_err" | tr '\0' '\n' > "$can
 if [ "$grep_rc" -gt 1 ]; then
   echo "line-citations.sh: git grep failed while scanning for citations: $(cat "$grep_err")" >&2
   exit 2
+fi
+
+# Second leg (dir #903): the NUL-less attribute-binary files, read as text with -a. Exit 1 = none (normal);
+# anything above is an error, as for the first leg. bash 3.2 + set -u: the array is expanded only when non-empty.
+nd_list="$work/nd.list"
+nd_rc=0
+attr_binary_list "$repo_dir" 2>"$grep_err" > "$nd_list" || nd_rc=$?
+if [ "$nd_rc" -gt 1 ]; then
+  echo "line-citations.sh: git grep failed while listing attribute-binary files: $(cat "$grep_err")" >&2
+  exit 2
+fi
+nd_specs=()
+while IFS= read -r -d '' spec; do
+  nd_specs+=( "$spec" )
+done < <(attr_binary_nulless "$repo_dir" < "$nd_list")
+if [ "${#nd_specs[@]}" -gt 0 ]; then
+  nd_rc=0
+  git -C "$repo_dir" grep -alz -E "$TOKEN_RE" -- "${nd_specs[@]}" 2>"$grep_err" | tr '\0' '\n' >> "$candidates" || nd_rc=$?
+  if [ "$nd_rc" -gt 1 ]; then
+    echo "line-citations.sh: git grep failed while scanning attribute-binary files: $(cat "$grep_err")" >&2
+    exit 2
+  fi
 fi
 
 while IFS= read -r f; do
