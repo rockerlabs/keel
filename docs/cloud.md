@@ -120,7 +120,7 @@ naming no mapped tier is refused.
 
 - the home path is rewritten — `$HOME` and the passwd home, each logical and physical, become `~`; Claude
   Code's project-directory encoding of each becomes `-Users-x`; the session scratch roots become `<tmp>/`.
-  A path is replaced wherever it occurs, so a short home such as `/root` also turns `/rootfs` into `~fs`;
+  A path is replaced wherever it occurs, so with HOME=/root a path beginning /rootfs also becomes ~fs;
 - the whole brief goes through `tools/secret-guard/secret-scan.sh`, the allow marker defanged, from an empty
   directory. The personal check is **fail-closed**: the tool exports `SECRET_SCAN_PERSONAL_FILE` — its value
   when set, else the scanner's default `~/.claude/secret-scan-personal` — and refuses (exit 2, nothing
