@@ -18,8 +18,8 @@
 #      URL or a `-Session:` line, which file mode does not look for;
 #   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv, the root commit's
 #      included) and no line of any commit message in the range may carry the scanner's inline allow marker, read
-#      in the scanner's decoded views (as is, NUL-stripped, and each with its invalid UTF-8 dropped) — a grep that
-#      fails is a scan error.
+#      in the scanner's decoded views (as is, NUL-stripped, each with its invalid UTF-8 dropped, and each blob decoded
+#      as UTF-16/32 through textconv) — a grep that fails is a scan error.
 # Then CI: every check in the rollup completed as a success, neutral or skipped (a commit status: a success), and
 # at least one succeeded — so an empty or all-skipped rollup is not green.
 #
