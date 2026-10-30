@@ -296,6 +296,70 @@ LC_ALL="$utf8_locale" run "$LAND" "$P" 5
 check_status "A4 a marker after an invalid UTF-8 byte, under $utf8_locale → exit 1" 1 "$STATUS"
 check_contains "A4 … named" "$OUT" "added allow marker: hit"
 
+# The scanner reads an inline marker in decoded views, so the grep reads the same ones (raw, NUL-stripped, and
+# `iconv -c` of each): a marker split by an invalid byte, or written in UTF-16/UTF-32, lands nowhere. The fixtures
+# carry the marker alone, so only the grep can refuse them.
+# bcommit_bytes FILE MESSAGE — like bcommit, the content read from stdin (so it may hold NUL bytes).
+bcommit_bytes() {
+  git -C "$P" checkout -q claude/cloud-dir-801
+  cat > "$P/$1"
+  git -C "$P" add "$1"
+  git -C "$P" commit -qm "$2"
+  git -C "$P" push -q "$O" HEAD:refs/heads/claude/cloud-dir-801
+  TIP="$(git -C "$P" rev-parse HEAD)"
+  git -C "$P" checkout -q main
+}
+# wide TEXT UNIT-BYTES… — TEXT's ASCII characters as code units of the given byte shape: each character, with the
+# bytes after it (`wide x '\0'` = UTF-16LE without a BOM) or before it (`wide x '' '\0'`), as printf escapes.
+wide() {
+  local t="$1" post="$2" pre="${3:-}" i
+  for ((i = 0; i < ${#t}; i++)); do printf "${pre}%s${post}" "${t:i:1}"; done
+}
+landed_marker_case() {  # LABEL — the fixture committed by the caller, the check run on its tip
+  pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+  run "$LAND" "$P" 5
+  check_status "A4 $1 → exit 1" 1 "$STATUS"
+  check_contains "A4 … named" "$OUT" "added allow marker: hit"
+  check_contains "A4 … the range scan alone reads it clean (the marker is all there is)" "$OUT" "range scan: clean"
+}
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit split2.txt "$(printf 'harmless # secret-scan:al\377low')" "split"
+landed_marker_case "an added marker split by an invalid byte"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit split3.txt "$(printf 'harmless # secret\200-scan:allow')" "split before the colon"
+landed_marker_case "an added marker split by a continuation byte"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes u16le.txt "utf-16le" < <({ printf '\377\376'; wide 'harmless # secret-scan:allow' '\0'; })
+landed_marker_case "an added marker written in UTF-16LE"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes u16be.txt "utf-16be" < <({ printf '\376\377'; wide 'harmless # secret-scan:allow' '' '\0'; })
+landed_marker_case "an added marker written in UTF-16BE"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes u32le.txt "utf-32le" < <({ printf '\377\376\0\0'; wide 'harmless # secret-scan:allow' '\0\0\0'; })
+landed_marker_case "an added marker written in UTF-32LE"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes u16split.txt "utf-16 split" < <({ printf '\377\376'; wide 'harmless # secret-scan:al' '\0'; printf '\377\0'; wide 'low' '\0'; })
+landed_marker_case "an added marker written in UTF-16 and split by an invalid byte"
+# (A commit message cannot carry an invalid byte through `git log`: it prints one as a valid UTF-8 character, which
+# splits the marker for the scanner too.)
+# The same on a host whose iconv cannot resume after an invalid byte (musl's), or has none: a shim that fails.
+mkdir -p "$SANDBOX/iconvshim"
+printf '#!/bin/sh\necho "iconv shim: failing" >&2\nexit 1\n' > "$SANDBOX/iconvshim/iconv"
+chmod +x "$SANDBOX/iconvshim/iconv"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit split4.txt "$(printf 'harmless # secret-scan:al\377low')" "split"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+PATH="$SANDBOX/iconvshim:$PATH" run "$LAND" "$P" 5
+check_status "A4 a marker split by an invalid byte, with an iconv that fails → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+
 # The range scan reads with the inline allow marker off: a marker split by an invalid byte, which no byte grep sees
 # but the scanner's caller-locale personal pass reads whole after `iconv -c` (the one pass that finds a non-ASCII
 # literal's case variant), hides nothing.

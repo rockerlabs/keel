@@ -17,8 +17,9 @@
 #   2. the PR title + body must pass the scanner's file mode (from an empty directory) and a grep for a session
 #      URL or a `-Session:` line, which file mode does not look for;
 #   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv, the root commit's
-#      included) and no line of any commit message in the range may carry the scanner's inline allow marker — a
-#      grep that fails is a scan error.
+#      included) and no line of any commit message in the range may carry the scanner's inline allow marker, read
+#      in the scanner's decoded views (as is, NUL-stripped, and each with its invalid UTF-8 dropped) — a grep that
+#      fails is a scan error.
 # Then CI: every check in the rollup completed as a success, neutral or skipped (a commit status: a success), and
 # at least one succeeded — so an empty or all-skipped rollup is not green.
 #
@@ -189,8 +190,37 @@ range_log() {
   git -C "$CLONE" -c log.showRoot=true log --root --no-color --no-ext-diff --no-textconv --no-renames --text "$@" "$RANGE" \
     > "$out" 2> "$err"
 }
-# marker_grep FILE ERE — FILE's lines matching ERE, numbered, on stdout; grep's status (≥ 2: it failed).
-marker_grep() { LC_ALL=C grep -anE -e "$2" "$1"; }
+# The scanner matches the inline marker in decoded views (NUL-stripped; `iconv -c` in the caller's locale, so a marker
+# split by an invalid byte reads whole; UTF-16/32 decoded), and every later scan without the switch (pre-commit,
+# pre-push, CI) honours what it finds. So the grep reads the same ones: the spool as it is, NUL-stripped (the marker
+# is ASCII, so it survives that in any UTF-16/32 byte order), and each of those with its invalid UTF-8 dropped.
+# utf8_clean IN OUT — IN with its invalid UTF-8 removed by `iconv -c`, padded with newlines first (a file ending in
+# an incomplete sequence still converts whole). Where iconv is missing, fails, or stops at the first invalid unit
+# (musl's does, and ignores -c), every byte >= 0x80 is dropped instead — a superset of iconv -c for an ASCII needle,
+# so it can only refuse more.
+iconv_resumes=""
+command -v iconv >/dev/null 2>&1 && [ "$(printf 'a\377b\n' | iconv -c -f UTF-8 -t UTF-8 2>/dev/null)" = ab ] && iconv_resumes=1
+utf8_clean() {
+  if [ -n "$iconv_resumes" ] && { cat "$1"; printf '\n\n\n\n'; } | iconv -c -f UTF-8 -t UTF-8 > "$2" 2>/dev/null; then
+    return 0
+  fi
+  LC_ALL=C tr -d '\200-\377' < "$1" > "$2"
+}
+# marker_grep FILE ERE — the lines of FILE's views matching ERE, numbered and led by the view's name, on stdout;
+# grep's status (≥ 2: it, or building a view, failed). FILE is grepped as bytes (LC_ALL=C -a).
+marker_grep() {
+  local f="$1" re="$2" rc=0 hits="" v out name
+  LC_ALL=C tr -d '\000' < "$f" > "$f.nul" || return 2
+  utf8_clean "$f" "$f.u8" || return 2
+  utf8_clean "$f.nul" "$f.nul.u8" || return 2
+  for v in "$f" "$f.nul" "$f.u8" "$f.nul.u8"; do
+    name="${v#"$f"}"; name="${name#.}"
+    out="$(LC_ALL=C grep -anE -e "$re" "$v")" || { rc=$?; [ "$rc" -le 1 ] || return "$rc"; rc=0; continue; }
+    hits="${hits:+$hits$'\n'}$(sed "s/^/${name:-raw}: /" <<< "$out")"
+  done
+  [ -n "$hits" ] || return 1
+  printf '%s\n' "$hits"
+}
 p_rc=0 m_rc=0
 if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
    || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc --format=; then
