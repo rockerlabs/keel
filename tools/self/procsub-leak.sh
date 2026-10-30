@@ -49,7 +49,8 @@
 #
 # REPO_DIR defaults to the current directory. Exit 0 unless a leak is found; 2 on a usage error, when the
 # scan cannot run (REPO_DIR is no directory or no git checkout, it tracks no shell script, bash lists no
-# builtins), or for a script bash cannot parse (named UNPARSED, never passed as clean).
+# builtins), when the scan itself fails (its awk | sort reader, or any other crash), or for a script bash
+# cannot parse (named UNPARSED, never passed as clean).
 # KNOWN LIMIT (dir #906): the awk reader can still lose its place partway through a script bash parsed
 # (quoting it mis-reads, a `case` pattern's `)` inside a multi-line `$(…)`, a `<<word` inside a string).
 # From there on it can miss a leak or report one that is not there, and nothing says the place was lost:
@@ -100,11 +101,12 @@ files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir")" ||
 
 normalized="$(mktemp)"
 # The completion marker (dir #264's idiom, see tools/self/line-citations.sh): on bash 3.2 a `set -u` abort
-# reaches an EXIT trap with `$?` already 0, and a crash must never read as a clean tree.
+# reaches an EXIT trap with `$?` already 0, and a crash must never read as a clean tree or as a leak. Each
+# deliberate exit past this point sets ok first; any other exit is a crash, and a crash is exit 2.
 ok=""
 cleanup() {
   leak_rc=$?
-  [ -n "$ok" ] || [ "$leak_rc" -ne 0 ] || leak_rc=1
+  [ -n "$ok" ] || leak_rc=2
   rm -f "$normalized"
   exit "$leak_rc"
 }
@@ -286,7 +288,7 @@ END {
       printf "%s\t%s()\tcalls %s() in a loop, and each call leaves an fd open\n", c_file[i], c_fn[i], c_to[i]
 }
 ' "$normalized" | LC_ALL=C sort -u)" ||
-  { echo "procsub-leak.sh: the reader failed (awk exit above); nothing was checked" >&2; exit 2; }
+  { echo "procsub-leak.sh: the awk | sort reader failed; nothing was checked" >&2; exit 2; }
 
 nhits=0
 [ -z "$hits" ] || while IFS=$'\t' read -r hf hfn htext; do
@@ -295,8 +297,8 @@ nhits=0
 done <<< "$hits"
 if [ "$nhits" -gt 0 ]; then
   say "  $nhits leak(s) in $nfiles script(s) — capture the output and read it with \`<<<\` (see this script's header)"
-  exit 1
+  ok=1; exit 1
 fi
-[ "$unparsed" -eq 0 ] || exit 2
 ok=1
+[ "$unparsed" -eq 0 ] || exit 2
 say "  OK — no process substitution held open per loop pass ($nfiles scripts)"

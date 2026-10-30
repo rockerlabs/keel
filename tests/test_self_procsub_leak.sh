@@ -4,7 +4,7 @@
 # (a child process, a subshell, the top level, a comment, a here-document, the captured fix), the call
 # following (same file, a sourced lib, two levels deep), the exit codes, a ground-truth leg that runs the
 # same shapes on the host's /bin/bash when that is the 3.2 that leaks, a script with non-UTF-8 bytes under a
-# UTF-8 locale, and a live leg over keel's own tree. Every fixture body sits in a quoted here-document or a
+# UTF-8 locale, a failing reader and a crash (each exit 2), and a live leg over keel's own tree. Every fixture body sits in a quoted here-document or a
 # one-line quoted string: the check skips those, so this file is not flagged.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
@@ -226,9 +226,19 @@ real_awk="$(command -v awk)"
 shim="$SANDBOX/awk-fails"; mkdir -p "$shim"
 printf '#!/bin/sh\ncase "$*" in *blist=*) exit 1 ;; esac\nexec "%s" "$@"\n' "$real_awk" > "$shim/awk"
 chmod +x "$shim/awk"
-run env PATH="$shim:$PATH" "$pl" "$d2"
+d4="$(new_repo)"; cp "$d2/fixed.sh" "$d4/"; ( cd "$d4" && git add -A && git commit -q -m fixed )
+run env PATH="$shim:$PATH" "$pl" "$d4"
 check_status "a failing reader -> exit 2" 2 "$STATUS"
-check_contains "...and says nothing was checked" "$OUT" "the reader failed"
+check_contains "...and says nothing was checked" "$OUT" "reader failed; nothing was checked"
+check_absent "...and never says OK" "$OUT" "OK —"
+# any other crash is exit 2 too, never the 1 of "leak found": a mktemp shim hands out a path in a
+# directory that does not exist, so the first write to it fails under `set -e`
+shim2="$SANDBOX/mktemp-bad"; mkdir -p "$shim2"
+printf '#!/bin/sh\necho "%s/no-such-dir/x"\n' "$SANDBOX" > "$shim2/mktemp"
+chmod +x "$shim2/mktemp"
+run env PATH="$shim2:$PATH" "$pl" "$d4"
+check_status "a crash mid-scan -> exit 2" 2 "$STATUS"
+check_absent "...and never says OK" "$OUT" "OK —"
 
 # --- ground truth: the shapes above behave on bash 3.2 the way the check classifies them -----------------
 # The check's leak/no-leak table is a measurement of 3.2.57 (see its header). Where the host's /bin/bash is
