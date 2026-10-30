@@ -406,7 +406,7 @@ _alwayson_imports() {
 # dir #252 owns Antigravity's). STOP_SET: a newline-framed set of real paths not followed or counted (the per-project
 # run passes the global chain's, so a global file is never counted or judged twice).
 alwayson_chain() {
-  local root="$1" stop="${2-}" max_hop=4 hop=0 queue next f fdisp tok abs real pr seen=$'\n' dseen=$'\n'
+  local root="$1" stop="${2-}" max_hop=4 hop=0 queue next f fdisp toks tok abs real pr seen=$'\n' dseen=$'\n'
   [ -f "$root" ] || return 0
   if [ ! -r "$root" ]; then printf 'UNREAD\t%s\n' "$root"; return 0; fi
   real="$(_real_path "$root")" || real="$root"
@@ -419,6 +419,8 @@ alwayson_chain() {
     next=""
     while IFS=$'\t' read -r f fdisp; do
       [ -n "$f" ] || continue
+      # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+      toks="$(_alwayson_imports "$f")" || true
       while IFS= read -r tok; do
         [ -n "$tok" ] || continue
         case "$tok" in
@@ -442,7 +444,7 @@ alwayson_chain() {
         pr="$(_parent_real "$abs")" || pr="$abs"
         printf 'LOAD\t%s\t%s\t%s\t%s\t%s\t%s\n' "$((hop + 1))" "$real" "$pr" "$(_char_count "$abs")" "$abs" "$fdisp"
         next="$next$real	$abs"$'\n'
-      done < <(_alwayson_imports "$f")
+      done <<<"$toks"
     done <<<"$queue"
     queue="$next"; hop=$((hop + 1))
   done
@@ -924,7 +926,7 @@ guard_drift_files() {
 # a commit made with hooks bypassed then reaches the remote unscanned, and the old verdict was "OK". guard_push_gap
 # DIR KEELDIR PC PP sets guard_gap to why DIR is not a complete Keel guard (empty when it is, or when it is the user's
 # own wiring: a hooks dir whose pre-commit is not Keel's is held to no Keel hook, and a foreign pre-push is theirs).
-# PC/PP are the producer's states (absent | keel | foreign, -link suffixed). A variable, not stdout: no fork per project.
+# PC/PP are the producer's states (absent | keel | keel-modified | foreign, -link suffixed). A variable, not stdout: no fork per project.
 guard_push_gap() {
   local dir="$1" keeldir="$2" pc="$3" pp="$4"
   guard_gap=""
@@ -1727,7 +1729,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       warn W-GUARD-UNWIRED "secret-guard is only half wired machine-global: $guard_gap — $g_way$guard_eff_note"
     else
       say "  OK   secret-guard: machine-global ($g_dir)"
-      if [ "$g_pc" = keel-link ]; then
+      if [ "$g_pc" = keel-link ] || [ "$g_pc" = keel-modified-link ]; then
         say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)"
       fi
     fi
@@ -1947,7 +1949,7 @@ memory_checks() {
   # the NEWEST code path it backticks; a note naming no tracked path has no code date and never fires.
   [ "$MEMORY_AGE" = 1 ] || return 0
   git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  local nd_pair nd src p cdate newest newest_p tok code_cache=""
+  local nd_pair nd src p cdate newest newest_p toks tok code_cache=""
   local git_dates=""
   if git -C "$mem_real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # newest-first log: the first sighting of a name is its last commit; a file with no commit is absent.
@@ -1961,6 +1963,8 @@ memory_checks() {
     [ -n "$nd_pair" ] || continue
     nd="${nd_pair%% *}"; src="${nd_pair##* }"
     newest=""; newest_p=""
+    # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+    toks="$(_backtick_tokens "$f" 1)" || true
     while IFS= read -r tok; do
       p="$(_mem_path_token "$tok" "$d")"
       [ -n "$p" ] || continue
@@ -1970,7 +1974,7 @@ memory_checks() {
       fi
       [ -n "$cdate" ] || continue
       if [ -z "$newest" ] || [[ "$newest" < "$cdate" ]]; then newest="$cdate"; newest_p="$p"; fi
-    done < <(_backtick_tokens "$f" 1)
+    done <<<"$toks"
     if [ -n "$newest" ] && [[ "$nd" < "$newest" ]]; then
       hint H-MEMORY-STALE "$base (${nd}[${src}] < $newest for $newest_p) — the note is older than the code it names: re-verify it, then refresh or delete it (FRAMEWORK.md \"Staleness check\")"
     fi
@@ -2252,7 +2256,7 @@ for d in "${DIRS[@]}"; do
   # hooks`), so it could judge a dir the installer never wrote and advise vendoring into a repo whose own
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
-  # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
+  # setting and its file, keel-dir, pre-commit = absent|keel|keel-modified|foreign (+ -link).
   w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
@@ -2303,7 +2307,7 @@ for d in "${DIRS[@]}"; do
           warn W-GUARD-UNWIRED "secret-guard is only half wired here: $guard_gap — $g_way$guard_home_note"
         fi
         case "$w_pc" in
-          keel-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
+          keel-link|keel-modified-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
         esac
         # A WIRED copy that drifted from the shipped engine runs old detection. Reported by whichever
         # check can fix it: the machine-wide dir (`machine-dir=1`) once, above (its remedy re-runs

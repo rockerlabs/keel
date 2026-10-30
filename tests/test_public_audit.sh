@@ -1088,6 +1088,29 @@ check_contains "dir #761: ...found in the binary file" "$OUT" "private token /Mi
 run env LC_ALL="$loc761" PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-plain761" bash "$pa" --no-history "$d"
 check_status "dir #761 control: the literal 'michalek' does not match an l-stroke → exit 0" 0 "$STATUS"
 
+# --- dir #762: a UTF-16/UTF-32 payload that starts at an ODD byte offset is no unit of the file; decode_binary reads
+# the file again from byte 1 (iconv UTF-16) and, with the built-in decoder, runs it over the whole file and from byte 1 on. One blob per encoding,
+# with a 1- or 3-byte prefix; the shim is dir #761's iconv that cannot resume. Bytes are built at runtime (ASCII source).
+cyr762="$(printf '\320\230\320\262\320\260\320\275')"        # "Ivan" (Cyrillic), UTF-8
+printf '%s\n' "$cyr762" > "$SANDBOX/pa-personal-cyr762"
+if command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr762" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  for spec762 in UTF-16LE:1 UTF-16BE:1 UTF-32LE:1 UTF-32BE:3; do
+    enc762="${spec762%%:*}"; off762="${spec762##*:}"
+    d="$(repo_by dev@example.com)"
+    { printf '%.*s' "$off762" ZZZ; printf 'lead %s trail' "$cyr762" | iconv -f UTF-8 -t "$enc762"; } > "$d/odd.bin"
+    commit_in "$d" "binary with the literal at an odd byte offset"
+    run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr762" bash "$pa" --no-history "$d"
+    check_status "dir #762: a Cyrillic literal in $enc762 at byte offset $off762 (tree) → GAP exit 1" 1 "$STATUS"
+    check_contains "dir #762: ...naming odd.bin" "$OUT" "in a binary file in the working tree — odd.bin"
+    run env SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr762" bash "$pa" "$d"
+    check_status "dir #762: ...and in git history → exit 1" 1 "$STATUS"
+    run env PATH="$SANDBOX/shim761:$PATH" SECRET_SCAN_PERSONAL_FILE="$SANDBOX/pa-personal-cyr762" bash "$pa" --no-history "$d"
+    check_status "dir #762: ...and with an iconv that cannot resume (built-in decoder) → exit 1" 1 "$STATUS"
+  done
+else
+  pass "dir #762 odd-offset rows skipped (no iconv / no UTF-32 converter)"
+fi
+
 # dir #886: an inherited pathspec-mode variable must not change what the built-in/allow-path `:(exclude)`
 # pathspecs mean. Fixture D: the config scans nothing under vend/ (allow-path) and itself; the token sits
 # under vend/ and vend/deep/. Fixture E: the token sits only under Vend/ (never both in one fixture — a

@@ -201,6 +201,19 @@ rm -f "$S/PWNED2"
 sf_hook "$R" "git -C ~/'\$(touch $S/PWNED2)' checkout -- f" a1
 check_nofile "Q8: a command substitution inside a tilde path is never run (no eval)" "$S/PWNED2"
 
+# --- Y1–Y11, one row per matcher clause the mutation list (tests/mutants/pre-pr-gate-subagent.tsv, dir #790) found unpinned ---------
+sf_allow "Y1: GIT_DIR and GIT_WORK_TREE both name the scratch clone (the work tree is the assignment's, not the cwd's)" "GIT_DIR=$X/.git GIT_WORK_TREE=$X git commit --allow-empty -m x"
+sf_allow "Y2: every -C joins the chain: -C X -C d is X/d" "git -C $X -C d commit --allow-empty -m x"
+sf_deny "Y3: --config-env takes its value as a separate word" 'git --config-env foo=BAR checkout -- f'
+sf_deny "Y4: --work-tree as a separate word" "git --work-tree $X reset --hard"
+sf_allow "Y5: a glob in a cd target is unknown, not a missing literal" "cd $S/X*; git stash"
+sf_deny "Y6: a bare ~ is the home directory" 'cd ~ && git -C rr stash'
+sf_allow "Y7: cd - is unknown" 'cd -; git stash'
+sf_allow "Y8: pushd +N is unknown" 'pushd +1 && git stash'
+sf_allow "Y9: cd -P <dir> skips the option" "cd -P $X && git stash"
+sf_deny "Y10: a directory init names does not outlive its segment" "git init $TMP/n5; git commit --allow-empty -m x"
+sf_allow "Y11: a command word with an expansion is not read as git (its path is unknown)" 'H=/usr/bin; $H/git checkout -- f'
+
 # --- G1–G2, the PR rule is untouched ---------------------------------------------------------------------------------------
 sf_hook "$R" 'gh pr create --fill' a1
 check_contains "G1: a subagent's gh pr create is denied by today's PR rule" "$OUT" 'Pre-PR gate'

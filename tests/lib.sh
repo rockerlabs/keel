@@ -669,6 +669,18 @@ run() {
   STATUS=$?
 }
 
+# run_fd_capped N SCRIPT [ARG…] — `run` a bash SCRIPT under `ulimit -n N`, for a test that a loop holds
+# no process-substitution fd per pass (dir #904, dir #905; tools/self/procsub-leak.sh). It runs on
+# /bin/bash where that exists, not the shebang's PATH bash: on macOS that is the 3.2 that leaks, even
+# when a newer bash comes first on PATH and would let a leaking loop pass. An environment variable for
+# SCRIPT goes before the call (`VAR=x run_fd_capped …`). Promoted at its third use (prose-drift, doctor
+# --memory-age, session-cost table), this file's "second use = promote" convention.
+run_fd_capped() {
+  local n="$1" b=bash; shift
+  [ -x /bin/bash ] && b=/bin/bash
+  run "$b" -c 'ulimit -n "$1" && shift && exec "$0" "$@"' "$b" "$n" "$@"
+}
+
 # An isolated HOME *plus* its own global git config, for tools that must not see the shared sandbox
 # state. lib.sh pins GIT_CONFIG_GLOBAL to one sandbox-wide config (above), so a fresh HOME ALONE does
 # not isolate `git config --global` — a non-obvious invariant three separate dir #85 tests each had to

@@ -2343,7 +2343,7 @@ done
 farm715() {  # dir tool-to-leave-out
   local t p
   mkdir -p "$1"
-  for t in git bash awk sed tr cmp mktemp cat rm sort grep iconv readlink dirname basename date mkdir head wc env; do
+  for t in git bash awk sed tr cmp mktemp cat rm sort grep iconv readlink dirname basename date mkdir head wc env tail; do
     [ "$t" = "$2" ] && continue
     p="$(type -P "$t")" && ln -sf "$p" "$1/$t"
   done
@@ -2974,6 +2974,44 @@ check_count "dir #761 twin: one needle_wide in secret-scan.sh" "$scan" "^needle_
 check_count "dir #761 twin: one needle_wide in public-audit.sh" "$pa746" "^needle_wide() {" 1
 check_block_equal "dir #761 twin: needle_wide equals public-audit.sh's" \
   "$(sed -n '/^needle_wide() {/,/^}/p' "$scan")" "$(sed -n '/^needle_wide() {/,/^}/p' "$pa746")"
+
+# --- dir #762: a UTF-16/UTF-32 payload that starts at an ODD byte offset of the file is no unit of the file, so the
+# passes that read the file from byte 0 never decode it. Two more iconv passes read it from byte 1 (UTF-16 from
+# byte 1 also decodes a BMP UTF-32 payload at offset 1 or 3 mod 4); the built-in decoder runs over the whole file and from its second byte.
+# The rows build the fixture with a 1/3-byte prefix; offsets 0 and 2 are the controls that were always decoded.
+# Needles are built from bytes so this test source stays ASCII.
+cyr762="$(printf '\320\230\320\262\320\260\320\275')"        # "Ivan" (Cyrillic), UTF-8
+d762="$(mktemp -d "$SANDBOX/d762.XXXXXX")"
+printf '%s\n' "$cyr762" > "$d762/p-cyr"
+mkdir "$d762/shim"                                             # a musl-like iconv: converts nothing, so the built-in decoder is the decode
+printf '#!/bin/sh\nexit 1\n' > "$d762/shim/iconv"; chmod +x "$d762/shim/iconv"
+if command -v iconv >/dev/null 2>&1 && printf '%s' "$cyr762" | iconv -f UTF-8 -t UTF-32LE >/dev/null 2>&1; then
+  for enc762 in UTF-16LE UTF-16BE UTF-32LE UTF-32BE; do
+    for off762 in 0 1 2 3; do
+      { printf '%.*s' "$off762" ZZZ; printf 'lead %s trail' "$cyr762" | iconv -f UTF-8 -t "$enc762"; } > "$d762/$enc762.$off762.bin"
+      run_in "$d762" env SECRET_SCAN_PERSONAL_FILE="$d762/p-cyr" "$scan" -- "$enc762.$off762.bin"
+      check_status "dir #762: a Cyrillic literal in $enc762 at byte offset $off762 → exit 1" 1 "$STATUS"
+    done
+  done
+  for f762 in UTF-16LE.1.bin UTF-32BE.3.bin UTF-32LE.1.bin; do
+    run_in "$d762" env PATH="$d762/shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$d762/p-cyr" "$scan" -- "$f762"
+    check_status "dir #762: $f762, iconv cannot resume (built-in decoder) → exit 1" 1 "$STATUS"
+  done
+  { printf 'Z'; printf 'lead %s trail' "$(printf '\320\240\320\276\320\274\320\260\320\275')" | iconv -f UTF-8 -t UTF-16LE; } > "$d762/other.bin"
+  run_in "$d762" env SECRET_SCAN_PERSONAL_FILE="$d762/p-cyr" "$scan" -- other.bin
+  check_status "dir #762 control: a misaligned UTF-16LE of a DIFFERENT Cyrillic word → exit 0" 0 "$STATUS"
+  run_in "$d762" env PATH="$d762/shim:$PATH" SECRET_SCAN_PERSONAL_FILE="$d762/p-cyr" "$scan" -- other.bin
+  check_status "dir #762 control: ...and with the built-in decoder → exit 0" 0 "$STATUS"
+else
+  pass "dir #762 odd-offset rows skipped (no iconv / no UTF-32 converter)"
+fi
+# the recipe holds the shifted passes, once each, in both twins (the twin-equality row above compares their text)
+for t762 in "secret-scan.sh:$ss746" "public-audit.sh:$pp746"; do
+  check_eq "dir #762: ${t762%%:*}'s recipe reads UTF-16 from the second byte in both byte orders" 2 \
+    "$(match "${t762#*:}" -cF 'tail -c +2 ')"
+  check_eq "dir #762: ${t762%%:*}'s built-in decoder runs over the whole file and from byte 1 on" 1 \
+    "$(match "${t762#*:}" -cF 'for skip in 1 2; do')"
+done
 
 # --- dir #761: an ASCII-only personal literal whose ERE `.` or bracket stands for a non-ASCII letter. Its UTF-16
 # bytes (`Michalek` with an l-stroke = 42 01) leave `MichaB\x01ek` in the NUL-strip view, which the literal
