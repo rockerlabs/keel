@@ -907,6 +907,7 @@ for needle in \
   "\`gh api repos/example/proj/pulls\`" \
   "\`gh api \"repos/example/proj/commits/<sha>/check-runs\"\`" \
   "one read every 2 minutes, at most 60 minutes per push" \
+  "An empty list is pending, not green" \
   "\`gh pr checks\` is GraphQL and blocked in the VM"; do
   check_contains "T15b pin: ${needle:0:70}" "$flat" "$needle"
 done
@@ -1107,6 +1108,8 @@ check_status "T16b a relative CLOUD_BACKLOG resolves against the start directory
 CLOUD_BACKLOG="$F/mirror/missing.md" cb "$P" "B.7"
 check_status "T16b a missing CLOUD_BACKLOG file → exit 2" 2 "$STATUS"
 check_contains "T16b … it is named" "$OUT" "$F/mirror/missing.md"
+CLOUD_BACKLOG='' cb "$P" "B.7"
+check_status "T16b an empty CLOUD_BACKLOG is set, not unset → exit 2" 2 "$STATUS"
 CLOUD_BACKLOG="$F/mirror" cb "$P" "B.7"
 check_status "T16b a CLOUD_BACKLOG directory → exit 2" 2 "$STATUS"
 CLOUD_BACKLOG="$F/mirror/missing.md" cbo "$P" --sweep

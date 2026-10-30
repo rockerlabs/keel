@@ -125,7 +125,7 @@ OWNER="${OR%%/*}"
 TICKET_ERE='[^[:space:]]+( #[0-9]+)?'
 # The backlog, the /backlog way: <main>/BACKLOG.md, else CLAUDE.md's inline section.
 BACKLOG=""
-if [ -n "${CLOUD_BACKLOG:-}" ]; then
+if [ -n "${CLOUD_BACKLOG+x}" ]; then
   BACKLOG="$(abs "$CLOUD_BACKLOG")"
   [ -f "$BACKLOG" ] && [ -r "$BACKLOG" ] || die 2 "CLOUD_BACKLOG is not a readable regular file: $BACKLOG"
 elif [ -f "$MAIN/BACKLOG.md" ]; then
