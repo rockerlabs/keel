@@ -5,6 +5,8 @@
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
 tool="$REPO_ROOT/tools/self/tag-ready.sh"
+# the expected hit lines, held in variables so this file carries no literal path:LINE citation (line-citations.sh)
+hist_ln=6; log_ln=8
 check_file "tools/self/tag-ready.sh exists" "$tool"
 
 # mk_fx — a fixture repo with a clean docs/release-history.md and CHANGELOG.md, committed. Prints its path.
@@ -45,7 +47,7 @@ printf '**Verification.** **Scope:** [PLACEHOLDER — filled from the audit GO r
 commit_all "$fx" "placeholder in history"
 run_in "$fx" bash "$tool"
 check_status "a [PLACEHOLDER in release-history.md -> exit 1" 1 "$STATUS"
-check_contains "...names the file and line" "$OUT" "docs/release-history.md:6:"
+check_contains "...names the file and line" "$OUT" "docs/release-history.md:${hist_ln}:"
 check_contains "...and says what to do" "$OUT" "fill it from the audit GO record"
 bad_rev="$(git -C "$fx" rev-parse HEAD)"
 
@@ -62,7 +64,7 @@ printf -- '- a [placeholder] bullet\n' >> "$fx/CHANGELOG.md"
 commit_all "$fx" "marker in changelog"
 run_in "$fx" bash "$tool"
 check_status "a lower-case [placeholder in CHANGELOG.md -> exit 1" 1 "$STATUS"
-check_contains "...names CHANGELOG.md" "$OUT" "CHANGELOG.md:8:"
+check_contains "...names CHANGELOG.md" "$OUT" "CHANGELOG.md:${log_ln}:"
 git -C "$fx" reset -q --hard HEAD~1
 
 # committed content only: an uncommitted marker is not read
