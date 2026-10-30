@@ -173,7 +173,7 @@ source with a `<!-- claim: … -->` marker (`changelog.d/README.md` § Numbers),
 (dir #810). A number whose source is gitignored (a ticket body, a spec, `RELEASES.md`) or changes after the cut is
 `claim: hand`, with the date or commit it was true at: a marker cannot re-derive what the tag does not contain. Run
 it again after every later edit to that section, and once more on the exact commit handed over for the tag: a fix
-that lands after the cut can change a re-derived file without touching the section (dir #846). Only after the cut-and-land PR lands does a human tag the merge commit and publish the release. A tag is
+that lands after the cut can change a re-derived file without touching the section (dir #846). **Tag-time marker check (dir #867):** the cut PR may carry a `[PLACEHOLDER` marker in the release-history entry's Verification block until the audit's GO record fills it (the 0.16.0 cut commit did), so no suite leg can reject one. On the exact SHA named for the tag, run `tools/self/tag-ready.sh <sha>` and tag only on exit 0: it fails while that marker stands in `docs/release-history.md` or `CHANGELOG.md`, reading committed content only, so never spell the marker with its opening bracket in those two files. Only after the cut-and-land PR lands does a human tag the merge commit and publish the release. A tag is
 outward-facing and effectively irreversible, so it sits behind the same rail as a merge: the session
 prepares everything up to "tag ready to cut," names the exact SHA, and stops.
 

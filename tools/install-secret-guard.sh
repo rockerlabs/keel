@@ -500,8 +500,9 @@ _isg_same_dir() {
 #   machine-dir=1  effective is the machine-wide hooksPath dir (what `--where --global` prints as `dir=`);
 #               how a consumer decides "this repo's hooks ARE the machine-wide ones" without comparing paths
 #               itself (dir #688)
-#   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | foreign, `-link` suffixed
-#               when it is a symlink — "keel" means the exact marker line (marker level: an install also requires a shipped body, dir #683)
+#   pre-commit= / pre-push=  state of that hook in `effective`: absent | keel | keel-modified | foreign, `-link` suffixed
+#               when it is a symlink — "keel" means the exact marker line AND a shipped body (dir #683); "keel-modified" the
+#               marker with a body no shipped version has (dir #791)
 # `--where --global` prints the machine-wide view (set/value/scope/origin/dir/keel-dir/pre-commit/pre-push), plus
 #   fallback=1  the machine-wide read took its narrow `git config --global` branch (no usable scratch dir)
 #   conditional=<n>|unknown  n ≥ 1 conditional [includeIf] includes set a core.hooksPath that is empty,
@@ -863,12 +864,15 @@ _isg_repo_effective_dir() {
   case "$eff" in /*) printf '%s' "$eff" ;; *) printf '%s' "$1/$eff" ;; esac
 }
 
-# absent | keel | foreign, `-link` appended when $2 in dir $1 is a symlink. Marker level, the test every
-# consumer shares (_isg_is_keel_hook); an install additionally needs a shipped body (_isg_is_shipped_hook, dir #683).
+# absent | keel | keel-modified | foreign, `-link` appended when $2 in dir $1 is a symlink. keel = Keel's marker AND a
+# shipped body (_isg_is_shipped_hook, the test an install applies); keel-modified = the marker but a body no shipped
+# version has (edited after install, dir #791): the installer refuses it without --force, so a reader must not call it Keel's.
 _isg_hook_state() {
   local t="$1/$2" s
   if [ ! -e "$t" ] && [ ! -L "$t" ]; then echo absent; return 0; fi
-  if [ -e "$t" ] && _isg_is_keel_hook "$t"; then s=keel; else s=foreign; fi
+  if [ -e "$t" ] && _isg_is_shipped_hook "$t"; then s=keel
+  elif [ -e "$t" ] && _isg_is_keel_hook "$t"; then s=keel-modified
+  else s=foreign; fi
   [ -L "$t" ] && s="$s-link"
   echo "$s"
 }
