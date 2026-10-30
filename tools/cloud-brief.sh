@@ -383,8 +383,9 @@ LEVEL="$(gh_or_refuse G1b "the protection of $OR:$DEFAULT" "repos/$OR/branches/$
 if [ "$LEVEL" != everyone ] && [ -z "$UNPROTECTED_OK" ]; then
   refuse G1b "$OR's $DEFAULT does not refuse an unchecked direct push (required status checks for everyone: '${LEVEL:-none}') — protect it, or opt in with the line KEEL-CLOUD unprotected-ok"
 fi
-WORKFLOWS="$(gh_or_refuse G1c "the workflows of $OR" "repos/$OR/actions/workflows" --jq .total_count)" || exit $?
-case "$WORKFLOWS" in ''|0|*[!0-9]*) refuse G1c "$OR has no CI workflow — the landing check needs a green check rollup" ;; esac
+WORKFLOWS="$(gh_or_refuse G1c "the workflows of $OR" "repos/$OR/actions/workflows" \
+  --jq '[(.workflows // [])[] | select(.state == "active")] | length')" || exit $?
+case "$WORKFLOWS" in ''|0|*[!0-9]*) refuse G1c "$OR has no active CI workflow — the landing check needs a green check rollup" ;; esac
 
 # --- the judged rows ---------------------------------------------------------------------------------------------
 if [ "$VERDICT" = none ] && [ "$MODE" != eligible ]; then

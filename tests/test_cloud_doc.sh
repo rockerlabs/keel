@@ -44,6 +44,7 @@ check_row() { # ID CLAUSE
 }
 check_row G1  'default-branch name outside `[A-Za-z0-9._/+-]` is refused here too'
 check_row G1b '`enforcement_level`'
+check_row G1c 'whose `state` is `active`'
 check_row G1c 'No CI is refused before any credit is spent'
 check_row G2  '`📐` beside R0–R2 is refused'
 check_row G2b 'no verdict needs `--eligible`'
