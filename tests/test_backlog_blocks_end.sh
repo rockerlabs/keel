@@ -70,7 +70,10 @@ check_eq "lookup: the heading is the full scan's" "$(printf '%s' "$all" | awk -F
 check_eq "lookup: the closed field is a placeholder, not a value" "-" "$(printf '%s' "$one" | cut -f3)"
 check_eq "lookup: a closed ticket is found too" "5" "$(backlog_ticket_blocks "$f" '' 'dir #2' | cut -f1)"
 check_eq "lookup: an unknown id gives nothing" "" "$(backlog_ticket_blocks "$f" '' 'dir #4')"
-check_eq "lookup: a prefix of an id is not the id (dir #3 vs dir #30)" "" "$(backlog_ticket_blocks "$f" '' 'dir #')"
+check_eq "lookup: a prefix of an id is not the id (dir #)" "" "$(backlog_ticket_blocks "$f" '' 'dir #')"
+printf '### dir #30 — a longer id — R3 — → pool\n\nbody\n' >> "$f"
+check_eq "lookup: dir #3 does not find the heading of dir #30 (one row, line 9)" "9" "$(backlog_ticket_blocks "$f" '' 'dir #3' | cut -f1)"
+check_eq "lookup: dir #30 is found on its own (line 14)" "14" "$(backlog_ticket_blocks "$f" '' 'dir #30' | cut -f1)"
 # The point of the mode: no per-heading closure work. A stub that records its calls shows none are made.
 calls="$d/calls"
 : > "$calls"
