@@ -164,7 +164,7 @@ report_scan "range scan" "$rc" "$out"
 # marker exempts counts as soon as the range changes its file; the allowlist file is the exemption that holds here.
 # Named only when a hit carries the marker: for a bare key or a trailer, an allowlist entry is never the remedy.
 # Read as bytes, like marker_grep below (LC_ALL=C -a): a byte that is not valid UTF-8 before the marker must not hide it.
-[ "$rc" -ne 1 ] || ! LC_ALL=C grep -qaF 'secret-scan:allow' <<< "$out" \
+[ "$rc" -ne 1 ] || ! LC_ALL=C grep -qaF 'secret-scan:''allow' <<< "$out" \
   || echo "    (a hit above carries an inline allow marker, which exempts nothing here: if it is a fixture already on $DEFAULT, list it in $DEFAULT's .secret-scan-allow)"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
