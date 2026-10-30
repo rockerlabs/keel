@@ -370,6 +370,64 @@ fx "$(printf 'KEEL-CLOUD\r')"
 cb "$P" "dir #801"
 check_status "T1c a CRLF KEEL-CLOUD line passes" 0 "$STATUS"
 
+# dir #913 (1): the opt-in is read from fence-blanked text, like every other field — a line inside a fenced example
+# opts nothing in (docs/cloud.md B1), and the refusal says the line was fenced.
+for fence in '```' '~~~'; do
+  fx "$fence"$'text\nKEEL-CLOUD\n'"$fence"
+  cbo "$P" "dir #801"
+  check_status "T1e KEEL-CLOUD only inside a $fence fence → exit 3" 3 "$STATUS"
+  check_contains "T1e … G1" "$ERR" "refused: G1"
+  check_contains "T1e … stderr names the fenced line" "$ERR" "CLAUDE.md line 4 (inside a fenced block): KEEL-CLOUD"
+  nothing_written "T1e $fence"
+done
+fx $'```\nKEEL-CLOUD unprotected-ok\n```\n\nKEEL-CLOUD'
+unprotect
+cbo "$P" "dir #801"
+check_status "T1e a fenced 'unprotected-ok' line does not carry its flag to a real plain line → exit 3" 3 "$STATUS"
+check_contains "T1e … the real line opts in, so the refusal is G1b" "$ERR" "refused: G1b"
+fx $'```\nan example\n```\n\nKEEL-CLOUD'
+cb "$P" "dir #801"
+check_status "T1e a real KEEL-CLOUD line after a closed fence still opts in" 0 "$STATUS"
+fx $'```\nan unclosed example\n\nKEEL-CLOUD'
+cbo "$P" "dir #801"
+check_status "T1e a stray fence above the real line blanks it → exit 3" 3 "$STATUS"
+check_contains "T1e … and the refusal says the fence markers are odd" "$ERR" "odd number of fence markers"
+
+# dir #913 (2): an HTTP 403 that is a rate limit (X-RateLimit-Remaining: 0, or "rate limit" in the message) is
+# transient — exit 2, nothing written; any other 403 stays "not readable" (G1/G1b/G1c, exit 3).
+rl() { # PATH-KEY MESSAGE REMAINING-HEADER-LINE — the stub answers 403 for it
+  printf '%s\n' "$2" > "$GH_FX/api/$1.403"
+  if [ -n "${3:-}" ]; then printf '%s\n' "$3" > "$GH_FX/api/$1.403hdr"; else rm -f "$GH_FX/api/$1.403hdr"; fi
+}
+for key in repos_example_proj repos_example_proj_branches_main repos_example_proj_actions_workflows; do
+  case "$key" in repos_example_proj) row=G1 ;; *_branches_main) row=G1b ;; *) row=G1c ;; esac
+  fx; rl "$key" "Forbidden" "X-RateLimit-Remaining: 4999"
+  cb "$P" "dir #801"
+  check_status "T22 a plain 403 reading $key → exit 3" 3 "$STATUS"
+  check_contains "T22 … refused as $row" "$OUT" "refused: $row"
+  nothing_written "T22 plain 403 $key"
+  fx; rl "$key" "Forbidden" "X-RateLimit-Remaining: 10"
+  cb "$P" "dir #801"
+  check_status "T22 a 403 with X-RateLimit-Remaining: 10 (not 0) reading $key → exit 3" 3 "$STATUS"
+  fx; rl "$key" "Forbidden" ""
+  cb "$P" "dir #801"
+  check_status "T22 a 403 with no rate-limit header reading $key → exit 3" 3 "$STATUS"
+  fx; rl "$key" "Forbidden" "X-RateLimit-Remaining: 0"
+  cb "$P" "dir #801"
+  check_status "T22 a 403 with X-RateLimit-Remaining: 0 reading $key → exit 2" 2 "$STATUS"
+  check_contains "T22 … named as a rate limit" "$OUT" "rate limit"
+  nothing_written "T22 rate limit $key"
+  fx; rl "$key" "Forbidden" "x-ratelimit-remaining: 0"
+  cb "$P" "dir #801"
+  check_status "T22 … the header name in lower case (HTTP/2) → exit 2" 2 "$STATUS"
+  fx; rl "$key" "API rate limit exceeded for user ID 1." "X-RateLimit-Remaining: 4999"
+  cb "$P" "dir #801"
+  check_status "T22 a 403 whose message says rate limit → exit 2" 2 "$STATUS"
+  fx; rl "$key" "You have exceeded a secondary rate limit. Please wait." ""
+  cb "$P" "dir #801"
+  check_status "T22 a secondary rate limit (no header) → exit 2" 2 "$STATUS"
+done
+
 # --- T1b / T1d: finding the ticket --------------------------------------------------------------------------------
 fx
 cb "$P" "dir #999"
@@ -555,6 +613,7 @@ run env "GIT_CONFIG_COUNT=$((n + 1))" "GIT_CONFIG_KEY_$n=safe.bareRepository" "G
 check_status "T10c dir #883 under safe.bareRepository=explicit → exit 3" 3 "$STATUS"
 check_contains "T10c … git cannot tell, so it refuses" "$OUT" \
   "refused: G7 — Spec: vendor/upstream/config — git cannot tell whether its directory"
+check_contains "T10c … and quotes git's own message" "$OUT" "cannot use bare repository"
 nothing_written "T10c"
 # A `..` that stays inside the main checkout is no refusal: the physical directory decides.
 add_ticket '\n### dir #865 — a spec spelled with .. inside — R4 — → pool\n\nSpec: docs/../docs/specs/s801.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
@@ -811,14 +870,42 @@ cb "$P" "dir #833"; check_eq "T13 mid tier, no effort word → sonnet/medium" "s
 check_contains "T13 no effort word warns" "$OUT" "no effort word"
 cb "$P" "dir #834"; check_eq "T13 two tiers: the first decides → sonnet/high" "sonnet/high" "$(row_of 'dir #834' | cut -f5)"
 
+# --- dir #913 (3): a body line glued to a heading with no recognized tail --------------------------------------------
+# backlog_ticket_blocks folds such a line into the heading (its lib documents the residual and stays unchanged), so G2
+# would read a 📐 from body text: the cloud route refuses and asks for the blank line.
+fx
+add_ticket '\n### dir #890 — glued prose under an ungraded heading\nThis body line is glued to it and says 📐 SPEC-READY.\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #891 — a glued line under a graded heading — R4 — → pool\nThis body line is glued but the heading is finished.\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #892 — a wrapped heading whose tail\nlands on its second line — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #893 — glued prose carrying a grade\nThe plan is R4 ready — R4 — here.\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+add_ticket '\n### dir #894 — an ungraded heading with its blank line\n\nA body line saying 📐 SPEC-READY, after the blank line.\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+cb "$P" "dir #890"
+check_status "T23 a glued body line carrying 📐 under an ungraded heading → exit 3" 3 "$STATUS"
+check_contains "T23 … refused as G2" "$OUT" "refused: G2"
+check_contains "T23 … naming the glued line" "$OUT" "This body line is glued to it and says 📐 SPEC-READY."
+glued_n="$(grep -n 'This body line is glued to it' "$P/BACKLOG.md" | cut -d: -f1)"
+check_contains "T23 … and its line number" "$OUT" "line $glued_n of"
+check_contains "T23 … asking for a blank line after the heading" "$OUT" "blank line"
+nothing_written "T23"
+cb "$P" "dir #891"
+check_status "T23 a glued line under a FINISHED heading is the lib's own case → passes" 0 "$STATUS"
+cb "$P" "dir #892"
+check_status "T23 a wrapped heading whose tail lands on a later line still passes" 0 "$STATUS"
+cb "$P" "dir #893"
+check_status "T23 a glued line whose text reads as a tail finishes the heading (the lib's grammar) → passes G2" 0 "$STATUS"
+cb "$P" "dir #894"
+check_status "T23 the same words after a blank line: the heading has no grade → exit 3" 3 "$STATUS"
+check_contains "T23 … that is the plain no-grade refusal, not the glued one" "$OUT" "no readiness grade on the heading"
+check_absent "T23 … which does not ask for a blank line" "$OUT" "directly under"
+
 # --- T14: the ledger ----------------------------------------------------------------------------------------------
 fx
 cb "$P" "dir #801" --credit-before 200
 check_eq "T14 a build writes one built row" "built" "$(status_of 'dir #801')"
 check_eq "T14 the row is keyed by repo" "example/proj" "$(row_of 'dir #801' | cut -f2)"
 check_eq "T14 the credit cell" "200" "$(row_of 'dir #801' | cut -f7)"
-check_eq "T14 a row has 14 cells" "14" "$(row_of 'dir #801' | awk -F'\t' '{print NF}')"
-check_eq "T14 the header" "$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR')" "$(head -1 "$CLOUD_LEDGER")"
+check_eq "T14 a row has 15 cells" "15" "$(row_of 'dir #801' | awk -F'\t' '{print NF}')"
+check_eq "T14 the header" "$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR\tsession')" "$(head -1 "$CLOUD_LEDGER")"
 cb "$P" "dir #801"
 check_eq "T14 a rebuild replaces the built row: one row" "1" "$(row_of 'dir #801' | grep -c '')"
 check_eq "T14 the rebuild's credit cell is fresh" "?" "$(row_of 'dir #801' | cut -f7)"
@@ -1194,6 +1281,8 @@ if [ -n "$HAVE_SCRIPT" ]; then
   fx
   cb "$P" "dir #801" --dispatch 3>&-
   check_status "T18 --dispatch → 0" 0 "$STATUS"
+  # This pins the claim only where `script` hands its inherited fds to the CLI: BSD `script` (macOS) does, and
+  # util-linux `script -qec` (verified on Linux: util-linux 2.39.3, dir #913) does too. A busybox `script` is unpinned.
   check_eq "T18 the CLI holds no fd 3 (the caller's stdout stays the receipt's)" "closed" "$(cat "$CLAUDE_FX/fd3-at-call")"
   check_eq "T18 the stub claude got --cloud first" "--cloud" "$(cat "$CLAUDE_FX/arg1")"
   check_eq "T18 … the brief text right after it" "$(cat "$CLOUD_BRIEF_DIR/example-proj--dir-801.md")" "$(cat "$CLAUDE_FX/brief")"
@@ -1206,7 +1295,12 @@ if [ -n "$HAVE_SCRIPT" ]; then
   check_contains "T18 the CLI's stdout is printed" "$OUT" "Created cloud session: Fixture"
   check_contains "T21 the claim text" "$OUT" "⏳ IN FLIGHT ($TODAY, branch claude/cloud-dir-801, cloud)"
   check_contains "T21 the heading with the claim appended, 📐 kept" "$OUT" "### dir #801 — eligible, verdict yes, with a spec — R4 — → pool — 📐 SPEC-READY — ⏳ IN FLIGHT ($TODAY, branch claude/cloud-dir-801, cloud)"
-  check_contains "T18 a gitignored backlog's Log line carries the session" "$OUT" "session session_01FIXTURE"
+  # dir #913 (4): the session id is never written into the ticket (a Log line on a gitignored backlog was a bare
+  # `session_<id>` no scan reads); it lives only in the local ledger row. The CLI's own output is printed above the claim.
+  ticket_text="${OUT#*Claim — }"
+  check_contains "T24 the claim and the Log line are printed" "$ticket_text" "Log: $TODAY — dispatched to a cloud session on claude/cloud-dir-801"
+  check_absent "T24 the ticket text the tool prints carries no session id" "$ticket_text" "session_"
+  check_eq "T24 the ledger row carries the session id" "session_01FIXTURE" "$(row_of 'dir #801' | cut -f15)"
   check_contains "T18 the landing command is printed" "$OUT" "tools/cloud-land.sh"
   cb "$P" "dir #801" --dispatch
   check_status "T18 a second dispatch without --redispatch → 3" 3 "$STATUS"
@@ -1223,11 +1317,13 @@ if [ -n "$HAVE_SCRIPT" ]; then
   check_contains "T18 … its stderr passed through" "$OUT" "stub stderr line"
   check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
   check_absent "T18 … no claim printed" "$OUT" "IN FLIGHT"
+  check_eq "T24 … no session id on the built row" "" "$(row_of 'dir #801' | cut -f15)"
   fx
   sed 's#^docs/specs/$##; s#^BACKLOG.md$##' "$P/.gitignore" > "$F/gi"; cat "$F/gi" > "$P/.gitignore"
   cb "$P" "dir #801" --dispatch
   check_status "T18 a tracked backlog dispatches" 0 "$STATUS"
-  check_absent "T18 a tracked backlog's Log line carries no session" "$OUT" "session session_01FIXTURE"
+  check_absent "T24 a tracked backlog's ticket text carries no session id either" "${OUT#*Claim — }" "session_"
+  check_eq "T24 … and the ledger row carries it" "session_01FIXTURE" "$(row_of 'dir #801' | cut -f15)"
   fx
   add_ticket '\n### dir #852 — a wrapped heading whose title runs\non — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n'
   cb "$P" "dir #852" --dispatch
@@ -1260,7 +1356,19 @@ cloud_ledger_put "$L" o/s "dir #1" "$(printf 'd\to/s\tdir #1\tb\tm\t1\t?\tbuilt\
 cloud_ledger_set "$L" o/r "dir #1" 8=landed 13=abc
 check_eq "lib cloud_ledger_set changes only the keyed row" "landed abc|built " \
   "$(awk -F'\t' 'NR > 1 { printf "%s %s|", $8, $13 }' "$L" | sed 's/|$//')"
-check_eq "lib … keeps 14 cells" "14" "$(cloud_ledger_row "$L" o/r "dir #1" | awk -F'\t' '{print NF}')"
+check_eq "lib … keeps an older 14-cell row at 14 cells" "14" "$(cloud_ledger_row "$L" o/r "dir #1" | awk -F'\t' '{print NF}')"
+cloud_ledger_set "$L" o/r "dir #1" 15=session_01X
+check_eq "lib cloud_ledger_set can set the 15th (session) cell of an older 14-cell row" "session_01X" \
+  "$(cloud_ledger_cell "$(cloud_ledger_row "$L" o/r "dir #1")" 15)"
+# cloud_gh_api (dir #913): rc 4 for a 404 or a 403 that is no rate limit, rc 2 for a rate limit (transient) or anything else.
+fx
+rl repos_example_proj "Forbidden" "X-RateLimit-Remaining: 4999"
+cloud_gh_api repos/example/proj --jq .default_branch >/dev/null 2>&1; check_status "lib cloud_gh_api: a plain 403 → rc 4" 4 "$?"
+rl repos_example_proj "Forbidden" "X-RateLimit-Remaining: 0"
+cloud_gh_api repos/example/proj --jq .default_branch >/dev/null 2>&1; check_status "lib cloud_gh_api: a 403 with the remaining count at 0 → rc 2" 2 "$?"
+rm -f "$GH_FX/api/repos_example_proj.403" "$GH_FX/api/repos_example_proj.403hdr"
+cloud_gh_api repos/example/nothing >/dev/null 2>&1; check_status "lib cloud_gh_api: a 404 → rc 4" 4 "$?"
+cloud_gh_api repos/example/proj --jq .default_branch >/dev/null 2>&1; check_status "lib cloud_gh_api: a readable endpoint → rc 0" 0 "$?"
 cloud_cell_ok "a$(printf '\t')b"; check_status "lib cloud_cell_ok refuses a tab" 1 "$?"
 mkdir -p "$SANDBOX/rel" && printf 'x\n' > "$SANDBOX/rel/list"
 check_eq "lib cloud_personal_file makes a relative list absolute (the scanner runs from another directory)" \

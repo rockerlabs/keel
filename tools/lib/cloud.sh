@@ -5,14 +5,16 @@
 # no `set -e`/`set -u` assumption. The caller sources tools/lib/repo-top.sh, tools/lib/safe-write.sh and
 # tools/lib/leak-gate.sh first.
 #
-# The ledger is one tab-separated file, a header line then one row per (repo, ticket), 14 cells:
+# The ledger is one tab-separated file, a header line then one row per (repo, ticket), 15 cells:
 #   built · repo · ticket · branch · model/effort · brief bytes · credit before · status · credit after ·
-#   overlap · landed · landing exit · head SHA · PR
+#   overlap · landed · landing exit · head SHA · PR · session
+# (dir #913: the session cell is the one place a dispatch's session id is kept — never in the ticket. A ledger written
+# before it has a 14-cell header and rows; its rows gain the cell when a dispatch sets it.)
 # Status: built → dispatched → landed, or abandoned (set by hand). A cell never holds a tab or a newline.
 # Values reach awk through ENVIRON, never `-v`, which would read a backslash in them as an escape; keys compare as
 # strings (`($3 "") == (t "")`), since awk compares two numeric-looking values as numbers (`2.1` = `2.10`).
 
-CLOUD_LEDGER_HEADER="$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR')"
+CLOUD_LEDGER_HEADER="$(printf 'built\trepo\tticket\tbranch\tmodel/effort\tbrief bytes\tcredit before\tstatus\tcredit after\toverlap\tlanded\tlanding exit\thead SHA\tPR\tsession')"
 CLOUD_LOCK_WAIT=10        # seconds a second writer waits for the lock
 CLOUD_LOCK_STALE_MIN=10   # minutes after which a held lock is named stale (never removed by a tool)
 CLOUD_ERR=""              # why the last cloud_resolve_main or cloud_personal_file call failed
@@ -186,14 +188,32 @@ cloud_scan_file() {
   (CDPATH='' cd -- "$3/scan-empty" && SECRET_SCAN_NO_INLINE_ALLOW=1 bash "$1" -- "$2" 2>&1)
 }
 
-# cloud_gh_api ARGS... — `gh api ARGS`, its stdout on stdout. rc 0 ok · rc 4 GitHub answered 404 or 403 (the
-# repository or ref is not readable) · rc 2 anything else (no network, not logged in, gh missing). stderr kept.
+# _cloud_rate_limited ERRFILE ENDPOINT — rc 0 when a 403 is a rate limit: "rate limit" in gh's message (the primary
+# "API rate limit exceeded" and the secondary "exceeded a secondary rate limit" both say it), or the response's
+# X-RateLimit-Remaining header at 0. gh prints no headers on an error unless asked, so the header is read from a
+# second `gh api ENDPOINT --include` (stdout has the headers even when the call fails); the header name is matched
+# in any case (HTTP/2 lowercases it).
+_cloud_rate_limited() {
+  local headers
+  LC_ALL=C grep -qiE 'rate limit' "$1" && return 0
+  headers="$(gh api "$2" --include 2>/dev/null || true)" # the call fails by design; a pipe would carry its status (pipefail)
+  LC_ALL=C grep -qiE '^x-ratelimit-remaining:[[:space:]]*0[[:space:]]*$' <<< "$headers"
+}
+
+# cloud_gh_api ENDPOINT [ARGS...] — `gh api ENDPOINT ARGS...`, its stdout on stdout (the endpoint comes first: a 403
+# is probed once more for its rate-limit header, through that endpoint alone). rc 0 ok · rc 4 GitHub answered 404, or
+# 403 that is not a rate limit (the repository or ref is not readable) · rc 2 anything else: a rate limit (a 403
+# too, but transient — retry later, dir #913), no network, not logged in, gh missing. stderr kept.
 cloud_gh_api() {
   local out err rc=0
   err="$(mktemp)" || return 2
   out="$(gh api "$@" 2> "$err")" || rc=$?
   if [ "$rc" -ne 0 ]; then
     cat "$err" >&2
+    if grep -qE 'HTTP 403' "$err" && _cloud_rate_limited "$err" "$1"; then
+      echo "cloud: GitHub answered 403 as a rate limit — transient, not a refusal; retry later" >&2
+      rm -f "$err"; return 2
+    fi
     if grep -qE 'HTTP 40[34]' "$err"; then rm -f "$err"; return 4; fi
     rm -f "$err"
     return 2

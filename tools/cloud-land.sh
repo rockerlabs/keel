@@ -20,12 +20,14 @@
 #      included) and no line of any commit message in the range may carry the scanner's inline allow marker — a
 #      grep that fails is a scan error.
 # Then CI: every check in the rollup completed as a success, neutral or skipped (a commit status: a success), and
-# at least one succeeded — so an empty or all-skipped rollup is not green.
+# at least one succeeded — so an empty or all-skipped rollup is not green. On a DRAFT PR a check that skipped is not
+# green at all (dir #913): an expensive workflow that skips drafts reads green beside one cheap success, so the PR is
+# marked ready, CI runs for real, and the check is re-run.
 #
-# Exit: 0 scans clean and CI green · 1 a scan hit or a scan error · 2 usage, a gh failure, no ledger row, a
-# repository mismatch, a PR whose base is not the default branch · 3 CI not green, or the branch moved after the
-# PR was read. A run that found its row records its landing exit, head SHA and PR; only exit 0 also corrects the
-# branch and sets the status to `landed` and the landed date — "the check passed at that head", not "merged". No
+# Exit: 0 scans clean and CI green · 1 a scan hit or a scan error · 2 usage, a gh failure (a rate limit included), no
+# ledger row, a repository mismatch, a PR whose base is not the default branch · 3 CI not green (a skipped check on
+# a draft PR included), or the branch moved after the PR was read. A run that found its row records its landing
+# exit, head SHA and PR; only exit 0 also corrects the branch and sets the status to `landed` and the landed date — "the check passed at that head", not "merged". No
 # merge without an exit 0 for the exact head SHA merged: the printed merge command pins it.
 #
 # Env (relative values are made absolute against the start directory): CLOUD_LEDGER
@@ -82,7 +84,7 @@ DEFAULT="$(cloud_gh_api "repos/$OR" --jq .default_branch)" && [ -n "$DEFAULT" ] 
 # --- the PR ---------------------------------------------------------------------------------------------------------
 # Plain JSON whatever the caller's environment asks of gh: a forced TTY or forced color would colorize it.
 PR_JSON="$(env -u GH_FORCE_TTY CLICOLOR_FORCE=0 NO_COLOR=1 \
-  gh pr view "$PR" --repo "$OR" --json title,headRefName,baseRefName,body,statusCheckRollup,headRefOid)" \
+  gh pr view "$PR" --repo "$OR" --json title,headRefName,baseRefName,body,statusCheckRollup,headRefOid,isDraft)" \
   || die 2 "gh pr view $PR --repo $OR failed"
 BRANCH="$(jq -r '.headRefName // ""' <<< "$PR_JSON")"
 HEAD_OID="$(jq -r '.headRefOid // ""' <<< "$PR_JSON")"
@@ -161,7 +163,8 @@ report_scan "range scan" "$rc" "$out"
 # --range reads each blob the range introduces whole, so a line already on the default branch that only an inline
 # marker exempts counts as soon as the range changes its file; the allowlist file is the exemption that holds here.
 # Named only when a hit carries the marker: for a bare key or a trailer, an allowlist entry is never the remedy.
-[ "$rc" -ne 1 ] || ! grep -qF 'secret-scan:allow' <<< "$out" \
+# Read as bytes, like marker_grep below (LC_ALL=C -a): a byte that is not valid UTF-8 before the marker must not hide it.
+[ "$rc" -ne 1 ] || ! LC_ALL=C grep -qaF 'secret-scan:''allow' <<< "$out" \
   || echo "    (a hit above carries an inline allow marker, which exempts nothing here: if it is a fixture already on $DEFAULT, list it in $DEFAULT's .secret-scan-allow)"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
@@ -233,7 +236,15 @@ jq -e 'def status_context: .__typename == "StatusContext" or (has("state") and (
                    else .status == "COMPLETED" and ((.conclusion // "") | IN("SUCCESS", "NEUTRAL", "SKIPPED")) end))
          and ($r | any(if status_context then .state == "SUCCESS" else .conclusion == "SUCCESS" end))' \
   <<< "$PR_JSON" >/dev/null && CI_GREEN=1
-if [ -n "$CI_GREEN" ]; then echo "  green"; else echo "  NOT green (a failing, pending or missing check, or none succeeded)"; fi
+# A draft PR with any skipped check is not green (dir #913): the skip may be the draft's own, hiding the real run.
+DRAFT_SKIPPED=""
+if [ -n "$CI_GREEN" ] && jq -e '.isDraft == true and ((.statusCheckRollup // []) | any((.conclusion // "") == "SKIPPED"))' \
+   <<< "$PR_JSON" >/dev/null; then
+  CI_GREEN="" DRAFT_SKIPPED=1
+fi
+if [ -n "$DRAFT_SKIPPED" ]; then echo "  NOT green (a draft PR with a skipped check)"
+elif [ -n "$CI_GREEN" ]; then echo "  green"
+else echo "  NOT green (a failing, pending or missing check, or none succeeded)"; fi
 
 echo "== Landing notes"
 notes="$(jq -r '.body // ""' <<< "$PR_JSON" | awk '/^## Landing notes[[:space:]]*$/ {f = 1; print; next} f && /^## / {exit} f')"
@@ -246,6 +257,11 @@ echo "  pre-PR flow (docs/cloud.md, the landing section). The operator merges."
 if [ -n "$SCAN_FAIL" ]; then
   echo "== REFUSED: a scan hit or a scan error. Do not merge; nothing pushed can be unpublished — fix forward on the branch."
   finish 1
+fi
+if [ -n "$DRAFT_SKIPPED" ]; then
+  echo "== CI not read as green: PR #$PR is a draft and a check was skipped — a workflow that skips drafts shows no result."
+  echo "   gh pr ready $PR --repo $OR, wait for CI, re-run the landing check."
+  finish 3
 fi
 if [ -z "$CI_GREEN" ]; then
   echo "== CI not green. Steer the cloud session (its web view, or \`claude --cloud <session id>\` from a terminal), then re-run this check."
