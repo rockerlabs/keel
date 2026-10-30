@@ -31,13 +31,15 @@ jobs:
   # dir #744 (B16): macOS is the long pole (one unsharded leg ran 12-16 min), so it runs as two shards — each
   # takes tests/run.sh's KEEL_TEST_SHARD=K/2 share (size-greedy by file bytes, every file exactly once) — and
   # an aggregator below reports the one required check name, `tests (macos-14)`. No branch-protection change.
+  # dir #921: the shards run on macos-15 (GitHub retires the macos-14 image on 2026-11-02); the check names keep
+  # `macos-14` only because branch protection requires them by name.
   macos-shards:
     name: tests (macos-14, shard ${{ matrix.shard }}/2)
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -48,8 +50,9 @@ jobs:
           KEEL_TEST_SHARD: ${{ matrix.shard }}/2
         run: bash tests/run.sh
 
-  # The required `tests (macos-14)` check: green only when BOTH shards succeeded. `if: always()` so a failed,
-  # cancelled or skipped shard still yields a red check here rather than a skipped one (branch protection
+  # The required `tests (macos-14)` check (name kept for branch protection, see above): green only when BOTH
+  # shards succeeded. `if: always()` so a failed, cancelled or skipped shard still yields a red check here
+  # rather than a skipped one (branch protection
   # treats a skipped required check as passing). On ubuntu: it must not take one of the account's macOS slots.
   macos:
     name: tests (macos-14)
