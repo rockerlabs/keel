@@ -5,7 +5,7 @@ Scaffold a new project to the Keel baseline so it is born-compliant (no backfill
 ## What it does
 
 Runs `tools/init-project.sh` in the target directory, which idempotently ensures:
-1. **git** initialized. A target inside another git repo is refused with nothing scaffolded — it would
+1. **git** initialized. A target inside another git repo is refused before any file is written (an absent target directory is created empty first) — it would
    otherwise attach to the parent — unless `--nested` asks for a separate repo there.
 2. **`.gitignore`** ignores the private AI context (`CLAUDE.md`, `AGENTS.md`, `.claude/`) + IDE/OS noise.
 3. **project `CLAUDE.md`** created from `templates/project-CLAUDE.md` (never overwrites an existing one),

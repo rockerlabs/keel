@@ -182,4 +182,8 @@ for v in $verbs; do
   fi
 done
 
+# Deliberate drift-binding: this fails the day a fifth tools/install-*.sh lands, so keel's prose gets a count review (dir #807).
+check_eq "dir #807: the installer count keel's comment states" "4" "$(ls "$REPO_ROOT"/tools/install-*.sh | wc -l | tr -d ' ')"
+pin "dir #807: keel's comment says four installers" "$REPO_ROOT/keel" 'and the four tools/install-*.sh installers' "expected keel's comment to state the installer count"
+
 summary

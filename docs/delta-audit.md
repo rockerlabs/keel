@@ -397,7 +397,9 @@ so far, before a second whole-file pair.
 **A GO verdict does not close the run — two records do, and a run that skips them leaves nothing a
 later cycle can read.** Both are the **orchestrator's**, by the roles table above (§5: "**all**
 bookkeeping"), not the verifier's: the verifier issues the verdict and stops, so a duty timed to the
-verdict but owed by nobody named is the same ownerless duty one step earlier. So, before the
+verdict but owed by nobody named is the same ownerless duty one step earlier. In a managed release ([`release-management.md`](release-management.md) R8) the
+manager is the one `BACKLOG.md` writer, so a record the project keeps there (keel's standing list, for (b)) is drafted inline in the
+orchestrator's verdict and written by the manager (R9); the duty stays the orchestrator's until the manager has written it. So, before the
 orchestrator records the GO verdict: **(a)** it OPENS the run's row in the project's cross-run record
 from the `run-record.md` stub — opened, not completed, because some of the row's own fields are facts
 about the tag (a prior run's row records the annotated tag peeling to the verified commit), which do

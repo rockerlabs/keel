@@ -89,7 +89,7 @@ release's `bootstrap.sh` asset, run by hand per `docs/publishing-checklist.md`).
 
 | Agent | What it does |
 |---|---|
-| `keel-polish-reviewer` | `/polish`'s review subagent: reads the diff its caller embeds in the prompt plus files on disk, and nothing else — its `tools:` allowlist is `Read, Grep, Glob`, so it cannot run a command, a test or git (a structural floor under the read-only rails, not a remembered instruction). |
+| `keel-polish-reviewer` | `/polish`'s review subagent (step 5 and its second-opinion add-on): reads the diff its caller embeds in the prompt plus files on disk, and nothing else — its `tools:` allowlist is `Read, Grep, Glob`, so it cannot run a command, a test or git (a structural floor under the read-only rails, not a remembered instruction). |
 
 `install.sh` wires `agents/*.md` into `<home>/agents/` (a symlink under `--link`, never under `--codex`);
 `uninstall.sh` removes what it placed; `doctor.sh --install` reports a missing agent
