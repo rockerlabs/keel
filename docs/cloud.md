@@ -243,7 +243,8 @@ wave plan) and R3 (the launch). The rules:
 ## Landing (B13)
 
 For a PR whose head branch has a ledger row, the pre-PR gate is replaced by: the cloud session's review, the
-VM's pre-push scans, CI, and `cloud-land.sh` exit 0 for the exact head SHA.
+VM's pre-push scans, CI, and `cloud-land.sh` exit 0 for the exact head SHA. That is a procedure the operator
+follows, not a hook: nothing in the local pre-PR gate recognises a cloud PR.
 
 ```text
 cloud-land.sh <repo> <PR#> [--ticket <id>]

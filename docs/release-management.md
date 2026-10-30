@@ -109,9 +109,9 @@ and falls under the same rule.
 **In a cloud-capable project the wave plan carries a route column ([`docs/cloud.md`](cloud.md)).** Each
 ticket reads `cloud` or `local — <why>` (`no — <row>`, no verdict, a wave peer, a `--check` refusal). Each
 `cloud` ticket passed `cloud-brief.sh <repo> "<id>" --check` before the plan is shown, and the plan quotes its
-`cloud-check:` receipt line. A ticket that shares a file with another ticket in the same wave does not go to the
-cloud in that wave — the manager cannot message a cloud worker, so R10's seams duty has no channel there — and
-the manager may move a ticket to a later wave to free it, saying so in the plan. The operator's yes on the plan
+`cloud-check:` receipt line. A ticket that shares a file with another ticket in the same wave, or names no
+file at all, does not go to the cloud in that wave — the manager cannot message a cloud worker, so R10's seams
+duty has no channel there — and the manager may move a ticket to a later wave to free it, saying so in the plan. The operator's yes on the plan
 is the yes for each listed cloud ticket, one dispatch each.
 
 ## R3 — worker launches, soft form

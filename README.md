@@ -144,7 +144,7 @@ rc) on the tool call that made it → [docs/reference.md](docs/reference.md).
 On Claude Code, a backlog ticket that needs nothing from your machine can run in a cloud session instead: a
 project opts in with one `KEEL-CLOUD` line in its `CLAUDE.md`, whoever grades a ticket also records whether it
 may go (`**Cloud:** yes` or `no — <why>`), `/go` offers the cloud on a `yes` ticket, and a model-free
-landing check (`tools/cloud-land.sh`) gates your merge. The session pushes one branch through a guard it
+landing check (`tools/cloud-land.sh`) is what you run before you merge. The session pushes one branch through a guard it
 installs and proves first, and opens a draft PR; starting it and merging stay yours. How it works →
 [docs/cloud.md](docs/cloud.md).
 

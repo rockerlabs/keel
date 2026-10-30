@@ -56,6 +56,17 @@ check_row G7  'a symlink'
 check_row G8  '"Question for a /design pass" in the body, "for the design" (case-insensitive) on the `**Model rec:**` line'
 check_row G9  '`--dispatch` only'
 
+# The decided column is what tells an operator which rows the tool settles and which are the grader's call, so
+# it is pinned too: the tool decides these rows mechanically, and records no verdict for them.
+check_decided() { # ID WORD — the row's last cell
+  case "$(row_text "$1")" in
+    *"| $2 |") pass "(A7) row $1 is decided: $2" ;;
+    *) fail "(A7) row $1 is decided: $2" "the row does not end in '| $2 |'" ;;
+  esac
+}
+for id in G1 G1b G1c G2 G2b G6 G7 G9; do check_decided "$id" mech; done
+for id in G3 G3b G4 G5; do check_decided "$id" judged; done
+
 # --- the verdict, the opt-in and who dispatches -------------------------------------------------------------
 check_contains "(A7) B2: the yes line form" "$doc_flat" '**Cloud:** yes (YYYY-MM-DD, <who>)'
 check_contains "(A7) B2: the no line form" "$doc_flat" '**Cloud:** no — <row>: <reason> (YYYY-MM-DD, <who>)'
@@ -126,6 +137,7 @@ r2="$(section "$rm_doc" '^## R2 ' '^## R3 ')"
 r3="$(section "$rm_doc" '^## R3 ' '^## The worker brief')"
 check_contains "(A7) B12: R1 carries the verdict duty" "$r1" "intake also settles each slate ticket's cloud verdict"
 check_contains "(A7) B12: R2 carries the route column" "$r2" 'the wave plan carries a route column'
+check_contains "(A7) B12: R2 keeps a ticket that names no file local" "$r2" 'or names no file at all'
 check_contains "(A7) B12: R2 names --check and its receipt" "$r2" '`cloud-check:` receipt line'
 check_contains "(A7) B12: R3 carries the cloud exception" "$r3" 'Named exception — a cloud worker'
 check_contains "(A7) B12: R3 keeps the operator as the merger" "$r3" 'never a constituent of a train the manager merges'
