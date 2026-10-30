@@ -232,21 +232,27 @@ cloud_personal_file || die 2 "$CLOUD_ERR"
 [ -f "$SCANNER" ] || die 2 "no scanner at $SCANNER"
 [ -f "$CLOUD_TEMPLATE" ] || die 2 "no protocol template at $CLOUD_TEMPLATE"
 
-# G1 (local half): the opt-in is a line of its own in the main checkout's CLAUDE.md.
+# G1 (local half): the opt-in is a line of its own in the main checkout's CLAUDE.md, read from fence-blanked text
+# like every other field (dir #913): a line inside a fenced example opts nothing in, and the refusal names it.
 OPTIN="" UNPROTECTED_OK="" NEAR=""
 if [ -f "$MAIN/CLAUDE.md" ]; then
+  claude_blanked="$(blank_fenced_blocks "$MAIN/CLAUDE.md")"
   while IFS= read -r hit; do
     n="${hit%%:*}" text="${hit#*:}"
-    if [[ "$text" =~ ^KEEL-CLOUD(\ unprotected-ok)?[[:space:]]*$ ]]; then
-      OPTIN=1
-      [ -z "${BASH_REMATCH[1]}" ] || UNPROTECTED_OK=1
+    if grep -qi 'keel-cloud' <<< "$(sed -n "${n}p" <<< "$claude_blanked")"; then
+      if [[ "$text" =~ ^KEEL-CLOUD(\ unprotected-ok)?[[:space:]]*$ ]]; then
+        OPTIN=1
+        [ -z "${BASH_REMATCH[1]}" ] || UNPROTECTED_OK=1
+      else
+        NEAR="${NEAR}  CLAUDE.md line $n: $text"$'\n'
+      fi
     else
-      NEAR="${NEAR}  CLAUDE.md line $n: $text"$'\n'
+      NEAR="${NEAR}  CLAUDE.md line $n (inside a fenced block): $text"$'\n'
     fi
   done < <(grep -n -i 'keel-cloud' "$MAIN/CLAUDE.md" || true)
 fi
-[ -z "$NEAR" ] || printf 'cloud-brief: not the opt-in (the opt-in is a line of its own: KEEL-CLOUD, or KEEL-CLOUD unprotected-ok):\n%s' "$NEAR" >&2
-[ -n "$OPTIN" ] || refuse G1 "$MAIN/CLAUDE.md has no KEEL-CLOUD line of its own (docs/cloud.md)"
+[ -z "$NEAR" ] || printf 'cloud-brief: not the opt-in (the opt-in is a line of its own, outside any fenced block: KEEL-CLOUD, or KEEL-CLOUD unprotected-ok):\n%s' "$NEAR" >&2
+[ -n "$OPTIN" ] || refuse G1 "$MAIN/CLAUDE.md has no KEEL-CLOUD line of its own outside a fenced block (docs/cloud.md)"
 [ -n "$OR" ] || refuse G1 "origin (${ORIGIN_URL:-none}) is not a github.com repository"
 
 # --- the ticket block --------------------------------------------------------------------------------------------
@@ -275,6 +281,37 @@ if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
 fi
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
+
+# heading_walk — backlog_ticket_blocks' wrapped-heading rule, walked again over the block's blanked text: sets
+# WALK_N (the continuation lines it takes after the first) and WALK_TEXT (the heading as walked, lines joined by
+# newlines). The walk is trusted only when it rebuilds the flattened HEADING exactly (walk_ok).
+WALK_N=0 WALK_TEXT=""
+heading_walk() {
+  local so_far ln
+  WALK_N=0
+  {
+    IFS= read -r so_far
+    so_far="$(sed -E 's/`[^`]*`//g' <<< "$so_far")"
+    while [ "$WALK_N" -lt 50 ] && IFS= read -r ln; do
+      ln="$(sed -E 's/`[^`]*`//g' <<< "$ln")"
+      [ -n "$ln" ] && bb_heading_continues "$so_far" "$ln" || break
+      so_far+=$'\n'"$ln"; WALK_N=$((WALK_N + 1))
+    done
+  } <<< "$BLANKED"
+  WALK_TEXT="$so_far"
+}
+walk_ok() { [ "$(tr '\n\t' '  ' <<< "$WALK_TEXT")" = "$HEADING" ]; }
+heading_walk
+
+# G2 (glued line, dir #913): the lib folds a body line written directly under a heading into the heading while the
+# heading has no recognized tail (BB_HEADING_TAIL_PATTERN), so G2 below could read a 📐 or a ✅ out of body text. The
+# lib documents that residual for keel's own backlog and stays unchanged; an adopter's backlog is not ours to
+# assume, and the wrapped-heading grammar (a tail that lands on a later physical line) cannot tell the two apart —
+# so a block that took continuation lines and still has no tail is refused, fail-closed, naming the line.
+if [ "$WALK_N" -ge 1 ] && walk_ok && ! [[ "$WALK_TEXT" =~ $BB_HEADING_TAIL_PATTERN ]]; then
+  glued="$(sed -n "$((START + 1))p" "$BACKLOG" | tr -d '\r')"
+  refuse G2 "line $((START + 1)) of $BACKLOG ('$glued') sits directly under a heading that has no readiness tail (— R<d>, → pool, a status glyph), so the backlog reads it as part of the heading — leave a blank line after the heading"
+fi
 
 # G2: open, R3/R4 or 📐 — the LAST `— R<d>` token decides; markers count on the heading only.
 if grep -qE '✅|❌|SUPERSEDED|RETRACTED|⏳|⛔' <<< "$HEADING"; then
@@ -315,8 +352,15 @@ if [ -n "$SPEC_LINE" ]; then
   spec_dir="$(CDPATH='' cd -P -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
   case "$spec_dir/" in "${MAIN%/}/"*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
   case "${spec_dir#"${MAIN%/}"}/" in *.[Gg][Ii][Tt]/*) refuse G7 "Spec: $SPEC_REL is inside a git directory (its directory is $spec_dir)" ;; esac
-  in_git="$(git -C "$spec_dir" rev-parse --is-inside-git-dir 2>/dev/null)" \
-    || refuse G7 "Spec: $SPEC_REL — git cannot tell whether its directory ($spec_dir) is a git directory"
+  # git's own stderr goes into the refusal (dir #913): a spec directory on another file system inside the checkout
+  # (GIT_DISCOVERY_ACROSS_FILESYSTEM), a bare repository under safe.bareRepository=explicit, ... each say why.
+  g7_err="$(mktemp "${TMPDIR:-/tmp}/cloud-brief-g7.XXXXXX")" || die 2 "mktemp failed"
+  if in_git="$(git -C "$spec_dir" rev-parse --is-inside-git-dir 2>"$g7_err")"; then
+    rm -f "$g7_err"
+  else
+    g7_msg="$(tr '\n' ' ' < "$g7_err" | sed -E 's/[[:space:]]+$//')"; rm -f "$g7_err"
+    refuse G7 "Spec: $SPEC_REL — git cannot tell whether its directory ($spec_dir) is a git directory: ${g7_msg:-no message from git}"
+  fi
   [ "$in_git" = false ] || refuse G7 "Spec: $SPEC_REL is inside a git directory (git reads $spec_dir as one)"
 fi
 
@@ -555,7 +599,7 @@ printf 'brief: %s (%s bytes)\n' "$DEST" "$BYTES"
 
 STATUS=built
 [ "$MODE" = dispatch ] && STATUS=dispatched
-ROW="$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t\t\t\t' "$(today)" "$OR" "$TICKET" "$BRANCH" "$MODEL/$EFFORT" "$BYTES" "$CREDIT" "$STATUS")"
+ROW="$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t\t\t\t\t' "$(today)" "$OR" "$TICKET" "$BRANCH" "$MODEL/$EFFORT" "$BYTES" "$CREDIT" "$STATUS")"
 cloud_ledger_init "$CLOUD_LEDGER" || die 2 "cannot create the ledger $CLOUD_LEDGER"
 cloud_ledger_lock "$CLOUD_LEDGER" || die 2 "the ledger is locked"
 reason="$(ledger_refusal)"
@@ -614,21 +658,19 @@ CLAIM="⏳ IN FLIGHT ($(today), branch $BRANCH, cloud)"
 # The claim goes after the heading's LAST physical line: re-walk backlog_ticket_blocks' wrapped-heading rule over
 # the block, and trust the walk only when it rebuilds the flattened HEADING exactly.
 claim_at=""
-{
-  IFS= read -r so_far
-  so_far="$(sed -E 's/`[^`]*`//g' <<< "$so_far")"
-  n=0
-  while [ "$n" -lt 50 ] && IFS= read -r ln; do
-    ln="$(sed -E 's/`[^`]*`//g' <<< "$ln")"
-    [ -n "$ln" ] && bb_heading_continues "$so_far" "$ln" || break
-    so_far+=$'\n'"$ln"; n=$((n + 1))
-  done
-  [ "$(tr '\n\t' '  ' <<< "$so_far")" != "$HEADING" ] || claim_at="$(sed -n "$((START + n))p" "$BACKLOG" | tr -d '\r') — $CLAIM"
-} <<< "$BLANKED"
+heading_walk
+[ -z "$HEADING" ] || ! walk_ok || claim_at="$(sed -n "$((START + WALK_N))p" "$BACKLOG" | tr -d '\r') — $CLAIM"
 [ -n "$claim_at" ] || claim_at="(append \` — $CLAIM\` to the end of the heading — its last line)"
+# The session id is never written into the ticket (dir #913): the Log line carries none, a gitignored backlog's
+# included — no scan reads a bare `session_<id>` there. It lives only in the local ledger row, set here.
 LOG="Log: $(today) — dispatched to a cloud session on $BRANCH ($MODEL/$EFFORT)"
-if [ -n "$SESSION" ] && git -C "$MAIN" check-ignore -q "$BACKLOG" 2>/dev/null; then
-  LOG="$LOG, session $SESSION"
+if [ -n "$SESSION" ]; then
+  if cloud_ledger_lock "$CLOUD_LEDGER"; then
+    cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$TICKET" "15=$SESSION" || echo "cloud-brief: cannot record the session id on the ledger row" >&2
+    cloud_ledger_unlock "$CLOUD_LEDGER"
+  else
+    echo "cloud-brief: the session id ($SESSION) was not recorded on the ledger row" >&2
+  fi
 fi
 cat <<NEXT
 
