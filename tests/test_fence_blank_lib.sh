@@ -81,4 +81,37 @@ check_absent "the span's own content is dropped" "$out" "nope"
 check_absent "the backticks themselves are dropped too" "$out" '`'
 check_contains "an unrelated line is untouched" "$out" "plain line"
 
+# --- NUL contract (dir #917): a NUL in the input must not shift line numbers, under ANY awk. busybox awk (the alpine
+# leg's) turns a NUL into a newline, which re-splits the line; the lib strips NULs first so cloud-brief's line numbers
+# (applied to the raw file) stay aligned. Run under whichever awk is the system's AND, when a busybox binary exists
+# on a non-alpine host, under busybox awk too (a PATH shim) so the shift is exercised everywhere --------------------
+printf 'one\n```\nfen\0ced\n```\nfive\0six\nseven\n' > "$d/nul.md"
+check_eq "NUL fixture: blank_fenced_blocks keeps the raw file's line count (system awk)" 6 "$(blank_fenced_blocks "$d/nul.md" | wc -l | tr -d ' ')"
+check_eq "NUL fixture: fence_marker_lines numbers the raw file's lines (system awk)" "2 4" "$(fence_marker_lines "$d/nul.md" | tr '\n' ' ' | sed 's/ $//')"
+if command -v busybox >/dev/null 2>&1 && busybox awk 'BEGIN { exit 0 }' >/dev/null 2>&1; then
+  mkdir "$d/bbbin" && ln -s "$(command -v busybox)" "$d/bbbin/awk"
+  check_eq "NUL fixture: blank_fenced_blocks keeps the raw file's line count (busybox awk)" 6 \
+    "$(PATH="$d/bbbin:$PATH" blank_fenced_blocks "$d/nul.md" | wc -l | tr -d ' ')"
+  check_eq "NUL fixture: fence_marker_lines numbers the raw file's lines (busybox awk)" "2 4" \
+    "$(PATH="$d/bbbin:$PATH" fence_marker_lines "$d/nul.md" | tr '\n' ' ' | sed 's/ $//')"
+else
+  pass "no busybox binary on this host: the busybox-awk NUL legs run on the alpine CI leg (system awk there IS busybox)"
+fi
+
+# --- header census (dir #917): every file under tools/ and commands/ that mentions blank_fenced_blocks is named in the
+# lib's header, so a new caller (or a rename) cannot leave the adopter-facing-callers list stale -----------------------
+header="$(sed -n '/^[^#]/q;p' "$lib")"
+census="$(cd "$REPO_ROOT" && grep -rl blank_fenced_blocks tools commands | grep -vx 'tools/lib/fence-blank.sh' | sort)"
+missing=""
+for f in $census; do
+  case "$header" in *"$f"*) ;; *) missing="$missing $f" ;; esac
+done
+if [ -z "$missing" ]; then
+  pass "the lib header names every file the blank_fenced_blocks census finds"
+else
+  fail "the lib header names every file the blank_fenced_blocks census finds" "not named:$missing"
+fi
+check_contains "the header states busybox awk's NUL behaviour" "$header" "busybox awk turns a NUL into a newline"
+check_contains "the header states the measured result" "$header" "measured"
+
 summary
