@@ -242,9 +242,10 @@ wave plan) and R3 (the launch). The rules:
 
 ## Landing (B13)
 
-For a PR whose head branch has a ledger row, the pre-PR gate is replaced by: the cloud session's review, the
-VM's pre-push scans, CI, and `cloud-land.sh` exit 0 for the exact head SHA. That is a procedure the operator
-follows, not a hook: nothing in the local pre-PR gate recognises a cloud PR.
+For a PR whose head branch has a ledger row, the local pre-PR gate does not apply: the VM opens the PR, and
+nothing in that gate recognises one. The route's own gate is a checklist the operator runs before the merge —
+the cloud session's review, the VM's pre-push scans, CI, and `cloud-land.sh` exit 0 for the exact head SHA. No
+hook enforces it; the tool prints the pinned merge command only on exit 0.
 
 ```text
 cloud-land.sh <repo> <PR#> [--ticket <id>]

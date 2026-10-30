@@ -57,7 +57,7 @@ check_row G8  '"Question for a /design pass" in the body, "for the design" (case
 check_row G9  '`--dispatch` only'
 
 # The decided column is what tells an operator which rows the tool settles and which are the grader's call, so
-# it is pinned too: the tool decides these rows mechanically, and records no verdict for them.
+# it is pinned too: the tool decides the mech rows and records no verdict for them; G8 is mixed.
 check_decided() { # ID WORD — the row's last cell
   case "$(row_text "$1")" in
     *"| $2 |") pass "(A7) row $1 is decided: $2" ;;
@@ -66,6 +66,10 @@ check_decided() { # ID WORD — the row's last cell
 }
 for id in G1 G1b G1c G2 G2b G6 G7 G9; do check_decided "$id" mech; done
 for id in G3 G3b G4 G5; do check_decided "$id" judged; done
+case "$(row_text G8)" in
+  *"· judged otherwise |") pass "(A7) row G8 is decided: mech for two phrases, judged otherwise" ;;
+  *) fail "(A7) row G8 is decided: mech for two phrases, judged otherwise" "the row does not end in '· judged otherwise |'" ;;
+esac
 
 # --- the verdict, the opt-in and who dispatches -------------------------------------------------------------
 check_contains "(A7) B2: the yes line form" "$doc_flat" '**Cloud:** yes (YYYY-MM-DD, <who>)'
