@@ -400,19 +400,21 @@ tu_self_check() {
 # object under "primary"/"subagent" (the latter key absent when the session spawned no subagents).
 # Emits one JSON object, e.g. {"primary":{...}} or {"primary":{...},"subagent":{...}}.
 tu_session_totals() {
-  local session_file="$1" tmp f
+  local session_file="$1" tmp subs f
   # dir #313 review: named _tu_bad, not "status" — zsh treats `status` as a special read-only
   # variable, and a sourced lib must not assume the caller's shell tolerates that name even though
   # this project's own scripts run under bash.
   local _tu_bad=0
   tu_require_jq || return 1
   tmp="$(mktemp)" || return 1
+  # captured, not `done < <(…)`: see tools/self/procsub-leak.sh (dir #905)
+  subs="$(tu_subagent_files "$session_file")" || true
   {
     tu_turns primary "$session_file" || _tu_bad=1
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       tu_turns subagent "$f" || _tu_bad=1
-    done < <(tu_subagent_files "$session_file")
+    done <<< "$subs"
   } > "$tmp"
   if [ "$_tu_bad" -ne 0 ]; then rm -f "$tmp"; return 1; fi
   # dir #313 review (a code-review pass found this live, reproduced by stubbing jq to fail): a

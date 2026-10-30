@@ -77,11 +77,7 @@ $c140
   i=$((i + 1))
 done
 d="$(mk_repo_with "${args[@]}")"
-# Run under /bin/bash where it exists, not the shebang's PATH bash: on macOS that is the 3.2 that leaks, even
-# when a newer bash comes first on PATH and would let a leaking loop pass.
-b=bash
-[ -x /bin/bash ] && b=/bin/bash
-run "$b" -c 'ulimit -n 64 && exec "$0" "$@"' "$b" "$pd" "$d" --quiet
+run_fd_capped 64 "$pd" "$d" --quiet
 check_status "160 files under ulimit -n 64 -> exit 0" 0 "$STATUS"
 check_absent "no fd exhaustion under ulimit -n 64" "$OUT" "Too many open files"
 check_eq "every one of the 160 files is scanned (one WARN each)" 160 "$(match "$OUT" -c '^  WARN')"
