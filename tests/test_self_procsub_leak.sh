@@ -3,8 +3,9 @@
 # loop pass inside a function (dir #904's crash). Each leaking shape it must flag, each shape it must not
 # (a child process, a subshell, the top level, a comment, a here-document, the captured fix), the call
 # following (same file, a sourced lib, two levels deep), the exit codes, a ground-truth leg that runs the
-# same shapes on the host's /bin/bash when that is the 3.2 that leaks, and a live leg over keel's own tree.
-# Every fixture body sits in a quoted here-document: the check skips those, so this file is not flagged.
+# same shapes on the host's /bin/bash when that is the 3.2 that leaks, a script with non-UTF-8 bytes under a
+# UTF-8 locale, and a live leg over keel's own tree. Every fixture body sits in a quoted here-document or a
+# one-line quoted string: the check skips those, so this file is not flagged.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -203,21 +204,31 @@ run "$pl" "$d2"
 check_status "an unparseable script -> exit 2" 2 "$STATUS"
 check_contains "...and names it" "$OUT" "UNPARSED  broken.sh"
 
-# a script holding bytes that are no valid UTF-8 reads the same under a UTF-8 locale (CI's): macOS awk
-# aborted on them and gawk warned, until the reader ran under LC_ALL=C
+# a script holding bytes that are no valid UTF-8 is read to its end under a UTF-8 locale (CI's): macOS awk
+# aborted on them and gawk warned, until the reader ran under LC_ALL=C. The leak after the bytes proves the
+# rest of the file is still read. Alpine has no `locale`, so this leg runs on macOS and glibc hosts only.
 utf8_locale="$(pick_utf8_locale)" || utf8_locale=""
 if [ -n "$utf8_locale" ]; then
   d3="$(new_repo)"
-  printf '#!/usr/bin/env bash
-raw() { tr "\320-\321" x; }
-' > "$d3/raw.sh"
+  printf '#!/usr/bin/env bash\nraw() { tr "\320-\321" x; }\nafter_raw() { local f x; for f in "$@"; do read -r x < <(printf a); done; }\n' > "$d3/raw.sh"
   ( cd "$d3" && git add -A && git commit -q -m raw )
   run env LC_ALL="$utf8_locale" "$pl" "$d3" --quiet
-  check_status "invalid UTF-8 bytes under $utf8_locale -> exit 0" 0 "$STATUS"
-  check_eq "invalid UTF-8 bytes under $utf8_locale: no output" "" "$OUT"
+  check_status "invalid UTF-8 bytes under $utf8_locale -> exit 1 (the leak after them)" 1 "$STATUS"
+  check_eq "invalid UTF-8 bytes under $utf8_locale: exactly the one LEAK line" \
+    "  LEAK  raw.sh after_raw(): read -r x < <(printf a);" "$OUT"
 else
   pass "UTF-8 leg skipped: this host has no UTF-8 locale"
 fi
+
+# a reader that fails is exit 2 and says so, never a status that reads as "leak found" or "clean": an awk
+# shim that exits 1 for the reader's call only (it carries -v blist=), real awk for everything else
+real_awk="$(command -v awk)"
+shim="$SANDBOX/awk-fails"; mkdir -p "$shim"
+printf '#!/bin/sh\ncase "$*" in *blist=*) exit 1 ;; esac\nexec "%s" "$@"\n' "$real_awk" > "$shim/awk"
+chmod +x "$shim/awk"
+run env PATH="$shim:$PATH" "$pl" "$d2"
+check_status "a failing reader -> exit 2" 2 "$STATUS"
+check_contains "...and says nothing was checked" "$OUT" "the reader failed"
 
 # --- ground truth: the shapes above behave on bash 3.2 the way the check classifies them -----------------
 # The check's leak/no-leak table is a measurement of 3.2.57 (see its header). Where the host's /bin/bash is

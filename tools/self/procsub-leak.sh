@@ -285,7 +285,8 @@ END {
     if (c_loop[i] && calls(i))
       printf "%s\t%s()\tcalls %s() in a loop, and each call leaves an fd open\n", c_file[i], c_fn[i], c_to[i]
 }
-' "$normalized" | LC_ALL=C sort -u)"
+' "$normalized" | LC_ALL=C sort -u)" ||
+  { echo "procsub-leak.sh: the reader failed (awk exit above); nothing was checked" >&2; exit 2; }
 
 nhits=0
 [ -z "$hits" ] || while IFS=$'\t' read -r hf hfn htext; do
