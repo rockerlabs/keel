@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tools/lib/attr-binary.sh — adopter-usable (dir #68): shared by tools/public-audit.sh. Sourced, not executed — no shebang, no set -e (inherits the caller's). Bash 3.2 + `set -u` safe.
+# tools/lib/attr-binary.sh — adopter-usable (dir #68): shared by tools/public-audit.sh and tools/self/line-citations.sh. Sourced, not executed — no shebang, no set -e (inherits the caller's). Bash 3.2 + `set -u` safe.
 #
 # attr-binary.sh (dir #903, extracted from tools/public-audit.sh's dir #767 recipe): `git grep -I` trusts a
 # tracked file's `-diff`/`binary` attribute over its bytes, so a text file under e.g. `*.svg -diff` (no NUL)
