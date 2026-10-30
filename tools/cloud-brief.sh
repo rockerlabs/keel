@@ -251,6 +251,10 @@ if [ -f "$MAIN/CLAUDE.md" ]; then
     fi
   done < <(grep -n -i 'keel-cloud' "$MAIN/CLAUDE.md" || true)
 fi
+# An odd number of fence markers leaves a fence open to the file's end, blanking a real opt-in below it.
+if [ -f "$MAIN/CLAUDE.md" ] && [ $(( $(fence_marker_lines "$MAIN/CLAUDE.md" | grep -c '') % 2 )) -eq 1 ]; then
+  NEAR="${NEAR}  CLAUDE.md has an odd number of fence markers: an unclosed fence blanks everything after it, an opt-in line included"$'\n'
+fi
 [ -z "$NEAR" ] || printf 'cloud-brief: not the opt-in (the opt-in is a line of its own, outside any fenced block: KEEL-CLOUD, or KEEL-CLOUD unprotected-ok):\n%s' "$NEAR" >&2
 [ -n "$OPTIN" ] || refuse G1 "$MAIN/CLAUDE.md has no KEEL-CLOUD line of its own outside a fenced block (docs/cloud.md)"
 [ -n "$OR" ] || refuse G1 "origin (${ORIGIN_URL:-none}) is not a github.com repository"
@@ -308,7 +312,8 @@ heading_walk
 # lib documents that residual for keel's own backlog and stays unchanged; an adopter's backlog is not ours to
 # assume, and the wrapped-heading grammar (a tail that lands on a later physical line) cannot tell the two apart —
 # so a block that took continuation lines and still has no tail is refused, fail-closed, naming the line.
-if [ "$WALK_N" -ge 1 ] && walk_ok && ! [[ "$WALK_TEXT" =~ $BB_HEADING_TAIL_PATTERN ]]; then
+walk_ok || refuse G2 "cannot tell where the heading at line $START of $BACKLOG ends — leave a blank line after it, and check that no tab or odd character splits it"
+if [ "$WALK_N" -ge 1 ] && ! [[ "$WALK_TEXT" =~ $BB_HEADING_TAIL_PATTERN ]]; then
   glued="$(sed -n "$((START + 1))p" "$BACKLOG" | tr -d '\r')"
   refuse G2 "line $((START + 1)) of $BACKLOG ('$glued') sits directly under a heading that has no readiness tail (— R<d>, → pool, a status glyph), so the backlog reads it as part of the heading — leave a blank line after the heading"
 fi
@@ -408,7 +413,7 @@ gh_or_refuse() { # ROW WHAT ARGS... — gh api's stdout; 404/403 refuses ROW, an
   case "$rc" in
     0) printf '%s' "$out" ;;
     4) refuse "$row" "gh api cannot read $what" ;;
-    *) die 2 "gh api failed reading $what (network, auth or gh itself)" ;;
+    *) die 2 "gh api failed reading $what (a rate limit, network, auth or gh itself — see gh's message above)" ;;
   esac
 }
 DEFAULT="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq .default_branch)" || exit $?
@@ -666,10 +671,10 @@ heading_walk
 LOG="Log: $(today) — dispatched to a cloud session on $BRANCH ($MODEL/$EFFORT)"
 if [ -n "$SESSION" ]; then
   if cloud_ledger_lock "$CLOUD_LEDGER"; then
-    cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$TICKET" "15=$SESSION" || echo "cloud-brief: cannot record the session id on the ledger row" >&2
+    cloud_ledger_set "$CLOUD_LEDGER" "$OR" "$TICKET" "15=$SESSION" || echo "cloud-brief: cannot record the session id $SESSION on the ledger row — keep it for \`claude --cloud <session id>\`" >&2
     cloud_ledger_unlock "$CLOUD_LEDGER"
   else
-    echo "cloud-brief: the session id ($SESSION) was not recorded on the ledger row" >&2
+    echo "cloud-brief: the session id $SESSION was not recorded on the ledger row — keep it for \`claude --cloud <session id>\`" >&2
   fi
 fi
 cat <<NEXT

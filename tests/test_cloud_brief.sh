@@ -388,6 +388,10 @@ check_contains "T1e … the real line opts in, so the refusal is G1b" "$ERR" "re
 fx $'```\nan example\n```\n\nKEEL-CLOUD'
 cb "$P" "dir #801"
 check_status "T1e a real KEEL-CLOUD line after a closed fence still opts in" 0 "$STATUS"
+fx $'```\nan unclosed example\n\nKEEL-CLOUD'
+cbo "$P" "dir #801"
+check_status "T1e a stray fence above the real line blanks it → exit 3" 3 "$STATUS"
+check_contains "T1e … and the refusal says the fence markers are odd" "$ERR" "odd number of fence markers"
 
 # dir #913 (2): an HTTP 403 that is a rate limit (X-RateLimit-Remaining: 0, or "rate limit" in the message) is
 # transient — exit 2, nothing written; any other 403 stays "not readable" (G1/G1b/G1c, exit 3).
