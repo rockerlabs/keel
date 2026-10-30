@@ -457,10 +457,15 @@ decode_binary() {  # $1 = source file, $2 = destination file for the decoded vie
       # NON-ASCII one (multi-byte code point) does not — decode it explicitly, symmetric with UTF-16.
       iconv -c -f UTF-32LE -t UTF-8 "$src" 2>/dev/null || true; echo
       iconv -c -f UTF-32BE -t UTF-8 "$src" 2>/dev/null || true; echo
+      # a payload that starts at an ODD byte offset (dir #762) is no unit of the file: decode the file again from its
+      # second byte (UTF-16, both byte orders; this also decodes a BMP UTF-32 payload at an odd offset).
+      tail -c +2 "$src" | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null || true; echo
+      tail -c +2 "$src" | iconv -c -f UTF-16BE -t UTF-8 2>/dev/null || true; echo
     fi
     # the built-in decoder, only where iconv cannot resume and a needle is wide (needle_wide: non-ASCII, or a `.`/bracket that can stand for a non-ASCII letter)
     if [ -n "${decode_nonascii:-}" ] && { ! command -v iconv >/dev/null 2>&1 || [ "$(printf 'A\000\000\330B\000' | iconv -c -f UTF-16LE -t UTF-8 2>/dev/null)" != AB ]; }; then
-      od -An -v -tu1 < "$src" | LC_ALL=C awk '
+      for skip in 1 2; do                                         # the whole file, then from its second byte (dir #762)
+      tail -c +"$skip" "$src" | od -An -v -tu1 | LC_ALL=C awk '
         function o(v, k) {
           if (v < 128) { if (v) s[k] = s[k] sprintf("%c", v) }
           else if (v < 2048) s[k] = s[k] sprintf("%c%c", 192 + int(v / 64), 128 + v % 64)
@@ -484,6 +489,7 @@ decode_binary() {  # $1 = source file, $2 = destination file for the decoded vie
         }
         END { m++; for (k = 1; k <= 4; k++) { q[k, m] = s[k]; for (j = 1; j <= m; j++) printf "%s", q[k, j]; printf "\n" } }
       ' || exit $?; echo
+      done
     fi
     LC_ALL=C tr -cs ' -~\t' '\n' < "$src" || exit $?; echo  # raw printable runs, squeezed (dir #830)
   } | LC_ALL=C tr -d '\000' > "$dst" || return $?

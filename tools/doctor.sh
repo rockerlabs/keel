@@ -924,7 +924,7 @@ guard_drift_files() {
 # a commit made with hooks bypassed then reaches the remote unscanned, and the old verdict was "OK". guard_push_gap
 # DIR KEELDIR PC PP sets guard_gap to why DIR is not a complete Keel guard (empty when it is, or when it is the user's
 # own wiring: a hooks dir whose pre-commit is not Keel's is held to no Keel hook, and a foreign pre-push is theirs).
-# PC/PP are the producer's states (absent | keel | foreign, -link suffixed). A variable, not stdout: no fork per project.
+# PC/PP are the producer's states (absent | keel | keel-modified | foreign, -link suffixed). A variable, not stdout: no fork per project.
 guard_push_gap() {
   local dir="$1" keeldir="$2" pc="$3" pp="$4"
   guard_gap=""
@@ -1727,7 +1727,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
       warn W-GUARD-UNWIRED "secret-guard is only half wired machine-global: $guard_gap — $g_way$guard_eff_note"
     else
       say "  OK   secret-guard: machine-global ($g_dir)"
-      if [ "$g_pc" = keel-link ]; then
+      if [ "$g_pc" = keel-link ] || [ "$g_pc" = keel-modified-link ]; then
         say "  (secret-guard: the pre-commit at $g_dir is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)"
       fi
     fi
@@ -2252,7 +2252,7 @@ for d in "${DIRS[@]}"; do
   # hooks`), so it could judge a dir the installer never wrote and advise vendoring into a repo whose own
   # hooks dir git was not reading. Keys (see the installer's header): effective = the dir git reads,
   # own = where a `<repo>` install writes, scope = where core.hooksPath is set, value/origin = the raw
-  # setting and its file, keel-dir, pre-commit = absent|keel|foreign (+ -link).
+  # setting and its file, keel-dir, pre-commit = absent|keel|keel-modified|foreign (+ -link).
   w_eff="" w_own="" w_scope="" w_value="" w_origin="" w_pc="" w_pp="" w_keeldir="" w_machinedir="" w_set="" w_novalue=""
   while IFS='=' read -r w_k w_v; do   # one key per line, once each (the producer's grammar)
     case "$w_k" in
@@ -2303,7 +2303,7 @@ for d in "${DIRS[@]}"; do
           warn W-GUARD-UNWIRED "secret-guard is only half wired here: $guard_gap — $g_way$guard_home_note"
         fi
         case "$w_pc" in
-          keel-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
+          keel-link|keel-modified-link) say "  (secret-guard: the pre-commit at $w_eff is a symlink — it runs, but install-secret-guard.sh refuses to write through a link, so it will not update it)" ;;
         esac
         # A WIRED copy that drifted from the shipped engine runs old detection. Reported by whichever
         # check can fix it: the machine-wide dir (`machine-dir=1`) once, above (its remedy re-runs
