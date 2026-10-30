@@ -865,6 +865,11 @@ if command -v iconv >/dev/null 2>&1; then
   check_contains "--selftest checks the UTF-16 blob catch" "$OUT" "UTF-16LE blob"
 fi
 check_contains "--selftest checks the fail-closed guard" "$OUT" "fails CLOSED"
+# dir #907: the switch exported in the caller's environment does not reach the probes, whose inline-allow probe
+# verifies the scanner's default.
+run env SECRET_SCAN_NO_INLINE_ALLOW=1 "$scan" --selftest
+check_status "--selftest with SECRET_SCAN_NO_INLINE_ALLOW=1 exported → exit 0" 0 "$STATUS"
+check_absent "--selftest with the switch exported reports no FAIL" "$OUT" "FAIL"
 
 # dir #849: the fail-closed probe feeds grep a FILE, not a pipe — grep exits on the malformed ERE before reading,
 # so a `printf | grep` producer gets SIGPIPE and prints "printf: write error: Broken pipe" to stderr (the dir #280

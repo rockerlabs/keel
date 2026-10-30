@@ -167,9 +167,9 @@ else
   echo "  PR-text session grep: clean"
 fi
 
-# The scans above read with the marker off, but a marker that lands would exempt its line from every later local
-# scan, so a PR that adds one never lands (the protocol forbids writing it). This reads every commit's patch (not
-# the net diff: a line added then deleted still ships), as text,
+# The scans above read with the marker off, but a marker that lands would exempt its line from every
+# later local scan, so a PR that adds one never lands (the protocol forbids writing it). This reads
+# every commit's patch (not the net diff: a line added then deleted still ships), as text,
 # uncolored, with no diff driver or textconv, the root commit's included whatever the caller's log.showRoot, and
 # every commit message. Every `+` line counts, the `+++` file headers included: a path carrying the marker refuses
 # too (--no-renames: a renamed path shows as one). A merge commit's own changes are its dense combined diff (--cc),

@@ -256,15 +256,14 @@ while IFS=$'\t' read -r b_start b_end _ b_heading; do
   case "$b_heading" in "### $TICKET — "*) START="$b_start"; END="$b_end"; HEADING="$b_heading"; break ;; esac
 done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
-# The last block's END counts the fence-blanked text, whose trailing blank lines a command substitution dropped, so
-# only blank lines and fenced text follow it. The fence markers after END decide (fence_marker_lines, the blanking's
-# own toggle): an even count closes every fence, and the block runs to the file's own last line, a heading-shaped
-# line inside a fence included; an odd count leaves the last marker an unclosed opener, which may hide the
-# backlog's own headings (`### `, `## `) — the block then runs to the line before the first heading after it,
-# never carrying the tickets and sections after it, or to the last line when none follows.
+# For the last block, the fence markers after its heading decide (fence_marker_lines, the blanking's own toggle; the
+# heading sits outside every fence): an even count closes every fence, and the block runs to the file's own last
+# line, a heading-shaped line inside a fence included; an odd count leaves the last marker an unclosed opener, which
+# may hide the backlog's own headings (`### `, `## `) — the block then runs to the line before the first heading
+# after it, never carrying the tickets and sections after it, or to the last line when none follows.
 blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
-  open="$(fence_marker_lines "$BACKLOG" | awk -v e="$END" '$1 > e { n++; last = $1 } END { if (n % 2) print last }')"
+  open="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++; last = $1 } END { if (n % 2) print last }')"
   END="$(awk -v o="${open:-0}" 'o && NR > o && /^(##|###) / { print NR - 1; cut = 1; exit }
     END { if (!cut) print NR }' "$BACKLOG")"
 fi

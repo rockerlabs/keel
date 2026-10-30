@@ -52,11 +52,11 @@
 #   by construction (interior commits brought in by a merge commonly already are — dir #569); unsafe
 #   post-push (ci-scan.sh's own docstring explains why), so it must never be set there.
 #
-# SECRET_SCAN_NO_INLINE_ALLOW=1 (env, every mode): the inline `secret-scan:allow` marker exempts nothing; the
-#   .secret-scan-allow file still applies. For a caller scanning text it does not trust (dir #907: the cloud
-#   route's landing range scan and its brief and PR-text scans), where a marker in the text would hide its own
-#   line however it is spelled — the personal pass in the caller's locale reads a marker split by an invalid
-#   byte whole, after `iconv -c`.
+# SECRET_SCAN_NO_INLINE_ALLOW=1 (env, every scan mode; --selftest drops it): the inline `secret-scan:allow`
+#   marker exempts nothing; the .secret-scan-allow file still applies. For a caller scanning text it does not
+#   trust (dir #907: the cloud route's landing range scan and its brief and PR-text scans), where a marker in the
+#   text would hide its own line however it is spelled — the personal pass in the caller's locale reads a marker
+#   split by an invalid byte whole, after `iconv -c`.
 #
 
 # Allowlist (for legit fixtures/example keys — be deliberate, real keys hide in tests too):
@@ -702,6 +702,8 @@ selftest() {
   export SECRET_SCAN_PERSONAL_FILE=/dev/null KEEL_IMPACT_LOG=''
   for _v in ${!GIT_CONFIG_KEY_@} ${!GIT_CONFIG_VALUE_@}; do unset "$_v"; done
   unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS
+  # dir #907: the probes verify the default, the inline-allow one included, so a caller's switch does not reach them.
+  unset SECRET_SCAN_NO_INLINE_ALLOW
   # BASH_SOURCE, not $0: resolves the script's real location even when invoked as `bash secret-scan.sh`
   # from another cwd — a selftest that can't find itself would fail for the wrong reason.
   script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
@@ -1360,8 +1362,9 @@ if [ -f "$ALLOW_FILE" ]; then
   done < "$ALLOW_FILE"
 fi
 
-# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow` marker (unless
-# SECRET_SCAN_NO_INLINE_ALLOW is set, dir #907), or an ERE entry. A here-string, not a `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
+# allowed_text TEXT — 0 when a hit's matched text is allowlisted: the inline `secret-scan:allow`
+# marker (unless SECRET_SCAN_NO_INLINE_ALLOW is set, dir #907), or an ERE entry. A here-string, not a
+# `printf | grep -q` pipe: under `set -o pipefail`, printf as a live writer can be
 # SIGPIPE'd by grep's own early exit on match, flipping a real allowlist match into a false "not allowlisted"
 # under load (dir #280). `-e` (dir #746 B2): an entry starting with `-` is a pattern — `-e.` read positionally
 # was the option -e with the pattern `.`, exempting every record. LC_ALL=C (B5): bytes, as the records are; a
