@@ -111,6 +111,8 @@ _pa_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # fail-open-ok: a fail
 . "$_pa_dir/lib/leak-patterns.sh"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_pa_dir/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/attr-binary.sh
+. "$_pa_dir/lib/attr-binary.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_pa_dir/lib/impact-store.sh"
 # shellcheck source=tools/lib/personal-literals.sh
@@ -417,14 +419,12 @@ fi
 # The tracked files a `-diff`/`binary` attribute marks binary but that hold no NUL (dir #767): the tree greps
 # read them as text in pa_tree_g's second leg. A NUL-bearing one stays a binary for sections 2 and 5b. The
 # listing runs under -a (git drops attribute-binary files otherwise) and through pa_match: exit 1 = none, a
-# normal outcome. A missing file or a symlink is skipped (section 1b GAPs a missing one). `:(literal)` keeps a
-# glob-character name from widening to a sibling. A `diff=<driver>` with `diff.<driver>.binary` in git CONFIG
-# (not a tracked file) is not seen.
-if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" git -C "$DIR" grep -l -z -a -e '' -- ':(attr:-diff)' "${excludes[@]}"; then
+# normal outcome. A missing file or a symlink is skipped (section 1b GAPs a missing one). The listing and the
+# NUL test live in tools/lib/attr-binary.sh (dir #903), shared with tools/self/line-citations.sh.
+if pa_match "list the attribute-binary tracked files" "$audit_tmp/nd.list" attr_binary_list "$DIR" "${excludes[@]}"; then
   while IFS= LC_ALL=C read -r -d '' f; do
-    [ -f "$DIR/$f" ] && [ ! -L "$DIR/$f" ] || continue
-    LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && pa_nd+=( ":(literal)$f" )
-  done < "$audit_tmp/nd.list"
+    pa_nd+=( "$f" )
+  done < <(attr_binary_nulless "$DIR" < "$audit_tmp/nd.list")
 fi
 
 # Decode ONE file's bytes (a committed blob written to a scratch path, or a working-tree file read
