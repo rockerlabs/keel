@@ -90,7 +90,8 @@ regcheck() {
   grep -qF -- 'is unpinned — the short name in its place survives' "$root/tools/branch-cleanup.sh" || echo "fail:d:tools/branch-cleanup.sh lacks its S10-5 entry"
   grep -qF -- 'a tracked symlink in changelog.d/ named' "$root/tools/self/changelog-fragments.sh" || echo "fail:d:tools/self/changelog-fragments.sh lacks its S8-7 entry"
   for phrase in tools/self/bypass-scan.sh tools/branch-cleanup.sh tools/self/changelog-fragments.sh; do
-    sed -n '1,/^[^#]/p' "$root/$phrase" | grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' || echo "fail:d:$phrase holds no register heading in its header"
+    block="$(sed -n '1,/^[^#]/p' "$root/$phrase")"
+    grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' <<<"$block" || echo "fail:d:$phrase holds no register heading in its header"
   done
 
   # (e) the Scope clause.
