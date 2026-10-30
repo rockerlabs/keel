@@ -11,7 +11,9 @@
 # scanner's inline allow marker off (SECRET_SCAN_NO_INLINE_ALLOW=1):
 #   1. in a fresh full clone without tags (never the project's checkout), the fetched branch tip must equal the
 #      PR's head SHA, and keel's scanner `--range refs/remotes/origin/<default>..refs/remotes/origin/<branch>`
-#      must exit 0 (keys, personal literals, session trailers in commit messages);
+#      must exit 0 (keys, personal literals, session trailers in commit messages) — it reads each blob the range
+#      introduces whole, so a file the range changes refuses on a line already on <default> that only an inline
+#      marker exempts (the default branch's .secret-scan-allow still applies);
 #   2. the PR title + body must pass the scanner's file mode (from an empty directory) and a grep for a session
 #      URL or a `-Session:` line, which file mode does not look for;
 #   3. no line any commit in the range adds (its patch, read as text, uncolored, no textconv, the root commit's
@@ -156,6 +158,10 @@ report_scan() {
 rc=0
 out="$(CDPATH='' cd -- "$CLONE" && SECRET_SCAN_NO_INLINE_ALLOW=1 bash "$SCANNER" --range "$RANGE" 2>&1)" || rc=$?
 report_scan "range scan" "$rc" "$out"
+# --range reads each blob the range introduces whole, so a line already on the default branch that only an inline
+# marker exempts counts as soon as the range changes its file; the allowlist file is the exemption that holds here.
+[ "$rc" -ne 1 ] \
+  || echo "    (an inline allow marker exempts nothing here, on $DEFAULT's own lines too: put a fixture in $DEFAULT's .secret-scan-allow)"
 
 jq -r '.title, "", (.body // "")' <<< "$PR_JSON" > "$WORK/pr-text.md"
 rc=0

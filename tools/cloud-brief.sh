@@ -58,9 +58,9 @@ usage() {
 REPO_ARG="" TICKET="" MODE=build REDISPATCH="" CREDIT="?" OUT="" RECEIPT=""
 WORK="" MAIN=""
 # --check's receipt comes on every exit once `--check` was read, a usage error's too, on fd 3 — the caller's stdout,
-# even when the exit comes from inside a redirected group (the brief's assembly) — and never with a ticket id that
-# could print a line of its own.
-exec 3>&1
+# opened when `--check` is read (before any redirect), so an exit from inside a redirected group (the brief's
+# assembly) reaches it; no other mode opens fd 3, so no child of theirs (--dispatch's CLI) holds the caller's stdout.
+# Never with a ticket id that could print a line of its own.
 on_exit() {
   local rc=$? head=none ticket="${TICKET:-?}"
   [ -z "$WORK" ] || rm -rf "$WORK"
@@ -75,7 +75,7 @@ trap on_exit EXIT
 set_mode() { [ "$MODE" = build ] || usage; MODE="$1"; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check) RECEIPT=1; set_mode check ;;
+    --check) exec 3>&1; RECEIPT=1; set_mode check ;;
     --eligible) set_mode eligible ;;
     --dispatch) set_mode dispatch ;;
     --sweep) set_mode sweep ;;
@@ -258,14 +258,15 @@ done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
 [ -n "$START" ] || die 2 "no heading '### $TICKET — …' in $BACKLOG"
 # For the last block, the fence markers after its heading decide (fence_marker_lines, the blanking's own toggle; the
 # heading sits outside every fence): an even count closes every fence, and the block runs to the file's own last
-# line, a heading-shaped line inside a fence included; an odd count leaves the last marker an unclosed opener, which
-# may hide the backlog's own headings (`### `, `## `) — the block then runs to the line before the first heading
-# after it, never carrying the tickets and sections after it, or to the last line when none follows.
+# line, a heading-shaped line inside a fence included. An odd count leaves a fence open that may hide the backlog's
+# own headings, and the markers cannot say which one opened it (a later section's closed fence pairs with the
+# ticket's opener), so the block then runs to the line before the first section (`## `) or ticket heading after
+# its own, fenced or not — never carrying the tickets and sections after it — or to the last line when none follows.
 blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 if [ "$END" -ge "$(grep -c '' <<< "$blanked_all")" ]; then
-  open="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++; last = $1 } END { if (n % 2) print last }')"
-  END="$(awk -v o="${open:-0}" 'o && NR > o && /^(##|###) / { print NR - 1; cut = 1; exit }
-    END { if (!cut) print NR }' "$BACKLOG")"
+  odd="$(fence_marker_lines "$BACKLOG" | awk -v s="$START" '$1 > s { n++ } END { print n % 2 }')"
+  END="$(LC_ALL=C awk -v s="$START" -v odd="$odd" -v re="^(## |### ($TICKET_ERE) — )" \
+    'odd && NR > s && $0 ~ re { print NR - 1; cut = 1; exit } END { if (!cut) print NR }' "$BACKLOG")"
 fi
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
@@ -291,9 +292,11 @@ esac
 
 # G7: the first token after `Spec:` names a file in the main checkout, which the brief carries to the VM — so never
 # an absolute path, a file whose PHYSICAL directory lies outside $MAIN (a `..` that climbs out, a directory symlinked
-# out), a file that is itself a symlink, or the repository's git data (its config, its auth), in any case — a
-# case-insensitive file system (macOS) reads `.GIT` as `.git`: no `.git` component as written (a gitfile too), and
-# no `.git` or `*.git` component in the physical directory (a bare repository inside the checkout is `<name>.git`).
+# out), a file that is itself a symlink, or git data (a config, its auth), in any case — a case-insensitive file
+# system (macOS) reads `.GIT` as `.git`: no `.git` component as written (a gitfile too), no `.git` or `*.git`
+# component in the physical directory (a bare repository inside the checkout is `<name>.git`), and, whatever its
+# name, no directory git itself reads as a git directory (a bare clone `vendor/upstream`, a --separate-git-dir) —
+# one git cannot answer for (a bare repository under safe.bareRepository=explicit) refuses too.
 # A `..` that stays inside is no refusal: the physical directory decides.
 SPEC_REL="" SPEC_FILE=""
 SPEC_LINE="$(grep -m1 -E '^(\*\*)?Spec:(\*\*)?[[:space:]]' <<< "$BLANKED" | tr -d '\r' || true)"
@@ -307,6 +310,9 @@ if [ -n "$SPEC_LINE" ]; then
   spec_dir="$(CDPATH='' cd -P -- "$(dirname -- "$SPEC_FILE")" && pwd -P)" || refuse G7 "Spec: $SPEC_REL — its directory cannot be entered"
   case "$spec_dir/" in "${MAIN%/}/"*) ;; *) refuse G7 "Spec: $SPEC_REL is outside $MAIN (its directory is $spec_dir)" ;; esac
   case "${spec_dir#"${MAIN%/}"}/" in *.[Gg][Ii][Tt]/*) refuse G7 "Spec: $SPEC_REL is inside a git directory (its directory is $spec_dir)" ;; esac
+  in_git="$(git -C "$spec_dir" rev-parse --is-inside-git-dir 2>/dev/null)" \
+    || refuse G7 "Spec: $SPEC_REL — git cannot tell whether its directory ($spec_dir) is a git directory"
+  [ "$in_git" = false ] || refuse G7 "Spec: $SPEC_REL is inside a git directory (git reads $spec_dir as one)"
 fi
 
 # G8 (its two mechanical phrases), then the model mapping.
@@ -449,8 +455,8 @@ part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a n
 #     is matched only where it starts a token (the byte before it is not one of [A-Za-z0-9]), so `-Users-alice/…`,
 #     `-Users-alice-proj`, a sibling's `-Users-alice2-…` (→ `-Users-x2-…`) and a name nested in another project
 #     directory's (`-private-tmp-claude-501--Users-alice-…`) are rewritten, while HOME=/root's `-root` never hits
-#     `state-root-migrate`, `non-root-user` or `claude/cloud-root-12` (privacy first: its `--root` does become
-#     `--Users-x`).
+#     `state-root-migrate`, `non-root-user` or `claude/cloud-root-12`. A known cost of catching the nested name: an
+#     option spelled like one, HOME=/root's `git log --root`, becomes `--Users-x` too (dir #908).
 # Then the session scratch roots → `<tmp>/`, the longer first.
 # rewrite MODE FROM TO [MODE FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order;
 # MODE `p` replaces every occurrence, `a` only one that starts a token (above). One byte-wise awk pass: bash's own

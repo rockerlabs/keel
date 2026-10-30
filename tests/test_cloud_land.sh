@@ -319,6 +319,21 @@ else
   echo "  SKIP  A4 split allow marker: this host has no UTF-8 locale"
 fi
 
+# With the marker off, a line already on the default branch that only an inline marker exempts counts too once the
+# range changes its file: the landing refuses, though the PR added no marker, and names the remedy.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+printf 'key %s # %s\nother 1\n' "$TOKEN" "$ALLOW_MARK" > "$P/fixture.txt"
+git -C "$P" add fixture.txt && git -C "$P" commit -qm "a fixture" && git -C "$P" push -q "$O" HEAD:refs/heads/main
+git -C "$P" checkout -q claude/cloud-dir-801 && git -C "$P" merge -q --no-edit main && git -C "$P" checkout -q main
+bcommit fixture.txt "$(printf 'key %s # %s\nother 2' "$TOKEN" "$ALLOW_MARK")" "change the fixture's other line"
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+run "$LAND" "$P" 5
+check_status "A4 a range changing a file whose default-branch line only a marker exempts → exit 1" 1 "$STATUS"
+check_contains "A4 … the range scan names the hit" "$OUT" "range scan: exit 1"
+check_contains "A4 … the PR added no marker" "$OUT" "added allow marker: none"
+check_contains "A4 … and the remedy is named" "$OUT" "main's .secret-scan-allow"
+
 # A marker grep that fails (exit 2) is a scan error, never "none": a grep shim fails on one output file at a time.
 REAL_GREP="$(command -v grep)"
 mkdir -p "$SANDBOX/grepshim"

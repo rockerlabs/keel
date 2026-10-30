@@ -540,6 +540,20 @@ for t in $written $physical; do
   check_contains "T10c dir #$t: G7, '$want'" "$OUT" "refused: G7 — Spec: "
   check_contains "T10c dir #$t: … '$want'" "$OUT" "$want"
 done
+# Whatever its name, a directory git itself reads as git data refuses (a bare clone named `vendor/upstream`), and
+# so does one git cannot answer for (a bare repository under safe.bareRepository=explicit).
+git init -q --bare "$P/vendor/upstream"
+add_ticket '\n### dir #883 — a spec in a bare clone named without .git — R4 — → pool\n\nSpec: vendor/upstream/config\n\n**Cloud:** yes (2026-10-27, fixture)\n'
+cb "$P" "dir #883"
+check_status "T10c dir #883: a Spec: in a bare clone named vendor/upstream → exit 3" 3 "$STATUS"
+check_contains "T10c dir #883: G7, git reads it as a git directory" "$OUT" \
+  "refused: G7 — Spec: vendor/upstream/config is inside a git directory (git reads "
+n="${GIT_CONFIG_COUNT:-0}"
+run env "GIT_CONFIG_COUNT=$((n + 1))" "GIT_CONFIG_KEY_$n=safe.bareRepository" "GIT_CONFIG_VALUE_$n=explicit" \
+  "$BRIEF_TOOL" "$P" "dir #883"
+check_status "T10c dir #883 under safe.bareRepository=explicit → exit 3" 3 "$STATUS"
+check_contains "T10c … git cannot tell, so it refuses" "$OUT" \
+  "refused: G7 — Spec: vendor/upstream/config — git cannot tell whether its directory"
 nothing_written "T10c"
 # A `..` that stays inside the main checkout is no refusal: the physical directory decides.
 add_ticket '\n### dir #865 — a spec spelled with .. inside — R4 — → pool\n\nSpec: docs/../docs/specs/s801.md\n\n**Cloud:** yes (2026-10-27, fixture)\n'
@@ -575,11 +589,12 @@ for gone in "dir #863" "Body of 863." "## Archive" "dir #700"; do
 done
 # A heading-shaped line inside the last ticket's CLOSED fence is fenced text: the fence travels whole.
 fx
-add_ticket '\n### dir #870 — a closing fence holding a heading — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\n### an example heading\nafter the example heading\n```\n'
+add_ticket '\n### dir #870 — a closing fence holding a heading — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\n### an example heading\n## an example section\nafter the example heading\n```\n'
 cb "$P" "dir #870" --out "$F/b870.md"
 check_status "T15c a last ticket whose closing fence holds a heading-shaped line builds" 0 "$STATUS"
 t870="$(part_of "$F/b870.md" ticket)"
 check_contains "T15c … the fenced heading-shaped line travels" "$t870" "### an example heading"
+check_contains "T15c … a fenced section-shaped line too" "$t870" "## an example section"
 check_contains "T15c … and the fence's last line" "$t870" "after the example heading"
 # A closed fence, then an unclosed one: the closed fence travels, the unclosed fence's text up to the first heading.
 fx
@@ -597,6 +612,18 @@ add_ticket '\n### dir #880 — an unclosed fence at the end — R4 — → pool\
 cb "$P" "dir #880" --out "$F/b880.md"
 check_status "T15c an unclosed fence at the end of the file builds" 0 "$STATUS"
 check_contains "T15c … its text to the file's last line travels" "$(part_of "$F/b880.md" ticket)" "its last line"
+# An unclosed fence, then a section holding its own closed fence: the toggle pairs the ticket's opener with that
+# fence's first marker, so no marker tells which fence is open — the block stops at the first section or ticket
+# heading after its own.
+fx
+add_ticket '\n### dir #884 — an unclosed fence before a fenced archive — R4 — → pool\n\n**Cloud:** yes (2026-10-27, fixture)\n\n```\nunclosed body 884\n\n## Archive\n\n### dir #885 — archived — R4 — ✅ DONE\n\n```sh\narchived code 885\n```\n\n### dir #886 — archived too — R4 — ✅ DONE\n\nBody of 886.\n'
+cb "$P" "dir #884" --out "$F/b884.md"
+check_status "T15c an unclosed fence before a fenced archive builds" 0 "$STATUS"
+t884="$(part_of "$F/b884.md" ticket)"
+check_contains "T15c … its own text after the unclosed opener travels" "$t884" "unclosed body 884"
+for gone in "## Archive" "dir #885" "archived code 885" "dir #886" "Body of 886."; do
+  check_absent "T15c … the ticket part carries no '$gone' from the fenced archive" "$t884" "$gone"
+done
 
 # --- T15d: a part that cannot be read stops the build -------------------------------------------------------------
 fx
@@ -1026,6 +1053,20 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then # root reads a mode-000 file (CLAUDE.md
   check_status "T20b --check on an unreadable spec → 2" 2 "$STATUS"
   check_eq "T20b … its receipt is the last stdout line" "cloud-check: 2 dir #801 $(git -C "$P" rev-parse HEAD)" "$(tail -n 1 <<< "$OUT")"
 fi
+# fd 3 is the receipt's alone: opened when --check is read, so no other mode hands the caller's stdout to a child
+# (--dispatch's CLI, git, gh, the scanner). A git shim records whether its fd 3 is open.
+fx
+real_git="$(type -P git)" # the binary: lib.sh's `git` function makes `command -v git` print `git`
+mkdir -p "$F/fd3shim"
+cat > "$F/fd3shim/git" <<SHIM
+#!/usr/bin/env bash
+if { : >&3; } 2>/dev/null; then echo open; else echo closed; fi >> "$F/fd3.log"
+exec "$real_git" "\$@"
+SHIM
+chmod +x "$F/fd3shim/git"
+PATH="$F/fd3shim:$PATH" cb "$P" "dir #801" --out "$F/fd3.md" 3>&-
+check_status "T20b a build through the git shim → 0" 0 "$STATUS"
+check_eq "T20b … no child of a build holds fd 3" "closed" "$(sort -u "$F/fd3.log" | tr '\n' ' ' | sed 's/ $//')"
 
 # --- T17: --sweep --------------------------------------------------------------------------------------------------
 fx
