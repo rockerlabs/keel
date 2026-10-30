@@ -4,8 +4,9 @@
 # (a child process, a subshell, the top level, a comment, a here-document, the captured fix), the call
 # following (same file, a sourced lib, two levels deep), the exit codes, a ground-truth leg that runs the
 # same shapes on the host's /bin/bash when that is the 3.2 that leaks, a script with non-UTF-8 bytes under a
-# UTF-8 locale, a failing reader and a crash (each exit 2), and a live leg over keel's own tree. Every fixture body sits in a quoted here-document or a
-# one-line quoted string: the check skips those, so this file is not flagged.
+# UTF-8 locale, a failing reader and a crash (each exit 2), and a live leg over keel's own tree. Every
+# fixture body sits in a quoted here-document or a one-line quoted string: the check skips those, so this
+# file is not flagged.
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -238,7 +239,18 @@ printf '#!/bin/sh\necho "%s/no-such-dir/x"\n' "$SANDBOX" > "$shim2/mktemp"
 chmod +x "$shim2/mktemp"
 run env PATH="$shim2:$PATH" "$pl" "$d4"
 check_status "a crash mid-scan -> exit 2" 2 "$STATUS"
+check_contains "...from the write that failed" "$OUT" "no-such-dir"
+check_absent "...not from the reader-failure branch" "$OUT" "reader failed"
+check_absent "...nor from a scan that could not start" "$OUT" "could not list"
 check_absent "...and never says OK" "$OUT" "OK —"
+# a closed stdout makes the final OK write fail: still exit 2, never the 1 of "leak found"
+run bash -c '"$1" "$2" >&-' _ "$pl" "$d4"
+check_status "a clean tree whose OK line cannot be written -> exit 2" 2 "$STATUS"
+# a leak and an unparseable script together: 2 outranks 1, and the LEAK line still prints
+cp "$d/leaks.sh" "$d2/"; ( cd "$d2" && git add -A && git commit -q -m both )
+run "$pl" "$d2" --quiet
+check_status "a leak plus an UNPARSED script -> exit 2" 2 "$STATUS"
+check_contains "...and the LEAK lines still print" "$OUT" "LEAK  leaks.sh leak_done():"
 
 # --- ground truth: the shapes above behave on bash 3.2 the way the check classifies them -----------------
 # The check's leak/no-leak table is a measurement of 3.2.57 (see its header). Where the host's /bin/bash is

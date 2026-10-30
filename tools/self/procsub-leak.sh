@@ -47,10 +47,11 @@
 #   tools/self/procsub-leak.sh [REPO_DIR] [--quiet]
 #   tools/self/procsub-leak.sh -h | --help
 #
-# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found; 2 on a usage error, when the
-# scan cannot run (REPO_DIR is no directory or no git checkout, it tracks no shell script, bash lists no
-# builtins), when the scan itself fails (its awk | sort reader, or any other crash), or for a script bash
-# cannot parse (named UNPARSED, never passed as clean).
+# REPO_DIR defaults to the current directory. Exit 0 unless a leak is found (1). Exit 2, which outranks 1,
+# on a usage error, when the scan cannot run (REPO_DIR is no directory or no git checkout, it tracks no
+# shell script, bash lists no builtins), when the scan itself fails (its awk | sort reader, or a crash
+# that would otherwise exit 0 or 1), or for a script bash cannot parse (named UNPARSED, never passed as
+# clean). A signal's status passes through.
 # KNOWN LIMIT (dir #906): the awk reader can still lose its place partway through a script bash parsed
 # (quoting it mis-reads, a `case` pattern's `)` inside a multi-line `$(…)`, a `<<word` inside a string).
 # From there on it can miss a leak or report one that is not there, and nothing says the place was lost:
@@ -72,8 +73,8 @@ Usage:
   tools/self/procsub-leak.sh --quiet      print only LEAK lines
   tools/self/procsub-leak.sh -h | --help
 
-Exit 0 unless a leak is found; 2 on a usage error, when the scan cannot run, or for an
-unparseable script. Known limit: the reader can lose its place partway through a script,
+Exit 0 unless a leak is found (1); 2 on a usage error, when the scan cannot run or fails,
+or for an unparseable script (2 outranks 1). Known limit: the reader can lose its place partway through a script,
 then miss a leak or report a false one, without saying so (dir #906).
 EOF
 }
@@ -93,24 +94,29 @@ repo_dir="$REPO_ARG"
 repo_dir="$(cd "$repo_dir" && pwd)"
 
 say() { [ "$QUIET" = 1 ] || echo "$@"; }
-say "● process substitutions held open per loop pass ($repo_dir)"
-
-files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir")" ||
-  { echo "procsub-leak.sh: could not list the tracked shell scripts under $repo_dir (not a git checkout?)" >&2; exit 2; }
-[ -n "$files" ] || { echo "procsub-leak.sh: no tracked shell scripts under $repo_dir" >&2; exit 2; }
-
 normalized="$(mktemp)"
-# The completion marker (dir #264's idiom, see tools/self/line-citations.sh): on bash 3.2 a `set -u` abort
-# reaches an EXIT trap with `$?` already 0, and a crash must never read as a clean tree or as a leak. Each
-# deliberate exit past this point sets ok first; any other exit is a crash, and a crash is exit 2.
-ok=""
+# The completion marker (dir #264's idiom, see tools/self/line-citations.sh): every deliberate exit past
+# this point goes through finish, which records its status. Any other exit is a crash. A crash that comes
+# out as 0 or 1 (on bash 3.2 a `set -u` abort reaches the trap with `$?` already 0) becomes 2, so it never
+# reads as a clean tree or a leak; a signal's status (130, 143, 3.2's own 134) passes through.
+chosen=""
+finish() { chosen="$1"; exit "$1"; }
 cleanup() {
   leak_rc=$?
-  [ -n "$ok" ] || leak_rc=2
+  if [ -n "$chosen" ]; then leak_rc="$chosen"
+  elif [ "$leak_rc" -le 1 ]; then leak_rc=2
+  fi
   rm -f "$normalized"
   exit "$leak_rc"
 }
 trap cleanup EXIT
+
+say "● process substitutions held open per loop pass ($repo_dir)"
+
+files="$(bash "$self_dir/shellcheck-targets.sh" "$repo_dir")" ||
+  { echo "procsub-leak.sh: could not list the tracked shell scripts under $repo_dir (not a git checkout?)" >&2; finish 2; }
+[ -n "$files" ] || { echo "procsub-leak.sh: no tracked shell scripts under $repo_dir" >&2; finish 2; }
+
 
 # One `\001FILE <path>` marker, then that file's normalized text. extglob is on before the parse: a
 # script that turns it on itself uses `@(…)` patterns that do not parse without it.
@@ -132,7 +138,7 @@ done <<< "$files"
 # list missed `getopts`, `let`, `trap`, …). A command word that is neither one nor a defined function runs
 # as a child process, which takes its fd with it.
 builtins="$(compgen -b | tr '\n' ' ')"
-case " $builtins " in *" read "*) ;; *) echo "procsub-leak.sh: could not list bash's builtins" >&2; exit 2 ;; esac
+case " $builtins " in *" read "*) ;; *) echo "procsub-leak.sh: could not list bash's builtins" >&2; finish 2 ;; esac
 
 # The reader. Stack entries: T (the wrapper, i.e. top level), F (a function), L (a loop), each with the
 # indent of the line that opened it. Each line is split into its list segments (`&&`, `||`, `;`) after
@@ -288,17 +294,17 @@ END {
       printf "%s\t%s()\tcalls %s() in a loop, and each call leaves an fd open\n", c_file[i], c_fn[i], c_to[i]
 }
 ' "$normalized" | LC_ALL=C sort -u)" ||
-  { echo "procsub-leak.sh: the awk | sort reader failed; nothing was checked" >&2; exit 2; }
+  { echo "procsub-leak.sh: the awk | sort reader failed; nothing was checked" >&2; finish 2; }
 
 nhits=0
 [ -z "$hits" ] || while IFS=$'\t' read -r hf hfn htext; do
   echo "  LEAK  $hf $hfn: $htext"
   nhits=$((nhits + 1))
 done <<< "$hits"
-if [ "$nhits" -gt 0 ]; then
+[ "$nhits" -eq 0 ] ||
   say "  $nhits leak(s) in $nfiles script(s) — capture the output and read it with \`<<<\` (see this script's header)"
-  ok=1; exit 1
-fi
-ok=1
-[ "$unparsed" -eq 0 ] || exit 2
+# An unparsed script outranks a leak: exit 1 would say every script was read.
+[ "$unparsed" -eq 0 ] || finish 2
+[ "$nhits" -eq 0 ] || finish 1
 say "  OK — no process substitution held open per loop pass ($nfiles scripts)"
+finish 0
