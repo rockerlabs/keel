@@ -157,7 +157,7 @@ pin_exact "(g) I4 item 2 is 'Seams.' (before the full test run)" "$guide_md" "2.
 # drops the fragments (or breaks a project without them) goes red. The old command is the control: on a
 # dir with no changelog.d/ the new one must print exactly the old one's lines.
 claims_cmd="$(sed -n 's/^   a\. Their claims: `\(.*\)`$/\1/p' "$guide_md")"
-pin "(i) I4 item 2a's command names changelog.d" "$guide_md" 'changelog.d -name '"'"'[a-z0-9]*.md'"'"'' \
+pin "(i) I4 item 2a's command names changelog.d" "$guide_md" 'changelog.d -name '"'"'[[:lower:][:digit:]]*.md'"'"'' \
   "expected the Their-claims command to scan the changelog.d/ fragments"
 old_claims_cmd='awk '"'"'/^## \[Unreleased\]/{p=1;next} /^## \[/{p=0} p && /[0-9]+ of |every|all |both/{print FILENAME":"NR": "$0}'"'"' CHANGELOG.md'
 i_dir="$(mktemp -d "$SANDBOX/claims.XXXXXX")"
