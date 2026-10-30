@@ -33,6 +33,13 @@
 #
 # Unmerged refs, including any fixture ref leaked by a checkout that predates dir #318's guard, are out of this tool's scope by design (dir #318, F2 = no new tool): dir #318's guard prevents new test-made ones from arising, so cleanup here stays merged-only. Dispose of a leaked one by hand only after proving it disposable -- every commit on it is reachable from origin/<default>, or its tree holds no file content that origin/<default> lacks -- never trust the branch name, and record `git branch <name> <sha>` before deleting.
 #
+# Known bypasses (1b, docs/verification-economics.md §4): this tool's register — a shape no ordinary run produces, kept
+# here instead of a ticket. The tool is not a guard, so SECURITY.md "Threat model by guard" does not list it. A test
+# gap, not a bypass: --merged="$base_ref" (the fully-qualified base) is unpinned — the short name in its place survives
+# tests/test_branch_cleanup.sh; with a local branch named like the base (`origin/main`) and the rule lost, an unmerged
+# branch grades AUTO and --prune-safe would delete it (its commits stay on the local branch of that name) —
+# delta-audit 0.17.0 S10-5. The fix that pins it deletes this entry.
+#
 # "merged" = the branch tip is reachable from origin/<default> (git for-each-ref --merged). This assumes
 # a recent `git fetch --prune`; commands/wrap.md runs one in step 0 before calling this. The script itself
 # does NO network and NO deletion in report mode, so it is safe to run and unit-test offline.

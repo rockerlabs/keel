@@ -37,6 +37,12 @@
 #     relative target beside the linking file (dead from inside changelog.d/, while the cut moves the text
 #     into CHANGELOG.md verbatim), a bare `#anchor` resolves to the fragment itself, other schemes GAP.
 #
+# Known bypasses (1b, docs/verification-economics.md §4): this tool's register — a shape no ordinary run produces, kept
+# here instead of a ticket. The tool is not a guard, so SECURITY.md "Threat model by guard" does not list it. A bypass:
+# a tracked symlink in changelog.d/ named `*.md` is read as a fragment (is_fragment and --check test `-f`, which follows
+# the link), so its target's content reaches CHANGELOG.md at the cut; no supported tool or session writes one (no
+# [bypass:] key: not a command shape; --check exits 0 on it) — baseline, delta-audit 0.17.0 S8-7.
+#
 # Exit codes: 0 ok · 1 --check found a failure · 2 bad arguments or an unreadable repo.
 set -euo pipefail
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).

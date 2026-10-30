@@ -1,0 +1,37 @@
+# tests/mutants/pre-pr-gate-subagent.tsv — single-clause mutants of tools/pre-pr-gate.sh's subagent git floor, slice 1:
+# the reader half check_subgit / sg_path / sg_cd (dir #675 B9-B12, dir #790).
+# keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_pre_pr_gate_subagent_floor.sh)
+# and checked for staleness by tests/test_mutation_lists.sh.
+# Columns, TAB-separated: id, file, needle, replacement, note — the format tests/mutants/pre-pr-gate.tsv documents.
+# Run: KEEL_SWEEP_TIMEOUT=600 bash tools/self/mutation-sweep.sh tests/mutants/pre-pr-gate-subagent.tsv \
+#        tests/test_pre_pr_gate_subagent_floor.sh
+# Not listed, with the reason:
+# - `w_plain` on the verb word (`if (j > ntok || !w_plain(j)) return`) and on the word after `builtin`: an expansion
+#   keeps its `$` source text, so such a word can never equal a mutating verb or cd, pushd, popd; dropping either
+#   check is equivalent.
+# Not yet covered (later slices, dir #790): the verb classification sg_mut and sg_valopt, and the bash walk of
+# tools/pre-pr-gate.sh (sg_val .. sg_check).
+SG01	tools/pre-pr-gate.sh	  if (!agent) return\n  i = cmd_start()	  if (0) return\n  i = cmd_start()	check_subgit: only a subagent's event reports candidates
+SG02	tools/pre-pr-gate.sh	if (c == "builtin" && i < ntok	if (0 && i < ntok	check_subgit: builtin cd is a cd
+SG03	tools/pre-pr-gate.sh	  if (c == "cd" || c == "pushd" || c == "popd") { sg_cd(i); return }	  if (c == "cd" || c == "popd") { sg_cd(i); return }	check_subgit: pushd is a cd
+SG04	tools/pre-pr-gate.sh	(c == "git" || (length(c) > 4 && substr(c, length(c) - 3) == "/git"))	(c == "git")	check_subgit: a path ending in /git is git
+SG05	tools/pre-pr-gate.sh	    if (nmv == "GIT_DIR") sg_gd	    if (nmv == "GIT_DIRX") sg_gd	check_subgit: GIT_DIR assignment names the git dir
+SG06	tools/pre-pr-gate.sh	    else if (nmv == "GIT_WORK_TREE") sg_wt	    else if (nmv == "GIT_WORK_TREEX") sg_wt	check_subgit: GIT_WORK_TREE assignment names the work tree
+SG07	tools/pre-pr-gate.sh	      chain = chain (chain == "" ? "" : SEP2) sg_path(tok[j + 1], tokm[j + 1]); j += 2	      chain = sg_path(tok[j + 1], tokm[j + 1]); j += 2	check_subgit: every -C joins the chain (the last does not replace the earlier ones)
+SG08	tools/pre-pr-gate.sh	    } else if (o == "-c" || o == "--namespace"	    } else if (o == "--namespace"	check_subgit: -c takes a value word
+SG09	tools/pre-pr-gate.sh	o == "--namespace" || o == "--config-env"	o == "--namespace"	check_subgit: --config-env takes a value word
+SG10	tools/pre-pr-gate.sh	    else if (o == "--git-dir" || o == "--work-tree") {	    else if (o == "--git-dir") {	check_subgit: --work-tree as a separate word
+SG11	tools/pre-pr-gate.sh	sg_gd = sg_path(substr(o, 11), substr(tokm[j], 11)); j++ }	sg_gd = sg_path(substr(o, 12), substr(tokm[j], 12)); j++ }	check_subgit: --git-dir= value offset
+SG12	tools/pre-pr-gate.sh	sg_wt = sg_path(substr(o, 13), substr(tokm[j], 13)); j++ }	sg_wt = sg_path(substr(o, 14), substr(tokm[j], 14)); j++ }	check_subgit: --work-tree= value offset
+SG13	tools/pre-pr-gate.sh	  if (!sg_mut(v, j + 1)) return\n  if (sg_extra	  if (0) return\n  if (sg_extra	check_subgit: only a mutating verb is reported
+SG14	tools/pre-pr-gate.sh	  if (sg_extra != "") chain =	  if (0) chain =	check_subgit: a directory init names joins the -C chain
+SG15	tools/pre-pr-gate.sh	SEP v (sg_sub != "" ? " " sg_sub : "") SEP chain	SEP v SEP chain	check_subgit: the reported verb carries its subcommand
+SG16	tools/pre-pr-gate.sh	  if (!sg_safe(t) || index(m, "g")) return "unknown"	  if (!sg_safe(t)) return "unknown"	sg_path: a glob word is unknown
+SG17	tools/pre-pr-gate.sh	(t == "~" || substr(t, 1, 2) == "~/")) return "tld:" t	(substr(t, 1, 2) == "~/")) return "tld:" t	sg_path: a bare ~ expands
+SG18	tools/pre-pr-gate.sh	(t == "~" || substr(t, 1, 2) == "~/")) return "tld:" t	(t == "~")) return "tld:" t	sg_path: ~/x expands
+SG19	tools/pre-pr-gate.sh	  if (!sg_safe(t) || index(m, "g")) return "unknown"\n  if (index(m, "x") == 0) return "lit:" t	  if (!sg_safe(t) || index(m, "g")) return "unknown"\n  if (1) return "lit:" t	sg_path: an expanding word (no leading tilde) is unknown
+SG20	tools/pre-pr-gate.sh	tok[j] != "-" && tok[j] !~	tok[j] !~	sg_cd: cd - is unknown
+SG21	tools/pre-pr-gate.sh	tok[j] !~ /^[-+][0-9]+$/) p = sg_path	1) p = sg_path	sg_cd: pushd +N is unknown
+SG22	tools/pre-pr-gate.sh	  while (j <= ntok && substr(tok[j], 1, 1) == "-" && length(tok[j]) > 1) {	  while (0) {	sg_cd: options before the directory are skipped
+SG23	tools/pre-pr-gate.sh	  sg_gd = "-"; sg_wt = "-"; sg_extra = ""; chain = ""	  sg_gd = "-"; sg_wt = "-"; chain = ""	check_subgit: a directory init names does not outlive its segment
+SG24	tools/pre-pr-gate.sh	  if (i > ntok || !w_plain(i)) return\n  c = tok[i]	  if (i > ntok) return\n  c = tok[i]	check_subgit: a command word with an expansion is never git

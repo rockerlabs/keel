@@ -212,6 +212,8 @@ check_contains "Phase 7's cut paragraph names the cut-shape check (dir #722)" "$
 check_contains "...and says to run it before the cut PR is opened" "$cut_para" "Before the cut PR is opened"
 check_contains "...and says the cut PR itself, already cut, gets SKIP rather than a second cut (dir #808)" "$cut_para" 'already the cut, it prints `SKIP` '
 check_contains "Phase 7's cut paragraph runs the numeric-claim lint on the cut section (dir #810)" "$cut_para" "changelog-claims.sh --section"
+check_contains "Phase 7's cut paragraph runs the tag-time marker check on the tag SHA (dir #867)" "$cut_para" 'run `tools/self/tag-ready.sh <sha>` and tag only on exit 0'
+pin "publishing-checklist §4 runs the tag-time marker check before the tag (dir #867)" "$REPO_ROOT/docs/publishing-checklist.md" 'Run `tools/self/tag-ready.sh <sha>` on that SHA first; tag only on exit 0' "expected the tag step to run tools/self/tag-ready.sh first"
 check_contains "...under --strict (dir #810)" "$cut_para" "--strict"
 check_contains "Phase 7's cut paragraph says what to do with a number whose source is gitignored or moves after the cut (dir #846)" "$cut_para" "A number whose source is gitignored"
 
