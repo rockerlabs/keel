@@ -100,7 +100,7 @@ check_eq "A21: the aggregator runs even when a shard failed or was cancelled" "a
 check_eq "A21: the aggregator runs on ubuntu, never taking a macOS slot" "ubuntu-24.04" "$(job_field "$agg" runs-on)"
 shards="$(job_block "$ci" macos-shards)"
 check_contains "A21: the shard matrix does not cancel its sibling on a failure" "$shards" "      fail-fast: false"
-check_eq "A21: the shard job runs on macos-14" "macos-14" "$(job_field "$shards" runs-on)"
+check_eq "A21: the shard job runs on macos-15 (the check names keep macos-14 for branch protection)" "macos-15" "$(job_field "$shards" runs-on)"
 
 # No job but the shard job takes a macOS runner (the aggregator and the ubuntu leg must not).
 mac_jobs=""
