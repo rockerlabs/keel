@@ -37,7 +37,7 @@
 # here instead of a ticket. The tool is not a guard, so SECURITY.md "Threat model by guard" does not list it. A test
 # gap, not a bypass: --merged="$base_ref" (the fully-qualified base) is unpinned — the short name in its place survives
 # tests/test_branch_cleanup.sh; with a local branch named like the base (`origin/main`) and the rule lost, an unmerged
-# branch grades AUTO and --prune-safe would delete it (its commits stay on the local branch of that name) — dir #814,
+# branch grades AUTO and --prune-safe would delete it (its commits stay on the local branch of that name) —
 # delta-audit 0.17.0 S10-5. The fix that pins it deletes this entry.
 #
 # "merged" = the branch tip is reachable from origin/<default> (git for-each-ref --merged). This assumes

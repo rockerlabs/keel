@@ -86,13 +86,18 @@ regcheck() {
   grep -qF -- 'planted at the claimed temp path' "$root/tools/lib/safe-write.sh" || echo "fail:d:tools/lib/safe-write.sh lacks 'planted at the claimed temp path'"
 
   # (d2) the registers of the tools that are not guards (dir #863): in the tool's own header, not in SECURITY.md's table.
-  grep -qF -- 'in_git_tree reads "git failed"' "$root/tools/self/bypass-scan.sh" || echo "fail:d:tools/self/bypass-scan.sh lacks its S9-5 entry"
-  grep -qF -- 'is unpinned — the short name in its place survives' "$root/tools/branch-cleanup.sh" || echo "fail:d:tools/branch-cleanup.sh lacks its S10-5 entry"
-  grep -qF -- 'a tracked symlink in changelog.d/ named' "$root/tools/self/changelog-fragments.sh" || echo "fail:d:tools/self/changelog-fragments.sh lacks its S8-7 entry"
-  for phrase in tools/self/bypass-scan.sh tools/branch-cleanup.sh tools/self/changelog-fragments.sh; do
-    block="$(sed -n '1,/^[^#]/p' "$root/$phrase")"
-    grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' <<<"$block" || echo "fail:d:$phrase holds no register heading in its header"
-  done
+  # Every needle is read from the header block only (up to the first non-comment line), so a phrase elsewhere in the
+  # script does not stand in for a deleted entry.
+  local bs_hdr bc_hdr cf_hdr
+  bs_hdr="$(sed -n '1,/^[^#]/p' "$root/tools/self/bypass-scan.sh")"
+  bc_hdr="$(sed -n '1,/^[^#]/p' "$root/tools/branch-cleanup.sh")"
+  cf_hdr="$(sed -n '1,/^[^#]/p' "$root/tools/self/changelog-fragments.sh")"
+  grep -qF -- 'in_git_tree reads "git failed"' <<<"$bs_hdr" || echo "fail:d:tools/self/bypass-scan.sh lacks its S9-5 entry"
+  grep -qF -- 'is unpinned — the short name in its place survives' <<<"$bc_hdr" || echo "fail:d:tools/branch-cleanup.sh lacks its S10-5 entry"
+  grep -qF -- 'a tracked symlink in changelog.d/ named' <<<"$cf_hdr" || echo "fail:d:tools/self/changelog-fragments.sh lacks its S8-7 entry"
+  grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' <<<"$bs_hdr" || echo "fail:d:tools/self/bypass-scan.sh holds no register heading in its header"
+  grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' <<<"$bc_hdr" || echo "fail:d:tools/branch-cleanup.sh holds no register heading in its header"
+  grep -qF -- 'Known bypasses (1b, docs/verification-economics.md §4)' <<<"$cf_hdr" || echo "fail:d:tools/self/changelog-fragments.sh holds no register heading in its header"
 
   # (e) the Scope clause.
   line="$(section_body '## Scope — what counts' "$sec")"
