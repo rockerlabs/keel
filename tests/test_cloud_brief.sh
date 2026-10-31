@@ -277,6 +277,31 @@ gh_ok() {
   printf '{"default_branch":"main"}\n' > "$d/api/$key.json"
   printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' > "$d/api/${key}_branches_main.json"
   printf '{"total_count":1,"workflows":[{"name":"CI","state":"active"}]}\n' > "$d/api/${key}_actions_workflows.json"
+  gh_run "$d" "$2" 7001 started
+}
+
+# gh_run DIR OWNER/NAME RUN-ID KIND — the default branch's latest run (dir #924): KIND started (one job with steps on a
+# hosted label), billing (one job, 0 steps, with the account-payment annotation), selfhosted (one started job on
+# the labels self-hosted + mac), none (no run yet).
+gh_run() {
+  local d="$1" key id="$3"
+  key="$(printf '%s' "repos/$2" | tr '/' '_')"
+  mkdir -p "$d/api"
+  case "$4" in
+    none) printf '{"total_count":0,"workflow_runs":[]}\n' > "$d/api/${key}_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json"; return ;;
+  esac
+  printf '{"total_count":1,"workflow_runs":[{"id":%s,"name":"CI","status":"completed","html_url":"https://github.com/%s/actions/runs/%s"}]}\n' \
+    "$id" "$2" "$id" > "$d/api/${key}_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json"
+  case "$4" in
+    started)
+      printf '{"jobs":[{"id":9001,"name":"test","status":"completed","conclusion":"success","labels":["ubuntu-latest"],"steps":[{"name":"Set up job"}]}]}\n' ;;
+    billing)
+      printf '{"jobs":[{"id":9002,"name":"test","status":"completed","conclusion":"failure","labels":["ubuntu-latest"],"steps":[]}]}\n'
+      printf '[{"message":"The job was not started because recent account payments have failed or your spending limit needs to be increased."}]\n' \
+        > "$d/api/${key}_check-runs_9002_annotations.json" ;;
+    selfhosted)
+      printf '{"jobs":[{"id":9003,"name":"test","status":"completed","conclusion":"success","labels":["self-hosted","mac"],"steps":[{"name":"Set up job"}]}]}\n' ;;
+  esac > "$d/api/${key}_actions_runs_${id}_jobs_per_page_100.json"
 }
 
 # home_slug DIR — Claude Code's project-directory encoding of DIR (every byte outside [A-Za-z0-9] → `-`).
@@ -399,7 +424,8 @@ rl() { # PATH-KEY MESSAGE REMAINING-HEADER-LINE — the stub answers 403 for it
   printf '%s\n' "$2" > "$GH_FX/api/$1.403"
   if [ -n "${3:-}" ]; then printf '%s\n' "$3" > "$GH_FX/api/$1.403hdr"; else rm -f "$GH_FX/api/$1.403hdr"; fi
 }
-for key in repos_example_proj repos_example_proj_branches_main repos_example_proj_actions_workflows; do
+for key in repos_example_proj repos_example_proj_branches_main repos_example_proj_actions_workflows \
+           repos_example_proj_actions_runs_branch_main_per_page_1_exclude_pull_requests_true; do
   case "$key" in repos_example_proj) row=G1 ;; *_branches_main) row=G1b ;; *) row=G1c ;; esac
   fx; rl "$key" "Forbidden" "X-RateLimit-Remaining: 4999"
   cb "$P" "dir #801"
@@ -501,6 +527,84 @@ fx
 printf '{"total_count":2,"workflows":[{"name":"old","state":"disabled_manually"},{"name":"CI","state":"active"}]}\n' > "$GH_FX/api/repos_example_proj_actions_workflows.json"
 cb "$P" "dir #801"
 check_status "T3c one active workflow → passes" 0 "$STATUS"
+
+# dir #924: the latest run on the default branch must have started its jobs.
+RK=repos_example_proj
+fx
+gh_run "$GH_FX" example/proj 7002 billing
+cb "$P" "dir #801"
+check_status "T3c latest run: a 0-step job with the billing annotation → exit 3" 3 "$STATUS"
+check_contains "T3c … G1c" "$OUT" "refused: G1c"
+check_contains "T3c … names the run" "$OUT" "actions/runs/7002"
+check_contains "T3c … quotes the annotation" "$OUT" "recent account payments have failed"
+nothing_written "T3c billing"
+fx
+gh_run "$GH_FX" example/proj 7002 billing
+rm "$GH_FX/api/${RK}_check-runs_9002_annotations.json"
+cb "$P" "dir #801"
+check_status "T3c latest run: a 0-step job, annotation unreadable → still exit 3" 3 "$STATUS"
+check_contains "T3c … G1c without an annotation" "$OUT" "refused: G1c"
+fx
+cb "$P" "dir #801"
+check_status "T3c latest run: started → passes" 0 "$STATUS"
+fx
+gh_run "$GH_FX" example/proj 7003 none
+cb "$P" "dir #801"
+check_status "T3c no run yet → passes" 0 "$STATUS"
+check_contains "T3c no run yet → warns" "$OUT" "no workflow run yet"
+fx
+printf '{"jobs":[{"id":9004,"name":"gated","status":"completed","conclusion":"skipped","labels":["ubuntu-latest"],"steps":[]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runs_7001_jobs_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c a skipped job with no steps is not a block → passes" 0 "$STATUS"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+cb "$P" "dir #801"
+check_status "T3c self-hosted-only, runners endpoint missing (404) → warns, passes" 0 "$STATUS"
+check_contains "T3c … warns the runners were unreadable" "$OUT" "could not read the runners"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+printf '{"total_count":1,"runners":[{"name":"traverse-mac","status":"offline","labels":[{"name":"self-hosted"},{"name":"mac"}]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runners_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c self-hosted-only, the only runner offline → exit 3" 3 "$STATUS"
+check_contains "T3c … G1c" "$OUT" "refused: G1c"
+check_contains "T3c … names the labels" "$OUT" "self-hosted"
+nothing_written "T3c offline runner"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+printf '{"total_count":1,"runners":[{"name":"other","status":"online","labels":[{"name":"self-hosted"},{"name":"linux"}]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runners_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c self-hosted-only, an online runner without the label → exit 3" 3 "$STATUS"
+fx
+printf '{"jobs":[{"id":9005,"name":"build","status":"queued","conclusion":null,"labels":["ubuntu-latest"],"steps":[]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runs_7001_jobs_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c a queued job with no steps is not a block → passes" 0 "$STATUS"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+printf '{"jobs":[{"id":9006,"name":"a","status":"completed","conclusion":"success","labels":["self-hosted","mac"],"steps":[{"name":"s"}]},{"id":9007,"name":"b","status":"completed","conclusion":"success","labels":["self-hosted","Linux"],"steps":[{"name":"s"}]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runs_7005_jobs_per_page_100.json"
+printf '{"runners":[{"name":"m","status":"online","labels":[{"name":"self-hosted"},{"name":"MAC"}]},{"name":"l","status":"online","labels":[{"name":"self-hosted"},{"name":"linux"}]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runners_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c two self-hosted jobs, one online runner each (labels case-insensitive) → passes" 0 "$STATUS"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+printf '{"total_count":2,"runners":[{"name":"off","status":"offline","labels":[{"name":"self-hosted"},{"name":"mac"}]},{"name":"on","status":"online","labels":[{"name":"self-hosted"},{"name":"mac"},{"name":"arm64"}]}]}\n' \
+  > "$GH_FX/api/${RK}_actions_runners_per_page_100.json"
+cb "$P" "dir #801"
+check_status "T3c self-hosted-only, one online runner carrying the labels → passes" 0 "$STATUS"
+fx
+gh_run "$GH_FX" example/proj 7005 selfhosted
+rl "${RK}_actions_runners_per_page_100" "Must have admin rights to Repository." ""
+cb "$P" "dir #801"
+check_status "T3c runners endpoint 403 (no admin) → passes" 0 "$STATUS"
+check_contains "T3c … with a warning" "$OUT" "could not read the runners"
+fx
+cb "$P" "dir #801"
+if grep -q 'actions/runners' "$GH_FX/calls"; then fail "T3c a hosted-label workflow does not read the runners" "it did"; else pass "T3c a hosted-label workflow does not read the runners"; fi
 
 # --- T4: G2 ---------------------------------------------------------------------------------------------------
 fx
@@ -1345,6 +1449,8 @@ fx
 printf '{"default_branch":"release+1"}\n' > "$GH_FX/api/repos_example_proj.json"
 printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' \
   > "$GH_FX/api/repos_example_proj_branches_release+1.json"
+cp "$GH_FX/api/repos_example_proj_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json" \
+  "$GH_FX/api/repos_example_proj_actions_runs_branch_release%2B1_per_page_1_exclude_pull_requests_true.json"
 cb "$P" "dir #801"
 check_status "T18 a default branch named release+1 passes" 0 "$STATUS"
 # A leading `+` is a forced refspec to `git fetch origin <default>` in the VM, a leading `-` an option.

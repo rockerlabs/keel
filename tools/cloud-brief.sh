@@ -427,6 +427,52 @@ WORKFLOWS="$(gh_or_refuse G1c "the workflows of $OR" "repos/$OR/actions/workflow
   --jq '[(.workflows // [])[] | select(.state == "active")] | length')" || exit $?
 case "$WORKFLOWS" in ''|0|*[!0-9]*) refuse G1c "$OR has no active CI workflow — the landing check needs a green check rollup" ;; esac
 
+# G1c, started-run probe (dir #924): an active workflow can still be one whose jobs never start — an account-level
+# Actions block (billing), a self-hosted runner that is offline. The latest run on the default branch must have
+# started its jobs; a COMPLETED job with no steps (not skipped or cancelled) never ran — a queued or waiting job
+# is healthy until proven otherwise (the runner check below catches the offline self-hosted case). A run whose
+# jobs all run on self-hosted labels also needs, per job, one ONLINE runner carrying that job's labels. No run yet is a fresh workflow (warning);
+# a runners endpoint a token without admin cannot read (403/404) warns, it does not refuse.
+warn_add() { WARN="${WARN:+$WARN; }$1"; }
+DEFAULT_Q="${DEFAULT//+/%2B}" # a `+` in a query string reads as a space
+RUN="$(gh_or_refuse G1c "the latest run of $OR:$DEFAULT" "repos/$OR/actions/runs?branch=$DEFAULT_Q&per_page=1&exclude_pull_requests=true" \
+  --jq '(.workflow_runs // [])[0] // empty | [.id, .html_url] | @tsv')" || exit $?
+if [ -z "$RUN" ]; then
+  warn_add "no workflow run yet on $OR:$DEFAULT — the started-run probe (G1c) had nothing to read"
+else
+  RUN_ID="${RUN%%$'\t'*}" RUN_URL="${RUN#*$'\t'}"
+  case "$RUN_ID" in ''|*[!0-9]*) die 2 "gh api gave an unreadable run id for $OR" ;; esac
+  JOBS="$(gh_or_refuse G1c "the jobs of run $RUN_ID of $OR" "repos/$OR/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs // []')" || exit $?
+  UNSTARTED="$(jq -r '[.[] | select(.status == "completed" and (.steps // [] | length) == 0 and (.conclusion // "") != "skipped" and (.conclusion // "") != "cancelled")] | .[0] // empty | "\(.id)\t\(.name)"' <<< "$JOBS")" \
+    || die 2 "cannot parse the jobs of run $RUN_ID of $OR"
+  if [ -n "$UNSTARTED" ]; then
+    job_id="${UNSTARTED%%$'\t'*}" job_name="${UNSTARTED#*$'\t'}" note=""
+    case "$job_id" in ''|*[!0-9]*) ;; *)
+      note="$(cloud_gh_api "repos/$OR/check-runs/$job_id/annotations" --jq '[.[].message] | map(select(. != null and . != "")) | .[0] // empty' 2>/dev/null)" || note=""
+    esac
+    refuse G1c "the latest run on $DEFAULT never started job '$job_name' ($RUN_URL: no steps)${note:+ — annotation: \"$note\"} — a dispatch would spend credit and the landing check would wait forever (an account billing block, or an offline self-hosted runner)"
+  fi
+  # Self-hosted-only: every job of the run carries the `self-hosted` label.
+  if jq -e 'length > 0 and all(.[]; (.labels // []) | index("self-hosted"))' <<< "$JOBS" >/dev/null 2>&1; then
+    NEED="$(jq -r '[.[].labels[]?] | unique | map(select(. != "self-hosted")) | join(",")' <<< "$JOBS")"
+    runners_rc=0
+    RUNNERS="$(cloud_gh_api "repos/$OR/actions/runners?per_page=100" --jq '.runners // []' 2>/dev/null)" || runners_rc=$?
+    case "$runners_rc" in
+      0)
+        # Per job: some online runner carries all of that job's labels (labels compare case-insensitively).
+        ONLINE="$(jq -rn --argjson jobs "$JOBS" --argjson runners "$RUNNERS" '
+          [$runners[] | select(.status == "online") | [.labels[].name | ascii_downcase]] as $on
+          | [$jobs[] | [.labels[]? | ascii_downcase] as $need
+            | select(any($on[]; . as $l | $need | all(. as $n | $l | index($n))) | not)] | length')" \
+          || die 2 "cannot parse the runners of $OR"
+        [ "${ONLINE:-1}" = 0 ] \
+          || refuse G1c "the workflow's jobs run only on self-hosted labels (self-hosted${NEED:+,$NEED}) and no online runner of $OR carries them — a dispatch would queue forever" ;;
+      4) warn_add "could not read the runners of $OR (403/404 — a token without admin); the self-hosted labels (self-hosted${NEED:+,$NEED}) were not checked for an online runner" ;;
+      *) die 2 "gh api failed reading the runners of $OR (a rate limit, network, auth or gh itself)" ;;
+    esac
+  fi
+fi
+
 # --- the judged rows ---------------------------------------------------------------------------------------------
 if [ "$VERDICT" = none ] && [ "$MODE" != eligible ]; then
   cat <<ROWS
