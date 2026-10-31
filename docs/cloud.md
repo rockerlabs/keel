@@ -278,7 +278,10 @@ allow marker off (`SECRET_SCAN_NO_INLINE_ALLOW=1`):
    diff, so a marker added and later deleted still refuses. The check reads the scanner's decoded views: the patch or
    message as it is, NUL-stripped, and each with its invalid UTF-8 dropped (`iconv -c`), so a marker split by an
    invalid byte or written in UTF-16/UTF-32 refuses too, and so does each blob decoded as UTF-16/UTF-32 the way the
-   scanner decodes it (a marker split by a lone surrogate); a marker check that fails is a scan error.
+   scanner decodes it (a marker split by a lone surrogate); a marker check that fails is a scan error. A marker hit
+   cannot be cleared by fixing forward: a later commit that removes or splits the literal leaves the earlier commit's
+   addition in the range. The only cures are a rewritten branch (the operator's force-push of the session's own
+   branch) or a fresh branch with a clean history; the refusal says so.
 
 Then CI: every check in the rollup completed as success, neutral or skipped, **and at least one succeeded** —
 so an empty or all-skipped rollup is not green. On a **draft** PR a check that skipped is not green at all (an

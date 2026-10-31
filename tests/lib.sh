@@ -1313,24 +1313,37 @@ write_full_receipt_review() {
 }
 
 # A PATH dir ($1) symlinking every executable currently on $PATH EXCEPT the names in $2.. — for
-# testing a script's dependency check when one or more tools are missing.
+# testing a script's dependency check when one or more tools are missing. One `ln -s` per PATH directory (a fork
+# per entry cost ~6 s on macOS); the first directory to hold a name wins.
 path_farm() {
-  local dest="$1" d f n hide hidden=0
+  local dest="$1" d f n hide hidden=0 batch=()
   shift
   mkdir -p "$dest"
   IFS=:
   for d in $PATH; do
     [ -d "$d" ] || continue
+    batch=()
     for f in "$d"/*; do
       [ -e "$f" ] || continue
       n=${f##*/}
       hidden=0
       for hide in "$@"; do [ "$n" = "$hide" ] && { hidden=1; break; }; done
       [ "$hidden" = 1 ] && continue
-      [ -e "$dest/$n" ] || ln -s "$f" "$dest/$n"
+      [ -e "$dest/$n" ] || batch+=("$f")
     done
+    [ "${#batch[@]}" -eq 0 ] || ln -s "${batch[@]}" "$dest/"
   done
   unset IFS
+}
+
+# cell REPO TICKET N — print cell N of the row in $CLOUD_LEDGER; set_cell REPO TICKET N VALUE — set it, as an operator
+# would by hand. String compares: a ticket `2.1` is not `2.10`, and awk would compare two numeric-looking values as
+# numbers. (Shared by the two cloud test files.)
+cell() { awk -F'\t' -v r="$1" -v t="$2" -v n="$3" 'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { print $n }' "$CLOUD_LEDGER"; }
+set_cell() {
+  awk -F'\t' -v OFS='\t' -v r="$1" -v t="$2" -v n="$3" -v val="$4" \
+    'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { $n = val } { print }' "$CLOUD_LEDGER" > "$CLOUD_LEDGER.new" \
+    && cat "$CLOUD_LEDGER.new" > "$CLOUD_LEDGER" && rm -f "$CLOUD_LEDGER.new"
 }
 
 # apostrophe_fixture_checkout LABEL — a disposable copy of just tools/ (never $REPO_ROOT itself) under

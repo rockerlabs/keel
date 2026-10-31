@@ -154,7 +154,12 @@ verdict_of() {
 }
 
 # grade_of HEADING — the LAST `— R<d>` token's grade, or nothing.
-grade_of() { grep -oE '— R[0-9]([^a-zA-Z0-9]|$)' <<< "$1" | tail -1 | grep -oE 'R[0-9]' || true; }
+# No fork: the regex walks the heading token by token, each match consuming its trailing character (as `grep -o` does).
+grade_of() {
+  local h="$1" g="" re='— R([0-9])([^a-zA-Z0-9]|$)'
+  while [[ "$h" =~ $re ]]; do g="R${BASH_REMATCH[1]}"; h="${h#*"${BASH_REMATCH[0]}"}"; done
+  printf '%s' "$g"
+}
 
 # --- --sweep: read-only listing ------------------------------------------------------------------------------
 # pr_of BRANCH [PR] → "<number> <head sha>" of PR when the row records one (a failed `cloud-land.sh --ticket` run
@@ -187,11 +192,11 @@ if [ "$MODE" = sweep ]; then
     blanked_all="$(blank_fenced_blocks "$BACKLOG")"
     while IFS=$'\t' read -r b_start b_end _ b_heading; do
       case "$b_heading" in "### "*" — "*) ;; *) continue ;; esac
-      grep -qE '✅|❌|SUPERSEDED|RETRACTED' <<< "$b_heading" && continue
+      case "$b_heading" in *✅*|*❌*|*SUPERSEDED*|*RETRACTED*) continue ;; esac
       g="$(grade_of "$b_heading")"
-      case "$g" in R3|R4) ;; '') grep -q '📐' <<< "$b_heading" || continue ;; *) continue ;; esac
+      case "$g" in R3|R4) ;; '') case "$b_heading" in *📐*) ;; *) continue ;; esac ;; *) continue ;; esac
       id="${b_heading#\#\#\# }"; id="${id%% — *}"
-      v="$(verdict_of "$(sed -n "${b_start},${b_end}p" <<< "$blanked_all")")"
+      v="$(verdict_of "$(sed -n "${b_start},${b_end}p;${b_end}q" <<< "$blanked_all")")"
       case "$v" in none) v="—" ;; yes) ;; no\ *) v="no — $(cut -d' ' -f2 <<< "$v")" ;; malformed*) v="malformed" ;; esac
       printf '  %s\t%s\t%s\n' "$id" "${g:-📐}" "$v"
     done < <(backlog_ticket_blocks "$BACKLOG" "$TICKET_ERE")
@@ -513,15 +518,36 @@ same_origin "$ENGINE_ORIGIN" "$KEEL_ORIGIN" \
 git -C "$ENGINE" fetch -q origin main 2>/dev/null || no_keel "git fetch origin main failed in $ENGINE"
 KEEL_SHA="$(git -C "$ENGINE" merge-base HEAD origin/main 2>/dev/null)" || no_keel "no merge-base of HEAD and origin/main in $ENGINE"
 
+# rewrite MODE FROM TO [MODE FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order;
+# MODE `p` replaces every occurrence, `a` only one that starts a token (below). One byte-wise awk pass (LC_ALL=C):
+# bash's own `${text//…}` on a brief holding multibyte text costs time quadratic in its size. The pairs travel as
+# awk's own arguments, read in BEGIN (no escape processing, unlike `-v`) and removed from ARGV before input is read.
+rewrite() {
+  LC_ALL=C awk '
+    function rep(s, from, to, alone,   out, i, n, prev, b) {
+      out = ""; n = length(from); prev = ""
+      while ((i = index(s, from)) > 0) {
+        if (alone) {
+          b = (i > 1) ? substr(s, i - 1, 1) : prev
+          if (b ~ /[A-Za-z0-9]/) {
+            out = out substr(s, 1, i); prev = substr(s, i, 1); s = substr(s, i + 1); continue
+          }
+        }
+        out = out substr(s, 1, i - 1) to; prev = substr(from, n, 1); s = substr(s, i + n)
+      }
+      return out s
+    }
+    BEGIN {
+      for (k = 1; k + 2 < ARGC; k += 3)
+        if (ARGV[k + 1] != "") { n++; md[n] = ARGV[k]; fr[n] = ARGV[k + 1]; to[n] = ARGV[k + 2] }
+      ARGC = 1
+    }
+    { for (k = 1; k <= n; k++) $0 = rep($0, fr[k], to[k], md[k] == "a"); print }' ${1+"$@"}
+}
 # --- assemble, rewrite, size, scan — in a temporary directory ----------------------------------------------------
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cloud-brief.XXXXXX")" || die 2 "mktemp failed"
-protocol="$(cat "$CLOUD_TEMPLATE")"
-protocol=${protocol//"<repo>"/"$OR"}
-protocol=${protocol//"<ticket>"/"$TICKET"}
-protocol=${protocol//"<branch>"/"$BRANCH"}
-protocol=${protocol//"<default>"/"$DEFAULT"}
-protocol=${protocol//"<keel-sha>"/"$KEEL_SHA"}
-protocol=${protocol//"<keel-origin>"/"$KEEL_ORIGIN"}
+protocol="$(rewrite p "<repo>" "$OR" p "<ticket>" "$TICKET" p "<branch>" "$BRANCH" p "<default>" "$DEFAULT" \
+  p "<keel-sha>" "$KEEL_SHA" p "<keel-origin>" "$KEEL_ORIGIN" < "$CLOUD_TEMPLATE")"
 part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a newline when it lacks a final one
 {
   echo "=== protocol ==="
@@ -550,33 +576,6 @@ part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a n
 #     `state-root-migrate`, `non-root-user` or `claude/cloud-root-12`. A known cost of catching the nested name: an
 #     option spelled like one, HOME=/root's `git log --root`, becomes `--Users-x` too (dir #908).
 # Then the session scratch roots → `<tmp>/`, the longer first.
-# rewrite MODE FROM TO [MODE FROM TO]... — stdin → stdout with each non-empty FROM replaced by its TO, in order;
-# MODE `p` replaces every occurrence, `a` only one that starts a token (above). One byte-wise awk pass: bash's own
-# `${text//…}` on a brief holding multibyte text costs time quadratic in its size (minutes near the byte cap on
-# macOS). A subshell, so the pairs never reach the CLI's environment.
-rewrite() (
-  i=0
-  while [ $# -ge 3 ]; do
-    [ -z "$2" ] || { i=$((i + 1)); export "CL_MODE_$i=$1" "CL_FROM_$i=$2" "CL_TO_$i=$3"; }
-    shift 3
-  done
-  CL_PAIRS="$i" LC_ALL=C awk '
-    function rep(s, from, to, alone,   out, i, n, prev, b) {
-      out = ""; n = length(from); prev = ""
-      while ((i = index(s, from)) > 0) {
-        if (alone) {
-          b = (i > 1) ? substr(s, i - 1, 1) : prev
-          if (b ~ /[A-Za-z0-9]/) {
-            out = out substr(s, 1, i); prev = substr(s, i, 1); s = substr(s, i + 1); continue
-          }
-        }
-        out = out substr(s, 1, i - 1) to; prev = substr(from, n, 1); s = substr(s, i + n)
-      }
-      return out s
-    }
-    BEGIN { n = ENVIRON["CL_PAIRS"] + 0; mp = "CL_MODE_"; fp = "CL_FROM_"; tp = "CL_TO_" }
-    { for (k = 1; k <= n; k++) $0 = rep($0, ENVIRON[fp k], ENVIRON[tp k], ENVIRON[mp k] == "a"); print }'
-)
 # passwd_home — the passwd entry's home: `~` with HOME unset (bash then reads the entry), when absolute.
 passwd_home() ( unset HOME; h=~; case "$h" in /*) printf '%s' "$h" ;; esac )
 homes=""
@@ -591,16 +590,14 @@ for h in "${HOME:-}" "$(passwd_home)"; do
   add_home "$h"
   [ -z "$h" ] || add_home "$(CDPATH='' cd -P -- "$h" 2>/dev/null && pwd -P)"
 done
-pairs=()
+sorted=()
 while IFS= read -r h; do
-  [ -z "$h" ] || pairs+=(p "$h" '~')
+  [ -z "$h" ] || sorted+=("$h")
 done < <(printf '%s' "$homes" | LC_ALL=C awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)
 # The encoding keeps every byte's place, so the names come in the paths' own longer-first order.
-n_paths="${#pairs[@]}" k=1
-while [ "$k" -lt "$n_paths" ]; do
-  pairs+=(a "$(keel_project_slug "${pairs[$k]}")" -Users-x)
-  k=$((k + 3))
-done
+pairs=()
+for h in ${sorted[@]+"${sorted[@]}"}; do pairs+=(p "$h" '~'); done
+for h in ${sorted[@]+"${sorted[@]}"}; do pairs+=(a "$(keel_project_slug "$h")" -Users-x); done
 uid="$(id -u)"
 rewrite ${pairs[@]+"${pairs[@]}"} p "/private/tmp/claude-$uid/" '<tmp>/' p "/tmp/claude-$uid/" '<tmp>/' \
   < "$WORK/raw" > "$WORK/brief" || die 2 "the home-path rewrite failed"

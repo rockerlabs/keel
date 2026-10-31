@@ -138,11 +138,13 @@ CLONE="$WORK/clone"
 RANGE="refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH"
 # No tags (a tag named `origin/<branch>` would shadow the remote-tracking ref) and the remote pinned to `origin`
 # (clone.defaultRemoteName); every ref below is spelled in full.
+# The clone itself fetches every branch into refs/remotes/origin/*, so the two refs are read once, by the clone; the
+# --verify below is the check that both exist.
 if ! git clone -q --no-tags -o origin "$CLONE_URL" "$CLONE" 2> "$WORK/clone.err" \
-   || ! git -C "$CLONE" fetch -q --no-tags origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" \
-        "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>> "$WORK/clone.err"; then
+   || ! git -C "$CLONE" rev-parse -q --verify "refs/remotes/origin/$DEFAULT^{commit}" >/dev/null 2>> "$WORK/clone.err" \
+   || ! git -C "$CLONE" rev-parse -q --verify "refs/remotes/origin/$BRANCH^{commit}" >/dev/null 2>> "$WORK/clone.err"; then
   sed 's/^/  /' "$WORK/clone.err"
-  echo "  scan error: cannot clone $CLONE_URL or fetch $DEFAULT and $BRANCH"
+  echo "  scan error: cannot clone $CLONE_URL or find $DEFAULT and $BRANCH in it"
   finish 1
 fi
 TIP="$(git -C "$CLONE" rev-parse "refs/remotes/origin/$BRANCH")"
@@ -187,12 +189,12 @@ fi
 # where a line new against every parent reads `++`; a line taken unchanged from one parent is not the merge's own
 # and does not count. git's output goes to files and is grepped as bytes (LC_ALL=C -a): under a UTF-8 locale a
 # byte that is not valid UTF-8 would stop `.*` short of the marker.
-# range_log OUT ERR ARG… — `git log ARG… $RANGE` in the clone with the shared flags; stdout to OUT, stderr to ERR.
+# range_log OUT ERR ARG… — `git log ARG… $RANGE` in the clone with the shared flags (`--format=` unless an ARG sets one); stdout to OUT, stderr to ERR.
 # With $VIEW_CMD set the patches are those of each blob converted by that command (git's textconv), not of its bytes.
 range_log() {
   local out="$1" err="$2" tc="--no-textconv"; shift 2
   [ -z "${VIEW_CMD:-}" ] || tc="--textconv"
-  git -C "$CLONE" -c "diff.keelview.textconv=${VIEW_CMD:-}" -c log.showRoot=true log --root --no-color --no-ext-diff "$tc" --no-renames --text "$@" "$RANGE" \
+  git -C "$CLONE" -c "diff.keelview.textconv=${VIEW_CMD:-}" -c log.showRoot=true log --root --no-color --no-ext-diff "$tc" --no-renames --text --format= "$@" "$RANGE" \
     > "$out" 2> "$err"
 }
 # The scanner matches the inline marker in decoded views (NUL-stripped; `iconv -c` in the caller's locale, so a marker
@@ -271,7 +273,7 @@ tail -c +$skip "\$1" | od -An -v -tu1 | LC_ALL=C awk '{
 }'
 VIEW
     # shellcheck disable=SC2086  # $flags intentionally word-split
-    VIEW_CMD="sh $sh" range_log "$WORK/$kind.$name.$skip.out" "$WORK/$kind.err" -p $flags --format= || return 2
+    VIEW_CMD="sh $sh" range_log "$WORK/$kind.$name.$skip.out" "$WORK/$kind.err" -p $flags || return 2
     out="$(LC_ALL=C grep -anE -e "$re" "$WORK/$kind.$name.$skip.out")" || { rc=$?; [ "$rc" -le 1 ] || return "$rc"; continue; }
     hits="${hits:+$hits$'\n'}$(sed "s/^/$name+$skip: /" <<< "$out")"
   done
@@ -279,13 +281,13 @@ VIEW
   printf '%s\n' "$hits"
 }
 p_rc=0 m_rc=0
-if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges --format= \
-   || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc --format=; then
+if ! range_log "$WORK/patch.out" "$WORK/patch.err" -p --no-merges \
+   || ! range_log "$WORK/merge.out" "$WORK/merge.err" -p --merges --cc; then
   echo "  scan error: cannot read the range's patches"; cat "$WORK/patch.err" "$WORK/merge.err" 2>/dev/null | sed 's/^/    /'
   SCAN_FAIL=1
 else
-  p_hits="$(marker_grep "$WORK/patch.out" '^\+.*secret-scan:allow')" || p_rc=$?
-  m_hits="$(marker_grep "$WORK/merge.out" '^\+\+.*secret-scan:allow')" || m_rc=$?
+  p_hits="$(marker_grep "$WORK/patch.out" '^\+.*secret-scan:''allow')" || p_rc=$?
+  m_hits="$(marker_grep "$WORK/merge.out" '^\+\+.*secret-scan:''allow')" || m_rc=$?
   if [ "$p_rc" -gt 1 ] || [ "$m_rc" -gt 1 ]; then
     echo "  scan error: a marker grep failed over the range's patches (exit $p_rc, $m_rc)"; SCAN_FAIL=1
   elif [ -n "$p_hits$m_hits" ]; then
@@ -298,7 +300,7 @@ g_rc=0
 if ! range_log "$WORK/msg.out" "$WORK/msg.err" --format=%B; then
   echo "  scan error: cannot read the range's commit messages"; sed 's/^/    /' "$WORK/msg.err"; SCAN_FAIL=1
 else
-  g_hits="$(marker_grep "$WORK/msg.out" 'secret-scan:allow')" || g_rc=$?
+  g_hits="$(marker_grep "$WORK/msg.out" 'secret-scan:''allow')" || g_rc=$?
   if [ "$g_rc" -gt 1 ]; then
     echo "  scan error: a marker grep failed over the range's commit messages (exit $g_rc)"; SCAN_FAIL=1
   elif [ -n "$g_hits" ]; then
@@ -339,7 +341,11 @@ echo "  A cloud PR's pre-PR gate is this check plus the session's review, the VM
 echo "  pre-PR flow (docs/cloud.md, the landing section). The operator merges."
 
 if [ -n "$SCAN_FAIL" ]; then
-  echo "== REFUSED: a scan hit or a scan error. Do not merge; nothing pushed can be unpublished — fix forward on the branch."
+  echo "== REFUSED: a scan hit or a scan error. Do not merge; nothing pushed can be unpublished."
+  echo "   A hit in a commit of the range stays in it when a later commit removes or splits the line (an added allow"
+  echo "   marker included): fixing forward does not clear it. Only a rewritten branch (the operator's force-push of the"
+  echo "   session's own branch) or a fresh branch with a clean history does; a hit in the PR text alone is cleared by"
+  echo "   editing the PR."
   finish 1
 fi
 if [ -n "$DRAFT_SKIPPED" ]; then
