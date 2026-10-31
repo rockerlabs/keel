@@ -276,7 +276,7 @@ gh_ok() {
   mkdir -p "$d/api"
   printf '{"default_branch":"main"}\n' > "$d/api/$key.json"
   printf '{"protected":true,"protection":{"required_status_checks":{"enforcement_level":"everyone"}}}\n' > "$d/api/${key}_branches_main.json"
-  printf '{"total_count":1}\n' > "$d/api/${key}_actions_workflows.json"
+  printf '{"total_count":1,"workflows":[{"name":"CI","state":"active"}]}\n' > "$d/api/${key}_actions_workflows.json"
 }
 
 # home_slug DIR — Claude Code's project-directory encoding of DIR (every byte outside [A-Za-z0-9] → `-`).
@@ -491,6 +491,16 @@ cb "$P" "dir #801"
 check_status "T3c no workflow → exit 3" 3 "$STATUS"
 check_contains "T3c names G1c" "$OUT" "refused: G1c"
 nothing_written "T3c"
+fx
+printf '{"total_count":1,"workflows":[{"name":"iOS CI","state":"disabled_manually"}]}\n' > "$GH_FX/api/repos_example_proj_actions_workflows.json"
+cb "$P" "dir #801"
+check_status "T3c only a disabled workflow → exit 3" 3 "$STATUS"
+check_contains "T3c disabled: G1c" "$OUT" "refused: G1c"
+nothing_written "T3c disabled"
+fx
+printf '{"total_count":2,"workflows":[{"name":"old","state":"disabled_manually"},{"name":"CI","state":"active"}]}\n' > "$GH_FX/api/repos_example_proj_actions_workflows.json"
+cb "$P" "dir #801"
+check_status "T3c one active workflow → passes" 0 "$STATUS"
 
 # --- T4: G2 ---------------------------------------------------------------------------------------------------
 fx
