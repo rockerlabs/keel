@@ -49,6 +49,13 @@ printf '%s %s %s %s' "${3:-}" "${4:-}" "${5:-}" "${6:-}" > "$d/rest"
 cp "$CLOUD_LEDGER" "$d/ledger-at-call"
 if [ -d "$(dirname "$CLOUD_LEDGER")/ledger.lock" ]; then echo held; else echo free; fi > "$d/lock-at-call"
 if { : >&3; } 2>/dev/null; then echo open; else echo closed; fi > "$d/fd3-at-call"
+case "$(cat "$d/mode" 2>/dev/null || true)" in
+  trust)
+    printf 'Quick safety check: Is this a project you created or one you trust?\n'
+    printf ' \342\235\257 No, exit\n   Yes, I trust this folder\n Enter to confirm\n'
+    exec sleep 600 ;;
+  hang) printf 'Some other prompt [y/N] '; exec sleep 600 ;;
+esac
 rc="$(cat "$d/exit" 2>/dev/null || echo 0)"
 if [ "$rc" = 0 ]; then
   echo "Created cloud session: Fixture"
@@ -1405,6 +1412,23 @@ if [ -n "$HAVE_SCRIPT" ]; then
   check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
   check_absent "T18 … no claim printed" "$OUT" "IN FLIGHT"
   check_eq "T24 … no session id on the built row" "" "$(row_of 'dir #801' | cut -f15)"
+  # dir #926: a CLI stopped on its folder-trust prompt, or on any prompt, is killed and the row goes back to built.
+  fx
+  printf 'trust' > "$CLAUDE_FX/mode"
+  SECONDS=0
+  cb "$P" "dir #801" --dispatch
+  check_status "T18 a trust prompt → exit 5" 5 "$STATUS"
+  check_contains "T18 … the remedy named" "$OUT" "run \`claude\` once in"
+  check_contains "T18 … the answer to give" "$OUT" "Yes, I trust this folder"
+  check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
+  check_absent "T18 … no claim printed" "$OUT" "IN FLIGHT"
+  check_eq "T18 … stopped within the bound" "yes" "$([ "$SECONDS" -lt 30 ] && echo yes || echo no)"
+  fx
+  printf 'hang' > "$CLAUDE_FX/mode"
+  CLOUD_DISPATCH_TIMEOUT=2 cb "$P" "dir #801" --dispatch
+  check_status "T18 a CLI that hangs on another prompt → exit 5" 5 "$STATUS"
+  check_contains "T18 … the timeout named" "$OUT" "did not finish within 2s"
+  check_eq "T18 … the row back to built" "built" "$(status_of 'dir #801')"
   fx
   sed 's#^docs/specs/$##; s#^BACKLOG.md$##' "$P/.gitignore" > "$F/gi"; cat "$F/gi" > "$P/.gitignore"
   cb "$P" "dir #801" --dispatch

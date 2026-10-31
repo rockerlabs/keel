@@ -634,22 +634,57 @@ back_to_built() {
   cloud_ledger_unlock "$CLOUD_LEDGER"
 }
 CLI_CMD="claude --cloud \"\$(cat $(printf '%q' "$DEST"))\" --model $MODEL --effort $EFFORT"
-printf 'cd %q || exit 1\nexec %s\n' "$MAIN" "$CLI_CMD" > "$WORK/run-cli.sh"
+# The CLI records its pid first, so a stuck run can be killed: `exec` keeps the pid, `script` ends with its child.
+printf 'cd %q || exit 1\necho $$ > %q\nexec %s\n' "$MAIN" "$WORK/cli.pid" "$CLI_CMD" > "$WORK/run-cli.sh"
 cli_rc=0
 if ! command -v script >/dev/null 2>&1; then
   back_to_built
   die 5 "no \`script\` to give the CLI the terminal it requires — run this in a terminal, from $MAIN:
   $CLI_CMD"
 fi
+# cli_clean FILE — the CLI's output with terminal escapes, carriage returns and backspaces removed.
+cli_clean() {
+  local esc
+  esc="$(printf '\033')"
+  LC_ALL=C sed -e "s/${esc}\[[0-9;?<>=]*[A-Za-z]//g" -e "s/${esc}[()][A-Za-z0-9]//g" -e "s/${esc}[0-9=>]//g" \
+    -e 's/\^D//g' "$1" 2>/dev/null | LC_ALL=C tr -d '\r\010'
+}
+# The CLI runs in the background and is watched: it stops on an interactive prompt nobody answers (dir #926), so a
+# folder-trust prompt in its output, or CLOUD_DISPATCH_TIMEOUT seconds (default 300) without an exit, ends it.
 case "$(uname -s)" in
-  Darwin) script -q "$WORK/cli.out" bash "$WORK/run-cli.sh" < /dev/null > /dev/null 2>&1 || cli_rc=$? ;;
-  *) script -qec "bash $(printf '%q' "$WORK/run-cli.sh")" "$WORK/cli.out" < /dev/null > /dev/null 2>&1 || cli_rc=$? ;;
+  Darwin) script -q "$WORK/cli.out" bash "$WORK/run-cli.sh" < /dev/null > /dev/null 2>&1 & ;;
+  *) script -qefc "bash $(printf '%q' "$WORK/run-cli.sh")" "$WORK/cli.out" < /dev/null > /dev/null 2>&1 & ;;
 esac
-esc="$(printf '\033')"
-CLI_OUT="$(LC_ALL=C sed -e "s/${esc}\[[0-9;?<>=]*[A-Za-z]//g" -e "s/${esc}[()][A-Za-z0-9]//g" -e "s/${esc}[0-9=>]//g" \
-  -e 's/\^D//g' "$WORK/cli.out" 2>/dev/null | LC_ALL=C tr -d '\r\010')"
+script_pid=$!
+stuck="" waited=0
+while kill -0 "$script_pid" 2>/dev/null; do
+  # A captured variable, not `cli_clean | grep -q`: grep's early exit would fail the pipeline under pipefail.
+  seen="$(cli_clean "$WORK/cli.out")"
+  if grep -qE 'Is this a project you created or one you trust|Yes, I trust this folder' <<< "$seen"; then
+    stuck=trust; break
+  fi
+  if [ "$waited" -ge "${CLOUD_DISPATCH_TIMEOUT:-300}" ]; then stuck=timeout; break; fi
+  sleep 1
+  waited=$((waited + 1))
+done
+if [ -n "$stuck" ]; then
+  cli_pid="$(cat "$WORK/cli.pid" 2>/dev/null || true)"
+  if [ -n "$cli_pid" ]; then kill "$cli_pid" 2>/dev/null || true; sleep 1; kill -9 "$cli_pid" 2>/dev/null || true; fi
+  kill "$script_pid" 2>/dev/null || true
+fi
+wait "$script_pid" 2>/dev/null || cli_rc=$?
+CLI_OUT="$(cli_clean "$WORK/cli.out")"
 printf '%s\n' "$CLI_OUT"
 # util-linux `script` may answer with its own status, so success also needs the CLI's own line.
+if [ "$stuck" = trust ]; then
+  back_to_built
+  die 5 "the CLI stopped on its folder-trust prompt — the row is back to built; nothing was claimed. The CLI has never trusted $MAIN: run \`claude\` once in $MAIN, answer 'Yes, I trust this folder', exit, then dispatch again (this tool never answers the prompt for you)"
+fi
+if [ "$stuck" = timeout ]; then
+  back_to_built
+  die 5 "the CLI did not finish within ${CLOUD_DISPATCH_TIMEOUT:-300}s (an interactive prompt may be waiting) — killed; the row is back to built; nothing was claimed. Run it by hand, from $MAIN:
+  $CLI_CMD"
+fi
 if [ "$cli_rc" -ne 0 ] || ! grep -q 'Created cloud session' <<< "$CLI_OUT"; then
   back_to_built
   die 5 "the dispatch failed (exit $cli_rc) — the row is back to built; nothing was claimed"
