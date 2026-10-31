@@ -133,7 +133,7 @@ finish() { # EXIT — record this run on the row, then exit; the branch, status 
 echo "== scans ($OR PR #$PR, $BRANCH @ $HEAD_OID)"
 CLONE_URL="${CLOUD_ORIGIN:-https://github.com/$OR.git}"
 case "$CLONE_URL" in *://*|*@*:*) ;; *) CLONE_URL="$(abs "$CLONE_URL")" ;; esac
-SCAN_FAIL="" MARKER_HIT=""
+SCAN_FAIL=""
 CLONE="$WORK/clone"
 RANGE="refs/remotes/origin/$DEFAULT..refs/remotes/origin/$BRANCH"
 # No tags (a tag named `origin/<branch>` would shadow the remote-tracking ref) and the remote pinned to `origin`
@@ -291,7 +291,7 @@ else
   if [ "$p_rc" -gt 1 ] || [ "$m_rc" -gt 1 ]; then
     echo "  scan error: a marker grep failed over the range's patches (exit $p_rc, $m_rc)"; SCAN_FAIL=1
   elif [ -n "$p_hits$m_hits" ]; then
-    echo "  added allow marker: hit"; printf '%s\n' "$p_hits" "$m_hits" | sed -e '/^$/d' -e 's/^/    /'; SCAN_FAIL=1 MARKER_HIT=1
+    echo "  added allow marker: hit"; printf '%s\n' "$p_hits" "$m_hits" | sed -e '/^$/d' -e 's/^/    /'; SCAN_FAIL=1
   else
     echo "  added allow marker: none"
   fi
@@ -304,7 +304,7 @@ else
   if [ "$g_rc" -gt 1 ]; then
     echo "  scan error: a marker grep failed over the range's commit messages (exit $g_rc)"; SCAN_FAIL=1
   elif [ -n "$g_hits" ]; then
-    echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$g_hits"; SCAN_FAIL=1 MARKER_HIT=1
+    echo "  allow marker in a commit message: hit"; sed 's/^/    /' <<< "$g_hits"; SCAN_FAIL=1
   else
     echo "  allow marker in a commit message: none"
   fi
@@ -342,13 +342,10 @@ echo "  pre-PR flow (docs/cloud.md, the landing section). The operator merges."
 
 if [ -n "$SCAN_FAIL" ]; then
   echo "== REFUSED: a scan hit or a scan error. Do not merge; nothing pushed can be unpublished."
-  if [ -n "$MARKER_HIT" ]; then
-    echo "   An added allow marker is read from every commit of the range, so a later commit that removes or splits it"
-    echo "   does not clear it: only a branch without the commit that adds it does. Rewrite the branch (a force-push of"
-    echo "   the session's own branch, by the operator) or start a fresh branch with a clean history."
-  else
-    echo "   Fix forward on the branch."
-  fi
+  echo "   A hit in a commit of the range stays in it when a later commit removes or splits the line (an added allow"
+  echo "   marker included): fixing forward does not clear it. Only a rewritten branch (the operator's force-push of the"
+  echo "   session's own branch) or a fresh branch with a clean history does; a hit in the PR text alone is cleared by"
+  echo "   editing the PR."
   finish 1
 fi
 if [ -n "$DRAFT_SKIPPED" ]; then

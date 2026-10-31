@@ -221,8 +221,8 @@ pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/clou
 run "$LAND" "$P" 5
 check_status "A4 an added allow marker → exit 1" 1 "$STATUS"
 check_contains "A4 … named" "$OUT" "added allow marker: hit"
-check_contains "A4 a marker hit says fix-forward cannot clear it" "$OUT" "does not clear it"
-check_absent "A4 … and does not tell the operator to fix forward" "$OUT" "fix forward on the branch"
+check_contains "A4 a marker hit says fix-forward cannot clear it" "$OUT" "fixing forward does not clear it"
+check_absent "A4 … and does not tell the operator to fix forward on the branch" "$OUT" "Fix forward on the branch"
 
 # The marker check reads every commit's patch and message, not the net diff.
 fx
@@ -637,6 +637,6 @@ SECRET_SCAN_PERSONAL_FILE="$F/missing" run "$LAND" "$P" 5
 check_status "A4 a personal list that is not a file → exit 2" 2 "$STATUS"
 
 # Each ref is read once: the clone fetches every branch, so the tool runs no `git fetch` after it.
-check_eq "A4 cloud-land.sh runs no git fetch after the clone" "0" "$(grep -cE '^[^#]*git .*[ ]fetch[ ]' "$LAND" || true)"
+check_eq "A4 cloud-land.sh runs no git fetch after the clone" "0" "$(grep -cE '^[^#]*git .*[ ]fetch([ ]|$)' "$LAND" || true)"
 
 summary
