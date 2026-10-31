@@ -488,3 +488,33 @@ else
 fi
 
 summary
+
+# --- bb_heading_end (dir #916): the one wrapped-heading walk ---------------------------------------------------
+# Unit: an unfinished title takes its wrapped lines up to the line that finishes it; a finished heading takes none;
+# a blank line, a body opener and the 50-line cap each end the walk; <last_index> bounds it.
+hl=("### dir #1 — a title that wraps" "across two lines — R2 — → pool" "Log: a body opener" "")
+bb_heading_end hl 0 3
+check_eq "bb_heading_end: a wrapped title ends after its finishing line" "$BB_HEADING_END" "2"
+check_eq "bb_heading_end: the block joins the lines with newlines" "$BB_HEADING_BLOCK" "### dir #1 — a title that wraps"$'\n'"across two lines — R2 — → pool"
+hl=("### dir #2 — done — R2 — ✅ DONE (2026-08-01)" "glued body line" "")
+bb_heading_end hl 0 2
+check_eq "bb_heading_end: a finished heading takes no further line" "$BB_HEADING_END" "1"
+hl=("pad" "### dir #3 — unfinished" "second" "third" "")
+bb_heading_end hl 1 2
+check_eq "bb_heading_end: last_index bounds the walk" "$BB_HEADING_END" "3"
+bb_heading_end hl 1 4
+check_eq "bb_heading_end: a blank line ends the walk" "$BB_HEADING_END" "4"
+hl=("### dir #4 — endless")
+for i in $(seq 1 60); do hl+=("wrapped $i"); done
+bb_heading_end hl 0 60
+check_eq "bb_heading_end: at most 50 lines past the heading" "$BB_HEADING_END" "51"
+
+# Census: no second copy of the walk. bb_heading_continues is called from bb_heading_end only, so no other tool
+# decides which following lines belong to a heading (a comment may still name it).
+census="$(grep -rnE '^[^#]*bb_heading_continues' "$REPO_ROOT/tools" --include='*.sh' | grep -v '/tools/lib/backlog-blocks\.sh:' || true)"
+check_eq "no tool but the lib calls bb_heading_continues (no second heading walk)" "$census" ""
+for c in tools/lib/backlog-blocks.sh tools/self/doctor.sh tools/self/accumulate.sh tools/cloud-brief.sh; do
+  check_contains "$c walks a heading through bb_heading_end" "$(cat "$REPO_ROOT/$c")" 'bb_heading_end '
+done
+
+summary

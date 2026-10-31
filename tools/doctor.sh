@@ -150,6 +150,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
 . "$_doctor_dir/lib/impact-store.sh"
+# shellcheck source=tools/lib/project-slug.sh
+. "$_doctor_dir/lib/project-slug.sh"
 # shellcheck source=tools/lib/gate-paths.sh
 . "$_doctor_dir/lib/gate-paths.sh"
 # shellcheck source=tools/lib/stat-portable.sh
@@ -1795,8 +1797,8 @@ fi
 # memory dir. memory_checks PROJECT_DIR records W-MEMORY-ORPHAN / W-MEMORY-DANGLING / W-MEMORY-SUPERSEDED
 # / H-MEMORY-STALE / H-MEMORY-DIR-UNRESOLVED into the unit's NOTES and never touches a memory file.
 # The dir is $KEEL_MEMORY_DIR when set (the test-isolation hatch, dir #125's KEEL_<NAME>_FILE rule),
-# else <home>/projects/<project path with every / and . as ->/memory — the leading / maps too, so the
-# name starts with a dash (/Users/x/.keel/kb → -Users-x--keel-kb: `/` then `.`, two dashes). Both the
+# else <home>/projects/<project path with every byte outside [A-Za-z0-9] as ->/memory (keel_project_slug, dir #916) — the
+# leading / maps too, so the name starts with a dash (/Users/x/.keel/kb → -Users-x--keel-kb: `/` then `.`, two dashes). Both the
 # logical and the physical spelling of the project path are tried. Absent dir → silent skip, UNLESS the
 # path carries a character outside [A-Za-z0-9/.-] (the encoder is only verified on those): then the skip
 # is announced, because a check that silently does nothing claims coverage it lacks (P1).
@@ -1894,7 +1896,7 @@ memory_checks() {
     [ "$dphys" != "$dabs" ] || dphys=""
     for cand in "$dabs" "$dphys"; do
       [ -n "$cand" ] || continue
-      enc="${cand//[\/.]/-}"
+      enc="$(keel_project_slug "$cand")"
       if [ -d "$ghome/projects/$enc/memory" ]; then mem="$ghome/projects/$enc/memory"; break; fi
     done
     if [ -z "$mem" ]; then

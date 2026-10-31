@@ -45,7 +45,7 @@ abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$START_DIR" "$1"
 die() { local code="$1"; shift; printf 'cloud-brief: %s\n' "$*" >&2; exit "$code"; }
 
 ENGINE="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"
-for lib in fence-blank backlog-blocks state-root repo-top nonneg-int safe-write leak-gate cloud; do
+for lib in fence-blank backlog-blocks state-root repo-top nonneg-int safe-write leak-gate cloud project-slug; do
   [ -s "$ENGINE/tools/lib/$lib.sh" ] && bash -n "$ENGINE/tools/lib/$lib.sh" 2>/dev/null \
     || die 2 "$ENGINE/tools/lib/$lib.sh is missing or corrupted — re-clone or re-download Keel"
   # shellcheck source=/dev/null
@@ -282,23 +282,18 @@ blanked_all="$(blank_fenced_blocks "$BACKLOG")"
 BLOCK="$(sed -n "${START},${END}p" "$BACKLOG")"
 BLANKED="$(sed -n "${START},${END}p" <<< "$blanked_all")"
 
-# heading_walk — backlog_ticket_blocks' wrapped-heading rule, walked again over the block's blanked text: sets
-# WALK_N (the continuation lines it takes after the first) and WALK_TEXT (the heading as walked, lines joined by
-# newlines). The walk is trusted only when it rebuilds the flattened HEADING exactly (walk_ok).
+# heading_walk — backlog_ticket_blocks' wrapped-heading rule (the lib's bb_heading_end), walked again over the block's
+# blanked text with inline code spans dropped: sets WALK_N (the continuation lines it takes after the first) and
+# WALK_TEXT (the heading as walked, lines joined by newlines). The walk is trusted only when it rebuilds the
+# flattened HEADING exactly (walk_ok).
 WALK_N=0 WALK_TEXT=""
 heading_walk() {
-  local so_far ln
-  WALK_N=0
-  {
-    IFS= read -r so_far
-    so_far="$(sed -E 's/`[^`]*`//g' <<< "$so_far")"
-    while [ "$WALK_N" -lt 50 ] && IFS= read -r ln; do
-      ln="$(sed -E 's/`[^`]*`//g' <<< "$ln")"
-      [ -n "$ln" ] && bb_heading_continues "$so_far" "$ln" || break
-      so_far+=$'\n'"$ln"; WALK_N=$((WALK_N + 1))
-    done
-  } <<< "$BLANKED"
-  WALK_TEXT="$so_far"
+  local ln
+  local -a walk_lines=()
+  while IFS= read -r ln; do walk_lines+=("$ln"); done < <(sed -E 's/`[^`]*`//g' <<< "$BLANKED")
+  bb_heading_end walk_lines 0 $((${#walk_lines[@]} - 1))
+  WALK_N=$((BB_HEADING_END - 1))
+  WALK_TEXT="$BB_HEADING_BLOCK"
 }
 walk_ok() { [ "$(tr '\n\t' '  ' <<< "$WALK_TEXT")" = "$HEADING" ]; }
 heading_walk
@@ -499,9 +494,9 @@ part() { cat "$1" && { [ -z "$(tail -c 1 "$1")" ] || echo; }; } # FILE, then a n
 # trailing `/`, `/` itself and duplicates dropped, all of them longer first (one may hold another). For each:
 #   - the path itself → `~`, wherever it occurs (privacy first: HOME=/root also turns `/rootfs` into `~fs`, and
 #     a sibling `/Users/alice2` becomes `~2` — the login never survives as a prefix);
-#   - its project-directory names → `-Users-x`: Claude Code's (the CLI's encoder turns every character outside
-#     [A-Za-z0-9] into `-`, `replace(/[^a-zA-Z0-9]/g, "-")`) and tools/lib/transcript-usage.sh's tu_project_slug
-#     form (only `/` and `.` → `-`, so a home holding `_` keeps it). Both work per byte here, so a non-ASCII home
+#   - its project-directory name → `-Users-x`: Claude Code's (the CLI's encoder turns every character outside
+#     [A-Za-z0-9] into `-`, `replace(/[^a-zA-Z0-9]/g, "-")`), which tools/lib/project-slug.sh's keel_project_slug
+#     also is — the one encoder tu_project_slug and tools/doctor.sh use (dir #916). It works per byte, so a non-ASCII home
 #     comes out longer than the CLI's (one `-` per UTF-16 unit there) and goes unrewritten — a known limit. A name
 #     is matched only where it starts a token (the byte before it is not one of [A-Za-z0-9]), so `-Users-alice/…`,
 #     `-Users-alice-proj`, a sibling's `-Users-alice2-…` (→ `-Users-x2-…`) and a name nested in another project
@@ -554,11 +549,10 @@ pairs=()
 while IFS= read -r h; do
   [ -z "$h" ] || pairs+=(p "$h" '~')
 done < <(printf '%s' "$homes" | LC_ALL=C awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)
-# Both encodings keep every byte's place, so the names come in the paths' own longer-first order.
+# The encoding keeps every byte's place, so the names come in the paths' own longer-first order.
 n_paths="${#pairs[@]}" k=1
 while [ "$k" -lt "$n_paths" ]; do
-  pairs+=(a "$(printf '%s' "${pairs[$k]}" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')" -Users-x)
-  pairs+=(a "$(printf '%s' "${pairs[$k]}" | LC_ALL=C tr '/.' '--')" -Users-x)
+  pairs+=(a "$(keel_project_slug "${pairs[$k]}")" -Users-x)
   k=$((k + 3))
 done
 uid="$(id -u)"
