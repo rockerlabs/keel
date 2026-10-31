@@ -5,4 +5,4 @@
   `tools/lib/safe-write.sh`, C06 (`cksum_of` on a missing file) and C04 (`para_of`'s `awk -v` needle) in
   `tests/lib.sh`. Only A02 carries a `[bypass:]` key, `gate-pr:check-run-masked-exit`, with a shape row in
   `tools/self/known-bypass-shapes.tsv`; A03 is a tree state and carries none. Comments and registers only: no
-  behaviour changes. A02 stays disclosed as known issue K2 until its fix lands.
+  behaviour changes. A02 stays disclosed as the second known issue of CHANGELOG [0.18.0] (K2 in the audit's numbering) until its fix lands.
