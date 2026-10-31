@@ -324,6 +324,7 @@ pin "R11 settles a stop that waits for the operator at wave-plan time" "$doc" \
   "expected R11 to carry the compaction-stop rule (dir #760)"
 r11b="$(para_of "$doc" '**A stop that waits for the operator is settled at wave-plan time')"
 check_contains "R11 names the permission-check refusal cause of a clear (dir #884)" "$r11b" 'permission check'
+check_contains "R11 points to R3 for the remedies (dir #884)" "$r11b" "R3's clear paragraph"
 
 # --- dir #810: the cut's re-derivation is no longer "an observation no ticket owns yet" --------------------------
 if grep -qF 'an observation no ticket' "$doc"; then
@@ -499,7 +500,7 @@ check_contains "R3 B2 defines finished as frozen (A2)" "$b2" 'frozen'
 check_contains "R3 B2 handles a PR unfrozen after its author's clear by a new freeze (A2)" "$b2" 'new freeze'
 check_contains "R3 B2 keeps the refusal fallback for a pinned or open session (A2)" "$b2" 'pinned or open on screen'
 check_contains "R3 B2 names the permission-check refusal cause (dir #884)" "$b2" 'Blocked by classifier'
-check_contains "R3 B2 gives the permission remedy: the operator grants the permission (dir #884)" "$b2" 'grants the'
+check_contains "R3 B2 gives the permission remedy: the operator grants the clear_session permission (dir #884)" "$b2" 'grants the `clear_session` permission'
 check_contains "R3 B2 clears the session first, before any hand-out (A2)" "$b2" 'clears that session first'
 check_contains "R3 B2 never hands the ticket to the warm session (A2)" "$b2" 'never to the warm session'
 check_contains "R3 B2: with no send left the clear and the message go together (A2)" "$b2" 'the clear and the message go together'

@@ -212,9 +212,9 @@ operator in one line (unpin or close it); meanwhile the ticket goes to another i
 held for the operator's answer or a queued launch (never to the warm session; past R6's hand-over threshold a queued
 launch is out, so it is held and written into the handover file), and once unpinned the clear is retried. The other
 known refusal cause is the harness's permission check: Claude Code's auto mode prints "Blocked by classifier" on the
-`clear_session` call. The manager never retries that call or works around the refusal; the operator grants the
-`clear_session` permission, and until that grant the ticket follows the same routes as above (another idle worker, a
-queued launch, or held for the operator's answer).
+`clear_session` call. The manager never retries that call or works around the refusal before that grant; the
+refusal is logged and put to the operator in one line; the operator grants the `clear_session` permission. Until then the ticket follows the routes above, with the same limits (another idle worker, a queued launch
+where R6 allows one, else held for the operator's answer); once granted, the clear is retried.
 
 **The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
 or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool
@@ -815,8 +815,8 @@ hand-over file>`, then ends its turn; the manager clears that session once it re
 continuation message — the worker id, its overlay paths, and the call to invoke the `polish` skill with args
 `after a compaction stop (dir #739): read <file> first` — which is the continued run. A clear the harness refuses
 (a session pinned or open on screen, or a permission check that blocks the call) falls back to the two paste-ready
-lines for the operator, and the manager reports the refusal; the remedy for each cause is in R3's clear paragraph. The threshold and any override are the operator's decision, never raised on the manager's
-own authority.
+lines for the operator, and the manager reports the refusal; the remedy for each cause is in R3's clear paragraph.
+The threshold and any override are the operator's decision, never raised on the manager's own authority.
 
 **The release runs at the default compaction threshold, and only the operator names another (dir #860).** A managed
 release leaves `/polish`'s compaction stop at the project's default (keel: `KEEL_POLISH_COMPACT_TOKENS` unset, so
