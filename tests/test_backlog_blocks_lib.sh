@@ -487,7 +487,6 @@ else
   fail "backlog_root_for on a plain single-checkout repo resolves to itself" "got $resolved_real, want $d5_real"
 fi
 
-summary
 
 # --- bb_heading_end (dir #916): the one wrapped-heading walk ---------------------------------------------------
 # Unit: an unfinished title takes its wrapped lines up to the line that finishes it; a finished heading takes none;
