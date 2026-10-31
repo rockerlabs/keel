@@ -210,7 +210,11 @@ queued launch, whichever comes first. Any new unit of work counts as a next tick
 included. A clear the harness refuses because the session is pinned or open on screen is logged and put to the
 operator in one line (unpin or close it); meanwhile the ticket goes to another idle worker if one exists, else is
 held for the operator's answer or a queued launch (never to the warm session; past R6's hand-over threshold a queued
-launch is out, so it is held and written into the handover file), and once unpinned the clear is retried.
+launch is out, so it is held and written into the handover file), and once unpinned the clear is retried. The other
+known refusal cause is the harness's permission check: Claude Code's auto mode prints "Blocked by classifier" on the
+`clear_session` call. The manager never retries that call or works around the refusal before that grant; the
+refusal is logged and put to the operator in one line; the operator grants the `clear_session` permission. Until then the ticket follows the routes above, with the same limits (another idle worker, a queued launch
+where R6 allows one, else held for the operator's answer); once granted, the clear is retried.
 
 **The gate keys on who opened the turn, not on who decided.** A turn opened by a peer's message, an automated event
 or a subagent's hand-back is refused even when the operator's decision arrived inside it through a question tool
@@ -810,9 +814,9 @@ reached it at step one within the same hour, and three idled until the operator 
 hand-over file>`, then ends its turn; the manager clears that session once it reads idle and sends one self-contained
 continuation message — the worker id, its overlay paths, and the call to invoke the `polish` skill with args
 `after a compaction stop (dir #739): read <file> first` — which is the continued run. A clear the harness refuses
-(a session pinned or open on screen) falls back to the two paste-ready lines for the operator, and the manager
-reports the refusal. The threshold and any override are the operator's decision, never raised on the manager's
-own authority.
+(a session pinned or open on screen, or a permission check that blocks the call) falls back to the two paste-ready
+lines for the operator, and the manager reports the refusal; the remedy for each cause is in R3's clear paragraph.
+The threshold and any override are the operator's decision, never raised on the manager's own authority.
 
 **The release runs at the default compaction threshold, and only the operator names another (dir #860).** A managed
 release leaves `/polish`'s compaction stop at the project's default (keel: `KEEL_POLISH_COMPACT_TOKENS` unset, so

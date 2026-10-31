@@ -43,6 +43,17 @@
 # kept here instead of a ticket; SECURITY.md "Threat model by guard" lists it. A test gap, not a bypass: A38's
 # post-check against a link planted at the claimed temp path between the claim and the write is unpinned (its test
 # never plants the link) — dir #796. The fix that pins it deletes this entry.
+# A second entry, a bypass: a generator-owned entrypoint with a UTF-8 byte-order mark before '<!-- KEEL-GENERATED' is not
+# owned (line 1 is read literally; ADAPTING.md "Generating your entrypoints yourself" says to write none), so a plain
+# install records its block, a later 'install.sh --link' swaps that block for the import line, and uninstall.sh strips
+# its rails (backed up) — delta-audit 0.18.0 A09, S3-4.
+# A third entry, a test gap, not a bypass: keel_context_is_generated (tools/lib/core-ownership.sh) has two clauses no test
+# pins — the [ -f ] guard that keeps a FIFO or other non-regular context file from blocking the read (the audit: without
+# it install.sh hangs on a FIFO CLAUDE.md, executed, rc 142 against 1) and the no-final-newline clause (a marker-only
+# file with no final newline); deleting either alone leaves tests/test_install_generated.sh,
+# tests/test_core_marker_anchor.sh, tests/test_install_link.sh and tests/test_install.sh green (re-run dir #885, each
+# file rc 0, no FAIL line), as does the copy-mode generated-file message arm — delta-audit 0.18.0 C02, S3-6, D1-8.
+# A test that builds a FIFO and a marker-only file without a final newline deletes this entry.
 #
 # The temp name `<target>.keeltmp.<pid>` is Keel's own scratch name, CLAIMED before use, never followed:
 # whatever is already there (a stale temp, or a link someone planted) is removed with `rm -f`, which never

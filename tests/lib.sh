@@ -24,6 +24,17 @@
 # remote-tracking ref or tag still reaches the old tip (dir #768's scoping); this file's reference-transaction guard
 # still refuses it for any process that kept the guard env — delta-audit 0.17.0 S4-1.
 #
+# A third entry, a test gap, not a bypass: cksum_of (dir #676) prints nothing for a missing or unreadable file, so two
+# byte-identity calls on a wrong path are equal, and tests/test_install_generated.sh and tests/test_core_marker_anchor.sh
+# catch a silent clobber of a generated file only through it (re-run dir #885: cksum_of replaced by a constant leaves both
+# files green, 95 and 39 passed, 0 failed); the call sites are in those two files and tests/test_cloud_brief.sh —
+# delta-audit 0.18.0 C06, VF1 V82/V120/V121. A check that cksum_of is non-empty for a regular file and changes with a
+# one-byte edit deletes this entry.
+# A fourth entry, a test gap, not a bypass: para_of (dir #860) passes NEEDLE through awk -v, whose escape processing turns
+# a backslash in the needle into another character, so such a needle finds nothing and the paragraph is empty — a
+# check_absent over it reads green. No caller passes one (re-checked dir #885) — delta-audit 0.18.0 C04, S3-5, D1-6.
+# The fix (ENVIRON["PARA_NEEDLE"]) deletes this entry.
+#
 # A draft test section (a scratch file sourced to try a fixture) must load this file first, then source
 # tests/section-guard.sh: a section that never loaded lib.sh has no guard at all and its `git -C ""` writes
 # the repo the shell stands in (dir #758; docs/delegation.md "Draft test sections").
