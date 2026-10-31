@@ -190,6 +190,13 @@ terminal**, so the tool runs it under `script` (a pseudo-terminal) and reads its
 It requires the CLI's own "Created cloud session" line beside exit 0. No `script` on the host: exit 5, the row
 goes back to `built`, and the command is printed for you to run in a terminal from the main checkout.
 
+**One-time trust step.** The CLI asks "Is this a project you created or one you trust?" the first time it runs
+in a directory. Nobody can answer it under `--dispatch`, so the tool watches the CLI's output, stops the CLI on
+that prompt and exits 5 (row back to `built`, nothing started). The tool never answers it for you: run `claude`
+once in the main checkout, answer "Yes, I trust this folder", exit, then dispatch again. The CLI call is bounded
+too: it is killed after `CLOUD_DISPATCH_TIMEOUT` seconds (default 300) and exits 5 with the captured output, so no
+other interactive prompt can hang a dispatch.
+
 - **Success (exit 0)** prints the CLI's output (the session's title, its web URL and its id), then the claim
   `⏳ IN FLIGHT (<today>, branch claude/cloud-<slug>, cloud)`, the heading with the claim appended after its
   last line, and a dated `Log:` line. The session appends the claim to the heading and the `Log:` line to

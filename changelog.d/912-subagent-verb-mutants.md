@@ -1,0 +1,1 @@
+- The subagent floor's mutation list now covers the verb classifier (dir #912, slice 3): 42 single-clause mutants of `sg_mut` / `sg_valopt` in `tests/mutants/pre-pr-gate-subagent.tsv` (one equivalent clause is named in the header), and 25 test rows (Y17–Y41) in `tests/test_pre_pr_gate_subagent_floor.sh` for the mutants the suite left alive.
