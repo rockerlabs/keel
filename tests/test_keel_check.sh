@@ -165,4 +165,19 @@ touch -t 202001010000 "$KEEL_CHECK_STATE_DIR/keel-check/.last-prune"   # force t
 run "$TOOL" "false"                 # any check on any repo forces a prune pass under this state dir
 check_dir "R5 prune: a fresh, still-empty sibling repo dir survives the reap" "$other_repo_dir"
 
+# --- dir #887: an unreadable state file must not leak the shell's own "Permission denied" -------------
+# `tr ... < "$state" 2>/dev/null` fails the input redirect before stderr is silenced, so bash printed
+# "line 131: <state>: Permission denied". The command's own rc is platform-independent; the stray line is
+# asserted only for non-root (chmod 000 is a no-op for root: CLAUDE.md Linux-leg trap 2).
+fresh_sd
+run "$TOOL" "false"                 # writes the state file
+state_files=$(find "$KEEL_CHECK_STATE_DIR" -type f ! -name '.last-prune' 2>/dev/null)
+for sf in $state_files; do chmod 000 "$sf"; done
+run "$TOOL" "false"
+check_status "unreadable state file: the command's own exit code still passes through" 1 "$STATUS"
+if [ "$(id -u 2>/dev/null)" != 0 ]; then
+  check_absent "unreadable state file: no stray shell 'Permission denied' line" "$OUT" "Permission denied"
+fi
+for sf in $state_files; do chmod 644 "$sf"; done
+
 summary
