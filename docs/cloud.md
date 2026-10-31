@@ -31,8 +31,8 @@ A project is cloud-capable when its main checkout's `CLAUDE.md` has a line **of 
 
 The main checkout is the first entry of `git worktree list`, as `/go` step 1 resolves `<root>`. Any other
 line that names `KEEL-CLOUD` — in a paragraph, with extra words — is not the opt-in, and the tool prints it.
-The line is read wherever it stands in the file, a fenced example included, so never show it in an
-example block. `unprotected-ok` lets row G1b pass a repository whose default branch a direct push can reach
+The line is read from the file with fenced blocks blanked, as every other field is: a line inside a fenced
+example opts nothing in, and the refusal prints it as "inside a fenced block". `unprotected-ok` lets row G1b pass a repository whose default branch a direct push can reach
 (the push guard below still applies). Prose around the line is the project's rails: the whole file travels in
 the brief, and its test command is the VM's test command.
 
@@ -72,12 +72,12 @@ All must hold. Mechanical rows the tool decides; judged rows are the grader's, r
 |---|---|---|
 | G1 | The project is cloud-capable (the opt-in line above) and `origin` resolves to a github.com repository `gh api` can read. A default-branch name outside `[A-Za-z0-9._/+-]` is refused here too — the protocol pastes it unquoted into the VM's shell — and so is one starting with `+` or `-`, which its git commands would read as a refspec flag or an option. | mech |
 | G1b | The default branch is protected (`enforcement_level` is `everyone`), or the `KEEL-CLOUD` line carries `unprotected-ok`. | mech |
-| G1c | The repository has CI the landing check can read: `gh api repos/<o>/<r>/actions/workflows --jq .total_count` is above 0. No CI is refused before any credit is spent: the landing check needs a non-empty, green check rollup. | mech |
-| G2 | The ticket is open and R3, R4 or `📐 SPEC-READY` (the LAST `— R<d>` token of the heading decides; `📐` with no grade passes; `📐` beside R0–R2 is refused — a contradiction), with none of ✅ · ❌ · `SUPERSEDED` · `RETRACTED` · `⏳ IN FLIGHT` · `⛔ BLOCKED` on the heading. Markers count on the heading only. | mech |
+| G1c | The repository has active CI the landing check can read: `gh api repos/<o>/<r>/actions/workflows` lists at least one workflow whose `state` is `active` (a disabled one does not count). No CI is refused before any credit is spent: the landing check needs a non-empty, green check rollup. | mech |
+| G2 | The ticket is open and R3, R4 or `📐 SPEC-READY` (the LAST `— R<d>` token of the heading decides; `📐` with no grade passes; `📐` beside R0–R2 is refused — a contradiction), with none of ✅ · ❌ · `SUPERSEDED` · `RETRACTED` · `⏳ IN FLIGHT` · `⛔ BLOCKED` on the heading. Markers count on the heading only. A body line written directly under a heading that has no readiness tail (`— R<d>`, `→ pool`, a status glyph) is refused, naming the line: the backlog reads it as part of the heading, so a `📐` or a `✅` in it would pass or fail the row — leave a blank line after the heading. A wrapped heading whose tail lands on a later line is not that case. | mech |
 | G2b | The ticket's verdict is not `no`; `yes` confirms the judged rows; no verdict needs `--eligible`. A malformed verdict is refused. | mech |
 | G3 | Every file the work writes is tracked in the project — never a gitignored or untracked file, the backlog, the rails file when it is gitignored, anything outside the repository. | judged |
 | G3b | Every file the work must read is tracked, or travels in the brief (the ticket, its spec, the rails). | judged |
-| G4 | Every check that decides the work runs on an Ubuntu VM with no key, device or live account; a final live check alone is done locally at landing. | judged |
+| G4 | Every check that decides the work runs on an Ubuntu VM with no key, device or live account; a final live check alone is done locally at landing. A check the VM cannot run (Xcode, a simulator, a device) is decided by the project's CI on the PR (a self-hosted runner counts), read by the session and again by the landing check. | judged |
 | G5 | The ticket is not itself a managed-release role (manager, train worker, auditor). A slate ticket may run as a cloud worker. | judged |
 | G6 | The rewritten brief is at most `CLOUD_BRIEF_MAX_BYTES` (default 130000: the dispatch passes it as ONE argument, and Linux caps one argument at 131071 bytes). | mech |
 | G7 | A `Spec:` line's first token names a file in the main checkout. No `Spec:` line passes. Never an absolute path, a symlink, a directory symlinked out of the checkout, or git data: a `.git` component in any case (`.GIT` on macOS, a gitfile), a `*.git` directory, or any directory git itself reads as a git directory (a bare clone named `vendor/upstream`), one git cannot answer for included — a git config, auth headers included, would ship to the VM. | mech |
@@ -105,10 +105,12 @@ quote it. The backlog is resolved the `/backlog` way: `<root>/BACKLOG.md`, else 
 | `--sweep` | read-only: the open tickets with their verdicts, and this repository's `dispatched` and `landed` rows with their PRs |
 
 **Exit codes.** 0 done · 1 the secret scan refused the brief · 2 usage, not found, a `gh` or git failure, the
-ledger lock · 3 a mechanical row, the model mapping or the ledger refused · 4 judged rows unconfirmed (no
-verdict yet — the judged rows and both line templates are printed) · 5 the dispatch itself failed. A `gh`
-answer of 404 or 403 is a G1/G1b/G1c refusal (exit 3); a rate limit is a 403 too, so a refusal that names
-"cannot read" is worth one re-run before it is believed.
+ledger lock, a ticket whose fence markers do not pair up (unpaired fences: close the unclosed fence — a re-run
+fails the same way until then) · 3 a mechanical row, the model mapping or the ledger refused · 4 judged rows
+unconfirmed (no verdict yet — the judged rows and both line templates are printed) · 5 the dispatch itself failed.
+A `gh` answer of 404, or of a 403 that is not a rate limit, is a G1/G1b/G1c refusal (exit 3). A 403 that is a rate
+limit (`X-RateLimit-Remaining: 0`, or "rate limit" in the message) is transient — exit 2, nothing written: re-run
+later.
 
 **The model** comes from the ticket's `**Model rec:**` line: top tier → opus, mid tier → sonnet, light tier →
 haiku, with the effort word on the same line (no effort word: medium). No line: sonnet and medium. A line
@@ -135,6 +137,7 @@ is `CLOUD_LEDGER`. Both default under keel's state root (`~/.keel/cloud/`). Envi
 |---|---|---|
 | `CLOUD_LEDGER` | `~/.keel/cloud/ledger.tsv` | both tools |
 | `CLOUD_BRIEF_DIR` | `~/.keel/cloud/briefs` | brief |
+| `CLOUD_BACKLOG` | unset: `<main>/BACKLOG.md`, else the inline section of `CLAUDE.md` | brief, all modes — the backlog file itself (an adopter's tickets mirrored in the heading canon); not a readable regular file → exit 2 |
 | `CLOUD_TEMPLATE` | `<keel-checkout>/templates/cloud-protocol.md` | brief |
 | `CLOUD_BRIEF_MAX_BYTES` | `130000` | brief (G6) |
 | `CLOUD_KEEL_ORIGIN` | `https://github.com/rockerlabs/keel` | brief — the URL the VM clones keel from; a fork's adopters set it |
@@ -191,8 +194,8 @@ goes back to `built`, and the command is printed for you to run in a terminal fr
   `⏳ IN FLIGHT (<today>, branch claude/cloud-<slug>, cloud)`, the heading with the claim appended after its
   last line, and a dated `Log:` line. The session appends the claim to the heading and the `Log:` line to
   the body with an edit tool. The tool never writes the backlog. A `📐 SPEC-READY` stays on the heading — the
-  claim appends, as `/go`'s own does. The `Log:` line carries the session id only when the backlog file is
-  gitignored, since a tracked backlog is published.
+  claim appends, as `/go`'s own does. The session id is never written into the ticket, the `Log:` line included: it lives only in the local ledger row (its
+  `session` cell), and in the output the CLI printed.
 - **Failure (exit 5)** prints the CLI's output (stdout and stderr arrive merged), sets the row back to
   `built`, and claims nothing.
 - **Steering a running session**: its web view (the URL the CLI printed), or `claude --cloud <session id>`
@@ -268,12 +271,13 @@ allow marker off (`SECRET_SCAN_NO_INLINE_ALLOW=1`):
    diff, so a marker added and later deleted still refuses; a marker check that fails is a scan error.
 
 Then CI: every check in the rollup completed as success, neutral or skipped, **and at least one succeeded** —
-so an empty or all-skipped rollup is not green. A draft PR whose expensive workflow skips drafts can read
-green beside one cheap success: read the rollup the tool prints before you mark the PR ready.
+so an empty or all-skipped rollup is not green. On a **draft** PR a check that skipped is not green at all (an
+expensive workflow that skips drafts would read green beside one cheap success): the tool exits 3 with the hint
+`gh pr ready <PR#> --repo <o>/<r>`, wait for CI, re-run the landing check.
 
 **Exit codes.** 0 scans clean and CI green · 1 a scan hit or a scan error · 2 usage, a `gh` failure, no ledger
-row, a repository mismatch, or a PR whose base is not the default branch · 3 CI not green, or the branch moved
-after the PR was read. Every run that found its row records its landing exit, head SHA and PR on it; only exit
+row, a repository mismatch, or a PR whose base is not the default branch · 3 CI not green (a skipped check on a
+draft PR included), or the branch moved after the PR was read. Every run that found its row records its landing exit, head SHA and PR on it; only exit
 0 also sets the status to `landed` and corrects the branch.
 
 On exit 0 the tool prints the Landing notes and two commands, `gh pr ready <PR#> --repo <o>/<r>` and `gh pr
@@ -292,7 +296,9 @@ own); the claim's `cloud` tag is the cue to read this section. `/wrap`'s closing
 
 `CLOUD_LEDGER` is a header line, then one tab-separated row per (repository, ticket):
 `built · repo · ticket · branch · model/effort · brief bytes · credit before · status · credit after ·
-overlap · landed · landing exit · head SHA · PR`. Credit cells are optional (`?`).
+overlap · landed · landing exit · head SHA · PR · session`. Credit cells are optional (`?`). The `session` cell
+is set by a successful dispatch; a ledger written before it keeps its 14-cell header, and its rows gain the cell
+when a dispatch sets it.
 
 - **Status**: `built` (brief written) → `dispatched` → `landed` (landing exit 0), or `abandoned` (by hand).
   `landed` means the check passed at that head, not that the PR merged. A non-zero landing run never changes

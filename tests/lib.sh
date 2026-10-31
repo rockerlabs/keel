@@ -244,6 +244,7 @@ unset \
   CLAUDE_CODE_SESSION_ID \
   CLICOLOR \
   CLICOLOR_FORCE \
+  CLOUD_BACKLOG \
   CLOUD_BRIEF_DIR \
   CLOUD_BRIEF_MAX_BYTES \
   CLOUD_KEEL_ORIGIN \
@@ -757,7 +758,10 @@ tty_run() {   # tty_run ANSWER CMD… → OUT, STATUS (merged stdout, pty-echoed
 
 # gh_fixture_stub DIR — write DIR/gh, a stub `gh` that answers from the fixture dir $GH_FX, never the network.
 # Every call is appended to $GH_FX/calls; a $GH_FX/fail file makes every call a connection error. `api PATH
-# [--jq EXPR]` prints jq EXPR over $GH_FX/api/<PATH, each of / ? & = : as _>.json, else fails as HTTP 404;
+# [--jq EXPR]` prints jq EXPR over $GH_FX/api/<PATH, each of / ? & = : as _>.json, else fails as HTTP 404 — or as
+# HTTP 403 when <PATH as above>.403 exists (its first line the message; <PATH>.403hdr holds response header lines,
+# which `--include` / `-i` after the path prints to stdout, headers then a blank line then a JSON body, as gh does
+# on an error, dir #913);
 # `pr view N --repo OWNER/NAME` prints $GH_FX/pr/<OWNER_NAME>-N.json — wrapped in an ANSI color escape, as gh
 # colorizes JSON, when the environment gives gh color the way go-gh's term.FromEnv decides it: with GH_FORCE_TTY
 # set, when NO_COLOR is unset and CLICOLOR is not 0 (CLICOLOR_FORCE is not read then); without it (stdout is a
@@ -771,9 +775,19 @@ d="${GH_FX:?}"
 echo "$*" >> "$d/calls"
 [ -f "$d/fail" ] && { echo "error connecting to api.github.com" >&2; exit 1; }
 if [ "${1:-}" = api ]; then
-  path="$2"; shift 2; jqx="."
-  while [ $# -gt 0 ]; do case "$1" in --jq) jqx="$2"; shift ;; esac; shift; done
+  path="$2"; shift 2; jqx="." incl=""
+  while [ $# -gt 0 ]; do case "$1" in --jq) jqx="$2"; shift ;; --include|-i) incl=1 ;; esac; shift; done
   f="$d/api/$(printf '%s' "$path" | tr '/?&=:' '_____').json"
+  if [ -f "${f%.json}.403" ]; then
+    msg="$(head -1 "${f%.json}.403")"
+    if [ -n "$incl" ]; then
+      printf 'HTTP/2.0 403 Forbidden\n'
+      [ ! -f "${f%.json}.403hdr" ] || cat "${f%.json}.403hdr"
+      printf '\n{"message":"%s"}\n' "$msg"
+    fi
+    echo "gh: $msg (HTTP 403)" >&2
+    exit 1
+  fi
   [ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
   jq -r "$jqx" "$f"
   exit

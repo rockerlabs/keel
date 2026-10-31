@@ -44,17 +44,25 @@ check_row() { # ID CLAUSE
 }
 check_row G1  'default-branch name outside `[A-Za-z0-9._/+-]` is refused here too'
 check_row G1b '`enforcement_level`'
+check_row G1c 'whose `state` is `active`'
 check_row G1c 'No CI is refused before any credit is spent'
 check_row G2  '`📐` beside R0–R2 is refused'
 check_row G2b 'no verdict needs `--eligible`'
 check_row G3  'the rails file when it is gitignored'
 check_row G3b 'or travels in the brief'
 check_row G4  'runs on an Ubuntu VM with no key, device or live account'
+check_row G4  "is decided by the project's CI on the PR (a self-hosted runner counts), read by the session and again by the landing check"
 check_row G5  'A slate ticket may run as a cloud worker'
 check_row G6  'Linux caps one argument at 131071 bytes'
 check_row G7  'a symlink'
 check_row G8  '"Question for a /design pass" in the body, "for the design" (case-insensitive) on the `**Model rec:**` line'
 check_row G9  '`--dispatch` only'
+
+# dir #922: the configuration table names CLOUD_BACKLOG, once, as a row of its own.
+env_row="$(awk 'index($0, "| `CLOUD_BACKLOG` |") == 1' "$doc")"
+check_eq "(dir #922) the configuration table has one CLOUD_BACKLOG row" "1" "$(printf '%s' "$env_row" | grep -c '')"
+check_contains "(dir #922) … it names the BACKLOG.md default" "$env_row" "<main>/BACKLOG.md"
+check_contains "(dir #922) … and the exit 2 for a file that is not readable" "$env_row" "exit 2"
 
 # The decided column is what tells an operator which rows the tool settles and which are the grader's call, so
 # it is pinned too: the tool decides the mech rows and records no verdict for them; G8 is mixed.
@@ -83,8 +91,26 @@ check_contains "(A7) B11: /go goes on locally on a refusal, with no offer" "$doc
   'a refusal is named and `/go` goes on locally, with no offer'
 check_contains "(A7) B11: the offer comes before /go's own claim" "$doc_flat" \
   "the offer comes before \`/go\`'s own claim (step 6)"
-check_contains "(A7) B9: the Log line carries the session id only for a gitignored backlog" "$doc_flat" \
-  'only when the backlog file is gitignored'
+check_contains "(A7) B9: the session id is never written into the ticket (dir #913)" "$doc_flat" \
+  'The session id is never written into the ticket, the `Log:` line included: it lives only in the local ledger row'
+check_contains "(A7) B14: the ledger's session cell (dir #913)" "$doc_flat" 'head SHA · PR · session'
+# dir #913: the five decisions and the leftovers the doc must state.
+check_contains "(A7) B1: a line inside a fenced example opts nothing in (dir #913)" "$doc_flat" \
+  'a line inside a fenced example opts nothing in'
+check_contains "(A7) exit 2 names unpaired fences (dir #913)" "$doc_flat" \
+  'a ticket whose fence markers do not pair up (unpaired fences'
+check_contains "(A7) a rate-limit 403 is transient, exit 2 (dir #913)" "$doc_flat" \
+  'A 403 that is a rate limit (`X-RateLimit-Remaining: 0`, or "rate limit" in the message) is transient — exit 2'
+check_contains "(A7) any other 403 stays a refusal (dir #913)" "$doc_flat" \
+  'of a 403 that is not a rate limit, is a G1/G1b/G1c refusal (exit 3)'
+check_contains "(A7) G2: a glued body line is refused (dir #913)" "$(row_text G2)" \
+  'A body line written directly under a heading that has no readiness tail'
+check_contains "(A7) G2: … with the blank-line remedy" "$(row_text G2)" 'leave a blank line after the heading'
+check_contains "(A7) B13: a skipped check on a draft PR is not green (dir #913)" "$doc_flat" \
+  'On a **draft** PR a check that skipped is not green at all'
+check_contains "(A7) B13: … with the hint" "$doc_flat" \
+  'the hint `gh pr ready <PR#> --repo <o>/<r>`, wait for CI, re-run the landing check'
+check_contains "(A7) B13: exit 3 names the draft rule (dir #913)" "$doc_flat" '3 CI not green (a skipped check on a draft PR included)'
 
 # --- B12: the manager's duties and the wave-peer rule ---------------------------------------------------------
 check_contains "(A7) B12: a wave peer keeps a ticket local" "$doc_flat" \
