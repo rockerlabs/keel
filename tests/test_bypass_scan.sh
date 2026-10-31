@@ -38,9 +38,11 @@ bash 3.2'"'"'s misreading|gate-push:heredoc-close-paren|header
 a heredoc- or pipe-fed shell|gate-push:heredoc-fed-shell|header
 an upper-case command word|gate-push:upper-case-command-word|header
 group inside a|gate-push:case-in-group-in-subst|header
-an upper-case command word|floor:upper-case-command-word|floor'
+an upper-case command word|floor:upper-case-command-word|floor
+a test receipt behind a green check-run.sh verify|gate-pr:check-run-masked-exit|header'
 # The entries about a file's content or a machine state: no transcript to scan, so no key. phrase | file | region
 NOCLASS='a hook started with stdin closed|tools/pre-pr-gate.sh|header
+a green run of HEAD plus uncommitted tracked edits|tools/pre-pr-gate.sh|header
 traps TERM|tests/lib.sh|whole
 planted at the claimed temp path|tools/lib/safe-write.sh|whole'
 
