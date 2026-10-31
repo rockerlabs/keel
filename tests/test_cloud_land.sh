@@ -364,12 +364,31 @@ fx
 row example/proj "dir #801" claude/cloud-dir-801 dispatched
 bcommit_bytes big32.txt "past U+10FFFF" < <({ printf '\377\376\0\0'; wide 'harmless # secret-scan:al' '\0\0\0'; printf '\0\0\021\0'; wide 'low' '\0\0\0'; })
 landed_marker_case "an added marker in UTF-32LE split by a value past U+10FFFF"
-# (A commit message cannot carry an invalid byte through `git log`: it prints one as a valid UTF-8 character, which
-# splits the marker for the scanner too.)
-# The same on a host whose iconv cannot resume after an invalid byte (musl's), or has none: a shim that fails.
+# The decode does not lean on iconv (musl's stops at a lone surrogate or a value past U+10FFFF, macOS's differs), and a
+# clean PR lands whatever the iconv flavour.
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
 mkdir -p "$SANDBOX/iconvshim"
 printf '#!/bin/sh\necho "iconv shim: failing" >&2\nexit 1\n' > "$SANDBOX/iconvshim/iconv"
 chmod +x "$SANDBOX/iconvshim/iconv"
+PATH="$SANDBOX/iconvshim:$PATH" run "$LAND" "$P" 5
+check_status "A4 a clean PR with an iconv that fails → exit 0" 0 "$STATUS"
+fx
+row example/proj "dir #801" claude/cloud-dir-801 dispatched
+bcommit_bytes surr16s.txt "lone surrogate" < <({ printf '\377\376'; wide 'harmless # secret-scan:''al' '\0'; printf '\001\330'; wide 'low' '\0'; })
+pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+PATH="$SANDBOX/iconvshim:$PATH" run "$LAND" "$P" 5
+check_status "A4 a marker in UTF-16LE split by a lone surrogate, with an iconv that fails → exit 1" 1 "$STATUS"
+check_contains "A4 … named" "$OUT" "added allow marker: hit"
+# bash 3.2 (macOS's /bin/bash) fails "${a[@]}" on an empty array under `set -u`: range_log, which runs with no views
+# on the plain path, expands no array.
+arr="$(sed -n '/^range_log()/,/^}/p' "$LAND" | grep -nE '\[[@*]\]' || true)"
+check_absent "A4 range_log expands no array (an empty one is unbound under set -u in bash 3.2)" "$arr" "[@]"
+
+# (A commit message cannot carry an invalid byte through `git log`: it prints one as a valid UTF-8 character, which
+# splits the marker for the scanner too.)
+# The same on a host whose iconv cannot resume after an invalid byte (musl's), or has none: a shim that fails.
 fx
 row example/proj "dir #801" claude/cloud-dir-801 dispatched
 bcommit split4.txt "$(printf 'harmless # secret-scan:al\377low')" "split"

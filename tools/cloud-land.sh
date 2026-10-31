@@ -187,9 +187,9 @@ fi
 # range_log OUT ERR ARG… — `git log ARG… $RANGE` in the clone with the shared flags; stdout to OUT, stderr to ERR.
 # With $VIEW_CMD set the patches are those of each blob converted by that command (git's textconv), not of its bytes.
 range_log() {
-  local out="$1" err="$2" tc=(--no-textconv) conf=(); shift 2
-  if [ -n "${VIEW_CMD:-}" ]; then tc=(--textconv); conf=(-c "diff.keelview.textconv=$VIEW_CMD"); fi
-  git -C "$CLONE" "${conf[@]}" -c log.showRoot=true log --root --no-color --no-ext-diff "${tc[@]}" --no-renames --text "$@" "$RANGE" \
+  local out="$1" err="$2" tc="--no-textconv"; shift 2
+  [ -z "${VIEW_CMD:-}" ] || tc="--textconv"
+  git -C "$CLONE" -c "diff.keelview.textconv=${VIEW_CMD:-}" -c log.showRoot=true log --root --no-color --no-ext-diff "$tc" --no-renames --text "$@" "$RANGE" \
     > "$out" 2> "$err"
 }
 # The scanner matches the inline marker in decoded views (NUL-stripped; `iconv -c` in the caller's locale, so a marker
@@ -232,31 +232,45 @@ marker_grep() {
   [ -n "$hits" ] || return 1
   printf '%s\n' "$hits"
 }
-# The scanner also decodes a blob as UTF-16/UTF-32 (`iconv -c`, both byte orders; UTF-16 again from the blob's second
-# byte), dropping an invalid unit whose bytes are not NUL, so a NUL-strip of the patch cannot rejoin a marker split by
-# one. A patch is not one aligned stream, so git decodes each blob itself: textconv through an info/attributes entry
-# (it beats the repository's own .gitattributes), once per decode, the patches of the converted blobs grepped.
-# Where there is no iconv the scanner has no such decode either. conv_grep KIND ERE — the hits of every view of the
-# KIND (patch|merge) spool; grep's status (≥ 2: something failed).
+# The scanner also decodes a blob as UTF-16/UTF-32 (both byte orders; UTF-16 again from the blob's second byte), where
+# an invalid unit drops out, so a NUL-strip of the patch cannot rejoin a marker split by one. A patch is not one aligned
+# stream, so git decodes each blob itself: textconv through an info/attributes entry (it beats the repository's own
+# .gitattributes), once per decode, the patches of the converted blobs grepped. The decode is od and awk, not iconv,
+# whose handling of a lone surrogate or a value past U+10FFFF differs by platform (musl's stops there): a unit is kept
+# only when it is one ASCII character (the value byte 1..127, its other bytes NUL) and every other unit is dropped, which
+# joins everything the scanner joins (the marker is ASCII) and a valid non-ASCII character too, so it can only refuse more.
+# A blob without a NUL byte has no such unit: it converts to nothing. A converter that fails fails the patch read, a scan
+# error. conv_grep KIND ERE — the hits of every view of the KIND (patch|merge) spool; grep's status (≥ 2: something failed).
 VIEWS=""
-if command -v iconv >/dev/null 2>&1; then
-  if mkdir -p "$CLONE/.git/info" && printf '* diff=keelview\n' > "$CLONE/.git/info/attributes"; then
-    VIEWS="UTF-16LE:1 UTF-16BE:1 UTF-32LE:1 UTF-32BE:1 UTF-16LE:2 UTF-16BE:2"
-  else
-    echo "  scan error: cannot set up the decoded patch views"; SCAN_FAIL=1
-  fi
+if ! command -v od >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1 || ! command -v cmp >/dev/null 2>&1; then
+  echo "  scan error: od, awk and cmp are needed for the decoded patch views"; SCAN_FAIL=1
+elif mkdir -p "$CLONE/.git/info" && printf '* diff=keelview\n' > "$CLONE/.git/info/attributes"; then
+  VIEWS="UTF-16LE:2:0:1 UTF-16BE:2:1:1 UTF-32LE:4:0:1 UTF-32BE:4:3:1 UTF-16LE:2:0:2 UTF-16BE:2:1:2"   # NAME:WIDTH:VALUE-BYTE:SKIP
+else
+  echo "  scan error: cannot set up the decoded patch views"; SCAN_FAIL=1
 fi
 conv_grep() {
-  local kind="$1" re="$2" spec enc skip sh out hits="" rc
+  local kind="$1" re="$2" spec name w vp skip sh out hits="" rc flags
+  case "$kind" in patch) flags="--no-merges" ;; *) flags="--merges --cc" ;; esac
   for spec in $VIEWS; do
-    enc="${spec%:*}" skip="${spec#*:}" sh="$WORK/view-$enc-$skip.sh"
-    printf '#!/bin/sh\ntail -c +%s "$1" | iconv -c -f %s -t UTF-8 2>/dev/null || true\n' "$skip" "$enc" > "$sh" || return 2
-    case "$kind" in
-      patch) VIEW_CMD="sh $sh" range_log "$WORK/$kind.$enc.$skip.out" "$WORK/$kind.err" -p --no-merges --format= || return 2 ;;
-      *) VIEW_CMD="sh $sh" range_log "$WORK/$kind.$enc.$skip.out" "$WORK/$kind.err" -p --merges --cc --format= || return 2 ;;
-    esac
-    out="$(LC_ALL=C grep -anE -e "$re" "$WORK/$kind.$enc.$skip.out")" || { rc=$?; [ "$rc" -le 1 ] || return "$rc"; continue; }
-    hits="${hits:+$hits$'\n'}$(sed "s/^/$enc+$skip: /" <<< "$out")"
+    IFS=: read -r name w vp skip <<< "$spec"
+    sh="$WORK/view-$name-$skip.sh"
+    cat > "$sh" <<VIEW || return 2
+#!/bin/sh
+set -e
+LC_ALL=C tr -d '\000' < "\$1" | cmp -s - "\$1" && exit 0
+tail -c +$skip "\$1" | od -An -v -tu1 | LC_ALL=C awk '{
+  for (i = 1; i <= NF; i++) {
+    c = \$i + 0; k = n % $w; n++
+    if (k == $vp) v = c; else if (c != 0) bad = 1
+    if (k == $w - 1) { if (!bad && v > 0 && v < 128) printf "%c", v; bad = 0; v = 0 }
+  }
+}'
+VIEW
+    # shellcheck disable=SC2086  # $flags intentionally word-split
+    VIEW_CMD="sh $sh" range_log "$WORK/$kind.$name.$skip.out" "$WORK/$kind.err" -p $flags --format= || return 2
+    out="$(LC_ALL=C grep -anE -e "$re" "$WORK/$kind.$name.$skip.out")" || { rc=$?; [ "$rc" -le 1 ] || return "$rc"; continue; }
+    hits="${hits:+$hits$'\n'}$(sed "s/^/$name+$skip: /" <<< "$out")"
   done
   [ -n "$hits" ] || return 1
   printf '%s\n' "$hits"
