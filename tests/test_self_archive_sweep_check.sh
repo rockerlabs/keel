@@ -169,4 +169,38 @@ run "$sc" --threshold 40 "$f"
 check_contains "a file of stubs plus an open ticket reports 0% closed" "$OUT" "closed tickets:    0 (0 lines, 0%)"
 check_absent "no WARN when only stubs remain" "$OUT" "WARN"
 
+# --- dir #915: a last closed ticket ending in a fenced block is counted whole ---------------------
+# The scanner counted its end over fence-blanked text whose trailing blank lines a command substitution dropped, so the
+# 7-line ticket below read as 3 lines. 11 lines in all: the closed ticket is 7 of them (63%).
+backlog_fence_tail="### dir #30 — open — R2 — → 0.9.0
+
+still open
+
+### dir #31 — a closed ticket ending in a fence — R2 — ✅ DONE (2026-08-01, done)
+
+body
+
+\`\`\`
+fenced tail
+\`\`\`
+"
+f="$(mk_backlog "$backlog_fence_tail")"
+run "$sc" --threshold 1 "$f"
+check_contains "MUTATION-PROOF (dir #915): a last closed ticket ending in a fence counts whole (7 of 11 lines)" "$OUT" "closed tickets:    1 (7 lines, 63%)"
+# The heading-continuation walk runs into the fenced lines under bash 3.2's set -u (the script sets it).
+backlog_fence_walk="### dir #32 — a closed ticket whose title wraps — R2 — ✅ DONE (2026-08-01, done)
+
+body
+
+### dir #33 — a title without its tail
+wrapped line
+\`\`\`
+fenced
+\`\`\`
+"
+f="$(mk_backlog "$backlog_fence_walk")"
+run "$sc" --threshold 1 "$f"
+check_status "a heading continuation running into a fence survives set -u" 0 "$STATUS"
+check_absent "… with no unbound-variable error" "$OUT" "unbound variable"
+
 summary

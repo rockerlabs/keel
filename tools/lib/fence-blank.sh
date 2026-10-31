@@ -44,8 +44,9 @@ blank_fenced_blocks() {
 }
 
 # fence_marker_lines FILE — the line number of every line blank_fenced_blocks() above toggles on, one per line in
-# file order: for a caller that needs the fence structure itself rather than the blanked text (dir #907:
-# tools/cloud-brief.sh reads the markers after the last ticket's END to tell a closed fence from an unclosed one).
+# file order: for a caller that needs the fence structure itself rather than the blanked text (dir #907, moved by
+# dir #915: tools/lib/backlog-blocks.sh's bb_last_block_fence_end reads the markers after the last ticket's heading
+# to tell a closed fence from an unclosed one).
 # The pattern is blank_fenced_blocks()' own, byte for byte; tests/test_fence_blank_lib.sh pins that the two agree.
 fence_marker_lines() {
   [ -r "$1" ] || { echo "fence-blank: cannot read $1" >&2; return 2; }
