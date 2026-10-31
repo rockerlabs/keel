@@ -202,7 +202,8 @@ sf_hook "$R" "git -C ~/'\$(touch $S/PWNED2)' checkout -- f" a1
 check_nofile "Q8: a command substitution inside a tilde path is never run (no eval)" "$S/PWNED2"
 
 # --- Y1–Y11, one row per matcher clause the mutation list (tests/mutants/pre-pr-gate-subagent.tsv, dir #790) found unpinned ---------
-# Rows Y12–Y16 are dir #911's (slice 2, the shell half sg_val .. sg_check).
+# Rows Y12–Y16 are dir #911's (slice 2, the shell half sg_val .. sg_check); Y17–Y41 are dir #912's (slice 3, the verb
+# classifier sg_mut / sg_valopt).
 sf_allow "Y1: GIT_DIR and GIT_WORK_TREE both name the scratch clone (the work tree is the assignment's, not the cwd's)" "GIT_DIR=$X/.git GIT_WORK_TREE=$X git commit --allow-empty -m x"
 sf_allow "Y2: every -C joins the chain: -C X -C d is X/d" "git -C $X -C d commit --allow-empty -m x"
 sf_deny "Y3: --config-env takes its value as a separate word" 'git --config-env foo=BAR checkout -- f'
@@ -221,6 +222,31 @@ sf_allow "Y13: after an unknown cd a relative -C is unknown, even one the hook's
 sf_allow "Y14: a second write to the same other repository is still allowed" "git -C $X stash; git -C $X stash"
 sf_allow "Y15: a second write through the same other git dir is still allowed" "GIT_DIR=$X/.git GIT_WORK_TREE=$X git stash; GIT_DIR=$X/.git GIT_WORK_TREE=$X git stash"
 sf_deny "Y16: a cd after the git segment does not apply to it" "git stash; cd $X"
+sf_allow "Y17: --dep, a prefix of --depth, takes the next word: the remote is not a refspec" 'git fetch --dep 1 git@example.com:r.git'
+sf_allow "Y18: --depth takes the next word: the remote is not a refspec" 'git fetch --depth 1 git@example.com:r.git'
+sf_deny "Y19: after -- a word spelled like a flag is a refspec" 'git fetch origin -- -x:b'
+sf_allow "Y20: -o takes the next word: the remote is not a refspec" 'git fetch -o x git@example.com:r.git'
+sf_allow "Y21: a refspec with an empty :dst writes no local ref" 'git fetch origin main:'
+sf_deny "Y22: --separate-git-dir takes the next word: the directory init names is R/d" "git init $R/d --separate-git-dir $TMP/gd"
+sf_deny "Y23: after -- a word is a branch name: a write" 'git branch -- newb'
+sf_deny "Y24: --edit-description writes" 'git branch --edit-description'
+sf_deny "Y25: tag --message=x is a write" 'git tag --message=x'
+sf_allow "Y26: tag --verify is a read" 'git tag --verify t'
+sf_allow "Y27: --sort takes the next word, even one spelled like a flag" 'git tag --sort -version:refname'
+sf_deny "Y28: branch -u writes, beside a read flag" 'git branch -a -u origin/main'
+sf_deny "Y29: tag -F writes, beside a read flag" 'git tag -l -F msg'
+sf_allow "Y30: branch -r is a read" 'git branch -r origin/main'
+sf_allow "Y31: notes --ref takes the next word" 'git notes --ref review list'
+sf_allow "Y32: submodule summary is a read" 'git submodule summary'
+sf_deny "Y33: reflog drop writes" 'git reflog drop'
+sf_deny "Y34: symbolic-ref -d deletes" 'git symbolic-ref -d HEAD'
+sf_allow "Y35: symbolic-ref -m takes its reason word: one name left is a read" 'git symbolic-ref -m why HEAD'
+sf_deny "Y36: a bare symbolic-ref is not a read" 'git symbolic-ref'
+sf_allow "Y37: config --system is outside the repository" 'git config --system a.b c'
+sf_deny "Y38: config -e edits" 'git config -e'
+sf_deny "Y39: the config set subcommand writes" 'git config set'
+sf_deny "Y40: config --file=F names the file" "git -C $X config --file=$R/.git/config core.hooksPath /dev/null"
+sf_allow "Y41: a config file at the root names / as the work tree" 'git config -f /keel-y42.cfg a.b c'
 
 # --- G1–G2, the PR rule is untouched ---------------------------------------------------------------------------------------
 sf_hook "$R" 'gh pr create --fill' a1

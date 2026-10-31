@@ -1,5 +1,6 @@
-# tests/mutants/pre-pr-gate-subagent.tsv — single-clause mutants of tools/pre-pr-gate.sh's subagent git floor, slices 1-2:
-# the reader half check_subgit / sg_path / sg_cd (dir #675 B9-B12, dir #790) and the shell half sg_val .. sg_check (dir #911).
+# tests/mutants/pre-pr-gate-subagent.tsv — single-clause mutants of tools/pre-pr-gate.sh's subagent git floor, slices 1-3:
+# the reader half check_subgit / sg_path / sg_cd (dir #675 B9-B12, dir #790) and the shell half sg_val .. sg_check (dir #911)
+# and the verb classifier sg_mut / sg_valopt (dir #912).
 # keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_pre_pr_gate_subagent_floor.sh)
 # and checked for staleness by tests/test_mutation_lists.sh.
 # Columns, TAB-separated: id, file, needle, replacement, note — the format tests/mutants/pre-pr-gate.tsv documents.
@@ -17,7 +18,8 @@
 #   a path that is not a directory when the hook runs, every later relative join through it names a missing path,
 #   an absolute one is reached from the real member that a failed cd keeps beside it, so no pending member can
 #   ever be a hit; dropping either is equivalent as the code stands.
-# Not yet covered (a later slice, dir #912): the verb classification sg_mut and sg_valopt.
+# - `sg_valopt`'s `if (index(w, "=")) return 0`: no listed option name holds `=`, so a word with `=` can never be a
+#   prefix of one; dropping the check is equivalent.
 SG01	tools/pre-pr-gate.sh	  if (!agent) return\n  i = cmd_start()	  if (0) return\n  i = cmd_start()	check_subgit: only a subagent's event reports candidates
 SG02	tools/pre-pr-gate.sh	if (c == "builtin" && i < ntok	if (0 && i < ntok	check_subgit: builtin cd is a cd
 SG03	tools/pre-pr-gate.sh	  if (c == "cd" || c == "pushd" || c == "popd") { sg_cd(i); return }	  if (c == "cd" || c == "popd") { sg_cd(i); return }	check_subgit: pushd is a cd
@@ -66,3 +68,45 @@ SW21	tools/pre-pr-gate.sh	      if [ "${sg_cd_pos[$ci]}" -lt "${sg_git_pos[$gi]}
 SW22	tools/pre-pr-gate.sh	        case "$gc" in "$sc"|"$sc".*) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac	        case "$gc" in *) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac	sg_check: a cd applies only inside its own scope (dir #745 I1)
 SW23	tools/pre-pr-gate.sh	    sg_members=("$hk_cwd"); sg_unk=0	    sg_members=("$hk_cwd")	sg_check: each git segment starts from a known directory set
 SW24	tools/pre-pr-gate.sh	    if sg_target_hit "$gi"; then sg_verb="${sg_git_verb[$gi]}"; return 0; fi\n    gi=$((gi + 1))	    if sg_target_hit "$gi"; then sg_verb="${sg_git_verb[$gi]}"; return 0; fi\n    return 1	sg_check: every git segment is checked, not only the first
+SV01	tools/pre-pr-gate.sh	  for (i = 1; i <= n; i++) if (index(names[i], w) == 1) return 1	  for (i = 1; i <= n; i++) if (names[i] == w) return 1	sg_valopt: an unambiguous prefix of a value option counts (--dep 1)
+SV02	tools/pre-pr-gate.sh	  n = split("--jobs --depth --deepen	  n = split("--jobs --deepen	sg_valopt: --depth takes the next word
+SV03	tools/pre-pr-gate.sh	 cherry-pick revert am pull push update-ref	 cherry-pick revert am pull push	sg_mut: update-ref is mutating
+SV04	tools/pre-pr-gate.sh	 update-index read-tree checkout-index gc prune	 read-tree checkout-index gc prune	sg_mut: update-index is mutating
+SV05	tools/pre-pr-gate.sh	 replace sparse-checkout maintenance stage merge-file fast-import pack-refs")) return 1	 replace sparse-checkout maintenance stage")) return 1	sg_mut: merge-file, fast-import and pack-refs are mutating
+SV06	tools/pre-pr-gate.sh	      if (!del && w == "--") { del = 1; continue }	      if (!del && w == "--") { continue }	sg_mut fetch: after -- every word is positional
+SV07	tools/pre-pr-gate.sh	        if (w == "--multiple") multi = 1	        if (w == "--multiplex") multi = 1	sg_mut fetch: --multiple makes every word a remote
+SV08	tools/pre-pr-gate.sh	        else if (sg_in(w, "-j -o") || (length(w) > 2	        else if (sg_in(w, "-j") || (length(w) > 2	sg_mut fetch: -o takes a value word
+SV09	tools/pre-pr-gate.sh	      if (!multi && npos > 1 && (eq = index(w, ":")) > 0) {	      if (!multi && npos > 0 && (eq = index(w, ":")) > 0) {	sg_mut fetch: the first positional is the remote, not a refspec
+SV10	tools/pre-pr-gate.sh	        if (nm != "" && substr(nm, 1, 13) != "refs/remotes/") return 1	        if (substr(nm, 1, 13) != "refs/remotes/") return 1	sg_mut fetch: a refspec with no :dst writes no local ref
+SV11	tools/pre-pr-gate.sh	        if (nm != "" && substr(nm, 1, 13) != "refs/remotes/") return 1	        if (nm != "") return 1	sg_mut fetch: a :dst under refs/remotes/ is allowed
+SV12	tools/pre-pr-gate.sh	      if (sg_in(w, "-b --initial-branch --separate-git-dir --template --object-format --ref-format")) k++	      if (sg_in(w, "-b --initial-branch --template --object-format --ref-format")) k++	sg_mut init: --separate-git-dir takes a value word
+SV13	tools/pre-pr-gate.sh	    if (d) sg_extra = sg_path(tok[d], tokm[d])	    if (0) sg_extra = sg_path(tok[d], tokm[d])	sg_mut init: the directory init names joins the chain
+SV14	tools/pre-pr-gate.sh	    if (v == "stash") return !(nxt == "list" || nxt == "show")	    if (v == "stash") return !(nxt == "list")	sg_mut stash: stash show is read-only
+SV15	tools/pre-pr-gate.sh	    if (v == "stash") return !(nxt == "list" || nxt == "show")	    if (v == "stash") return !(nxt == "show")	sg_mut stash: stash list is read-only
+SV16	tools/pre-pr-gate.sh	    return nxt != "list"\n  }	    return 1\n  }	sg_mut worktree: worktree list is read-only
+SV17	tools/pre-pr-gate.sh	      if (w == "--") { npos += ntok - k; break }	      if (w == "--") { break }	sg_mut branch/tag: words after -- are names
+SV18	tools/pre-pr-gate.sh	"--delete --move --copy --force --set-upstream-to --unset-upstream --edit-description"	"--delete --move --copy --force --set-upstream-to --unset-upstream"	sg_mut branch: --edit-description writes
+SV19	tools/pre-pr-gate.sh	: "--delete --force --annotate --sign --local-user --file --message")) wr = 1	: "--delete --force --annotate --sign --local-user --file")) wr = 1	sg_mut tag: --message writes
+SV20	tools/pre-pr-gate.sh	        else if (sg_in(nm, "--list --show-current --all --remotes --verify")) rd = 1	        else if (sg_in(nm, "--list --show-current --all --remotes")) rd = 1	sg_mut branch/tag: --verify reads
+SV21	tools/pre-pr-gate.sh	{ rd = 1; if (!eq) k++ }	{ rd = 1 }	sg_mut branch/tag: --contains and the like take the next word
+SV22	tools/pre-pr-gate.sh	        if (w ~ (v == "branch" ? "[dDmMcCfu]" : "[dfasmuF]")) wr = 1	        if (w ~ (v == "branch" ? "[dDmMcCf]" : "[dfasmuF]")) wr = 1	sg_mut branch: -u writes
+SV23	tools/pre-pr-gate.sh	        if (w ~ (v == "branch" ? "[dDmMcCfu]" : "[dfasmuF]")) wr = 1	        if (w ~ (v == "branch" ? "[dDmMcCfu]" : "[dfasmu]")) wr = 1	sg_mut tag: -F writes
+SV24	tools/pre-pr-gate.sh	        if (w ~ (v == "branch" ? "[lar]" : "[lnv]")) rd = 1	        if (w ~ (v == "branch" ? "[la]" : "[lnv]")) rd = 1	sg_mut branch: -r reads
+SV25	tools/pre-pr-gate.sh	    return wr || (!rd && npos > 0)	    return wr || npos > 0	sg_mut branch/tag: a read flag with a name is a read
+SV26	tools/pre-pr-gate.sh	      if (w == "--ref") { k++; continue }	      if (w == "--ref") { continue }	sg_mut notes: --ref takes a value word
+SV27	tools/pre-pr-gate.sh	    if (v == "notes") return !(nxt == "" || nxt == "list" || nxt == "show")	    if (v == "notes") return !(nxt == "list" || nxt == "show")	sg_mut notes: bare notes lists
+SV28	tools/pre-pr-gate.sh	    if (v == "bisect") return !(nxt == "log" || nxt == "visualize" || nxt == "view")	    if (v == "bisect") return !(nxt == "visualize" || nxt == "view")	sg_mut bisect: bisect log is read-only
+SV29	tools/pre-pr-gate.sh	    if (v == "submodule") return !(nxt == "" || nxt == "status" || nxt == "summary")	    if (v == "submodule") return !(nxt == "" || nxt == "status")	sg_mut submodule: submodule summary is read-only
+SV30	tools/pre-pr-gate.sh	    if (v == "reflog") return nxt == "expire" || nxt == "delete" || nxt == "drop"	    if (v == "reflog") return nxt == "expire" || nxt == "delete"	sg_mut reflog: reflog drop writes
+SV31	tools/pre-pr-gate.sh	    return !(nxt == "" || nxt == "show" || nxt == "get-url")	    return !(nxt == "" || nxt == "show")	sg_mut remote: remote get-url is read-only
+SV32	tools/pre-pr-gate.sh	  if (v == "apply") return !(sg_has(a, "--check --stat --numstat --summary") && !sg_has(a, "--apply --index --cached --3way -3"))	  if (v == "apply") return !(sg_has(a, "--check --stat --numstat --summary"))	sg_mut apply: --check with --index still writes
+SV33	tools/pre-pr-gate.sh	    npos = 0; del = sg_has(a, "-d --delete")	    npos = 0; del = sg_has(a, "--delete")	sg_mut symbolic-ref: -d deletes
+SV34	tools/pre-pr-gate.sh	      if (tok[k] == "-m") k++	      if (0) k++	sg_mut symbolic-ref: -m takes a reason word
+SV35	tools/pre-pr-gate.sh	    return del || npos != 1	    return del || npos > 1	sg_mut symbolic-ref: a bare symbolic-ref with no name is not a read
+SV36	tools/pre-pr-gate.sh	        if (w == "--global" || w == "--system") glob = 1	        if (w == "--global") glob = 1	sg_mut config: --system is outside the repository
+SV37	tools/pre-pr-gate.sh	        if (sg_in(w, "--unset --unset-all --add --replace-all --remove-section --rename-section -e --edit")) wr = 1	        if (sg_in(w, "--unset --unset-all --add --replace-all --remove-section --rename-section --edit")) wr = 1	sg_mut config: -e edits
+SV38	tools/pre-pr-gate.sh	        else if (sg_in(w, "--type --default --blob --comment")) k++	        else if (sg_in(w, "--type --default --blob")) k++	sg_mut config: --comment takes a value word
+SV39	tools/pre-pr-gate.sh	    if (!(wr || (!rd && npos >= 2))) return 0	    if (!(wr || npos >= 2)) return 0	sg_mut config: --get with two words is a read
+SV40	tools/pre-pr-gate.sh	    if (sg_in(first, "set unset rename-section remove-section edit")) wr = 1	    if (sg_in(first, "unset rename-section remove-section edit")) wr = 1	sg_mut config: the set subcommand writes
+SV41	tools/pre-pr-gate.sh	        else if (index(w, "--file=") == 1) { ffile = substr(w, 8); fmask = substr(tokm[k], 8) }	        else if (0) { ffile = substr(w, 8); fmask = substr(tokm[k], 8) }	sg_mut config: --file=F names the file
+SV42	tools/pre-pr-gate.sh	        if (match(nm, /\/[^\/]*$/)) nm = (RSTART == 1) ? "/" : substr(nm, 1, RSTART - 1); else nm = "."	        if (match(nm, /\/[^\/]*$/)) nm = substr(nm, 1, RSTART - 1); else nm = "."	sg_mut config: a file at the root names / as the work tree
