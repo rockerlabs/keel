@@ -904,7 +904,11 @@ for needle in \
   "\`no PR: <the step> — <the reason>\`" \
   "\`abandon: docs/cloud.md, Abandoning — ledger row example/proj dir #801\`" \
   "\"\$KT/keel/tools/secret-guard/secret-scan.sh\" -- <file>\` must exit 0" \
-  "\`gh api repos/example/proj/pulls\`"; do
+  "\`gh api repos/example/proj/pulls\`" \
+  "\`gh api \"repos/example/proj/commits/<sha>/check-runs\"\`" \
+  "one read every 2 minutes, at most 60 minutes per push" \
+  "An empty list is pending, not green" \
+  "\`gh pr checks\` is GraphQL and blocked in the VM"; do
   check_contains "T15b pin: ${needle:0:70}" "$flat" "$needle"
 done
 check_absent "T15b no 'Russian' in the protocol part" "$proto" "Russian"
@@ -1074,6 +1078,46 @@ chmod +x "$F/fd3shim/git"
 PATH="$F/fd3shim:$PATH" cb "$P" "dir #801" --out "$F/fd3.md" 3>&-
 check_status "T20b a build through the git shim → 0" 0 "$STATUS"
 check_eq "T20b … no child of a build holds fd 3" "closed" "$(sort -u "$F/fd3.log" | tr '\n' ' ' | sed 's/ $//')"
+
+# --- T16b (dir #922): CLOUD_BACKLOG names the backlog file directly -------------------------------------------------
+fx
+rm -f "$P/BACKLOG.md"
+mkdir -p "$F/mirror"
+cat > "$F/mirror/tickets.md" <<'MIRROR'
+# Mirrored tickets
+
+### B.7 — an adopter ticket from a mirror — R4 — → pool
+
+Body of B.7.
+
+**Cloud:** yes (2026-10-31, fixture)
+
+### B.8 — another mirrored ticket — R3 — → pool
+
+**Cloud:** no — G4: needs a simulator (2026-10-31, fixture)
+MIRROR
+CLOUD_BACKLOG="$F/mirror/tickets.md" cb "$P" "B.7" --out "$F/b-b7.md"
+check_status "T16b CLOUD_BACKLOG: a mirrored ticket builds with no BACKLOG.md in the project" 0 "$STATUS"
+check_contains "T16b … the ticket part holds its heading" "$(part_of "$F/b-b7.md" ticket)" "### B.7 — an adopter ticket from a mirror"
+check_contains "T16b … and its body" "$(part_of "$F/b-b7.md" ticket)" "Body of B.7."
+check_absent "T16b … and not the sibling" "$(part_of "$F/b-b7.md" ticket)" "B.8"
+CLOUD_BACKLOG="$F/mirror/tickets.md" cbo "$P" "B.8" --check
+check_contains "T16b the verdict line is read from the file" "$ERR$OUT" "G4"
+pushd "$F" >/dev/null && CLOUD_BACKLOG="mirror/tickets.md" cb "$P" "B.7" --out "$F/b-rel.md"; popd >/dev/null || exit
+check_status "T16b a relative CLOUD_BACKLOG resolves against the start directory" 0 "$STATUS"
+CLOUD_BACKLOG="$F/mirror/missing.md" cb "$P" "B.7"
+check_status "T16b a missing CLOUD_BACKLOG file → exit 2" 2 "$STATUS"
+check_contains "T16b … it is named" "$OUT" "$F/mirror/missing.md"
+CLOUD_BACKLOG='' cb "$P" "B.7"
+check_status "T16b an empty CLOUD_BACKLOG is set, not unset → exit 2" 2 "$STATUS"
+CLOUD_BACKLOG="$F/mirror" cb "$P" "B.7"
+check_status "T16b a CLOUD_BACKLOG directory → exit 2" 2 "$STATUS"
+CLOUD_BACKLOG="$F/mirror/missing.md" cbo "$P" --sweep
+check_status "T16b --sweep with a missing CLOUD_BACKLOG → exit 2" 2 "$STATUS"
+CLOUD_BACKLOG="$F/mirror/tickets.md" cbo "$P" --sweep
+check_status "T16b --sweep reads the file → 0" 0 "$STATUS"
+check_contains "T16b … it lists the file's open ticket" "$OUT" "B.7	R4	yes"
+check_contains "T16b … and the no verdict's row" "$OUT" "B.8	R3	no — G4"
 
 # --- T17: --sweep --------------------------------------------------------------------------------------------------
 fx

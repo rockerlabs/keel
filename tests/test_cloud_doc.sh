@@ -50,11 +50,18 @@ check_row G2b 'no verdict needs `--eligible`'
 check_row G3  'the rails file when it is gitignored'
 check_row G3b 'or travels in the brief'
 check_row G4  'runs on an Ubuntu VM with no key, device or live account'
+check_row G4  "is decided by the project's CI on the PR (a self-hosted runner counts), read by the session and again by the landing check"
 check_row G5  'A slate ticket may run as a cloud worker'
 check_row G6  'Linux caps one argument at 131071 bytes'
 check_row G7  'a symlink'
 check_row G8  '"Question for a /design pass" in the body, "for the design" (case-insensitive) on the `**Model rec:**` line'
 check_row G9  '`--dispatch` only'
+
+# dir #922: the configuration table names CLOUD_BACKLOG, once, as a row of its own.
+env_row="$(awk 'index($0, "| `CLOUD_BACKLOG` |") == 1' "$doc")"
+check_eq "(dir #922) the configuration table has one CLOUD_BACKLOG row" "1" "$(printf '%s' "$env_row" | grep -c '')"
+check_contains "(dir #922) … it names the BACKLOG.md default" "$env_row" "<main>/BACKLOG.md"
+check_contains "(dir #922) … and the exit 2 for a file that is not readable" "$env_row" "exit 2"
 
 # The decided column is what tells an operator which rows the tool settles and which are the grader's call, so
 # it is pinned too: the tool decides the mech rows and records no verdict for them; G8 is mixed.
