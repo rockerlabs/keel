@@ -313,7 +313,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
     if [ -z "$date_str" ] || [[ "${BASH_REMATCH[3]}" < "$date_str" ]]; then date_str="${BASH_REMATCH[3]}"; fi
   fi
   if [ -n "$date_str" ]; then
-    ts="$(date -u -j -f '%Y-%m-%d' "$date_str" +%s 2>/dev/null \
+    ts="$(date -u -j -f '%Y-%m-%d %H:%M:%S' "$date_str 00:00:00" +%s 2>/dev/null \
       || date -u -d "$date_str" +%s 2>/dev/null || true)"
     if [ -n "$ts" ]; then
       age_days=$(( (today_epoch - ts) / 86400 ))

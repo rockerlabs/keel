@@ -30,3 +30,4 @@ gate-push:heredoc-fed-shell	tools/pre-pr-gate.sh	(((^|[^A-Za-z0-9_.-])(bash|sh|z
 gate-push:case-in-group-in-subst	tools/pre-pr-gate.sh	\$\([^)]*\([[:space:]]*case[[:space:]].*esac.*{ACT}	any
 gate-push:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*((GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push|(GH|Gh|gH)[[:space:]]+pr[[:space:]]+create)	any
 floor:upper-case-command-word	tools/pre-pr-gate.sh	(^|[;&|(])[[:space:]]*(GIT|Git|gIT|GIt|giT|gIt|GiT)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*(checkout|reset|stash|clean)	subagent
+gate-pr:check-run-masked-exit	tools/pre-pr-gate.sh	check-run\.sh[[:space:]]+run[[:space:]][^;]*--[[:space:]]+["'][^"']*[|;]|update-index[[:space:]]+([^;|&]*[[:space:]])?--(assume-unchanged|skip-worktree)	any

@@ -57,6 +57,17 @@
 # Not a command shape, so not a CI-scan case either: a hook started with stdin closed hangs to the harness timeout
 # (Claude Code delivers hook input on stdin; `subagent-rails` has the same shape) — dir #781.
 #
+# Named residuals of the PR rule's test receipt (tools/check-run.sh), which no CI scan catches:
+# a test receipt behind a green check-run.sh verify [bypass:gate-pr:check-run-masked-exit] of a command whose red a pipe
+# or ';' inside the one-string command masks (bash -c without pipefail records the LAST stage's status), or whose edit
+# git update-index --assume-unchanged / --skip-worktree hides from the tree state (tools/check-run.sh; the argv form
+# with the pipe outside the call is unaffected; bash -o pipefail would turn 'producer | head' into a false red, rc 141,
+# so the fix is a design fork) — delta-audit 0.18.0 A02, D1-2; no sighting in D1's recorded search (109 check-run calls
+# / 43 sessions, 2026-10-15..20, not re-run by VF1) outside D1's own probe. dir #885.
+# A test receipt bound to HEAD by a green run of HEAD plus uncommitted tracked edits (tools/check-run.sh verify compares
+# the run's recorded tree with the current one, not with a clean tree; /polish ordering rule 1, commit by step 3, is
+# prose) — delta-audit 0.18.0 A03, S4-3. A tree state, so no key. dir #885.
+#
 # --- receipt format (dir #49) ---------------------------------------------------------------------
 # The sentinel is no longer a bare SHA — it's a small per-run receipt at the same path/keying:
 #   nonce\t<run-id>                     (line 1, written by `init`)

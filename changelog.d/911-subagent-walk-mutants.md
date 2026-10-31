@@ -1,0 +1,1 @@
+- The subagent floor's mutation list gained its slice-2 rows (dir #911): 24 single-clause mutants of the gate's shell walk, with three equivalents named in the list header, and five test rows in `tests/test_pre_pr_gate_subagent_floor.sh` for the mutants the suite left alive.

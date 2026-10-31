@@ -1,5 +1,5 @@
-# tests/mutants/pre-pr-gate-subagent.tsv — single-clause mutants of tools/pre-pr-gate.sh's subagent git floor, slice 1:
-# the reader half check_subgit / sg_path / sg_cd (dir #675 B9-B12, dir #790).
+# tests/mutants/pre-pr-gate-subagent.tsv — single-clause mutants of tools/pre-pr-gate.sh's subagent git floor, slices 1-2:
+# the reader half check_subgit / sg_path / sg_cd (dir #675 B9-B12, dir #790) and the shell half sg_val .. sg_check (dir #911).
 # keel-self-maintenance: read by tools/self/mutation-sweep.sh (swept against tests/test_pre_pr_gate_subagent_floor.sh)
 # and checked for staleness by tests/test_mutation_lists.sh.
 # Columns, TAB-separated: id, file, needle, replacement, note — the format tests/mutants/pre-pr-gate.tsv documents.
@@ -9,8 +9,15 @@
 # - `w_plain` on the verb word (`if (j > ntok || !w_plain(j)) return`) and on the word after `builtin`: an expansion
 #   keeps its `$` source text, so such a word can never equal a mutating verb or cd, pushd, popd; dropping either
 #   check is equivalent.
-# Not yet covered (later slices, dir #790): the verb classification sg_mut and sg_valopt, and the bash walk of
-# tools/pre-pr-gate.sh (sg_val .. sg_check).
+# - `unset CDPATH;` in `sg_gitdir_common`: its argument is always absolute (an absolute member joined with the path,
+#   or the path itself), and `git --git-dir=<absolute> rev-parse --git-common-dir` answers an absolute path
+#   (measured for a `.git` dir, a linked worktree's gitfile and its `.git/worktrees/<x>` dir, git 2.52), so the
+#   `cd` never consults CDPATH — unlike `sg_common_dir`, whose relative answer SW08 pins.
+# - `sg_apply_cd`'s pending targets (`pend[...]="$t"`) and the cap of 8 that bounds only them: a pending target is
+#   a path that is not a directory when the hook runs, every later relative join through it names a missing path,
+#   an absolute one is reached from the real member that a failed cd keeps beside it, so no pending member can
+#   ever be a hit; dropping either is equivalent as the code stands.
+# Not yet covered (a later slice, dir #912): the verb classification sg_mut and sg_valopt.
 SG01	tools/pre-pr-gate.sh	  if (!agent) return\n  i = cmd_start()	  if (0) return\n  i = cmd_start()	check_subgit: only a subagent's event reports candidates
 SG02	tools/pre-pr-gate.sh	if (c == "builtin" && i < ntok	if (0 && i < ntok	check_subgit: builtin cd is a cd
 SG03	tools/pre-pr-gate.sh	  if (c == "cd" || c == "pushd" || c == "popd") { sg_cd(i); return }	  if (c == "cd" || c == "popd") { sg_cd(i); return }	check_subgit: pushd is a cd
@@ -35,3 +42,27 @@ SG21	tools/pre-pr-gate.sh	tok[j] !~ /^[-+][0-9]+$/) p = sg_path	1) p = sg_path	s
 SG22	tools/pre-pr-gate.sh	  while (j <= ntok && substr(tok[j], 1, 1) == "-" && length(tok[j]) > 1) {	  while (0) {	sg_cd: options before the directory are skipped
 SG23	tools/pre-pr-gate.sh	  sg_gd = "-"; sg_wt = "-"; sg_extra = ""; chain = ""	  sg_gd = "-"; sg_wt = "-"; chain = ""	check_subgit: a directory init names does not outlive its segment
 SG24	tools/pre-pr-gate.sh	  if (i > ntok || !w_plain(i)) return\n  c = tok[i]	  if (i > ntok) return\n  c = tok[i]	check_subgit: a command word with an expansion is never git
+SW01	tools/pre-pr-gate.sh	    lit:*) sg_vk=lit; sg_vp="${1#lit:}" ;;	    lit:*) sg_vk=unknown; sg_vp="${1#lit:}" ;;	sg_val: a literal path is known
+SW02	tools/pre-pr-gate.sh	case "$sg_vp" in "~") sg_vp="$HOME"; sg_vk=lit ;;	case "$sg_vp" in "~") sg_vp="$HOME" ;;	sg_val: a bare ~ resolves to $HOME
+SW03	tools/pre-pr-gate.sh	"~/"*) sg_vp="$HOME${sg_vp#\~}"; sg_vk=lit ;; esac	"~/"*) sg_vp="$HOME${sg_vp#\~}" ;; esac	sg_val: ~/x resolves under $HOME
+SW04	tools/pre-pr-gate.sh	      if [ -z "${HOME:-}" ]; then sg_vp=""	      if false; then sg_vp=""	sg_val: with no HOME a tilde stays unknown
+SW05	tools/pre-pr-gate.sh	    -) sg_vk=dash ;;	    -) sg_vk=unknown ;;	sg_val: no value (-) is the running directory
+SW06	tools/pre-pr-gate.sh	    /*) sg_j="$2" ;;	    /*) sg_j="${1%/}/$2" ;;	sg_join: an absolute path is not joined
+SW07	tools/pre-pr-gate.sh	then sg_j="${1%/}/$2"; else sg_j=""; fi ;;	then sg_j="${1%/}/$2"; else sg_j="$2"; fi ;;	sg_join: an unknown base makes a relative path unknown
+SW08	tools/pre-pr-gate.sh	  (unset CDPATH; cd -- "$1" 2>/dev/null && cd -- "$raw" 2>/dev/null && pwd -P)	  (cd -- "$1" 2>/dev/null && cd -- "$raw" 2>/dev/null && pwd -P)	sg_common_dir: CDPATH is dropped before the cd
+SW09	tools/pre-pr-gate.sh	  (unset CDPATH; cd -- "$1" 2>/dev/null && cd -- "$raw" 2>/dev/null && pwd -P)	  (unset CDPATH; cd -- "$1" 2>/dev/null && cd -- "$raw" 2>/dev/null && pwd)	sg_common_dir: the physical path is compared
+SW10	tools/pre-pr-gate.sh	  case "$sg_seen" in *"${sep}d:$1${sep}"*) return 1 ;; esac	  case "$sg_seen" in *"${sep}d:$1${sep}"*) return 0 ;; esac	sg_dir_hit: a directory already asked is not a hit again
+SW11	tools/pre-pr-gate.sh	  case "$sg_seen" in *"${sep}g:$1${sep}"*) return 1 ;; esac	  case "$sg_seen" in *"${sep}g:$1${sep}"*) return 0 ;; esac	sg_gitdir_hit: a git dir already asked is not a hit again
+SW12	tools/pre-pr-gate.sh	  [ "$sg_vk" = lit ] || { sg_unk=1; return 0; }	  [ "$sg_vk" = lit ] || return 0	sg_apply_cd: a cd to an unknown target makes the directory set unknown
+SW13	tools/pre-pr-gate.sh	    if [ -d "$t" ]; then new[${#new[@]}]="$t"	    if true; then new[${#new[@]}]="$t"	sg_apply_cd: a cd to a missing directory leaves the member in place (dir #669)
+SW14	tools/pre-pr-gate.sh	        if [ -n "$sg_vp" ]; then sg_join "$cur" "$sg_vp"; cur="$sg_j"; fi	        :	sg_target_hit: a literal -C joins the path
+SW15	tools/pre-pr-gate.sh	      else cur=""\n      fi\n      ci=$((ci + 1))	      else :\n      fi\n      ci=$((ci + 1))	sg_target_hit: an unknown -C makes the path unknown
+SW16	tools/pre-pr-gate.sh	  if [ "$sg_unk" = 1 ]; then mlist=(""); else mlist=("${sg_members[@]}"); fi	  mlist=("${sg_members[@]}")	sg_target_hit: an unknown directory set is one unknown member
+SW17	tools/pre-pr-gate.sh	      lit) sg_join "$cur" "$gdp"; sg_gitdir_hit "$sg_j" && return 0	      lit) sg_join "$cur" "$gdp"; false && return 0	sg_target_hit: a literal GIT_DIR/--git-dir is checked
+SW18	tools/pre-pr-gate.sh	           [ "$wtk" = dash ] && { sg_dir_hit "$cur" && return 0; } ;;	           : ;;	sg_target_hit: a git dir with no work tree runs on the current directory
+SW19	tools/pre-pr-gate.sh	      dash) sg_dir_hit "$cur" && return 0 ;;	      dash) ;;	sg_target_hit: no git dir named: the current directory is checked
+SW20	tools/pre-pr-gate.sh	    if [ "$wtk" = lit ]; then sg_join "$cur" "$wtp"; sg_dir_hit "$sg_j" && return 0; fi	    :	sg_target_hit: a literal work tree is checked
+SW21	tools/pre-pr-gate.sh	      if [ "${sg_cd_pos[$ci]}" -lt "${sg_git_pos[$gi]}" ] 2>/dev/null; then	      if [ "${sg_cd_pos[$ci]}" -ne "${sg_git_pos[$gi]}" ] 2>/dev/null; then	sg_check: only an earlier cd applies
+SW22	tools/pre-pr-gate.sh	        case "$gc" in "$sc"|"$sc".*) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac	        case "$gc" in *) sg_apply_cd "${sg_cd_val[$ci]}" ;; esac	sg_check: a cd applies only inside its own scope (dir #745 I1)
+SW23	tools/pre-pr-gate.sh	    sg_members=("$hk_cwd"); sg_unk=0	    sg_members=("$hk_cwd")	sg_check: each git segment starts from a known directory set
+SW24	tools/pre-pr-gate.sh	    if sg_target_hit "$gi"; then sg_verb="${sg_git_verb[$gi]}"; return 0; fi\n    gi=$((gi + 1))	    if sg_target_hit "$gi"; then sg_verb="${sg_git_verb[$gi]}"; return 0; fi\n    return 1	sg_check: every git segment is checked, not only the first

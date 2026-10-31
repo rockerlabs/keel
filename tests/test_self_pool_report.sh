@@ -70,22 +70,33 @@ check_contains "oldest entry is the earliest dated pool ticket" "$OUT" "d (dir #
 # --- dir #735: oldest entry is the EARLIEST stated origination date, not the heading's first date ----
 # A heading's first date can be a later status annotation (#656's shape: filed 2026-10-01 per its body, heading
 # first date 2026-10-04) or absent; read off it, the age came out young — the direction that hides a stale pool.
-# The script samples "now" before it parses the date (BSD `date -j -f` fills the time of day from the clock),
-# so on a loaded run its whole-day figure can sit one below ours: accept N or N-1 days, never the wrong date.
-age_of() { # age_of <YYYY-MM-DD> -> "Nd|N-1d" whole days from then to now (BSD date, else GNU)
-  local ts n
-  ts="$(date -u -j -f '%Y-%m-%d' "$1" +%s 2>/dev/null || date -u -d "$1" +%s)"
-  n=$(( ($(date -u +%s) - ts) / 86400 ))
-  echo "$n $((n - 1))"
+# The run's "now" is FROZEN at 2026-06-01 00:00:01 UTC by a `date` shim on PATH: BSD `date -j -f '%Y-%m-%d'`
+# fills the unparsed time of day from the clock, so an unfixed parse reads N-1 days whenever the clock is
+# past midnight; with "now" frozen one second into a UTC day that is deterministic and every age is exactly N.
+real_date="$(type -P date)"
+mkdir -p "$SANDBOX/datebin"
+cat > "$SANDBOX/datebin/date" <<SHIM
+#!/bin/sh
+if [ "\$#" -eq 2 ] && [ "\$1" = "-u" ] && [ "\$2" = "+%s" ]; then echo 1780272001; exit 0; fi
+exec "$real_date" "\$@"
+SHIM
+chmod +x "$SANDBOX/datebin/date"
+frozen_now=1780272001
+age_of() { # age_of <YYYY-MM-DD> -> whole days from that date's midnight UTC to the frozen now (BSD date, else GNU)
+  local ts
+  ts="$(date -u -j -f '%Y-%m-%d %H:%M:%S' "$1 00:00:00" +%s 2>/dev/null || date -u -d "$1" +%s)"
+  echo $(( (frozen_now - ts) / 86400 ))
 }
 check_age() { # check_age <label> <output> <date> <id>
-  local n m
-  read -r n m <<< "$(age_of "$3")"
+  local n
+  n="$(age_of "$3")"
   case "$2" in
-    *"oldest entry:                   ${n}d ($4)"*|*"oldest entry:                   ${m}d ($4)"*) pass "$1" ;;
-    *) fail "$1" "output missing: ${n}d or ${m}d ($4)" ;;
+    *"oldest entry:                   ${n}d ($4)"*) pass "$1" ;;
+    *) fail "$1" "output missing: ${n}d ($4)" ;;
   esac
 }
+pin "BSD branch parses midnight explicitly (no clock-filled time of day)" "$pr" '%Y-%m-%d %H:%M:%S' \
+  "pool-report.sh must parse \"\$date_str 00:00:00\" with %Y-%m-%d %H:%M:%S"
 backlog_age="### dir #70 — status date on the heading, filing date in the body — R2 — → pool — ⏸ HALF NOT TRIGGERED (2020-06-01, re-tagged 2020-06-02)
 
 Filed 2020-01-01 by the implementer.
@@ -99,14 +110,14 @@ Filed 2020-01-01 by the implementer.
 body
 "
 f="$(mk_backlog "$backlog_age")"
-run "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
+run env PATH="$SANDBOX/datebin:$PATH" "$pr" --history "$SANDBOX/hist-age.jsonl" "$f"
 check_age "body Found date (no heading date) wins: dir #71 is the oldest" "$OUT" 2019-03-01 "dir #71"
 # A "found"/"filed" inside another word is not a filing marker (the word needs a non-letter before it).
 f="$(mk_backlog "### dir #73 — decoy words — R3 — → pool (found 2025-01-01)
 
 A profound change; unfounded since 2018-05-01.
 ")"
-run "$pr" --history "$SANDBOX/hist-age3.jsonl" "$f"
+run env PATH="$SANDBOX/datebin:$PATH" "$pr" --history "$SANDBOX/hist-age3.jsonl" "$f"
 check_age "'profound'/'unfounded' dates are not read as a filing date (dir #73 stays at its heading date)" "$OUT" 2025-01-01 "dir #73"
 f="$(mk_backlog "### dir #74 — label and date on different lines — R3 — → pool (found 2025-01-01)
 
@@ -114,11 +125,11 @@ f="$(mk_backlog "### dir #74 — label and date on different lines — R3 — �
 
 - 2018-05-01 Log: an unrelated dated bullet.
 ")"
-run "$pr" --history "$SANDBOX/hist-age4.jsonl" "$f"
+run env PATH="$SANDBOX/datebin:$PATH" "$pr" --history "$SANDBOX/hist-age4.jsonl" "$f"
 check_age "a Filed label does not pair with a date on a LATER line (dir #74 stays at its heading date)" "$OUT" 2025-01-01 "dir #74"
 backlog_age2="${backlog_age%%### dir #71*}"
 f="$(mk_backlog "$backlog_age2")"
-run "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
+run env PATH="$SANDBOX/datebin:$PATH" "$pr" --history "$SANDBOX/hist-age2.jsonl" "$f"
 check_age "body Filed date beats the heading's later status date (dir #70)" "$OUT" 2020-01-01 "dir #70"
 
 # --- structurally-parked wording variants: "⛔ PARKED" counts, "⛔ UNBLOCKED" does NOT --------------
