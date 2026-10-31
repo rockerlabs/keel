@@ -42,21 +42,24 @@ proj() {
   printf '{"default_branch":"%s"}\n' "$3" > "$GH_FX/api/$key.json"
 }
 
-# pr_json OWNER/REPO NUMBER BRANCH HEAD CI-JSON [BODY] [TITLE] [BASE] — the stub's `gh pr view` answer, the
-# fields the tool requests (an empty BODY or TITLE takes the default; BASE defaults to main).
+# pr_json OWNER/REPO NUMBER BRANCH HEAD CI-JSON [BODY] [TITLE] [BASE] [DRAFT] — the stub's `gh pr view` answer, the
+# fields the tool requests (an empty BODY or TITLE takes the default; BASE defaults to main; DRAFT, true or false,
+# defaults to false).
 pr_json() {
   jq -n --arg b "$3" --arg h "$4" --argjson ci "$5" --arg body "${6:-Summary.
 
 ## Landing notes
 - PR #$2 from $3
-}" --arg t "${7:-Cloud work}" --arg base "${8:-main}" \
-    '{title: $t, headRefName: $b, baseRefName: $base, body: $body, statusCheckRollup: $ci, headRefOid: $h}' \
+}" --arg t "${7:-Cloud work}" --arg base "${8:-main}" --argjson draft "${9:-false}" \
+    '{title: $t, headRefName: $b, baseRefName: $base, body: $body, statusCheckRollup: $ci, headRefOid: $h, isDraft: $draft}' \
     > "$GH_FX/pr/$(printf '%s' "$1" | tr '/' '_')-$2.json"
 }
 GREEN='[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]'
 RED='[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"FAILURE"}]'
 PENDING='[{"__typename":"CheckRun","name":"ci","status":"IN_PROGRESS","conclusion":null}]'
 SKIPPED='[{"__typename":"CheckRun","name":"a","status":"COMPLETED","conclusion":"SKIPPED"},{"__typename":"CheckRun","name":"b","status":"COMPLETED","conclusion":"SKIPPED"}]'
+# One cheap success beside a workflow that skipped (an expensive one that skips draft PRs).
+GREEN_AND_SKIPPED='[{"__typename":"CheckRun","name":"cheap","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","name":"expensive","status":"COMPLETED","conclusion":"SKIPPED"}]'
 TRAILER="Claude-""Session"
 
 # row REPO TICKET BRANCH STATUS — append a ledger row.
@@ -160,6 +163,22 @@ check_status "A4 a rollup whose every check was skipped → exit 3" 3 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" '[]'
 run "$LAND" "$P" 5
 check_status "A4 an empty check rollup → exit 3" 3 "$STATUS"
+# dir #913 (5): on a DRAFT PR a check that skipped is not green — an expensive workflow that skips drafts reads
+# green beside one cheap success. The remedy is to mark the PR ready, wait for CI, and re-run.
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN_AND_SKIPPED" "" "" "" true
+run "$LAND" "$P" 5
+check_status "A4 a draft PR with a skipped check beside a success → exit 3" 3 "$STATUS"
+check_contains "A4 … the hint names gh pr ready" "$OUT" "gh pr ready 5 --repo example/proj"
+check_contains "A4 … and the rest of the route" "$OUT" "wait for CI, re-run the landing check"
+check_absent "A4 … no merge line" "$OUT" "gh pr merge"
+check_eq "A4 … the row stays dispatched" "dispatched" "$(cell example/proj 'dir #801' 8)"
+check_eq "A4 … its landing exit is 3" "3" "$(cell example/proj 'dir #801' 12)"
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN_AND_SKIPPED" "" "" "" false
+run "$LAND" "$P" 5
+check_status "A4 the same rollup on a PR that is ready → exit 0" 0 "$STATUS"
+pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN" "" "" "" true
+run "$LAND" "$P" 5
+check_status "A4 a draft PR with every check a success → exit 0" 0 "$STATUS"
 pr_json example/proj 5 claude/cloud-dir-801 "0000000000000000000000000000000000000001" "$GREEN"
 run "$LAND" "$P" 5
 check_status "A4 the head moved after the PR was read → exit 3" 3 "$STATUS"
@@ -177,7 +196,7 @@ git -C "$P" checkout -q main
 pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/cloud-dir-801)" "$GREEN"
 run "$LAND" "$P" 5
 check_status "A4 a token in the pushed range → exit 1" 1 "$STATUS"
-check_absent "A4 … a hit with no allow marker gets no allowlist remedy" "$OUT" ".secret-scan-allow"
+check_absent "A4 … a hit with no allow marker gets no allowlist remedy (the hint's own phrase)" "$OUT" "a hit above carries an inline allow marker"
 check_eq "A4 … the row stays dispatched" "dispatched" "$(cell example/proj 'dir #801' 8)"
 check_eq "A4 … its landing exit is 1" "1" "$(cell example/proj 'dir #801' 12)"
 
@@ -434,7 +453,25 @@ run "$LAND" "$P" 5
 check_status "A4 a range changing a file whose default-branch line only a marker exempts → exit 1" 1 "$STATUS"
 check_contains "A4 … the range scan names the hit" "$OUT" "range scan: exit 1"
 check_contains "A4 … the PR added no marker" "$OUT" "added allow marker: none"
-check_contains "A4 … and the remedy is named" "$OUT" "main's .secret-scan-allow"
+check_contains "A4 … and the remedy is named (the hint's own phrase)" "$OUT" "a hit above carries an inline allow marker"
+check_contains "A4 … pointing at the default branch's allowlist" "$OUT" "list it in main's .secret-scan-allow"
+
+# The remedy grep reads bytes (LC_ALL=C grep -a): an invalid UTF-8 byte before the marker on the reported line hides
+# nothing from it under a UTF-8 locale (dir #913).
+if real_utf8="$(pick_utf8_locale)"; then
+  fx
+  row example/proj "dir #801" claude/cloud-dir-801 dispatched
+  printf 'key %s \377 # %s\nother 1\n' "$TOKEN" "$ALLOW_MARK" > "$P/fixture.txt"
+  git -C "$P" add fixture.txt && git -C "$P" commit -qm "a fixture" && git -C "$P" push -q "$O" HEAD:refs/heads/main
+  git -C "$P" checkout -q claude/cloud-dir-801 && git -C "$P" merge -q --no-edit main && git -C "$P" checkout -q main
+  bcommit fixture.txt "$(printf 'key %s \377 # %s\nother 2' "$TOKEN" "$ALLOW_MARK")" "change the fixture's other line"
+  pr_json example/proj 5 claude/cloud-dir-801 "$TIP" "$GREEN"
+  LC_ALL="$real_utf8" run "$LAND" "$P" 5
+  check_status "A4 an invalid byte before the marker, under $real_utf8 → exit 1" 1 "$STATUS"
+  check_contains "A4 … the remedy is still named" "$OUT" "a hit above carries an inline allow marker"
+else
+  echo "  SKIP  A4 remedy beside an invalid byte: this host has no UTF-8 locale"
+fi
 
 # A marker grep that fails (exit 2) is a scan error, never "none": a grep shim fails on one output file at a time.
 REAL_GREP="$(command -v grep)"

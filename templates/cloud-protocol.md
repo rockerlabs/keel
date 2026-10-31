@@ -110,6 +110,14 @@ not an adversary: never pass `--no-verify` to any git command.
   split of the suite, run its parts ONE AT A TIME, each as a background job waited for by its completion notice.
 - While a test run is going, change nothing: no edit, commit, branch switch or fetch.
 - A run cut short is never green: name it in the PR body.
+- When the rails' test command needs what the VM lacks (Xcode, a simulator, a device — the rails say so, or the
+  command is not found), do not claim it ran. Run (f) first; then push (after (b)'s scan), open or update the
+  draft PR as (g) says, and read that head's CI through REST: `gh api "repos/<repo>/commits/<sha>/check-runs"`
+  with `--paginate`, `<sha>` being the pushed head. An empty list is pending, not green; green is every run
+  completed with success, neutral or skipped and at least one success. Wait in a bounded loop run as a background
+  job: one read every 2 minutes, at most 60 minutes per push. On a red run, fix and push again. A run still
+  unfinished at the bound is named in the PR body, never called green. `gh pr checks` is GraphQL and blocked in
+  the VM. Name in the PR's Checks which checks you ran yourself and which only CI ran.
 
 (f) Review. Run `/code-review high` on the diff against `origin/<default>`. If it is not available, use a
 general-purpose subagent given the diff and the done-criteria from (d), asked for correctness bugs with
