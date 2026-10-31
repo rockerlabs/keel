@@ -49,6 +49,6 @@ help-guard-dropped	tools/self/accumulate.sh	-h|--help) if [ "${#pos[@]}" -eq 0 ]
 arity-check-after-dir	tools/self/accumulate.sh	cmd="${pos[0]}"	cmd="${pos[0]}"; [ -n "$DIR" ] || die "--dir is required"	the subcommand/arity check comes before --dir
 closure-date-unvalidated	tools/self/accumulate.sh	valid_date "$cdate" || cdate="—"	true	closed: an impossible date is undated
 date-anywhere-on-line	tools/self/accumulate.sh	'^[^(]*\\(([0-9][0-9][0-9][0-9]-	'^.*\\(([0-9][0-9][0-9][0-9]-	closed: only a parenthesised date counts
-heading-rule-first-blank	tools/self/accumulate.sh	elif [ -n "$line" ] && bb_heading_continues "$block" "$line"; then	elif true; then	closed: a body line glued under a finished heading is not part of its block (dir #847)
-span-only-line-continues	tools/self/accumulate.sh	elif [ -n "$line" ] && bb_heading_continues	elif bb_heading_continues	closed: a line that is only a code span ends the block, as in the census
+heading-rule-first-blank	tools/lib/backlog-blocks.sh	[ -n "$_bb_ln" ] && bb_heading_continues "$BB_HEADING_BLOCK" "$_bb_ln" || break	[ -n "$_bb_ln" ] || break	closed: a body line glued under a finished heading is not part of its block (dir #847)
+span-only-line-continues	tools/lib/backlog-blocks.sh	[ -n "$_bb_ln" ] && bb_heading_continues	bb_heading_continues	closed: a line that is only a code span ends the block, as in the census
 next-heading-absorbed	tools/self/accumulate.sh	line[j] != "" && line[j] !~ /^##+ / && n <= 50	line[j] != "" && n <= 50	closed: the next ticket's heading is never part of this heading's block

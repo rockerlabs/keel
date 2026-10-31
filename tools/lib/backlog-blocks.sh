@@ -194,6 +194,35 @@ bb_heading_continues() {
   [[ ! "$so_far" =~ $BB_HEADING_TAIL_PATTERN ]]
 }
 
+# bb_heading_end <array_name> <start_index> <last_index>
+#   dir #916: the ONE wrapped-heading walk. <array_name> names an array holding the text's lines, one per element
+#   (element 0 = line 1; the caller blanks fenced blocks and inline code spans first); <start_index> is the
+#   heading's own element and <last_index> the last element the walk may read (the ticket's end). The walk takes
+#   the lines bb_heading_continues accepts, stops at the first empty line, and reads at most 50 lines past the
+#   heading whatever <last_index> says (a wrapped title realistically never runs longer; the cap keeps the cost
+#   independent of how long the ticket is). Sets, in the caller's shell (no subshell, so call it directly):
+#     BB_HEADING_END    the index one past the heading's last line (start_index + 1 when nothing wraps)
+#     BB_HEADING_BLOCK  the heading's lines joined by newlines
+#   bash 3.2 has no namerefs: the array is read through `${!ref}` with ref="name[i]", and <last_index> must lie
+#   inside the array (an unset element aborts under `set -u`).
+bb_heading_end() {
+  local _bb_arr="$1" _bb_i="$2" _bb_last="$3" _bb_ref _bb_ln
+  [ $((_bb_i + 50)) -lt "$_bb_last" ] && _bb_last=$((_bb_i + 50))
+  _bb_ref="${_bb_arr}[$_bb_i]"
+  BB_HEADING_BLOCK="${!_bb_ref}"
+  _bb_i=$((_bb_i + 1))
+  while [ "$_bb_i" -le "$_bb_last" ]; do
+    _bb_ref="${_bb_arr}[$_bb_i]"
+    _bb_ln="${!_bb_ref}"
+    [ -n "$_bb_ln" ] && bb_heading_continues "$BB_HEADING_BLOCK" "$_bb_ln" || break
+    BB_HEADING_BLOCK+=$'\n'"$_bb_ln"
+    _bb_i=$((_bb_i + 1))
+  done
+  # shellcheck disable=SC2034  # read by the callers (cloud-brief.sh); the others use BB_HEADING_BLOCK only
+  BB_HEADING_END="$_bb_i"
+  return 0
+}
+
 backlog_ticket_blocks() {
   local file="$1"
   # dir #605: optional ERE heading token (default = keel's two shapes); see backlog-census.sh --ticket-token.
@@ -245,7 +274,7 @@ backlog_ticket_blocks() {
 
   local bidx=0
   local nb="${#boundary_lines[@]}"
-  local start end heading_line probe block_scan_end heading_block closed flat
+  local start end heading_line heading_block closed flat
   local own_num stripped_block
 
   for start in "${heading_lines[@]}"; do
@@ -264,18 +293,8 @@ backlog_ticket_blocks() {
     # dir #255: a heading whose title text wraps across physical source lines can carry its
     # terminal tag on a continuation line, not the `### ...` line itself — build the whole
     # heading block (up to the first blank line, capped at 50 lines past start) and test that.
-    probe=$((start + 1))
-    block_scan_end="$end"
-    [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
-    heading_block="$heading_line"
-    # dir #839: a non-blank next line is a continuation only when bb_heading_continues says so —
-    # a bare "first blank line" rule also swallowed a body line written directly under a FINISHED
-    # heading, and a `✅ DONE` in it closed an open ticket.
-    while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ] \
-      && bb_heading_continues "$heading_block" "${stripped_lines[$((probe - 1))]}"; do
-      heading_block+=$'\n'"${stripped_lines[$((probe - 1))]}"
-      probe=$((probe + 1))
-    done
+    bb_heading_end stripped_lines $((start - 1)) $((end - 1))
+    heading_block="$BB_HEADING_BLOCK"
 
     # F-04 (dir #267 fixer brief): a naive `grep -qE '— ✅ ...' <<< "$heading_block"` counts a
     # DIFFERENT ticket's own closure tag too, whenever body text absorbed into the block (no blank

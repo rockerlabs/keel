@@ -842,19 +842,8 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
       # independent of how far a ticket's body-span happens to reach (found by /simplify's
       # efficiency pass; the cap's SIZE was then sized up by /code-review medium's altitude pass,
       # which measured the historical margin above).
-      probe=$((start + 1))
-      block_scan_end="$end"
-      [ $((start + 50)) -lt "$end" ] && block_scan_end=$((start + 50))
-      heading_block="$heading_line"
-      # dir #766: the lib's shared rule (dir #839) decides which following lines belong to the heading — a body line
-      # written with no blank line after a FINISHED heading is not absorbed into it (it used to be, so a `— ✅` at the
-      # start of that body line read as the heading's own tag and the check went quiet). The common case (a blank
-      # line right after the heading) never reaches the function.
-      while [ "$probe" -le "$block_scan_end" ] && [ -n "${stripped_lines[$((probe - 1))]}" ] \
-        && bb_heading_continues "$heading_block" "${stripped_lines[$((probe - 1))]}"; do
-        heading_block+=$'\n'"${stripped_lines[$((probe - 1))]}"
-        probe=$((probe + 1))
-      done
+      bb_heading_end stripped_lines $((start - 1)) $((end - 1))
+      heading_block="$BB_HEADING_BLOCK"
       # Scope, per the ticket this implements (dir #87): a MISSING tag (no ✅/⏳/RETRACTED at all)
       # vs. a body that already records closure — not a WRONG tag (e.g. heading stuck on
       # ⏳ IN FLIGHT while the body says ✅ CLOSED). Any existing tag short-circuits below,

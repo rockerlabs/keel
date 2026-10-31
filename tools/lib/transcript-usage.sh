@@ -43,8 +43,8 @@
 #   discriminator dir #313's own first draft assumed — but `true` throughout a SUBAGENT file. The fact
 #   that separates primary from fan-out is which FILE a record lives in, not a field inside it (dir
 #   #314 SPEC §6.2, §8.3).
-# - The harness's own project-directory slug: an absolute path with every `/` AND every `.` replaced by
-#   `-` (verified live: ".../keel/.claude/worktrees/X" -> "...keel--claude-worktrees-X" — the dot in
+# - The harness's own project-directory slug: an absolute path with every byte outside [A-Za-z0-9] — `/`, `.`, a
+#   space, `_`, a non-ASCII byte — replaced by `-` (dir #916; verified live for `/` and `.`: ".../keel/.claude/worktrees/X" -> "...keel--claude-worktrees-X" — the dot in
 #   ".claude" becomes a dash too, producing the double-dash a naive "replace / only" slug would miss).
 #   A repo's own checkout and every one of its worktrees each get a DIFFERENT slug from this same
 #   transform, sharing only the prefix up to the repo's own path — session discovery must glob
@@ -67,6 +67,9 @@
 # its own copy of the main-checkout-resolution chain — see that function's own comment for why.
 # shellcheck source=tools/lib/repo-top.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/repo-top.sh"
+# dir #916: the harness's directory-name encoding is tools/lib/project-slug.sh's, one copy for every caller.
+# shellcheck source=tools/lib/project-slug.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/project-slug.sh"
 
 # tu_projects_root — where this machine keeps Claude Code transcripts. Reuses $KEEL_HOME exactly the
 # way tools/lib/impact-store.sh's impact_store_root already does for "$HOME/.claude" resolution,
@@ -76,13 +79,13 @@ tu_projects_root() {
   printf '%s/projects' "${KEEL_HOME:-${HOME:?transcript-usage: set HOME, or export KEEL_HOME}/.claude}"
 }
 
-# tu_project_slug DIR — DIR's absolute path with every '/' and '.' replaced by '-', matching the
-# harness's own transcript-directory naming (verified live, see header). Empty output and non-zero
+# tu_project_slug DIR — DIR's absolute path with every byte outside [A-Za-z0-9] replaced by '-' (keel_project_slug),
+# matching the harness's own transcript-directory naming (verified live, see header). Empty output and non-zero
 # status if DIR does not resolve — a caller must check, never assume a slug for a bad path.
 tu_project_slug() {
   local dir="$1" abs
   abs="$(cd "$dir" 2>/dev/null && pwd)" || return 1
-  printf '%s' "$abs" | tr '/.' '--'
+  keel_project_slug "$abs"
 }
 
 # tu_repo_top [DIR] — the project's main-checkout top for DIR (default cwd), folding worktrees into

@@ -301,15 +301,12 @@ hits_in_file() {
 # heading_block_of TEXT → the heading line (TEXT's first) plus the following lines bb_heading_continues accepts (dir #839's
 # rule, shared with the census; dir #847). Inline code spans are blanked first, as backlog_ticket_blocks does.
 heading_block_of() {
-  local spans line block="" first=1
+  local spans line
+  local -a hb_lines=()
   spans="$(blank_inline_code_spans <<< "$1")"
-  while IFS= read -r line; do
-    if [ "$first" = 1 ]; then block="$line"; first=0
-    elif [ -n "$line" ] && bb_heading_continues "$block" "$line"; then block+="$NL$line"
-    else break
-    fi
-  done <<< "$spans"
-  printf '%s' "$block"
+  while IFS= read -r line; do hb_lines+=("$line"); done <<< "$spans"
+  bb_heading_end hb_lines 0 $((${#hb_lines[@]} - 1))
+  printf '%s' "$BB_HEADING_BLOCK"
 }
 
 # closed_state CLASS → prints open | closed <glyph> <date|—> | draft | orphaned

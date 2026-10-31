@@ -932,9 +932,9 @@ export HOME="$SANDBOX/x/first_last"
 mkdir -p "$HOME"
 fx
 # A slug nested in another project-dir name (a session started under a scratch root) follows a `-`; the
-# `/` and `.` → `-` form (tools/lib/transcript-usage.sh's tu_project_slug) keeps the `_`.
+# tu_project_slug form is the same encoding since dir #916 (tools/lib/project-slug.sh), so the `_` goes too.
 nested="$(home_slug "/private/tmp/claude-$(id -u)/$(home_slug "$HOME")-proj")"
-tu_form="$(printf '%s' "$HOME" | tr '/.' '--')"
+tu_form="$(. "$REPO_ROOT/tools/lib/project-slug.sh"; keel_project_slug "$HOME")"
 add_ticket "\\n### dir #866 — the home's own project dir — R4 — → pool\\n\\nMemory: $(home_slug "$HOME")/memory/MEMORY.md\\nNested: $nested/memory\\nTranscripts: $tu_form/s.jsonl\\n\\n**Cloud:** yes (2026-10-27, fixture)\\n"
 cb "$P" "dir #866" --out "$F/fl.md"
 check_status "T12 a HOME named first_last builds" 0 "$STATUS"
@@ -943,7 +943,7 @@ check_contains "T12 … its CLI-style slug (first-last) rewritten" "$fl" "Claude
 check_absent "T12 … no slug left" "$fl" "first-last"
 check_contains "T12 the bare home slug before a / → -Users-x/" "$fl" "Memory: -Users-x/memory/MEMORY.md"
 check_contains "T12 a slug nested after a - rewritten" "$fl" "Nested: -private-tmp-claude-$(id -u)--Users-x-proj/memory"
-check_contains "T12 the tu_project_slug form (first_last kept) rewritten" "$fl" "Transcripts: -Users-x/s.jsonl"
+check_contains "T12 the tu_project_slug form (one encoder with the CLI's) rewritten" "$fl" "Transcripts: -Users-x/s.jsonl"
 check_absent "T12 … no tu form left" "$fl" "first_last"
 # A home's slug is rewritten only where it starts a token: never glued after a letter or digit (privacy first: one
 # glued before a letter is still rewritten, so a sibling's `-…-root2-…` hides the login too).
