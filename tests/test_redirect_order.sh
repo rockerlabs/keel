@@ -22,11 +22,19 @@ AWK_PROG='
 }'
 
 # Lint over the tracked tree (tests/ excluded: they plant bad forms on purpose).
-hits="$(cd "$REPO_ROOT" && git ls-files -z -- '*.sh' ':!tests/' | xargs -0 awk "$AWK_PROG" 2>/dev/null)"
-if [ -z "$hits" ]; then
-  pass "no 'cmd < file 2>…' input-before-stderr redirect in tracked tools"
+# A scan that could not run must fail, never pass as "no hits".
+files="$(cd "$REPO_ROOT" && git ls-files -z -- '*.sh' ':!tests/' | tr '\0' '\n')" || files=""
+if [ -z "$files" ]; then
+  fail "lint scans the tracked tools" "git ls-files listed no .sh files"
 else
-  fail "no 'cmd < file 2>…' input-before-stderr redirect in tracked tools" "$hits"
+  hits="$(cd "$REPO_ROOT" && printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 awk "$AWK_PROG")"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "lint scans the tracked tools" "awk/xargs failed (rc=$rc)"
+  elif [ -z "$hits" ]; then
+    pass "no 'cmd < file 2>…' input-before-stderr redirect in tracked tools"
+  else
+    fail "no 'cmd < file 2>…' input-before-stderr redirect in tracked tools" "$hits"
+  fi
 fi
 
 # Self-rows on a scratch file: the lint reports the bad form and stays quiet on the fixed forms.
