@@ -656,6 +656,8 @@ case "$(uname -s)" in
   *) script -qefc "bash $(printf '%q' "$WORK/run-cli.sh")" "$WORK/cli.out" < /dev/null > /dev/null 2>&1 & ;;
 esac
 script_pid=$!
+dispatch_timeout="${CLOUD_DISPATCH_TIMEOUT:-300}"
+case "$dispatch_timeout" in '' | *[!0-9]*) dispatch_timeout=300 ;; esac
 stuck="" waited=0
 while kill -0 "$script_pid" 2>/dev/null; do
   # A captured variable, not `cli_clean | grep -q`: grep's early exit would fail the pipeline under pipefail.
@@ -663,7 +665,7 @@ while kill -0 "$script_pid" 2>/dev/null; do
   if grep -qE 'Is this a project you created or one you trust|Yes, I trust this folder' <<< "$seen"; then
     stuck=trust; break
   fi
-  if [ "$waited" -ge "${CLOUD_DISPATCH_TIMEOUT:-300}" ]; then stuck=timeout; break; fi
+  if [ "$waited" -ge "$dispatch_timeout" ]; then stuck=timeout; break; fi
   sleep 1
   waited=$((waited + 1))
 done
@@ -682,7 +684,7 @@ if [ "$stuck" = trust ]; then
 fi
 if [ "$stuck" = timeout ]; then
   back_to_built
-  die 5 "the CLI did not finish within ${CLOUD_DISPATCH_TIMEOUT:-300}s (an interactive prompt may be waiting) — killed; the row is back to built; nothing was claimed. Run it by hand, from $MAIN:
+  die 5 "the CLI did not finish within ${dispatch_timeout}s (an interactive prompt may be waiting) — killed; the row is back to built; nothing was claimed. Run it by hand, from $MAIN:
   $CLI_CMD"
 fi
 if [ "$cli_rc" -ne 0 ] || ! grep -q 'Created cloud session' <<< "$CLI_OUT"; then
