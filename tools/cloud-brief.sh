@@ -651,8 +651,11 @@ cli_clean() {
 }
 # The CLI runs in the background and is watched: it stops on an interactive prompt nobody answers (dir #926), so a
 # folder-trust prompt in its output, or CLOUD_DISPATCH_TIMEOUT seconds (default 300) without an exit, ends it.
+# Both `script`s must flush the typescript on every write, or the prompt is invisible until the CLI exits: BSD
+# `script` (macOS) needs -F, util-linux needs -f (probed: without them the file stays empty until exit). The
+# typescript may start with a ^D byte (stdin is /dev/null); the prompt match is a substring match, so it is tolerated.
 case "$(uname -s)" in
-  Darwin) script -q "$WORK/cli.out" bash "$WORK/run-cli.sh" < /dev/null > /dev/null 2>&1 & ;;
+  Darwin) script -qF "$WORK/cli.out" bash "$WORK/run-cli.sh" < /dev/null > /dev/null 2>&1 & ;;
   *) script -qefc "bash $(printf '%q' "$WORK/run-cli.sh")" "$WORK/cli.out" < /dev/null > /dev/null 2>&1 & ;;
 esac
 script_pid=$!

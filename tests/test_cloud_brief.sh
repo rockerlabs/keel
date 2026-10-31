@@ -1329,6 +1329,12 @@ cbo "$P" --sweep
 check_status "T17 a sweep with no open R3/R4/📐 ticket → 0" 0 "$STATUS"
 check_eq "T17 … a header and no ticket rows" "0" "$(grep -c '^  dir #' <<< "$OUT")"
 
+# dir #926: BSD `script` (macOS) buffers its typescript until exit unless run with -F (probed on macOS 15), so the
+# trust prompt would go unseen; this host cannot run the Darwin branch, so pin its flag in the source.
+check_eq "T18 the Darwin branch runs script with -F (flush on every write)" "1" \
+  "$(grep -c 'Darwin) script -qF "\$WORK/cli.out"' "$REPO_ROOT/tools/cloud-brief.sh")"
+check_eq "T18 the Linux branch runs script with -f" "1" "$(grep -c '\*) script -qefc ' "$REPO_ROOT/tools/cloud-brief.sh")"
+
 # --- T18 / T21: --dispatch -----------------------------------------------------------------------------------------
 fx
 git -C "$P" checkout -q -b elsewhere
