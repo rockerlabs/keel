@@ -283,9 +283,9 @@ decode_nonascii="$personal_nonascii"
 # SIGPIPE and prints "write error: Broken pipe" ahead of the reason below (dir #849, the dir #280 class).
 if [ -n "$has_personal" ]; then
   printf 'x\n' > "$SCRATCH/probe-in.txt" || _fail_closed "write the personal-regex probe input" $?
-  rc=0; LC_ALL=C grep -iE -f "$personal_pat" < "$SCRATCH/probe-in.txt" >/dev/null 2>&1 || rc=$?
+  rc=0; LC_ALL=C grep -iE -f "$personal_pat" >/dev/null 2>&1 < "$SCRATCH/probe-in.txt" || rc=$?
   if [ "$rc" -lt 2 ]; then
-    grep -iE -f "$personal_pat" < "$SCRATCH/probe-in.txt" >/dev/null 2>&1 || rc=$?
+    grep -iE -f "$personal_pat" >/dev/null 2>&1 < "$SCRATCH/probe-in.txt" || rc=$?
   fi
   if [ "$rc" -ge 2 ]; then
     echo "secret-scan: invalid regex in $PERSONAL_FILE — personal-data detection would be" >&2
@@ -323,7 +323,7 @@ cur_blob=""
 rec_dedupe_from=""; rec_dedupe_to=""
 
 # a file (or blob) is binary if it contains a NUL byte
-is_binary_file() { ! LC_ALL=C tr -d '\000' < "$1" 2>/dev/null | cmp -s - "$1"; }
+is_binary_file() { ! LC_ALL=C tr -d '\000' 2>/dev/null < "$1" | cmp -s - "$1" 2>/dev/null; }
 
 # match a text FILE against both classes; optional extra grep flag (e.g. -n) via $1, and an optional
 # extra case-sensitive ERE OR'd into class 1 via $3 (e.g. $SESSION_META for messages, as count_matches).
@@ -738,7 +738,7 @@ selftest() {
   # A file, not `printf | grep`: grep exits on the bad pattern before reading, so a piped producer gets SIGPIPE
   # and prints "write error: Broken pipe" to stderr (dir #849, the dir #280 class).
   printf 'x\n' > "$dir/probe-in.txt"
-  greprc=0; grep -iE -e 'unbalanced(paren' < "$dir/probe-in.txt" >/dev/null 2>&1 || greprc=$?
+  greprc=0; grep -iE -e 'unbalanced(paren' >/dev/null 2>&1 < "$dir/probe-in.txt" || greprc=$?
   if [ "$greprc" -ge 2 ]; then
     printf 'unbalanced(paren\n' > "$dir/badre"
     printf 'anything\n' > "$dir/any.txt"
@@ -870,7 +870,7 @@ scan_file_args() {
     [ -f "$f" ] || { echo "secret-scan: no such file: $f" >&2; exit 2; }
     # a checked read into a spool (dir #715 review): an unreadable file exits 2 naming it, not 1 (the
     # "found" status, with no hit line for a caller to parse); the name never reaches cmp/grep
-    cat < "$f" > "$fspool" 2>"$ferr" || _fail_closed "read '$f'" $? "$ferr"
+    cat 2>"$ferr" > "$fspool" < "$f" || _fail_closed "read '$f'" $? "$ferr"
     emit_file "$f" "$fspool"
   done
 }

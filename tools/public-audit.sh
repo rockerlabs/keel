@@ -684,7 +684,7 @@ if [ "${#tokens[@]}" -gt 0 ] || [ "$has_personal" = 1 ]; then
       fsize="$(wc -c 2>/dev/null < "$DIR/$f")" || { gap "could not read '$f' in the working tree (exit $?) — the audit is INCOMPLETE"; continue; }
       fsize="${fsize//[[:space:]]/}"
       if [ "${fsize:-0}" -gt "$wt_max" ]; then wt_bin_skipped=$((wt_bin_skipped + 1)); continue; fi
-      LC_ALL=C tr -d '\000' < "$DIR/$f" 2>/dev/null | cmp -s - "$DIR/$f" 2>/dev/null && continue
+      LC_ALL=C tr -d '\000' 2>/dev/null < "$DIR/$f" | cmp -s - "$DIR/$f" 2>/dev/null && continue
       decode_binary "$DIR/$f" "$audit_tmp/wt.dec" || { gap "could not decode '$f' in the working tree (exit $?) — the audit is INCOMPLETE"; continue; }
       if [ "${#tokens[@]}" -gt 0 ]; then
         for t in "${tokens[@]}"; do

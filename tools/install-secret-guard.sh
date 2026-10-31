@@ -250,7 +250,7 @@ _isg_is_shipped_hook() {
   local sum
   _isg_is_keel_hook "$1" || return 1
   [ -r "$isg_sums" ] || return 1
-  sum="$(cksum < "$1" 2>/dev/null)" || return 1
+  sum="$(cksum 2>/dev/null < "$1")" || return 1
   grep -qxF -- "${1##*/} $sum" "$isg_sums"
 }
 

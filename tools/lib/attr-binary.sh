@@ -26,7 +26,7 @@ attr_binary_nulless() {
   local repo="$1" f
   while IFS= LC_ALL=C read -r -d '' f; do
     [ -f "$repo/$f" ] && [ ! -L "$repo/$f" ] || continue
-    if LC_ALL=C tr -d '\000' < "$repo/$f" 2>/dev/null | cmp -s - "$repo/$f" 2>/dev/null; then
+    if LC_ALL=C tr -d '\000' 2>/dev/null < "$repo/$f" | cmp -s - "$repo/$f" 2>/dev/null; then
       printf ':(literal)%s\0' "$f"
     fi
   done
