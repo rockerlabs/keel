@@ -202,6 +202,7 @@ sf_hook "$R" "git -C ~/'\$(touch $S/PWNED2)' checkout -- f" a1
 check_nofile "Q8: a command substitution inside a tilde path is never run (no eval)" "$S/PWNED2"
 
 # --- Y1–Y11, one row per matcher clause the mutation list (tests/mutants/pre-pr-gate-subagent.tsv, dir #790) found unpinned ---------
+# Rows Y12–Y16 are dir #911's (slice 2, the shell half sg_val .. sg_check).
 sf_allow "Y1: GIT_DIR and GIT_WORK_TREE both name the scratch clone (the work tree is the assignment's, not the cwd's)" "GIT_DIR=$X/.git GIT_WORK_TREE=$X git commit --allow-empty -m x"
 sf_allow "Y2: every -C joins the chain: -C X -C d is X/d" "git -C $X -C d commit --allow-empty -m x"
 sf_deny "Y3: --config-env takes its value as a separate word" 'git --config-env foo=BAR checkout -- f'
@@ -213,6 +214,13 @@ sf_allow "Y8: pushd +N is unknown" 'pushd +1 && git stash'
 sf_allow "Y9: cd -P <dir> skips the option" "cd -P $X && git stash"
 sf_deny "Y10: a directory init names does not outlive its segment" "git init $TMP/n5; git commit --allow-empty -m x"
 sf_allow "Y11: a command word with an expansion is not read as git (its path is unknown)" 'H=/usr/bin; $H/git checkout -- f'
+
+sf_hook "$R" 'cd ~ && git stash' a1 HOME=
+if [ -z "$OUT" ] && [ "$STATUS" = 0 ]; then pass "allow: Y12: with HOME empty a bare ~ is unknown"; else fail "allow: Y12: with HOME empty a bare ~ is unknown" "expected an empty allow — got: $STATUS ${OUT:-<empty>}"; fi
+sf_allow "Y13: after an unknown cd a relative -C is unknown, even one the hook's own cwd would resolve" 'cd "$Q" && git -C ../../R stash'
+sf_allow "Y14: a second write to the same other repository is still allowed" "git -C $X stash; git -C $X stash"
+sf_allow "Y15: a second write through the same other git dir is still allowed" "GIT_DIR=$X/.git GIT_WORK_TREE=$X git stash; GIT_DIR=$X/.git GIT_WORK_TREE=$X git stash"
+sf_deny "Y16: a cd after the git segment does not apply to it" "git stash; cd $X"
 
 # --- G1–G2, the PR rule is untouched ---------------------------------------------------------------------------------------
 sf_hook "$R" 'gh pr create --fill' a1
