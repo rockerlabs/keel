@@ -1110,8 +1110,10 @@ _extract_dir_tickets() { _strip_ref_citations | extract_dir_tickets; }
 # tab-aligned commit message) silently fails to strip on macOS while working on Linux/CI. The POSIX
 # bracket class matches an actual tab identically on both, the same class `tools/lib/dir-tickets.sh`'s
 # own extraction regex already uses for exactly this reason.
+# Bold markers (`**`/`__`) are stripped first, the same pass `extract_dir_tickets` makes (dir #578), so a
+# bold-wrapped `**dir #N** (ref)` marker is excluded exactly like the plain one (dir #588).
 _strip_ref_citations() {
-  sed -E 's/dir #[0-9]+(-[0-9]+)?[[:space:]]*\(ref\)//g'
+  sed -E 's/(\*\*|__)//g; s/dir #[0-9]+(-[0-9]+)?[[:space:]]*\(ref\)//g'
 }
 
 # KEEL_PENDING_RELEASE_MAX_COMMITS (dir #156, env-overridable, default 40): how many commits past a
