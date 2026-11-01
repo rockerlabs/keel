@@ -406,24 +406,26 @@
 # "answered" or "timed out" (which itself submits) — nothing here currently distinguishes a hypothetical
 # future interrupt path from an ordinary miss, and none is assumed.
 #
-# **Marker** — the dialog's question text must carry, verbatim, the literal line
-# `KEEL-REVIEW-DIALOG: level=<level>` (same literal-match discipline as `KEEL-AGENT-REVIEW` above, same
-# reason: this hook greps for it, not the human-facing wording, which must stay free to change — dir #64's
-# tag-vs-prose lesson). Below, `skill-trace`'s new branch greps `$st_input` (the RAW event JSON, not a
-# parsed field — see TO VERIFY (2) above) for `KEEL-REVIEW-DIALOG: level=<word>`, takes the LAST match,
-# then validates the captured word against `$ACCEPTED_REVIEW_LEVELS` exactly (not embedded in the regex
-# itself — found in the operator-run /code-review high pass: an in-regex alternation lets grep's
-# leftmost-longest match truncate a malformed `level=highest` down to a false-accepted `high`), and
-# appends `<sha>\tdialog:<level>` to the same trace file the Skill/UserPromptExpansion/
-# SubagentStop legs already write (`trace_path_for`) — sha is this hook's OWN `git … rev-parse HEAD` at
-# fire time, never a self-reported field, same trust boundary as every other leg. No marker / no sha →
-# silent exit 0, same as the other legs.
+# **Marker** — dir #319 (supersedes dir #88's composed form, a `level=<level>` suffix after the marker): the
+# dialog's question must END with the bare literal `KEEL-REVIEW-DIALOG` (trailing whitespace aside), in the
+# SAME single dialog, the same shape as step 4's `KEEL-DEPTH-DIALOG` (dir #118) — the literal is matched
+# by this hook, not the human-facing wording, which must stay free to change (dir #64's tag-vs-prose
+# lesson). Below, `skill-trace`'s AskUserQuestion branch reads `tool_response.answers` (not the raw event
+# text) through `_answer_for_trailing_marker`: exactly ONE answer key ends with the marker and its value
+# is a non-empty answer → append `<sha>\tdialog:review` (level-less: the level was never load-bearing —
+# the receipt's level is bound to step 4's depth and to the `agent:<level>` trace at the same sha, and
+# the reminder's job is "the add-on offer was put and answered for this commit", not which add-on was
+# chosen) to the same trace file the Skill/UserPromptExpansion/SubagentStop legs already write
+# (`trace_path_for`) — sha is this hook's OWN `git … rev-parse HEAD` at fire time, never a
+# self-reported field, same trust boundary as every other leg. An unanswered dialog, a mid-sentence
+# mention, two questions both ending with it, or the old composed shape trace nothing; no marker / no
+# sha → silent exit 0, same as the other legs.
 #
 # **Gate check** — in the PASS branch, immediately after the existing review-trace check: whenever
 # `$review_outcome` matches `agent:*` (bare `agent:<level>`, or with an add-on —
 # `agent:<level>+<addon>`, dir #183's single-token shape; the dialog reminder fires identically for
 # every one of them), additionally
-# require a `dialog:<outcome_level>` line for `$current_sha` in the trace file; else deny naming the
+# require a `dialog:review` line (dir #319; `dialog:skip` for a skip) for `$current_sha` in the trace file; else deny naming the
 # dialog as missing. Per-SHA by construction (dir #72's convergence-round fork): a fix-commit moves HEAD,
 # so an earlier round's dialog line doesn't cover a later commit — a fresh answered dialog is required
 # per round, matching the MANDATORY paragraph's own "each such round moves HEAD" prose. Applies to
@@ -451,10 +453,16 @@
 # file contains any `dialog:` line — a flow that always skips the dialog would then never arm the check
 # at all, making it a permanent no-op, the exact failure mode this ticket exists to close.
 #
-# **Residual limits** (same discipline as dir #63/#70's own sections): (1) marker fabrication — any
-# `AskUserQuestion` whose text contains the marker traces, even an unrelated one, but uniquely among the
-# trace legs the faked artifact is ITSELF operator-visible (every dialog renders to the human), so the
-# silent-skip failure mode this ticket closes stays structurally closed even under fabrication; a
+# **Residual limits** (same discipline as dir #63/#70's own sections): (1) marker fabrication — dir #319
+# NARROWED this from "any `AskUserQuestion` whose text contains the marker, answered or not" to "the
+# trailing token of exactly ONE ANSWERED question" and does not claim to close it: an agent that ends an
+# UNRELATED question with the bare marker mints `dialog:review` the moment the operator answers it. A
+# required answer VALUE would not close this — the agent composes the option labels too, so any fixed
+# vocabulary can be planted on the same unrelated question (the depth leg's `skip` equally) — it would only
+# pin human-facing wording and turn every free-text "Other" answer into a false deny. What bounds it is
+# that, uniquely among the trace legs, the faked artifact is ITSELF operator-visible: the marker is the
+# last token of the question the human reads, so the spoof is a visible artifact, not a silent one, and
+# the silent-skip failure mode this ticket closes stays structurally closed even under fabrication; a
 # dishonest model with Bash could anyway write the trace file directly (the standing residual every leg
 # shares). (2) sha keyed to the event cwd, not the eventual `--head` — same split-checkout false-deny
 # trade-off as dir #63 limit (2). (3) per-repo trace file shared across worktrees — same as dir #63 limit
@@ -735,6 +743,11 @@ ACCEPTED_REVIEW_LEVELS='low medium high max'
 # call sites further down. A future reorder still has to be reflected here, but only here — not
 # hunted down at each of the six sites separately (caught live by a peer session's review of this
 # ticket: an earlier draft of this comment claimed no such binding existed at all, which was false).
+# dir #319: `KEEL-REVIEW-DIALOG` followed `KEEL-DEPTH-DIALOG` below — it is a bare trailing literal now
+# too, so only `KEEL-AGENT-REVIEW` is still composed (a `: level=<word>` suffix the hook parses), and the
+# test file's `_composed_marker_sweep` (whose pattern needs `: level=`) protects only that one. The
+# array and its positional binding stay untouched (dir #147); the sweep's alternation over all three
+# names is harmless over-coverage.
 # dir #118: since this array was built, `KEEL-DEPTH-DIALOG` stopped being a "composed" token in the
 # sense the name and the dir #147 comment above describe — it no longer takes a `: level=<word>`
 # suffix at all (the outcome now comes from the operator's ANSWER, not the question text; see its own
@@ -771,6 +784,33 @@ _match_review_level() {
     fi
   done
   return 1
+}
+# dir #319 (M1): the ONE answer-keyed read both AskUserQuestion dialog legs use (the depth leg, dir #118,
+# and the review-reminder leg). $1 the raw PostToolUse(AskUserQuestion) event JSON, $2 the marker. Looks
+# the marker up in `tool_response.answers`' OWN keys only (never `tool_input.questions`: a question that
+# was merely ASKED, with no answer, proves nothing), requires it to be the TRAILING token of the key
+# (`rstrip | endswith`, so a mid-sentence mention never matches), and requires EXACTLY ONE key to match
+# (zero or several resolve to nothing, never first-or-last: an ambiguous or decoy-bearing event fails
+# closed at both ends). Prints the matched answer as one JSON string per line (an array answer, a
+# multiSelect, yields one line per string element; a single-select yields one) — JSON-encoded so a
+# multi-line free-text answer stays on ONE line and cannot fake a line equal to a vocabulary word. Prints
+# nothing when there is no match, no answer, or an empty-string answer: an empty answer counts as
+# UNANSWERED (fail closed). Every step is type-guarded (`tool_response` may be any shape), so a malformed
+# event takes the explicit empty path and never leans on the trailing `2>/dev/null`, which stays only as
+# the last resort. ASSUMPTION, not confirmed live: the value of an "Other" free-text choice is a plain
+# string (possibly empty); the empty case is the one that fails closed, and a non-string value does too.
+_answer_for_trailing_marker() {
+  printf '%s' "$1" | jq -r --arg marker "$2" '
+    def rstrip: sub("[ \t\r\n]+$"; "");
+    ((.tool_response | if type == "object" then .answers else null end) // {}) as $answers
+    | ($answers | if type == "object" then to_entries else [] end
+       | map(select(.key | rstrip | endswith($marker)))
+      ) as $matches
+    | (if ($matches | length) == 1 then $matches[0].value else null end) as $a
+    | ($a | if type == "array" then .[] else . end)
+    | select(type == "string" and length > 0)
+    | @json
+  ' 2>/dev/null
 }
 # The review ADD-ON a step-5 outcome may name on top of a standing agent review, as a SINGLE token:
 # `agent:<level>+<addon>`. dir #158 had generalized this into a comma-separated SET, so a commit that
@@ -1074,6 +1114,19 @@ _stamp_depth_outcome() {
   sha="$(_head_sha "$cwd")"
   [ -n "$sha" ] && outcome="${outcome}:${sha}"
   printf '%s' "$outcome"
+}
+
+# dir #277: the ONE test for "was this skip-level step 4 outcome decided against THIS commit" —
+# shared by `receipt --recover`'s skip arm (below) and the PASS branch's `skip-stale-commit` check, so
+# the two cannot drift apart. $1 the recorded `polish.4-depth` outcome, $2 the commit to compare with.
+# True iff a stamp exists (`##*:` takes the LAST colon-separated field, which is the sha whenever
+# `_stamp_depth_outcome` appended one; on a bare `skip` it is a no-op, so comparing the result back to
+# the whole string tells "no stamp" apart from "a stamp") AND it equals $2. A legacy/unstamped bare
+# `skip` has no digest to check, so it fails everywhere: fail closed whenever the evidence is missing.
+_depth_skip_bound_to() {
+  local outcome="$1" sha="$2" stamp
+  stamp="${outcome##*:}"
+  [ "$stamp" != "$outcome" ] && [ -n "$sha" ] && [ "$stamp" = "$sha" ]
 }
 
 # The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
@@ -1718,7 +1771,7 @@ resolve_impact_log() {
 # the receipt-pass call below (dir #63/#64's `sweep` provenance trick, `prov_label`+`prov_tag`), the
 # dir #488 `review-null-exempt` call (the exempting ancestor sha + `$trace_match_outcome`), and the
 # dir #488 (Amendment B1) `review-null-dialog-exempt` call (the same ancestor sha + the dialog's own
-# `dialog:$outcome_level`). Each one's actual on-disk line has 6 tab fields, not 5, and $5 there is
+# dialog tag, `$needs_dialog_tag`). Each one's actual on-disk line has 6 tab fields, not 5, and $5 there is
 # the second packed value, not the claim key — currently harmless only because `keel-impact.sh`
 # doesn't score any of the three types (EVENT_TYPES excludes all of them), so nothing ever reads that
 # misplaced field. `keel-impact.sh cmd_add`'s ingest loop round-trips such a line VERBATIM (the
@@ -3285,9 +3338,8 @@ case "${1:-}" in
             # string is how "no stamp existed" is told apart from "a stamp existed and it was empty".
             case "$r_outcome" in
               skip|skip:*)
-                r_depth_sha="${r_outcome##*:}"
-                [ "$r_depth_sha" = "$r_outcome" ] && r_depth_sha=""
-                if [ -z "$r_depth_sha" ] || [ "$r_depth_sha" != "$current_head" ]; then
+                # dir #277: the shared predicate (see `_depth_skip_bound_to`), not an inline copy.
+                if ! _depth_skip_bound_to "$r_outcome" "$current_head"; then
                   _note_unrecovered "$r_step" "step 4 re-sized fresh (no proof the recorded skip was decided for current HEAD — an unstamped/legacy skip, or one decided at a different commit; re-confirm skip, or size fresh, for this diff)"
                   continue
                 fi
@@ -3433,38 +3485,24 @@ case "${1:-}" in
     fi
 
     if [ "$st_event" = "PostToolUse" ] && [ "$st_tool" = "AskUserQuestion" ]; then
-      # dir #88: unlike the Skill/SubagentStop legs, the marker is searched for in the RAW event JSON
-      # ($st_input), not a parsed field — the questions-array schema for a hook event is the one
-      # unverified detail (see the dir #88 header section's TO VERIFY), so grepping the raw text makes
-      # the exact field name non-load-bearing, the same defensive move dir #63's own TO-VERIFY-resolved
-      # block already documents for a different field. No `^...$` line anchor: the marker sits embedded
-      # inside a JSON string, not alone on its own line the way a subagent's plain-text final message is.
-      # Correctness fix (found in the operator-run /code-review high pass on this ticket): capture the
-      # FULL trailing word (greedy `[a-zA-Z0-9_-]+` — digits, underscore AND hyphen in the class:
-      # dir #116's own reviews found `level=high2` truncating to a false-accepted `high` under a
-      # letters-only class, `level=skip_x` under a letters-digits one, and `level=skip-waived` under a
-      # hyphen-less one — hyphen being the one separator this file's own outcome vocabulary uses, so
-      # exactly the string the receipt path rejects would have minted a trace), then
-      # validate it against the exact accepted set with a
-      # loop over $ACCEPTED_REVIEW_LEVELS — matching `(low|medium|high|max)` directly here would let
-      # `grep -Eo`'s leftmost-longest match truncate a malformed `level=highest`/`level=maximum` down to
-      # a false-accepted `high`/`max`, the same right-side-anchor gap the SubagentStop marker avoids with
-      # its own `^...$` anchoring. A loop, not a `case` pattern list, deliberately: an unquoted `|`-joined
-      # variable in a case pattern is matched as ONE literal glob string, not split into alternatives at
-      # runtime — confirmed the hard way while building this fix, see $ACCEPTED_REVIEW_LEVELS's own comment.
+      # dir #88 → dir #319: unlike the Skill/SubagentStop legs, this leg reads the event's ANSWER data
+      # (`tool_response.answers`, confirmed live by dir #118's probe), not marker text greped out of the raw
+      # event JSON. Both markers are bare trailing literals read through `_answer_for_trailing_marker`, so
+      # no level is parsed here any more — the old composed `level=<word>` grep, its greedy-word capture and
+      # its `_match_review_level` validation (the near-miss class `level=high2`/`high-ish`/`highest`) are
+      # structurally gone from this leg; the SubagentStop and Skill legs keep their own level handling.
       # dir #116/dir #118: step 4's mandatory skip dialog carries its OWN `KEEL-DEPTH-DIALOG` skip
       # marker — never the review marker below. A distinct token keeps the namespaces mechanically
       # separate: a sizing dialog cannot pre-satisfy § Step 5 (a)'s dir #88 check (its token never yields
-      # a `dialog:<review-level>` line), and the review marker cannot vouch for a skip (skip stays out
-      # of $ACCEPTED_REVIEW_LEVELS — the SubagentStop leg shares that set, and an agent review "at
-      # skip" would vouch for no review at all). The two parses are INDEPENDENT, not exclusive — an
+      # a `dialog:review` line), and the review marker cannot vouch for a skip (the review leg writes
+      # `dialog:review` whatever the answer, so even an answer of `skip` never yields `dialog:skip`: the
+      # separation comes from the TAG, not from a level vocabulary). The two parses are INDEPENDENT, not exclusive — an
       # event carrying both tokens writes both lines. Exclusivity was the first cut and produced a real
       # false-deny: a § Step 5 (a) reminder dialog merely QUOTING the depth token lost its own
-      # `dialog:<level>` line and denied a genuine agent unlock.
+      # `dialog:review` line and denied a genuine agent unlock.
       # Common case first: most AskUserQuestion events (ordinary clarifying questions with neither
-      # marker) carry NO marker — one builtin glob check keeps that dominant path fork-free. Unlike
-      # `KEEL-REVIEW-DIALOG:`, the depth marker below (dir #118) has no `:` suffix at all, so the glob
-      # can't require one — it only needs "some KEEL-*-DIALOG token is present somewhere".
+      # marker) carry NO marker — one builtin glob check keeps that dominant path fork-free. Both markers
+      # are bare (no `:` suffix), so the glob only needs "some KEEL-*-DIALOG token is present somewhere".
       case "$st_input" in
         *KEEL-*-DIALOG*) : ;;
         *) exit 0 ;;
@@ -3518,23 +3556,21 @@ case "${1:-}" in
       # missing one does, no crash involved at all. A missing/malformed `tool_response` still resolves
       # to no trace either way — failing closed, same direction as every other residual in this file,
       # never failing open into an unverified skip.
-      dpt_hit="$(printf '%s' "$st_input" | jq -r --arg marker "$MARKER_DEPTH_DIALOG" '
-        def rstrip: sub("[ \t\r\n]+$"; "");
-        (.tool_response.answers // {}) as $answers
-        | ($answers | if type == "object" then to_entries else [] end
-           | map(select(.key | rstrip | endswith($marker)))
-          ) as $matches
-        | (if ($matches | length) == 1 then $matches[0].value else null end) as $a
-        | ($a != null) and
-          ($a | if type == "array"
-                then any(.[]; type == "string" and (ascii_downcase == "skip"))
-                else (type == "string" and (ascii_downcase == "skip")) end)
-      ' 2>/dev/null)"
-      [ "$dpt_hit" = "true" ] && _append_trace_line "$st_cwd" "dialog:skip"
-      dlg_word="$(printf '%s' "$st_input" | grep -Eo "${MARKER_REVIEW_DIALOG}: level=[a-zA-Z0-9_-]+" | tail -n1)"
-      dlg_word="${dlg_word#${MARKER_REVIEW_DIALOG}: level=}"
-      dlg_level="$(_match_review_level "$dlg_word")" || dlg_level=""
-      [ -n "$dlg_level" ] && _append_trace_line "$st_cwd" "dialog:$dlg_level"
+      # dir #319 (M1): both legs read their answer through `_answer_for_trailing_marker` (above) — the
+      # filter this comment block describes, factored once. Depth leg: `dialog:skip` iff an answer
+      # case-folds to exactly `skip` (the lines are JSON strings, so the comparison includes the quotes).
+      dpt_ans="$(_answer_for_trailing_marker "$st_input" "$MARKER_DEPTH_DIALOG")"
+      if printf '%s\n' "$dpt_ans" | grep -qixF '"skip"'; then
+        _append_trace_line "$st_cwd" "dialog:skip"
+      fi
+      # dir #319: the review-reminder leg is the SAME primitive with its own bare marker: `dialog:review`
+      # (level-less) iff exactly one answered question ends with `KEEL-REVIEW-DIALOG` and carries a
+      # non-empty answer — ANY answer, since the reminder's job is "the add-on offer was put and answered
+      # for this commit", not which add-on was chosen. The level the old marker encoded was never
+      # load-bearing: the receipt's level is bound to step 4's depth and to the `agent:<level>` trace at
+      # the same sha. The composed `: level=<word>` shape and a mid-sentence mention now trace nothing.
+      rvw_ans="$(_answer_for_trailing_marker "$st_input" "$MARKER_REVIEW_DIALOG")"
+      [ -n "$rvw_ans" ] && _append_trace_line "$st_cwd" "dialog:review"
       exit 0
     fi
 
@@ -4158,6 +4194,13 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
   }
   END {
     if (malformed || nonce == "") { print "MALFORMED" SEP; exit }
+    # dir #277: step 5 is DERIVED, never receipted, when step 4 is a skip. It has no content of its own
+    # there (the only legal value is the literal skip, which step 4 already recorded), so it counts as
+    # present with that value whenever the current-nonce step 4 outcome is skip or skip:<...>. Done
+    # BEFORE the missing/replay computation, so a foreign-nonce leftover step 5 line under a skip depth
+    # is simply never consulted. An explicit step 5 line always wins over this (the depth cross-check
+    # still sees it). The stamp-vs-HEAD binding is the PASS branch (skip-stale-commit), not this awk.
+    if (!("polish.5-review" in got) && ("polish.4-depth" in got) && (val["polish.4-depth"] == "skip" || val["polish.4-depth"] ~ /^skip:/)) { got["polish.5-review"] = 1; val["polish.5-review"] = "skip" }
     missing = ""; replay = ""
     for (s in need) {
       if (!(s in got)) {
@@ -4418,7 +4461,7 @@ case "$status" in
     # trusted unconditionally, so a session could size the diff `medium`, then write `polish.5-review
     # skip` regardless. ONE case statement below is the only place that knows the trusted-suffix set —
     # it strips the suffix (to compare against step 4's level), decides whether a trace is required,
-    # decides whether the dir #88 dialog check applies (`$needs_dialog`: every `agent:*`-shaped
+    # decides whether the dir #88 dialog check applies (`$needs_dialog_tag`, dir #319: every `agent:*`-shaped
     # outcome — bare, or carrying an add-on (dir #183) — the outcomes § Step 5 (a)'s
     # reminder exists on — plus `skip` since dir #116, whose dialog is step 4's
     # own skip dialog instead), AND builds the dir #64 tier 2a provenance label +
@@ -4449,16 +4492,20 @@ case "$status" in
         "an invented value cannot be trusted to say what actually ran"
     fi
     trusted=0
-    needs_dialog=0
+    # dir #319 (M3): the dialog check is keyed by ONE variable — the trace tag it looks up, which also picks
+    # the deny message, so the lookup and the wording cannot drift apart. "" = no dialog check applies;
+    # `dialog:skip` = step 4's skip dialog (the `skip` arm); `dialog:review` = § Step 5 (a)'s reminder
+    # (every `agent:*` arm).
+    needs_dialog_tag=""
     # dir #488 (Amendment B1): defined here, unconditionally, so the dialog check further below can
     # read it under `set -u` regardless of which case arm runs — the `skip` arm sets trusted=1 and
     # never reaches the block that would otherwise populate this, so without this default a `skip`
-    # outcome (needs_dialog=1 too) would abort on an unbound variable the first time this ran.
+    # outcome (a dialog tag too) would abort on an unbound variable the first time this ran.
     review_null_ancestor=""
     trace_match_outcome="$review_outcome"
     case "$review_outcome" in
       skip)             outcome_level="skip";                       trusted=1
-                         # dir #116: needs_dialog here reads step 4's mandatory skip dialog (its
+                         # dir #116: the dialog tag here is step 4's mandatory skip dialog (its
                          # `KEEL-DEPTH-DIALOG` skip marker), not § Step 5 (a)'s reminder — skip is the one
                          # depth that bypasses step 5 outright, so that ANSWERED dialog is the only
                          # mechanical evidence the skip question was put to a human for THIS commit
@@ -4468,7 +4515,7 @@ case "$status" in
                          # coast on the prior diff's answer. prov_label stays "self-reported": unarmed
                          # installs still pass with no dialog line, so the label describes the floor,
                          # not the best case.
-                         needs_dialog=1
+                         needs_dialog_tag="dialog:skip"
                          prov_label="review: skip";  prov_tag="self-reported" ;;
       agent:*+*)        # dir #81, generalized to a set by dir #158, narrowed back to one token by
                          # dir #183: the operator additionally ran `/code-review` ON TOP of an
@@ -4569,7 +4616,7 @@ case "$status" in
                            outcome_level="${outcome_level%%+*}"
                          fi
                          trace_match_outcome="agent:$outcome_level"
-                         needs_dialog=1
+                         needs_dialog_tag="dialog:review"
                          # dir #303: this arm and the bare `agent:*)` arm below are BOTH reachable
                          # only on the dir #254 refusal fallback — the same evidence, an unanswerable
                          # Skill(code-review) invocation this run — yet before this fix only the bare
@@ -4585,7 +4632,7 @@ case "$status" in
                          # falsifier below the main case, right after the depth-mismatch check, for
                          # what this actually triggers (it re-tests $review_outcome directly against
                          # this same suffix rather than caching a flag here: unlike `trusted`/
-                         # `needs_dialog`, which this case sets and several branches downstream read,
+                         # `needs_dialog_tag`, which this case sets and several branches downstream read,
                          # this fact has exactly one reader, right after, and `$review_outcome` never
                          # changes in between — so a cached flag would just be a second place the
                          # suffix literal has to stay in sync with this arm's own `%`-strip, found by
@@ -4601,7 +4648,7 @@ case "$status" in
                          # just as self-report-fabricable, so it earns no more trust and still needs the
                          # SubagentStop trace match (skill-trace, above).
                          outcome_level="${review_outcome#agent:}"
-                         needs_dialog=1
+                         needs_dialog_tag="dialog:review"
                          prov_label="review: $outcome_level, independent agent review (Skill(code-review) invocation refused this run)"; prov_tag="agent-confirmed" ;;
       *)                outcome_level="$review_outcome"
                          prov_label="review: $outcome_level, trace-confirmed in-session"; prov_tag="trace-confirmed" ;;
@@ -4612,7 +4659,7 @@ case "$status" in
     # shape, not a hand-off result. Deny it outright rather than let a trusted-arm suffix dodge the
     # skip-dialog check below: reproduced in a sandbox, `skip-waived` + a matching `polish.4-depth
     # skip:*` unlocked an ARMED gate with no dialog ever answered, because `*-waived` sets trusted=1
-    # and leaves needs_dialog=0 — the same unconditional-trust shape dir #96 closed for step 6.
+    # and leaves needs_dialog_tag empty — the same unconditional-trust shape dir #96 closed for step 6.
     if [ "$outcome_level" = "skip" ] && [ "$review_outcome" != "skip" ]; then
       _deny_discarded "$sentinel" "$cwd" "$receipt_key" "skip-suffixed-outcome" \
         "Pre-PR gate: step 5 recorded '$review_outcome' — a suffixed 'skip' is not a valid outcome (skip has no review to waive or hand off; its only honest receipt is the bare 'skip', chosen via step 4's dialog)." \
@@ -4762,16 +4809,37 @@ case "$status" in
         fi
       fi
     fi
+    # dir #277: a `skip` unlock is bound to the commit step 4's skip was decided against. Step 5 is
+    # derived from step 4's own receipt (the parser, above), and `receipt` stamps that outcome with HEAD
+    # at write time, so a skip chosen for an earlier diff fails here whether or not a step 5 line exists
+    # (writing the missing line by hand changes nothing: no escape hatch). Armed and UNARMED repos alike —
+    # the stamp exists in both, unlike the dialog trace, which an UNARMED repo never checks. Before this
+    # an UNARMED repo had no per-commit binding on a skip at all. Ordered BEFORE the dialog check on
+    # purpose: a stale ARMED skip has both a stale stamp and a stale dialog, and the stamp names the cause.
+    # The core message must NEVER spell a dialog marker (same discipline as `skip-dialog-missing`).
+    if [ "$outcome_level" = "skip" ] && ! _depth_skip_bound_to "$depth_outcome" "$current_sha"; then
+      # Name the stamp only when the last colon field LOOKS like a commit sha (7+ hex digits): an unstamped
+      # `skip:<measurement>` (hand-appended, or sha resolution failed at write time) has a last field that
+      # is the measurement text, and printing that as "a commit" would hide the real cause.
+      skip_stamp="${depth_outcome##*:}"
+      case "$skip_stamp" in
+        *[!0-9a-f]*|"") skip_stamp="an unstamped legacy commit" ;;
+        *) if [ "$skip_stamp" = "$depth_outcome" ] || [ "${#skip_stamp}" -lt 7 ]; then skip_stamp="an unstamped legacy commit"; else skip_stamp="commit $skip_stamp"; fi ;;
+      esac
+      _deny_intact "$cwd" "skip-stale-commit" \
+        "Pre-PR gate: step 5 is 'skip' by way of step 4, but step 4's skip was decided against $skip_stamp and the commit being shipped is $current_sha — a skip chosen for a different diff cannot cover this one." \
+        "re-run step 4's ask-dialog for current HEAD (or size a real review) and write step 4's receipt fresh, then retry; no need to \"init\"."
+    fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
     # `agent:<level>+<addon>` — dir #183 — the reminder fires
-    # identically for all of them, `$needs_dialog` set by the SAME case statement above) additionally
+    # identically for all of them, `$needs_dialog_tag` set by the SAME case statement above) additionally
     # requires a mechanically-traced, ANSWERED
     # AskUserQuestion dialog for § Step 5 (a)'s MANDATORY reminder — the review claim itself can be
     # receipted honestly while that reminder is silently skipped by momentum (felt on dir #62/PR #147).
     # Armed only when the AskUserQuestion leg is actually wired (`_dialog_leg_armed`, above) — see the
     # dir #88 header section for why an unconditional check would false-deny every `agent:*` unlock
     # between `git pull` and the operator re-running the installer.
-    if [ "$needs_dialog" -eq 1 ] && _dialog_leg_armed "$main_top"; then
+    if [ -n "$needs_dialog_tag" ] && _dialog_leg_armed "$main_top"; then
       # dir #488 (Amendment B1 — the manager's own review of PR #432 found this: "a guard fixed one
       # function short of its own twin"): the review-trace check above already exempts a review-null
       # fix commit via $review_null_ancestor, but this dialog check kept keying strictly on
@@ -4781,21 +4849,21 @@ case "$status" in
       # Re-answering that dialog means re-running § Step 5 (a) — a Skill(code-review) invocation — which
       # is exactly the mechanical cost dir #488 exists to remove, so an unexempted twin here defeated
       # the whole ticket on every armed install. `$review_null_ancestor` is always defined by this
-      # point (initialized "" alongside `trusted`/`needs_dialog` above, never left unset by `set -u`)
+      # point (initialized "" alongside `trusted`/`needs_dialog_tag` above, never left unset by `set -u`)
       # — for the `skip` arm specifically it is unconditionally "" (skip sets trusted=1, so the
       # review-trace block above that would populate it never runs), so this fallback is structurally
       # a no-op for skip's own, unrelated dialog (step 4's, not § Step 5 (a)'s) — its behavior is
       # untouched, deliberately.
       dialog_ancestor_ok=0
-      if [ -n "$review_null_ancestor" ] && _trace_has_line "$wt" "$review_null_ancestor" "dialog:$outcome_level"; then
+      if [ -n "$review_null_ancestor" ] && _trace_has_line "$wt" "$review_null_ancestor" "$needs_dialog_tag"; then
         dialog_ancestor_ok=1
       fi
-      if _trace_has_line "$wt" "$current_sha" "dialog:$outcome_level"; then
+      if _trace_has_line "$wt" "$current_sha" "$needs_dialog_tag"; then
         : # answered for current HEAD directly — the ordinary case, nothing to log.
       elif [ "$dialog_ancestor_ok" -eq 1 ]; then
         # dir #488: logged, same as the review-trace exemption above — the dialog was genuinely
         # answered, just for the ancestor the review check already accepted, not current HEAD.
-        log_event "review-null-dialog-exempt" "$review_null_ancestor -> $current_sha"$'\t'"dialog:$outcome_level" "$cwd"
+        log_event "review-null-dialog-exempt" "$review_null_ancestor -> $current_sha"$'\t'"$needs_dialog_tag" "$cwd"
       else
         # dir #376: no retire_sentinel here — the chain is otherwise well-formed and only this one
         # dialog trace is missing, a precondition the session can still satisfy without losing the
@@ -4806,7 +4874,7 @@ case "$status" in
         # dialog. An explicit if/else (not two deny calls relying on deny()'s own exit): the same
         # duplicate-JSON hazard the dir #96 comment in deny() documents would reappear the day deny
         # ever stopped being terminal.
-        if [ "$outcome_level" = "skip" ]; then
+        if [ "$needs_dialog_tag" = "dialog:skip" ]; then
           dlg_deny_reason="skip-dialog-missing"
           # This message must NEVER spell the matchable marker string itself: even though dir #118
           # made the depth leg require a matching ANSWER too (not just marker presence), a session
@@ -4818,7 +4886,7 @@ case "$status" in
           dlg_deny_action="re-run step 4's ask-dialog for current HEAD, or size a real review, then retry; no need to \"init\"."
         else
           dlg_deny_reason="review-dialog-missing"
-          dlg_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit (it is spelled in polish-guide.md § Step 5) — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about)."
+          dlg_deny_core="Pre-PR gate: step 5's review outcome ('$review_outcome') is an independent-agent review, but step 5(a)'s MANDATORY reminder dialog was never opened/answered for this commit (it is spelled in polish-guide.md § Step 5; if your step 5(a) doesn't end that dialog's question with the marker spelled there, your polish.md is a stale copy — an older one composes a level-suffixed form that traces nothing now (dir #319): refresh it by copying the shipped file over your own: cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md AND cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md (the guide carries the rare-branch text the core points at) — re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no, and stops offering at all once a keel-polish.md alias exists, which a non-interactive install creates on its own) — re-open/answer that AskUserQuestion dialog for current HEAD (do not fall back to a plain -operator-run outcome, which would silently drop the agent review this dialog is about)."
           dlg_deny_action="answer the dialog and retry; no need to \"init\"."
         fi
         _deny_intact "$cwd" "$dlg_deny_reason" "$dlg_deny_core" "$dlg_deny_action"

@@ -143,7 +143,7 @@ Steps, in order:
    compare this round's real review against the wrong baseline.
    **One exception inside that set (dir #116, narrowed by dir #236): a `skip`-level step 4 recovers only
    when it was decided against the commit that is STILL current HEAD** — i.e. nothing has shipped since,
-   the case a missing step 5 receipt alone forced (dir #236's felt case), not a genuine fix commit.
+   the case dir #236's felt miss forced (a step 5 receipt that no longer exists, dir #277), not a genuine fix commit.
    `--recover`'s closing note names it withheld whenever that's not true: `skip` is the one depth that
    bypasses step 5 outright, so inheriting it across an actual fix commit would hand that commit a review
    bypass the operator chose for a different diff. When the note names `polish.4-depth`, step 4 is NOT
@@ -401,19 +401,20 @@ is simplify → tests → review: never skip or reorder the test run after simpl
    lead-in ("Pick a review depth. KEEL-DEPTH-DIALOG"), not merely present somewhere in it — the gate
    matches on trailing position, not on containment, precisely so an ordinary sentence that happens to
    mention this token mid-clause can't be mistaken for the genuine marker (dir #118, found live by this
-   ticket's own `/code-review max` pass). Unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`, this
-   marker never encodes an outcome in the question text, so it is safe to spell out exactly like this — no
-   `<...>` placeholder needed, and doing so does not trip the composed-marker sweep (dir #116), which only
-   flags a marker immediately followed by a real `level=<word>`. The gate reads which option the operator
+   ticket's own `/code-review max` pass). Same rule as step 5(a)'s `KEEL-REVIEW-DIALOG` (dir #319): both
+   are bare trailing literals and neither encodes an outcome in the question text, so each is safe to
+   spell out exactly like this — no `<...>` placeholder needed, and doing so does not trip the
+   composed-marker sweep (dir #116), which only flags a marker immediately followed by a real
+   `level=<word>`. The gate reads which option the operator
    actually CHOSE from the `AskUserQuestion` event's own answer data (`tool_response.answers`, confirmed
    live dir #118 — see `tools/pre-pr-gate.sh`'s own dir #118 comment for the full incident and the
    uniqueness/case-fold rules the trace check applies), so the marker's only job is to flag "this
    question's answer is skip-trackable" — the ANSWER, not the question text, decides whether `dialog:skip`
    gets written, which is also what collapses what used to be a two-dialog ask-then-confirm dance into the
    ONE ask-dialog the operator already sees on all three paths above. Use the option label `skip` (any
-   case) verbatim for the skip choice in every such dialog. The token stays deliberately DIFFERENT from
-   step 5(a)'s `KEEL-REVIEW-DIALOG` — the depth leg accepts only an answer of `skip`, so no step-4 dialog
-   can pre-satisfy step 5(a)'s own dialog check by construction.
+   case) verbatim for the skip choice in every such dialog. The two stay DIFFERENT tokens, so a sizing dialog
+   can never pre-satisfy step 5(a)'s check: the depth leg writes `dialog:skip` only on an answer of `skip`,
+   the review leg writes `dialog:review` on any answer (dir #319).
 
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>` — e.g.
    `low:+38-8,2f,docs` or `medium:+412-96,10f,code`. A bare level records the conclusion and throws away
@@ -423,14 +424,12 @@ is simplify → tests → review: never skip or reorder the test run after simpl
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, there is no REVIEW to run —
    the decision already happened at step 4's skip dialog, which the gate cross-checks per commit (dir
-   #116; a fix commit moving HEAD needs that dialog re-answered at step 4, not here). **This step's own
-   RECEIPT is still required** (`tools/pre-pr-gate.sh receipt polish.5-review skip`, immediately, no
-   dialog, no wait) — the gate's completeness check treats all eight steps as mandatory, `skip` included,
-   and a missing step 5 receipt denies `gh pr create` on its own, independent of whether step 4's
-   decision was sound (dir #236: "do nothing" describing the review was misread as "no receipt either,"
-   and a forgotten receipt then forced a full re-ask of step 4's dialog on retry — recovering a
-   same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
-   the cheap way to never need that). `ultra` you
+   #116; a fix commit moving HEAD needs that dialog re-answered at step 4, not here), and there is nothing to receipt
+   either: the gate derives step 5 from step 4's own skip receipt, which `receipt` stamps with the commit
+   it was decided against, and treats it as satisfied only while that commit is still HEAD (dir #277,
+   closing the receipt-only write dir #236 documented). A fix commit after a skip needs step 4 re-answered
+   for the new HEAD, not a step-5 write; writing `polish.5-review skip` by hand is still accepted and
+   changes nothing. `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
    alternative attempted. For `low|medium|high`, the first attempt is K2's review subagent, below; for
    `max` — and for `low|medium|high` once K2's fallbacks send you here — ATTEMPT `Skill(code-review) <level>`
@@ -572,10 +571,11 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      **MANDATORY NEXT ACTION — open an `AskUserQuestion` dialog before touching step 6.** The gate now
      denies an `agent:*` unlock with no answered dialog for this commit (dir #88, once
      `tools/install-pre-pr-gate.sh` has wired the `AskUserQuestion` hook — see that file's own header):
-     the question text MUST carry, verbatim and somewhere in the question, the literal line
-     `KEEL-REVIEW-DIALOG: level=<level>` (the chosen depth) — plain text, no markdown formatting, same
-     literal-match discipline as the `KEEL-AGENT-REVIEW` marker above, since the gate greps for it, not
-     the human-facing wording. This fires every time execution reaches here, including a
+     the question MUST END with the bare literal `KEEL-REVIEW-DIALOG` — plain text, no markdown
+     formatting, no `level=` suffix, the last thing after the human-readable lead-in, trailing whitespace
+     only, in the SAME single dialog. The gate reads the answer entry off the event (any answer proves the
+     reminder was put), so a mid-sentence mention or an unanswered dialog traces nothing (dir #319,
+     mirroring dir #118); it matches that literal, not the human-facing wording. This fires every time execution reaches here, including a
      convergence-round re-review after a fix commit (see the terminal-pass note below). Each such round
      moves HEAD, and a hand-off note is same-SHA-only (per (c)), so an earlier round's dialog doesn't
      cover a later commit.
@@ -744,7 +744,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
        `polish.5-review <level>-operator-run`. **A `review-dialog-missing` denial is a DIFFERENT deny
        (dir #88) and must NOT be treated as this fallback trigger:** it means the DIALOG, not the agent
        trace, is what's missing — the agent review itself is fine. The fix is to open/answer (a)'s
-       `AskUserQuestion` dialog (with the `KEEL-REVIEW-DIALOG: level=<level>` marker) for current HEAD,
+       `AskUserQuestion` dialog (ending with the bare `KEEL-REVIEW-DIALOG` marker) for current HEAD,
        then re-write the same combined outcome — never fall back to the plain `-operator-run` outcome for
        this deny, which would silently drop the agent review half (the exact dir #81 anti-pattern this
        combined outcome exists to prevent).
@@ -879,7 +879,9 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      agent review).
    - `low`/`medium`/`high` — a genuine `/code-review` pass: run by K2's review subagent, or operator-typed or
      revisit-triggered in-session.
-   - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
+   - `medium-operator-run`, `ultra-operator-run`, `medium-waived` — the hand-off outcomes.
+   - `skip` — derived by the gate from step 4's stamped skip, never written by this step; accepted if
+     written (dir #277).
    - `medium-waived:trace-broken` — the ONE recognized reason on a waiver, reserved for "the trace
      mechanism itself looks broken" (dir #366). The gate cross-checks it against its own repo-keyed
      trace file and denies if that file already holds lines — see (b)'s waiver bullet above for the
