@@ -37,7 +37,8 @@
 #   tools/self/pool-report.sh [--record RELEASE [--amend]] [--history PATH] [BACKLOG_PATH]
 #   tools/self/pool-report.sh -h | --help
 #
-# --record RELEASE appends this run's pool size to the history file tagged with RELEASE,
+# --record RELEASE appends this run's pool size, the files the reading covered and the pool's id set
+# (dir #655) to the history file tagged with RELEASE,
 # unless a row for that release already exists (idempotent re-runs). Without --record, the
 # report is computed and printed but nothing is written — safe to run any number of times.
 # --amend (dir #461, requires --record) makes the release key a CORRECTABLE record: last-write-
@@ -49,6 +50,14 @@
 # tools/self/doctor.sh's check 5 does (dir #135). The history file defaults to
 # POOL-HISTORY.jsonl next to that BACKLOG.md (i.e. the main checkout root) — override with
 # --history for tests or a non-standard layout.
+#
+# dir #655 — growth by origin and coverage: when the last recorded reading carries an id set, the
+# report prints "new since the last reading" and "returned from a slate" (an id present now, absent
+# then, and older than that reading's date), and the trigger's latest step counts net of the returned
+# tickets. A reading compares only with readings of the same `files` coverage: a sort that moves
+# tickets to a sibling file (history 180 -> 19) is a change of definition, so the trigger is not read
+# across it. Older rows without `files`/`ids` degrade to the size-only reading. Tickets without a
+# `dir #N` heading count toward the size but not the id set.
 #
 # Always exits 0 (advisory only); a missing/unreadable BACKLOG.md is a silent skip, not an
 # error, matching every other keel-self-maintenance check that reads this gitignored file.
@@ -86,7 +95,7 @@ Usage: pool-report.sh [--record RELEASE [--amend]] [--history PATH] [BACKLOG_PAT
 Reports the `→ pool` lane's size, oldest entry's age, R-level split (R4/R3/R2/R1/R0,
 read from a ticket's heading first and a body-stated `Readiness: RN` second), and the
 count excluding structurally-parked tickets (dir #360). With --record RELEASE, appends
-this run's pool size to the untracked history file (default: POOL-HISTORY.jsonl beside
+this run's pool size, covered files and id set (dir #655) to the untracked history file (default: POOL-HISTORY.jsonl beside
 BACKLOG.md) tagged with that release, unless a row for it already exists, and reports
 whether the two-consecutive-minors growth trigger fires against recorded history.
 --amend (requires --record) makes that one release's row correctable: last-write-wins
@@ -131,6 +140,9 @@ parked_count=0
 r4=0; r3=0; r2=0; r1=0; r0=0; runmarked=0
 oldest_age=-1
 oldest_id="unlabeled"
+# dir #655: one "<id>:<earliest date or empty>" token per pool ticket that carries a `dir #N` heading;
+# the id set is what --record stores and what the next run's split compares against.
+pool_entries=()
 
 # dir #463, second half: the body-fallback scan below needs the SAME fence-blanked,
 # backtick-stripped content `tools/lib/backlog-blocks.sh`'s own `backlog_ticket_blocks` already
@@ -314,6 +326,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   if [[ "$body_span" =~ $found_re ]]; then
     if [ -z "$date_str" ] || [[ "${BASH_REMATCH[3]}" < "$date_str" ]]; then date_str="${BASH_REMATCH[3]}"; fi
   fi
+  if [ -n "$own_num" ]; then pool_entries+=("$own_num:$date_str"); fi
   if [ -n "$date_str" ]; then
     ts="$(date -u -j -f '%Y-%m-%d %H:%M:%S' "$date_str 00:00:00" +%s 2>/dev/null \
       || date -u -d "$date_str" +%s 2>/dev/null || true)"
@@ -330,11 +343,44 @@ done < <(backlog_ticket_blocks "$backlog_file")
 
 # Read whatever history already exists BEFORE any --record append below, so the trigger
 # check below compares this run's size against PRIOR runs only, never against itself.
-prev_sizes=()
+# dir #655: a row may also carry `"files":[...]` (which files that reading covered) and `"ids":[...]`
+# (the pool's id set); both are parsed per row, and a row without them (older history) reads "-"
+# and degrades to the size-only reading.
+prev_sizes=(); prev_dates=(); prev_files=(); prev_ids=(); last_release=""
 if [ -f "$history_file" ]; then
-  while IFS= read -r sz; do prev_sizes+=("$sz"); done \
-    < <(grep -oE '"pool_size":[0-9]+' "$history_file" 2>/dev/null | grep -oE '[0-9]+$' || true)
+  while IFS= read -r hrow || [ -n "$hrow" ]; do
+    hsz="$(grep -oE '"pool_size":[0-9]+' <<< "$hrow" | grep -oE '[0-9]+$' || true)"
+    [ -n "$hsz" ] || continue
+    prev_sizes+=("$hsz")
+    last_release="$(sed -n 's/.*"release":"\([^"]*\)".*/\1/p' <<< "$hrow")"
+    prev_dates+=("$(sed -n 's/.*"date":"\([^"]*\)".*/\1/p' <<< "$hrow")")
+    if grep -qF '"files":[' <<< "$hrow"; then
+      prev_files+=("$(sed -n 's/.*"files":\[\([^]]*\)\].*/\1/p' <<< "$hrow")")
+    else
+      prev_files+=("-")
+    fi
+    if grep -qF '"ids":[' <<< "$hrow"; then
+      hids="$(sed -n 's/.*"ids":\[\([^]]*\)\].*/\1/p' <<< "$hrow")"
+      prev_ids+=(" ${hids//,/ } ")
+    else
+      prev_ids+=("-")
+    fi
+  done < "$history_file"
 fi
+
+# dir #655: --amend replaces the LAST row's reading; comparing the corrected reading with the row it
+# replaces would report the amended figures against their own stale ids, so that row is not a baseline.
+if [ "$amend" = "1" ] && [ "${#prev_sizes[@]}" -ge 1 ] && [ "$last_release" = "$record_release" ]; then
+  last_i=$((${#prev_sizes[@]} - 1))
+  unset "prev_sizes[$last_i]" "prev_dates[$last_i]" "prev_files[$last_i]" "prev_ids[$last_i]"
+fi
+
+# dir #655: what THIS reading covers. The tool reads one file (BACKLOG.md, or whatever path it was
+# given), so a sort that moves tickets to a sibling file changes this value, and no growth figure is
+# read across that change.
+files_now="\"$(basename "$backlog_file")\""
+# Comparable = same coverage, or either side predates the field (older row: size-only reading).
+same_coverage() { [ "$1" = "-" ] || [ "$2" = "-" ] || [ "$1" = "$2" ]; }
 
 echo "pool-report: $backlog_file"
 echo "  pool size:                     $pool_size"
@@ -345,19 +391,56 @@ else
 fi
 echo "  R-level split:                  R4=$r4 R3=$r3 R2=$r2 R1=$r1 R0=$r0 unmarked=$runmarked"
 echo "  excluding structurally-parked:  $((pool_size - parked_count)) (of $pool_size; $parked_count parked by rule: blocked or explicit-gate)"
+echo "  coverage:                       ${files_now//\"/}"
 
 n="${#prev_sizes[@]}"
+
+# dir #655: split the growth since the last reading by origin. An id present now and absent from the
+# last reading is "returned from a slate" when the ticket is OLDER than that reading (it existed
+# before, so a cut or sort sent it back) and "new" otherwise (filed since, or undated).
+new_count=0; returned_count=0
+if [ "$n" -ge 1 ]; then
+  l_files="${prev_files[$((n - 1))]}"; l_ids="${prev_ids[$((n - 1))]}"; l_date="${prev_dates[$((n - 1))]}"
+  if [ "$l_ids" = "-" ]; then
+    echo "  since the last reading:         no id set recorded — size-only reading"
+  elif ! same_coverage "$l_files" "$files_now"; then
+    echo "  since the last reading:         coverage changed (${l_files//\"/} -> ${files_now//\"/}) — no growth read across it"
+  else
+    for entry in ${pool_entries[@]+"${pool_entries[@]}"}; do
+      eid="${entry%%:*}"; edate="${entry#*:}"
+      case "$l_ids" in *" $eid "*) continue ;; esac
+      if [ -n "$edate" ] && [ -n "$l_date" ] && [[ "$edate" < "$l_date" ]]; then
+        returned_count=$((returned_count + 1))
+      else
+        new_count=$((new_count + 1))
+      fi
+    done
+    echo "  new since the last reading:     $new_count"
+    echo "  returned from a slate:          $returned_count (absent from the last reading, older than it)"
+  fi
+fi
+
 trigger_fired=0
+trigger_blocked=""
 if [ "$n" -ge 2 ]; then
   p2="${prev_sizes[$((n - 2))]}"
   p1="${prev_sizes[$((n - 1))]}"
-  if [ "$p2" -lt "$p1" ] && [ "$p1" -lt "$pool_size" ]; then
-    trigger_fired=1
+  if ! same_coverage "${prev_files[$((n - 2))]}" "${prev_files[$((n - 1))]}" \
+    || ! same_coverage "${prev_files[$((n - 1))]}" "$files_now"; then
+    trigger_blocked="coverage changed within the last three readings"
+  else
+    # The latest step counts as growth net of the tickets a slate returned (dir #655).
+    grown_now=$((pool_size - returned_count))
+    if [ "$p2" -lt "$p1" ] && [ "$p1" -lt "$grown_now" ]; then
+      trigger_fired=1
+    fi
   fi
 fi
 
 if [ "$trigger_fired" = "1" ]; then
-  echo "WARN: the pool has grown across the last two recorded releases and again this run ($p2 -> $p1 -> $pool_size) — schedule a drain release (dir #360)." >&2
+  echo "WARN: the pool has grown across the last two recorded releases and again this run ($p2 -> $p1 -> $pool_size; $returned_count of this run's growth returned from a slate, $new_count new) — schedule a drain release (dir #360)." >&2
+elif [ -n "$trigger_blocked" ]; then
+  echo "  growth trigger:                 not read — $trigger_blocked"
 elif [ "$n" -lt 2 ]; then
   echo "  growth trigger:                 not enough recorded history yet ($n prior run(s); needs 2)"
 else
@@ -366,8 +449,11 @@ fi
 
 if [ -n "$record_release" ]; then
   release_key="\"release\":\"$record_release\""
-  new_row="$(printf '{"release":"%s","date":"%s","pool_size":%s}' \
-    "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size")"
+  # dir #655: the row also names the files it covered and the pool's id set.
+  ids_json=""
+  for entry in ${pool_entries[@]+"${pool_entries[@]}"}; do ids_json="$ids_json${ids_json:+,}${entry%%:*}"; done
+  new_row="$(printf '{"release":"%s","date":"%s","pool_size":%s,"files":[%s],"ids":[%s]}' \
+    "$record_release" "$(date -u +%Y-%m-%d)" "$pool_size" "$files_now" "$ids_json")"
   if [ -f "$history_file" ] && grep -qF "$release_key" "$history_file" 2>/dev/null; then
     if [ "$amend" = "1" ]; then
       # dir #461, half 2: the plain call stays idempotent-once (the header's own contract,
