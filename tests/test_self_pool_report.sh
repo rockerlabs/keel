@@ -627,4 +627,11 @@ f655_new="$(mk_pool 1:2026-01-01 2:2026-01-02 3:2999-01-01)"
 run "$pr" --history "$hist655_trg" "$f655_new"
 check_contains "the same growth by a new filing fires the trigger" "$OUT" "WARN"
 
+# --amend: the row being replaced is not the baseline of its own corrected reading.
+hist655_am="$SANDBOX/hist-655-am.jsonl"
+run "$pr" --record rB --history "$hist655_am" "$(mk_pool 1:2026-01-01)"
+run "$pr" --record rA --history "$hist655_am" "$(mk_pool 1:2026-01-01 2:2999-01-01)"
+run "$pr" --record rA --amend --history "$hist655_am" "$(mk_pool 1:2026-01-01 2:2999-01-01 3:2999-01-02)"
+check_contains "MUTATION-PROOF: an amend of the last row compares with the row before it, not with itself (2 new, not 1)" "$OUT" "new since the last reading:     2"
+
 summary

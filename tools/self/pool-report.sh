@@ -346,12 +346,13 @@ done < <(backlog_ticket_blocks "$backlog_file")
 # dir #655: a row may also carry `"files":[...]` (which files that reading covered) and `"ids":[...]`
 # (the pool's id set); both are parsed per row, and a row without them (older history) reads "-"
 # and degrades to the size-only reading.
-prev_sizes=(); prev_dates=(); prev_files=(); prev_ids=()
+prev_sizes=(); prev_dates=(); prev_files=(); prev_ids=(); last_release=""
 if [ -f "$history_file" ]; then
   while IFS= read -r hrow || [ -n "$hrow" ]; do
     hsz="$(grep -oE '"pool_size":[0-9]+' <<< "$hrow" | grep -oE '[0-9]+$' || true)"
     [ -n "$hsz" ] || continue
     prev_sizes+=("$hsz")
+    last_release="$(sed -n 's/.*"release":"\([^"]*\)".*/\1/p' <<< "$hrow")"
     prev_dates+=("$(sed -n 's/.*"date":"\([^"]*\)".*/\1/p' <<< "$hrow")")
     if grep -qF '"files":[' <<< "$hrow"; then
       prev_files+=("$(sed -n 's/.*"files":\[\([^]]*\)\].*/\1/p' <<< "$hrow")")
@@ -365,6 +366,13 @@ if [ -f "$history_file" ]; then
       prev_ids+=("-")
     fi
   done < "$history_file"
+fi
+
+# dir #655: --amend replaces the LAST row's reading; comparing the corrected reading with the row it
+# replaces would report the amended figures against their own stale ids, so that row is not a baseline.
+if [ "$amend" = "1" ] && [ "${#prev_sizes[@]}" -ge 1 ] && [ "$last_release" = "$record_release" ]; then
+  last_i=$((${#prev_sizes[@]} - 1))
+  unset "prev_sizes[$last_i]" "prev_dates[$last_i]" "prev_files[$last_i]" "prev_ids[$last_i]"
 fi
 
 # dir #655: what THIS reading covers. The tool reads one file (BACKLOG.md, or whatever path it was
