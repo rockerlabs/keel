@@ -65,6 +65,25 @@ check_status "occupied sibling .origin.git path exits nonzero" 2 "$STATUS"
 check_nodir "primary target is never created when only its sibling is occupied" "$tgt"
 check_file "the sibling's pre-existing content is untouched" "$tgt.origin.git/not-a-clone.txt"
 
+# --- dir #447: a trailing slash on <target-dir> must not bypass the sibling guard. Shells complete
+# `seed.sh ./arm-cold/` with the slash, so the guard must see the same sibling path the script
+# later writes (`<target>.origin.git`), never `<target>/.origin.git` inside the target ----------
+tgt="$SANDBOX/slash-sibling-occupied"
+mkdir -p "$tgt.origin.git"
+echo "unrelated pre-existing content" > "$tgt.origin.git/not-a-clone.txt"
+run bash "$seed" "$tgt/"
+check_status "trailing-slash target with occupied sibling exits nonzero" 2 "$STATUS"
+check_nodir "trailing-slash target is never created when its sibling is occupied" "$tgt"
+check_file "trailing-slash run leaves the occupied sibling untouched" "$tgt.origin.git/not-a-clone.txt"
+
+# --- dir #447: a trailing-slash target with a free sibling seeds exactly like the bare path -----
+tgt="$SANDBOX/slash-good"
+run bash "$seed" "$tgt/"
+check_status "trailing-slash good run exits 0" 0 "$STATUS"
+check_dir "trailing-slash run's sibling bare origin lands at <target>.origin.git (no slash inside)" "$tgt.origin.git"
+check_nodir "trailing-slash run writes no .origin.git inside the target" "$tgt/.origin.git"
+check_contains "trailing-slash run wires origin to the sibling" "$(git -C "$tgt" remote get-url origin 2>/dev/null)" "$tgt.origin.git"
+
 # --- sanity: a correct run still works end-to-end, --with-keel included -------------------------
 tgt="$SANDBOX/good-target"
 run bash "$seed" "$tgt" --with-keel "$core"
