@@ -1547,7 +1547,7 @@ if [ "$INSTALL_MODE" = 1 ]; then
         warn W-CLI-FOREIGN "keel CLI ($kl) resolves outside this checkout (an older keel clone?) — if this is the live one, remove the link first (install never replaces a link Keel did not make, --force included), then re-run install.sh$irelink_mode$ihome_flag from here"
       fi
     else
-      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$irelink_mode$ihome_flag (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand"
+      warn W-CLI-UNWIRED "keel CLI not wired at $ihome/bin/keel — re-run install.sh$irelink_mode$ihome_flag (add --force if a real file, not a symlink or a directory, sits there — it gets backed up first), or add an alias by hand"
     fi
   fi
 
