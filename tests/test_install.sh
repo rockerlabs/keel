@@ -813,7 +813,7 @@ check_contains "T14c the Verify WARN fires for the unwired CLI" "$OUT" "keel CLI
 # refusal satisfies it. This is the likely single-site regression — the WARN is the line that mirrors
 # tools/doctor.sh's own W-CLI-UNWIRED string (dir #349 brought the two into agreement; pinned
 # separately in test_install_link.sh, next to the finding itself).
-check_contains "T14c …and advises install.sh (the home's own --link, spec 685 r2 B22), reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --link --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there already"
+check_contains "T14c …and advises install.sh (the home's own --link, spec 685 r2 B22), reachable without bin/keel, carving out a directory" "$OUT" "re-run 'install.sh --link --home \"$warnhome\"' (add --force if a real file, not a symlink or a directory, sits there"
 # The needle carries the CONDITIONAL wording, not just the line's identity: mutation-proved that a
 # needle of "is not a Keel symlink" alone leaves a flat `--force` regression green, and a flat --force
 # is what aborts the run at force_backup's `cp` when a DIRECTORY sits there.
