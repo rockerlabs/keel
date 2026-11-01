@@ -1,3 +1,6 @@
+---
+description: Finish a Keel install by drafting INSTANCE.md and project context from this machine and repo, for human review — use after install.sh, "set up Keel", "finish install"
+---
 # /keel-setup
 
 Finish a Keel install — fill the content that `install.sh` (mechanical) can't, by inspecting **this

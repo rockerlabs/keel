@@ -1,3 +1,7 @@
+---
+description: Scaffold a new project to the Keel baseline (git, .gitignore, project CLAUDE.md, AGENTS.md, impact tracking, registration) — use for "new project", "init project", "bootstrap Keel here"
+argument-hint: "[--nested] [--no-register] [--no-impact] [PROJECT_DIR]"
+---
 # /init-project
 
 Scaffold a new project to the Keel baseline so it is born-compliant (no backfilling later).
