@@ -1296,7 +1296,7 @@ cmd_add() {
   # _impact_require_enabled's own $LEDGER-only check isn't sufficient here (rollup shares that check
   # and never touches $EVIDENCE, so broadening it there would wrongly refuse a legitimate rollup).
   # Caught HERE, before anything is written — not inside ensure_evidence, which only runs partway
-  # through this function's OWN write sequence, after the ledger row is already appended (found live
+  # through this function's OWN write sequence (found live
   # by an operator-run max-depth review's delta pass: the earlier, narrower fix left `add` able to
   # half-complete — a scored row with no evidence block, breaking evidence.md's own stated invariant,
   # "a count in the ledger equals the number of citations here").
@@ -1434,6 +1434,8 @@ cmd_add() {
 
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
 
+  ensure_ledger
+
   # Archive the per-event citations — the auditable trail. Only when there was something to cite; an inert
   # ("—") session leaves no block, mirroring "no evidence, nothing to record".
   if [ "$ev_count" -gt 0 ]; then
@@ -1461,10 +1463,9 @@ cmd_add() {
     } >> "$EVIDENCE"
   fi
 
-  # Ledger row LAST (dir #365): the evidence blocks above land first, so a refused or failing evidence
-  # write aborts before any row exists — no half-written record. The ledger is the index; an evidence
-  # block with no index entry is the less confusing residue.
-  ensure_ledger
+  # Ledger row LAST (dir #365): the evidence blocks above land first, so a refused evidence write aborts
+  # before any row exists. The ledger is the index; an evidence block with no index entry is the less
+  # confusing residue. ensure_ledger is a preflight above, so a refused ledger aborts before evidence.
   # Row values, index-aligned with _LEDGER_COLS (dir #151): built from the array instead of a
   # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order. The
   # format string depends only on the column COUNT (one "%s |" per column), not on any column's

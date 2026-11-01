@@ -1,3 +1,4 @@
-- `keel-impact add` now writes its evidence blocks before the ledger row, so the ledger row is the last write
-  and a refused or failing evidence write (for example, a non-regular `evidence.md`) aborts before any row
-  exists. Before, the row landed first and the store was left half-updated with no message (dir #365).
+- `keel-impact add` now writes its ledger row last, after the evidence blocks. A refused evidence write
+  (for example, a non-regular `evidence.md`) therefore aborts before any row exists. Before, the row landed
+  first, and a refused evidence write left a row with no evidence block; the refusal message was printed, but
+  the store was already half-updated (dir #365). The ledger is preflighted, so a refused ledger leaves no evidence block.
