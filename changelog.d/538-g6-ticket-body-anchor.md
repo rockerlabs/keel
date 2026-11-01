@@ -1,0 +1,1 @@
+- `docs/grooming.md` G6 now requires a finding written into a ticket body to carry its verification anchor (`path:line`, or the command and its output) and to state only what was verified; a behavioural claim about unread code is written as `TO VERIFY`, never as fact (dir #538).
