@@ -177,6 +177,7 @@ JQSTUB
 chmod +x "$jqfail_bin/jq"
 OUT="$(env PATH="$jqfail_bin:$PATH" TMPDIR="$jqfail_tmp" KEEL_HOME="$SANDBOX/jqfail-home" bash -c "set -e; . '$REPO_ROOT/tools/lib/transcript-usage.sh'; tu_session_totals '$sess_file' >/dev/null; echo reached-after" 2>&1 </dev/null)"
 STATUS=$?
+check_status "a jq failure propagates as its non-zero status to the unguarded caller" "3" "$STATUS"
 check_eq "a jq failure in tu_session_totals leaks no temp file (rm -f runs)" "0" "$(ls -A "$jqfail_tmp" | wc -l | tr -d ' ')"
 
 summary

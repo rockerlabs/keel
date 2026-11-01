@@ -430,10 +430,10 @@ tu_session_totals() {
   # this file's sibling tools/keel-impact.sh already does everywhere it faces the same hazard
   # (search that file for "must stay the VERY NEXT statement") — `out`/`status` here is the same
   # discipline, not a new one.
-  # dir #438: the capture is tested with `|| status=$?` so this function's own cleanup runs however its
+  # dir #438: the capture is tested with `|| _tu_status=$?` so this function's own cleanup runs however its
   # caller invokes it — a bare `out="$(jq ...)"` aborts under `set -e` before `rm -f`, leaking $tmp (the
   # same shape dir #422 removed from token-report.sh).
-  local out status=0
+  local out _tu_status=0
   out="$(jq -c -s '
     def sumf(f): map(f) | add // 0;
     group_by(.kind)
@@ -448,8 +448,8 @@ tu_session_totals() {
         models: ([.[].model] | unique)
       }})
     | add // {}
-  ' "$tmp")" || status=$?
+  ' "$tmp")" || _tu_status=$?
   rm -f "$tmp"
-  [ "$status" -eq 0 ] || return "$status"
+  [ "$_tu_status" -eq 0 ] || return "$_tu_status"
   printf '%s\n' "$out"
 }
