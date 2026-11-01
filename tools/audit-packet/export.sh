@@ -254,6 +254,8 @@ while IFS= read -r line || [ -n "$line" ]; do
   line="${line%$'\r'}"
   [ -n "$line" ] || continue
   case "$line" in
+    [[:space:]]*) die_args "path '$line' starts with whitespace — git cat-file --batch would drop it
+  from the chunk header (dir #502)" ;;
     *"$TAB"*) die_args "path '$line' contains a tab — cannot be represented in the chunk header or
   MANIFEST.txt" ;;
   esac
@@ -273,7 +275,9 @@ BLOB_SIZES=()
 bc_i=0
 while read -r bc_sha bc_type bc_size; do
   f="${files[bc_i]}"
-  { [ "$bc_type" = "blob" ] && [ -n "$bc_size" ]; } \
+  case "$bc_sha" in ''|*[!0-9a-f]*) bc_type=missing ;; esac   # a "<name> missing" line split on a path's own spaces
+  case "$bc_size" in ''|*[!0-9]*) bc_type=missing ;; esac
+  [ "$bc_type" = "blob" ] \
     || die_args "'$f' is not a tracked file at $baseline7 — the caller's file list disagrees with
   the tree. Re-derive it (inventory.sh --paths / delta-audit's delta-files.txt) against this exact
   baseline."
@@ -525,7 +529,7 @@ for i in $(seq 0 $((total_chunks - 1))); do
   printf '\n' >> "$chunk_file"
   # ONE `git cat-file --batch` per chunk (dir #502): the format line IS the per-file header, and --batch
   # appends the content and a newline after it — byte-for-byte the old header + `cat-file -p` + '\n'.
-  # %(rest) is the path (everything after the blob sha on the input line, spaces included).
+  # %(rest) is the path (everything after the blob sha, inner/trailing spaces kept; leading whitespace is refused at list-read).
   printf '%s' "${CHUNK_BLOBS[i]}" \
     | git cat-file --batch="===== FILE: %(rest) @ $baseline7 =====" >> "$chunk_file"
   n_files=$(printf '%s' "${CHUNK_PATHS[i]}" | grep -c '')
