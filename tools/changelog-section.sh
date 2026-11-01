@@ -94,7 +94,9 @@ blanked="$(awk '/^[[:space:]]*(```|~~~)/ { infence = !infence; print ""; next } 
 
 # Locate the target heading and the next `## ` heading after it (any shape — [Unreleased] or another
 # version — marks the end of this section), same heading grammar doctor.sh's check 6 already parses.
-escaped_version="$(printf '%s' "$version" | sed 's/[.[\*^$/]/\\&/g')"
+# Same escape as tools/lib/regex-escape.sh's `escape_bre_literal` (dir #428), inlined for the same
+# copy-portability reason as the fence-blanking above; tests/test_regex_escape_lib.sh pins the two together.
+escaped_version="$(printf '%s' "$version" | sed 's/[][\.*^$]/\\&/g')"
 heading_re="^## \\[${escaped_version}\\]"
 
 start_line="$(grep -nE "$heading_re" <<< "$blanked" | head -1 | cut -d: -f1 || true)"

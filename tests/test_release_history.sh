@@ -25,6 +25,10 @@
 . "$REPO_ROOT/tools/lib/fence-blank.sh"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$REPO_ROOT/tools/lib/nonneg-int.sh"
+# shellcheck source=tools/lib/regex-escape.sh
+. "$REPO_ROOT/tools/lib/regex-escape.sh"
+# shellcheck source=tools/lib/heading-intro.sh
+. "$REPO_ROOT/tools/lib/heading-intro.sh"
 #
 # Known residual (/code-review medium, dir #232; the dir #866 check below is outside it — it carries its own
 # fixture rows): the three `fail` branches below (missing heading,
@@ -137,47 +141,27 @@ pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
 pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 
 # _pending_release_intro_commit VERSION — SHA of the commit that most recently introduced the heading
-# line "## VERSION ..." into docs/release-history.md's tracked history, outside any fenced block.
-# Mirrored from doctor.sh's own `_pending_release_intro_commit` (dir #156, not shared — dir #299),
-# with two fixes the mirror needed that the original didn't (both found live, /code-review high — one
-# by the line-by-line and altitude angles independently, one by the cross-file tracer angle):
+# line "## VERSION ..." into docs/release-history.md's tracked history, outside any fenced block. The walk
+# is tools/lib/heading-intro.sh's `heading_intro_commit`, shared with tools/self/doctor.sh (dir #428 — this
+# was a mirrored copy kept in step by a comment alone; dir #299's anchoring landed here first and doctor.sh
+# only caught up when the v0.9.0 cut false-GAPed). What stays here:
 #
-# 1. ANCHORED match, not a bare substring (dir #299). doctor.sh's own `## [x.y.z]` heading has a
-#    trailing `]` that already stops a shorter version from matching as a prefix of a longer one; this
-#    file's bracket-less `## vX.Y.Z` has no such incidental boundary, so `## v0.7.1` is a literal
-#    substring of `## v0.7.10` (reproduced live) — a future patch-version pair sharing a numeric prefix
-#    would silently resolve to the WRONG introducing commit and corrupt the distance the whole
-#    allowance is built on. `$heading_re` requires the character right after the version to be
-#    non-digit (or end of line). `-G` (regex pickaxe, matches an added/removed LINE), not `-S` (string
-#    pickaxe, matches any occurrence-count change) — anchors/character-classes need pickaxe regex
-#    support, which only `-G` provides.
-# 2. SHALLOW-CLONE guard (dir #299). A shallow clone's boundary commit is indistinguishable, from
-#    `git show "$sha^:$rel"` alone, from a genuine first commit — the parent object simply isn't
-#    present locally, so `before=""` and the presence-flip below reads that boundary commit as "just
-#    introduced right here", fabricating distance 0 for a heading that may be years old (reproduced
-#    live against a real `--depth 1` clone). doctor.sh sidesteps this by skipping its WHOLE
-#    reconciliation on a shallow clone (dir #139's own guard); this function has no such guard upstream
-#    — the CI job this file's own checks run in doesn't set `fetch-depth: 0` at all (dir #300, already
-#    filed and separately scoped) — so it needs its own, narrower one: bail out here, the same as an
-#    unresolvable candidate already does, so the caller's existing fail-open path (below) reports
-#    "can't measure" honestly instead of inventing a verdict.
+# 1. ANCHORED match (dir #299). This file's bracket-less `## vX.Y.Z` has no closing `]` to stop a shorter
+#    version matching as a prefix of a longer one (`## v0.7.1` is a substring of `## v0.7.10`), so
+#    `$heading_re` requires the character after the version to be a non-digit (or end of line).
+# 2. SHALLOW-CLONE guard (dir #299). A shallow clone's boundary commit is indistinguishable from a genuine
+#    first commit (its parent object is absent, so `before` is empty), which would fabricate distance 0 for
+#    a years-old heading. doctor.sh skips its whole reconciliation on a shallow clone; this test's CI job
+#    does not fetch full history (dir #300), so it bails here and the caller fails OPEN.
+# 3. A git failure inside the walk (the lib returns 2) also fails OPEN here — a test helper, not a
+#    self-check verdict; doctor.sh GAPs on the same status.
 #
-# Prints nothing if no candidate resolves (including the shallow-clone bail above); the caller below
-# fails OPEN (keeps the allowance, no distance) on that empty case rather than inventing one.
+# Prints nothing if no candidate resolves; the caller below fails OPEN (keeps the allowance, no distance).
 _pending_release_intro_commit() {
-  local ver="$1" rel sha now before esc heading_re
+  local heading_re
   [ "$(git -C "$REPO_ROOT" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ] || return 0
-  rel="${history#"$REPO_ROOT"/}"
-  esc="${ver//./\\.}"
-  heading_re="^## ${esc}([^0-9]|\$)"
-  while IFS= read -r sha; do
-    now="$(blank_fenced_blocks <(git -C "$REPO_ROOT" show "$sha:$rel" 2>/dev/null) 2>/dev/null)"
-    before="$(blank_fenced_blocks <(git -C "$REPO_ROOT" show "$sha^:$rel" 2>/dev/null) 2>/dev/null)"
-    if grep -qE "$heading_re" <<< "$now" && ! grep -qE "$heading_re" <<< "$before"; then
-      printf '%s\n' "$sha"
-      return 0
-    fi
-  done < <(git -C "$REPO_ROOT" log -G"$heading_re" --format=%H -- "$history" 2>/dev/null || true)
+  heading_re="^## $(escape_bre_literal "$1")([^0-9]|\$)"
+  heading_intro_commit "$REPO_ROOT" "${history#"$REPO_ROOT"/}" "$heading_re" || true
 }
 
 # $headings is already in file order (this page's own "newest first" convention, unsorted by the scan

@@ -21,7 +21,7 @@
 #      hit `$REPO_ROOT` as a plain substring prefix of an unrelated string that merely starts the same
 #      way — confirmed live on the Alpine leg, where `$REPO_ROOT` is `/keel` and doctor.sh's own
 #      "run /keel-score to score" hint collapsed into "run .-score to score" without this anchor.
-#      `$REPO_ROOT` is escaped (`sed_escape`, below) before going into the sed pattern: it's an
+#      `$REPO_ROOT` is escaped (`escape_bre_literal`, below) before going into the sed pattern: it's an
 #      arbitrary filesystem path, not a literal this file controls, and interpolating it into a BRE
 #      unescaped is a real, reproducible bug on a checkout whose path contains a sed/regex
 #      metacharacter (`.`, `*`, `[`, or the `#` delimiter itself) — confirmed live: a `#` in the path
@@ -67,19 +67,15 @@ readme="$REPO_ROOT/examples/README.md"
 run bash "$tour"
 check_status "tour.sh runs end-to-end -> exit 0" 0 "$STATUS"
 
-# Escape a string so it's safe to interpolate as a LITERAL (not a pattern) into a BRE using '#' as the
-# delimiter below. Escapes backslash first (so the metachar pass below can't double-escape a backslash
-# it just inserted), then the actual BRE metacharacters plus the '#' delimiter itself. Deliberately does
-# NOT escape `+ ? | ( ) { }`: those are ordinary literal characters in POSIX BRE, but backslash-escaping
-# them invokes GNU sed's non-portable BRE extensions (`\+` = one-or-more, `\?` = zero-or-one, `\|` =
-# alternation, `\(...\)`/`\{...\}` = grouping/interval) — escaping a literal '+' in $REPO_ROOT would turn
-# it into a quantifier on GNU sed (confirmed live: `sed 's/a\+b/X/'` matches "aab", not "a+b"), silently
-# breaking the very substitution this function exists to make safe.
-sed_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/[.[*^$#]/\\&/g'; }
+# $REPO_ROOT goes into a BRE that uses '#' as the sed delimiter, so it is escaped with the shared builder
+# (tools/lib/regex-escape.sh, dir #428 — this file's local `sed_escape` was one of three drifting copies),
+# naming '#' as the extra character.
+# shellcheck source=tools/lib/regex-escape.sh
+. "$REPO_ROOT/tools/lib/regex-escape.sh"
 
 # Rule 1: the tour's own mktemp sandbox, resolved or not, -> /tmp/demo.
 sandbox_re='(/private)?(/var/folders/[^ ]*/T/tmp\.[A-Za-z0-9]+|/tmp/tmp\.[A-Za-z0-9]+)'
-repo_root_esc="$(sed_escape "$REPO_ROOT")"
+repo_root_esc="$(escape_bre_literal "$REPO_ROOT" '#')"
 # Rule 3's replacement is built from parts (like tour.sh's own fake_key) so this file's source
 # never holds a whole key-shaped token.
 planted_key="$(key 'AKIA' 'IOSFODNN7EXAMPLE')"

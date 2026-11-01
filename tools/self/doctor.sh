@@ -1132,6 +1132,10 @@ _strip_ref_citations() {
 # `-r`-not-just-`-f` fix already recorded in this check's own comments below.
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$self_dir/../lib/nonneg-int.sh"
+# shellcheck source=tools/lib/regex-escape.sh
+. "$self_dir/../lib/regex-escape.sh"
+# shellcheck source=tools/lib/heading-intro.sh
+. "$self_dir/../lib/heading-intro.sh"
 pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
 # No explicit empty-string handling here: `sanitize_nonneg_int` itself treats '' as invalid and
 # returns the default, so `${VAR:-40}` above (unset -> default) and the sanitizer below (empty,
@@ -1139,117 +1143,21 @@ pending_max_commits="${KEEL_PENDING_RELEASE_MAX_COMMITS:-40}"
 # operator-run `/code-review high` pass, reproduced live).
 pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 
-# _blob_text VAR REV REL — dir #766: VAR = REL's text at REV, "" when REV or REL is absent there (a root commit's
-# parent; a commit that has no such file), status 2 when git itself fails. Absence is asked of git by status
-# (`rev-parse -q --verify` exits 1 for an unresolvable rev) and by listing (`ls-tree` prints nothing for an absent
-# path), not inferred from any nonzero exit — so a git that errors reads as a failure. Limit: a parent object that
-# is genuinely missing (a partial clone) still reads as an unresolvable rev, i.e. absent; a SHALLOW clone is
-# skipped upstream by check 6's guard.
-_blob_text() {
-  local var="$1" rev="$2" rel="$3" bt_rc=0 entry text
-  git -C "$repo_root" rev-parse -q --verify "$rev^{commit}" >/dev/null 2>&1 || bt_rc=$?
-  if [ "$bt_rc" -eq 1 ]; then printf -v "$var" ''; return 0; fi
-  [ "$bt_rc" -eq 0 ] || return 2
-  entry="$(git -C "$repo_root" ls-tree "$rev" -- "$rel")" || return 2
-  if [ -z "$entry" ]; then printf -v "$var" ''; return 0; fi
-  text="$(git -C "$repo_root" show "$rev:$rel")" || return 2
-  printf -v "$var" '%s' "$text"
-}
-
-# _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced
-# the exact heading text "## [VERSION]" into CHANGELOG.md's TRACKED history, OUTSIDE any fenced code
-# block — i.e. how long the section AS IT CURRENTLY STANDS has existed, which is what the
-# pending-release allowance's commit-distance bound below needs. `git log -G` (the regex pickaxe)
-# reports every commit whose diff has a line matching the anchored heading regex, newest first — so
-# the FIRST entry is normally the commit that introduced today's heading (an earlier `tail -1`+-S
-# version instead picked the OLDEST matching commit ever, in ANY add/remove cycle — wrong when a
-# version number is cut, reverted, and later genuinely re-cut with the SAME number; the -S→-G swap's
-# own rationale is at the loop's `done` line below).
-#
-# **Verify-after-the-fact (dir #194, candidate 1 — the operator's choice over "accept and document" for
-# this fork):** the pickaxe itself has no concept of "inside a fence" — it matches the file's RAW
-# historical content, so a candidate SHA can be a decoy: a commit that only added (or removed) a
-# FENCED example elsewhere in CHANGELOG.md (this very file documents its own release-note conventions,
-# and an illustrative snippet is a realistic future entry) whose literal text happens to contain a real
-# `## [x.y.z]` heading, while the section's actual un-fenced heading was introduced at a DIFFERENT
-# commit. A plain "does this commit's fence-blanked content contain the heading" check is not enough to
-# tell the two apart — once the real section exists, its heading stays present (fence-blanked) at every
-# later commit, decoy or not. What actually distinguishes them is whether THIS commit's own diff added
-# the heading OUTSIDE a fence: fence-blank both this commit's content and its immediate PARENT's, and
-# require the heading to be PRESENT now but ABSENT before — a targeted, per-candidate recheck (not the
-# "reconstruct every historical revision's fence-blanked content and re-search" mechanism this ticket
-# explicitly scoped out as too big). Candidates are walked newest first; the first one whose fence-blanked
-# presence flips false→true is the real introducing commit — a decoy (present both before and after,
-# because the real heading was already there, or the add was itself inside a fence) is skipped in favor
-# of the next-newest match. A presence check, not an occurrence-COUNT comparison: a genuinely duplicated
-# heading (a bad merge — the file's own separate section-count invariant elsewhere already flags that
-# as its own drift) would make a later duplicate-adding commit look like a valid "count went up" event
-# to a counting check, but presence alone correctly keeps resolving to the section's true original
-# introduction regardless. Confirmed latent, not live: this repo's own CHANGELOG.md has never used a
-# fenced `## [x.y.z]`-shaped example, so every real call so far returns on the first candidate — this
-# only costs two extra `git show` + awk passes per candidate, and only for a heading with more than one
-# pickaxe hit.
-#
-# Prints nothing if no candidate is found, or if every candidate turns out to be a fence-only add/remove
-# — an untracked or freshly-added-but-uncommitted CHANGELOG.md, a history rewrite, or (the fenced case)
-# a heading whose every occurrence-count change happened inside an example. The pending-release
-# allowance's commit-distance bound below (dir #156) FAILS OPEN on that empty case rather than inventing
-# drift from a measurement it couldn't make — see the comment there. Single consumer WITHIN THIS FILE
-# (that bound), so — like `_semver_gt` just above — it lives here beside check 6 rather than with the
-# file's general helpers. Mirrored (not shared — same reasoning as `_semver_gt` above), scanning
-# docs/release-history.md instead of CHANGELOG.md, by `tests/test_release_history.sh`'s own
-# pending-release allowance (dir #299) — check that file too when fixing this one. (dir #766: this copy now
-# returns 2 on a git failure for the caller to GAP; the mirror in that test still fails open on it — a test
-# helper, not a self-check verdict, and left as is.)
+# _pending_release_intro_commit VERSION — print the SHA of the commit that most recently introduced the
+# heading line "## [VERSION]" into CHANGELOG.md's tracked history, outside any fenced block: how long the
+# section AS IT CURRENTLY STANDS has existed, which the pending-release allowance's commit-distance bound
+# below needs. The walk itself (newest-first -G pickaxe, fence-blanked presence flip, anchoring, git-failure
+# status) is tools/lib/heading-intro.sh's `heading_intro_commit`, shared with tests/test_release_history.sh's
+# own allowance (dir #428 — they were two parallel copies kept in step by a comment alone); this wrapper
+# only builds the heading regex and keeps the caller-side preconditions. Prints nothing when no candidate
+# is found (the bound then FAILS OPEN, see the comment there); returns 2 when git failed (dir #766), for
+# the caller to GAP — this runs inside `$( )`, where a gap() would be lost with the subshell.
+# The closing `]` bounds the right edge ([0.9.0] cannot prefix [0.9.01]).
 _pending_release_intro_commit() {
-  local heading="## [$1]" heading_re rel sha now before
-  rel="${changelog_file#"$repo_root"/}"
-  # LINE-ANCHORED presence test, not a substring one (dir #299's anchor-both-ends class, hit live at
-  # the v0.9.0 cut): CHANGELOG prose has QUOTED a release heading inline before (an inline-backtick
-  # mention survives blank_fenced_blocks, which blanks only fenced blocks), and an unanchored
-  # `grep -qF "$heading"` counts that mention as the heading — so the newest-first walk skips the real
-  # cut commit (its ^-parent already "contains" the string, in prose) and returns a years-old commit
-  # that merely introduced the mention, blowing the distance bound. `^` plus the escaped literal
-  # requires an actual heading line; the closing `]` bounds the right edge ([0.9.0] cannot prefix
-  # [0.9.01] — the bracket lands on a digit).
-  heading_re="^$(printf '%s' "$heading" | sed 's/[][\.*^$/]/\\&/g')"
-  # dir #213 closed this via SHAPE (no bare `$( )` assignment whose failing status aborts the run); dir #766
-  # replaced its trailing `|| true` with the checked status below.
-  # dir #766: the pickaxe is spooled with its status kept. Status 2 = could not walk the history; the caller
-  # GAPs (this runs inside `$( )`, where a gap() would be lost with the subshell). Status 0 with empty output
-  # stays the designed "heading never appears in tracked history" fail-open.
+  local heading_re
   [ "$HEAD_STATE" = commits ] || return 0   # no commits yet: bound unresolvable (a failed HEAD GAPped at check 4)
-  intro_shas=""
-  intro_rc=0
-  intro_shas="$(git -C "$repo_root" log -G"$heading_re" --format=%H -- "$changelog_file" 2>/dev/null)" || intro_rc=$?
-  [ "$intro_rc" -eq 0 ] || return 2
-  while IFS= read -r sha; do
-    [ -n "$sha" ] || continue
-    # Captured into variables, not piped straight into `grep -q` (dir #195's own class, reintroduced
-    # here and caught live: `blank_fenced_blocks <(...) | grep -qF ...` SIGPIPEs the awk writer the
-    # instant grep finds its match and exits, and under `set -o pipefail` that reads as "not present"
-    # even when it plainly is — reproduced against this repo's own real CHANGELOG.md, 300KB+, where the
-    # heading sits well before the point grep would need to keep reading). Capturing to `$now`/`$before`
-    # first lets `blank_fenced_blocks` run to completion on its own, then a `<<<` here-string grep (no
-    # live writer process on the other end) tests presence with nothing left to signal.
-    # dir #766: the blob is read with its status kept. The -G pickaxe also lists a commit that REMOVED a matching
-    # line (one that deleted or moved the file), so the blob may be absent at $sha as well as at `$sha^` (this
-    # commit added it, or it is a root commit); _blob_text tells absent from a failing git. Status 2 = failure.
-    now_raw=""; before_raw=""   # set by _blob_text's `printf -v` (declared for shellcheck SC2154)
-    _blob_text now_raw "$sha" "$rel" || return 2
-    _blob_text before_raw "$sha^" "$rel" || return 2
-    now="$(blank_fenced_blocks /dev/stdin <<< "$now_raw")"
-    before="$(blank_fenced_blocks /dev/stdin <<< "$before_raw")"
-    if grep -q "$heading_re" <<< "$now" && ! grep -q "$heading_re" <<< "$before"; then
-      printf '%s\n' "$sha"
-      return 0
-    fi
-  done <<< "$intro_shas"
-  # -G (regex pickaxe), not -S: -S counts SUBSTRING occurrences, so a count-neutral commit — one that
-  # promotes an existing inline-prose mention into the real heading line, adding one and removing one
-  # — never enters the candidate walk and the function silently fails open (bound not computed). The
-  # mirror in tests/test_release_history.sh already uses -G"$heading_re" for exactly this reason; this
-  # is the -S/-G half of dir #299's anchor class, converged here with the presence test above.
+  heading_re="^$(escape_bre_literal "## [$1]")"
+  heading_intro_commit "$repo_root" "${changelog_file#"$repo_root"/}" "$heading_re"
 }
 
 say ""
