@@ -101,14 +101,34 @@ bb_strip_foreign_citations() {
   # engine ever sees them, so that class was actually just `{space, t}`: it does not match a real
   # tab byte, and it wrongly matches a stray literal `t` character. `[[:blank:]]` is the portable
   # POSIX class that means exactly "space or tab, never newline".
-  while [[ "$stripped" =~ [Ss]upersed(es|ed|ing)([[:blank:]]+by)?[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
-    && [ "${BASH_REMATCH[3]}" != "$own_num" ]; do
-    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  # dir #448: each verb form is walked to a true fixed point. The old `while match && foreign` loop
+  # halted at the FIRST match when that match named own_num, so a foreign citation behind a
+  # self-citation kept its tag in the block, where the caller's bare-tag test read it as the heading's own.
+  # Now a self-citation is moved, unchanged, into `kept` (it is the heading's own tag and must survive)
+  # and the scan resumes on the text after it; a foreign one is removed; the loop ends only on no match.
+  local kept rest
+  kept=""
+  rest="$stripped"
+  while [[ "$rest" =~ [Ss]upersed(es|ed|ing)([[:blank:]]+by)?[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]]; do
+    if [ "${BASH_REMATCH[3]}" = "$own_num" ]; then
+      kept+="${rest%%"${BASH_REMATCH[0]}"*}${BASH_REMATCH[0]}"
+      rest="${rest#*"${BASH_REMATCH[0]}"}"
+    else
+      rest="${rest/"${BASH_REMATCH[0]}"/}"
+    fi
   done
-  while [[ "$stripped" =~ [Dd]uplicate\ of[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]] \
-    && [ "${BASH_REMATCH[1]}" != "$own_num" ]; do
-    stripped="${stripped/"${BASH_REMATCH[0]}"/}"
+  stripped="$kept$rest"
+  kept=""
+  rest="$stripped"
+  while [[ "$rest" =~ [Dd]uplicate\ of[[:blank:]]+dir\ \#([0-9]+)[[:blank:]]*(—[[:blank:]]*)?${tag_pattern}([^a-zA-Z]|$) ]]; do
+    if [ "${BASH_REMATCH[1]}" = "$own_num" ]; then
+      kept+="${rest%%"${BASH_REMATCH[0]}"*}${BASH_REMATCH[0]}"
+      rest="${rest#*"${BASH_REMATCH[0]}"}"
+    else
+      rest="${rest/"${BASH_REMATCH[0]}"/}"
+    fi
   done
+  stripped="$kept$rest"
   printf '%s' "$stripped"
 }
 
@@ -128,7 +148,11 @@ bb_strip_foreign_citations() {
 # Known limit, accepted: a Title-case or UPPER word right after a glyph in a title (`❌ Duplicate detection
 # fails`, `✅ FIXED-width parser`) still reads as a closure — the peer's own form is Title case, and the
 # UPPER form already behaved so before this change; word such a title without the glyph in front.
-BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:space:]]*[*_]{0,2}[[:space:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
+# dir #448: the two internal gaps are `[[:blank:]]` (space/tab), NOT `[[:space:]]`: the latter bridged a newline,
+# so a wrapped title ending in the glyph with `DONE` opening the next line read as one closure tag. A real
+# tag is always on one line. The real BACKLOG.md reads byte-identically under either class (measured), so
+# tests/test_backlog_blocks_lib.sh pins the difference with its own fixtures.
+BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:blank:]]*[*_]{0,2}[[:blank:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
 # bb_closure_word_ok <candidate_marker>
 #   dir #581 (c): the write-time half — a closing writer (the release manager's marker sweep,
