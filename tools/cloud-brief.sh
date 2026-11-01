@@ -414,6 +414,9 @@ gh_or_refuse() { # ROW WHAT ARGS... — gh api's stdout; 404/403 refuses ROW, an
 }
 DEFAULT="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq .default_branch)" || exit $?
 [ -n "$DEFAULT" ] || die 2 "gh api gave no default branch for $OR"
+# dir #927: a private repository's hosted-runner minutes are the owner's account-wide quota (public ones are free).
+VIS="$(gh_or_refuse G1 "repos/$OR" "repos/$OR" --jq '[(.private // false), (.owner.type // "User")] | @tsv')" || exit $?
+IFS=$'\t' read -r PRIVATE OWNER_TYPE <<< "$VIS"
 # The name goes unquoted into the VM's shell commands (the protocol's <default>): ref characters a shell passes as
 # they are, spelled out — a bracket range follows the locale's collation in bash 3.2 — and no leading `+` or `-`,
 # which `git fetch origin <default>` would read as a forced refspec or an option.
@@ -439,26 +442,83 @@ case "$WORKFLOWS" in ''|0|*[!0-9]*) refuse G1c "$OR has no active CI workflow �
 # jobs all run on self-hosted labels also needs, per job, one ONLINE runner carrying that job's labels. No run yet is a fresh workflow (warning);
 # a runners endpoint a token without admin cannot read (403/404) warns, it does not refuse.
 warn_add() { WARN="${WARN:+$WARN; }$1"; }
+# first_unstarted JOBS-JSON — "id<TAB>name" of the first COMPLETED job with no steps (not skipped or cancelled), or empty.
+first_unstarted() {
+  jq -r '[.[] | select(.status == "completed" and (.steps // [] | length) == 0 and (.conclusion // "") != "skipped" and (.conclusion // "") != "cancelled")] | .[0] // empty | "\(.id)\t\(.name)"' <<< "$1"
+}
+# job_note REPO JOB-ID — the first annotation message of that job's check run, or empty (best-effort).
+job_note() {
+  case "$2" in ''|*[!0-9]*) return 0 ;; esac
+  cloud_gh_api "repos/$1/check-runs/$2/annotations" --jq '[.[].message] | map(select(. != null and . != "")) | .[0] // empty' 2>/dev/null || true
+}
+# sibling_probe — dir #927: walk the owner's other private repositories (at most SIBLING_MAX, newest push first) and read
+# each one's newest run. Sets SIB_BAD (text naming a sibling run whose job never started, newer than this repo's run)
+# and SIB_FRESH (url of a sibling run newer than this repo's run whose jobs started). Unreadable siblings only warn.
+SIBLING_MAX=10
+sibling_probe() {
+  local list sibs sib n=0 skipped=0 srun sid surl sat sjobs sun sstarted note
+  case "$OWNER_TYPE" in
+    Organization) list="orgs/${OR%%/*}/repos?type=private&per_page=100&sort=pushed" ;;
+    # GET /users/<o>/repos lists only PUBLIC repositories; the authenticated user's own private ones are at /user/repos
+    # (owner filtered below — when the token is another user's, nothing of this owner appears and the probe finds nothing).
+    *)            list="user/repos?affiliation=owner&visibility=private&sort=pushed&per_page=100" ;;
+  esac
+  sibs="$(cloud_gh_api "$list" --jq '.[] | select(.private == true and ((.archived // false) | not) and ((.disabled // false) | not)) | .full_name' 2>/dev/null)" \
+    || { warn_add "could not list the other private repositories of ${OR%%/*} — the account-level G1c probe was skipped"; return 0; }
+  while IFS= read -r sib; do
+    [ -n "$sib" ] && [ "$sib" != "$OR" ] && [ "${sib%%/*}" = "${OR%%/*}" ] || continue
+    n=$((n + 1)); [ "$n" -le "$SIBLING_MAX" ] || break
+    srun="$(cloud_gh_api "repos/$sib/actions/runs?per_page=1&exclude_pull_requests=true" \
+      --jq '(.workflow_runs // [])[0] // empty | [.id, .html_url, (.created_at // "")] | @tsv' 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
+    [ -n "$srun" ] || continue
+    IFS=$'\t' read -r sid surl sat <<< "$srun"
+    case "$sid" in ''|*[!0-9]*) continue ;; esac
+    # Only a run newer than this repo's own can say anything about the account's CURRENT state.
+    # Without both timestamps the order is unknown: skip rather than judge the account on an undated run.
+    [ -n "$RUN_AT" ] && [ -n "$sat" ] && [[ "$sat" > "$RUN_AT" ]] || continue
+    sjobs="$(cloud_gh_api "repos/$sib/actions/runs/$sid/jobs?per_page=100" --jq '.jobs // []' 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
+    sun="$(first_unstarted "$sjobs" 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
+    if [ -n "$sun" ]; then
+      note="$(job_note "$sib" "${sun%%$'\t'*}")"
+      SIB_BAD="the newest run of $sib never started job '${sun#*$'\t'}' ($surl: no steps)${note:+ — annotation: \"$note\"}"
+      break
+    fi
+    sstarted="$(jq -r '[.[] | select((.steps // [] | length) > 0)] | length' <<< "$sjobs" 2>/dev/null)" || sstarted=0
+    if [ "${sstarted:-0}" != 0 ] && [ -z "$SIB_FRESH" ]; then SIB_FRESH="$surl"; fi
+  done <<< "$sibs"
+  [ "$skipped" = 0 ] || warn_add "could not read $skipped sibling private repositor$([ "$skipped" = 1 ] && echo y || echo ies) — the account-level G1c probe is partial"
+  return 0
+}
+
 DEFAULT_Q="${DEFAULT//+/%2B}" # a `+` in a query string reads as a space
 RUN="$(gh_or_refuse G1c "the latest run of $OR:$DEFAULT" "repos/$OR/actions/runs?branch=$DEFAULT_Q&per_page=1&exclude_pull_requests=true" \
-  --jq '(.workflow_runs // [])[0] // empty | [.id, .html_url] | @tsv')" || exit $?
+  --jq '(.workflow_runs // [])[0] // empty | [.id, .html_url, (.created_at // "")] | @tsv')" || exit $?
 if [ -z "$RUN" ]; then
   warn_add "no workflow run yet on $OR:$DEFAULT — the started-run probe (G1c) had nothing to read"
 else
-  RUN_ID="${RUN%%$'\t'*}" RUN_URL="${RUN#*$'\t'}"
+  IFS=$'\t' read -r RUN_ID RUN_URL RUN_AT <<< "$RUN"
   case "$RUN_ID" in ''|*[!0-9]*) die 2 "gh api gave an unreadable run id for $OR" ;; esac
   JOBS="$(gh_or_refuse G1c "the jobs of run $RUN_ID of $OR" "repos/$OR/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs // []')" || exit $?
-  UNSTARTED="$(jq -r '[.[] | select(.status == "completed" and (.steps // [] | length) == 0 and (.conclusion // "") != "skipped" and (.conclusion // "") != "cancelled")] | .[0] // empty | "\(.id)\t\(.name)"' <<< "$JOBS")" \
-    || die 2 "cannot parse the jobs of run $RUN_ID of $OR"
-  if [ -n "$UNSTARTED" ]; then
-    job_id="${UNSTARTED%%$'\t'*}" job_name="${UNSTARTED#*$'\t'}" note=""
-    case "$job_id" in ''|*[!0-9]*) ;; *)
-      note="$(cloud_gh_api "repos/$OR/check-runs/$job_id/annotations" --jq '[.[].message] | map(select(. != null and . != "")) | .[0] // empty' 2>/dev/null)" || note=""
-    esac
+  UNSTARTED="$(first_unstarted "$JOBS")" || die 2 "cannot parse the jobs of run $RUN_ID of $OR"
+  SH_ONLY=0
+  if jq -e 'length > 0 and all(.[]; (.labels // []) | index("self-hosted"))' <<< "$JOBS" >/dev/null 2>&1; then SH_ONLY=1; fi
+  # dir #927: a hosted runner's minutes are an account-wide quota, so on a private repository this repo's last run can
+  # predate an account block (stale pass) or its lifting (stale refuse): also read the newest run of the owner's other
+  # private repositories (bounded, read-only, best-effort — an unreadable sibling is skipped with a warning).
+  SIB_BAD="" SIB_FRESH=""
+  if [ "$PRIVATE" = true ] && [ "$SH_ONLY" = 0 ]; then sibling_probe; fi
+  if [ -n "$SIB_BAD" ]; then
+    refuse G1c "the account looks blocked: $SIB_BAD — a dispatch would spend credit and the landing check would wait forever; once the block is lifted, run one workflow on $DEFAULT first so G1c's evidence is fresh"
+  fi
+  if [ -n "$UNSTARTED" ] && [ -n "$SIB_FRESH" ]; then
+    warn_add "G1c evidence is stale: the latest run on $OR:$DEFAULT never started a job ($RUN_URL) but a later run started on the same account ($SIB_FRESH) — run one workflow on $DEFAULT first"
+  elif [ -n "$UNSTARTED" ]; then
+    job_id="${UNSTARTED%%$'\t'*}" job_name="${UNSTARTED#*$'\t'}"
+    note="$(job_note "$OR" "$job_id")"
     refuse G1c "the latest run on $DEFAULT never started job '$job_name' ($RUN_URL: no steps)${note:+ — annotation: \"$note\"} — a dispatch would spend credit and the landing check would wait forever (an account billing block, or an offline self-hosted runner)"
   fi
   # Self-hosted-only: every job of the run carries the `self-hosted` label.
-  if jq -e 'length > 0 and all(.[]; (.labels // []) | index("self-hosted"))' <<< "$JOBS" >/dev/null 2>&1; then
+  if [ "$SH_ONLY" = 1 ]; then
     NEED="$(jq -r '[.[].labels[]?] | unique | map(select(. != "self-hosted")) | join(",")' <<< "$JOBS")"
     runners_rc=0
     RUNNERS="$(cloud_gh_api "repos/$OR/actions/runners?per_page=100" --jq '.runners // []' 2>/dev/null)" || runners_rc=$?
