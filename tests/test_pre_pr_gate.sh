@@ -4100,7 +4100,7 @@ check_absent "dir #713 item 9: ...and no longer says an agent review satisfies n
 check_contains "dir #713 item 9: ...it names the reviewer whose agent receipt IS accepted" "$OUT" "keel-polish-reviewer"
 
 # dir #579: a gate invoked through a symlink (the hand-linked install) sources its libs from the REAL script's dir.
-lk="$(mktemp -d)"; mkdir -p "$lk/a" "$lk/b"
+lk="$(mktemp -d "$SANDBOX/lk.XXXXXX")"; mkdir -p "$lk/a" "$lk/b"
 ln -s "$gate" "$lk/a/pre-pr-gate.sh"; ln -s "$lk/a/pre-pr-gate.sh" "$lk/b/hop.sh"   # absolute, then a two-hop chain
 d="$(mkrepo)"
 for l in "$lk/a/pre-pr-gate.sh" "$lk/b/hop.sh"; do
