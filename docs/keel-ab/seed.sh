@@ -82,6 +82,8 @@ case "${2:-}" in
     keel_core="$3"
     [ -f "$keel_core" ] || { echo "seed.sh: --with-keel path is not a regular file: $keel_core" >&2; exit 2; }
     [ -r "$keel_core" ] || { echo "seed.sh: --with-keel path not readable: $keel_core" >&2; exit 2; }
+    # dir #515: validated against the invocation cwd, consumed after `cd "$target"` — make it absolute now.
+    case "$keel_core" in /*) ;; *) keel_core="$PWD/$keel_core" ;; esac
     ;;
   *)
     echo "seed.sh: unrecognized argument: $2 (expected --with-keel)" >&2
