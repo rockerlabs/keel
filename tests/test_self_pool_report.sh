@@ -571,4 +571,60 @@ run "$pr" --history "$SANDBOX/hist-glue.jsonl" "$fglue"
 check_contains "MUTATION-PROOF: a glued body line does not drop the open ticket from the pool" "$OUT" \
   "pool size:                     1"
 
+# --- dir #655: the record carries the id set and the covered files; the next run splits the growth ----
+# by origin. MUTATION-PROOF: reading the pool by size alone reads the returned ticket as a new filing.
+mk_pool() { # mk_pool <id:found-date>... -> a BACKLOG.md whose pool holds exactly those dir tickets
+  local body="" spec
+  for spec in "$@"; do
+    body="$body### dir #${spec%%:*} — pool ticket (found ${spec#*:}) — R2 — → pool
+
+body
+
+"
+  done
+  mk_backlog "$body"
+}
+hist655="$SANDBOX/hist-655.jsonl"
+f655a="$(mk_pool 1:2026-01-01 2:2026-01-02)"
+run "$pr" --record rA --history "$hist655" "$f655a"
+check_contains "the recorded row carries the covered file" "$(cat "$hist655")" '"files":["BACKLOG.md"]'
+check_contains "the recorded row carries the id set" "$(cat "$hist655")" '"ids":[1,2]'
+# 3 is older than the rA reading (a returned ticket); 4 was filed after it (a new filing). The reading date
+# is today, so 2020-01-01 is older and 2999-01-01 is newer.
+f655b="$(mk_pool 1:2026-01-01 2:2026-01-02 3:2020-01-01 4:2999-01-01)"
+run "$pr" --history "$hist655" "$f655b"
+check_contains "split: one new filing" "$OUT" "new since the last reading:     1"
+check_contains "split: one ticket returned from a slate" "$OUT" "returned from a slate:          1"
+check_contains "coverage is printed" "$OUT" "coverage:                       BACKLOG.md"
+
+# An older row with no id set degrades to the size-only reading.
+hist655_old="$SANDBOX/hist-655-old.jsonl"
+printf '%s\n' '{"release":"rOld","date":"2026-01-10","pool_size":2}' > "$hist655_old"
+run "$pr" --history "$hist655_old" "$f655b"
+check_contains "an old row without an id set -> size-only reading" "$OUT" "no id set recorded"
+check_absent "an old row prints no split" "$OUT" "returned from a slate"
+
+# A reading never compares across a change of coverage (history 180 -> 19 at the sort).
+hist655_cov="$SANDBOX/hist-655-cov.jsonl"
+{
+  printf '%s\n' '{"release":"c1","date":"2026-01-01","pool_size":1,"files":["BACKLOG-old.md"],"ids":[1]}'
+  printf '%s\n' '{"release":"c2","date":"2026-01-02","pool_size":2,"files":["BACKLOG-old.md"],"ids":[1,2]}'
+} > "$hist655_cov"
+run "$pr" --history "$hist655_cov" "$f655b"
+check_contains "changed coverage is named" "$OUT" "coverage changed"
+check_absent "MUTATION-PROOF: no growth trigger across a coverage change (1 -> 2 -> 4 would fire on size alone)" "$OUT" "WARN"
+
+# The trigger counts the latest step net of returned tickets.
+hist655_trg="$SANDBOX/hist-655-trg.jsonl"
+{
+  printf '%s\n' '{"release":"t1","date":"2026-01-01","pool_size":1,"files":["BACKLOG.md"],"ids":[1]}'
+  printf '%s\n' '{"release":"t2","date":"2026-01-02","pool_size":2,"files":["BACKLOG.md"],"ids":[1,2]}'
+} > "$hist655_trg"
+f655_ret="$(mk_pool 1:2026-01-01 2:2026-01-02 3:2020-01-01)"
+run "$pr" --history "$hist655_trg" "$f655_ret"
+check_absent "MUTATION-PROOF: growth explained by a returned ticket does not fire the trigger (2 -> 3, 1 returned)" "$OUT" "WARN"
+f655_new="$(mk_pool 1:2026-01-01 2:2026-01-02 3:2999-01-01)"
+run "$pr" --history "$hist655_trg" "$f655_new"
+check_contains "the same growth by a new filing fires the trigger" "$OUT" "WARN"
+
 summary

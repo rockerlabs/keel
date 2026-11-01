@@ -436,18 +436,11 @@ settled fact.
   **Record any time this cycle — the reading no longer has to be right the first time.** The release
   key is a correctable record, not an idempotent-once one (`dir #461`): a stale reading is fixed with
   `--record --amend` instead of being avoided by ordering the whole sweep around this one step.
-  **When the drain trigger fires, split the growth by where it came from before reading it as a
-  filing rate (the 0.13.0 groom, 2026-09-30).** The trigger counts the pool, not filings, so a slate cut
-  that sends tickets back reads as growth at the next reading. That groom saw about 180 → 219: 32 of the
-  40 were the previous release's cut returning its carried-over lane, and 8 were net new filings.
-  Returned tickets call for a sort or a drain; filings call for a stricter filing bar. So the plan
-  states both numbers, the returned ones taken from the cut's own record. This is a hand step, a
-  compensation whose remover is `dir #655`.
-  **A reading compares only with readings of the same coverage (the 0.14.0 groom).** When what the
-  tool counts changes (a sort moving most open tickets to a parked file, a new filter), the plan
-  states the uncounted part beside the reading and reads no growth across the change (keel's history
-  went 180 → 19 at its split: a change of definition, not a drain). Same remover, `dir #655`, whose
-  record must name the files a reading covered.
+  **Growth by origin and coverage are the tool's to report (`dir #655`).** The recording stores the
+  pool's id set and the files a reading covered; the next run prints the growth split into new filings
+  and tickets returned from a slate, and reads no growth across a change of coverage (a sort moving
+  tickets to another file). The plan quotes those figures; it does not split the growth by hand. A row
+  recorded before that shipped carries neither, and reads by size alone.
 - **Staleness.** Where the project's `⚠ ERODING`-style staleness marker and its cap/staleness check
   exist (they may not — this is a per-project mechanism this procedure only calls), run it as part of
   this sweep.
