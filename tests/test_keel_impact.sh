@@ -603,6 +603,18 @@ check_file "score writes the ledger into the store (marker-free, no env)" "$erep
 check_file "score writes the trail into the store (marker-free, no env)" "$erepo_store/evidence.md"
 check_nofile "the project tree still carries nothing after add" "$erepo/.keel/ledger.md"
 
+# --- a failing evidence write must NOT leave a ledger row behind (the ledger is the index: write it last).
+# Forced for real, not mocked: the store's evidence.md is a DIRECTORY, which ensure_evidence refuses
+# (non-regular target). Before the fix the row landed first, so the store came out half-updated.
+ferepo="$(new_repo)"
+ferepo_store="$KEEL_IMPACT_STORE/$(store_id_for "$ferepo")"
+run_in "$ferepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" enable .
+mkdir -p "$ferepo_store/evidence.md"
+run_in "$ferepo" env -u KEEL_IMPACT_LOG -u KEEL_IMPACT_LEDGER -u KEEL_IMPACT_EVIDENCE bash "$TOOL" add --fire "f" --gap none
+check_status "a refused evidence write fails the add" 1 "$STATUS"
+check_contains "the refusal says why" "$OUT" "not a regular file"
+check_absent "a failed evidence write leaves NO ledger row (no half-written record)" "$(cat "$ferepo_store/ledger.md" 2>/dev/null)" "| 100 |"
+
 # --- worktree: a linked worktree resolves to the SAME store entry as its main checkout -------------
 # before the store (dir #181's bug class), events from worktree sessions could silently vanish or split
 git -C "$erepo" add -A >/dev/null 2>&1

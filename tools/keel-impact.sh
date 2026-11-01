@@ -1432,35 +1432,7 @@ cmd_add() {
   local tk; tk="$(_ledger_cell "${ticket:-—}")"
   local sn; sn="$(_ledger_cell "${session:-—}")"
 
-  ensure_ledger
   local today; today="${asof:-$(date -u +%Y-%m-%d)}"
-  # Row values, index-aligned with _LEDGER_COLS (dir #151): built from the array instead of a
-  # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order. The
-  # format string depends only on the column COUNT (one "%s |" per column), not on any column's
-  # identity, so it's built once here rather than inside the value-mapping loop below.
-  local -a _row_vals=()
-  local _col _fmt="|"
-  for _col in "${_LEDGER_COLS[@]}"; do _fmt="$_fmt %s |"; done
-  for _col in "${_LEDGER_COLS[@]}"; do
-    case "$_col" in
-      date)     _row_vals+=("$today") ;;
-      score)    _row_vals+=("$score") ;;
-      conf)     _row_vals+=("$conf") ;;
-      guard)    _row_vals+=("$_n_guard") ;;
-      hold)     _row_vals+=("$_n_hold") ;;
-      fire)     _row_vals+=("$_n_fire") ;;
-      hit)      _row_vals+=("$_n_hit") ;;
-      miss)     _row_vals+=("$_n_miss") ;;
-      fric)     _row_vals+=("$_n_friction") ;;
-      silent)   _row_vals+=("$silent") ;;
-      evidence) _row_vals+=("$ev") ;;
-      gap)      _row_vals+=("$gp") ;;
-      ticket)   _row_vals+=("$tk") ;;
-      session)  _row_vals+=("$sn") ;;
-      *) printf 'keel-impact: internal error — no value mapped for ledger column %s\n' "$_col" >&2; exit 1 ;;
-    esac
-  done
-  printf "$_fmt\n" "${_row_vals[@]}" >> "$LEDGER"
 
   # Archive the per-event citations — the auditable trail. Only when there was something to cite; an inert
   # ("—") session leaves no block, mirroring "no evidence, nothing to record".
@@ -1488,6 +1460,38 @@ cmd_add() {
       printf '(re-cite explicitly via flags if genuinely this session'"'"'s)\n'
     } >> "$EVIDENCE"
   fi
+
+  # Ledger row LAST (dir #365): the evidence blocks above land first, so a refused or failing evidence
+  # write aborts before any row exists — no half-written record. The ledger is the index; an evidence
+  # block with no index entry is the less confusing residue.
+  ensure_ledger
+  # Row values, index-aligned with _LEDGER_COLS (dir #151): built from the array instead of a
+  # hand-typed printf, so the writer can't silently drift from _ledger_parse's column order. The
+  # format string depends only on the column COUNT (one "%s |" per column), not on any column's
+  # identity, so it's built once here rather than inside the value-mapping loop below.
+  local -a _row_vals=()
+  local _col _fmt="|"
+  for _col in "${_LEDGER_COLS[@]}"; do _fmt="$_fmt %s |"; done
+  for _col in "${_LEDGER_COLS[@]}"; do
+    case "$_col" in
+      date)     _row_vals+=("$today") ;;
+      score)    _row_vals+=("$score") ;;
+      conf)     _row_vals+=("$conf") ;;
+      guard)    _row_vals+=("$_n_guard") ;;
+      hold)     _row_vals+=("$_n_hold") ;;
+      fire)     _row_vals+=("$_n_fire") ;;
+      hit)      _row_vals+=("$_n_hit") ;;
+      miss)     _row_vals+=("$_n_miss") ;;
+      fric)     _row_vals+=("$_n_friction") ;;
+      silent)   _row_vals+=("$silent") ;;
+      evidence) _row_vals+=("$ev") ;;
+      gap)      _row_vals+=("$gp") ;;
+      ticket)   _row_vals+=("$tk") ;;
+      session)  _row_vals+=("$sn") ;;
+      *) printf 'keel-impact: internal error — no value mapped for ledger column %s\n' "$_col" >&2; exit 1 ;;
+    esac
+  done
+  printf "$_fmt\n" "${_row_vals[@]}" >> "$LEDGER"
 
   # Safe now that the row and any evidence blocks are durably appended. Only fires when something
   # actually needs REMOVING (ingested or stale) — a kept/preserved-only run changes nothing the file
