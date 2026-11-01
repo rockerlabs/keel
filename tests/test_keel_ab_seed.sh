@@ -84,6 +84,31 @@ check_dir "trailing-slash run's sibling bare origin lands at <target>.origin.git
 check_nodir "trailing-slash run writes no .origin.git inside the target" "$tgt/.origin.git"
 check_contains "trailing-slash run wires origin to the sibling" "$(git -C "$tgt" remote get-url origin 2>/dev/null)" "$tgt.origin.git"
 
+# --- dir #447 (review round): a `..` segment must resolve before the non-empty guard reads it.
+# `<x>/../dirty` with no `<x>` used to pass the guard (the test hit ENOENT) and fold the dirty
+# directory's files into the seed commit ----------------------------------------------------------
+dirty="$SANDBOX/dotdot-dirty"
+mkdir -p "$dirty"
+echo "PRE-EXISTING UNCOMMITTED WORK" > "$dirty/wip.txt"
+run bash "$seed" "$SANDBOX/no-such-dir/../dotdot-dirty"
+check_status "a ..-spelled non-empty target exits nonzero" 2 "$STATUS"
+check_nodir "a ..-spelled non-empty target is never git-init'd" "$dirty/.git"
+check_file "a ..-spelled non-empty target's file is untouched" "$dirty/wip.txt"
+
+# --- dir #447 (review round): `.` resolves to the real cwd, so its sibling must be guarded too ---
+tgt="$SANDBOX/dot-occupied"
+mkdir -p "$tgt" "$tgt.origin.git"
+echo "unrelated pre-existing content" > "$tgt.origin.git/not-a-clone.txt"
+run bash "$seed" "$tgt/."
+check_status "a '.'-suffixed target with occupied sibling exits nonzero" 2 "$STATUS"
+check_nofile "a '.'-suffixed target never seeds config.sh into the occupied-sibling case" "$tgt/config.sh"
+check_file "a '.' target leaves the occupied sibling untouched" "$tgt.origin.git/not-a-clone.txt"
+
+# --- dir #447 (review round): `/.` canonicalizes to the filesystem root and is refused with the
+# same exit 2 as every other validation error (it used to exit 1 via mkdir "") --------------------
+run bash "$seed" "/."
+check_status "a '/.' target exits 2 (root refused), not 1 from mkdir" 2 "$STATUS"
+
 # --- sanity: a correct run still works end-to-end, --with-keel included -------------------------
 tgt="$SANDBOX/good-target"
 run bash "$seed" "$tgt" --with-keel "$core"

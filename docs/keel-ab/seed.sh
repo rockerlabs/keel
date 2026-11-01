@@ -53,17 +53,27 @@ esac
 # failure below — missing target included — exits the same nonzero code (2), not a mix of 1 and 2.
 [ $# -ge 1 ] || { echo "seed.sh: missing <target-dir>" >&2; usage >&2; exit 2; }
 target="$1"
-# dir #447: normalize the target before ANY guard or write reads it. A trailing slash (shells complete
-# `./arm-cold/` with one) would otherwise make "$target.origin.git" resolve to `arm-cold/.origin.git`,
-# inside the target, so the sibling guard checked the wrong path while the real sibling
-# (`arm-cold.origin.git`, derived from the cd'd PWD below) was left unguarded. Strip trailing slashes
-# and `/.` segments so the guard and the write agree on one path; `/` itself is kept as-is.
-while [ "${#target}" -gt 1 ] && { [ "${target%/}" != "$target" ] || [ "${target%/.}" != "$target" ]; }; do
-  case "$target" in
-    */.) target="${target%/.}" ;;
-    */)  target="${target%/}" ;;
-  esac
-done
+# dir #447: canonicalize the target ONCE, before ANY guard or write reads it. Every path below (the
+# non-empty guard, the `.origin.git` sibling guard, mkdir, cd, and the clone's `$PWD.origin.git`) is
+# derived from this one absolute, lexically collapsed string, so they cannot disagree: a trailing
+# slash, `.`, `..`, or repeated slashes (`./arm/`, `a/../b`, `sub/..`) all resolve to the same path
+# the guard checks. Lexical only: symlinked components are not resolved. Done in a subshell so the
+# `set -f`/IFS changes never leak. The filesystem root is refused (exit 2) so `/.` cannot slip through.
+canonical_target() {
+  local p="$1" part out="" IFS=/
+  set -f
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  for part in $p; do
+    case "$part" in
+      ""|.) ;;
+      ..) out="${out%/*}" ;;
+      *) out="$out/$part" ;;
+    esac
+  done
+  printf '%s\n' "${out:-/}"
+}
+target="$(canonical_target "$1")"
+[ "$target" != "/" ] || { echo "seed.sh: refusing the filesystem root as <target-dir>" >&2; exit 2; }
 keel_core=""
 case "${2:-}" in
   "") : ;;
@@ -86,9 +96,9 @@ esac
 # first and only discovers the sibling is occupied later would recreate the exact half-mutated,
 # retry-folds-into-a-mislabeled-commit state this guard exists to prevent, just on the second path
 # instead of the first.
-# The sibling path below is `$target.origin.git` only because $target was normalized above (dir #447:
-# no trailing slash, no `/.`). That is the same path the `clone --bare` writes after `cd` (`$PWD.origin.git`),
-# so this guard and the write agree; keep the normalization ahead of this check if either moves.
+# The sibling path below is `$target.origin.git` only because $target was canonicalized above (dir #447:
+# absolute, no `.`/`..`/repeated slashes). `cd "$target"` then makes `$PWD` equal that same string, so the
+# clone's `$PWD.origin.git` is the path guarded here; keep canonicalization ahead of this check if either moves.
 for p in "$target" "$target.origin.git"; do
   if [ -e "$p" ]; then
     if [ ! -d "$p" ]; then
