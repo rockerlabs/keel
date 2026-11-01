@@ -755,6 +755,27 @@ check_absent "C2: after rotate, the still-existing entry does NOT read as lost" 
 check_status "C2: the entry directory itself still exists after rotate" 0 \
   "$( [ -d "$c2_entry" ] && printf 0 || printf 1 )"
 
+# rotate never overwrites an existing archive: a stale archive already holding this second's stamped
+# name must keep its content, and the live log must land in a disambiguated sibling instead.
+d="$(mkrepo)"; rt_env s_rot_collide
+feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')" startup
+feed_hook "$(read_json "$d" Read "$d/docs/foo.md")" log-tool
+rot_entry="$(entry_dir_of "$d")"
+rot_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+printf 'STALE-ARCHIVE-LINE\n' > "$rot_entry/reads.log.$rot_stamp.archive"
+feed_hook "$(jq -n --arg cwd "$d" '{hook_event_name:"SessionStart", cwd:$cwd}')" startup
+feed_hook "$(read_json "$d" Read "$d/docs/bar.md")" log-tool
+run_hook rotate "$d"
+check_status "rotate-collide: rotate exits 0 when a colliding archive exists" 0 "$STATUS"
+check_contains "rotate-collide: the pre-existing archive keeps its old content" \
+  "$(cat "$rot_entry/reads.log.$rot_stamp.archive")" "STALE-ARCHIVE-LINE"
+check_absent "rotate-collide: the old content was not replaced by the new log" \
+  "$(cat "$rot_entry/reads.log.$rot_stamp.archive")" "docs/bar.md"
+check_file "rotate-collide: the live log landed in a disambiguated sibling archive" \
+  "$rot_entry/reads.log.$rot_stamp.1.archive"
+check_contains "rotate-collide: the disambiguated archive holds the rotated log" \
+  "$(cat "$rot_entry/reads.log.$rot_stamp.1.archive")" "docs/bar.md"
+
 # moved — an escape found by this ticket's own review round (not one of C1-C3, added on top of the
 # spec's own acceptance list): keel_store_state's full state machine (enabled/lost/moved/never) is
 # reused, not just its `lost` rung — a repo whose KEEL_READ_TRACE_STORE root changed between sessions

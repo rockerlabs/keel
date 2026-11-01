@@ -589,7 +589,23 @@ case "${1:-}" in
     ro_any=0
     for ro_f in reads.log wrap-fuse-events.log; do
       if [ -f "$ro_store/$ro_f" ]; then
-        mv "$ro_store/$ro_f" "$ro_store/$ro_f.$ro_stamp.archive"
+        # Never overwrite an existing archive: a same-second rotation or a stale archive already
+        # holding the stamped name would otherwise lose its lines. Probe for a free name first, then
+        # move with -n so a file created in the probe-to-move window is not clobbered either.
+        ro_target="$ro_store/$ro_f.$ro_stamp.archive"
+        ro_n=1
+        while [ -e "$ro_target" ]; do
+          ro_target="$ro_store/$ro_f.$ro_stamp.$ro_n.archive"
+          ro_n=$((ro_n + 1))
+        done
+        mv -n "$ro_store/$ro_f" "$ro_target" || {
+          printf 'read-trace: could not archive %s to %s\n' "$ro_store/$ro_f" "$ro_target" >&2
+          exit 1
+        }
+        if [ -e "$ro_store/$ro_f" ]; then
+          printf 'read-trace: %s was not archived (target appeared during rotate); retry\n' "$ro_store/$ro_f" >&2
+          exit 1
+        fi
         ro_any=1
       fi
     done
