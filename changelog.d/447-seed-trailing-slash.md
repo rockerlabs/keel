@@ -1,0 +1,1 @@
+- `docs/keel-ab/seed.sh` normalizes its `<target-dir>` (trailing slashes and `/.` segments) before the non-empty guard reads it, so a slash-suffixed target can no longer bypass the `<target>.origin.git` sibling check and leave a half-seeded target behind (dir #447; the v0.9.1 known issue).
