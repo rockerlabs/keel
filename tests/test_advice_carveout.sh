@@ -8,12 +8,11 @@
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
-# clause FILE — every carve-out clause in FILE, one per line: from "a real file" through "backed up first".
-clause() { grep -o 'a real file, not a symlink or a directory, [^()]*backed up first' "$1"; }
+# Every tracked file carrying the clause, not a hardcoded list: a new site anywhere in the tree is counted.
+# This file itself is excluded (it spells the pattern out). Clause: from "a real file" through "backed up first".
+all="$(git -C "$REPO_ROOT" grep -h -o -E 'a real file, not a symlink or a directory, [^()]*backed up first' -- . ':!tests/test_advice_carveout.sh')"
 
-all="$(for f in install.sh tools/doctor.sh keel; do clause "$REPO_ROOT/$f"; done)"
-
-# Four sites: install.sh x2, tools/doctor.sh x1, keel x1. A site dropped or re-typed without the clause
+# Four sites: install.sh x2, tools/doctor.sh x1, keel x1. A site dropped, re-typed, or added elsewhere
 # moves this count, which is the point — update it deliberately when a site is added.
 check_eq "dir #374: the carve-out clause appears at all four advice sites" "4" "$(printf '%s\n' "$all" | grep -c .)"
 
