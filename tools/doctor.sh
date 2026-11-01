@@ -1654,6 +1654,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
       igate_settings="$ihome/settings.json"
     fi
 
+    # dir #579: a hand-linked gate script (`$ihome/pre-pr-gate.sh` -> `<keel>/tools/pre-pr-gate.sh`) sources
+    # its libs from beside the REAL file; flag a link whose target has no lib/ beside it (moved or partial copy).
+    if [ -L "$ihome/pre-pr-gate.sh" ]; then
+      igate_real="$(_real_path "$ihome/pre-pr-gate.sh" 2>/dev/null)" || igate_real=""
+      if [ -z "$igate_real" ] || [ ! -f "${igate_real%/*}/lib/nonneg-int.sh" ] || [ ! -f "${igate_real%/*}/lib/impact-store.sh" ] || [ ! -f "${igate_real%/*}/lib/gate-paths.sh" ]; then
+        warn W-GATE-LIBS "$ihome/pre-pr-gate.sh is a symlink whose target has no lib/ (nonneg-int.sh, impact-store.sh, gate-paths.sh) beside it — the gate would fail to source them; re-link it to <keel>/tools/pre-pr-gate.sh"
+      else
+        say "  OK   /polish gate script: symlink resolves to $igate_real (libs found beside it)"
+      fi
+    fi
+
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the
     # other hooks (SessionStart, PostToolUse, UserPromptExpansion, SubagentStop, SubagentStart) are enhancements.
     # gate_hook_wired (shared with the per-project loop's own half of this check, below) does the structural

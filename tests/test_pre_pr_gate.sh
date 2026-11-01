@@ -4099,4 +4099,16 @@ check_contains "dir #713 item 9: the hint keeps the pinned Skill(code-review) it
 check_absent "dir #713 item 9: ...and no longer says an agent review satisfies nothing" "$OUT" "satisfies nothing here"
 check_contains "dir #713 item 9: ...it names the reviewer whose agent receipt IS accepted" "$OUT" "keel-polish-reviewer"
 
+# dir #579: a gate invoked through a symlink (the hand-linked install) sources its libs from the REAL script's dir.
+lk="$(mktemp -d "$SANDBOX/lk.XXXXXX")"; mkdir -p "$lk/a" "$lk/b"
+ln -s "$gate" "$lk/a/pre-pr-gate.sh"; ln -s "$lk/a/pre-pr-gate.sh" "$lk/b/hop.sh"   # absolute, then a two-hop chain
+d="$(mkrepo)"
+for l in "$lk/a/pre-pr-gate.sh" "$lk/b/hop.sh"; do
+  ERR="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"'"$d"'"}' | bash "$l" 2>&1 >/dev/null)"
+  check_absent "dir #579: gate via symlink ($(basename "$l")) prints no 'No such file'" "$ERR" "No such file"
+done
+(cd "$lk/a" && ln -s "$gate" rel.sh && ERR="$(printf '%s' '{}' | bash ./rel.sh 2>&1 >/dev/null)"; [ "${ERR#*No such file}" = "$ERR" ]) \
+  && pass "dir #579: gate via a cwd-relative symlink prints no 'No such file'" || fail "dir #579: relative symlink" "libs not found"
+rm -rf "$lk"
+
 summary
