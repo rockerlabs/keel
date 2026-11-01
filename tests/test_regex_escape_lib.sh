@@ -23,15 +23,15 @@ check_eq "empty string -> empty" '' "$(escape_bre_literal '')"
 # The escaped text must match ONLY the literal, in BRE, ERE and as a sed pattern.
 for lit in '## [1.2.3]' 'a.b' 'x]y' '[x' 'a*b' '^c$' 'back\slash'; do
   esc="$(escape_bre_literal "$lit")"
-  if printf '%s\n' "$lit" | grep -q "^$esc\$" && printf '%s\n' "$lit" | grep -qE "^$esc\$"; then
+  if grep -q "^$esc\$" <<< "$lit" && grep -qE "^$esc\$" <<< "$lit"; then
     pass "literal '$lit' matches itself (grep BRE + ERE)"
   else fail "literal '$lit' matches itself (grep BRE + ERE)" "escaped as: $esc"; fi
-  if printf '%s\n' "$lit" | sed "s/^$esc\$/HIT/" | grep -qx HIT; then
+  if grep -qx HIT <<< "$(sed "s/^$esc\$/HIT/" <<< "$lit")"; then
     pass "literal '$lit' matches itself (sed)"
   else fail "literal '$lit' matches itself (sed)" "escaped as: $esc"; fi
 done
 esc="$(escape_bre_literal 'a.b')"
-if printf 'axb\n' | grep -q "^$esc\$"; then fail "an escaped '.' does not match another character" "matched axb"
+if grep -q "^$esc\$" <<< "axb"; then fail "an escaped '.' does not match another character" "matched axb"
 else pass "an escaped '.' does not match another character"; fi
 
 # '#' as the sed delimiter (the use that tests/test_tour_transcript.sh makes of the extra argument).
