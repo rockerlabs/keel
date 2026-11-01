@@ -587,7 +587,7 @@ pin "dir #533: R9 requires state-reading command output in a perimeter closure r
   'A closure record proves runtime state with a state-reading command'"'"'s output, never a chat answer (dir #533).' \
   "expected the R9 paragraph on closure-record evidence"
 pin "dir #533: R9 makes the verifier check one command per perimeter criterion" "$doc" \
-  'at least one such' \
+  'command-and-output pair per perimeter criterion, and a criterion with none is an open finding, not a pass.' \
   "expected the verifier clause (one command-and-output pair per perimeter criterion)"
 
 summary
