@@ -149,17 +149,14 @@ pending_max_commits="$(sanitize_nonneg_int "$pending_max_commits" 40)"
 # 1. ANCHORED match (dir #299). This file's bracket-less `## vX.Y.Z` has no closing `]` to stop a shorter
 #    version matching as a prefix of a longer one (`## v0.7.1` is a substring of `## v0.7.10`), so
 #    `$heading_re` requires the character after the version to be a non-digit (or end of line).
-# 2. SHALLOW-CLONE guard (dir #299). A shallow clone's boundary commit is indistinguishable from a genuine
-#    first commit (its parent object is absent, so `before` is empty), which would fabricate distance 0 for
-#    a years-old heading. doctor.sh skips its whole reconciliation on a shallow clone; this test's CI job
-#    does not fetch full history (dir #300), so it bails here and the caller fails OPEN.
+# 2. SHALLOW-CLONE guard (dir #299) now lives in the lib walk (it prints nothing on a shallow clone); this
+#    test's CI job does not fetch full history (dir #300), so the caller below fails OPEN on that.
 # 3. A git failure inside the walk (the lib returns 2) also fails OPEN here — a test helper, not a
 #    self-check verdict; doctor.sh GAPs on the same status.
 #
 # Prints nothing if no candidate resolves; the caller below fails OPEN (keeps the allowance, no distance).
 _pending_release_intro_commit() {
   local heading_re
-  [ "$(git -C "$REPO_ROOT" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ] || return 0
   heading_re="^## $(escape_bre_literal "$1")([^0-9]|\$)"
   heading_intro_commit "$REPO_ROOT" "${history#"$REPO_ROOT"/}" "$heading_re" || true
 }

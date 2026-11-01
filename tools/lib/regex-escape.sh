@@ -7,10 +7,11 @@
 #
 # escape_bre_literal STRING [EXTRA] — print STRING with a backslash put before each of `] [ \ . * ^ $`,
 # plus before every character of EXTRA (the delimiter of the `sed s` the result is interpolated into, e.g.
-# `/` or `#`). The result is valid as a literal in POSIX BRE and ERE alike. It deliberately does NOT
+# `/` or `#`). The result is a literal in POSIX BRE, and in ERE too for any STRING free of `+ ? | ( ) { }`
+# (versions and `## [x.y.z]` headings are). It deliberately does NOT
 # escape `+ ? | ( ) { }`: they are ordinary characters in a POSIX BRE, and a backslash before them turns
 # on GNU's non-portable BRE operators (`\+`, `\?`, `\|`), so escaping a literal `+` would make it a
-# quantifier. A caller that feeds the result to `grep -E` must therefore not pass a string holding those.
+# quantifier. A caller that feeds the result to `grep -E` or the git pickaxe must therefore not pass a string holding those.
 # EXTRA must not hold a character with a meaning inside a bracket expression (`]`, `\`, `^`, `-`).
 #
 # tools/changelog-section.sh keeps its own copy ON PURPOSE (it must stay copy-portable alone — see its

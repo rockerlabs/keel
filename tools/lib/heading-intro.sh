@@ -33,7 +33,7 @@ git_blob_text() {
 # the git repo REPO, OUTSIDE any fenced code block — i.e. how long the section AS IT CURRENTLY STANDS has
 # existed, which is what the pending-release allowance's commit-distance bound needs. The caller builds
 # HEADING_RE (escape_bre_literal in regex-escape.sh builds the literal part) and owns every precondition of
-# its own: doctor.sh's "HEAD has commits", the release-history test's shallow-clone bail.
+# its own (doctor.sh's "HEAD has commits"); the shallow-clone bail lives in the walk itself.
 #
 # Status 0 with the SHA, or 0 with NOTHING printed when no candidate qualifies (the designed fail-open: the
 # heading never appears in tracked history, or every candidate was a fence-only add/remove); status 2 when
@@ -60,6 +60,10 @@ git_blob_text() {
 #   the blob may be absent at $sha as well as at `$sha^`; git_blob_text tells absent from a failing git.
 heading_intro_commit() {
   local repo="$1" rel="$2" heading_re="$3" intro_shas intro_rc=0 sha now before now_raw before_raw
+  # SHALLOW-CLONE guard (dir #299, moved here by dir #428 so no caller can forget it): a shallow boundary
+  # commit's parent is absent, which reads as a genuine first commit and would fabricate distance 0 for a
+  # years-old heading. Bail with nothing printed; callers fail OPEN on that.
+  [ "$(git -C "$repo" rev-parse --is-shallow-repository 2>/dev/null)" != true ] || return 0
   intro_shas="$(git -C "$repo" log -G"$heading_re" --format=%H -- "$rel" 2>/dev/null)" || intro_rc=$?
   [ "$intro_rc" -eq 0 ] || return 2
   while IFS= read -r sha; do
