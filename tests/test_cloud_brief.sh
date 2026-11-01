@@ -289,7 +289,7 @@ gh_ok() {
 
 # gh_run DIR OWNER/NAME RUN-ID KIND — the default branch's latest run (dir #924): KIND started (one job with steps on a
 # hosted label), billing (one job, 0 steps, with the account-payment annotation), selfhosted (one started job on
-# the labels self-hosted + mac), none (no run yet).
+# the labels self-hosted + mac), none (no run yet). Optional 5th argument: the run's created_at.
 gh_run() {
   local d="$1" key id="$3"
   key="$(printf '%s' "repos/$2" | tr '/' '_')"
@@ -297,8 +297,8 @@ gh_run() {
   case "$4" in
     none) printf '{"total_count":0,"workflow_runs":[]}\n' > "$d/api/${key}_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json"; return ;;
   esac
-  printf '{"total_count":1,"workflow_runs":[{"id":%s,"name":"CI","status":"completed","html_url":"https://github.com/%s/actions/runs/%s"}]}\n' \
-    "$id" "$2" "$id" > "$d/api/${key}_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json"
+  printf '{"total_count":1,"workflow_runs":[{"id":%s,"name":"CI","status":"completed","created_at":"%s","html_url":"https://github.com/%s/actions/runs/%s"}]}\n' \
+    "$id" "${5:-}" "$2" "$id" > "$d/api/${key}_actions_runs_branch_main_per_page_1_exclude_pull_requests_true.json"
   case "$4" in
     started)
       printf '{"jobs":[{"id":9001,"name":"test","status":"completed","conclusion":"success","labels":["ubuntu-latest"],"steps":[{"name":"Set up job"}]}]}\n' ;;
@@ -309,6 +309,34 @@ gh_run() {
     selfhosted)
       printf '{"jobs":[{"id":9003,"name":"test","status":"completed","conclusion":"success","labels":["self-hosted","mac"],"steps":[{"name":"Set up job"}]}]}\n' ;;
   esac > "$d/api/${key}_actions_runs_${id}_jobs_per_page_100.json"
+}
+
+# make_private [OWNER-TYPE] — dir #927: the stub answers that repos/example/proj is private (default owner type User).
+make_private() {
+  printf '{"default_branch":"main","private":true,"owner":{"login":"example","type":"%s"}}\n' "${1:-User}" > "$GH_FX/api/repos_example_proj.json"
+}
+# sibling_list [LIST-KEY] NAME... — the owner's repository listing: each NAME is a private repository, unless NAME starts with `pub:`.
+sibling_list() {
+  local key="users_example_repos_type_owner_per_page_100_sort_pushed" sep="" name
+  case "${1:-}" in users_*|orgs_*) key="$1"; shift ;; esac
+  { printf '['
+    for name in "$@"; do
+      case "$name" in pub:*) printf '%s{"full_name":"example/%s","private":false}' "$sep" "${name#pub:}" ;; *) printf '%s{"full_name":"example/%s","private":true}' "$sep" "$name" ;; esac
+      sep=,
+    done
+    printf ']\n'; } > "$GH_FX/api/$key.json"
+}
+# gh_sibling NAME RUN-ID KIND CREATED — sibling repository example/NAME's newest run (any branch): KIND started | billing.
+gh_sibling() {
+  local key="repos_example_$1" id="$2"
+  printf '{"workflow_runs":[{"id":%s,"created_at":"%s","html_url":"https://github.com/example/%s/actions/runs/%s"}]}\n' \
+    "$id" "$4" "$1" "$id" > "$GH_FX/api/${key}_actions_runs_per_page_1_exclude_pull_requests_true.json"
+  case "$3" in
+    started) printf '{"jobs":[{"id":9101,"name":"test","status":"completed","conclusion":"success","labels":["ubuntu-latest"],"steps":[{"name":"Set up job"}]}]}\n' ;;
+    billing) printf '{"jobs":[{"id":9102,"name":"test","status":"completed","conclusion":"failure","labels":["ubuntu-latest"],"steps":[]}]}\n'
+      printf '[{"message":"The job was not started because recent account payments have failed or your spending limit needs to be increased."}]\n' \
+        > "$GH_FX/api/${key}_check-runs_9102_annotations.json" ;;
+  esac > "$GH_FX/api/${key}_actions_runs_${id}_jobs_per_page_100.json"
 }
 
 # home_slug DIR — Claude Code's project-directory encoding of DIR (every byte outside [A-Za-z0-9] → `-`).
@@ -608,6 +636,80 @@ check_contains "T3c … with a warning" "$OUT" "could not read the runners"
 fx
 cb "$P" "dir #801"
 if grep -q 'actions/runners' "$GH_FX/calls"; then fail "T3c a hosted-label workflow does not read the runners" "it did"; else pass "T3c a hosted-label workflow does not read the runners"; fi
+
+# dir #927: for a private repository on hosted runners the probe is account-level — the owner's other private
+# repositories' newest runs count too.
+fx
+make_private; sibling_list sib other
+gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z
+gh_sibling sib 8001 billing 2026-10-31T14:55:00Z
+gh_sibling other 8002 started 2026-10-30T09:00:00Z
+cb "$P" "dir #801"
+check_status "T3c private, own run started, a sibling's newest run not started → exit 3" 3 "$STATUS"
+check_contains "T3c … G1c" "$OUT" "refused: G1c"
+check_contains "T3c … names the sibling run" "$OUT" "example/sib/actions/runs/8001"
+check_contains "T3c … quotes the annotation" "$OUT" "recent account payments have failed"
+check_contains "T3c … prints the remedy line" "$OUT" "run one workflow on main first"
+nothing_written "T3c sibling billing"
+fx
+make_private; sibling_list sib
+gh_run "$GH_FX" example/proj 7001 started 2026-10-31T12:00:00Z
+gh_sibling sib 8001 billing 2026-10-11T14:55:00Z
+cb "$P" "dir #801"
+check_status "T3c … a sibling's not-started run OLDER than this repo's started run is stale → passes" 0 "$STATUS"
+fx
+make_private Organization; sibling_list orgs_example_repos_type_private_per_page_100_sort_pushed sib
+gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z
+gh_sibling sib 8001 billing 2026-10-31T14:55:00Z
+cb "$P" "dir #801"
+check_status "T3c an organization-owned repository reads orgs/<o>/repos → exit 3" 3 "$STATUS"
+check_contains "T3c … names the sibling run" "$OUT" "example/sib/actions/runs/8001"
+fx
+make_private; sibling_list proj sib
+gh_run "$GH_FX" example/proj 7002 billing 2026-10-11T10:00:00Z
+gh_sibling sib 8001 started 2026-10-31T09:00:00Z
+cb "$P" "dir #801"
+check_status "T3c private, own run not started but older than a sibling's started run → passes" 0 "$STATUS"
+check_contains "T3c … with the stale-evidence warning" "$OUT" "G1c evidence is stale"
+check_contains "T3c … naming the sibling run" "$OUT" "example/sib/actions/runs/8001"
+check_contains "T3c … and the remedy" "$OUT" "run one workflow on main first"
+fx
+make_private; sibling_list sib
+gh_run "$GH_FX" example/proj 7002 billing 2026-10-31T10:00:00Z
+gh_sibling sib 8001 started 2026-10-11T09:00:00Z
+cb "$P" "dir #801"
+check_status "T3c private, own run not started and no newer sibling run → exit 3" 3 "$STATUS"
+check_contains "T3c … names the own run" "$OUT" "actions/runs/7002"
+fx
+make_private; sibling_list sib
+gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z
+cb "$P" "dir #801"
+check_status "T3c a sibling without a run (Actions off) is skipped → passes" 0 "$STATUS"
+fx
+make_private
+gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z
+cb "$P" "dir #801"
+check_status "T3c the owner's repository list unreadable → passes" 0 "$STATUS"
+check_contains "T3c … with a warning" "$OUT" "account-level G1c probe was skipped"
+fx
+sibling_list sib
+gh_sibling sib 8001 billing 2026-10-31T14:55:00Z
+cb "$P" "dir #801"
+check_status "T3c a public repository → no sibling probe → passes" 0 "$STATUS"
+if grep -qE 'users/|orgs/|example/sib' "$GH_FX/calls"; then fail "T3c a public repository reads no sibling" "it did"; else pass "T3c a public repository reads no sibling"; fi
+fx
+make_private; sibling_list pub:openrepo
+gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z
+cb "$P" "dir #801"
+check_status "T3c a public sibling is not probed → passes" 0 "$STATUS"
+if grep -q 'openrepo' "$GH_FX/calls"; then fail "T3c a public sibling's runs are not read" "it did"; else pass "T3c a public sibling's runs are not read"; fi
+fx
+make_private; sibling_list sib
+gh_run "$GH_FX" example/proj 7005 selfhosted 2026-10-11T10:00:00Z
+printf '{"runners":[{"name":"m","status":"online","labels":[{"name":"self-hosted"},{"name":"mac"}]}]}\n' > "$GH_FX/api/${RK}_actions_runners_per_page_100.json"
+gh_sibling sib 8001 billing 2026-10-31T14:55:00Z
+cb "$P" "dir #801"
+check_status "T3c a self-hosted-only private workflow → no sibling probe → passes" 0 "$STATUS"
 
 # --- T4: G2 ---------------------------------------------------------------------------------------------------
 fx
