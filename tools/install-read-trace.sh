@@ -172,7 +172,7 @@ else
   usage >&2
   exit 2
 fi
-[ -n "$scope_flag" ] && settings="$settings_dir/settings.json"
+if [ -n "$scope_flag" ]; then settings="$settings_dir/settings.json"; fi
 
 if [ "$uninstall" = 1 ] && [ ! -f "$settings" ]; then
   echo "install-read-trace: nothing to remove — no $settings"
