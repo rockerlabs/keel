@@ -160,7 +160,7 @@ for lib in safe-write.sh artifact-cksum.sh ledger.sh; do
   check_contains "S3-2: ...naming it" "$(id_line G-REQUIRED-LIB)" "$lib"
   check_eq "S3-2: ...a GAP (exit 1), not a quiet OK" 1 "$STATUS"
   if [ "$lib" = ledger.sh ]; then
-    check_contains "S3-2: ...ledger.sh's own wording (install.sh exits 1 at the ledger step)" "$(id_line G-REQUIRED-LIB)" "install.sh does its work, then exits 1 at the ledger step"
+    check_contains "S3-2: ...ledger.sh's own wording (consumers skip the discovery-index step, non-fatal)" "$(id_line G-REQUIRED-LIB)" "skip the checkout-side discovery-index write or prune (non-fatal, dir #378)"
     check_absent "S3-2: ...not the shared 'refuse to run' wording" "$(id_line G-REQUIRED-LIB)" "refuse to run without it"
   fi
   mv "$cp_root/tools/lib/$lib.away" "$cp_root/tools/lib/$lib"

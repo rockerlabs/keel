@@ -441,9 +441,18 @@ if [ "$uninstall" = 1 ]; then
       [ -e "$m" ] && manifests_left=1
     done
     if [ "$manifests_left" = 0 ]; then
-      # shellcheck source=tools/lib/ledger.sh
-      . "$here/lib/ledger.sh"
-      ledger_remove "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved"
+      # dir #378: guarded like manifest.sh — a corrupted ledger.sh must not abort uninstall at parse time.
+      if [ -s "$here/lib/ledger.sh" ] && bash -n "$here/lib/ledger.sh" 2>/dev/null; then
+        # shellcheck source=tools/lib/ledger.sh
+        . "$here/lib/ledger.sh"
+        if declare -F ledger_remove >/dev/null; then
+          ledger_remove "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved"
+        else
+          echo "install-pre-pr-gate: tools/lib/ledger.sh sourced but ledger_remove is undefined (a truncated copy can pass the syntax check while still missing a function) — skipping the discovery-index prune (non-fatal)" >&2
+        fi
+      else
+        echo "install-pre-pr-gate: tools/lib/ledger.sh is missing or corrupted — skipping the discovery-index prune (non-fatal)" >&2
+      fi
     fi
   fi
 
@@ -555,10 +564,19 @@ wired_at=$wired_at"
   # respecting the same KEEL_LEDGER_FILE test-isolation override install.sh does. Non-fatal: the hook
   # wiring above already fully succeeded, so a read-only checkout must not abort the run (found by an
   # independent /code-review high pass on install.sh's own equivalent site).
-  # shellcheck source=tools/lib/ledger.sh
-  . "$here/lib/ledger.sh"
-  ledger_append "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved" \
-    || echo "install-pre-pr-gate: ledger write failed (non-fatal) — $repo_root/.keel not writable?" >&2
+  # dir #378: guarded like manifest.sh — a bare `.` of a corrupted ledger.sh aborts at parse time. Degrades.
+  if [ -s "$here/lib/ledger.sh" ] && bash -n "$here/lib/ledger.sh" 2>/dev/null; then
+    # shellcheck source=tools/lib/ledger.sh
+    . "$here/lib/ledger.sh"
+    if declare -F ledger_append >/dev/null; then
+      ledger_append "${KEEL_LEDGER_FILE:-$repo_root/.keel/installed-homes}" "$gate_home_resolved" \
+        || echo "install-pre-pr-gate: ledger write failed (non-fatal) — $repo_root/.keel not writable?" >&2
+    else
+      echo "install-pre-pr-gate: tools/lib/ledger.sh sourced but ledger_append is undefined (a truncated copy can pass the syntax check while still missing a function) — skipping the discovery-index write (non-fatal)" >&2
+    fi
+  else
+    echo "install-pre-pr-gate: tools/lib/ledger.sh is missing or corrupted — skipping the discovery-index write (non-fatal)" >&2
+  fi
 fi
 
 echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."
