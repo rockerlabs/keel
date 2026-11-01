@@ -117,4 +117,22 @@ check_file "good run writes CLAUDE.md from --with-keel" "$tgt/CLAUDE.md"
 check_file "good run writes the relmon skeleton (config.sh)" "$tgt/config.sh"
 check_dir "good run's sibling bare origin lands next to (not inside) the target (FINDING-S8-1)" "$tgt.origin.git"
 
+# --- dir #515: a RELATIVE --with-keel path is resolved against the invocation cwd, not the target ---
+# Validation ran in the caller's cwd, but the copy ran after `cd "$target"`, so a relative path passed
+# the check and then failed, leaving a half-built fixture with no CLAUDE.md and a nonzero exit.
+tgt="$SANDBOX/relative-core-target"
+mkdir -p "$SANDBOX/relcwd"
+printf '# relative CORE\n' > "$SANDBOX/relcwd/REL-CORE.md"
+OUT="$(cd "$SANDBOX/relcwd" && bash "$seed" "$tgt" --with-keel REL-CORE.md 2>&1 </dev/null)"
+STATUS=$?
+check_status "relative --with-keel path: run exits 0" 0 "$STATUS"
+check_file "relative --with-keel path: CLAUDE.md is written" "$tgt/CLAUDE.md"
+check_file "relative --with-keel path: config.sh is written (full fixture)" "$tgt/config.sh"
+check_dir "relative --with-keel path: sibling bare origin exists" "$tgt.origin.git"
+if cmp -s "$SANDBOX/relcwd/REL-CORE.md" "$tgt/CLAUDE.md"; then
+  pass "relative --with-keel path: CLAUDE.md is the verbatim copy"
+else
+  fail "relative --with-keel path: CLAUDE.md is the verbatim copy" "content differs"
+fi
+
 summary
