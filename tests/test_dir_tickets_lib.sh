@@ -83,6 +83,12 @@ check_contains "a line-wrapped ticket list extracts the first line's tickets" "$
 check_contains "a line-wrapped ticket list joins onto the continuation line" "$out" "dir #202"
 check_contains "a line-wrapped ticket list extracts the continuation's last ticket too" "$out" "dir #203"
 
+# Cross-line `+` join (dir #589): a `+`-joined list wrapped after the `+` must join like the comma form —
+# the buffer trigger and the continuation class both need `+`, matching the grep anchor (dir #482).
+out="$(printf 'dir #1 +\n#2\n' | extract_dir_tickets)"
+check_contains "a +-wrapped ticket list extracts the first line's ticket" "$out" "dir #1"
+check_contains "a +-wrapped ticket list joins onto the continuation line" "$out" "dir #2"
+
 # Blank-line hard flush: a blank line must flush the buffer as-is rather than let it survive to be
 # joined onto a later, unrelated ticket-shaped line — two commit bodies separated by a blank line,
 # where the second body happens to open with a bare ticket list, must not stitch onto the first body's
