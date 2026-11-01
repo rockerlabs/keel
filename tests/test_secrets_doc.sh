@@ -12,10 +12,17 @@ doc="$REPO_ROOT/docs/secrets-in-the-working-tree.md"
 
 # fenced_text FILE — only the lines between ``` or ~~~ fences (the fence lines themselves dropped).
 fenced_text() {
+  # No regex intervals: mawk/busybox/old BSD awk disagree on `{0,3}`. A fence is up to three leading
+  # spaces, then ``` or ~~~, checked with sub/substr, which every awk supports.
   awk '
-    /^ {0,3}(```|~~~)/ { m = ($0 ~ /^ {0,3}```/) ? "`" : "~"
-                         if (!infence) { infence = 1; fence = m; next }
-                         if (m == fence) { infence = 0; next } }
+    {
+      lead = $0; sub(/^ +/, "", lead)
+      ind = length($0) - length(lead)
+      isfence = (ind <= 3 && (substr(lead, 1, 3) == "```" || substr(lead, 1, 3) == "~~~"))
+    }
+    isfence { m = (substr(lead, 1, 3) == "```") ? "`" : "~"
+              if (!infence) { infence = 1; fence = m; next }
+              if (m == fence) { infence = 0; next } }
     infence { print }
   ' "$1"
 }
