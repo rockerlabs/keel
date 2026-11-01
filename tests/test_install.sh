@@ -1468,4 +1468,26 @@ check_status "A9: a conflict keeps install's exit status at 0" 0 "$STATUS"
 check_contains "A9: ...and is reported" "$OUT" "kept $a9d/.claude/.keel/impact/-p-a9d"
 check_nolink "A9: ...with the legacy entry left a real directory" "$a9d/.claude/.keel/impact/-p-a9d"
 
+# dir #378 — tools/lib/ledger.sh is guarded like manifest.sh, but it DEGRADES: a corrupted copy skips the
+# discovery-index write with one line and exit 0. Two fixtures: a syntax error, and a valid-boundary
+# truncation that drops ledger_append (bash -n passes; the declare -F check must catch it).
+t378ck="$SANDBOX/force-checkout-ledger-corrupt"
+cp -r "$ckdir" "$t378ck"
+printf 'this is not valid bash (\n' > "$t378ck/tools/lib/ledger.sh"
+t378home="$SANDBOX/force-ledger-corrupt-home"; mkdir -p "$t378home"
+fresh_home_env "$t378home"
+run env "${FRESH_HOME_ENV[@]}" "$t378ck/install.sh" --home "$t378home/h" --no-hooks
+check_status "T378 corrupted tools/lib/ledger.sh → still exit 0" 0 "$STATUS"
+check_file "T378 install still lands the core despite the corrupted ledger lib" "$t378home/h/FRAMEWORK.md"
+check_contains "T378 …with one line naming the lib and the skipped write" "$OUT" "tools/lib/ledger.sh is missing or corrupted — skipping the discovery-index write"
+check_absent "T378 …and no raw bash trace reaches the output" "$OUT" "syntax error"
+t378tk="$SANDBOX/force-checkout-ledger-truncated"
+cp -r "$ckdir" "$t378tk"
+sed '15,33d' "$t378tk/tools/lib/ledger.sh" > "$t378tk/tools/lib/ledger.sh.new" && mv "$t378tk/tools/lib/ledger.sh.new" "$t378tk/tools/lib/ledger.sh"
+t378th="$SANDBOX/force-ledger-truncated-home"; mkdir -p "$t378th"
+fresh_home_env "$t378th"
+run env "${FRESH_HOME_ENV[@]}" "$t378tk/install.sh" --home "$t378th/h" --no-hooks
+check_status "T378 truncated ledger.sh (valid syntax, no ledger_append) → exit 0" 0 "$STATUS"
+check_contains "T378 …and names the undefined function" "$OUT" "ledger_append is undefined"
+
 summary

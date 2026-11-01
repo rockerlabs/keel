@@ -2554,14 +2554,24 @@ _keel_test_pause_after lock-released
 # of the caller's own HOME sandbox; the test harness points this at a throwaway file so a test run
 # never pollutes the real checkout's ledger with stale sandbox homes.
 if [ "$EPHEMERAL" != 1 ]; then
-  # shellcheck source=tools/lib/ledger.sh
-  . "$root/tools/lib/ledger.sh"
+  # dir #378: bare `.` of a corrupted ledger.sh aborts the run at parse time (set -e), so guard it like
+  # manifest.sh above. Degrades, never exits: the home install above already fully succeeded.
   # Non-fatal, like the secret-guard wiring above: the home install above already fully succeeded,
   # so a checkout that happens to be read-only (a different write target than $HOME_DIR — every
   # other write in this script lands there, not here) must not abort the run and swallow the Verify
   # summary below (found by an independent /code-review high pass).
-  ledger_append "${KEEL_LEDGER_FILE:-$root/.keel/installed-homes}" "$home_resolved" \
-    || echo "  !    ledger write failed (non-fatal) — $root/.keel not writable?" >&2
+  if [ -s "$root/tools/lib/ledger.sh" ] && bash -n "$root/tools/lib/ledger.sh" 2>/dev/null; then
+    # shellcheck source=tools/lib/ledger.sh
+    . "$root/tools/lib/ledger.sh"
+    if declare -F ledger_append >/dev/null; then
+      ledger_append "${KEEL_LEDGER_FILE:-$root/.keel/installed-homes}" "$home_resolved" \
+        || echo "  !    ledger write failed (non-fatal) — $root/.keel not writable?" >&2
+    else
+      echo "install: tools/lib/ledger.sh sourced but ledger_append is undefined (a truncated copy can pass the syntax check while still missing a function) — skipping the discovery-index write (non-fatal)" >&2
+    fi
+  else
+    echo "install: tools/lib/ledger.sh is missing or corrupted — skipping the discovery-index write (non-fatal, matching a read-only-checkout failure)" >&2
+  fi
 fi
 
 # Shared opening — the mode-specific middle differs below (clone handling, update, removal).
