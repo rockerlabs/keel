@@ -2942,6 +2942,18 @@ printf '%s\tpolish.4-depth\tskip\n' "$live_nonce" >> "$sf"
 gate "gh pr create --fill" "$d"
 check_contains "dir #277 T-e: an unstamped legacy step-4 skip → denied" "$OUT" '"permissionDecision":"deny"'
 check_contains "dir #277 T-e: ...as an unstamped legacy commit" "$OUT" "an unstamped legacy commit"
+# T-e2. (/code-review finding) an unstamped step-4 skip that carries a MEASUREMENT (`skip:<text>`, no sha) must
+# not have that text printed as if it were the commit it was decided against.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip" "polish.5-review"
+sf="$(sentinel_for "$d")"
+live_nonce="$(sed -n '1p' "$sf" | cut -f2)"
+grep -v "	polish.4-depth	" "$sf" > "$sf.new" && cat "$sf.new" > "$sf" && rm -f "$sf.new"
+printf '%s\tpolish.4-depth\tskip:+38-8,2f,docs\n' "$live_nonce" >> "$sf"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-e2: an unstamped skip:<measurement> → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-e2: ...as an unstamped legacy commit" "$OUT" "an unstamped legacy commit"
+check_absent "dir #277 T-e2: ...never printing the measurement as a commit" "$OUT" "decided against commit +38"
 # T-f. The new deny must not spell a dialog marker: fed through the dialog leg it mints no trace (95d's
 # mirror for this deny).
 d="$(mkrepo)"

@@ -4818,8 +4818,14 @@ case "$status" in
     # purpose: a stale ARMED skip has both a stale stamp and a stale dialog, and the stamp names the cause.
     # The core message must NEVER spell a dialog marker (same discipline as `skip-dialog-missing`).
     if [ "$outcome_level" = "skip" ] && ! _depth_skip_bound_to "$depth_outcome" "$current_sha"; then
+      # Name the stamp only when the last colon field LOOKS like a commit sha (7+ hex digits): an unstamped
+      # `skip:<measurement>` (hand-appended, or sha resolution failed at write time) has a last field that
+      # is the measurement text, and printing that as "a commit" would hide the real cause.
       skip_stamp="${depth_outcome##*:}"
-      if [ "$skip_stamp" = "$depth_outcome" ]; then skip_stamp="an unstamped legacy commit"; else skip_stamp="commit $skip_stamp"; fi
+      case "$skip_stamp" in
+        *[!0-9a-f]*|"") skip_stamp="an unstamped legacy commit" ;;
+        *) if [ "$skip_stamp" = "$depth_outcome" ] || [ "${#skip_stamp}" -lt 7 ]; then skip_stamp="an unstamped legacy commit"; else skip_stamp="commit $skip_stamp"; fi ;;
+      esac
       _deny_intact "$cwd" "skip-stale-commit" \
         "Pre-PR gate: step 5 is 'skip' by way of step 4, but step 4's skip was decided against $skip_stamp and the commit being shipped is $current_sha — a skip chosen for a different diff cannot cover this one." \
         "re-run step 4's ask-dialog for current HEAD (or size a real review) and write step 4's receipt fresh, then retry; no need to \"init\"."
