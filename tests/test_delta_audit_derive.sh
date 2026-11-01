@@ -213,6 +213,10 @@ run_record="$(cat "$out1/run-record.md")"
 check_contains "run-record.md's scope line names the file and PR counts" \
   "$run_record" "| scope | 6 files, 2 PRs |"
 
+# dir #556: the stub names a destination an adopter can act on, not the keel-only path alone.
+check_contains "run-record.md stub names the adopter default and create-if-absent" \
+  "$run_record" "adopters: beside the grooms record, e.g. AUDITS.md next to GROOMS.md — create it if absent"
+
 # dir #230: the profile's four added fields. A field nothing writes is a field that does not exist,
 # so the stub carries a slot for each one the doctrine defines.
 check_contains "run-record.md carries the new-classes-vs-instances row" \

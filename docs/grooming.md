@@ -125,7 +125,9 @@ verdict ([`docs/delta-audit.md`](delta-audit.md) §8), but a groom reads it one 
 G0 the first moment its absence is visible to anyone — and the first groom to check for it found it
 simply missing, on a run whose own records asserted the duty in their own words. Check rather than
 assume; where it is missing, reconstructing what is still reconstructable is a G0 output, and the rest
-is recorded as lost rather than invented. The same applies to that run's harvest, which G0's harvest
+is recorded as lost rather than invented. (A missing row has two causes: the append never happened, or the project's record had no
+destination to append to; [`delta-audit.md`](delta-audit.md) §8(a) now names a default location and a create-if-absent duty, which
+removes the second — `dir #556`.) The same applies to that run's harvest, which G0's harvest
 paragraph below already owns — check it there, not twice. **The releases record's row is checked
 too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7

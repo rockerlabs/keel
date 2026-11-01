@@ -125,11 +125,11 @@ extract_dir_tickets() {
     { line = $0
       if (line == "") { if (buf != "") { print buf; buf = "" }; next }
       if (buf != "") {
-        if (line ~ /^[ \t]*#[0-9]+([,;\/[:space:]]+#[0-9]+)*[,;]?[ \t]*$/) { line = buf " " line }
+        if (line ~ /^[ \t]*#[0-9]+([,;+\/[:space:]]+#[0-9]+)*[,;+]?[ \t]*$/) { line = buf " " line }
         else { print buf }
         buf = ""
       }
-      if (line ~ /,[ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
+      if (line ~ /[,+][ \t]*$/) { sub(/[ \t]*$/, "", line); buf = line }
       else { print line }
     }
     END { if (buf != "") print buf }

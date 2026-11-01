@@ -636,7 +636,26 @@ set -u
 # dir #647: drop an inherited repo selector before any git call (tests/test_git_env_guard.sh pins this line).
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 
-_ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A symlinked install (`~/.claude/pre-pr-gate.sh` -> `<keel>/tools/pre-pr-gate.sh`) must find its sibling
+# libs next to the REAL script, so follow every symlink hop first (dir #579). One `readlink` per hop, the
+# portable form: no `-f`/`realpath`, which BSD readlink (macOS < 12.3) and some busybox builds lack. Prints
+# the physical directory of the real script; fails on a loop (more than 40 hops) or an unreadable link.
+_gate_self_dir() {
+  local p="${BASH_SOURCE[0]:-$0}" l n=0
+  while [ -L "$p" ]; do
+    n=$((n + 1))
+    [ "$n" -le 40 ] || return 1
+    l="$(readlink "$p")" || return 1
+    case "$l" in
+      /*) p="$l" ;;
+      *) case "$p" in */*) p="${p%/*}/$l" ;; *) p="$l" ;; esac ;;
+    esac
+  done
+  case "$p" in */*) p="${p%/*}" ;; *) p=. ;; esac
+  (cd -P "$p" 2>/dev/null && pwd -P)
+}
+
+_ppg_dir="$(_gate_self_dir)" || _ppg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$_ppg_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/impact-store.sh
@@ -1220,7 +1239,7 @@ _gate_settings_has_dialog_hook() {
 # directly-invoked copy still finds its own siblings rather than the caller's cwd.
 _gate_checkout_root() {
   local here
-  here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || return 1
+  here="$(_gate_self_dir)" || return 1
   (cd "$here/.." && pwd) 2>/dev/null
 }
 

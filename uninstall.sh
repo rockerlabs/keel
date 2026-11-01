@@ -1092,9 +1092,19 @@ if [ "$DRY_RUN" = 0 ]; then
     [ -e "$m" ] && manifests_left=1
   done
   if [ "$manifests_left" = 0 ]; then
-    # shellcheck source=tools/lib/ledger.sh
-    . "$root/tools/lib/ledger.sh"
-    ledger_remove "$ledger_file" "$home_canon"
+    # dir #378: guarded like manifest.sh — a corrupted ledger.sh must not abort uninstall at parse time.
+    # Degrades: the prune is skipped, the rest of the uninstall proceeds.
+    if [ -s "$root/tools/lib/ledger.sh" ] && bash -n "$root/tools/lib/ledger.sh" 2>/dev/null; then
+      # shellcheck source=tools/lib/ledger.sh
+      . "$root/tools/lib/ledger.sh"
+      if declare -F ledger_remove >/dev/null; then
+        ledger_remove "$ledger_file" "$home_canon"
+      else
+        echo "uninstall: tools/lib/ledger.sh sourced but ledger_remove is undefined (a truncated copy can pass the syntax check while still missing a function) — skipping the discovery-index prune (non-fatal)" >&2
+      fi
+    else
+      echo "uninstall: tools/lib/ledger.sh is missing or corrupted — skipping the discovery-index prune (non-fatal); a stale entry may remain until a future run repairs it" >&2
+    fi
     # dir #377: a crashed install can strand its per-pid scratch (`.prior-manifest.<pid>`,
     # `.artifacts.<pid>`) here — install.sh sweeps stale ones only on its own NEXT run, which an
     # adopter who is uninstalling never triggers. They are internal junk (never user-authored, never

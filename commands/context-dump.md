@@ -1,3 +1,6 @@
+---
+description: Onboard an existing, undocumented codebase into Keel by reading its source tree — use for large or organically grown repos, "document this codebase", "map this project"
+---
 # /context-dump
 
 Onboard an existing, undocumented (or thinly-documented) codebase into Keel's structure by actually

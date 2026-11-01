@@ -1136,12 +1136,12 @@ if [ "$INSTALL_MODE" = 1 ]; then
   # artifact-cksum.sh, safe-write.sh (dir #679) and ledger.sh (dir #805, below). Without either they refuse to run, so an install "complete" by
   # every other check can neither be finished nor removed. Judged the way the two sourced libs above are (`-s` and
   # `bash -n`), but reported as a GAP rather than aborting: this audit has nothing to source them for.
-  # dir #805: ledger.sh is the third — sourced bare and late (install.sh near its end, uninstall.sh after its
-  # removals), so its absence fails at the last step, not at the start; it gets its own wording below.
+  # dir #805: ledger.sh is the third — sourced late (install.sh near its end, uninstall.sh after its removals).
+  # dir #378: its absence no longer fails the run (each consumer degrades and skips the ledger step); it gets its own wording below.
   for ireq_lib in artifact-cksum.sh safe-write.sh ledger.sh; do
     if ! { [ -s "$tools_dir/lib/$ireq_lib" ] && bash -n "$tools_dir/lib/$ireq_lib" 2>/dev/null; }; then
       if [ "$ireq_lib" = ledger.sh ]; then
-        gap G-REQUIRED-LIB "tools/lib/ledger.sh is missing or corrupted — install.sh does its work, then exits 1 at the ledger step; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
+        gap G-REQUIRED-LIB "tools/lib/ledger.sh is missing or corrupted — install.sh and uninstall.sh skip the checkout-side discovery-index write or prune (non-fatal, dir #378), so discovery is incomplete; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
         continue
       fi
       gap G-REQUIRED-LIB "tools/lib/$ireq_lib is missing or corrupted — install.sh and uninstall.sh refuse to run without it, so this install can be neither completed nor removed; re-clone or update this Keel checkout, then re-run tools/doctor.sh --install$imode_flag$idoctor_arg"
@@ -1652,6 +1652,17 @@ if [ "$INSTALL_MODE" = 1 ]; then
       # this loop doesn't reach — see the pairing-check comment above). Nothing here is guessed among
       # several candidates the way the removed pre-manifest fallbacks in uninstall.sh/install.sh were.
       igate_settings="$ihome/settings.json"
+    fi
+
+    # dir #579: a hand-linked gate script (`$ihome/pre-pr-gate.sh` -> `<keel>/tools/pre-pr-gate.sh`) sources
+    # its libs from beside the REAL file; flag a link whose target has no lib/ beside it (moved or partial copy).
+    if [ -L "$ihome/pre-pr-gate.sh" ]; then
+      igate_real="$(_real_path "$ihome/pre-pr-gate.sh" 2>/dev/null)" || igate_real=""
+      if [ -z "$igate_real" ] || [ ! -f "${igate_real%/*}/lib/nonneg-int.sh" ] || [ ! -f "${igate_real%/*}/lib/impact-store.sh" ] || [ ! -f "${igate_real%/*}/lib/gate-paths.sh" ]; then
+        warn W-GATE-LIBS "$ihome/pre-pr-gate.sh is a symlink whose target has no lib/ (nonneg-int.sh, impact-store.sh, gate-paths.sh) beside it — the gate would fail to source them; re-link it to <keel>/tools/pre-pr-gate.sh"
+      else
+        say "  OK   /polish gate script: symlink resolves to $igate_real (libs found beside it)"
+      fi
     fi
 
     # The load-bearing hook is PreToolUse/Bash (it's the one that actually blocks gh pr create); the

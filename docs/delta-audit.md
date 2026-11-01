@@ -401,6 +401,7 @@ verdict but owed by nobody named is the same ownerless duty one step earlier. In
 manager is the one `BACKLOG.md` writer, so a record the project keeps there (keel's standing list, for (b)) is drafted inline in the
 orchestrator's verdict and written by the manager (R9); the duty stays the orchestrator's until the manager has written it. So, before the
 orchestrator records the GO verdict: **(a)** it OPENS the run's row in the project's cross-run record
+(default location: beside the project's grooms/releases record — `AUDITS.md` next to `GROOMS.md`, or the project's own equivalent; keel's own is `private/audit/RUNS.md` — and create it per its own shape if it doesn't exist yet, rather than a silent no-op)
 from the `run-record.md` stub — opened, not completed, because some of the row's own fields are facts
 about the tag (a prior run's row records the annotated tag peeling to the verified commit), which do
 not exist yet; the row is completed at close, the same two-stage lifecycle the releases-side record

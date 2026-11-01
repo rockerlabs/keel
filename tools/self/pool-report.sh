@@ -284,7 +284,9 @@ while IFS=$'\t' read -r start end closed heading_block; do
       fi
     done <<< "$clause_split"
   fi
-  grep -qiE 'explicit gate|gate[[:space:]]*=' <<< "$heading_block" && parked=1
+  # Anchored at a word start: an unanchored `gate[[:space:]]*=` also matched any word ending in
+  # "gate" (delegate, mitigate, aggregate, investigate) and silently counted it as parked.
+  grep -qiE '(^|[^[:alnum:]_])(explicit gate|gate[[:space:]]*=)' <<< "$heading_block" && parked=1
   [ "$parked" = "1" ] && parked_count=$((parked_count + 1))
 
   # Oldest entry: the EARLIEST origination date the ticket states. dir #735: the heading's FIRST

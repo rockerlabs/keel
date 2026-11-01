@@ -46,7 +46,7 @@ can revoke. In a standalone audit (no manager), Fixers stay operator-launched pe
 
 **A6 — the run record is part of the run, harvest included.**
 Fill `run-record.md` and append the run's row to your project's cross-run record (keel's own:
-`private/audit/RUNS.md`, gitignored, main-checkout root — `dir #249` owns this step). Then **harvest**:
+`private/audit/RUNS.md`, gitignored, main-checkout root — `dir #249` owns this step; default for an adopter: beside its grooms/releases record — `AUDITS.md` next to `GROOMS.md`, or the project's own equivalent — and create it per its own shape if it doesn't exist yet, rather than a silent no-op). Then **harvest**:
 every `no-action(<reason>)` disposition naming a real defect gets copied onto the project's standing
 list (keel's instance: the `## Standing list` section of `BACKLOG.md` — create it per its own shape if
 it doesn't exist yet, rather than a silent no-op)
@@ -65,7 +65,7 @@ publishing — never an extract-and-curate-by-hand step handed back to them.
 
 **Portability.** `<version>` resolves against the TARGET project's own backlog release tags
 (`→ <version>` headings) and git tags — never keel's own release-plan table. A6's cross-run record is
-per-project; use your own project's location, keel's `private/audit/RUNS.md` is keel's instance only.
+per-project; use your own project's location (default: beside its grooms record, A6), keel's `private/audit/RUNS.md` is keel's instance only.
 Outside keel, invoke `tools/delta-audit/derive.sh` via the installed keel checkout's path, not the
 target repo's own tree.
 
