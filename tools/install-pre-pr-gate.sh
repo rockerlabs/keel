@@ -579,7 +579,7 @@ wired_at=$wired_at"
   fi
 fi
 
-echo "Restart Claude Code (hooks load only at session start) — then /polish unlocks gh pr create for real."
+echo "Hooks in settings files are usually live at once; restart Claude Code if a hook does not fire — then /polish unlocks gh pr create for real."
 # Same rule as install.sh's home_flag and doctor's ihome_flag: a bare `doctor.sh --install` audits
 # ${KEEL_HOME:-$HOME/.claude}, so on a retargeted home it would report on a different install than the
 # one just wired (dir #98, found to be a class rather than a site).
