@@ -67,6 +67,13 @@
 # `<chunk-id>` literally, those three tokens are substituted too, matching auditor.md's own convention
 # — harmless no-ops otherwise.
 #
+# Process cost (dir #502): this tool used to fork `git cat-file` three times per listed file (-e, -s, -p).
+# It now forks it 1 + <chunks> times in total: one `--batch-check` pass over the whole list (existence,
+# type, size) and one `--batch` pass per chunk (the format line is the per-file header). Measured on the
+# 448-file keel tree at 8dc1cd8: 1344 forks before (3 x 448), 30 after (1 + 29 chunks at the default
+# --chunk-bytes). Output is byte-identical to the old per-file form (diff-tested, MANIFEST's
+# `generated:` stamp aside). A listed path that is not a blob at the baseline is refused, as before.
+#
 # Chunking: markdown files (scope A, minus --historical) first, whole-files-first-fit up to
 # --chunk-bytes; then the remaining (non-md) files the same way; then each --historical file gets its
 # OWN trailing chunk, never packed with anything else, regardless of size (dir #744: the `changelog.d/*.md`
