@@ -150,7 +150,7 @@ bb_strip_foreign_citations() {
 # UPPER form already behaved so before this change; word such a title without the glyph in front.
 # dir #448: the two internal gaps are `[[:blank:]]` (space/tab), NOT `[[:space:]]`: the latter bridged a newline,
 # so a wrapped title ending in the glyph with `DONE` opening the next line read as one closure tag. A real
-# tag is always on one line. The real BACKLOG.md reads byte-identically under either class (measured), so
+# tag is always on one line. The ticket reports the real BACKLOG.md reads byte-identically under either class, so
 # tests/test_backlog_blocks_lib.sh pins the difference with its own fixtures.
 BB_CLOSURE_TAG_PATTERN='(✅|❌)[[:blank:]]*[*_]{0,2}[[:blank:]]*(DONE|Done|CLOSED|Closed|ABSORBED|Absorbed|EXECUTED|Executed|SUPERSEDED|Superseded|DUPLICATE|Duplicate|BUILT|Built|FIXED|Fixed)'
 
