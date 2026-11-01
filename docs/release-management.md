@@ -588,6 +588,14 @@ install and deletions stay the operator's; merges are the manager's under R14 wh
 `no-action` findings bound for the standing list and the staged-ticket drafts, and the manager writes them under R8 before the GO is
 recorded; the close checklist is not done until it has. The run's row in the cross-run record is not a `BACKLOG.md` write and stays the orchestrator's.
 
+**A closure record proves runtime state with a state-reading command's output, never a chat answer (dir #533).** Each
+done-criterion about runtime config or perimeter (effective config, effective tool list, grants, a runtime log line) cites the
+command that prints the effective state and pastes its output. A bot's or a worker's own chat self-report of that state is
+not evidence: the cheapest thing to paste, and it passed review twice. One RC audit found a closure asserting a "global
+ban" and a three-tool list from the bot's chat answer while the live config was `[]` and another instance carried a toolset
+that spawns a worker with a terminal. So the audit's verifier checks that a closure record holds at least one such
+command-and-output pair per perimeter criterion, and a criterion with none is an open finding, not a pass.
+
 **An audit-heavy worker reaches `/polish`'s compaction stop at its fix loop (dir #828).** One RC-audit worker stood at
 457k tokens of context at `/polish` step 1 (the threshold then was 250k) after four auditors and a thirteen-commit
 fix loop, and a worker cannot type `/compact`: the pause cost a manager-to-operator round trip and a hand-written
