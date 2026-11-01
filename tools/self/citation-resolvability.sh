@@ -38,7 +38,7 @@
 #   tools/self/citation-resolvability.sh -h | --help
 #
 # REPO_DIR defaults to the current directory and may be a worktree of the target repo — BACKLOG.md is
-# looked up at the main checkout regardless of which one REPO_DIR names, docs/*.md at REPO_DIR itself
+# looked up at the main checkout regardless of which one REPO_DIR names, docs/*.md (and the root live docs) at REPO_DIR itself
 # (a worktree's tracked files are real, git-synced copies, unlike BACKLOG.md).
 #
 # Env overrides (test isolation, same shape as KEEL_IMPACT_LOG et al. in tests/lib.sh):
