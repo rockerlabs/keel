@@ -389,6 +389,37 @@ run "$cr" "$d" --quiet
 check_contains "a number that is not a merged PR is still DEAD" "$OUT" "DEAD dir #513"
 check_absent "...with no PR hint" "$OUT" "merged PR"
 
+# --- dir #315: root-level live docs FRAMEWORK.md and PRINCIPLES.md are scanned; other root docs are not -----------
+mk_root_repo() {   # mk_root_repo FILE BODY — BACKLOG.md live only for dir #5; FILE at the repo root
+  local d; d="$(new_repo)"
+  printf '%s' "$backlog_ok" > "$d/BACKLOG.md"
+  printf '%s' "$2" > "$d/$1"
+  ( cd "$d" && git add -A && git commit -q -m fixture )
+  printf '%s' "$d"
+}
+for rf in FRAMEWORK.md PRINCIPLES.md; do
+  d="$(mk_root_repo "$rf" "# root doc
+
+Cites dir #404, which nothing defines.
+")"
+  run "$cr" "$d" --quiet
+  check_status "dead citation in root $rf -> exit 1" 1 "$STATUS"
+  check_contains "...reported DEAD, first cited in $rf" "$OUT" "DEAD dir #404 — no live BACKLOG.md heading, not in the archive or BACKLOG-parked.md (first cited: $rf)"
+  d="$(mk_root_repo "$rf" "# root doc
+
+Cites dir #5, live.
+")"
+  run "$cr" "$d" --quiet
+  check_status "live citation in root $rf -> exit 0" 0 "$STATUS"
+done
+# Deliberately unscanned root docs keep citing aged-out tickets without crying wolf.
+d="$(mk_root_repo IDEAS.md "# ideas
+
+Cites dir #404, long aged out.
+")"
+run "$cr" "$d" --quiet
+check_status "a dead citation in an unscanned root doc (IDEAS.md) is not a finding -> exit 0" 0 "$STATUS"
+
 # --- smoke test: the real keel checkout runs without crashing -------------------------------------
 # Not asserting exit 0 here: HOME is sandboxed (tests/lib.sh), so the real, personal
 # ~/.claude/projects/.../CLAUDE-archive.md is invisible to this run regardless of REPO_DIR, and a

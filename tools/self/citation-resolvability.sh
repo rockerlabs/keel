@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/self/citation-resolvability.sh — keel-self-maintenance (dir #68 exemption, per
-# tools/self/prose-drift.sh's header): checks that every `dir #N` cited in KEEL'S OWN docs/*.md
-# (and, dir #729, in the unreleased changelog text) resolves to exactly one ticket. There is no
+# tools/self/prose-drift.sh's header): checks that every `dir #N` cited in KEEL'S OWN docs/*.md,
+# FRAMEWORK.md and PRINCIPLES.md (dir #315) (and, dir #729, in the unreleased changelog text) resolves to exactly one ticket. There is no
 # consumer-facing counterpart and install.sh never ships this file.
 #
 # Filed dir #266, 2026-08-27, after a day in which three separate tickets were filed for citations
@@ -66,7 +66,7 @@ self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUIET=0
 usage() {
   cat <<'EOF'
-tools/self/citation-resolvability.sh — every `dir #N` cited in docs/*.md must resolve to exactly one
+tools/self/citation-resolvability.sh — every `dir #N` cited in docs/*.md, FRAMEWORK.md and PRINCIPLES.md must resolve to exactly one
 ticket, across BACKLOG.md's live headings and the closed-ticket archive index.
 Also scanned (dir #729): CHANGELOG.md's [Unreleased] section and changelog.d/*.md fragments; a dead
 number that is also a merged PR number in the repo's history is flagged as a likely PR cited as a ticket.
@@ -163,17 +163,27 @@ else
 fi
 resolve_optional_file archive_file archive "$archive_file" "a moved-to-archive ticket will read as dead"
 
-# Tracked doc set: docs/*.md only — matching dir #266's own proof run (26 unique numbers, 41
-# mentions, 1 unresolvable). CHANGELOG.md and commands/*.md/templates/*.md are deliberately excluded,
+# Tracked doc set: docs/*.md plus the root-level live docs FRAMEWORK.md and PRINCIPLES.md (dir #315).
+# docs/*.md matches dir #266's own proof run (26 unique numbers, 41 mentions, 1 unresolvable).
+# CHANGELOG.md and commands/*.md/templates/*.md are deliberately excluded,
 # same reasoning as tools/self/doctor.sh's dead-reference check exempting CHANGELOG.md: those are
 # history text, not live documentation, and legitimately keep citing a ticket number long after that
 # ticket has aged out of both BACKLOG.md and the archive — six real CHANGELOG.md citations of exactly
 # that shape (dir #12, dir #23, dir #27, dir #28, dir #49, dir #77) surfaced as false positives the
 # first time this script scanned CHANGELOG.md, which is the cry-wolf failure this ticket itself warns
 # against.
+# Root-level live docs (dir #315): FRAMEWORK.md is the reusable methodology install.sh syncs into every
+# adopter's home and is read on demand during real work — live documentation by the criterion above, so
+# the history-text argument does not transfer to it; it was out of the scan only because the old glob
+# stopped at docs/. PRINCIPLES.md is the core artifact and is scanned for the same reason (it cites no
+# ticket today, so the entry is a standing guard). Deliberately NOT scanned, by decision rather than
+# omission: README.md, CORE.md, ADAPTING.md, SECURITY.md and IDEAS.md (not yet audited for aged-out
+# citations; widen the list only after checking they do not cite like CHANGELOG.md does).
+# CAVEAT — a scoped negative proves less than it looks like, on whichever axis was scoped: "no dead
+# citation" here means in THESE files and for the `dir #N` vocabulary only, not "in the tree".
 scan_files=()
 while IFS= read -r f; do scan_files+=("$f"); done < <(
-  git -C "$repo_dir" ls-files -- 'docs/*.md'
+  git -C "$repo_dir" ls-files -- 'docs/*.md' FRAMEWORK.md PRINCIPLES.md
 )
 abs_files=()
 # A loop, not `${scan_files[@]/#/"$repo_dir/"}`: bash 3.2 keeps the inner quotes literally in the array form,
