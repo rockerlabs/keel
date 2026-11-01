@@ -1757,9 +1757,14 @@ $ct_fragment_text" || true)"
   # coreutils, not guaranteed on the alpine-busybox CI leg the way `grep`/`awk`/`sed` are), and this
   # idiom is already this file's own established style for a small set-membership test.
   ct_missing=""
+  ct_unparsed=""   # dir #281: citations the extractor could not expand (not tickets) — own WARN slot
   if [ -n "$ct_commit_tickets" ]; then
     while IFS= read -r ticket; do
       [ -n "$ticket" ] || continue
+      # A diagnostic marker (e.g. an over-cap range) is not a ticket id: keep it out of ct_missing.
+      case "$ticket" in
+        "dir #"*[!0-9]*) ct_unparsed="$ct_unparsed${ct_unparsed:+; }$ticket"; continue ;;
+      esac
       if [ -z "$ct_unreleased_tickets" ] || ! grep -qxF "$ticket" <<< "$ct_unreleased_tickets"; then
         ct_missing="$ct_missing${ct_missing:+, }$ticket"
       fi
@@ -1769,8 +1774,11 @@ $ct_fragment_text" || true)"
   [ -n "$ct_highest" ] && ct_since="v$ct_highest"
   if [ "$ct_blind" = 1 ]; then
     :   # a read already GAPped above: no verdict over half the evidence
-  elif [ -n "$ct_missing" ]; then
-    warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section or changelog.d/: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
+  elif [ -n "$ct_missing" ] || [ -n "$ct_unparsed" ]; then
+    if [ -n "$ct_unparsed" ]; then
+      warn "citation(s) in commits since $ct_since could not be expanded into tickets, check them by hand: $ct_unparsed"
+    fi
+    [ -z "$ct_missing" ] || warn "ticket(s) referenced in commits since $ct_since but absent from CHANGELOG.md's [Unreleased] section or changelog.d/: $ct_missing — verify each is a legitimate no-entry case (comment/test-only) before releasing (dir #237); a citation that only references another ticket for context, not crediting its own work, can be marked \`dir #N (ref)\` to exclude it (dir #364/#273)"
   else
     say "  OK   every dir #N referenced in commits since $ct_since appears in CHANGELOG.md's [Unreleased] section or changelog.d/"
   fi

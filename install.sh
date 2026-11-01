@@ -2346,7 +2346,7 @@ if [ "$EPHEMERAL" != 1 ] && [ -f "$root/keel" ]; then
       # A link here is not Keel's (a stale own link was re-pointed above): install declined it, --force included.
       echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — it is a link Keel did not make: remove it and re-run '$advise_install' to let Keel wire it, or add an alias by hand."
     else
-      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there already — it gets backed up first), or add an alias by hand."
+      echo "  WARN keel CLI not wired at $HOME_DIR/bin/keel — re-run '$advise_install' (add --force if a real file, not a symlink or a directory, sits there — it gets backed up first), or add an alias by hand."
     fi
   fi
 fi

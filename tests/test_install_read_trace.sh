@@ -29,6 +29,8 @@ check_status "--global + a repo path -> exit 2 (rejected)" 2 "$STATUS"
 repo="$(new_repo)"
 run "$installer" "$repo"
 check_status "fresh install -> exit 0" 0 "$STATUS"
+check_contains "install message: hooks usually live at once, restart only if one does not fire (dir #638)" "$OUT" "usually live at once; restart Claude Code if a hook does not fire"
+check_absent "install message drops the stale restart line (dir #638)" "$OUT" "hooks load only at session start"
 check_file "settings.json created" "$repo/.claude/settings.json"
 for ev in $THREE_EVENTS; do
   check_contains "wires $ev" "$OUT" "+    $ev"
