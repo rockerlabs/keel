@@ -386,4 +386,10 @@ check_contains "section 11 class 3 leaves the bound to the caller, not vendor-re
 
 pin "dir #807: delta-audit.md section 8 routes a BACKLOG.md-resident record through the manager" "$doc" 'manager is the one `BACKLOG.md` writer, so a record the project keeps there' "expected section 8 to name the manager as the writer in a managed release"
 
+# dir #556: §8(a) names a default location and the create-if-absent duty for the cross-run record.
+pin "§8(a) names AUDITS.md beside GROOMS.md as the default record" "$doc" 'AUDITS.md` next to `GROOMS.md`' \
+  "expected delta-audit.md §8(a) to name the default cross-run record location"
+pin "§8(a) extends create-if-absent to the cross-run record" "$doc" "and create it per its own shape if it doesn't exist yet, rather than a silent no-op" \
+  "expected delta-audit.md §8(a) to carry the create-if-absent duty"
+
 summary
