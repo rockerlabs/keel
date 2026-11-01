@@ -1953,6 +1953,17 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/C
 run "$sd" "$d" --quiet
 check_absent "a TAB-separated ref marker still strips on this platform's sed" "$OUT" "dir #961"
 
+# dir #588: a bold-wrapped `**dir #N** (ref)` marker is excluded like the plain one (both bold forms)
+d="$(mk_clean_repo)"
+printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/CHANGELOG.md"
+( cd "$d" && git add -A && git commit -qm "cut 1.0.0" && git tag v1.0.0 )
+{ printf '#!/usr/bin/env bash\necho tool\n'; } >> "$d/$fake_widget"
+( cd "$d" && git add -A && git commit -qm "$(printf 'matches **dir #966** (ref) and __dir #967__ (ref) but flags dir #968')" )
+run "$sd" "$d" --quiet
+check_absent "a bold-wrapped ref marker is excluded (dir #588)" "$OUT" "dir #966"
+check_absent "an underscore-bold ref marker is excluded (dir #588)" "$OUT" "dir #967"
+check_contains "a live citation beside bold ref markers is still flagged (dir #588)" "$OUT" "dir #968"
+
 # documented scope-limit, pinned (found live by the same /code-review pass): a `(ref)` marker
 # attached to one item INSIDE a shorthand list is undefined usage, and the actual behavior is worse
 # than "the marker just doesn't apply" — a bare `#M` continuation never carries a "dir " prefix for
