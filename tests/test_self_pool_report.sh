@@ -184,11 +184,19 @@ body
 ### dir #914 — delegate = something, aggregate=x — R2 — → pool
 
 body
+
+### dir #915 — investigate = the cause, mitigate = the risk — R2 — → pool
+
+body
+
+### dir #916 — set merge_gate = off for the census — R2 — → pool
+
+body
 "
 fgate_false="$(mk_backlog "$gate_false_backlog")"
 run "$pr" --history "$SANDBOX/hist-gate-false.jsonl" "$fgate_false"
 check_contains "MUTATION-PROOF: delegate/mitigate/aggregate/investigate headings are NOT parked (0 of 4)" "$OUT" \
-  "excluding structurally-parked:  4 (of 4; 0 parked by rule"
+  "excluding structurally-parked:  6 (of 6; 0 parked by rule"
 
 gate_true_backlog="### dir #921 — waits on an explicit gate from the release manager — R3 — → pool
 
