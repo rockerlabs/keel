@@ -55,8 +55,8 @@ Steps, in order:
    *Rare — a `handoff-check` match, any of the max/ultra/skip/borderline dialogs and their marker rule:*
    the guide, § Step 4.
 
-5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
-   receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
+5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → nothing to run and nothing to
+   receipt: the gate derives step 5 from step 4's skip receipt (dir #277), no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
    K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`; availability = the attempt, not the listing). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to

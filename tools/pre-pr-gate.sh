@@ -1076,6 +1076,19 @@ _stamp_depth_outcome() {
   printf '%s' "$outcome"
 }
 
+# dir #277: the ONE test for "was this skip-level step 4 outcome decided against THIS commit" —
+# shared by `receipt --recover`'s skip arm (below) and the PASS branch's `skip-stale-commit` check, so
+# the two cannot drift apart. $1 the recorded `polish.4-depth` outcome, $2 the commit to compare with.
+# True iff a stamp exists (`##*:` takes the LAST colon-separated field, which is the sha whenever
+# `_stamp_depth_outcome` appended one; on a bare `skip` it is a no-op, so comparing the result back to
+# the whole string tells "no stamp" apart from "a stamp") AND it equals $2. A legacy/unstamped bare
+# `skip` has no digest to check, so it fails everywhere: fail closed whenever the evidence is missing.
+_depth_skip_bound_to() {
+  local outcome="$1" sha="$2" stamp
+  stamp="${outcome##*:}"
+  [ "$stamp" != "$outcome" ] && [ -n "$sha" ] && [ "$stamp" = "$sha" ]
+}
+
 # The `git worktree list --porcelain` main-entry projection, factored out so main_top_for() and
 # resolve_impact_log() below (one file, two pre-dir-#61 and dir-#61 call sites) share the fragment
 # instead of each inlining it — the awk is identical; only the surrounding fallback order differs, so
@@ -3285,9 +3298,8 @@ case "${1:-}" in
             # string is how "no stamp existed" is told apart from "a stamp existed and it was empty".
             case "$r_outcome" in
               skip|skip:*)
-                r_depth_sha="${r_outcome##*:}"
-                [ "$r_depth_sha" = "$r_outcome" ] && r_depth_sha=""
-                if [ -z "$r_depth_sha" ] || [ "$r_depth_sha" != "$current_head" ]; then
+                # dir #277: the shared predicate (see `_depth_skip_bound_to`), not an inline copy.
+                if ! _depth_skip_bound_to "$r_outcome" "$current_head"; then
                   _note_unrecovered "$r_step" "step 4 re-sized fresh (no proof the recorded skip was decided for current HEAD — an unstamped/legacy skip, or one decided at a different commit; re-confirm skip, or size fresh, for this diff)"
                   continue
                 fi
@@ -4158,6 +4170,13 @@ result="$(awk -F'\t' -v steps="$EXPECTED_STEPS" -v SEP=$'\x1f' '
   }
   END {
     if (malformed || nonce == "") { print "MALFORMED" SEP; exit }
+    # dir #277: step 5 is DERIVED, never receipted, when step 4 is a skip. It has no content of its own
+    # there (the only legal value is the literal skip, which step 4 already recorded), so it counts as
+    # present with that value whenever the current-nonce step 4 outcome is skip or skip:<...>. Done
+    # BEFORE the missing/replay computation, so a foreign-nonce leftover step 5 line under a skip depth
+    # is simply never consulted. An explicit step 5 line always wins over this (the depth cross-check
+    # still sees it). The stamp-vs-HEAD binding is the PASS branch (skip-stale-commit), not this awk.
+    if (!("polish.5-review" in got) && ("polish.4-depth" in got) && (val["polish.4-depth"] == "skip" || val["polish.4-depth"] ~ /^skip:/)) { got["polish.5-review"] = 1; val["polish.5-review"] = "skip" }
     missing = ""; replay = ""
     for (s in need) {
       if (!(s in got)) {
@@ -4761,6 +4780,21 @@ case "$status" in
             "invoke the review once more at your CURRENT HEAD — when step 5's review subagent ran it and HEAD moved since the HEAD its review saw, as a delta round to that SAME subagent (Skill args <level> <that sha>..HEAD); with HEAD unchanged, or when the last review ran in-session and no such subagent exists, in-session (args <level> origin/<default>...HEAD, or <level> <that sha>..HEAD after a moved HEAD) (dir #670) — and write the polish.5-review receipt fresh; no \"init\" or \"receipt --recover\" needed, the other steps' receipts are untouched. If the review mechanism was genuinely unavailable instead, /polish's hand-off should have produced an -operator-run/-waived outcome."
         fi
       fi
+    fi
+    # dir #277: a `skip` unlock is bound to the commit step 4's skip was decided against. Step 5 is
+    # derived from step 4's own receipt (the parser, above), and `receipt` stamps that outcome with HEAD
+    # at write time, so a skip chosen for an earlier diff fails here whether or not a step 5 line exists
+    # (writing the missing line by hand changes nothing: no escape hatch). Armed and UNARMED repos alike —
+    # the stamp exists in both, unlike the dialog trace, which an UNARMED repo never checks. Before this
+    # an UNARMED repo had no per-commit binding on a skip at all. Ordered BEFORE the dialog check on
+    # purpose: a stale ARMED skip has both a stale stamp and a stale dialog, and the stamp names the cause.
+    # The core message must NEVER spell a dialog marker (same discipline as `skip-dialog-missing`).
+    if [ "$outcome_level" = "skip" ] && ! _depth_skip_bound_to "$depth_outcome" "$current_sha"; then
+      skip_stamp="${depth_outcome##*:}"
+      if [ "$skip_stamp" = "$depth_outcome" ]; then skip_stamp="an unstamped legacy commit"; else skip_stamp="commit $skip_stamp"; fi
+      _deny_intact "$cwd" "skip-stale-commit" \
+        "Pre-PR gate: step 5 is 'skip' by way of step 4, but step 4's skip was decided against $skip_stamp and the commit being shipped is $current_sha — a skip chosen for a different diff cannot cover this one." \
+        "re-run step 4's ask-dialog for current HEAD (or size a real review) and write step 4's receipt fresh, then retry; no need to \"init\"."
     fi
     # dir #88: an `agent:*`-shaped outcome (bare `agent:<level>`, or carrying an add-on,
     # `agent:<level>+<addon>` — dir #183 — the reminder fires

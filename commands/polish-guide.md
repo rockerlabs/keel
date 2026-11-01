@@ -143,7 +143,7 @@ Steps, in order:
    compare this round's real review against the wrong baseline.
    **One exception inside that set (dir #116, narrowed by dir #236): a `skip`-level step 4 recovers only
    when it was decided against the commit that is STILL current HEAD** — i.e. nothing has shipped since,
-   the case a missing step 5 receipt alone forced (dir #236's felt case), not a genuine fix commit.
+   the case dir #236's felt miss forced (a step 5 receipt that no longer exists, dir #277), not a genuine fix commit.
    `--recover`'s closing note names it withheld whenever that's not true: `skip` is the one depth that
    bypasses step 5 outright, so inheriting it across an actual fix commit would hand that commit a review
    bypass the operator chose for a different diff. When the note names `polish.4-depth`, step 4 is NOT
@@ -423,14 +423,12 @@ is simplify → tests → review: never skip or reorder the test run after simpl
 
 5. **Run the chosen review — one terminal pass, no loop-back.** For `skip`, there is no REVIEW to run —
    the decision already happened at step 4's skip dialog, which the gate cross-checks per commit (dir
-   #116; a fix commit moving HEAD needs that dialog re-answered at step 4, not here). **This step's own
-   RECEIPT is still required** (`tools/pre-pr-gate.sh receipt polish.5-review skip`, immediately, no
-   dialog, no wait) — the gate's completeness check treats all eight steps as mandatory, `skip` included,
-   and a missing step 5 receipt denies `gh pr create` on its own, independent of whether step 4's
-   decision was sound (dir #236: "do nothing" describing the review was misread as "no receipt either,"
-   and a forgotten receipt then forced a full re-ask of step 4's dialog on retry — recovering a
-   same-commit skip is narrower now, see step 4's own note, but writing this receipt immediately is still
-   the cheap way to never need that). `ultra` you
+   #116; a fix commit moving HEAD needs that dialog re-answered at step 4, not here), and there is nothing to receipt
+   either: the gate derives step 5 from step 4's own skip receipt, which `receipt` stamps with the commit
+   it was decided against, and treats it as satisfied only while that commit is still HEAD (dir #277,
+   closing the receipt-only write dir #236 documented). A fix commit after a skip needs step 4 re-answered
+   for the new HEAD, not a step-5 write; writing `polish.5-review skip` by hand is still accepted and
+   changes nothing. `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
    alternative attempted. For `low|medium|high`, the first attempt is K2's review subagent, below; for
    `max` — and for `low|medium|high` once K2's fallbacks send you here — ATTEMPT `Skill(code-review) <level>`
@@ -879,7 +877,9 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      agent review).
    - `low`/`medium`/`high` — a genuine `/code-review` pass: run by K2's review subagent, or operator-typed or
      revisit-triggered in-session.
-   - `medium-operator-run`, `ultra-operator-run`, `medium-waived`, `skip` — the hand-off outcomes.
+   - `medium-operator-run`, `ultra-operator-run`, `medium-waived` — the hand-off outcomes.
+   - `skip` — derived by the gate from step 4's stamped skip, never written by this step; accepted if
+     written (dir #277).
    - `medium-waived:trace-broken` — the ONE recognized reason on a waiver, reserved for "the trace
      mechanism itself looks broken" (dir #366). The gate cross-checks it against its own repo-keyed
      trace file and denies if that file already holds lines — see (b)'s waiver bullet above for the

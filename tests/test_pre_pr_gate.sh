@@ -2794,12 +2794,13 @@ run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"             
 run_in "$d" bash "$gate" receipt --recover
 check_absent "dir #116: no withheld note when this round already wrote step 4" "$OUT" "polish.4-depth NOT recovered by design"
 
-# 93b. dir #236 end-to-end: the felt shape itself. A trivial diff is skip-sized and every step except
-# step 5 is receipted — step 5's "for skip, do nothing" was misread as "no receipt either", the exact
-# wording this ticket's commands/polish.md fix closes. `gh pr create` denies for the missing step 5
-# receipt and retires the sentinel; no fix commit is involved, so the retry must not have to re-open step
-# 4's dialogs — `--recover` restores the skip-level depth (this test's own floor above proves it can), and
-# the only write the retry needs is step 5's own bare, receipt-only `skip`.
+# 93b. dir #236 end-to-end, rewritten by dir #277: the felt shape itself. A trivial diff is skip-sized and
+# every step except step 5 is receipted — step 5 has no content of its own for `skip`, which is what the
+# ticket's own "do nothing" wording kept being misread against. dir #236 needed a hand-written step-5
+# receipt on the retry; since dir #277 the gate DERIVES step 5 from step 4's stamped skip, so the felt miss
+# no longer denies at all. Still pinned both ways: the first attempt allows with no step-5 line, and the
+# retry after a retired chain (`init` + `--recover`, no commit in between) needs ZERO further writes —
+# `--recover` restores the same-HEAD skip (test 93 above) and the derived step 5 follows from it.
 d="$(mkrepo)"
 head_sha="$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" init
@@ -2810,17 +2811,115 @@ run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"
 run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
 run_in "$d" bash "$gate" receipt polish.7-selfcheck
 run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
-# polish.5-review deliberately never written — the felt miss.
+# polish.5-review deliberately never written — the dir #236 felt miss, now a non-event.
 gate "gh pr create --fill" "$d"
-check_contains "dir #236: setup — missing step-5 receipt denies, as before" "$OUT" '"permissionDecision":"deny"'
-check_contains "dir #236: ...naming the missing receipt" "$OUT" "missing receipt for step(s)"
+check_status "dir #277: no step-5 line at all, skip decided at current HEAD → exit 0" 0 "$STATUS"
+check_absent "dir #277: ...allowed, not denied for a missing step 5" "$OUT" "deny"
+# The retry shape: a separate denied attempt retires the chain (a head-moved deny is the simplest honest
+# trigger — here, an unrelated MISSING step makes the chain intact, so retire it the plain way instead).
+d="$(mkrepo)"
+head_sha="$(git -C "$d" rev-parse HEAD)"
 run_in "$d" bash "$gate" init
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"
+run_in "$d" bash "$gate" init                                                       # chain retired, no commit since
 run_in "$d" bash "$gate" receipt --recover
-check_absent "dir #236: retry recovers the skip-level depth — no re-ask needed" "$OUT" "polish.4-depth NOT recovered by design"
-run_in "$d" bash "$gate" receipt polish.5-review skip                              # the only write this retry needs
+check_absent "dir #277: retry recovers the skip-level depth — no re-ask needed" "$OUT" "polish.4-depth NOT recovered by design"
+run_in "$d" bash "$gate" receipt polish.1-diff
+run_in "$d" bash "$gate" receipt polish.2-simplify
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_sha"
+run_in "$d" bash "$gate" receipt polish.6-retest "skipped:no-file-changes"
+run_in "$d" bash "$gate" receipt polish.7-selfcheck
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_sha"
+gate "gh pr create --fill" "$d"                                                    # no step-5 write anywhere
+check_status "dir #277: retry unlocks with NO step-5 write and no fresh step-4 dialog" 0 "$STATUS"
+check_absent "dir #277: retry unlocks with no step-5 write → allowed" "$OUT" "deny"
+
+# 93c. dir #277: the derived step 5 for skip, in the full set of shapes the spec names.
+# T-a. UNARMED positive: full chain, step 4 via `receipt` (stamped at HEAD), NO step-5 line → allow,
+# provenance unchanged.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip" "polish.5-review"
 gate "gh pr create --fill" "$d"
-check_status "dir #236: retry unlocks with no fresh step-4 dialog" 0 "$STATUS"
-check_absent "dir #236: retry unlocks with no fresh step-4 dialog → allowed" "$OUT" "deny"
+check_status "dir #277 T-a: UNARMED, skip stamped at HEAD, no step-5 line → exit 0" 0 "$STATUS"
+check_contains "dir #277 T-a: provenance still reads 'review: skip'" "$OUT" "review: skip"
+# T-b. ARMED: the derived skip still needs the step-4 dialog at HEAD — allow with it, deny without it.
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "skip" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-b: ARMED, derived skip with no dialog → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-b: ...for the missing step-4 skip dialog" "$OUT" "no step-4 skip dialog"
+askuserquestion_trace_answered "$d" "Pure docs diff. Pick a review depth. KEEL-DEPTH-DIALOG" "skip"
+gate "gh pr create --fill" "$d"
+check_status "dir #277 T-b: ARMED, derived skip + answered skip dialog → exit 0" 0 "$STATUS"
+rm -f "$tf"
+# T-c. UNARMED stale — the hole the spec reproduced: skip stamped at A, a commit moves HEAD to B, steps
+# 3/6/8 are re-receipted at B, no step-5 line. Before dir #277 this ALLOWED in an UNARMED repo.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip" "polish.5-review"                            # stamps step 4 with commit A
+git -C "$d" commit --allow-empty -qm "substantial follow-up commit"                # HEAD moves to B
+head_b="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_b"
+run_in "$d" bash "$gate" receipt polish.6-retest "$head_b"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_b"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-c: UNARMED, skip stamped at an earlier commit → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-c: ...as a stale skip, naming the stamped commit" "$OUT" "step 4's skip was decided against commit"
+assert_chain_intact "skip-stale-commit" "$d"
+run_in "$d" bash "$gate" receipt polish.4-depth "skip:+3-1,1f,docs"                # fresh step 4 at B, last write wins
+gate "gh pr create --fill" "$d"
+check_status "dir #277 T-c: a fresh step-4 receipt at the new HEAD unlocks, no init" 0 "$STATUS"
+# T-d. The escape hatch stays closed: writing the missing step-5 `skip` by hand changes nothing.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip"                                              # step 5 written explicitly too
+git -C "$d" commit --allow-empty -qm "substantial follow-up commit"
+head_b="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_b"
+run_in "$d" bash "$gate" receipt polish.6-retest "$head_b"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_b"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-d: a hand-written step-5 skip does not rescue a stale step-4 skip" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-d: ...still the stale-commit deny" "$OUT" "step 4's skip was decided against commit"
+# T-e. A legacy, unstamped step-4 skip (hand-appended under the live nonce, bypassing `receipt`) fails
+# closed — there is no digest to check.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip" "polish.5-review"
+sf="$(sentinel_for "$d")"
+live_nonce="$(sed -n '1p' "$sf" | cut -f2)"
+grep -v "	polish.4-depth	" "$sf" > "$sf.new" && cat "$sf.new" > "$sf" && rm -f "$sf.new"
+printf '%s\tpolish.4-depth\tskip\n' "$live_nonce" >> "$sf"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-e: an unstamped legacy step-4 skip → denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-e: ...as an unstamped legacy commit" "$OUT" "an unstamped legacy commit"
+# T-f. The new deny must not spell a dialog marker: fed through the dialog leg it mints no trace (95d's
+# mirror for this deny).
+d="$(mkrepo)"
+arm_dialog_leg "$d"
+tf="$(trace_for "$d")"; rm -f "$tf"
+write_full_receipt_review "$d" "skip" "polish.5-review"
+git -C "$d" commit --allow-empty -qm "substantial follow-up commit"
+head_b="$(git -C "$d" rev-parse HEAD)"
+run_in "$d" bash "$gate" receipt polish.3-tests "$head_b"
+run_in "$d" bash "$gate" receipt polish.6-retest "$head_b"
+run_in "$d" bash "$gate" receipt polish.8-unlock "$head_b"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-f: setup — ARMED stale skip names the stamp, not the dialog" "$OUT" "step 4's skip was decided against commit"
+deny_out="$OUT"    # capture before the trace call below overwrites $OUT
+check_absent "dir #277 T-f: the stale-commit deny spells no marker" "$deny_out" "KEEL-DEPTH-DIALOG"
+askuserquestion_trace_answered "$d" "The gate denied with: $deny_out" "skip"
+check_nofile "dir #277 T-f: the stale-commit deny recapped in a dialog mints NO trace" "$tf"
+# T-g. Synthesis does not leak: a NON-skip depth with step 5 omitted is still a missing step 5.
+d="$(mkrepo)"
+write_full_receipt "$d" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_contains "dir #277 T-g: non-skip depth, no step-5 line → still denied" "$OUT" '"permissionDecision":"deny"'
+check_contains "dir #277 T-g: ...naming the missing polish.5-review" "$OUT" "missing receipt for step(s): polish.5-review"
+# ...and a foreign-nonce leftover under a skip depth is never consulted (no REPLAY): derived, so allowed.
+d="$(mkrepo)"
+write_full_receipt_review "$d" "skip" "" "polish.5-review"
+gate "gh pr create --fill" "$d"
+check_status "dir #277: a stale-nonce step-5 leftover under a skip depth is irrelevant → exit 0" 0 "$STATUS"
 
 # 94. dir #118: step 4's skip-trackable dialog carries a BARE literal marker, `KEEL-DEPTH-DIALOG` — no
 # `level=` suffix at all (unlike step 5(a)'s `KEEL-REVIEW-DIALOG: level=<level>`), because the level
