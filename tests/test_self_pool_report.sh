@@ -165,6 +165,44 @@ run "$pr" --history "$SANDBOX/hist-clause-scope.jsonl" "$fclause"
 check_contains "MUTATION-PROOF (dir #425): a heading with both a block and its own unblock clause still counts parked (2 of 2, not 1)" \
   "$OUT" "excluding structurally-parked:  0 (of 2; 2 parked by rule"
 
+# --- explicit-gate heuristic is word-anchored: words ENDING in "gate" are not parked ----------------
+# MUTATION-PROOF: the unanchored `gate[[:space:]]*=` matched "delegate = ..." and "aggregate=x" and
+# silently counted them as parked (under-counting the live pool). One fixture per false-positive
+# word, plus the two real shapes that must still count.
+gate_false_backlog="### dir #911 — delegate something to the worker — R3 — → pool
+
+body
+
+### dir #912 — mitigate the risk, investigate later — R3 — → pool
+
+body
+
+### dir #913 — aggregate the census figures — R2 — → pool
+
+body
+
+### dir #914 — delegate = something, aggregate=x — R2 — → pool
+
+body
+"
+fgate_false="$(mk_backlog "$gate_false_backlog")"
+run "$pr" --history "$SANDBOX/hist-gate-false.jsonl" "$fgate_false"
+check_contains "MUTATION-PROOF: delegate/mitigate/aggregate/investigate headings are NOT parked (0 of 4)" "$OUT" \
+  "excluding structurally-parked:  4 (of 4; 0 parked by rule"
+
+gate_true_backlog="### dir #921 — waits on an explicit gate from the release manager — R3 — → pool
+
+body
+
+### dir #922 — gate = the v1 release — R2 — → pool
+
+body
+"
+fgate_true="$(mk_backlog "$gate_true_backlog")"
+run "$pr" --history "$SANDBOX/hist-gate-true.jsonl" "$fgate_true"
+check_contains "real explicit-gate and 'gate =' shapes still count as parked (2 of 2)" "$OUT" \
+  "excluding structurally-parked:  0 (of 2; 2 parked by rule"
+
 # --- --record idempotency ------------------------------------------------------------------------
 hist="$SANDBOX/hist-record.jsonl"
 run "$pr" --record 0.9.0 --history "$hist" "$f"
