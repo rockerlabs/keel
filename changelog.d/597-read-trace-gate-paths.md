@@ -1,0 +1,1 @@
+- `tools/install-read-trace.sh` now derives its project-scope `<repo>/.claude/settings.json` path from the shared `gate_project_settings_path` in `tools/lib/gate-paths.sh`, the fourth site of that literal to share one source (dir #597; no behaviour change).

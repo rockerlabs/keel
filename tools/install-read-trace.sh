@@ -58,6 +58,8 @@ esac
 
 # shellcheck source=tools/lib/sh-quote.sh
 . "$here/lib/sh-quote.sh"
+# shellcheck source=tools/lib/gate-paths.sh
+. "$here/lib/gate-paths.sh"
 # shellcheck source=tools/lib/repo-arg-guard.sh
 . "$here/lib/repo-arg-guard.sh"
 # rt_sh — $rt quoted (dir #514), already wrapped in single quotes AND JSON-escaped, for the ONE place
@@ -162,12 +164,15 @@ if [ -n "$scope_flag" ]; then
 elif [ -n "${1:-}" ]; then
   repo="$1"
   keel_repo_arg_guard "$repo"
-  settings_dir="$repo/.claude"
+  # dir #597: the project-scope target is the shared `gate_project_settings_path` (tools/lib/gate-paths.sh),
+  # the same source install-pre-pr-gate.sh, doctor.sh and pre-pr-gate.sh use; $settings_dir is its parent.
+  settings="$(gate_project_settings_path "$repo")"
+  settings_dir="${settings%/*}"
 else
   usage >&2
   exit 2
 fi
-settings="$settings_dir/settings.json"
+[ -n "$scope_flag" ] && settings="$settings_dir/settings.json"
 
 if [ "$uninstall" = 1 ] && [ ! -f "$settings" ]; then
   echo "install-read-trace: nothing to remove — no $settings"

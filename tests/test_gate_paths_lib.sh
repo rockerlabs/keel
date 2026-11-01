@@ -49,6 +49,12 @@ check_contains "tools/pre-pr-gate.sh sources tools/lib/gate-paths.sh" \
 check_contains "tools/pre-pr-gate.sh's _dialog_leg_armed calls gate_project_settings_path" \
   "$(cat "$REPO_ROOT/tools/pre-pr-gate.sh")" 'gate_project_settings_path "$top"'
 
+# dir #597: tools/install-read-trace.sh is the fourth site of the literal; it derives from the lib too.
+check_contains "tools/install-read-trace.sh sources tools/lib/gate-paths.sh" \
+  "$(cat "$REPO_ROOT/tools/install-read-trace.sh")" 'lib/gate-paths.sh'
+check_contains "tools/install-read-trace.sh's project-scope branch calls gate_project_settings_path" \
+  "$(cat "$REPO_ROOT/tools/install-read-trace.sh")" 'settings="$(gate_project_settings_path "$repo")"'
+
 # --- settings.local.json stays its own, independent candidate in the armer only (not part of the DRY
 # fix, not read by gate_project_settings_path or doctor.sh at all) -----------------------------------
 check_contains "tools/pre-pr-gate.sh still probes settings.local.json as its own candidate" \
