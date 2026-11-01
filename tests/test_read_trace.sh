@@ -5,7 +5,8 @@
 # shell helper, the wrap-done marker, the SessionEnd wrap-fuse classifier (wrapped vs no-wrap,
 # including the same-second tie the tool's own comment names), its two exclusions (read-only,
 # DELEGATION RUN), the SessionStart pickup/banner, and the tier-2 aggregate's pinned FORMAT (fed a
-# synthetic log, per the ticket's own binding-test requirement).
+# synthetic log, per the ticket's own binding-test requirement), and `rotate`'s archive naming and
+# nothing-to-rotate outcome (dir #392).
 # shellcheck source=tests/lib.sh
 . "$(dirname "$0")/lib.sh" || { echo "lib.sh missing — refusing to run outside the sandbox" >&2; exit 1; }
 
@@ -812,5 +813,43 @@ d="$(new_repo)"; rt_env s706backlog
 printf '# b\n' > "$d/BACKLOG.md"
 run_hook aggregate "$d"
 check_absent "706: a repo holding only BACKLOG.md does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
+
+# --- rotate: release-boundary archival of the persistent logs (dir #392; ticket V6 coverage gap) ----
+# One case per outcome. Both logs present -> each is renamed to <name>.<stamp>.archive (the live name
+# gone), with the stamp in the exact UTC form YYYYmmddTHHMMSSZ, and the entry directory kept.
+# Nothing present -> a clean "nothing to rotate", rc 0, no archive, entry directory kept.
+d="$(mkrepo)"; rt_env rot1
+ed="$(entry_dir_of "$d")"; mkdir -p "$ed"
+printf 'read line\n' > "$ed/reads.log"
+printf 'wrap line\n' > "$ed/wrap-fuse-events.log"
+run_hook rotate "$d"
+check_status "rotate: both logs present -> exit 0" 0 "$STATUS"
+check_contains "rotate: reports the rotation and the store" "$OUT" "rotated logs in $ed"
+check_nofile "rotate: live reads.log is gone after rotation" "$ed/reads.log"
+check_nofile "rotate: live wrap-fuse-events.log is gone after rotation" "$ed/wrap-fuse-events.log"
+rot_a=""; rot_w=""
+for f in "$ed"/reads.log.*.archive; do [ -f "$f" ] && rot_a="${f##*/}"; done
+for f in "$ed"/wrap-fuse-events.log.*.archive; do [ -f "$f" ] && rot_w="${f##*/}"; done
+stamp_re='^[0-9]{8}T[0-9]{6}Z$'
+rot_a_stamp="${rot_a#reads.log.}"; rot_a_stamp="${rot_a_stamp%.archive}"
+rot_w_stamp="${rot_w#wrap-fuse-events.log.}"; rot_w_stamp="${rot_w_stamp%.archive}"
+[[ -n "$rot_a" && "$rot_a_stamp" =~ $stamp_re ]] && rot_a_ok=0 || rot_a_ok=1
+[[ -n "$rot_w" && "$rot_w_stamp" =~ $stamp_re ]] && rot_w_ok=0 || rot_w_ok=1
+check_status "rotate: reads.log archived with an exact UTC YYYYmmddTHHMMSSZ suffix" 0 "$rot_a_ok"
+check_status "rotate: wrap-fuse-events.log archived with an exact UTC YYYYmmddTHHMMSSZ suffix" 0 "$rot_w_ok"
+check_eq "rotate: both archives share one stamp" "$rot_a_stamp" "$rot_w_stamp"
+check_eq "rotate: archived reads.log keeps its contents" "read line" "$(cat "$ed/$rot_a" 2>/dev/null)"
+check_eq "rotate: archived wrap-fuse-events.log keeps its contents" "wrap line" "$(cat "$ed/$rot_w" 2>/dev/null)"
+check_dir "rotate: the entry directory itself survives rotation" "$ed"
+d="$(mkrepo)"; rt_env rot2
+ed="$(entry_dir_of "$d")"; mkdir -p "$ed"
+run_hook rotate "$d"
+check_status "rotate: nothing to rotate -> exit 0" 0 "$STATUS"
+check_contains "rotate: nothing-to-rotate line printed cleanly" "$OUT" "nothing to rotate in $ed"
+check_absent "rotate: nothing-to-rotate run creates no archive" "$OUT" "rotated logs"
+archives_left=0
+for f in "$ed"/*.archive; do [ -f "$f" ] && archives_left=$((archives_left + 1)); done
+check_eq "rotate: no archive file appears when nothing was present" "0" "$archives_left"
+check_dir "rotate: nothing-to-rotate keeps the entry directory" "$ed"
 
 summary
