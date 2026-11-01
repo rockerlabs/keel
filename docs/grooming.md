@@ -671,6 +671,16 @@ none of them mechanical — every one came from reading a ticket body or running
 re-reading the plan itself). A groom that skips this round is a groom that has not yet found its own
 mistakes.
 
+**A finding written into a ticket body carries its verification anchor and states only what was verified.** Of
+all the groom's writes, an accepted finding turned into a ticket-body edit is the one a later worker reads as a
+brief, and the false claim is minted in the compression between "verified X exists" and "X does Y". So each such
+finding carries its anchor: `path:line`, or the command and its output. The body states only what that anchor
+shows. A behavioural claim about code nobody read is written as `TO VERIFY: <claim>`, never as fact. In the
+2026-09-16 groom a ticket body was corrected to say a guard hook exists, after verifying that it does; the
+compressed note also described what the hook does, which nobody had read, and it was wrong (the worker who read
+the hook found it refuses only one tracked file). This is G3's "derive, don't assert" applied to the groom's own
+writes.
+
 **Optional second axis, same round: a genuinely different model vendor, not just a fresh context
 window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
 ticket bodies in scope, read by a swappable cross-vendor client. Run twice on a release plan so far
