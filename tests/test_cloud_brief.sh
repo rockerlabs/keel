@@ -317,7 +317,7 @@ make_private() {
 }
 # sibling_list [LIST-KEY] NAME... — the owner's repository listing: each NAME is a private repository, unless NAME starts with `pub:`.
 sibling_list() {
-  local key="users_example_repos_type_owner_per_page_100_sort_pushed" sep="" name
+  local key="user_repos_affiliation_owner_visibility_private_sort_pushed_per_page_100" sep="" name
   case "${1:-}" in users_*|orgs_*) key="$1"; shift ;; esac
   { printf '['
     for name in "$@"; do
@@ -696,7 +696,7 @@ sibling_list sib
 gh_sibling sib 8001 billing 2026-10-31T14:55:00Z
 cb "$P" "dir #801"
 check_status "T3c a public repository → no sibling probe → passes" 0 "$STATUS"
-if grep -qE 'users/|orgs/|example/sib' "$GH_FX/calls"; then fail "T3c a public repository reads no sibling" "it did"; else pass "T3c a public repository reads no sibling"; fi
+if grep -qE 'user/|users/|orgs/|example/sib' "$GH_FX/calls"; then fail "T3c a public repository reads no sibling" "it did"; else pass "T3c a public repository reads no sibling"; fi
 fx
 make_private; sibling_list pub:openrepo
 gh_run "$GH_FX" example/proj 7001 started 2026-10-11T10:00:00Z

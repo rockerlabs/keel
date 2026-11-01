@@ -459,12 +459,14 @@ sibling_probe() {
   local list sibs sib n=0 skipped=0 srun sid surl sat sjobs sun sstarted note
   case "$OWNER_TYPE" in
     Organization) list="orgs/${OR%%/*}/repos?type=private&per_page=100&sort=pushed" ;;
-    *)            list="users/${OR%%/*}/repos?type=owner&per_page=100&sort=pushed" ;;
+    # GET /users/<o>/repos lists only PUBLIC repositories; the authenticated user's own private ones are at /user/repos
+    # (owner filtered below — when the token is another user's, nothing of this owner appears and the probe finds nothing).
+    *)            list="user/repos?affiliation=owner&visibility=private&sort=pushed&per_page=100" ;;
   esac
   sibs="$(cloud_gh_api "$list" --jq '.[] | select(.private == true and ((.archived // false) | not) and ((.disabled // false) | not)) | .full_name' 2>/dev/null)" \
     || { warn_add "could not list the other private repositories of ${OR%%/*} — the account-level G1c probe was skipped"; return 0; }
   while IFS= read -r sib; do
-    [ -n "$sib" ] && [ "$sib" != "$OR" ] || continue
+    [ -n "$sib" ] && [ "$sib" != "$OR" ] && [ "${sib%%/*}" = "${OR%%/*}" ] || continue
     n=$((n + 1)); [ "$n" -le "$SIBLING_MAX" ] || break
     srun="$(cloud_gh_api "repos/$sib/actions/runs?per_page=1&exclude_pull_requests=true" \
       --jq '(.workflow_runs // [])[0] // empty | [.id, .html_url, (.created_at // "")] | @tsv' 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
@@ -472,7 +474,8 @@ sibling_probe() {
     IFS=$'\t' read -r sid surl sat <<< "$srun"
     case "$sid" in ''|*[!0-9]*) continue ;; esac
     # Only a run newer than this repo's own can say anything about the account's CURRENT state.
-    if [ -n "$RUN_AT" ] && [ -n "$sat" ] && ! [[ "$sat" > "$RUN_AT" ]]; then continue; fi
+    # Without both timestamps the order is unknown: skip rather than judge the account on an undated run.
+    [ -n "$RUN_AT" ] && [ -n "$sat" ] && [[ "$sat" > "$RUN_AT" ]] || continue
     sjobs="$(cloud_gh_api "repos/$sib/actions/runs/$sid/jobs?per_page=100" --jq '.jobs // []' 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
     sun="$(first_unstarted "$sjobs" 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
     if [ -n "$sun" ]; then
@@ -481,7 +484,7 @@ sibling_probe() {
       break
     fi
     sstarted="$(jq -r '[.[] | select((.steps // [] | length) > 0)] | length' <<< "$sjobs" 2>/dev/null)" || sstarted=0
-    if [ "${sstarted:-0}" != 0 ] && [ -n "$RUN_AT" ] && [ -z "$SIB_FRESH" ]; then SIB_FRESH="$surl"; fi
+    if [ "${sstarted:-0}" != 0 ] && [ -z "$SIB_FRESH" ]; then SIB_FRESH="$surl"; fi
   done <<< "$sibs"
   [ "$skipped" = 0 ] || warn_add "could not read $skipped sibling private repositor$([ "$skipped" = 1 ] && echo y || echo ies) — the account-level G1c probe is partial"
   return 0
