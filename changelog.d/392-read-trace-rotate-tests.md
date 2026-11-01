@@ -1,0 +1,1 @@
+- `tests/test_read_trace.sh` now covers `tools/read-trace.sh rotate` (dir #392): one case per outcome. With both logs present, each is archived as `<name>.<UTC stamp>.archive` with contents kept and the entry directory left in place; with nothing present it reports "nothing to rotate" cleanly and creates no archive. Test-only; no behaviour change.

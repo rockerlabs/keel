@@ -813,4 +813,37 @@ printf '# b\n' > "$d/BACKLOG.md"
 run_hook aggregate "$d"
 check_absent "706: a repo holding only BACKLOG.md does not print the line" "$OUT" "nothing in this repository is in the trace's scope"
 
+# --- rotate: release-boundary archival of the persistent logs (dir #392; ticket V6 coverage gap) ----
+# One case per outcome. Both logs present -> each is renamed to <name>.<stamp>.archive (the live name
+# gone), and the stamp is a UTC YYYYmmddTHHMMSSZ. Nothing present -> a clean "nothing to rotate", rc 0.
+d="$(mkrepo)"; rt_env rot1
+ed="$(entry_dir_of "$d")"; mkdir -p "$ed"
+printf 'read line\n' > "$ed/reads.log"
+printf 'wrap line\n' > "$ed/wrap-fuse-events.log"
+run_hook rotate "$d"
+check_status "rotate: both logs present -> exit 0" 0 "$STATUS"
+check_contains "rotate: reports the rotation and the store" "$OUT" "rotated logs in $ed"
+check_nofile "rotate: live reads.log is gone after rotation" "$ed/reads.log"
+check_nofile "rotate: live wrap-fuse-events.log is gone after rotation" "$ed/wrap-fuse-events.log"
+rot_a=""; rot_w=""
+for f in "$ed"/reads.log.*.archive; do [ -f "$f" ] && rot_a="${f##*/}"; done
+for f in "$ed"/wrap-fuse-events.log.*.archive; do [ -f "$f" ] && rot_w="${f##*/}"; done
+case "$rot_a" in reads.log.[0-9]*T[0-9]*Z.archive) rot_a_ok=0 ;; *) rot_a_ok=1 ;; esac
+case "$rot_w" in wrap-fuse-events.log.[0-9]*T[0-9]*Z.archive) rot_w_ok=0 ;; *) rot_w_ok=1 ;; esac
+check_status "rotate: reads.log archived with a UTC timestamp suffix" 0 "$rot_a_ok"
+check_status "rotate: wrap-fuse-events.log archived with a UTC timestamp suffix" 0 "$rot_w_ok"
+check_eq "rotate: both archives share one stamp" "${rot_a#reads.log.}" "${rot_w#wrap-fuse-events.log.}"
+check_eq "rotate: archived reads.log keeps its contents" "read line" "$(cat "$ed/$rot_a")"
+check_eq "rotate: archived wrap-fuse-events.log keeps its contents" "wrap line" "$(cat "$ed/$rot_w")"
+check_dir "rotate: the entry directory itself survives rotation" "$ed"
+d="$(mkrepo)"; rt_env rot2
+ed="$(entry_dir_of "$d")"; mkdir -p "$ed"
+run_hook rotate "$d"
+check_status "rotate: nothing to rotate -> exit 0" 0 "$STATUS"
+check_contains "rotate: nothing-to-rotate line printed cleanly" "$OUT" "nothing to rotate in $ed"
+check_absent "rotate: nothing-to-rotate run creates no archive" "$OUT" "rotated logs"
+archives_left=0
+for f in "$ed"/*.archive; do [ -f "$f" ] && archives_left=$((archives_left + 1)); done
+check_eq "rotate: no archive file appears when nothing was present" "0" "$archives_left"
+
 summary
