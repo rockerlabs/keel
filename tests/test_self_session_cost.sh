@@ -160,4 +160,23 @@ check_status "table over 80 manifest lines under ulimit -n 64 exits 0" "0" "$STA
 check_absent "no fd exhaustion over 80 manifest lines" "$OUT" "Too many open files"
 check_eq "every one of the 80 tickets gets its row" 80 "$(match "$OUT" -cE 'fdrow[0-9]+')"
 
+# --- dir #438: a jq failure inside tu_session_totals must not leak its temp file -------------------
+# Called DIRECTLY from a `set -e` shell (no $(...) or `||` around it) — the one call shape where errexit is
+# live inside the lib function. Through `$(...)` (session-cost.sh's own cmd_session) the leak is not
+# reachable (measured: the substitution's subshell does not abort), so that path cannot prove the fix.
+# The stub fails only the aggregate call (`jq -c -s ...`), the one whose failure used to skip `rm -f "$tmp"`.
+jqfail_real="$(command -v jq)"
+jqfail_bin="$SANDBOX/jqfail-bin"
+jqfail_tmp="$SANDBOX/jqfail-tmp"
+mkdir -p "$jqfail_bin" "$jqfail_tmp"
+cat > "$jqfail_bin/jq" <<JQSTUB
+#!/bin/sh
+case "\$*" in *"-c -s"*) exit 3 ;; esac
+exec "$jqfail_real" "\$@"
+JQSTUB
+chmod +x "$jqfail_bin/jq"
+OUT="$(env PATH="$jqfail_bin:$PATH" TMPDIR="$jqfail_tmp" KEEL_HOME="$SANDBOX/jqfail-home" bash -c "set -e; . '$REPO_ROOT/tools/lib/transcript-usage.sh'; tu_session_totals '$sess_file' >/dev/null; echo reached-after" 2>&1 </dev/null)"
+STATUS=$?
+check_eq "a jq failure in tu_session_totals leaks no temp file (rm -f runs)" "0" "$(ls -A "$jqfail_tmp" | wc -l | tr -d ' ')"
+
 summary
