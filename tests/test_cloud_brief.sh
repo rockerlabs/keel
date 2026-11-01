@@ -351,11 +351,7 @@ cbo() { OUT="$("$BRIEF_TOOL" "$@" 2>"$F/stderr" </dev/null)"; STATUS=$?; ERR="$(
 # Ticket ids compare as strings: awk compares two numeric-looking values as numbers (`34.` = `34`).
 row_of()    { awk -F'\t' -v t="$1" 'NR > 1 && ($3 "") == (t "")' "$CLOUD_LEDGER" 2>/dev/null; }
 status_of() { row_of "$1" | cut -f8; }
-set_cell() { # TICKET N VALUE — edit the fixture ledger by hand, as an operator would
-  awk -F'\t' -v OFS='\t' -v t="$1" -v n="$2" -v v="$3" 'NR > 1 && ($3 "") == (t "") { $n = v } { print }' "$CLOUD_LEDGER" > "$F/l.tmp"
-  cat "$F/l.tmp" > "$CLOUD_LEDGER"
-}
-set_status() { set_cell "$1" 8 "$2"; } # TICKET STATUS
+set_status() { set_cell example/proj "$1" 8 "$2"; } # TICKET STATUS (set_cell and cell: tests/lib.sh)
 part_of() { awk -v p="=== $2 ===" '$0 == p { f = 1; next } /^=== [a-z ]+ ===$/ { f = 0 } f' "$1"; }
 nothing_written() { # LABEL
   if [ -d "$CLOUD_BRIEF_DIR" ] && [ -n "$(ls -A "$CLOUD_BRIEF_DIR")" ]; then fail "$1: no brief" "found $(ls "$CLOUD_BRIEF_DIR")"; else pass "$1: no brief"; fi
@@ -1135,7 +1131,7 @@ for needle in \
   "What to push: only \`HEAD:refs/heads/$B\`" \
   "Before every push, \`\"\$KT/keel/tools/secret-guard/secret-scan.sh\" --range \"origin/main..HEAD\"\` must exit 0" \
   "\`git commit --amend\` with the message minus that line" \
-  "Never write the text \`secret-scan:allow\` anywhere" \
+  "Never write the text \`secret-scan:""allow\` anywhere" \
   "Run \`/code-review high\`" \
   "\`draft=true\`" \
   "You never merge, never mark a PR ready and never close one" \
@@ -1153,6 +1149,10 @@ for needle in \
   check_contains "T15b pin: ${needle:0:70}" "$flat" "$needle"
 done
 check_absent "T15b no 'Russian' in the protocol part" "$proto" "Russian"
+check_absent "T15b the guard script has no (delete) arm (the all-zero-sha arm covers a deletion)" "$proto" "= '(delete)'"
+marker_whole="secret-scan:""allow"
+whole_hits="$(grep -lF -e "$marker_whole" "$REPO_ROOT"/tools/cloud-*.sh "$REPO_ROOT"/tests/test_cloud_*.sh 2>/dev/null || true)"
+check_eq "T15b no cloud tool or cloud test spells the allow marker whole (a cloud PR that edits such a line trips the landing check)" "" "$whole_hits"
 g_ids="$(grep -nE '(^|[^A-Za-z0-9])G[0-9]b?([^A-Za-z0-9]|$)' <<< "$proto" || true)"
 check_eq "T15b no G-row id in the protocol part" "" "$g_ids"
 check_eq "T15b no ticket id in the template" "0" "$(grep -cE 'dir #[0-9]|KB\.[0-9]' "$REPO_ROOT/templates/cloud-protocol.md")"
@@ -1364,7 +1364,7 @@ check_contains "T16b … and the no verdict's row" "$OUT" "B.8	R3	no — G4"
 fx
 cb "$P" "dir #812"; set_status "dir #812" dispatched
 cb "$P" "dir #814"; set_status "dir #814" landed
-set_cell "dir #814" 13 aaaa
+set_cell example/proj "dir #814" 13 aaaa
 printf '[{"number":7,"head":{"sha":"bbbb"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-814_state_all.json"
 printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
 cb "$P" "dir #815"; set_status "dir #815" dispatched
@@ -1394,7 +1394,7 @@ rm "$GH_FX/fail"
 printf '[{"number":7,"head":{"sha":"aaaa"}}]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-814_state_all.json"
 cbo "$P" --sweep
 check_contains "T17 a landed row at its PR head is current" "$OUT" "landed	dir #814	claude/cloud-dir-814	PR #7	current"
-set_cell "dir #814" 12 3
+set_cell example/proj "dir #814" 12 3
 cbo "$P" --sweep
 check_contains "T17 a landed row whose last landing check failed is stale" "$OUT" "STALE: the last landing check exited 3"
 # A same-day row is 0 days in every zone: a zone 14 h ahead of UTC (no tzdata: UTC, still passing) and a POSIX
@@ -1414,14 +1414,14 @@ printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-d
 today="$(date +%F)"
 e=$(( $(date -d "$today 12:00:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$today 12:00:00" +%s) + 86400 ))
 tomorrow="$(date -d "@$e" +%F 2>/dev/null || date -r "$e" +%F)"
-set_cell "dir #812" 1 "$tomorrow"
+set_cell example/proj "dir #812" 1 "$tomorrow"
 cbo "$P" --sweep
 check_contains "T17 a row dated tomorrow is -1 days old" "$OUT" "since $tomorrow (-1 days)"
 # A failed `cloud-land.sh --ticket` run records the PR (cell 14) but leaves the branch cell: the sweep reads the
 # recorded PR first, so a PR from another branch never reads as "no PR" (the abandon trigger).
 fx
 cb "$P" "dir #812"; set_status "dir #812" dispatched
-set_cell "dir #812" 12 3; set_cell "dir #812" 13 eeee; set_cell "dir #812" 14 9
+set_cell example/proj "dir #812" 12 3; set_cell example/proj "dir #812" 13 eeee; set_cell example/proj "dir #812" 14 9
 printf '[]\n' > "$GH_FX/api/repos_example_proj_pulls_head_example_claude_cloud-dir-812_state_all.json"
 printf '{"number":9,"head":{"sha":"eeee"}}\n' > "$GH_FX/api/repos_example_proj_pulls_9.json"
 cbo "$P" --sweep

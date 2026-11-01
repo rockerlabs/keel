@@ -43,8 +43,6 @@ refuse() { echo "keel cloud guard: refused $1" >&2; refused=1; }
 while read -r local_ref local_sha remote_ref _ || [ -n "$local_ref" ]; do
   if [ "$remote_ref" != "$allowed" ]; then
     refuse "a push to '$remote_ref' (only $allowed may be pushed)"
-  elif [ "$local_ref" = '(delete)' ]; then
-    refuse "deleting '$remote_ref'"
   else
     case "$local_sha" in *[!0]*) ;; *) refuse "deleting '$remote_ref'" ;; esac
   fi

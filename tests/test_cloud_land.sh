@@ -64,15 +64,6 @@ TRAILER="Claude-""Session"
 
 # row REPO TICKET BRANCH STATUS — append a ledger row.
 row() { printf '2026-10-27\t%s\t%s\t%s\tsonnet/high\t1000\t?\t%s\t\t\t\t\t\t\n' "$1" "$2" "$3" "$4" >> "$CLOUD_LEDGER"; }
-# cell REPO TICKET N — print cell N of the row; set_cell REPO TICKET N VALUE — set it. String compares: a ticket
-# `2.1` is not `2.10`.
-cell() { awk -F'\t' -v r="$1" -v t="$2" -v n="$3" 'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { print $n }' "$CLOUD_LEDGER"; }
-set_cell() {
-  awk -F'\t' -v OFS='\t' -v r="$1" -v t="$2" -v n="$3" -v val="$4" \
-    'NR > 1 && ($2 "") == (r "") && ($3 "") == (t "") { $n = val } { print }' "$CLOUD_LEDGER" > "$CLOUD_LEDGER.new" \
-    && mv "$CLOUD_LEDGER.new" "$CLOUD_LEDGER"
-}
-
 # bcommit FILE CONTENT MESSAGE — commit FILE (CONTENT) on $P's cloud branch and push it; sets $TIP to the new tip.
 bcommit() {
   git -C "$P" checkout -q claude/cloud-dir-801
@@ -84,13 +75,19 @@ bcommit() {
   git -C "$P" checkout -q main
 }
 
+# The fixture project is built once (PROTO, never handed to a case) and copied by every fx — a build is ~3 s of git.
+PROTO="$(mktemp -d "$SANDBOX/proto.XXXXXX")"; require_sandbox_path "$PROTO" proto
+F="$PROTO" GH_FX="$PROTO/gh" proj proj example/proj main
+PROTO_HEAD="$HEAD"
 fx() {
   F="$(mktemp -d "$SANDBOX/fx.XXXXXX")"; require_sandbox_path "$F" fx
   export GH_FX="$F/gh" CLOUD_LEDGER="$F/ledger.tsv" SECRET_SCAN_PERSONAL_FILE="$F/personal"
   mkdir -p "$GH_FX"
   printf 'zzfixturezz\n' > "$F/personal"
   printf '%s\n' "$LEDGER_HEADER" > "$CLOUD_LEDGER"
-  proj proj example/proj main
+  cp -Rp "$PROTO/proj" "$PROTO/proj-origin.git" "$F/"
+  cp -Rp "$PROTO/gh/api" "$PROTO/gh/pr" "$GH_FX/"
+  P="$F/proj" O="$F/proj-origin.git" HEAD="$PROTO_HEAD"
   export CLOUD_ORIGIN="$O"
 }
 
@@ -224,6 +221,8 @@ pr_json example/proj 5 claude/cloud-dir-801 "$(git -C "$P" rev-parse claude/clou
 run "$LAND" "$P" 5
 check_status "A4 an added allow marker → exit 1" 1 "$STATUS"
 check_contains "A4 … named" "$OUT" "added allow marker: hit"
+check_contains "A4 a marker hit says fix-forward cannot clear it" "$OUT" "fixing forward does not clear it"
+check_absent "A4 … and does not tell the operator to fix forward on the branch" "$OUT" "Fix forward on the branch"
 
 # The marker check reads every commit's patch and message, not the net diff.
 fx
@@ -636,5 +635,8 @@ row example/proj "dir #801" claude/cloud-dir-801 dispatched
 pr_json example/proj 5 claude/cloud-dir-801 "$HEAD" "$GREEN"
 SECRET_SCAN_PERSONAL_FILE="$F/missing" run "$LAND" "$P" 5
 check_status "A4 a personal list that is not a file → exit 2" 2 "$STATUS"
+
+# Each ref is read once: the clone fetches every branch, so the tool runs no `git fetch` after it.
+check_eq "A4 cloud-land.sh runs no git fetch after the clone" "0" "$(grep -cE '^[^#]*git .*[ ]fetch([ ]|$)' "$LAND" || true)"
 
 summary

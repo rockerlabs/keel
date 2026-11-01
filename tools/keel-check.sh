@@ -128,10 +128,10 @@ fi
 
 # Failed: bump the consecutive-failure counter (read-tolerant of a corrupt/missing file).
 fails=0
-[ -f "$state" ] && fails="$(tr -cd '0-9' < "$state" 2>/dev/null)"
+[ -f "$state" ] && fails="$(tr -cd '0-9' 2>/dev/null < "$state")"
 [ -z "$fails" ] && fails=0
 fails=$((fails + 1))
-printf '%s' "$fails" > "$state" 2>/dev/null || true
+printf '%s' "$fails" 2>/dev/null > "$state" || true
 
 if [ "$fails" -lt "$threshold" ]; then
   printf 'keel-check: FAIL #%s — %s (one more failure of this same check trips the stop)\n' \

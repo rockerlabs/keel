@@ -260,7 +260,7 @@ core_import_re='(^|[[:space:]])@[^[:space:]]*keel/CORE\.md([[:space:]]|$)'
 # target, and each project's own CLAUDE.md) — one definition instead of three hand-copies.
 _char_count() {
   local n
-  n="$(wc -c < "$1" 2>/dev/null | tr -d ' ')" || n=0
+  n="$(wc -c 2>/dev/null < "$1" | tr -d ' ')" || n=0
   [ -n "$n" ] || n=0
   printf '%s' "$n"
 }
@@ -879,7 +879,7 @@ guard_edited_hooks() {
   for h in pre-commit pre-push; do
     guard_is_keel_hook "$dir" "$h" || continue
     [ -L "$dir/$h" ] && continue   # the installer refuses a linked hook with or without --force; the link notes say so
-    if [ -r "$sums" ] && sum="$(cksum < "$dir/$h" 2>/dev/null)" && grep -qxF -- "$h $sum" "$sums"; then continue; fi
+    if [ -r "$sums" ] && sum="$(cksum 2>/dev/null < "$dir/$h")" && grep -qxF -- "$h $sum" "$sums"; then continue; fi
     out="${out:+$out, }$h"
   done
   printf '%s' "$out"
