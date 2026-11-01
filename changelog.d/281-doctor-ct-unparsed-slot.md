@@ -1,0 +1,1 @@
+- `tools/self/doctor.sh` check 7 now reports citations the extractor cannot expand (an over-cap `dir #N-M` range) in their own WARN, separate from the missing-ticket list, so each list means one thing (dir #281).

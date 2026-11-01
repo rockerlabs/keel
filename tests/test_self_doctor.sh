@@ -1792,6 +1792,13 @@ printf '# Changelog\n\n## [Unreleased]\n- init\n\n%s\n' "$ct_v1_section" > "$d/C
 ( cd "$d" && git add -A && git commit -qm "dir #1-99999 absurdly wide range" )
 run "$sd" "$d" --quiet
 check_contains "over-cap range surfaces loudly rather than silently truncating" "$OUT" "range too large to expand"
+check_contains "over-cap range gets its own WARN slot (dir #281)" "$OUT" "could not be expanded into tickets"
+check_absent "over-cap range is not worded as a missing ticket (dir #281)" "$OUT" "referenced in commits since"
+# a real missing ticket co-occurring with an over-cap range: both channels report, each its own meaning
+( cd "$d" && echo x >> "$fake_widget" && git add -A && git commit -qm "dir #936 real missing ticket" )
+run "$sd" "$d" --quiet
+check_contains "co-occurring: unexpandable range still reported" "$OUT" "range too large to expand"
+check_contains "co-occurring: real missing ticket listed" "$OUT" "referenced in commits since v1.0.0 but absent from CHANGELOG.md's [Unreleased] section or changelog.d/: dir #936"
 
 # a spaced hyphen after a ticket number is ordinary prose, not a range — must not misparse into a
 # wild expansion or a parse failure.
