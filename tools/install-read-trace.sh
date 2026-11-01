@@ -317,4 +317,4 @@ while IFS=$'\t' read -r status event matcher; do
 done <<<"$statuses"
 
 echo "install-read-trace: wired into $settings"
-echo "Restart Claude Code (hooks load only at session start) — read-trace is now recording."
+echo "Hooks in settings files are usually live at once; restart Claude Code if a hook does not fire — read-trace is now recording."
