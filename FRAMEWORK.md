@@ -45,7 +45,11 @@ Tie to P3: economy lives *above* the P1 gate — never downgrade below what a co
 pay for headroom a task won't use. When unsure whether a task is "hard," name the uncertainty and let the
 user pick the tier.
 
-Phase routing complements difficulty routing: design and spec work at high effort, a well-groomed ticket's implementation at low effort, and independent review back at high effort, because decomposition quality is what buys the right to cheap implementation passes.
+Phase routing complements difficulty routing: design and spec work at high effort, a well-groomed ticket's
+implementation at low effort (its decisions are already made, so it is execution, not reasoning), and
+independent review back at high effort — decomposition quality is what buys the right to cheap
+implementation passes, and a ticket that still needs reasoning at implementation time is not yet well
+groomed.
 
 ---
 
@@ -61,16 +65,16 @@ step runs one informally).
 - **Frontier rounds, not a fixed sequence or a fixed batch.** Each round batches exactly the questions for
   which enough context has accumulated — independent questions go out together, a question whose answer
   depends on an unanswered one waits — then the decision tree is rebuilt from the answers before the next
-  round is computed. This unifies "sequential when questions branch, batched when independent": one rule
-  covers both. A tool like `AskUserQuestion` supports multi-question batches by design. Don't carry a
-  blanket "one at a time" rule forward — that's a chat-interview convention, not a universal.
+  round is computed. One rule covers both the branching and the independent case. A tool like
+  `AskUserQuestion` supports multi-question batches by design; a blanket "one at a time" rule is a
+  chat-interview convention, not a universal.
 - **Forks text cannot resolve go to a disposable prototype.** A fork about layout or state-machine behavior
   that prose cannot settle is answered by a throwaway prototype built to answer ONE question — 3–5
   radically different variants, not one variant in three colors. The prototype is evidence for the
   decision and is discarded, never shipped.
 - **Close with a shared-understanding gate.** The loop ends with an explicit restatement of the agreed
-  behavior, which the human confirms or reopens. A plan the human only skims and agrees to is not agreement,
-  so the restatement is the step that cannot be skipped.
+  behavior, which the human confirms or reopens. Skim-and-agree on a generated plan is not agreement, so
+  the restatement is what makes the confirmation explicit.
 - **Always attach a recommended answer** to each question, so the user's fastest path is confirming a
   default instead of composing one from scratch.
 - **Doesn't lower CORE's bar for opening a fork.** "Don't ask to confirm a default you'd pick anyway"
