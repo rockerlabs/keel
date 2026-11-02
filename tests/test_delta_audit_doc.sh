@@ -384,6 +384,23 @@ check_contains "section 11 class 2 routes to the non-reasoning model at class 3'
 check_contains "section 11 class 3 leaves the bound to the caller, not vendor-review.sh (dir #898)" "$s11_898" \
   "The 10 KB bundle bound is the caller's (or its client's) to keep, not \`tools/vendor-review.sh\`'s"
 
+# dir #585: §11 carries the invariant crib-sheet sub-rule for diff-only bundles.
+s11_585="$(section_body '## 11. The cross-vendor leg — four harness lessons, as classes' "$doc" | flatten_ws)"
+for needle in \
+  'prepend an invariant crib sheet to every diff-only bundle' \
+  'at most **1 KB**' \
+  'the doc comment of each symbol the diff calls but does not define' \
+  'leave out a symbol with no doc comment rather than inventing one' \
+  "The sheet counts against class 3's 10 KB bound when the bundle goes to the non-reasoning chat model" \
+  'Invariants this diff relies on' \
+  'A sentinel with no stated meaning is left out' \
+  'drop the rest whole; never cut a comment mid-sentence' \
+  'record it as failed, not as' \
+  "in the run record's vendor-leg line"
+do
+  check_contains "section 11 crib-sheet sub-rule: $needle (dir #585)" "$s11_585" "$needle"
+done
+
 pin "dir #807: delta-audit.md section 8 routes a BACKLOG.md-resident record through the manager" "$doc" 'manager is the one `BACKLOG.md` writer, so a record the project keeps there' "expected section 8 to name the manager as the writer in a managed release"
 
 # dir #556: §8(a) names a default location and the create-if-absent duty for the cross-run record.
