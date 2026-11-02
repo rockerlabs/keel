@@ -1,0 +1,1 @@
+- `tools/token-report.sh` now removes its four `mktemp` scratch files on an interrupt (SIGTERM/SIGINT) as well as on the normal and mktemp-failure paths: an `EXIT` trap, cleared before the normal-path cleanup, covers the window between them. A regression test in `tests/test_token_report.sh` pins the case (dir #442).
