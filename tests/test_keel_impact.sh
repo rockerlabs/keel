@@ -1049,10 +1049,10 @@ fi
 # _impact_merge_ledger_produce), not a `pkill -f` pattern match against the process table — an
 # earlier version used the pattern-match approach and flaked on macOS CI (passed locally, passed on
 # Linux CI, failed intermittently on macos-14). The cause of that flake is not established here:
-# the measured target is the backgrounded job itself. In the v0.9.1 RC audit (dir #450), the stub's
-# $PPID equalled the job's own $! (sig_pid) with zero intervening forks, so there is no fork
-# depth for a pattern match to get wrong. Taking the pid from the OS ($PPID as the stub itself
-# sees it) is still the exact target, independent of how the process table looks at kill time.
+# the v0.9.1 RC audit (dir #450) measured on one platform that the stub's $PPID equals the job's
+# own $! (sig_pid) with zero intervening forks. That measurement does not rule out the flake's
+# cause on other platforms. Taking the pid from the OS ($PPID as the stub itself sees it) is an
+# exact target as long as no subshell sits between $! and the awk call; nothing enforces that.
 # The cleanup check then rendezvous on that EXACT process's own death (`kill -0` failing),
 # not a fixed-iteration poll of file existence — a process only reports dead once it has actually
 # exited, which for a process with an EXIT trap installed happens strictly after that trap
@@ -1146,7 +1146,7 @@ else
   # $dir409_target is dead); it only does real work if that loop hit its KEEL_TEST_HANG_BOUND instead of
   # observing death. The pattern-based pkill below is deliberately still the fuzzy, non-exact kill
   # this fix's whole point was to stop relying on for the ASSERTION — kept here only as a mop-up for
-  # any OTHER bash-fork layer of the same invocation that isn't $dir409_target, not as a second
+  # any other process of the same invocation that isn't $dir409_target, not as a second
   # correctness check.
   [ -n "$dir409_target" ] && kill -9 "$dir409_target" 2>/dev/null
   pkill -9 -f "keel-impact.sh migrate $sigrepo" 2>/dev/null || true
