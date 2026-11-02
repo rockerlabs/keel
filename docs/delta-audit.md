@@ -416,6 +416,18 @@ the name of `tools/delta-audit/harvest.sh`, which fills this record's mechanical
 does nothing of the kind; a session told to "harvest" can run that script and believe the duty
 discharged.)*
 
+**A verdict's recommended follow-up is a stageable item too (dir #557).** Every *recommended follow-up* the
+verdict names (for example "owed follow-up, not a blocker: a second bundled cross-vendor round over the
+files a truncated leg never saw") is either staged — a ticket, or a standing-list line with its trigger — or
+dropped in the verdict with a one-line reason. A recommendation that lives only in `verdict.md` is unharvested
+by definition: it is neither a finding, which (b) moves to the standing list, nor a staged ticket, which (b)
+requires filed, so it falls between both rules. One run's verifier disclosed a real residual (5 of 11 files
+got no whole-file cross-vendor pass because the leg truncated its prompt), recommended a second round, and
+wrote it in the verdict only; the release manager filed exactly what was staged, and the next groom's G4(c)
+check was the first reader to notice. The staged-tickets file carries a `## Recommendations` stanza every
+time — one line per recommendation naming where it went (ticket, standing-list line, or the drop reason), or
+`none` — so an empty one is visible rather than indistinguishable from a forgotten one.
+
 **Clause B's demotion ticket is staged by the verdict, never addressed to "the groom" in prose (dir #815).**
 When [`verification-economics.md`](verification-economics.md) §3's Clause B trigger holds for the run (it
 yielded only instances of known classes), or one class has now recurred across three or more runs, the

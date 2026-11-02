@@ -50,7 +50,7 @@ Fill `run-record.md` and append the run's row to your project's cross-run record
 every `no-action(<reason>)` disposition naming a real defect gets copied onto the project's standing
 list (keel's instance: the `## Standing list` section of `BACKLOG.md` — create it per its own shape if
 it doesn't exist yet, rather than a silent no-op)
-(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — `docs/verification-economics.md` §4). Verify `tickets-staged.md` is empty or filed before
+(a `no-action(1b — …)` finding goes to its guard's known-bypass register instead — `docs/verification-economics.md` §4). Every *recommended follow-up* the verdict names is either staged (a ticket, or a standing-list line with its trigger) or dropped in the verdict with a one-line reason — a recommendation that lives only in `verdict.md` is unharvested by definition; `tickets-staged.md` carries a `## Recommendations` stanza (`none` when empty) so an empty one is visible. Verify `tickets-staged.md` is empty or filed before
 leaving the run directory behind.
 
 **A7 — you hand the operator the tag commands; you never run them.**
