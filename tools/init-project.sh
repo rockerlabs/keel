@@ -10,6 +10,8 @@ set -euo pipefail
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$here/lib/require-git-repo.sh"
 tpl_project="$root/templates/project-CLAUDE.md"
 
 REGISTER=1
@@ -56,7 +58,12 @@ echo "init-project: scaffolding $(pwd)"   # make the target explicit — the cwd
 # repo used to attach to the parent — and impact tracking then enabled the PARENT's root. A non-empty
 # `--show-prefix` means the target is not its own toplevel (a linked worktree's root is): refuse before
 # scaffolding anything, unless --nested asks for a separate repo here.
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+# dir #930: a bare repo (or a path inside a `.git` dir) is a repo but not a work tree: scaffolding files into it
+# would litter a git directory, and `git init` there would nest a repo in it. Refuse, never scaffold.
+if keel_is_git_repo . && ! keel_is_git_work_tree .; then
+  echo "init-project: $(pwd -P) is a bare git repository (or inside a .git directory), not a work tree — refusing to scaffold into it." >&2
+  exit 2
+elif ! keel_is_git_work_tree .; then
   git init -q
   echo "  + git initialized"
 elif [ -z "$(git rev-parse --show-prefix)" ]; then

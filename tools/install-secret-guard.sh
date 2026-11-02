@@ -14,7 +14,9 @@
 #   install-secret-guard.sh --where <repo>   read-only: print where a <repo> install writes (own), where git
 #                                            reads this repo's hooks (effective), and the core.hooksPath
 #                                            scope that decides it — the ONE resolver tools/doctor.sh,
-#                                            install.sh and uninstall.sh read (dir #643, dir #688)
+#                                            install.sh and uninstall.sh read (dir #643, dir #688).
+#                                            Like install mode it refuses a bare repo (exit 2): a bare
+#                                            repo has no work tree, so no commit there runs a hook (dir #930)
 #   install-secret-guard.sh --where --global read-only: the machine-wide core.hooksPath as git resolves it
 #
 # Never clobbers your data silently: a pre-existing pre-commit/pre-push (or global core.hooksPath) that
@@ -1195,6 +1197,7 @@ Usage:
                                          unwire the global guard: restore the displaced hooksPath, or unset it
   install-secret-guard.sh --where <repo-path> | --where --global
                                          read-only: which hooks dir an install writes, which one git reads
+                                         (a bare repo is refused, as in install mode)
   install-secret-guard.sh -h | --help
 EOF
     exit 0 ;;
