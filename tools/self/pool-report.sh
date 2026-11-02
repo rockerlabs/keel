@@ -201,8 +201,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # Last `→` token naming a release or the pool (BACKLOG.md's own G3 extraction rule) — a
   # heading carries prose arrows too ("→ ask", "→ a release of its own"); only these two
   # shapes are ever a real release tag.
-  tag="$(grep -oE '→[[:space:]]*(pool\b|[0-9]+\.[0-9]+\.[0-9]+)' <<< "$heading_block" \
-    | tail -1 | sed -E 's/^→[[:space:]]*//' || true)"
+  tag="$(bb_last_release_tag "$heading_block" 'pool|[0-9]+\.[0-9]+\.[0-9]+')"
   [ "$tag" = "pool" ] || continue
 
   pool_size=$((pool_size + 1))

@@ -542,4 +542,18 @@ check_status "dir #448: glyph + tab + word still closes" 1 "$(tagmatch448 $'x �
 check_status "dir #448: glyph + emphasis + word still closes" 1 "$(tagmatch448 'x ✅ **Done 2026-09-20**')"
 check_status "dir #448: glyph directly followed by word still closes" 1 "$(tagmatch448 'x ✅DONE')"
 
+# --- bb_last_release_tag (dir #593): last qualifying arrow wins, vocabulary-scoped, always exits 0 ----------------
+census_vocab='pool|next|on-demand|[0-9]+\.[0-9]+(\.[0-9]+)?'
+pool_vocab='pool|[0-9]+\.[0-9]+\.[0-9]+'
+check_eq "dir #593: last qualifying arrow wins over prose arrows" "pool" \
+  "$(bb_last_release_tag '### dir #1 — t — R2 — → ask → 0.9.0 → pool → a release of its own' "$pool_vocab")"
+check_eq "dir #593: census vocabulary reads next" "next" "$(bb_last_release_tag 'x → next' "$census_vocab")"
+check_eq "dir #593: census vocabulary reads on-demand" "on-demand" "$(bb_last_release_tag 'x → on-demand' "$census_vocab")"
+check_eq "dir #593: census vocabulary reads N.N" "0.11" "$(bb_last_release_tag 'x → 0.11' "$census_vocab")"
+check_eq "dir #593: pool vocabulary ignores next" "" "$(bb_last_release_tag 'x → next' "$pool_vocab")"
+check_eq "dir #593: pool vocabulary ignores N.N" "" "$(bb_last_release_tag 'x → 0.11' "$pool_vocab")"
+check_eq "dir #593: trailing word boundary is required (poolside is no tag)" "" "$(bb_last_release_tag 'x → poolside' "$pool_vocab")"
+check_eq "dir #593: no arrow prints nothing" "" "$(bb_last_release_tag 'no arrows here' "$pool_vocab")"
+check_eq "dir #593: no arrow still exits 0" "0" "$(bb_last_release_tag 'none' "$pool_vocab" >/dev/null; echo $?)"
+
 summary
