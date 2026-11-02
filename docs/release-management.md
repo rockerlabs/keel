@@ -541,9 +541,10 @@ a non-zero exit means the word is not recognised, and the manager either writes 
 widens the constant in the same PR — so the next unlisted word is refused there rather than
 discovered by the next census.
 
-The definition-quote rule also governs the closing write: before writing a closure marker for an audit finding,
-apply R9's definition-quote rule (dir #537). The quoted definition and each part's status live in the closure record
-or the ticket body; the marker stays a short tag that points to them, not the PR's retelling.
+The definition-quote rule also governs the closing write:
+before writing a closure marker for an audit finding, apply R9's definition-quote rule (dir #537).
+The quoted definition and each part's status live in the closure record or the ticket body;
+the marker stays a short tag that points to them, not the PR's retelling.
 
 **A ticket the manager files carries a release tag on its heading, `→ pool` when nothing else fits
 (the 0.17.0 groom).** Seven of the 0.16.0 manager's filings had none. The census lists them as
