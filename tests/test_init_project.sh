@@ -72,6 +72,7 @@ check_status "broken symlink's dangling target is unchanged" "does-not-exist.md"
 notpl="$SANDBOX/no-template-run"
 mkdir -p "$notpl/tools"
 cp "$REPO_ROOT/tools/init-project.sh" "$notpl/tools/init-project.sh"
+mkdir -p "$notpl/tools/lib" && cp "$REPO_ROOT/tools/lib/require-git-repo.sh" "$notpl/tools/lib/"   # dir #930: the sourced lib travels with it
 target="$SANDBOX/no-template-target"
 run "$notpl/tools/init-project.sh" --no-register --no-impact "$target"
 check_status "init with a missing template → exit 0" 0 "$STATUS"

@@ -17,6 +17,8 @@
 # two files.
 set -euo pipefail
 unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/require-git-repo.sh"
 
 marker='[PLACEHOLDER'
 files=(docs/release-history.md CHANGELOG.md)
@@ -28,7 +30,7 @@ esac
 [ "$#" -le 1 ] || { printf 'tag-ready: at most one REV\n' >&2; exit 2; }
 rev=HEAD; [ "$#" -eq 1 ] && rev="$1"
 
-git rev-parse --is-inside-work-tree > /dev/null 2>&1 || { printf 'tag-ready: not inside a git work tree\n' >&2; exit 2; }
+keel_is_git_work_tree || { printf 'tag-ready: not inside a git work tree\n' >&2; exit 2; }
 commit="$(git rev-parse --verify --quiet "$rev^{commit}")" || { printf 'tag-ready: %s is not a commit\n' "$rev" >&2; exit 2; }
 for f in "${files[@]}"; do
   git cat-file -e "$commit:$f" 2> /dev/null || { printf 'tag-ready: %s is absent at %s; refusing to pass on a missing file\n' "$f" "$rev" >&2; exit 2; }
