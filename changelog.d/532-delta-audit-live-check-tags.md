@@ -1,0 +1,1 @@
+- `docs/delta-audit.md` §9: the leg prompt now requires every live-check block (SQL, shell) handed to the operator to carry a `TESTED on <where>` or `UNTESTED-SQL`/`UNTESTED-SHELL` tag, and the verifier prompt checks the tag exists (dir #532).

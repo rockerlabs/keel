@@ -392,4 +392,9 @@ pin "§8(a) names AUDITS.md beside GROOMS.md as the default record" "$doc" 'AUDI
 pin "§8(a) extends create-if-absent to the cross-run record" "$doc" "and create it per its own shape if it doesn't exist yet, rather than a silent no-op" \
   "expected delta-audit.md §8(a) to carry the create-if-absent duty"
 
+# dir #532: live-check blocks handed to the operator carry a TESTED/UNTESTED tag; the verifier checks it.
+pin "§9 S2…Sn prompt: every operator live-check block is tagged (dir #532)" "$doc" 'carries either a `TESTED on <where>` tag' \
+  "expected the leg prompt to require a TESTED/UNTESTED tag on operator live-check blocks"
+check_contains "S-final prompt: checks the live-check tag (dir #532)" "$sfinal_flat" 'carries a `TESTED on <where>` or an `UNTESTED-SQL`'
+
 summary

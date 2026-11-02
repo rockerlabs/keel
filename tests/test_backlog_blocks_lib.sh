@@ -516,4 +516,30 @@ for c in tools/lib/backlog-blocks.sh tools/self/doctor.sh tools/self/accumulate.
   check_contains "$c walks a heading through bb_heading_end" "$(cat "$REPO_ROOT/$c")" 'bb_heading_end '
 done
 
+# --- dir #448: two false-`closed=1` shapes in the closure helpers (both latent; no live instance) --------------
+# (1) bb_strip_foreign_citations must reach a FIXED POINT: a self-citation (own_num) ahead of a foreign one
+# used to halt the loop, leaving the foreign citation's tag in the block for the bare-tag test to read as own.
+# Checked with a non-closure tag too (the caller's tag_pattern is a parameter): `RETRACTED` here.
+blk448=$'### dir #448 — an open ticket — R2 — → pool\nSupersedes dir #448 — RETRACTED once; Supersedes dir #9 — RETRACTED.'
+got448="$(bb_strip_foreign_citations "$blk448" 448 'RETRACTED')"
+check_contains "dir #448: the self-citation survives the strip" "$got448" 'Supersedes dir #448 — RETRACTED'
+check_status "MUTATION-PROOF: dir #448: a foreign citation BEHIND a self-citation is stripped (fixed point)" \
+  1 "$([[ "$got448" == *'dir #9'* ]] && echo 0 || echo 1)"
+blk448=$'Duplicate of dir #448 ✅ DONE; Duplicate of dir #9 ✅ DONE; Duplicate of dir #8 ✅ DONE'
+got448="$(bb_strip_foreign_citations "$blk448" 448 "$BB_CLOSURE_TAG_PATTERN")"
+check_eq "dir #448: Duplicate form, self then two foreign -> only the self citation remains" \
+  'Duplicate of dir #448 ✅ DONE;  ' "$got448"
+# (2) BB_CLOSURE_TAG_PATTERN's internal gaps are same-line whitespace: a glyph at EOL and the word at BOL of
+# the next line is NOT one closure tag. `[[:space:]]` bridged the newline. The census over the real file is
+# byte-identical either way, so only this fixture tells the two apart.
+tagmatch448() { if [[ "$1" =~ ${BB_CLOSURE_TAG_PATTERN}([^a-zA-Z]|$) ]]; then echo 1; else echo 0; fi; }
+check_status "MUTATION-PROOF: dir #448: glyph at EOL + word at BOL is not a closure tag" \
+  0 "$(tagmatch448 $'title ends ✅\nDONE starts the next line')"
+check_status "MUTATION-PROOF: dir #448: glyph, newline, emphasis, word is not a closure tag" \
+  0 "$(tagmatch448 $'title ends ❌\n**Closed** next line')"
+check_status "dir #448: glyph + space + word still closes" 1 "$(tagmatch448 'x ✅ DONE (2026-08-01)')"
+check_status "dir #448: glyph + tab + word still closes" 1 "$(tagmatch448 $'x ✅\tDONE')"
+check_status "dir #448: glyph + emphasis + word still closes" 1 "$(tagmatch448 'x ✅ **Done 2026-09-20**')"
+check_status "dir #448: glyph directly followed by word still closes" 1 "$(tagmatch448 'x ✅DONE')"
+
 summary

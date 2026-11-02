@@ -279,4 +279,10 @@ EOF
 pin "dir #807: grooming.md G5 names the lint without a RELEASES.md path argument" "$doc" 'tools/self/value-claim-lint.sh <version>` (dir #672)' "expected the lint invocation to take a lone version"
 check_absent "dir #807: grooming.md no longer passes the relative RELEASES.md to the lint" "$(cat "$doc")" 'value-claim-lint.sh RELEASES.md'
 
+# dir #538: a G6 finding written into a ticket body carries its anchor; unread behaviour is TO VERIFY.
+pin "dir #538: G6 requires a verification anchor on a finding written into a ticket body" "$doc" \
+  'carries its verification anchor and states only what was verified' "expected the G6 anchor rule"
+pin "dir #538: G6 writes an unread behavioural claim as TO VERIFY" "$doc" \
+  'is written as `TO VERIFY: <claim>`' "expected the TO VERIFY marker rule"
+
 summary

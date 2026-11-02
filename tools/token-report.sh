@@ -105,7 +105,15 @@ _tr_resolve_session() {
 _tr_build_report() {
   local -a files=("$@")
   local tmp_totals tmp_turns tmp_calls tmp_sc
+  # dir #409's own idiom (tools/changelog-section.sh): an EXIT trap, not a RETURN trap — this
+  # function's only call site invokes it inside a `$(...)` command substitution, which bash runs in
+  # its own subshell, so the trap set here fires once at that subshell's exit and never becomes a
+  # global handler that could fire on an unrelated function's return (the hazard the comment below
+  # already documents for RETURN traps). Armed right after the first mktemp, so a SIGTERM/SIGINT
+  # anywhere after it — including inside the mktemp chain — removes every file created so far; the
+  # still-empty variables are a no-op for rm -f.
   tmp_totals="$(mktemp)" || return 1
+  trap 'rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"' EXIT
   tmp_turns="$(mktemp)" || { rm -f "$tmp_totals"; return 1; }
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
@@ -364,6 +372,7 @@ _tr_build_report() {
         }
       }
   ')" || status=$?
+  trap - EXIT
   rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"
   [ "$status" -eq 0 ] || return "$status"
   printf '%s\n' "$out"
