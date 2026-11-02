@@ -1048,11 +1048,12 @@ fi
 # The kill target is the stub's own recorded $PPID (the exact process running
 # _impact_merge_ledger_produce), not a `pkill -f` pattern match against the process table — an
 # earlier version used the pattern-match approach and flaked on macOS CI (passed locally, passed on
-# Linux CI, failed intermittently on macos-14): the real target sits an unpredictable number of
-# internal bash forks below the backgrounded job's own $!, and which fork a command-line pattern
-# happens to match first is platform/bash-build/scheduler-load-dependent, not deterministic. Getting
-# the exact pid straight from the OS ($PPID as the stub itself sees it) removes that guesswork
-# entirely. The cleanup check then rendezvous on that EXACT process's own death (`kill -0` failing),
+# Linux CI, failed intermittently on macos-14). The cause of that flake is not established here:
+# the measured target is the backgrounded job itself. In the v0.9.1 RC audit (dir #450), the stub's
+# $PPID equalled the job's own $! (sig_pid) with zero intervening forks, so there is no fork
+# depth for a pattern match to get wrong. Taking the pid from the OS ($PPID as the stub itself
+# sees it) is still the exact target, independent of how the process table looks at kill time.
+# The cleanup check then rendezvous on that EXACT process's own death (`kill -0` failing),
 # not a fixed-iteration poll of file existence — a process only reports dead once it has actually
 # exited, which for a process with an EXIT trap installed happens strictly after that trap
 # completes, so by the time the death is observed the cleanup is guaranteed done, however slow or
@@ -1077,12 +1078,11 @@ real_mktemp="$(command -v mktemp)"
   # `exec sleep 30` keeps this stub's own pid (it replaces the process image, not forks), so
   # recording $$ BEFORE the exec gives the test a pid it can kill directly later to reap the sleep
   # once its cmdline no longer says "awk". $PPID is the DIRECT parent that invoked this stub as
-  # "awk" — i.e. the exact _impact_merge_ledger_produce-running process holding the EXIT trap.
+  # "awk" — i.e. the process running _impact_merge_ledger_produce, which holds the EXIT trap.
   # Recording it here (rather than pattern-matching "keel-impact.sh migrate ..." against the whole
-  # process table later) is what makes the kill target exact instead of a guess: the earlier
-  # pkill-by-pattern approach flaked on macOS CI (dir #409 follow-up) because the target sits an
-  # unpredictable number of internal bash forks below the backgrounded job's own $!, and which of
-  # those forks the pattern actually matches first can vary by platform/bash build/scheduler load.
+  # process table later) gives the kill an exact target. Measured in the dir #450 audit: this pid
+  # is the backgrounded job's own $! (zero intervening forks). The earlier pkill-by-pattern
+  # approach flaked on macOS CI (dir #409 follow-up); the cause is not established here.
   printf '  *date_col*) echo $$ > %q; echo $PPID > %q; touch %q; exec sleep 30 ;;\n' \
     "$awk_pidfile" "$awk_ppidfile" "$awk_marker"
   printf '  *) exec %q "$@" ;;\n' "$real_awk"
