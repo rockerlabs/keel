@@ -45,6 +45,12 @@ Tie to P3: economy lives *above* the P1 gate — never downgrade below what a co
 pay for headroom a task won't use. When unsure whether a task is "hard," name the uncertainty and let the
 user pick the tier.
 
+Phase routing complements difficulty routing: design and spec work at high effort, a well-groomed ticket's
+implementation at low effort (its decisions are already made, so it is execution, not reasoning), and
+independent review back at high effort — decomposition quality is what buys the right to cheap
+implementation passes, and a ticket that still needs reasoning at implementation time is not yet well
+groomed.
+
 ---
 
 ## Interview loops — eliciting a multi-question decision
@@ -56,10 +62,19 @@ step runs one informally).
 - **Fact-vs-decision split first.** Before putting anything to the user, check whether the answer is
   discoverable by reading code, docs, or the environment (`INSTANCE.md` included) — ask only what needs
   the user's own judgment.
-- **Sequential when questions branch, batched when independent.** An earlier answer that changes which
-  later question even applies (the decision-tree case) forces sequential; independent questions cost less
-  round-trip batched — a tool like `AskUserQuestion` supports multi-question batches by design. Don't carry
-  a blanket "one at a time" rule forward — that's a chat-interview convention, not a universal.
+- **Frontier rounds, not a fixed sequence or a fixed batch.** Each round batches exactly the questions for
+  which enough context has accumulated — independent questions go out together, a question whose answer
+  depends on an unanswered one waits — then the decision tree is rebuilt from the answers before the next
+  round is computed. One rule covers both the branching and the independent case. A tool like
+  `AskUserQuestion` supports multi-question batches by design; a blanket "one at a time" rule is a
+  chat-interview convention, not a universal.
+- **Forks text cannot resolve go to a disposable prototype.** A fork about layout or state-machine behavior
+  that prose cannot settle is answered by a throwaway prototype built to answer ONE question — 3–5
+  radically different variants, not one variant in three colors. The prototype is evidence for the
+  decision and is discarded, never shipped.
+- **Close with a shared-understanding gate.** The loop ends with an explicit restatement of the agreed
+  behavior, which the human confirms or reopens. Skim-and-agree on a generated plan is not agreement, so
+  the restatement is what makes the confirmation explicit.
 - **Always attach a recommended answer** to each question, so the user's fastest path is confirming a
   default instead of composing one from scratch.
 - **Doesn't lower CORE's bar for opening a fork.** "Don't ask to confirm a default you'd pick anyway"
@@ -232,6 +247,23 @@ trend.
 grooming wave, a recon dossier), fan it out to stateless subagent workers behind a file contract instead
 of doing it serially in one session — keeping every gate (commits, PRs, merges, backlog/memory writes)
 inside your own session regardless. Full pattern → `docs/delegation.md`.
+
+---
+
+## Decomposition — sizing and slicing tickets
+
+The Loop model's L4 runs one ticket per session, so the ticket is the unit that must fit. Apply these at
+grooming time, before a ticket is handed to a session.
+
+- **Size by context budget.** Every ticket must fit one fresh-context session *including* its tests, its
+  review, and its report. Ask "will this ticket fit one context?" when grooming; a ticket that does not is
+  split, not run long.
+- **Name tickets by the behavior they add, never by layer.** "Reject expired tokens at the login endpoint"
+  is a verifiable vertical slice; "DB schema" or "the API" is a layer that verifies nothing alone. Name
+  blocking dependencies explicitly, so each slice can land in order.
+- **When the design exceeds one session, ticket the design questions.** Each design question gets its own
+  interview session (see Interview loops), and they converge into one spec with an explicit
+  out-of-scope section, each exclusion carrying its reason.
 
 ---
 
