@@ -389,10 +389,14 @@ s11_585="$(section_body '## 11. The cross-vendor leg — four harness lessons, a
 for needle in \
   'prepend an invariant crib sheet to every diff-only bundle' \
   'at most **1 KB**' \
-  'the doc comments of every symbol the diff calls but does not define' \
+  'the doc comment of each symbol the diff calls but does not define' \
   'leave out a symbol with no doc comment rather than inventing one' \
-  "Count the sheet against class 3's 10 KB bundle bound" \
-  'Record the leg'"'"'s false-positive rate per run'
+  "The sheet counts against class 3's 10 KB bound when the bundle goes to the non-reasoning chat model" \
+  'Invariants this diff relies on' \
+  'A sentinel with no stated meaning is left out' \
+  'drop the rest whole; never cut a comment mid-sentence' \
+  'record it as failed, not as' \
+  "in the run record's vendor-leg line"
 do
   check_contains "section 11 crib-sheet sub-rule: $needle (dir #585)" "$s11_585" "$needle"
 done
