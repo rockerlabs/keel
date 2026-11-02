@@ -1,0 +1,1 @@
+- `docs/delta-audit.md` §5 gains a pair rule for post-fix re-checks (dir #604): a post-fix pair is one informed leg plus one leg blind to the verdict and the fix's rationale, and the verifier reads the blind leg's `NOT checked` list as leads. Prose only; no behaviour change.
