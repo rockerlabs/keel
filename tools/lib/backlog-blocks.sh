@@ -191,6 +191,18 @@ bb_own_ticket_num() {
   printf '%s' "$num"
 }
 
+# bb_last_release_tag <heading_block> <vocab_ere>
+#   dir #593: the "last `→` token naming a release or the pool" extraction (BACKLOG.md's G3 rule) was
+#   carried as its own grep|tail|sed pipeline by tools/self/backlog-census.sh and tools/self/pool-report.sh,
+#   each with its own vocabulary. <vocab_ere> is the vocabulary alone, without a trailing `\b` (e.g.
+#   `pool|[0-9]+\.[0-9]+\.[0-9]+`) — the same shape bb_strip_foreign_citations takes, so a caller can pass one
+#   constant to both; this function wraps it as `(vocab)\b` for grep -E. Prints the last arrow's token
+#   without the arrow, or nothing when no arrow qualifies. Always exits 0 (safe under `set -e`).
+bb_last_release_tag() {
+  local block="$1" vocab="$2"
+  grep -oE "→[[:space:]]*(${vocab})\\b" <<< "$block" | tail -1 | sed -E 's/^→[[:space:]]*//' || true
+}
+
 # dir #839: the shapes that mark a heading as FINISHED — an R grade after a dash, a release/pool/lane
 # arrow, or a status glyph. Every current heading line carries one of the three.
 BB_HEADING_TAIL_PATTERN='—[[:space:]]*R[0-9]([^0-9]|$)|→[[:space:]]*(pool|next|on-demand|[0-9]+\.[0-9]+)|✅|❌|⏳'
