@@ -906,9 +906,13 @@ _isg_is_machine_dir() {
 # printing "false" for a bare repository, which this gate used to let through to a hook install no commit
 # there would ever run. The assignment is `|| `-guarded, so the caller's `set -e` cannot abort it silently.
 _isg_require_work_tree() {
-  local out
+  local out diag
   out="$(git -C "$1" rev-parse --is-inside-work-tree 2>/dev/null)" || out=""
-  [ "$out" = true ] || { echo "not a git repo: $1" >&2; exit 2; }
+  [ "$out" = true ] && return 0
+  # git's own "dubious ownership" diagnostic goes through verbatim, as in the lib (a different failure).
+  diag="$(git -C "$1" rev-parse --is-inside-work-tree 2>&1 || true)"
+  case "$diag" in *"dubious ownership"*) echo "$diag" >&2 ;; *) echo "not a git repo: $1" >&2 ;; esac
+  exit 2
 }
 _isg_where_repo() {
   local repo="$1" own eff

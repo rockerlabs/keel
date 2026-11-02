@@ -86,9 +86,11 @@ check_contains "tools/install-secret-guard.sh unsets the seven vars inline (not 
 # install-secret-guard.sh drifting away from it but NOT keel_repo_arg_guard's own body changing — a
 # one-directional pin); this way EITHER file changing without the other breaks this check, not just
 # one direction of the drift.
-lib_check_line="$(grep -F 'rev-parse --is-inside-work-tree' "$lib")"
-lib_check_line="${lib_check_line#"${lib_check_line%%[! ]*}"}"
-check_contains "tools/install-secret-guard.sh's validity check matches keel_repo_arg_guard's, verbatim" \
+# dir #591: the check moved into tools/lib/require-git-repo.sh (keel_repo_arg_guard delegates to it), so the
+# fragment is read from there. Non-vacuity is asserted: an empty fragment would make check_contains pass on anything.
+lib_check_line="$(grep -oF 'rev-parse --is-inside-work-tree 2>/dev/null)"' "$REPO_ROOT/tools/lib/require-git-repo.sh" | head -1)"
+check_ne "the lib's git-invocation fragment was actually extracted (not vacuous)" "" "$lib_check_line"
+check_contains "tools/install-secret-guard.sh's validity check matches the shared lib's git invocation, verbatim" \
   "$isg_src" "$lib_check_line"
 
 summary

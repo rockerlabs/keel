@@ -74,5 +74,9 @@ unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PA
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/require-git-repo.sh"
 keel_repo_arg_guard() {
   local repo="$1"
+  # A missing, unreadable or 0-byte require-git-repo.sh is sourced silently (see the header): refuse with a
+  # labelled exit 2 here rather than let the caller see "command not found" (127) with or without set -e.
+  type keel_require_git_work_tree >/dev/null 2>&1 \
+    || { echo "repo-arg-guard.sh: tools/lib/require-git-repo.sh is missing or empty — this checkout is incomplete; re-clone or re-download Keel" >&2; exit 2; }
   keel_require_git_work_tree "$repo" "" "not a git repo: $repo"
 }

@@ -99,6 +99,15 @@ check_eq "install-secret-guard <bare> (install mode): unchanged wording" "not a 
 check_nodir "install-secret-guard <bare>: nothing written into the bare repo's hooks dir" "$bare/hooks/pre-commit.d"
 check_nofile "install-secret-guard <bare>: no pre-commit hook installed" "$bare/hooks/pre-commit"
 
+# the standalone inline gate carries the same dubious-ownership pass-through as the lib
+run env PATH="$stub:$PATH" bash "$REPO_ROOT/tools/install-secret-guard.sh" --where "$wt"
+check_status "install-secret-guard (dubious ownership): exits 2" 2 "$STATUS"
+check_contains "install-secret-guard (dubious ownership): git's diagnostic passes through" "$OUT" "dubious ownership"
+# keel_repo_arg_guard without its lib: a labelled exit 2, not "command not found"
+run bash -c 'set -euo pipefail; . "$1"; unset -f keel_require_git_work_tree; keel_repo_arg_guard "$2"' _ "$REPO_ROOT/tools/lib/repo-arg-guard.sh" "$wt"
+check_status "keel_repo_arg_guard with its lib function missing: exit 2" 2 "$STATUS"
+check_contains "keel_repo_arg_guard with its lib function missing: labelled" "$OUT" "require-git-repo.sh is missing"
+
 run bash "$REPO_ROOT/tools/install-read-trace.sh" "$bare"
 check_status "install-read-trace <bare> exits 2" 2 "$STATUS"
 check_contains "install-read-trace <bare>: names it" "$OUT" "not a git repo: $bare"
