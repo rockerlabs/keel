@@ -590,4 +590,17 @@ pin "dir #533: R9 makes the verifier check one command per perimeter criterion" 
   'command-and-output pair per perimeter criterion, and a criterion with none is an open finding, not a pass.' \
   "expected the verifier clause (one command-and-output pair per perimeter criterion)"
 
+pin "dir #537: R9 requires a closure record to quote the finding's own definition" "$doc" \
+  'A closure record that closes an audit finding quotes the finding'"'"'s own definition (dir #537).' \
+  "expected the R9 paragraph on closure records that narrow the finding they close"
+pin "dir #537: R9 has the manager diff the quoted definition against the record at approval" "$doc" \
+  'the manager diffs those two texts at approval' \
+  "expected the approval clause (diff the quoted definition against the cross-run record)"
+pin "dir #537: R9 treats a part dropped from the closure as still open" "$doc" \
+  'a named part the closure drops is an open part of the finding, not a narrower closure' \
+  "expected the narrowing clause (a dropped part stays open)"
+pin "dir #537: R8 points the closure-marker write at the R9 rule" "$doc" \
+  'before writing a closure marker for an audit finding, apply R9'"'"'s definition-quote rule (dir #537)' \
+  "expected R8 to point the closing write at the R9 rule"
+
 summary
