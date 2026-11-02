@@ -583,4 +583,11 @@ pin "M7a says a --agent manager cannot merge and points at R14 (dir #862)" "$cmd
 pin "dir #807: R9 routes the audit's closing records through the manager" "$doc" 'closing records route through the manager (dir #807).**' "expected the R9 paragraph on the audit's closing records"
 pin "dir #807: M8 has the manager write the audit's records" "$cmd" 'you write them under R8 before the GO is recorded (R9, dir #807).' "expected M8 to carry the manager-writes sentence"
 
+pin "dir #533: R9 requires state-reading command output in a perimeter closure record" "$doc" \
+  'A closure record proves runtime state with a state-reading command'"'"'s output, never a chat answer (dir #533).' \
+  "expected the R9 paragraph on closure-record evidence"
+pin "dir #533: R9 makes the verifier check one command per perimeter criterion" "$doc" \
+  'command-and-output pair per perimeter criterion, and a criterion with none is an open finding, not a pass.' \
+  "expected the verifier clause (one command-and-output pair per perimeter criterion)"
+
 summary
