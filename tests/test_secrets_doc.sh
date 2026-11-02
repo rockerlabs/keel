@@ -13,7 +13,7 @@ doc="$REPO_ROOT/docs/secrets-in-the-working-tree.md"
 # fenced_text FILE — only the lines between ``` or ~~~ fences (the fence lines themselves dropped).
 fenced_text() {
   awk '
-    /^ {0,3}(```|~~~)/ { m = ($0 ~ /^ {0,3}```/) ? "`" : "~"
+    /^[ ]?[ ]?[ ]?(```|~~~)/ { m = ($0 ~ /^[ ]?[ ]?[ ]?```/) ? "`" : "~"
                          if (!infence) { infence = 1; fence = m; next }
                          if (m == fence) { infence = 0; next } }
     infence { print }
