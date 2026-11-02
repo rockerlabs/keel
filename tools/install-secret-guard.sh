@@ -592,6 +592,8 @@ _isg_machine_read_files() {
   local probe rc=0
   m_fallback=0
   probe="$(mktemp -d 2>/dev/null)" || probe=""
+  # dir #591: exit status only, on purpose (unlike _isg_require_work_tree): this asks "does git find ANY enclosing
+  # repository around the scratch dir, a bare one included?" and any answer but "none" must take the fallback.
   if [ -n "$probe" ] && ! git -C "$probe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     _isg_cfg_read "$probe"
     [ "${1:-}" != walk ] || _isg_conditional_reads "$probe"
@@ -897,9 +899,20 @@ _isg_is_machine_dir() {
   case "$d" in /*) _isg_same_dir "$1" "$d" ;; *) return 1 ;; esac
 }
 
+# _isg_require_work_tree REPO — exit 2 "not a git repo: REPO" unless REPO is a git WORK TREE. dir #591: an inline
+# copy of tools/lib/require-git-repo.sh's keel_is_git_work_tree / keel_require_git_work_tree (this script ships
+# standalone and sources nothing from tools/lib/ — see the header), and tests/test_require_git_repo_lib.sh pins
+# the two together. It reads git's "true" output, not the exit status alone: `--is-inside-work-tree` exits 0
+# printing "false" for a bare repository, which this gate used to let through to a hook install no commit
+# there would ever run. The assignment is `|| `-guarded, so the caller's `set -e` cannot abort it silently.
+_isg_require_work_tree() {
+  local out
+  out="$(git -C "$1" rev-parse --is-inside-work-tree 2>/dev/null)" || out=""
+  [ "$out" = true ] || { echo "not a git repo: $1" >&2; exit 2; }
+}
 _isg_where_repo() {
   local repo="$1" own eff
-  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  _isg_require_work_tree "$repo"
   # `own` and `effective` are documented as absolute: a relative $repo (doctor's default is ".") would
   # otherwise print "./.git/hooks", which means something else to a consumer standing elsewhere.
   repo="$(cd "$repo" && pwd)" || exit 2
@@ -1189,7 +1202,7 @@ EOF
     # selectors are already unset (top of file) —
     # this validity gate, and every git -C "$repo" call below it, is trustworthy because of that, not
     # because of anything done here.
-    git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+    _isg_require_work_tree "$repo"
     # dir #643: the target comes from the one resolver (_isg_repo_own_dir) that `--where` prints too.
     hooks="$(_isg_repo_own_dir "$repo")" || exit 2
     install_into "$hooks"

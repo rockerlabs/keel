@@ -105,6 +105,8 @@ die_args() { printf 'drydock inventory: %s\n' "$1" >&2; exit 2; }
 refuse()   { printf 'drydock inventory: %s\n' "$1" >&2; exit 3; }
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$script_dir/../lib/require-git-repo.sh"
 baseline_rev="origin/main"
 prev_rev=""
 paths_mode=0
@@ -120,7 +122,7 @@ while [ $# -gt 0 ]; do
 done
 
 # --- the guard ------------------------------------------------------------------------------------
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+keel_is_git_work_tree . \
   || refuse "not a git repository (run this inside the tree you are auditing)"
 # Measure the repo, not the cwd: a run launched from a subdirectory must still see the whole tree.
 repo_root="$(git rev-parse --show-toplevel)"

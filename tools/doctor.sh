@@ -156,6 +156,8 @@ _doctor_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_doctor_dir/lib/gate-paths.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$_doctor_dir/lib/stat-portable.sh"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$_doctor_dir/lib/require-git-repo.sh"
 # tools/lib/agent-floor.sh is NOT sourced here (dir #718 S6-9): only --install's reviewer-agent check reads it,
 # and a corrupt copy used to kill every plain run at load. It is loaded where it is used, behind a syntax check.
 # dir #631: the secrets recipe's absolute path, resolved from THIS checkout (`keel doctor` execs it), so
@@ -1961,10 +1963,10 @@ memory_checks() {
   # Skipped on a non-git project (G-GIT-MISSING already reports that state). ONE finding per file, naming
   # the NEWEST code path it backticks; a note naming no tracked path has no code date and never fires.
   [ "$MEMORY_AGE" = 1 ] || return 0
-  git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  keel_is_git_work_tree "$d" || return 0
   local nd_pair nd src p cdate newest newest_p toks tok code_cache=""
   local git_dates=""
-  if git -C "$mem_real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if keel_is_git_work_tree "$mem_real"; then
     # newest-first log: the first sighting of a name is its last commit; a file with no commit is absent.
     git_dates="$(git -C "$mem_real" -c core.quotepath=off log --format=$'\001%cs' --name-only --relative -- . 2>/dev/null \
       | awk '/^\001/{d=substr($0,2);next} NF&&!seen[$0]++{printf "\n%s\t%s", $0, d}' || true)"
@@ -2017,7 +2019,7 @@ for d in "${DIRS[@]}"; do
 
   if [ ! -d "$d" ]; then gap G-DIR-MISSING "directory not found"; flush_notes ""; continue; fi
 
-  if ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if ! keel_is_git_work_tree "$d"; then
     gap G-GIT-MISSING "not a git repo (git init + a feature-branch flow — see FRAMEWORK.md)"
   fi
 
