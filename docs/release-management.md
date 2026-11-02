@@ -636,12 +636,14 @@ is still composed, and the install is one of the operator touchpoints R7 counts.
 **The release row closes with a deployment field, read from the target, never inferred from the tag (dir #534).** A tag is not a
 deployment. One project's release table stood "shipped" for a release whose deploy was a separate operator step nobody had run;
 the next release's deploy script found the target still on the previous release's SHA four days later, and nothing in this
-checklist had asked. So the row (R7's, in the releases cross-run record) carries one more field, written by the manager at close
-and holding one of three forms. `deployed <sha> <date>`: the SHA is what the target's own head command printed (a
+checklist had asked. So the manager's cells of the run's row (R7's, in the releases cross-run record) include a deployment field,
+holding one of three forms. `deployed <sha> <date> (<head command>)`: the SHA is what the target's own head command printed (a
 `git rev-parse HEAD` on the deploy checkout, the version line a status endpoint reports) in that session, not the tag's SHA
 copied across. `NOT deployed — operator step pending`: the deploy is the operator's and has not been confirmed. `no deploy target`:
-the project has none. A tag or a merged PR is never the evidence for the first form, and a target the session cannot reach is the
-second form, not a guess.
+the project has none. The row is completed before the tag, so a deploy that follows the tag leaves the field in the second form
+at close; the manager rewrites it to the first form only after reading the target again once the operator reports the deploy
+done, and otherwise the next groom's G0 ([`docs/grooming.md`](grooming.md)) re-checks it. A tag or a merged PR is never the
+evidence for the first form, and a target the session cannot reach is the second form, not a guess.
 
 **The release notes are the manager's to write, the operator's to read.** The manager composes the
 notes file itself, from the `CHANGELOG.md` section **at the verified GO SHA** (read via the tagged

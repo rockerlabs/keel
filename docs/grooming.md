@@ -46,12 +46,6 @@ Consume it **by pointing at the tool that produces it**, never by citing its int
 column names, no file path, no output shape — the tool's own doc is where that lives, and it may
 change there without this doc needing an edit.
 
-**Re-check the previous release's deployment before reading its cycle as shipped (dir #534).** The release row's deployment field
-([`docs/release-management.md`](release-management.md) R9) is a claim written at close, and a tag is not a deployment. Read the
-target's head live now (the same command the field names) and compare it with the SHA the row states; a row saying `NOT deployed`,
-or a target head that differs, means the cycle is read as built and tagged but not shipped, and the gap is a G0 output. Where
-the project has no deploy target, the row says so and there is nothing to check.
-
 **Read both signals against what the sensor can actually see, and expect the first cycle to spend
 most of its effort on the instrument rather than on the docs.** Three coverage gaps, all found by one
 groom, all invisible from the output alone: a read trace records read *tool calls*, so any file the
@@ -75,6 +69,8 @@ key against its own top, not the main checkout's). Two of the three gaps stay pe
 future ticket closes: an always-on context file or a slash-command body never produces a Read tool
 call, and neither does a file opened via `cat`/`sed`/`grep` — the disclosure exists to name that limit,
 not to remove it. Read what the tool prints; it is no longer guidance to remember by hand.
+
+**Re-check the previous release's deployed state against the live target before reading its cycle as shipped (dir #534).** Run the head command the row's deployment field names ([`docs/release-management.md`](release-management.md) R9) and compare it with the SHA the row states; a `NOT deployed` row or a differing head means built and tagged, not shipped, and the gap is a G0 output.
 
 **Read a recorded pain by its provenance (G1).** A row whose pain is `accepted-on-proposal` is weaker
 evidence of felt pain than a `stated` one: the pain may recur only because the previous groom or session
