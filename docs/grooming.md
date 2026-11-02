@@ -135,6 +135,15 @@ too (the 0.17.0 groom):** where its run cells are still empty after the close
 ([`docs/release-management.md`](release-management.md) R7 names the case), re-sum the run by branch as R7
 describes, and record the figure as reconstructed by the groom, never as the manager's own.
 
+**Check the previous release's opened row is complete, and in the right row (dir #541).** Find it by its version
+token (G7), not by position, and confirm it carries no `_` placeholder: a row that still carries one was either
+never completed or completed in a neighbour's slot ([`docs/release-management.md`](release-management.md) R7's
+lookup rule). The felt case (hermes 0.5.0): the final numbers sat in the previous release's row while the new
+row kept five `_`, and a single-line record hid both until this check. Where the numbers sit in the wrong row, move
+them and record the move as a G0 output. The same check applies to the previous audit run's harvest: it
+sits under its OWN dated header, found by the run number, not appended to the end of an earlier run's
+block; a harvest without its header is a G0 output (add the header, move the lines), not an acceptable shape.
+
 **Degrade cleanly when the read-trace aggregate does not exist yet**, or on a project that never installed the read trace:
 skip its inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
@@ -517,6 +526,7 @@ input is on the list:
   currently owns; `/triage` is the "periodically" that gets an owner.
 - **(c) Closed audit-run directories.** Confirmed at G0 above, not repeated here as a separate step —
   see G0's own paragraph, which states it in full so a compressed read of this section cannot drop it.
+  That paragraph's header duty applies here too: the run's harvest lands under its own dated header, never appended to an earlier run's block (dir #541).
 - **(d) A spec's own follow-up list** (dir #560, applied 2026-09-20). A design session's spec routinely
   ends with "out of scope / follow-ups to file at close" — a deferred filing that assumes the
   *implementing* session will do bookkeeping at the moment (`/polish` → PR → close) it is least likely

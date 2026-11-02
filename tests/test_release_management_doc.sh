@@ -603,4 +603,10 @@ pin "dir #537: R8 points the closure-marker write at the R9 rule" "$doc" \
   'before writing a closure marker for an audit finding, apply R9'"'"'s definition-quote rule (dir #537)' \
   "expected R8 to point the closing write at the R9 rule"
 
+# dir #541: R7 finds the row it completes by the version token / run number, never by the nearest empty slot.
+pin "dir #541: R7 finds the opened row by its version token or run number" "$doc" \
+  'found by its version token or run number, never by the nearest empty slot' "expected the R7 lookup rule"
+pin "dir #541: R7 records addressed to one cycle land under that cycle's own header" "$doc" \
+  "under that cycle's own header" "expected the R7 own-header rule"
+
 summary

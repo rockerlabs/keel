@@ -501,6 +501,17 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
 
+**Find the row by its version token or run number, never by the nearest empty slot (dir #541).** A record
+addressed to ONE cycle lands in that cycle's own row, and the row is found by its version token or run number:
+the row opened for the release being closed is the one found by its version token or run number, never by the nearest empty slot. On a record kept as one
+long line per genre, "find the slot" degrades into "find the first slot", and the first fact slot
+belongs to the OLDEST open row. The felt case (hermes 0.5.0): the manager wrote the 0.5.0 final numbers into
+the 0.4.1 row's slot while the 0.5.0 row kept five `_` placeholders. The same rule covers every other record
+this role appends: a record addressed to one cycle (an audit run's no-action lines, a harvest) lands
+under that cycle's own header, which the manager writes when it is absent, and is never appended to the end
+of an earlier cycle's block. After writing, re-read the row by the same key and check it carries no `_`
+placeholder; [`docs/grooming.md`](grooming.md) G0 repeats that check one cycle later.
+
 **Beside the figure, record the context budget the run held (dir #860).** The row names the workers' threshold and the
 manager's, each with every value the operator named during the run (read from the shared brief), and how often each
 fired: compaction stops, clears before a next ticket and manager hand-overs, counted from the ledger (where the
