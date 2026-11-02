@@ -1,0 +1,1 @@
+- `tools/self/doctor.sh` and `tools/lib/dir-tickets.sh` strip inline code spans through the shared `blank_inline_code_spans` instead of a private `sed` copy each; behaviour unchanged (dir #590).

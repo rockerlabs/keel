@@ -202,8 +202,7 @@ while IFS=$'\t' read -r start end closed heading_block; do
   # by ANY failing command in it, including a `grep` that legitimately finds nothing — every
   # extraction below either sits in a pipeline ending in a command that always exits 0, or is
   # explicitly guarded with `|| true`, so a non-matching heading can never abort the census.
-  tag="$(grep -oE '→[[:space:]]*(pool\b|next\b|on-demand\b|[0-9]+\.[0-9]+(\.[0-9]+)?\b)' \
-    <<< "$stripped_block" | tail -1 | sed -E 's/^→[[:space:]]*//' || true)"
+  tag="$(bb_last_release_tag "$stripped_block" 'pool|next|on-demand|[0-9]+\.[0-9]+(\.[0-9]+)?')"
   [ -n "$tag" ] || tag="untagged"
 
   if [ -n "$ticket_token" ]; then

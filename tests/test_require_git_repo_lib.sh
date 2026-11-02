@@ -153,7 +153,8 @@ done
 stray=""
 for t in tools/branch-cleanup.sh tools/doctor.sh tools/audit-packet/export.sh tools/delta-audit/derive.sh \
          tools/drydock/inventory.sh tools/self/prose-drift.sh tools/install-read-trace.sh \
-         tools/install-pre-pr-gate.sh tools/lib/repo-arg-guard.sh; do
+         tools/install-pre-pr-gate.sh tools/lib/repo-arg-guard.sh \
+         tools/init-project.sh tools/self/tag-ready.sh tools/self/bypass-scan.sh; do
   # a variable, not a pipe: `grep -q` closing early would SIGPIPE its producer under pipefail (dir #280)
   code="$(grep -v '^[[:space:]]*#' "$REPO_ROOT/$t" || true)"
   if grep -q 'rev-parse --is-inside-work-tree' <<< "$code"; then stray="$stray $t"; fi
@@ -164,5 +165,25 @@ isg="$REPO_ROOT/tools/install-secret-guard.sh"
 check_eq "install-secret-guard: both gates call the inline helper" 2 "$(grep -c '^ *_isg_require_work_tree "' "$isg")"
 check_eq "install-secret-guard: the helper reads git's output, not just the exit status" 1 \
   "$(grep -c 'out="\$(git -C "\$1" rev-parse --is-inside-work-tree 2>/dev/null)" || out=""' "$isg")"
+
+# --- dir #930: the three sites that kept the exit-status-only shape now go through the lib ---------------
+# init-project: a bare repo is refused (exit 2), never scaffolded into or `git init`ed over.
+run bash "$REPO_ROOT/tools/init-project.sh" --no-register --no-impact "$bare"
+check_status "dir #930: init-project on a bare repo -> exit 2" 2 "$STATUS"
+check_contains "dir #930: ...naming the bare repository" "$OUT" "bare git repository"
+check_nofile "dir #930: ...and scaffolding nothing into it" "$bare/CLAUDE.md"
+# tag-ready: a bare repo is "not a git work tree" with the script's own message and exit code.
+run_in "$bare" bash "$REPO_ROOT/tools/self/tag-ready.sh"
+check_status "dir #930: tag-ready in a bare repo -> exit 2" 2 "$STATUS"
+check_contains "dir #930: ...with its own message" "$OUT" "tag-ready: not inside a git work tree"
+# bypass-scan: --out inside a bare repo is refused like one inside a work tree.
+run bash "$REPO_ROOT/tools/self/bypass-scan.sh" scan --transcripts "$SANDBOX/no-transcripts" --out "$bare/c.tsv"
+check_status "dir #930: bypass-scan --out inside a bare repo -> exit 2" 2 "$STATUS"
+check_nofile "dir #930: ...and nothing was created there" "$bare/c.tsv"
+# install-secret-guard --where: the dir #591 refusal of a bare repo is kept, documented in the usage text.
+run bash "$REPO_ROOT/tools/install-secret-guard.sh" --where "$bare"
+check_status "dir #930: --where on a bare repo -> exit 2 (kept)" 2 "$STATUS"
+run bash "$REPO_ROOT/tools/install-secret-guard.sh" --help
+check_contains "dir #930: --help says --where refuses a bare repo" "$OUT" "bare repo is refused"
 
 summary

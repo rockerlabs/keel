@@ -49,6 +49,8 @@ self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$self_dir/../lib/transcript-usage.sh"   # tu_projects_root: the one resolver of the harness's transcripts dir
 # shellcheck source=tools/lib/state-root.sh
 . "$self_dir/../lib/state-root.sh"          # keel_store_root: the one resolver of keel's durable stores
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$self_dir/../lib/require-git-repo.sh"
 repo_root="$(cd "$self_dir/../.." && pwd -P)"
 DEFAULT_SHAPES="$self_dir/known-bypass-shapes.tsv"
 WINDOW_DAYS=90          # B11: the guards' window; the scan's default look-back
@@ -155,7 +157,8 @@ in_git_tree() {
   while [ ! -d "$d" ] && [ "$d" != / ] && [ "$d" != . ]; do d="$(dirname "$d")"; done
   d="$(cd "$d" 2>/dev/null && pwd -P)" || return 0
   case "$d/" in "$repo_root"/*) return 0 ;; esac
-  git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1
+  # dir #930: ANY repo counts, a bare one included — the 0600 candidate file must not land in a git directory either.
+  keel_is_git_repo "$d"
 }
 
 cmd_scan() {

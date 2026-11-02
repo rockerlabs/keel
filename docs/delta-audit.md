@@ -885,6 +885,38 @@ real runs, stated as classes rather than tied to any one vendor's harness:
 A delta bundle being a **diff**, not the whole file, is what makes this leg affordable to run at all
 against a payload-limited or per-token-billed vendor.
 
+**Sub-rule — prepend an invariant crib sheet to every diff-only bundle.** This applies to every bundle of
+classes 1–4 alike, scriptable or packet, and no tool does it for you yet: it is applied by hand. A bundle
+that carries only the diff hands the reader no context outside it, so a safeguard reads as a bug, a
+purpose-built helper as an omission, and a premise the code never had as a finding. On one codebase's
+detection-adjacent code (code that decides whether something is flagged, matched or detected; the audits
+were that project's two most recent releases) the vendor leg returned 3 of 3 such false positives in one
+release and 2 of 2 in the one before — every one "pre-existing context outside the diff", each overturned
+only by spending orchestrator and verifier tokens, with zero accepted findings from the leg across both.
+Five samples on one codebase: a reason to try the sheet, not proof it works. So for each bundle, prepend
+at most **1 KB** headed `Invariants this diff relies on`:
+
+- the doc comment of each symbol the diff calls but does not define, limited to symbols the project itself
+  defines (not the shell's or the standard library's); find each with a grep for its definition and take
+  the comment block directly above it, verbatim;
+- any sentinel convention the diff's values follow (what `0`, `-1`, `null` or an empty string means there),
+  only where a doc comment or a named constant states it. A sentinel with no stated meaning is left out,
+  never inferred.
+
+State each as the code states it; never paraphrase, and leave out a symbol with no doc comment rather than
+inventing one. If the sheet would pass 1 KB, keep the symbols the diff's changed lines call most directly
+and drop the rest whole; never cut a comment mid-sentence. A comment can be stale, so the sheet is
+context for the reader, not ground truth: a finding that contradicts it is still checked against the code.
+The sheet counts against class 3's 10 KB bound when the bundle goes to the non-reasoning chat model, and
+follows that class's `CHUNK-MANIFEST` line when there is one; elsewhere the vendor's own input cap is the
+bound.
+
+Measure it: record the leg's false-positive rate for the run (overturned findings over findings returned)
+in the run record's vendor-leg line, beside the leg's token spend (section 5). A failed round (class 2's
+empty reply, class 3's truncated one) returns no findings and has no rate: record it as failed, not as
+0 false positives. The sheet is judged on the next audit of detection-adjacent code, where the vendor
+leg should produce at least one accepted finding, or return findings with none overturned.
+
 ## 12. Self-revision clause
 
 This document is subject to its own phase-0 discipline: not a fixed verdict, a checklist to
