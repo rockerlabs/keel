@@ -63,6 +63,12 @@ pin "G1 candidate's first ticket is a live verification with a number per sympto
 pin "G1 a pick does not satisfy an 'operator has seen X' unpark condition" \
   "$doc" 'is **not** satisfied by a' \
   "expected G1 to keep a selection from offered labels from satisfying an observation-shaped unpark condition (dir #542)"
+pin "G1 labels the candidate row and quotes the disclaimer" \
+  "$doc" 'The row is labelled `candidate`' \
+  "expected G1 to require the candidate label on the row (dir #542)"
+pin "G1 re-cuts the candidate slate from the numbers" \
+  "$doc" 'The next groom re-cuts it from those numbers' \
+  "expected G1 to have the next groom re-cut the slate from the verification numbers (dir #542)"
 pin "G3 anchor: derive, don't assert" \
   "$doc" "## G3 — derive, don't assert" \
   "expected a named G3 section"

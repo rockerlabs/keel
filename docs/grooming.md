@@ -300,9 +300,11 @@ agent keeps proposing it looks felt; refusing it discards a genuine decision. On
   the proposal's argument, so a reader can tell whose reasoning the row carries.
 - `carried`: no pain behind the row; the "carried-over theme, not a sprint" wording above.
 
-G0 of the next groom reads `accepted-on-proposal` rows as weaker evidence of felt pain. A pain picked from
+G0 of the next groom reads `candidate` rows as no evidence of felt pain until their verification number
+exists, and `accepted-on-proposal` rows as weaker evidence of felt pain. A pain picked from
 offered labels is `accepted-on-proposal` too, with the label as the proposal: record it as a picked label
-(below) and give it that provenance. The field applies to every row, including a plan whose only pain is
+(below) and give it that provenance, except a pick the operator disclaims as unobserved, which is a
+`candidate` (below), a fourth state outside the three values. The field applies to every row, including a plan whose only pain is
 the META-pain. A rule of the procedure, not a compensation.
 
 **A pain picked from labels the groom offered is recorded as a picked label (the 0.14.0 and 0.15.0
@@ -325,7 +327,8 @@ agreement, and a pick the chooser disclaims as unobserved is not evidence of a f
 - Its first ticket is a live verification on production data, producing **a number per symptom**: how
   often it occurs, over what sample. A symptom with no number is not confirmed.
 - The slate behind the row is provisional. The next groom re-cuts it from those numbers: a confirmed
-  symptom becomes a `stated` pain, a refuted one leaves the slate, and a symptom still unmeasured stays a
+  symptom is recorded as `accepted-on-proposal` with the measured number as its evidence (or `stated` once
+  the operator says it in their own words), a refuted one leaves the slate, and a symptom still unmeasured stays a
   candidate. Tickets past the verification are not planned against the candidate until then.
 - A ticket's own unpark condition of the shape "the operator has actually seen X" is **not** satisfied by a
   selection from a list the groom offered, however the selection is worded. It is satisfied by the
@@ -334,8 +337,7 @@ agreement, and a pick the chooser disclaims as unobserved is not evidence of a f
   "unpark when the operator really sees duplicates in the output" would have been unparked by the pick
   alone).
 
-A rule of the procedure, not a compensation. Related: a pain comes from the operator, and a value claim
-is bound to the slate it is stated for.
+A rule of the procedure, not a compensation.
 
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
