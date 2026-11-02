@@ -120,16 +120,17 @@ _tr_build_report() {
 
   # dir #422: the jq call below used to do `out="$(jq ...)"; status=$?; rm -f <4 files>; [ "$status"
   # -eq 0 ] || return "$status"` — a bare assignment failing under `set -e` aborts the function via
-  # errexit before `status=$?` is ever reached. (In THIS script the failure was, in fact, caught
-  # today regardless: this function's only call site wraps it as `report="$(_tr_build_report
-  # ...)" || exit 1`, and testing a command via `&&`/`||` suspends errexit for the WHOLE function's
-  # execution — verified live, contra how this ticket was filed — but that made the old code correct
-  # only by an accident of how its one caller happens to invoke it, the same accident this file's
-  # sibling tools/lib/transcript-usage.sh's tu_session_totals() still relies on today for the
-  # identical bare-assignment shape — not yet ported to this fix, out of scope for dir #422, worth
-  # its own follow-up.) Fixed below by testing the assignment via `||` instead: the left/only operand
-  # of `||` is the other context `set -e` exempts on its own terms, so this function's own
-  # correctness no longer depends on how any caller happens to invoke it. A `trap ... RETURN` was
+  # errexit before `status=$?` is ever reached. In THIS script the failure was caught regardless,
+  # and the reason is the call site's command substitution, not the caller's `||`: bash disables
+  # errexit throughout any command substitution (it is not inherited without `inherit_errexit`).
+  # This function's only call site runs it as `report="$(_tr_build_report ...)" || exit 1`, so the
+  # whole function body runs with errexit off. The `||` on that outer assignment only handles the
+  # failure status; it does not suspend errexit inside the function. The old code was therefore
+  # correct because of how its one caller invokes it, which is an incidental shape, not a guarantee.
+  # The sibling tools/lib/transcript-usage.sh's tu_session_totals() has the same bare-assignment
+  # shape and is also called inside a command substitution; it is not changed here (out of scope).
+  # Fixed below by testing the assignment via `||` instead, so this function's own correctness no
+  # longer depends on how any caller invokes it. A `trap ... RETURN` was
   # tried here first and reverted: a RETURN trap set inside a function is not scoped to it — it is a
   # single global handler that also fires on the NEXT function return up the call chain once the
   # setting function's own locals are out of scope, the same hazard tu_session_totals's own comment

@@ -3896,12 +3896,13 @@ v0.9.1 entry.
   here used a `trap ... RETURN` instead and was reverted mid-review — that pattern was already tried
   and reverted in that sibling file too, since a RETURN trap set inside a function is not scoped to
   it and can fire again on a later function's return once the setting function's own locals are out
-  of scope, reproduced live here as well). The dependency the fix removes was real either way:
-  `_tr_build_report`'s one call site wraps it as `report="$(_tr_build_report ...)" || exit 1`, and
-  testing a command as part of an `&&`/`||` list suspends `set -e` for its entire execution — so
-  contrary to how this ticket was filed, `status=$?` was reachable in the live script all along
-  (verified with minimal harnesses, including one reproducing the exact call shape); the fix removes
-  the dependency on that incidental caller behavior rather than closing an active leak.
+  of scope, reproduced live here as well). `status=$?` was reachable in the live script all along,
+  and the fix does not close an active leak: `_tr_build_report`'s one call site runs it inside a
+  command substitution, `report="$(_tr_build_report ...)" || exit 1`, and bash disables `set -e`
+  throughout any command substitution (not inherited without `inherit_errexit`). The `||` on that
+  outer assignment handles only the failure status and does not suspend errexit inside the function
+  (verified with minimal harnesses, including one reproducing the exact call shape). The fix removes
+  the function's dependency on that incidental call-site shape.
 
 ## [0.9.0] — 2026-09-07
 
