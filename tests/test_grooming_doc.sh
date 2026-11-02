@@ -306,6 +306,6 @@ pin "dir #541: G0 checks the previous release's opened row carries no placeholde
 pin "dir #541: G0 checks the previous audit run's harvest sits under its own dated header" "$doc" \
   "sits under its OWN dated header" "expected the G0 harvest-header check"
 pin "dir #541: G4(c) restates the own-header check" "$doc" \
-  'under its own dated header, never appended to an earlier run' "expected G4(c) to carry the header duty"
+  'header, never appended to an earlier run'"'"'s block (dir #541)' "expected G4(c) to carry the header duty"
 
 summary

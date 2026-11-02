@@ -502,8 +502,8 @@ sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as
 so the next groom can re-sum it.
 
 **Find the row by its version token or run number, never by the nearest empty slot (dir #541).** A record
-addressed to ONE cycle lands in that cycle's own row, and the row is found by its version token or run number:
-the row opened for the release being closed is the one found by its version token or run number, never by the nearest empty slot. On a record kept as one
+addressed to ONE cycle lands in that cycle's own row: the row opened for the release being closed is the one
+found by its version token or run number, never by the nearest empty slot. On a record kept as one
 long line per genre, "find the slot" degrades into "find the first slot", and the first fact slot
 belongs to the OLDEST open row. The felt case (hermes 0.5.0): the manager wrote the 0.5.0 final numbers into
 the 0.4.1 row's slot while the 0.5.0 row kept five `_` placeholders. The same rule covers every other record
