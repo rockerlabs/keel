@@ -67,6 +67,13 @@
 # `<chunk-id>` literally, those three tokens are substituted too, matching auditor.md's own convention
 # — harmless no-ops otherwise.
 #
+# Process cost (dir #502): this tool used to fork `git cat-file` three times per listed file (-e, -s, -p).
+# It now forks it 1 + <chunks> times in total: one `--batch-check` pass over the whole list (existence,
+# type, size) and one `--batch` pass per chunk (the format line is the per-file header). Measured on the
+# 448-file keel tree at 8dc1cd8: 1344 forks before (3 x 448), 30 after (1 + 29 chunks at the default
+# --chunk-bytes). Output is byte-identical to the old per-file form (diff-tested, MANIFEST's
+# `generated:` stamp aside). A listed path that is not a blob at the baseline is refused, as before.
+#
 # Chunking: markdown files (scope A, minus --historical) first, whole-files-first-fit up to
 # --chunk-bytes; then the remaining (non-md) files the same way; then each --historical file gets its
 # OWN trailing chunk, never packed with anything else, regardless of size (dir #744: the `changelog.d/*.md`
@@ -247,6 +254,8 @@ while IFS= read -r line || [ -n "$line" ]; do
   line="${line%$'\r'}"
   [ -n "$line" ] || continue
   case "$line" in
+    [[:space:]]*) die_args "path '$line' starts with whitespace — git cat-file --batch would drop it
+  from the chunk header (dir #502)" ;;
     *"$TAB"*) die_args "path '$line' contains a tab — cannot be represented in the chunk header or
   MANIFEST.txt" ;;
   esac
@@ -258,12 +267,26 @@ done < "$filelist_raw"
 
 # Every listed path must be a real blob at the baseline — a bad caller-supplied list is a refusal,
 # never a silent omission (the same discipline tools/drydock/inventory.sh's readability check uses).
-for f in "${files[@]}"; do
-  git cat-file -e "$baseline:$f" 2>/dev/null \
+# ONE `git cat-file --batch-check` pass answers existence, type and size for the whole list (dir #502:
+# it was three forks per file — -e, -s, -p). Output is one line per input line, in order:
+# `<sha> <type> <size>`, or `<input> missing`. BLOB_SHAS / BLOB_SIZES are index-parallel to files[].
+BLOB_SHAS=()
+BLOB_SIZES=()
+bc_i=0
+while read -r bc_sha bc_type bc_size; do
+  f="${files[bc_i]}"
+  case "$bc_sha" in ''|*[!0-9a-f]*) bc_type=missing ;; esac   # a "<name> missing" line split on a path's own spaces
+  case "$bc_size" in ''|*[!0-9]*) bc_type=missing ;; esac
+  [ "$bc_type" = "blob" ] \
     || die_args "'$f' is not a tracked file at $baseline7 — the caller's file list disagrees with
   the tree. Re-derive it (inventory.sh --paths / delta-audit's delta-files.txt) against this exact
   baseline."
-done
+  BLOB_SHAS+=("$bc_sha")
+  BLOB_SIZES+=("$bc_size")
+  bc_i=$((bc_i + 1))
+done < <(for f in "${files[@]}"; do printf '%s:%s\n' "$baseline" "$f"; done | git cat-file --batch-check)
+[ "$bc_i" = "${#files[@]}" ] || die_args "cannot read the tracked sizes of the listed files at $baseline7 —
+  re-derive the list and re-export."
 
 # _relabel_leak_gate_path PATH — run_leak_gate's own RELABEL_FN hook (tools/lib/leak-gate.sh), one
 # function for both passes: PASS 1's ack_file/vendor_file are scratch files a reader can't otherwise
@@ -379,19 +402,20 @@ is_fragment() {
   esac
 }
 
-md_files=()
+md_files=()     # these four hold indexes into files[] / BLOB_SHAS[] / BLOB_SIZES[]
 code_files=()
 hist_files=()
 frag_files=()
-for f in "${files[@]}"; do
+for i in "${!files[@]}"; do
+  f="${files[i]}"
   if is_historical "$f"; then
-    hist_files+=("$f")
+    hist_files+=("$i")
   elif is_fragment "$f"; then
-    frag_files+=("$f")
+    frag_files+=("$i")
   elif case "$f" in *.md) true ;; *) false ;; esac; then
-    md_files+=("$f")
+    md_files+=("$i")
   else
-    code_files+=("$f")
+    code_files+=("$i")
   fi
 done
 
@@ -401,23 +425,25 @@ CHUNK_PATHS=()   # index i -> NL-joined repo-relative paths in chunk i+1
 CHUNK_BYTES=()   # index i -> sum of tracked blob sizes in that chunk
 CHUNK_OVERSIZE=()
 
-pack_ordered() {  # $1 = cap, $@ = paths, in the order to pack them; each call starts a fresh chunk
+CHUNK_BLOBS=()   # index i -> NL-joined `<blob sha> <path>` lines in chunk i+1: the --batch input
+
+pack_ordered() {  # $1 = cap, $@ = file indexes, in the order to pack them; each call starts a fresh chunk
   local cap="$1"; shift
-  local path size idx cur_open=0
-  for path in "$@"; do
-    size="$(git cat-file -s "$baseline:$path" 2>/dev/null)" \
-      || refuse "cannot read the tracked size of '$path' at $baseline7 — was it removed between the
-  file-list read and this scan? Re-derive the list and re-export."
+  local ix path size sha idx cur_open=0
+  for ix in "$@"; do
+    path="${files[ix]}"; size="${BLOB_SIZES[ix]}"; sha="${BLOB_SHAS[ix]}"
     if [ "$cur_open" = 1 ]; then
       idx=$(( ${#CHUNK_PATHS[@]} - 1 ))
       if [ $(( CHUNK_BYTES[idx] + size )) -le "$cap" ]; then
         CHUNK_PATHS[idx]="${CHUNK_PATHS[idx]}${path}${NL}"
+        CHUNK_BLOBS[idx]="${CHUNK_BLOBS[idx]}${sha} ${path}${NL}"
         CHUNK_BYTES[idx]=$(( CHUNK_BYTES[idx] + size ))
         continue
       fi
       cur_open=0
     fi
     CHUNK_PATHS+=("${path}${NL}")
+    CHUNK_BLOBS+=("${sha} ${path}${NL}")
     CHUNK_BYTES+=("$size")
     CHUNK_OVERSIZE+=(0)
     idx=$(( ${#CHUNK_PATHS[@]} - 1 ))
@@ -501,14 +527,12 @@ for i in $(seq 0 $((total_chunks - 1))); do
     printf 'chunk %02d: %s\n' "$((j + 1))" "$sib_list" >> "$chunk_file"
   done
   printf '\n' >> "$chunk_file"
-  n_files=0
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    printf '===== FILE: %s @ %s =====\n' "$path" "$baseline7" >> "$chunk_file"
-    git cat-file -p "$baseline:$path" >> "$chunk_file"
-    printf '\n' >> "$chunk_file"
-    n_files=$((n_files + 1))
-  done <<< "${CHUNK_PATHS[i]}"
+  # ONE `git cat-file --batch` per chunk (dir #502): the format line IS the per-file header, and --batch
+  # appends the content and a newline after it — byte-for-byte the old header + `cat-file -p` + '\n'.
+  # %(rest) is the path (everything after the blob sha, inner/trailing spaces kept; leading whitespace is refused at list-read).
+  printf '%s' "${CHUNK_BLOBS[i]}" \
+    | git cat-file --batch="===== FILE: %(rest) @ $baseline7 =====" >> "$chunk_file"
+  n_files=$(printf '%s' "${CHUNK_PATHS[i]}" | grep -c '')
   printf 'CHUNK-END %02d files=%d bytes=%d\n' "$chunk_num" "$n_files" "${CHUNK_BYTES[i]}" >> "$chunk_file"
   sum="$(sha256_of "$chunk_file")"
   oversize_flag=""; [ "${CHUNK_OVERSIZE[i]}" = 1 ] && oversize_flag=" OVERSIZE"
