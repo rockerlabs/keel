@@ -2487,7 +2487,7 @@ check_status "A48: a git that cannot resolve HEAD at all -> exit 1" 1 "$STATUS"
 check_contains "A48: it is a GAP naming HEAD" "$OUT" "could not read HEAD (git exit 128)"
 check_absent "A48: no OK line over a history it could not read" "$OUT" "OK   CHANGELOG.md is at least as recent"
 
-# A49 — _blob_text's failure paths: an untagged newest CHANGELOG section sends check 6 into the pickaxe walk, and a git
+# A49 — git_blob_text's (tools/lib/heading-intro.sh) failure paths: an untagged newest CHANGELOG section sends check 6 into the pickaxe walk, and a git
 # that fails only 'ls-tree' (or 'show') must be a GAP naming the walk, not "blob absent".
 fixture_untagged_section() {
   printf '# Changelog\n\n## [Unreleased]\n- init\n\n## [9.9.9] — 2026-01-01\n- pending\n' > "$1/CHANGELOG.md"
