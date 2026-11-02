@@ -123,8 +123,12 @@
 . "$(dirname "${BASH_SOURCE[0]}")/fence-blank.sh"
 
 # The backtick span is DELETED (the shared blank_inline_code_spans, dir #590), then bold markers are stripped bare.
+# This file therefore depends on tools/lib/fence-blank.sh (sourced above, so it must sit beside this file). stdin is
+# raw text (a git log, a changelog fragment), not blank_fenced_blocks() output, so NULs are dropped first:
+# fence-blank.sh's NUL CONTRACT says blank_inline_code_spans() gets NUL-free input only.
 extract_dir_tickets() {
-  blank_inline_code_spans \
+  tr -d '\000' \
+    | blank_inline_code_spans \
     | sed -E 's/(\*\*|__)//g' \
     | awk '
     { line = $0

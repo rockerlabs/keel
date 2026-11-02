@@ -36,7 +36,7 @@ grep exits 1 on no match, which is valid here (an empty result is a real answer)
 outside a git repo (or a sandbox dir the tests point at) the porcelain list exits non-zero; the check falls back to repo_root and then to its documented no-BACKLOG skip ## | awk 'NR==1{sub(/^worktree /,""); path=$0} /^bare$/{bare=1} END{if (!bare) print path}' || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/sed over the fence-blanked BACKLOG text) ## < <(grep -nE '^### dir #[0-9]+ ' <<< "$fence_blanked" | cut -d: -f1)
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/sed over the fence-blanked BACKLOG text) ## < <(grep -nE '^### dir #[0-9]+ |^## ' <<< "$fence_blanked" | cut -d: -f1)
-a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/sed over the fence-blanked BACKLOG text) ## < <(blank_inline_code_spans <<< "$fence_blanked")
+a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result (grep/awk over the fence-blanked BACKLOG text) ## < <(blank_inline_code_spans <<< "$fence_blanked")
 best-effort by design: no gh, offline or unauthenticated is the documented degrade, and that check's OK line says so (needs gh) ## pr_state="$(cd "$repo_root" && gh pr view "$pr_num" --json state -q .state 2>/dev/null)" || continue
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
 a pure filter over in-memory text: no producer to fail, and no-match is a valid empty result ## unreleased_count="$(grep -cE '^## \[Unreleased\]' <<< "$changelog_blanked" || true)"

@@ -147,4 +147,11 @@ check_absent "a ticket quoted inside a backtick span is not extracted" "$out" "d
 check_contains "a ticket outside a span is extracted" "$out" "dir #2"
 check_contains "a bare continuation across a deleted span still joins" "$out" "dir #3"
 
+# Edge inputs the sed->awk switch could change: no trailing newline, and a stray NUL (dropped, never a line break).
+out="$(printf 'dir #5, #6' | extract_dir_tickets)"
+check_contains "input without a trailing newline still extracts the anchor" "$out" "dir #5"
+check_contains "input without a trailing newline still joins a bare continuation" "$out" "dir #6"
+out="$(printf 'dir #7, \0#8\n' | extract_dir_tickets)"
+check_contains "a stray NUL does not detach a bare continuation" "$out" "dir #8"
+
 summary
