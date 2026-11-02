@@ -54,6 +54,15 @@ pin "G1 records each pain's provenance: carried" \
 pin "G0 reads accepted-on-proposal as weaker evidence" \
   "$doc" 'is weaker' \
   "expected G0 to discount an accepted-on-proposal pain against a stated one (dir #819)"
+pin "G1 labels a disclaimed pick a candidate, not a pain" \
+  "$doc" 'is a candidate, not a pain' \
+  "expected G1 to keep the candidate rule for a pick the operator cannot confirm (dir #542)"
+pin "G1 candidate's first ticket is a live verification with a number per symptom" \
+  "$doc" '**a number per symptom**' \
+  "expected G1 to require a measured number per symptom before a slate (dir #542)"
+pin "G1 a pick does not satisfy an 'operator has seen X' unpark condition" \
+  "$doc" 'is **not** satisfied by a' \
+  "expected G1 to keep a selection from offered labels from satisfying an observation-shaped unpark condition (dir #542)"
 pin "G3 anchor: derive, don't assert" \
   "$doc" "## G3 — derive, don't assert" \
   "expected a named G3 section"

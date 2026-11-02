@@ -314,6 +314,29 @@ theme. A "no new pain" option sits beside the labels, so declining costs the sam
 And the plan records each as a picked label, never as the operator's words. A rule of the procedure,
 not a compensation.
 
+**A pick the operator says they cannot confirm is a candidate, not a pain (an adopter's tenth groom,
+2026-09-17).** The groom offered four output-quality symptoms; the operator picked all four and answered
+"I can't confirm or refute these, we can do live testing in design sessions". A menu manufactures
+agreement, and a pick the chooser disclaims as unobserved is not evidence of a felt pain, even as an
+`accepted-on-proposal` one. Four consequences, applied together:
+
+- The row is labelled `candidate` where its pain provenance goes, with the disclaimer quoted. It is not
+  `stated`, `accepted-on-proposal` or `carried`, and no later section reads it as a pain.
+- Its first ticket is a live verification on production data, producing **a number per symptom**: how
+  often it occurs, over what sample. A symptom with no number is not confirmed.
+- The slate behind the row is provisional. The next groom re-cuts it from those numbers: a confirmed
+  symptom becomes a `stated` pain, a refuted one leaves the slate, and a symptom still unmeasured stays a
+  candidate. Tickets past the verification are not planned against the candidate until then.
+- A ticket's own unpark condition of the shape "the operator has actually seen X" is **not** satisfied by a
+  selection from a list the groom offered, however the selection is worded. It is satisfied by the
+  operator's own observation, or by the verification's number. The groom checks every parked ticket in the
+  slate for such a condition before it un-parks anything on the strength of a pick (there, H.64's
+  "unpark when the operator really sees duplicates in the output" would have been unparked by the pick
+  alone).
+
+A rule of the procedure, not a compensation. Related: a pain comes from the operator, and a value claim
+is bound to the slate it is stated for.
+
 **The case where the operator's only stated pain is the META-pain.** This procedure assumes stated
 pains map onto themes, and covers the odd row that has none with "carried-over theme, not a sprint"
 wording. It has nothing for a *whole plan* with no per-row pains — which is what you get when the
