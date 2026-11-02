@@ -882,6 +882,21 @@ real runs, stated as classes rather than tied to any one vendor's harness:
    same-family cross-vendor round's. Full procedure, both modes: [`docs/drydock.md`](drydock.md),
    "The external leg."
 
+**Sub-rule — prepend an invariant crib sheet to every diff-only bundle.** A bundle that carries only the
+diff hands the reader no context outside it, so a safeguard reads as a bug, a purpose-built helper as an
+omission, and a premise the code never had as a finding. On one codebase's detection-adjacent code the
+vendor leg returned 3 of 3 such false positives in one release and 2 of 2 in the one before — every one
+"pre-existing context outside the diff", each overturned only by spending orchestrator and verifier tokens,
+with zero accepted findings from the leg across both releases. So for each bundle, prepend at most **1 KB**
+headed `Invariants this diff relies on`: the doc comments of every symbol the diff calls but does not
+define (extract them mechanically with a grep for the symbol's definition and its leading comment block),
+plus any sentinel convention the diff's values follow (what `0`, `-1`, `null` or an empty string means
+there). State each as the code states it; never paraphrase a claim the code does not make, and leave out a
+symbol with no doc comment rather than inventing one. Count the sheet against class 3's 10 KB bundle bound.
+Record the leg's false-positive rate per run (overturned findings over findings returned) so the sheet's
+effect is measured: it is judged on the next audit of detection-adjacent code, where the vendor leg should
+produce at least one accepted finding or no false positives.
+
 A delta bundle being a **diff**, not the whole file, is what makes this leg affordable to run at all
 against a payload-limited or per-token-billed vendor.
 
