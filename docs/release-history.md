@@ -32,7 +32,45 @@ were never recorded in this comparable shape.
 
 A release that made the always-on layer something Keel reads and checks, and cut the cost of a `/polish` run and of a managed release. `doctor` now resolves each entrypoint's whole import chain, reports it as one line, and flags an on-demand Keel file pulled into every session, an import that resolves to nothing, a file past the fourth hop and a global chain over its budget (dir #253). The import reader is a line-based approximation of Claude Code's import grammar, and the changelog says where it can differ from the harness. An entrypoint another tool generates (line 1 `<!-- KEEL-GENERATED`) is now left byte-identical by every installer mode, and `install.sh --link` swaps an embedded rails block only when its manifest recorded it as Keel's own (dir #253). `/polish` takes fewer turns: a test run is one `tools/check-run.sh` call whose files, not a reading of its output, decide the receipt, receipts are written alongside the next step's first calls, and four recurring gaps promoted from adopter sessions are closed (dir #855, dir #765, dir #822). A managed release runs under a context budget, caps each PR's review loop at five delta rounds with the operator deciding at the cap, and can no longer land its cut without its release-history entry (dir #860, dir #871, dir #866). The release audit is priced from its measured parts and the audit tail is capped at a quarter of the slate (dir #872, dir #843), and the session-cost reader skips one bad transcript line instead of aborting the file (dir #852). The release-candidate audit returned NO-GO on seven prose claims the release itself made false; one prose-only fix round corrected them before the cut.
 
-**Verification.** **Scope:** 54 files across 15 first-parent merges (PRs #665 to #679) and 74 commits, +2,621/−169, range v0.17.0 (`f572b06`) to `1cda6b3` (the fix round's merge); the figures are `git diff --shortstat v0.17.0 1cda6b3` and `git rev-list --count v0.17.0..1cda6b3`. The release candidate the audit read was `e313733` (PRs #665 to #678: 53 files, +2,590/−169). The cut PR folds the changelog fragments into `CHANGELOG.md`, adds this entry and corrects one wording row (below) in `ADAPTING.md` and the changelog; it changes no code. **Method:** a delta audit with seven whole-read legs, each over a cluster of the range (Sonnet, medium or high effort) — six cluster legs, one of them using the real import extractor lifted from the shipped Claude Code binary as an oracle, and one blind-method diverse leg — and a verifier (Sonnet, xhigh) that re-derived the findings, ran a mutation sweep (77 mutant runs) and ruled on each. Pass 1 returned NO-GO at `e313733`. One Fixer session made the fix round (PR #679, prose only), checked by an executable per-row script that printed seven failures on the candidate and seven passes on the fix. Pass 2 was a re-check pair scoped to the fix round's new surface (a fresh whole read and a behaviour-first leg, Sonnet, high effort), then a second verifier (Sonnet, xhigh) working from the written record alone. It returned GO at `1cda6b3`, conditional on one wording row, which the cut corrects, and on the tag-time checks. **Coverage:** 42 ledger rows, each with exactly one verdict, none waived; CI green by commit on every leg at the candidate (ubuntu, macOS, Alpine, shellcheck, secret scan, self-check), with the cut simulation covered by an identical tree on PR #678's head; the full suite ran in CI, not in the verifier. **Findings:** 53 raw findings, 35 accepted ids (14 behavioural, 15 prose, 6 test or pin gaps): 7 fix-before-tag, all prose and all fixed in PR #679; 3 ticketed for the next release, 6 register entries, 2 already-known tickets, 17 recorded as no-action. Pass 2 found 7 more accepted findings, all prose and none behavioural, four of them induced by the fix round's own edits: 2 fixed in the cut (a false quantifier the fix round wrote in `ADAPTING.md` about which `doctor` findings send the remedy to a generator, and its sibling in the changelog) and 5 recorded as no-action. The import reader's divergence from the harness, which the audit staged as a known issue, is disclosed in the changelog section. **Behavioural defects:** 14 in shipped code (10 introduced in this range, 4 in the baseline); none destroys user data or opens a leak path, and none was fix-before-tag. The ones a user can meet are doctor's import reader (a fence opened on a list-marker line hides later imports; an on-demand `@path` in an HTML block, link reference definition or blockquote raises a `G-ALWAYSON-ONDEMAND` that cannot be suppressed) and `tools/check-run.sh` verifying a piped one-string command by the last stage's status. **Which layer found what:** the oracle leg found the reader's divergence and the two false `ADAPTING.md` sentences; the blind-method leg alone found the `check-run.sh` pipe hole and independently confirmed seven others; the verifier's mutants found one defect of their own and showed 11 of 28 mutants of the new import reader survive the tests. **What was NOT checked:** a live Claude Code load of any import (the oracle is the extractor, not the loader); the new reader under gawk or mawk beyond CI's own samples; the real GitHub merge-queue payload; and the tag itself, which is the operator's. **Induced-defect rate:** pass 1, 0 / 53 (the first wave has no earlier fix to be induced from); pass 2, 4 / 7 accepted findings (all prose). **Records:** the run's own audit directory, gitignored.
+**Verification.** **Scope:** 54 files across 15 first-parent merges (PRs #665 to #679) and 74
+commits, +2,621/−169, range v0.17.0 (`f572b06`) to `1cda6b3` (the fix round's merge); the figures
+are `git diff --shortstat v0.17.0 1cda6b3` and `git rev-list --count v0.17.0..1cda6b3`. The release
+candidate the audit read was `e313733` (PRs #665 to #678: 53 files, +2,590/−169). The cut PR folds
+the changelog fragments into `CHANGELOG.md`, adds this entry and corrects one wording row (below) in
+`ADAPTING.md` and the changelog; it changes no code. **Method:** a delta audit with seven whole-read
+legs, each over a cluster of the range (Sonnet, medium or high effort) — six cluster legs, one of
+them using the real import extractor lifted from the shipped Claude Code binary as an oracle, and
+one blind-method diverse leg — and a verifier (Sonnet, xhigh) that re-derived the findings, ran a
+mutation sweep (77 mutant runs) and ruled on each. Pass 1 returned NO-GO at `e313733`. One Fixer
+session made the fix round (PR #679, prose only), checked by an executable per-row script that
+printed seven failures on the candidate and seven passes on the fix. Pass 2 was a re-check pair
+scoped to the fix round's new surface (a fresh whole read and a behaviour-first leg, Sonnet, high
+effort), then a second verifier (Sonnet, xhigh) working from the written record alone. It returned
+GO at `1cda6b3`, conditional on one wording row, which the cut corrects, and on the tag-time checks.
+**Coverage:** 42 ledger rows, each with exactly one verdict, none waived; CI green by commit on
+every leg at the candidate (ubuntu, macOS, Alpine, shellcheck, secret scan, self-check), with the
+cut simulation covered by an identical tree on PR #678's head; the full suite ran in CI, not in the
+verifier. **Findings:** 53 raw findings, 35 accepted ids (14 behavioural, 15 prose, 6 test or pin
+gaps): 7 fix-before-tag, all prose and all fixed in PR #679; 3 ticketed for the next release, 6
+register entries, 2 already-known tickets, 17 recorded as no-action. Pass 2 found 7 more accepted
+findings, all prose and none behavioural, four of them induced by the fix round's own edits: 2 fixed
+in the cut (a false quantifier the fix round wrote in `ADAPTING.md` about which `doctor` findings
+send the remedy to a generator, and its sibling in the changelog) and 5 recorded as no-action. The
+import reader's divergence from the harness, which the audit staged as a known issue, is disclosed
+in the changelog section. **Behavioural defects:** 14 in shipped code (10 introduced in this range,
+4 in the baseline); none destroys user data or opens a leak path, and none was fix-before-tag. The
+ones a user can meet are doctor's import reader (a fence opened on a list-marker line hides later
+imports; an on-demand `@path` in an HTML block, link reference definition or blockquote raises a
+`G-ALWAYSON-ONDEMAND` that cannot be suppressed) and `tools/check-run.sh` verifying a piped
+one-string command by the last stage's status. **Which layer found what:** the oracle leg found the
+reader's divergence and the two false `ADAPTING.md` sentences; the blind-method leg alone found the
+`check-run.sh` pipe hole and independently confirmed seven others; the verifier's mutants found one
+defect of their own and showed 11 of 28 mutants of the new import reader survive the tests.
+**What was NOT checked:** a live Claude Code load of any import (the oracle is the extractor, not
+the loader); the new reader under gawk or mawk beyond CI's own samples; the real GitHub merge-queue
+payload; and the tag itself, which is the operator's. **Induced-defect rate:** pass 1, 0 / 53 (the
+first wave has no earlier fix to be induced from); pass 2, 4 / 7 accepted findings (all prose).
+**Records:** the run's own audit directory, gitignored.
 
 ## v0.17.0 — 2026-10-15
 
@@ -59,20 +97,22 @@ session's worktree for removal and grades a remote-less repo whose default branc
 took in field corrections from adopters (dir #823, dir #826). The README was slimmed from 342 to 175 lines, with the
 detail moved rather than dropped, and gained a short silent explainer video.
 
-**Verification.** **Scope:** 97 files across 21 first-parent merges (PRs #623 to #664) and 295 commits,
-+10,272/−821, range v0.16.0 (`e577a66`) to v0.17.0 (`f572b06`); the figures are `git diff --shortstat v0.16.0 v0.17.0`
-and `git rev-list --count v0.16.0..v0.17.0`. The tagged commit is the merge of the cut PR (#664), which folded the
-changelog fragments into `CHANGELOG.md` and added no code. **Method:** the range carries the delta-audit fix commits
-(the `delta-audit 0.17.0 fix` and `audit fix` commits in `git log v0.16.0..v0.17.0`) and a managed release's
-per-slice review-round commits, so a delta audit and review rounds ran; how many legs, of what kind and at what tier is
-recorded in the run's own audit directory, which is gitignored, and is not restated here. **Coverage:** not recorded in
-a form this page can cite. **Findings:** the fix commits above were made before the tag; the counts of findings filed,
-accepted, ticketed or disclosed are in the audit record and are not restated. **Behavioural defects:** not recorded here.
-**Which layer found what:** not recorded here. **What was NOT checked:** this entry was written after the tag from the
-repository alone (`CHANGELOG.md`'s section for this version and git history), so every field above is what git shows
-and nothing the audit concluded; the verifiers' verdict, the suite and CI results at the tagged commit, and anything the
-operator checked by hand were not available to it. **Induced-defect rate:** not recorded here. **Records:** the run's
-own audit directory, gitignored.
+**Verification.** **Scope:** 97 files across 21 first-parent merges (PRs #623 to #664) and 295
+commits, +10,272/−821, range v0.16.0 (`e577a66`) to v0.17.0 (`f572b06`); the figures are `git diff
+--shortstat v0.16.0 v0.17.0` and `git rev-list --count v0.16.0..v0.17.0`. The tagged commit is the
+merge of the cut PR (#664), which folded the changelog fragments into `CHANGELOG.md` and added no
+code. **Method:** the range carries the delta-audit fix commits (the `delta-audit 0.17.0 fix` and
+`audit fix` commits in `git log v0.16.0..v0.17.0`) and a managed release's per-slice review-round
+commits, so a delta audit and review rounds ran; how many legs, of what kind and at what tier is
+recorded in the run's own audit directory, which is gitignored, and is not restated here.
+**Coverage:** not recorded in a form this page can cite. **Findings:** the fix commits above were
+made before the tag; the counts of findings filed, accepted, ticketed or disclosed are in the audit
+record and are not restated. **Behavioural defects:** not recorded here. **Which layer found what:**
+not recorded here. **What was NOT checked:** this entry was written after the tag from the
+repository alone (`CHANGELOG.md`'s section for this version and git history), so every field above
+is what git shows and nothing the audit concluded; the verifiers' verdict, the suite and CI results
+at the tagged commit, and anything the operator checked by hand were not available to it.
+**Induced-defect rate:** not recorded here. **Records:** the run's own audit directory, gitignored.
 
 ## v0.16.0 — 2026-10-12
 
@@ -95,58 +135,67 @@ guard installer's hook modes regardless of umask, made the changelog-fragment re
 listing, and fixed `doctor`'s advice loop on an edited Keel hook. Known issues ship disclosed in the CHANGELOG
 section.
 
-**Verification.** **Scope:** 177 files (25 of them changelog fragments, read as one folded row) across 50 PRs, 20 first-parent
-merges and 380 commits, +15,938/−1,906, range v0.15.0 (`837a9f5`) to the release candidate `831dc14` — twice the
-previous delta, so raw counts below are not comparable with earlier releases; plus a fix round of five PRs (#617,
-#618, #619, #620, #621), 31 files, +471/−46, to the audited head `db26b92`. The cut itself is a text-only commit on top
-of that head: it folds the 30 fragments into the changelog section (56 top-level bullets from the cut, 55 after
-curation), adds this entry, and re-states one figure row. **Method:** a managed release. Pass 1: a mechanical
-baseline leg (Sonnet, medium effort), sixteen whole-read cluster legs cut by surface (Sonnet, high), a diverse leg
-that was a different method rather than a different vendor — a blind claim-falsification of the release's changelog
-with live adversarial probes, reconciled afterwards (Sonnet, high) — and a verifier (Sonnet, xhigh); no external
-vendor leg, by the operator's decision. The verifier returned NO-GO at `831dc14`. Four Fixer sessions, launched by the
-release manager, made the fixes. Pass 2 was scoped to the fix round: a fresh-context reader (with a 1,512-command gate
-differential) and a behaviour-first prober (with 38 single-hunk mutants), blind to each other and parallel on the
-fixed head, then a second verifier (Sonnet, xhigh) fresh from the written record, which returned a conditional GO at
-`db26b92` — transferable to the cut's merge commit only if the cut's diff stays text-only and its stated
-conditions hold. **Coverage:** pass 1, 153 ledger rows with exactly one verdict each — 78 clean, 2 mechanical-only,
-73 finding, 0 waived — and 177 of 177 files in exactly one cluster; CI green by commit on every leg at the candidate;
-suite 148 files, 13,818 passed, 0 failed in a clean clone. Pass 2, every one of the 17 closure rows (the pass-1
-fix-before-tag set, the two promoted riders, the operator's extra gate fix and the cut's curation item) has a
-status: 11 closed, 5 partial (each a clause too narrow, a count that moved, or a gate variant) and 1 left to the cut.
-**Findings:** pass 1, 99 ids filed, 93 distinct, 90 accepted (2 medium, 8 low-medium, 80 low), 3 rejected; of the
-accepted, 13 were fix-before-tag (one code, twelve wording) and the rest ticketed, disclosed or recorded as
-no-action. The one code finding — the secret-guard installer's hooks and scanner coming out group-writable under
-umask 002 and world-writable under umask 000, where 0.15.0 gave 755/644 — was fixed in the round, with the two
-promoted riders (the fragment reader failing on a failing listing, doctor's advice loop on an edited Keel hook) and
-the operator's gate fix for a `case` pattern's `)`. Pass 2, 14 ids filed, 13 distinct, 12 accepted, all low, none
-medium or higher, no new class; the wording ones were corrected in the cut. Open at the cut: the code findings are
-ticketed, the rest recorded as no-action, and three known issues are disclosed in the changelog section.
-**Behavioural defects:** pass 1, 28 in adopter-facing code (16 range-introduced or mixed, 12 baseline) plus 10 in
-maintainer-only code; the hard regressions against v0.15.0 were the installer's modes (fixed), the gate's `case`
-pattern bypass (closed for its named shapes), a spec-accepted false deny, and doctor's advice loop (fixed). Pass 2, 5
-more, none medium: one latency defect and one false-deny breadth induced by the gate fix, a grouped-`case` shape
-still allowed that v0.15.0 denied, a stale code comment beside a foreign hook, and a status-hiding reader in a
-maintainer tool; cumulative 43 (the two passes' scopes differ). **Which layer found what:** in pass 1 the cluster legs
-found 88 of the 90 accepted findings, including the code defect, the gate regression and the false deny; the diverse
-leg found what they did not (an unreadable global config read as unset, a worktree remedy that leads with the wrong
-command, two header residuals) and gave independent positive evidence the clusters could not (fifty historical hook
-bodies all recognised); neither alone would have been enough. In pass 2 the fresh-context reader found the five
-wording defects and the latency one; the prober found the grouped-`case` hole the reader's corpus missed, the
-false-deny breadth, the foreign-hook comment and seven unpinned hunks; each missed several of the other's.
-**What was NOT checked:** the cut's own content beyond its stated conditions — a separate read of the cut diff is the
-only read of the hand edits made in it; the full suite and any Linux or Alpine execution by the verifiers (macOS
-only; Linux behaviour rests on CI's Ubuntu and Alpine legs and on the legs' own container runs), so bash 4+ execution
-of the grouped-`case` shapes is unverified; about fifty low baseline, prose and test-only findings accepted on the legs'
-quoted evidence rather than re-derived; the real GitHub merge-queue payload, the real subagent hook payload and the
-model-behavioural rules (the review subagent's void rule, the compaction stop, the mutation pass); member PR diffs
-were not re-read by the verifiers, only re-scanned for hand-resolved merge hunks; the rollback-path modes of the
-installer beyond the legs' own measurements; and the tag itself, which is the operator's. The cut-simulation CI job
-is red on the cut commit by construction — it re-cuts an already-cut tree — and is not a required check.
-**Induced-defect rate:** pass 1, 0 / 99 (the first wave has no earlier fix to be induced from); pass 2, 10 / 12 as
-adjudicated (12 / 14 as the legs filed them): ten of the twelve accepted findings were created by the fix round's own
-edits, four of them in the wording batch itself; cumulative 10 / 102 adjudicated (12 / 113 filed). **Records:** the
-run's own audit directory, gitignored.
+**Verification.** **Scope:** 177 files (25 of them changelog fragments, read as one folded row)
+across 50 PRs, 20 first-parent merges and 380 commits, +15,938/−1,906, range v0.15.0 (`837a9f5`) to
+the release candidate `831dc14` — twice the previous delta, so raw counts below are not comparable
+with earlier releases; plus a fix round of five PRs (#617, #618, #619, #620, #621), 31 files,
++471/−46, to the audited head `db26b92`. The cut itself is a text-only commit on top of that head:
+it folds the 30 fragments into the changelog section (56 top-level bullets from the cut, 55 after
+curation), adds this entry, and re-states one figure row. **Method:** a managed release. Pass 1: a
+mechanical baseline leg (Sonnet, medium effort), sixteen whole-read cluster legs cut by surface
+(Sonnet, high), a diverse leg that was a different method rather than a different vendor — a blind
+claim-falsification of the release's changelog with live adversarial probes, reconciled afterwards
+(Sonnet, high) — and a verifier (Sonnet, xhigh); no external vendor leg, by the operator's decision.
+The verifier returned NO-GO at `831dc14`. Four Fixer sessions, launched by the release manager, made
+the fixes. Pass 2 was scoped to the fix round: a fresh-context reader (with a 1,512-command gate
+differential) and a behaviour-first prober (with 38 single-hunk mutants), blind to each other and
+parallel on the fixed head, then a second verifier (Sonnet, xhigh) fresh from the written record,
+which returned a conditional GO at `db26b92` — transferable to the cut's merge commit only if the
+cut's diff stays text-only and its stated conditions hold. **Coverage:** pass 1, 153 ledger rows
+with exactly one verdict each — 78 clean, 2 mechanical-only, 73 finding, 0 waived — and 177 of 177
+files in exactly one cluster; CI green by commit on every leg at the candidate; suite 148 files,
+13,818 passed, 0 failed in a clean clone. Pass 2, every one of the 17 closure rows (the pass-1
+fix-before-tag set, the two promoted riders, the operator's extra gate fix and the cut's curation
+item) has a status: 11 closed, 5 partial (each a clause too narrow, a count that moved, or a gate
+variant) and 1 left to the cut. **Findings:** pass 1, 99 ids filed, 93 distinct, 90 accepted (2
+medium, 8 low-medium, 80 low), 3 rejected; of the accepted, 13 were fix-before-tag (one code, twelve
+wording) and the rest ticketed, disclosed or recorded as no-action. The one code finding — the
+secret-guard installer's hooks and scanner coming out group-writable under umask 002 and
+world-writable under umask 000, where 0.15.0 gave 755/644 — was fixed in the round, with the two
+promoted riders (the fragment reader failing on a failing listing, doctor's advice loop on an edited
+Keel hook) and the operator's gate fix for a `case` pattern's `)`. Pass 2, 14 ids filed, 13
+distinct, 12 accepted, all low, none medium or higher, no new class; the wording ones were corrected
+in the cut. Open at the cut: the code findings are ticketed, the rest recorded as no-action, and
+three known issues are disclosed in the changelog section. **Behavioural defects:** pass 1, 28 in
+adopter-facing code (16 range-introduced or mixed, 12 baseline) plus 10 in maintainer-only code; the
+hard regressions against v0.15.0 were the installer's modes (fixed), the gate's `case` pattern
+bypass (closed for its named shapes), a spec-accepted false deny, and doctor's advice loop (fixed).
+Pass 2, 5 more, none medium: one latency defect and one false-deny breadth induced by the gate fix,
+a grouped-`case` shape still allowed that v0.15.0 denied, a stale code comment beside a foreign
+hook, and a status-hiding reader in a maintainer tool; cumulative 43 (the two passes' scopes
+differ). **Which layer found what:** in pass 1 the cluster legs found 88 of the 90 accepted
+findings, including the code defect, the gate regression and the false deny; the diverse leg found
+what they did not (an unreadable global config read as unset, a worktree remedy that leads with the
+wrong command, two header residuals) and gave independent positive evidence the clusters could not
+(fifty historical hook bodies all recognised); neither alone would have been enough. In pass 2 the
+fresh-context reader found the five wording defects and the latency one; the prober found the
+grouped-`case` hole the reader's corpus missed, the false-deny breadth, the foreign-hook comment and
+seven unpinned hunks; each missed several of the other's. **What was NOT checked:** the cut's own
+content beyond its stated conditions — a separate read of the cut diff is the only read of the hand
+edits made in it; the full suite and any Linux or Alpine execution by the verifiers (macOS only;
+Linux behaviour rests on CI's Ubuntu and Alpine legs and on the legs' own container runs), so bash
+4+ execution of the grouped-`case` shapes is unverified; about fifty low baseline, prose and
+test-only findings accepted on the legs' quoted evidence rather than re-derived; the real GitHub
+merge-queue payload, the real subagent hook payload and the model-behavioural rules (the review
+subagent's void rule, the compaction stop, the mutation pass); member PR diffs were not re-read by
+the verifiers, only re-scanned for hand-resolved merge hunks; the rollback-path modes of the
+installer beyond the legs' own measurements; and the tag itself, which is the operator's. The
+cut-simulation CI job is red on the cut commit by construction — it re-cuts an already-cut tree —
+and is not a required check. **Induced-defect rate:** pass 1, 0 / 99 (the first wave has no earlier
+fix to be induced from); pass 2, 10 / 12 as adjudicated (12 / 14 as the legs filed them): ten of the
+twelve accepted findings were created by the fix round's own edits, four of them in the wording
+batch itself; cumulative 10 / 102 adjudicated (12 / 113 filed). **Records:** the run's own audit
+directory, gitignored.
 
 ## v0.15.0 — 2026-10-09
 
@@ -175,57 +224,65 @@ claims. Twenty-three merged slate PRs, #539–#556 and #558–#562 (seven of the
 plus the groom PR #538 and two audit-fix PRs, #563 and #564. Three known issues ship disclosed in the CHANGELOG
 section, and its upgrade note says which copies to refresh.
 
-**Verification.** **Scope:** 82 files across 23 merged slate PRs plus the groom PR, range v0.14.0 (`681fb8b`) to
-the release candidate `e74bff7`, 111 commits, +5,556/−1,017; plus a fix round of two PRs (#563 merged into #564),
-15 files, +287/−26, to the audited tree `cf216c8` — audit fixes, not feature work, so the anchor was not re-cut.
-**Method:** a managed release; orchestrator Opus 5.5 at high effort. A mechanical baseline leg plus eight
-whole-read legs (Sonnet) over clusters cut by coupling, after a two-leg pilot. The diverse leg was a different
-method, not a different vendor, since the operator was away and nothing was sent outside: a blind
-claim-falsification of the release's CHANGELOG section with live adversarial probes, reconciled afterwards. The
-verifier (Sonnet) returned NO-GO at `e74bff7`; two Fixer sessions — real sessions, launched by the release
-manager — fixed all six fix-before-tag findings, in #563 and #564. The Clause A re-check was scoped to the fix
-round's new surface: a pair read `cf216c8` in parallel and blind to each other, a fresh-context reader (a 24-row
-install matrix and 16 mutants) and a blind claim-falsifier. A second verifier pass, fresh from the written record,
-returned NO-GO with a stated route to GO: one residual behavioural finding, left unfixed, disclosed and filed, plus
-three CHANGELOG corrections made in the cut. **Coverage:** pass 1, 82 ledger rows, exactly
-one verdict each — 38 clean, 8 mechanical-only, 36 finding, 0 waived; pass 2, 85 rows — 12 re-verdicted, 3 added
-for files the fix round touched, 70 carried byte-identical. CI 6/6 by commit on the candidate (run 37834380984)
-and on the audited tree (run 37879483776), including the Alpine/busybox leg. Suite evidence from sandboxed clones
-and CI only, never the operator's own checkout: 10,562 passed, 0 failed, 127 files, at the candidate. **Findings:**
-74 accepted across two passes — pass 1: 58 (4 medium, 7 low-medium, 47 low); pass 2: 16. The six pass-1
-fix-before-tag findings were fixed in the release: `install.sh` failing an install, writing no manifest and
-leaving its lock when it declined a link (introduced in this range), `doctor`'s dead-end advice for that link, a
-missing upgrade note for the re-vendored scanner, a false "never deletes" for the Alpine-clone helper, an
-over-claiming scanner headline, and an incomplete list of what the gate's push rule does not catch. Five
-CHANGELOG sentences the fix round wrote were corrected in the cut (three owed by the verdict, two optional), and a
-sixth was scoped to its ticket. Open at the cut: 27 pass-1 findings and 10
-pass-2 findings ticketed, the rest recorded as no-action, all filed in the backlog or on the standing list; three
-known issues are disclosed in the CHANGELOG section. **Behavioural defects:** pass 1 accepted 27 behavioural
-findings (23 in shipped code, 4 in maintainer-only tools); among them, range-introduced: the declined-link install
-failure (fixed), a hard-linked `settings.json` failing an otherwise no-op hook-installer re-run, an accept file
-ignored for a path with `//` (fixed), a partly quoted prefix assignment that hides a push bypass from the gate,
-two false push denials, and two Alpine-clone helper edges (a symlinked clone path it would reset, a misleading
-refusal); the two medium baseline fail-opens (binary decode stops at
-the first invalid unit; `doctor` OK with Keel's pre-push missing) ship disclosed. Pass 2 accepted 5 behavioural
-findings: 2 on the fix surface (one counting — Keel's own dangling links labelled as yours and the install ending
-0 after a lost manifest and a moved checkout, left unfixed and disclosed; one carved out — a test-only hook reachable
-from an exported variable) and 3 older ones off it. **Which layer found what:** the whole-read legs found four of
-the six fix-before-tag findings and two of the four mediums; the method-diverse leg found six findings no other
-leg did, including the other two mediums (the heredoc-commit push bypass and `doctor` OK over a missing pre-push),
-and independently found the declined-link install failure. In the re-check pair, the reader found the counting
-finding, which the falsifier could not construct because it kept the manifest; the falsifier found two older
-behavioural findings (a named pipe that hangs the installer, an ambient git config that lets the tour commit past
-the guard) and explained an Ubuntu CI residue from the job log instead of closing it on a green re-run.
-No new class was named in pass 2; pass 1 named one candidate, an all-unchanged installer run that still writes.
-**What was NOT checked:** Clause A on the whole state — the re-check pair read only what the fix round newly
-reached, and the counting finding ships unfixed, disclosed in the CHANGELOG, rather than fixed. The verifier ran macOS only; Linux, busybox and
-dash behaviour of the fix code rests on CI's Ubuntu and Alpine legs and on the legs' own container runs, which one
-leg's container kill on the shared Docker daemon interrupted once; the Ubuntu teardown flake is explained from
-one CI log, not reproduced; the cut itself adds this entry, a third known issue and seven CHANGELOG wording edits (the three the
-verifier specified, four more), which no verifier pass read — a separate cut-diff leg is the only read of them; and the standing-list lines were not re-read by the verifier. **Induced-defect rate:** 10 / 74 — the
-verifier's per-finding tally, pass 1 0 / 58 and pass 2 10 / 16: eight are not behavioural (five are CHANGELOG
-sentences the fix round wrote), and two are behavioural, the counting finding and the carved-out test hook.
-**Records:** the run's own audit directory, gitignored.
+**Verification.** **Scope:** 82 files across 23 merged slate PRs plus the groom PR, range v0.14.0
+(`681fb8b`) to the release candidate `e74bff7`, 111 commits, +5,556/−1,017; plus a fix round of two
+PRs (#563 merged into #564), 15 files, +287/−26, to the audited tree `cf216c8` — audit fixes, not
+feature work, so the anchor was not re-cut. **Method:** a managed release; orchestrator Opus 5.5 at
+high effort. A mechanical baseline leg plus eight whole-read legs (Sonnet) over clusters cut by
+coupling, after a two-leg pilot. The diverse leg was a different method, not a different vendor,
+since the operator was away and nothing was sent outside: a blind claim-falsification of the
+release's CHANGELOG section with live adversarial probes, reconciled afterwards. The verifier
+(Sonnet) returned NO-GO at `e74bff7`; two Fixer sessions — real sessions, launched by the release
+manager — fixed all six fix-before-tag findings, in #563 and #564. The Clause A re-check was scoped
+to the fix round's new surface: a pair read `cf216c8` in parallel and blind to each other, a
+fresh-context reader (a 24-row install matrix and 16 mutants) and a blind claim-falsifier. A second
+verifier pass, fresh from the written record, returned NO-GO with a stated route to GO: one residual
+behavioural finding, left unfixed, disclosed and filed, plus three CHANGELOG corrections made in the
+cut. **Coverage:** pass 1, 82 ledger rows, exactly one verdict each — 38 clean, 8 mechanical-only,
+36 finding, 0 waived; pass 2, 85 rows — 12 re-verdicted, 3 added for files the fix round touched, 70
+carried byte-identical. CI 6/6 by commit on the candidate (run 37834380984) and on the audited tree
+(run 37879483776), including the Alpine/busybox leg. Suite evidence from sandboxed clones and CI
+only, never the operator's own checkout: 10,562 passed, 0 failed, 127 files, at the candidate.
+**Findings:** 74 accepted across two passes — pass 1: 58 (4 medium, 7 low-medium, 47 low); pass 2:
+16. The six pass-1 fix-before-tag findings were fixed in the release: `install.sh` failing an
+install, writing no manifest and leaving its lock when it declined a link (introduced in this
+range), `doctor`'s dead-end advice for that link, a missing upgrade note for the re-vendored
+scanner, a false "never deletes" for the Alpine-clone helper, an over-claiming scanner headline, and
+an incomplete list of what the gate's push rule does not catch. Five CHANGELOG sentences the fix
+round wrote were corrected in the cut (three owed by the verdict, two optional), and a sixth was
+scoped to its ticket. Open at the cut: 27 pass-1 findings and 10 pass-2 findings ticketed, the rest
+recorded as no-action, all filed in the backlog or on the standing list; three known issues are
+disclosed in the CHANGELOG section. **Behavioural defects:** pass 1 accepted 27 behavioural findings
+(23 in shipped code, 4 in maintainer-only tools); among them, range-introduced: the declined-link
+install failure (fixed), a hard-linked `settings.json` failing an otherwise no-op hook-installer
+re-run, an accept file ignored for a path with `//` (fixed), a partly quoted prefix assignment that
+hides a push bypass from the gate, two false push denials, and two Alpine-clone helper edges (a
+symlinked clone path it would reset, a misleading refusal); the two medium baseline fail-opens
+(binary decode stops at the first invalid unit; `doctor` OK with Keel's pre-push missing) ship
+disclosed. Pass 2 accepted 5 behavioural findings: 2 on the fix surface (one counting — Keel's own
+dangling links labelled as yours and the install ending 0 after a lost manifest and a moved
+checkout, left unfixed and disclosed; one carved out — a test-only hook reachable from an exported
+variable) and 3 older ones off it. **Which layer found what:** the whole-read legs found four of the
+six fix-before-tag findings and two of the four mediums; the method-diverse leg found six findings
+no other leg did, including the other two mediums (the heredoc-commit push bypass and `doctor` OK
+over a missing pre-push), and independently found the declined-link install failure. In the re-check
+pair, the reader found the counting finding, which the falsifier could not construct because it kept
+the manifest; the falsifier found two older behavioural findings (a named pipe that hangs the
+installer, an ambient git config that lets the tour commit past the guard) and explained an Ubuntu
+CI residue from the job log instead of closing it on a green re-run. No new class was named in pass
+2; pass 1 named one candidate, an all-unchanged installer run that still writes.
+**What was NOT checked:** Clause A on the whole state — the re-check pair read only what the fix
+round newly reached, and the counting finding ships unfixed, disclosed in the CHANGELOG, rather than
+fixed. The verifier ran macOS only; Linux, busybox and dash behaviour of the fix code rests on CI's
+Ubuntu and Alpine legs and on the legs' own container runs, which one leg's container kill on the
+shared Docker daemon interrupted once; the Ubuntu teardown flake is explained from one CI log, not
+reproduced; the cut itself adds this entry, a third known issue and seven CHANGELOG wording edits
+(the three the verifier specified, four more), which no verifier pass read — a separate cut-diff leg
+is the only read of them; and the standing-list lines were not re-read by the verifier.
+**Induced-defect rate:** 10 / 74 — the verifier's per-finding tally, pass 1 0 / 58 and pass 2 10 /
+16: eight are not behavioural (five are CHANGELOG sentences the fix round wrote), and two are
+behavioural, the counting finding and the carved-out test hook. **Records:** the run's own audit
+directory, gitignored.
 
 ## v0.14.0 — 2026-10-07
 
@@ -250,59 +307,66 @@ relative scanner path, a flaky census test, and three adopter-prose claims. Thir
 plus three audit fixes, #534–#536. Ten known issues ship disclosed in the CHANGELOG section, and its upgrade
 note tells an existing install which installers to re-run.
 
-**Verification.** **Scope:** 158 files across 36 merged PRs (#498–#533), range v0.13.0 (`31e32ec`) to the
-release candidate `7d0fd60`, 191 commits, +12,322/−1,648; plus a fix round of three PRs (#534–#536), 13 files,
-+149/−23, to the GO commit `62c71bb` — audit fixes, not feature work, so the anchor was not re-cut.
-**Method:** a managed release; orchestrator Opus 5.5 at high effort. A mechanical baseline leg plus eleven
-whole-read legs (Sonnet) over clusters cut by coupling, after a three-leg pilot; the diverse leg was DeepSeek's
-chat model on eight coupled bundles (whole files, range diffs for five oversize files), no reasoning-model
-rounds. The verifier (Sonnet) returned NO-GO at `7d0fd60`; on the operator's decision all six
-fix-before-tag findings were fixed and the Clause A re-check was scoped to the fix round's new surface. Three
-Fixer sessions — real sessions — merged as #534–#536. A re-check pair then read `62c71bb` in
-parallel and blind to each other: a fresh same-family leg (whole-read of the 13 touched files, live closure runs
-and mutation) and DeepSeek chat on two bundles. A second verifier pass, fresh from the written record, returned
-GO. **Coverage:** 158 ledger rows, exactly one verdict each at both passes — pass 2: 84 clean, 74 finding, 0
-mechanical-only, 0 waived (pass 1: 86 clean, 72 finding); the 13 rows on the fix surface were re-verdicted and
-the other 145 are byte-identical to pass 1. CI run 37650500230, 6/6 on the exact GO commit by commit, including
-the Alpine/busybox leg (the pass-1 candidate's run: 37551380137, 6/6). Suite evidence from sandboxed clones and
-CI only, never the operator's own checkout: 9,517 passed, 0 failed, at the candidate; a simulated cut
-(an emptied `[Unreleased]` above a dated heading) at the GO commit, 119 files, 9,543 passed, 0 failed, run
-independently by the re-check leg and by the verifier. The verifier re-derived the six fix-before-tag findings
-itself, live. **Findings:** 95 accepted across two passes — pass 1: 92 (89 leg findings plus 5 DeepSeek-derived,
-less 2 merged duplicates); pass 2: 3, all low and non-behavioural. The six fix-before-tag findings were fixed in
-the release: three doc tests' changelog assertions that read only the live `[Unreleased]` section and would have
-turned the cut's own CI red, the leak gate reading clean over a relative scanner path, a census test's SIGPIPE
-flake, and three adopter-prose items (a doc saying `doctor` deletes noise, the README's "updates it all at
-once", and the section's upgrade note). Open at the GO: 38 behavioural findings, 24 ticketed and 14 recorded as no-action, all
-filed in the backlog or on the standing list; the two passes put 39 lines on the standing list in all (37 from the
-first, 2 from the second); the CHANGELOG section discloses ten known issues from
-the audit's findings, and its closing sentence points at the rest. **Behavioural defects:** pass 1 accepted 39 behavioural
-findings — 37 in product code and 2 in test infrastructure; of the 37, 14 were introduced by the range and 23
-are baseline or further instances of known classes. One range-introduced defect failed open a documented
-no-bypass gate (the leak gate and the relative path above), and it was fixed before the tag; no range-introduced
-default-path crash was found. Pass 2 accepted none: the re-check pair and the verifier found no behavioural
-finding. **Which layer found what:** the same-family legs found every fix-before-tag finding. DeepSeek's first
-wave raised 53 numbered candidates and 6 were accepted (4 low baseline items in the secret scanner and the
-suite canary, 1 corroboration of a same-family finding, 1 baseline no-action); 47 were refuted or left as leads,
-mostly claims about code outside the changed hunks and busybox-portability claims refuted by container probes;
-none was fix-before-tag or range-introduced. In the re-check pair, DeepSeek raised no accepted behavioural
-finding and one claim refuted live (a stale `PWD` defeating the gate); the same-family leg found the three
-pass-2 findings. Pass 1 named two new classes: a test that pins mutable release-flow state (the live
-`[Unreleased]` text), and a path-valued environment variable re-resolved after the process changes directory.
-No gate ran the suite on the cut shape; a check for that is filed. **What was NOT checked:** Clause A on the whole state. The verdicts ran NO-GO at `7d0fd60`, then GO
-at `62c71bb` after one fix round, with Clause A satisfied on the fix round's surface under the operator's
-scoping, not on the whole state: the re-check pair read only what the fix round newly reached and found no
-behavioural finding and no new class, while the whole-state pair was not run and the 38 findings above remain
-open. Beyond that: Linux, busybox and dash behaviour of the fix code was not re-run by the verifier — CI's
-ubuntu and alpine legs are the only evidence, and the Linux flake rate of the repaired census test is
-unmeasured; the simulated cut tests a shape, and the real cut also adds this history entry, which no test the
-verifier ran has seen; the DeepSeek re-check bundles were not re-diffed byte for byte against the tree; the
-pass-1 findings stand on pass-1 evidence, since nothing in the fix surface touches them; and the standing-list
-lines were not re-read by the verifier. **Induced-defect rate:** 3 / 95 — the verifier's per-finding tally,
-pass 1 0 / 92 and pass 2 3 / 3, all three low and none behavioural: an assertion widened to a whole file that
-the fix's own changelog bullet satisfies, a list of path variables only half bound by tests, and a corrected
-README sentence left unscoped beside the guard-hook copy it names. The automated tally counts marker lines and
-reads 3 / 92, because DeepSeek-derived findings carry no marker line and two duplicates were merged; recorded
+**Verification.** **Scope:** 158 files across 36 merged PRs (#498–#533), range v0.13.0 (`31e32ec`)
+to the release candidate `7d0fd60`, 191 commits, +12,322/−1,648; plus a fix round of three PRs
+(#534–#536), 13 files, +149/−23, to the GO commit `62c71bb` — audit fixes, not feature work, so the
+anchor was not re-cut. **Method:** a managed release; orchestrator Opus 5.5 at high effort. A
+mechanical baseline leg plus eleven whole-read legs (Sonnet) over clusters cut by coupling, after a
+three-leg pilot; the diverse leg was DeepSeek's chat model on eight coupled bundles (whole files,
+range diffs for five oversize files), no reasoning-model rounds. The verifier (Sonnet) returned
+NO-GO at `7d0fd60`; on the operator's decision all six fix-before-tag findings were fixed and the
+Clause A re-check was scoped to the fix round's new surface. Three Fixer sessions — real sessions —
+merged as #534–#536. A re-check pair then read `62c71bb` in parallel and blind to each other: a
+fresh same-family leg (whole-read of the 13 touched files, live closure runs and mutation) and
+DeepSeek chat on two bundles. A second verifier pass, fresh from the written record, returned GO.
+**Coverage:** 158 ledger rows, exactly one verdict each at both passes — pass 2: 84 clean, 74
+finding, 0 mechanical-only, 0 waived (pass 1: 86 clean, 72 finding); the 13 rows on the fix surface
+were re-verdicted and the other 145 are byte-identical to pass 1. CI run 37650500230, 6/6 on the
+exact GO commit by commit, including the Alpine/busybox leg (the pass-1 candidate's run:
+37551380137, 6/6). Suite evidence from sandboxed clones and CI only, never the operator's own
+checkout: 9,517 passed, 0 failed, at the candidate; a simulated cut (an emptied `[Unreleased]` above
+a dated heading) at the GO commit, 119 files, 9,543 passed, 0 failed, run independently by the
+re-check leg and by the verifier. The verifier re-derived the six fix-before-tag findings itself,
+live. **Findings:** 95 accepted across two passes — pass 1: 92 (89 leg findings plus 5
+DeepSeek-derived, less 2 merged duplicates); pass 2: 3, all low and non-behavioural. The six
+fix-before-tag findings were fixed in the release: three doc tests' changelog assertions that read
+only the live `[Unreleased]` section and would have turned the cut's own CI red, the leak gate
+reading clean over a relative scanner path, a census test's SIGPIPE flake, and three adopter-prose
+items (a doc saying `doctor` deletes noise, the README's "updates it all at once", and the section's
+upgrade note). Open at the GO: 38 behavioural findings, 24 ticketed and 14 recorded as no-action,
+all filed in the backlog or on the standing list; the two passes put 39 lines on the standing list
+in all (37 from the first, 2 from the second); the CHANGELOG section discloses ten known issues from
+the audit's findings, and its closing sentence points at the rest. **Behavioural defects:** pass 1
+accepted 39 behavioural findings — 37 in product code and 2 in test infrastructure; of the 37, 14
+were introduced by the range and 23 are baseline or further instances of known classes. One
+range-introduced defect failed open a documented no-bypass gate (the leak gate and the relative path
+above), and it was fixed before the tag; no range-introduced default-path crash was found. Pass 2
+accepted none: the re-check pair and the verifier found no behavioural finding.
+**Which layer found what:** the same-family legs found every fix-before-tag finding. DeepSeek's
+first wave raised 53 numbered candidates and 6 were accepted (4 low baseline items in the secret
+scanner and the suite canary, 1 corroboration of a same-family finding, 1 baseline no-action); 47
+were refuted or left as leads, mostly claims about code outside the changed hunks and
+busybox-portability claims refuted by container probes; none was fix-before-tag or range-introduced.
+In the re-check pair, DeepSeek raised no accepted behavioural finding and one claim refuted live (a
+stale `PWD` defeating the gate); the same-family leg found the three pass-2 findings. Pass 1 named
+two new classes: a test that pins mutable release-flow state (the live `[Unreleased]` text), and a
+path-valued environment variable re-resolved after the process changes directory. No gate ran the
+suite on the cut shape; a check for that is filed. **What was NOT checked:** Clause A on the whole
+state. The verdicts ran NO-GO at `7d0fd60`, then GO at `62c71bb` after one fix round, with Clause A
+satisfied on the fix round's surface under the operator's scoping, not on the whole state: the
+re-check pair read only what the fix round newly reached and found no behavioural finding and no new
+class, while the whole-state pair was not run and the 38 findings above remain open. Beyond that:
+Linux, busybox and dash behaviour of the fix code was not re-run by the verifier — CI's ubuntu and
+alpine legs are the only evidence, and the Linux flake rate of the repaired census test is
+unmeasured; the simulated cut tests a shape, and the real cut also adds this history entry, which no
+test the verifier ran has seen; the DeepSeek re-check bundles were not re-diffed byte for byte
+against the tree; the pass-1 findings stand on pass-1 evidence, since nothing in the fix surface
+touches them; and the standing-list lines were not re-read by the verifier. **Induced-defect rate:**
+3 / 95 — the verifier's per-finding tally, pass 1 0 / 92 and pass 2 3 / 3, all three low and none
+behavioural: an assertion widened to a whole file that the fix's own changelog bullet satisfies, a
+list of path variables only half bound by tests, and a corrected README sentence left unscoped
+beside the guard-hook copy it names. The automated tally counts marker lines and reads 3 / 92,
+because DeepSeek-derived findings carry no marker line and two duplicates were merged; recorded
 rather than smoothed. **Records:** the run's own audit directory, gitignored.
 
 ## v0.13.0 — 2026-10-03
@@ -330,7 +394,83 @@ new guards with tests that turn red without them, and corrected prose the range 
 Twenty-four merged PRs, #473–#496: seventeen build PRs and seven audit fixes. Seven known issues ship
 disclosed in the CHANGELOG section.
 
-**Verification.** **Scope:** 99 files across 17 merged PRs (#473–#489), range v0.12.0 to the anchor `06c5183`; plus seven audit-fix PRs (#490–#496) in five fix rounds, 104 files in v0.12.0..`0d9a892`, the GO commit and the merge of PR #496 — audit fixes, not feature work, so the anchor was not re-cut. **Method:** a standalone run, not a managed release (the operator's moratorium); orchestrator Opus 5.5. S1 mechanical baseline plus seven whole-read legs over clusters cut by coupling (machine-watch, hook installers, state root, git-env guard, the run.sh canary, go/vendor-review/leak-gate, cross-cutting prose), Sonnet; the diverse leg was DeepSeek by operator decision — its chat model on seven diff bundles, its reasoning model on four, all four of which returned empty at the vendor's ceiling. Clause A was applied strictly by operator decision: any behavioural finding from a re-check pair, known or not, resets it. Seven operator-launched Fixer sessions — real sessions, never subagents — in five fix rounds, checked by four re-check pairs, each run in parallel on a fix-round head: a fresh same-family leg plus DeepSeek chat on whole-file bundles (3, 4, 4 and 1 bundles). The S-final verifier ran five passes: the first two in one context, the last three fresh from the written record after the orchestrator's worktree was deleted. **Coverage:** 99 ledger rows, every row exactly one verdict at the anchor — 34 clean, 27 mechanical-only, 38 finding rows (17 fix-before-tag, 13 ticket-next, 7 no-action, 1 known-issue); none waived; carried through passes 2–5. The verifier read the whole range delta of the eight files the legs had read only in part; the unread remainder of those files is unchanged since v0.12.0 and its rows are mechanical-only, never clean. CI run 37127884060, 6/6 on the exact GO SHA by commit, including the Alpine/busybox leg. Suite evidence from scratch clones and CI only, never the operator's own checkout: the verifier's last run at the GO SHA passed 101 files, 7164 assertions, 0 failed, and a listing of the real temp dir around that run found no new entry of keel's. The verifier re-derived every finding and every fix itself — live wherever a probe was possible, by reading where it was not. **Findings:** 80 accepted across five passes (45 in the first wave, then 14, 10, 9 and 2 from the re-check rounds); 10 DeepSeek first-wave items refuted. The first wave's 12 fix-before-tag findings were fixed by the first three Fixer batches; the later batches fixed five more behavioural findings from the re-check rounds plus prose, and the last batch was prose only. Open at the GO: 30 behavioural — 17 ticket-next, filed at the run's close in 10 backlog tickets; 12 on the standing list as no-action; 1 a known issue — plus non-behavioural standing lines; the open defects an adopter can meet are disclosed as the CHANGELOG section's known issues. The last round's two low prose findings are imprecise clauses in known issue (7) itself, left as written: the cut changes no sentence. **Behavioural defects:** 30 ship open at the GO (split above). The first wave accepted 25, 17 introduced in this range and 8 baseline at v0.12.0; three were machine-safety paths introduced in range, all in the test harness or behind an environment variable — the suite running an operator's exported notifier on test data, probe directories left in the real temp dir, the engine half of the canary failing open and silent — and all three were fixed before the tag. The re-check rounds found 12 more, mostly baseline defects reached by deeper whole-file reads; among those fixed are both canary halves going silent when git cannot read the checkout they watch (one nested layout still skips silently, a known issue), the suite's residue in the real temp dir, and per-file logs sent to `/` when the temp-dir mint failed as root. One behavioural defect was induced by a fix round, low and fail-closed: a `TMPDIR` inside the watched checkout trips the canary on a clean run — induced on macOS, while on Linux the same trip predates the release — disclosed as part of known issue (7). None of the 30 open is a default-path write to the real machine or the destruction of a user file introduced by this range; the installers' never-clobber holes — `install-secret-guard.sh` overwriting a user's hook that merely mentions its marker, among them — are baseline, shipped already in v0.12.0, and now ticketed. **Which layer found what:** the same-family legs found every machine-safety item of the first wave and every fail-open shape of the canary. DeepSeek's first wave yielded one unique accepted finding, low, and corroborated one more; its machine-watch slice came back truncated, so at the first pass the release's largest new surface had no usable diverse read — one of the reasons Clause A was not met at that pass. From round 2, smaller whole-file bundles worked: DeepSeek found the install tests' symlink farms left in the real temp dir, which a diff bundle had missed, and three further accepted items. In round 5 it found nothing and missed the two prose imprecisions the same-family leg found. The verifier caught one orchestrator error at its first pass — the run's opening record cited a CI run for a different commit — and recorded its own upstream share of an induced finding: a fix brief that copied the verifier's imprecise wording carried the imprecision into the shipped sentence. **What was NOT checked:** Clause A on the whole state. The verdicts ran NO-GO, NO-GO, NO-GO, NO-GO, then GO at `0d9a892` — after four NO-GO passes, and with Clause A satisfied on the final fix round's surface under the operator's scoping, not on the whole state: by operator decision the last re-check pair read only the three CHANGELOG hunks the final fix batch changed, and on that surface it returned no behavioural finding and no new class. On the whole state the round-4 pair had returned six behavioural findings, and the 30 above remain open. The verifier's own judgement, recorded with the GO: the scoping is a sound operator decision, not a sound reading of Clause A as written, and the GO does not mean no behavioural finding remains. Beyond that, a selection from the run's own list: the private audit harness, gitignored and outside the universe; the `agy` client against a real `agy`, so two of its findings rest on reading alone; the two operator-drill claims behind the desktop notification, verified by no leg; the Linux behaviour of the round-5 canary probes, run on macOS only, with CI as the Linux evidence; which of the `KEEL_*` variables the suite leaves inherited name a path a test could write through, counted by a grep and never probed; the migrator's race with a live hook and a cross-filesystem move, read but not reproduced; and the procedure this run itself executes, which has no independent leg by design. **Induced-defect rate:** 18 / 80 — the verifier's per-finding tally: round 1 0 / 45, round 2 8 / 14, round 3 3 / 10, round 4 5 / 9, round 5 2 / 2 — one of them behavioural; most of the rest are imprecise sentences a prose fix wrote into the disclosures it added. The run's automated tally instead reads 16 / 76: it counts marker lines, so it counts two first-wave leads as findings and misses the verifier's later reconciliations. Recorded rather than smoothed. Records: the run's own audit directory and the cross-run audit record, both gitignored.
+**Verification.** **Scope:** 99 files across 17 merged PRs (#473–#489), range v0.12.0 to the anchor
+`06c5183`; plus seven audit-fix PRs (#490–#496) in five fix rounds, 104 files in v0.12.0..`0d9a892`,
+the GO commit and the merge of PR #496 — audit fixes, not feature work, so the anchor was not
+re-cut. **Method:** a standalone run, not a managed release (the operator's moratorium);
+orchestrator Opus 5.5. S1 mechanical baseline plus seven whole-read legs over clusters cut by
+coupling (machine-watch, hook installers, state root, git-env guard, the run.sh canary,
+go/vendor-review/leak-gate, cross-cutting prose), Sonnet; the diverse leg was DeepSeek by operator
+decision — its chat model on seven diff bundles, its reasoning model on four, all four of which
+returned empty at the vendor's ceiling. Clause A was applied strictly by operator decision: any
+behavioural finding from a re-check pair, known or not, resets it. Seven operator-launched Fixer
+sessions — real sessions, never subagents — in five fix rounds, checked by four re-check pairs, each
+run in parallel on a fix-round head: a fresh same-family leg plus DeepSeek chat on whole-file
+bundles (3, 4, 4 and 1 bundles). The S-final verifier ran five passes: the first two in one context,
+the last three fresh from the written record after the orchestrator's worktree was deleted.
+**Coverage:** 99 ledger rows, every row exactly one verdict at the anchor — 34 clean, 27
+mechanical-only, 38 finding rows (17 fix-before-tag, 13 ticket-next, 7 no-action, 1 known-issue);
+none waived; carried through passes 2–5. The verifier read the whole range delta of the eight files
+the legs had read only in part; the unread remainder of those files is unchanged since v0.12.0 and
+its rows are mechanical-only, never clean. CI run 37127884060, 6/6 on the exact GO SHA by commit,
+including the Alpine/busybox leg. Suite evidence from scratch clones and CI only, never the
+operator's own checkout: the verifier's last run at the GO SHA passed 101 files, 7164 assertions, 0
+failed, and a listing of the real temp dir around that run found no new entry of keel's. The
+verifier re-derived every finding and every fix itself — live wherever a probe was possible, by
+reading where it was not. **Findings:** 80 accepted across five passes (45 in the first wave, then
+14, 10, 9 and 2 from the re-check rounds); 10 DeepSeek first-wave items refuted. The first wave's 12
+fix-before-tag findings were fixed by the first three Fixer batches; the later batches fixed five
+more behavioural findings from the re-check rounds plus prose, and the last batch was prose only.
+Open at the GO: 30 behavioural — 17 ticket-next, filed at the run's close in 10 backlog tickets; 12
+on the standing list as no-action; 1 a known issue — plus non-behavioural standing lines; the open
+defects an adopter can meet are disclosed as the CHANGELOG section's known issues. The last round's
+two low prose findings are imprecise clauses in known issue (7) itself, left as written: the cut
+changes no sentence. **Behavioural defects:** 30 ship open at the GO (split above). The first wave
+accepted 25, 17 introduced in this range and 8 baseline at v0.12.0; three were machine-safety paths
+introduced in range, all in the test harness or behind an environment variable — the suite running
+an operator's exported notifier on test data, probe directories left in the real temp dir, the
+engine half of the canary failing open and silent — and all three were fixed before the tag. The
+re-check rounds found 12 more, mostly baseline defects reached by deeper whole-file reads; among
+those fixed are both canary halves going silent when git cannot read the checkout they watch (one
+nested layout still skips silently, a known issue), the suite's residue in the real temp dir, and
+per-file logs sent to `/` when the temp-dir mint failed as root. One behavioural defect was induced
+by a fix round, low and fail-closed: a `TMPDIR` inside the watched checkout trips the canary on a
+clean run — induced on macOS, while on Linux the same trip predates the release — disclosed as part
+of known issue (7). None of the 30 open is a default-path write to the real machine or the
+destruction of a user file introduced by this range; the installers' never-clobber holes —
+`install-secret-guard.sh` overwriting a user's hook that merely mentions its marker, among them —
+are baseline, shipped already in v0.12.0, and now ticketed. **Which layer found what:** the
+same-family legs found every machine-safety item of the first wave and every fail-open shape of the
+canary. DeepSeek's first wave yielded one unique accepted finding, low, and corroborated one more;
+its machine-watch slice came back truncated, so at the first pass the release's largest new surface
+had no usable diverse read — one of the reasons Clause A was not met at that pass. From round 2,
+smaller whole-file bundles worked: DeepSeek found the install tests' symlink farms left in the real
+temp dir, which a diff bundle had missed, and three further accepted items. In round 5 it found
+nothing and missed the two prose imprecisions the same-family leg found. The verifier caught one
+orchestrator error at its first pass — the run's opening record cited a CI run for a different
+commit — and recorded its own upstream share of an induced finding: a fix brief that copied the
+verifier's imprecise wording carried the imprecision into the shipped sentence.
+**What was NOT checked:** Clause A on the whole state. The verdicts ran NO-GO, NO-GO, NO-GO, NO-GO,
+then GO at `0d9a892` — after four NO-GO passes, and with Clause A satisfied on the final fix round's
+surface under the operator's scoping, not on the whole state: by operator decision the last re-check
+pair read only the three CHANGELOG hunks the final fix batch changed, and on that surface it
+returned no behavioural finding and no new class. On the whole state the round-4 pair had returned
+six behavioural findings, and the 30 above remain open. The verifier's own judgement, recorded with
+the GO: the scoping is a sound operator decision, not a sound reading of Clause A as written, and
+the GO does not mean no behavioural finding remains. Beyond that, a selection from the run's own
+list: the private audit harness, gitignored and outside the universe; the `agy` client against a
+real `agy`, so two of its findings rest on reading alone; the two operator-drill claims behind the
+desktop notification, verified by no leg; the Linux behaviour of the round-5 canary probes, run on
+macOS only, with CI as the Linux evidence; which of the `KEEL_*` variables the suite leaves
+inherited name a path a test could write through, counted by a grep and never probed; the migrator's
+race with a live hook and a cross-filesystem move, read but not reproduced; and the procedure this
+run itself executes, which has no independent leg by design. **Induced-defect rate:** 18 / 80 — the
+verifier's per-finding tally: round 1 0 / 45, round 2 8 / 14, round 3 3 / 10, round 4 5 / 9, round 5
+2 / 2 — one of them behavioural; most of the rest are imprecise sentences a prose fix wrote into the
+disclosures it added. The run's automated tally instead reads 16 / 76: it counts marker lines, so it
+counts two first-wave leads as findings and misses the verifier's later reconciliations. Recorded
+rather than smoothed. Records: the run's own audit directory and the cross-run audit record, both
+gitignored.
 
 ## v0.12.0 — 2026-09-25
 
@@ -356,7 +496,72 @@ itself was reworked three times in-release, plus a frontmatter fix (dir #636, di
 single `/go <N>`, with a coordination-only overlay from the fourth wave on. Twenty merged
 PRs, #451–#470.
 
-**Verification.** **Scope:** 130 files across 20 merged PRs (#451–#470) — 16 in the original range v0.11.0..48a6569, plus a 4-PR fix round (#467–#470, 19 file-touches); the GO commit is `c1010d1`, PR #470's own merge — an audit fix, not feature work, so the anchor was not re-cut and the fix round's touched files carry their post-anchor commit on their own ledger rows. **Method:** managed release 0.12.0 (manager + orchestrator, Opus 5.5 + high). S1 mechanical baseline (Sonnet + medium) over all 130 files; five parallel blind whole-read legs over clusters cut by coupling (test harness 13 files, gate + installers 16, impact + read-trace 15, /go + filing bar 15, audit prose + CHANGELOG 7), each code file travelling with its test and the prose that pins it, at Sonnet + high; a cross-vendor wave on the same five clusters as diff bundles, blind, same SHA — GPT-OSS-120b, Gemini's quota exhausted. A first fix round (3 PRs, operator-widened) ran next, its own pair a same-family leg plus another GPT-OSS bundle; the verifier's own first pass issued a GO it could not support — on two facts the orchestrator's own re-derivation refuted — and, resumed with that evidence, ruled NO-GO on the resulting SHA over one finding. A second fix round (1 PR) closed it, checked by a fresh same-family leg plus a third GPT-OSS bundle. S-final verifier at the highest effort tier, one context resumed across three passes; every Linux/Alpine claim measured live in Docker, never inferred. **Coverage:** 130 ledger rows, every row exactly one verdict, resolved at the GO SHA — 56 clean, 4 ticket-next, 4 no-action, 2 fix-before-tag, 64 mechanical-only, 0 waived; every substantive row had one whole-read leg plus the mechanical pass. The two files a wave-1 leg had only partially read (`tests/test_pre_pr_gate.sh`, `tests/test_secret_guard.sh`) were closed by the verifier reading both whole, all 3680 and 1262 lines. CI 6/6 on the exact GO SHA, including the Alpine/busybox leg. Suite evidence from scratch clones and CI only, never the operator's own checkout. The verifier re-derived every finding and every refutation with its own live commands, in its own scratch clones, independent of the prior sessions' own runs. **Findings:** 9 accepted, 1 induced — a fix round's own new redaction code left a multi-line config value's continuation line unredacted. Six were fixed before the tag: an impact-store provenance writer that followed an inherited `GIT_DIR` into another repository's config; a new test-sandbox self-check that false-failed under a sibling worktree's ordinary commit; a gate veto with two unguarded `git -C` calls, baseline at v0.11.0; a misleading, though still fail-closed, deny message when `HOME` is a plain file; three previously-unpinned command-contract rules; and the induced redaction gap itself. Three were disclosed rather than fixed at the root: a known-class guard-coverage gap — the test sandbox's guard covers refs but not an arbitrary `git config` write, now at least detected by a widened tripwire though still unblocked at the write itself; one command doc's intro line still lacking a managed-release carve-out its own siblings carry; and the CHANGELOG's own stale test-file count, which this cut resolves. Zero items were filed as fresh BACKLOG tickets this run — every accepted finding was judged cheap and safe enough to fix or disclose in-release instead. **Behavioural defects:** 4 — two introduced in this range and fixed before the tag (the impact-store hijack, in the same release's own new provenance writer; the ref-guard self-check's false-trip, in the same release's own new self-check); one baseline at v0.11.0, also fixed here (the gate veto's own two unguarded `git -C` calls); and one a known-class test-sandbox guard-coverage gap, not a new regression — the guard covers refs but not an arbitrary `git config` write, disclosed via a widened detection tripwire rather than closed at the write. A fifth, the redaction gap, was induced by the first fix round itself and closed by the second. **Which layer found what:** the same-family legs found everything accepted; the vendor leg — GPT-OSS-120b, weaker than prior runs' Gemini — found nothing accepted. Two of its five first-wave bundles, the two safety-guard clusters, returned SHIP with zero findings and zero leads in about twenty seconds each, compensated by the verifier's own live re-derivation of three guard claims per cluster; its other three bundles raised five findings, every one refuted on execution — a transitive `source` chain read as absent, a shebang read as busybox, a documentation label read as a contradiction. The fix rounds' own same-family legs carried Clause A: the first found the run's only induced defect and the one finding that forced a second fix round; the second confirmed both fixes sound and found nothing new. The verifier itself needed one round of arbitration: its own first pass issued GO against its own "not satisfied" ruling on Clause A, resting on two facts it had gotten wrong, caught by the orchestrator's live re-probe and corrected to NO-GO before the second fix round resolved it for good. **What was NOT checked:** these are a selection from the run's own record. The private audit harness itself, gitignored and outside the universe the derivation tool's own git-diff scope can ever reach. The vendor leg's two thin bundles (the safety-guard clusters) were read only as a compensating check — three guard claims per cluster, re-derived live by the verifier — not independently re-read item by item the way the other three bundles' five findings were. One mechanical-pass leg disclosed a boundary it did not cross: the parts of `doctor.sh`'s and `citation-resolvability.sh`'s own checks that depend on the live main-checkout backlog rather than a scratch clone. The procedure this run itself executes has no independent leg, by design. **Induced-defect rate:** 1 / 9 — the verifier's own per-finding tally — a fix round's own new redaction code left one continuation line unredacted. The run's automated tally instead reads 2 / 11: one leg wrote two `Mark:` lines for a single finding, and a later leg's own below-bar prose note, not itself a finding, picked up a `Mark:` too. Recorded rather than smoothed; a ticket owns making the tally count per finding, not per marker line. Records: the run's own audit directory and the release ledger, both gitignored and named in the release manager's record.
+**Verification.** **Scope:** 130 files across 20 merged PRs (#451–#470) — 16 in the original range
+v0.11.0..48a6569, plus a 4-PR fix round (#467–#470, 19 file-touches); the GO commit is `c1010d1`, PR
+#470's own merge — an audit fix, not feature work, so the anchor was not re-cut and the fix round's
+touched files carry their post-anchor commit on their own ledger rows. **Method:** managed release
+0.12.0 (manager + orchestrator, Opus 5.5 + high). S1 mechanical baseline (Sonnet + medium) over all
+130 files; five parallel blind whole-read legs over clusters cut by coupling (test harness 13 files,
+gate + installers 16, impact + read-trace 15, /go + filing bar 15, audit prose + CHANGELOG 7), each
+code file travelling with its test and the prose that pins it, at Sonnet + high; a cross-vendor wave
+on the same five clusters as diff bundles, blind, same SHA — GPT-OSS-120b, Gemini's quota exhausted.
+A first fix round (3 PRs, operator-widened) ran next, its own pair a same-family leg plus another
+GPT-OSS bundle; the verifier's own first pass issued a GO it could not support — on two facts the
+orchestrator's own re-derivation refuted — and, resumed with that evidence, ruled NO-GO on the
+resulting SHA over one finding. A second fix round (1 PR) closed it, checked by a fresh same-family
+leg plus a third GPT-OSS bundle. S-final verifier at the highest effort tier, one context resumed
+across three passes; every Linux/Alpine claim measured live in Docker, never inferred. **Coverage:**
+130 ledger rows, every row exactly one verdict, resolved at the GO SHA — 56 clean, 4 ticket-next, 4
+no-action, 2 fix-before-tag, 64 mechanical-only, 0 waived; every substantive row had one whole-read
+leg plus the mechanical pass. The two files a wave-1 leg had only partially read
+(`tests/test_pre_pr_gate.sh`, `tests/test_secret_guard.sh`) were closed by the verifier reading both
+whole, all 3680 and 1262 lines. CI 6/6 on the exact GO SHA, including the Alpine/busybox leg. Suite
+evidence from scratch clones and CI only, never the operator's own checkout. The verifier re-derived
+every finding and every refutation with its own live commands, in its own scratch clones,
+independent of the prior sessions' own runs. **Findings:** 9 accepted, 1 induced — a fix round's own
+new redaction code left a multi-line config value's continuation line unredacted. Six were fixed
+before the tag: an impact-store provenance writer that followed an inherited `GIT_DIR` into another
+repository's config; a new test-sandbox self-check that false-failed under a sibling worktree's
+ordinary commit; a gate veto with two unguarded `git -C` calls, baseline at v0.11.0; a misleading,
+though still fail-closed, deny message when `HOME` is a plain file; three previously-unpinned
+command-contract rules; and the induced redaction gap itself. Three were disclosed rather than fixed
+at the root: a known-class guard-coverage gap — the test sandbox's guard covers refs but not an
+arbitrary `git config` write, now at least detected by a widened tripwire though still unblocked at
+the write itself; one command doc's intro line still lacking a managed-release carve-out its own
+siblings carry; and the CHANGELOG's own stale test-file count, which this cut resolves. Zero items
+were filed as fresh BACKLOG tickets this run — every accepted finding was judged cheap and safe
+enough to fix or disclose in-release instead. **Behavioural defects:** 4 — two introduced in this
+range and fixed before the tag (the impact-store hijack, in the same release's own new provenance
+writer; the ref-guard self-check's false-trip, in the same release's own new self-check); one
+baseline at v0.11.0, also fixed here (the gate veto's own two unguarded `git -C` calls); and one a
+known-class test-sandbox guard-coverage gap, not a new regression — the guard covers refs but not an
+arbitrary `git config` write, disclosed via a widened detection tripwire rather than closed at the
+write. A fifth, the redaction gap, was induced by the first fix round itself and closed by the
+second. **Which layer found what:** the same-family legs found everything accepted; the vendor leg —
+GPT-OSS-120b, weaker than prior runs' Gemini — found nothing accepted. Two of its five first-wave
+bundles, the two safety-guard clusters, returned SHIP with zero findings and zero leads in about
+twenty seconds each, compensated by the verifier's own live re-derivation of three guard claims per
+cluster; its other three bundles raised five findings, every one refuted on execution — a transitive
+`source` chain read as absent, a shebang read as busybox, a documentation label read as a
+contradiction. The fix rounds' own same-family legs carried Clause A: the first found the run's only
+induced defect and the one finding that forced a second fix round; the second confirmed both fixes
+sound and found nothing new. The verifier itself needed one round of arbitration: its own first pass
+issued GO against its own "not satisfied" ruling on Clause A, resting on two facts it had gotten
+wrong, caught by the orchestrator's live re-probe and corrected to NO-GO before the second fix round
+resolved it for good. **What was NOT checked:** these are a selection from the run's own record. The
+private audit harness itself, gitignored and outside the universe the derivation tool's own git-diff
+scope can ever reach. The vendor leg's two thin bundles (the safety-guard clusters) were read only
+as a compensating check — three guard claims per cluster, re-derived live by the verifier — not
+independently re-read item by item the way the other three bundles' five findings were. One
+mechanical-pass leg disclosed a boundary it did not cross: the parts of `doctor.sh`'s and
+`citation-resolvability.sh`'s own checks that depend on the live main-checkout backlog rather than a
+scratch clone. The procedure this run itself executes has no independent leg, by design.
+**Induced-defect rate:** 1 / 9 — the verifier's own per-finding tally — a fix round's own new
+redaction code left one continuation line unredacted. The run's automated tally instead reads 2 /
+11: one leg wrote two `Mark:` lines for a single finding, and a later leg's own below-bar prose
+note, not itself a finding, picked up a `Mark:` too. Recorded rather than smoothed; a ticket owns
+making the tally count per finding, not per marker line. Records: the run's own audit directory and
+the release ledger, both gitignored and named in the release manager's record.
 
 ## v0.11.0 — 2026-09-22
 
@@ -380,7 +585,67 @@ reached the
 real machine-global secret guard while reproducing a defect, and a CI wait that cost a session
 thirty-plus no-op turns — are recorded in the release ledger, not here.
 
-**Verification.** **Scope:** 59 files across 25 merged PRs (#424–#448), range v0.10.2 to the anchor `e36f46a`; the GO commit is `0d6a1bc`, the merge of the in-release fix PR #449 — an audit fix, not feature work, so the anchor was not re-cut and the three fixed files carry their post-anchor commit on their rows. **Method:** 8 same-family legs, count fixed at plan time and never grown, plus 14 vendor calls, in two waves — S1 mechanical baseline over all 59 files; five parallel blind whole-read legs over clusters cut by coupling (gate 12 files, secret-guard/installers 13, read-trace/self-tools 14, backlog instruments 13, prose/CHANGELOG 7), each code file travelling with its test and the prose that pins it; a cross-vendor wave on the same five clusters as diff bundles, blind, parallel, same SHA — two vendors, three models once a reasoning model's ceiling forced a reroute. A fix round then ran for the one behavioural finding: a gated Fixer session — a real session, never a subagent — with its own independent pair, one same-family leg and two cross-vendor ones, on the fix's own bundle. S-final verifier at the highest effort tier. **Coverage:** 59 ledger rows, every row exactly one verdict, resolved at the GO SHA — 49 clean, 8 ticket-next, 1 no-action, 1 fix-before-tag, 0 mechanical-only, 0 waived; every row had one whole-read leg plus the mechanical pass. CI 6/6 on that exact commit including the Alpine/busybox leg — in progress when the verifier launched and waited for, and the PR head's own green explicitly not inherited, a merge commit being a different commit. Suite evidence from scratch clones and CI only, never the operator's own checkout. The verifier re-read a sample of clean rows and re-derived every finding and every refutation with its own commands. **Findings:** 9 accepted, none induced by the run's own fix round — which is all the record's `original` mark asserts; two it additionally names as pre-existing, and the rest it does not date either way — 1 behavioural, fixed before the tag; 8 ticket-next or no-action, among them two coverage gaps, one a comment stating the opposite of what its code does, one a strip that misses a third punctuation shape of a family ticketed twice before, one a locale pin measured unreachable on both platforms keel targets, and one a documentation citation pointing at a section override that has never existed in any revision of the cited file. **Behavioural defects:** 1 — the secret-guard installer wrote its new run-scoped safety-net backup to the same path the `--force` branch uses for a permanent one, then deleted it on success, destroying a user's permanent backup on the next ordinary re-install. Introduced in this range, baseline-controlled against the previous tag, fixed with two distinct suffix constants and a regression test proved red by reverting the fix. It is the first behavioural defect in four audited releases, and the first one a delta audit caught that the release's own build reviews did not. **Which layer found what:** the cross-vendor leg found it, from the diff alone, and it was the run's only behavioural defect; the same-family whole-read of the very same file called it clean, because it verified the file through the shipped fixtures and every one of those is a failure-path case — the success path across two runs has no test at all. The converse held just as sharply: every mutation proof in the run required executing code, which a diff reader cannot do. The fix round is the cleanest illustration of the pair — the vendor leg predicted the new regression test was load-bearing by contrasting it with a neighbour that is not, and the same-family leg proved it by reverting the fix and watching the assertions go red. Neither could do the other's half. One vendor's reasoning model returned empty content at its ceiling on four of five first-wave bundles and was not relaunched; those four were routed to that vendor's non-reasoning model instead, which answered all four, so every bundle still carried two live diverse legs. The reasoning model's one completed bundle is where the behavioural defect came from. **What was NOT checked:** these are a selection from the run record's own longer list — the private audit harness, which is gitignored and outside the universe by construction; ten gate-cluster items from one vendor, read and spot-matched against an already-mutation-proved same-family read but not re-derived one by one, all of them that vendor's own "no defect" conclusions; six further vendor items across three bundles — a key-dedup overwrite, a byte-class check under a UTF-8 locale, a slug-collision fold, a test's pass-threshold looseness, a guard-ordering question already covered from another angle, and one stale prose rationale — read but not independently reproduced live, all latent or design-level rather than confirmed defects, and left to the standing pool reader's judgement rather than adjudicated at the cut; the procedure this run itself executes, which by design has no independent leg; and a local shellcheck reproduction, which returned output that did not match the command issued across three attempts and was discarded as untrustworthy rather than reported — CI's own shellcheck leg was the load-bearing one. **Induced-defect rate:** 0 induced / 9 total — the fix round's own independent pair came back clean on the fix. The run's automated tally instead read 0 of 23, because it counts marker lines across reports rather than findings, and one leg wrote fifteen of them on leads while its own report states zero findings — the same over-count class that needed hand-correction in each of the two preceding runs, here in a third shape. Recorded rather than smoothed, corrected by hand, and owned by a ticket that makes the tally count per finding. Records: the run's own audit directory and the release ledger, both gitignored and named in the release manager's record.
+**Verification.** **Scope:** 59 files across 25 merged PRs (#424–#448), range v0.10.2 to the anchor
+`e36f46a`; the GO commit is `0d6a1bc`, the merge of the in-release fix PR #449 — an audit fix, not
+feature work, so the anchor was not re-cut and the three fixed files carry their post-anchor commit
+on their rows. **Method:** 8 same-family legs, count fixed at plan time and never grown, plus 14
+vendor calls, in two waves — S1 mechanical baseline over all 59 files; five parallel blind
+whole-read legs over clusters cut by coupling (gate 12 files, secret-guard/installers 13,
+read-trace/self-tools 14, backlog instruments 13, prose/CHANGELOG 7), each code file travelling with
+its test and the prose that pins it; a cross-vendor wave on the same five clusters as diff bundles,
+blind, parallel, same SHA — two vendors, three models once a reasoning model's ceiling forced a
+reroute. A fix round then ran for the one behavioural finding: a gated Fixer session — a real
+session, never a subagent — with its own independent pair, one same-family leg and two cross-vendor
+ones, on the fix's own bundle. S-final verifier at the highest effort tier. **Coverage:** 59 ledger
+rows, every row exactly one verdict, resolved at the GO SHA — 49 clean, 8 ticket-next, 1 no-action,
+1 fix-before-tag, 0 mechanical-only, 0 waived; every row had one whole-read leg plus the mechanical
+pass. CI 6/6 on that exact commit including the Alpine/busybox leg — in progress when the verifier
+launched and waited for, and the PR head's own green explicitly not inherited, a merge commit being
+a different commit. Suite evidence from scratch clones and CI only, never the operator's own
+checkout. The verifier re-read a sample of clean rows and re-derived every finding and every
+refutation with its own commands. **Findings:** 9 accepted, none induced by the run's own fix round
+— which is all the record's `original` mark asserts; two it additionally names as pre-existing, and
+the rest it does not date either way — 1 behavioural, fixed before the tag; 8 ticket-next or
+no-action, among them two coverage gaps, one a comment stating the opposite of what its code does,
+one a strip that misses a third punctuation shape of a family ticketed twice before, one a locale
+pin measured unreachable on both platforms keel targets, and one a documentation citation pointing
+at a section override that has never existed in any revision of the cited file.
+**Behavioural defects:** 1 — the secret-guard installer wrote its new run-scoped safety-net backup
+to the same path the `--force` branch uses for a permanent one, then deleted it on success,
+destroying a user's permanent backup on the next ordinary re-install. Introduced in this range,
+baseline-controlled against the previous tag, fixed with two distinct suffix constants and a
+regression test proved red by reverting the fix. It is the first behavioural defect in four audited
+releases, and the first one a delta audit caught that the release's own build reviews did not.
+**Which layer found what:** the cross-vendor leg found it, from the diff alone, and it was the run's
+only behavioural defect; the same-family whole-read of the very same file called it clean, because
+it verified the file through the shipped fixtures and every one of those is a failure-path case —
+the success path across two runs has no test at all. The converse held just as sharply: every
+mutation proof in the run required executing code, which a diff reader cannot do. The fix round is
+the cleanest illustration of the pair — the vendor leg predicted the new regression test was
+load-bearing by contrasting it with a neighbour that is not, and the same-family leg proved it by
+reverting the fix and watching the assertions go red. Neither could do the other's half. One
+vendor's reasoning model returned empty content at its ceiling on four of five first-wave bundles
+and was not relaunched; those four were routed to that vendor's non-reasoning model instead, which
+answered all four, so every bundle still carried two live diverse legs. The reasoning model's one
+completed bundle is where the behavioural defect came from. **What was NOT checked:** these are a
+selection from the run record's own longer list — the private audit harness, which is gitignored and
+outside the universe by construction; ten gate-cluster items from one vendor, read and spot-matched
+against an already-mutation-proved same-family read but not re-derived one by one, all of them that
+vendor's own "no defect" conclusions; six further vendor items across three bundles — a key-dedup
+overwrite, a byte-class check under a UTF-8 locale, a slug-collision fold, a test's pass-threshold
+looseness, a guard-ordering question already covered from another angle, and one stale prose
+rationale — read but not independently reproduced live, all latent or design-level rather than
+confirmed defects, and left to the standing pool reader's judgement rather than adjudicated at the
+cut; the procedure this run itself executes, which by design has no independent leg; and a local
+shellcheck reproduction, which returned output that did not match the command issued across three
+attempts and was discarded as untrustworthy rather than reported — CI's own shellcheck leg was the
+load-bearing one. **Induced-defect rate:** 0 induced / 9 total — the fix round's own independent
+pair came back clean on the fix. The run's automated tally instead read 0 of 23, because it counts
+marker lines across reports rather than findings, and one leg wrote fifteen of them on leads while
+its own report states zero findings — the same over-count class that needed hand-correction in each
+of the two preceding runs, here in a third shape. Recorded rather than smoothed, corrected by hand,
+and owned by a ticket that makes the tally count per finding. Records: the run's own audit directory
+and the release ledger, both gitignored and named in the release manager's record.
 
 ## v0.10.2 — 2026-09-19
 
@@ -408,7 +673,43 @@ real checkout, with a thirty-nine-site sweep of the same idiom recorded site by 
 managed release — one manager session, twelve gated worker sessions across four waves cut by file
 overlap — with the pattern's own costs and defects recorded in the release ledger, not here.
 
-**Verification.** **Scope:** 44 files across 14 merged PRs (#409–#422), range v0.10.1 to the anchor `ed62446`; the cut commit after it is prose only. **Method:** 6 legs, count fixed at plan time — S1 mechanical baseline; three whole-read legs over clusters cut by coupling (the security/installer cluster of 13 files, the gate/doctor/quoting cluster of 16, the self-tools/prose cluster of 15, so every changed file had exactly one whole read and each code file travelled with its test); a cross-vendor leg of two vendors on three diff bundles split by the same clusters (a Gemini reader on all three; a DeepSeek reasoner on two — it exhausted its 64k reasoning ceiling on the security bundle and was not relaunched, its captured reasoning mined for one lead instead); S-final verifier at the highest effort tier. No fix round was needed and no Fixer session ran. **Coverage:** 44 ledger rows, every row exactly one verdict — 34 `clean`, 8 `ticket-next` over six findings, 2 `no-action` on the standing list, 0 `fix-before-tag`, 0 `mechanical-only`, 0 waived. CI green on the GO SHA across all six legs, resolved live; suite evidence from scratch clones only. Clause A met with one named gap: the security cluster had a single live vendor read after the reasoner capped, compensated by the verifier's own highest-tier re-derivation of that cluster (the reachability scenario the new baseline logic guards was built and run live). **Findings:** 14 adjudicated — 10 accepted, 4 vendor claims refuted by execution (a claimed missing `pipefail` — present outside the hunk, the shipped broken-self-test stub run to prove it; a claimed bash 4.3+ over-escaping — identical output on seven bash versions in containers; a claimed missing grooming step — present; a claimed basename-only path match — the exact-match branch exists). Of the ten accepted: two coverage gaps (a guard with no test; a canary assertion that does not discriminate), one sync-twin drift between the two hook installers present since the previous release, one quoting edge on a no-jq fallback path, four comments or changelog sentences stating something false or over-stated (one re-derived in the cut commit itself under the whole-sentence rule), two no-action. **Behavioural defects:** none, in this release's code or in code an adopter had installed before it. **Which layer found what:** the same-family legs found the sync-twin drift and the untested guard; the vendor legs found four of the six ticketed items, all comment- or test-quality, and every one of their four behavioural-looking claims was refuted by running the code — the first run in this record where the diversity leg found no behavioural defect the same-family leg missed, on a range that had none to find. Bundling by coupling again produced zero cross-bundle false positives. **What was NOT checked:** the private audit harness (gitignored, outside the universe); the procedure this run executes had no independent leg, by design; the DeepSeek reasoner never read the security bundle; the local Alpine leg's network-dependent bootstrap assertions, which fail in this sandbox at a pristine baseline — CI's Alpine job was the load-bearing leg for every PR. **Induced-defect rate:** 0 / 14 — no fix round, so no fix-round defects; the release's own record counts three manager-brief text defects in the build phase, all caught by workers re-deriving before main. Records: the run's own audit directory and the release ledger, both gitignored and named in the release manager's record.
+**Verification.** **Scope:** 44 files across 14 merged PRs (#409–#422), range v0.10.1 to the anchor
+`ed62446`; the cut commit after it is prose only. **Method:** 6 legs, count fixed at plan time — S1
+mechanical baseline; three whole-read legs over clusters cut by coupling (the security/installer
+cluster of 13 files, the gate/doctor/quoting cluster of 16, the self-tools/prose cluster of 15, so
+every changed file had exactly one whole read and each code file travelled with its test); a
+cross-vendor leg of two vendors on three diff bundles split by the same clusters (a Gemini reader on
+all three; a DeepSeek reasoner on two — it exhausted its 64k reasoning ceiling on the security
+bundle and was not relaunched, its captured reasoning mined for one lead instead); S-final verifier
+at the highest effort tier. No fix round was needed and no Fixer session ran. **Coverage:** 44
+ledger rows, every row exactly one verdict — 34 `clean`, 8 `ticket-next` over six findings, 2
+`no-action` on the standing list, 0 `fix-before-tag`, 0 `mechanical-only`, 0 waived. CI green on the
+GO SHA across all six legs, resolved live; suite evidence from scratch clones only. Clause A met
+with one named gap: the security cluster had a single live vendor read after the reasoner capped,
+compensated by the verifier's own highest-tier re-derivation of that cluster (the reachability
+scenario the new baseline logic guards was built and run live). **Findings:** 14 adjudicated — 10
+accepted, 4 vendor claims refuted by execution (a claimed missing `pipefail` — present outside the
+hunk, the shipped broken-self-test stub run to prove it; a claimed bash 4.3+ over-escaping —
+identical output on seven bash versions in containers; a claimed missing grooming step — present; a
+claimed basename-only path match — the exact-match branch exists). Of the ten accepted: two coverage
+gaps (a guard with no test; a canary assertion that does not discriminate), one sync-twin drift
+between the two hook installers present since the previous release, one quoting edge on a no-jq
+fallback path, four comments or changelog sentences stating something false or over-stated (one
+re-derived in the cut commit itself under the whole-sentence rule), two no-action.
+**Behavioural defects:** none, in this release's code or in code an adopter had installed before it.
+**Which layer found what:** the same-family legs found the sync-twin drift and the untested guard;
+the vendor legs found four of the six ticketed items, all comment- or test-quality, and every one of
+their four behavioural-looking claims was refuted by running the code — the first run in this record
+where the diversity leg found no behavioural defect the same-family leg missed, on a range that had
+none to find. Bundling by coupling again produced zero cross-bundle false positives.
+**What was NOT checked:** the private audit harness (gitignored, outside the universe); the
+procedure this run executes had no independent leg, by design; the DeepSeek reasoner never read the
+security bundle; the local Alpine leg's network-dependent bootstrap assertions, which fail in this
+sandbox at a pristine baseline — CI's Alpine job was the load-bearing leg for every PR.
+**Induced-defect rate:** 0 / 14 — no fix round, so no fix-round defects; the release's own record
+counts three manager-brief text defects in the build phase, all caught by workers re-deriving before
+main. Records: the run's own audit directory and the release ledger, both gitignored and named in
+the release manager's record.
 
 ## v0.10.1 — 2026-09-15
 
@@ -438,42 +739,43 @@ the new tool itself — `export.sh` embedded the `--known` file and the remote U
 promised no bypass — and it, too, came from the diverse pair.
 
 **Verification.** **Scope:** 26 files across 11 merged PRs (#396–#406), range v0.10.0 to the anchor
-`e7bbfdf`, plus the fix round's PR #407 (9 files) live-checked at the GO SHA `5333bf6`; the cut commit
-after it is prose only. **Method:** 6 legs, count fixed at plan time — S1 mechanical baseline; S2
-whole-read + seams over the code/test cluster (12 files, the 3-PR `import.sh` seam among them); S3
-whole-read over the prose cluster (14 files, the 11-PR `CHANGELOG.md` seam); a cross-vendor leg of two
-vendors on two diff bundles split **by coupling with a sibling manifest** (DeepSeek reasoner and Gemini
-on bundle A; Gemini alone on bundle B after the reasoner exhausted its 64k completion budget twice — the
-run's own counter-example to §11's "raise the floor"); S-final verifier at the highest effort tier;
-one real Fixer session. The external OpenAI-family leg's 17 verdicts at `0396b4c` were carried into the
-ledger as imported input, verified once by a separate Claude verifier, not re-run. **Coverage:** 26
-ledger rows, every row exactly one verdict — 19 `clean`, 4 `fix-before-tag` closed by PR #407, 2
-`ticket-next`, 1 `no-action(cosmetic)` on the standing list, 0 `mechanical-only`, 0 waived; 9 post-anchor
-rows live-checked. CI green on the GO SHA across all six legs; suite evidence from scratch clones only.
-Clause A satisfied on the anchor universe — S2/S3 and the two-vendor leg ran blind in parallel on one SHA
-and the diverse pair found the one behavioural defect the same-family leg marked clean; on the fix
-round's new surface two fresh-context reads ran sequentially (letter not met, spirit served — the
-verifier advised against a third round, no open question remaining). **Findings:** 7 — 1 behavioural
-(`export.sh`'s leak gate did not cover the `--known` file or the MANIFEST `remote:` URL; both vendors,
-same line; fixed structurally by a second gate pass over the assembled packet), 2 stale claims
-(`docs/delta-audit.md` §11's "three"/"four" and "via a raw API"; this changelog's own entry for the `--staged` scan fixes, item (d),
-which named a mechanism the shipped code does not use — both re-derived from the tree under §10's
-whole-sentence rule), 1 low (`import.sh`'s closing fence on a CRLF reply, batched), 2 coverage gaps
-ticketed, 1 cosmetic. 3 refutations settled by execution (a bash-3.2 `${a[@]:-}`
-claim, a `known`-class field, a fixture count). **Behavioural defects:** one, in this release's own new
-tool, fixed before the tag; none in code an adopter had installed before this release. **Which layer found what:**
-the same-family whole-read legs marked `export.sh` clean; both cross-vendor readers
-flagged the same line — the eleventh consecutive run in which the diversity leg found what the
-same-family leg did not. Bundling by coupling produced zero cross-bundle false positives, against three
-in the previous run. The fix round then produced two induced defects of its own (a `#`-delimited sed
-built from caller text; a cleanup trap that would remove a pre-existing packet dir), both caught by
-the Fixer's own review before the PR opened. **What was NOT checked:** the private audit harness
-(`agy.sh`, `run-audit.sh` — gitignored, outside the universe; a bash-3.2 regression there was found and
-patched by the orchestrator mid-run); the procedure this run executes had no independent leg, by
-design; DeepSeek never read bundle B. **Induced-defect rate:** 3 / 10 accepted findings (the two
-Fixer-round defects and one low residual the Fixer's review parked and ticketed), all caught before
-main. Records: the run's own audit directory and the release ledger, both gitignored and named in the
-release manager's record.
+`e7bbfdf`, plus the fix round's PR #407 (9 files) live-checked at the GO SHA `5333bf6`; the cut
+commit after it is prose only. **Method:** 6 legs, count fixed at plan time — S1 mechanical
+baseline; S2 whole-read + seams over the code/test cluster (12 files, the 3-PR `import.sh` seam
+among them); S3 whole-read over the prose cluster (14 files, the 11-PR `CHANGELOG.md` seam); a
+cross-vendor leg of two vendors on two diff bundles split **by coupling with a sibling manifest**
+(DeepSeek reasoner and Gemini on bundle A; Gemini alone on bundle B after the reasoner exhausted its
+64k completion budget twice — the run's own counter-example to §11's "raise the floor"); S-final
+verifier at the highest effort tier; one real Fixer session. The external OpenAI-family leg's 17
+verdicts at `0396b4c` were carried into the ledger as imported input, verified once by a separate
+Claude verifier, not re-run. **Coverage:** 26 ledger rows, every row exactly one verdict — 19
+`clean`, 4 `fix-before-tag` closed by PR #407, 2 `ticket-next`, 1 `no-action(cosmetic)` on the
+standing list, 0 `mechanical-only`, 0 waived; 9 post-anchor rows live-checked. CI green on the GO
+SHA across all six legs; suite evidence from scratch clones only. Clause A satisfied on the anchor
+universe — S2/S3 and the two-vendor leg ran blind in parallel on one SHA and the diverse pair found
+the one behavioural defect the same-family leg marked clean; on the fix round's new surface two
+fresh-context reads ran sequentially (letter not met, spirit served — the verifier advised against a
+third round, no open question remaining). **Findings:** 7 — 1 behavioural (`export.sh`'s leak gate
+did not cover the `--known` file or the MANIFEST `remote:` URL; both vendors, same line; fixed
+structurally by a second gate pass over the assembled packet), 2 stale claims (`docs/delta-audit.md`
+§11's "three"/"four" and "via a raw API"; this changelog's own entry for the `--staged` scan fixes,
+item (d), which named a mechanism the shipped code does not use — both re-derived from the tree
+under §10's whole-sentence rule), 1 low (`import.sh`'s closing fence on a CRLF reply, batched), 2
+coverage gaps ticketed, 1 cosmetic. 3 refutations settled by execution (a bash-3.2 `${a[@]:-}`
+claim, a `known`-class field, a fixture count). **Behavioural defects:** one, in this release's own
+new tool, fixed before the tag; none in code an adopter had installed before this release.
+**Which layer found what:** the same-family whole-read legs marked `export.sh` clean; both
+cross-vendor readers flagged the same line — the eleventh consecutive run in which the diversity leg
+found what the same-family leg did not. Bundling by coupling produced zero cross-bundle false
+positives, against three in the previous run. The fix round then produced two induced defects of its
+own (a `#`-delimited sed built from caller text; a cleanup trap that would remove a pre-existing
+packet dir), both caught by the Fixer's own review before the PR opened. **What was NOT checked:**
+the private audit harness (`agy.sh`, `run-audit.sh` — gitignored, outside the universe; a bash-3.2
+regression there was found and patched by the orchestrator mid-run); the procedure this run executes
+had no independent leg, by design; DeepSeek never read bundle B. **Induced-defect rate:** 3 / 10
+accepted findings (the two Fixer-round defects and one low residual the Fixer's review parked and
+ticketed), all caught before main. Records: the run's own audit directory and the release ledger,
+both gitignored and named in the release manager's record.
 
 ## v0.10.0 — 2026-09-11
 
@@ -507,37 +809,38 @@ produced the project's first measured design-session cost lines.
 **Verification.** **Scope:** 31 files across 12 merged PRs (#381, #384–#394), range v0.9.1 to the
 cut. **Method:** 5 legs — S1 mechanical baseline; S2 whole-file-read + all 12 seams, run blind; S3
 cross-vendor in two rounds on two ≤185 KB diff bundles, **with two vendors for the first time**
-(DeepSeek reasoner, and Gemini via the Antigravity CLI); S-final verifier at the highest effort tier.
-Leg count fixed at plan time. **Coverage:** 31 ledger rows, every row exactly one verdict — 26 `clean`,
-5 carrying a finding, 0 `mechanical-only`, 0 waived. CI green on the RC SHA `81eb344` across all six
-legs (shellcheck, self-check, secret-scan, ubuntu, macOS, alpine-busybox); suite evidence from scratch
-clones only. Clause A satisfied: the whole-read and the two-vendor legs ran in parallel on the anchor
-and jointly found no behavioural defect and no new class. **Findings:** the two vendors between them
-raised 14 claims; the verifier accepted 8 (DS1-CV-3/4/5, DS2-CV-3/4, AG1-CV-1, AG2-CV-4/5) and rejected
-6 with evidence. Of the 8: 1 fix-before-tag (a test comment with its ticket numbers swapped, folded
-into this cut); 5 ticket-next, filed as four backlog tickets (the two grooming-doc invariant violations
-as one); 2 no-action naming real defects, moved to the standing list together with one pre-existing
-out-of-range item the mechanical leg surfaced. Three "one of them is wrong" disputes were settled by
-execution rather than reading: the implementing worker was right and DeepSeek wrong on a bash-3.2
-completion-marker (live-tested both ways); neither was wrong on a `${7-…}` contract; Gemini was right
-about the test comment. **Behavioural defects:** none in shipped code. The one lead that outranked
-everything — a worker's report of `gh pr create` succeeding right after `no active receipt` — was
-live-reproduced benign in a scratch clone: the second create after a consumed sentinel is denied, and
-the gate's accept path reads only the live sentinel, never its backup. **Which layer found what:** the
-same-family whole-read leg reported zero findings across all 31 files; every accepted finding came
-from the two cross-vendor diff readers, and the verifier's own adversarial sample of the whole-read
-leg's `clean` rows found four low-severity misses among them — the tenth consecutive run in which the
-diversity leg found what the same-family leg did not. The two vendors were themselves decorrelated:
-DeepSeek dug into the new citation ratchet (five claims, two accepted); Gemini never touched it but
-caught the two grooming-doc invariant violations DeepSeek missed. **What was NOT checked:** the
-procedure this run itself executes had no independent leg, by design, same as the prior run; the
-whole-read leg marked the release's most-rewritten file "read whole: yes, seam-focused" — a hedge the
-verifier's sample, not an unqualified whole read, is what covers; and the cross-vendor readers saw a
-diff, so the eight unchanged sentinel-retirement sites were visible only to the whole-read leg and the
-verifier. Two procedure incidents inside the audit are recorded in its run directory rather than
-smoothed: the whole-read leg's report never reached disk until the leg was resumed (a relative path in
-its final line), and splitting the diff by file across the two bundles manufactured three cross-bundle
-false positives in one vendor leg, discarded on that ground. **Induced-defect rate:** 0 of 8 accepted
+(DeepSeek reasoner, and Gemini via the Antigravity CLI); S-final verifier at the highest effort
+tier. Leg count fixed at plan time. **Coverage:** 31 ledger rows, every row exactly one verdict — 26
+`clean`, 5 carrying a finding, 0 `mechanical-only`, 0 waived. CI green on the RC SHA `81eb344`
+across all six legs (shellcheck, self-check, secret-scan, ubuntu, macOS, alpine-busybox); suite
+evidence from scratch clones only. Clause A satisfied: the whole-read and the two-vendor legs ran in
+parallel on the anchor and jointly found no behavioural defect and no new class. **Findings:** the
+two vendors between them raised 14 claims; the verifier accepted 8 (DS1-CV-3/4/5, DS2-CV-3/4,
+AG1-CV-1, AG2-CV-4/5) and rejected 6 with evidence. Of the 8: 1 fix-before-tag (a test comment with
+its ticket numbers swapped, folded into this cut); 5 ticket-next, filed as four backlog tickets (the
+two grooming-doc invariant violations as one); 2 no-action naming real defects, moved to the
+standing list together with one pre-existing out-of-range item the mechanical leg surfaced. Three
+"one of them is wrong" disputes were settled by execution rather than reading: the implementing
+worker was right and DeepSeek wrong on a bash-3.2 completion-marker (live-tested both ways); neither
+was wrong on a `${7-…}` contract; Gemini was right about the test comment. **Behavioural defects:**
+none in shipped code. The one lead that outranked everything — a worker's report of `gh pr create`
+succeeding right after `no active receipt` — was live-reproduced benign in a scratch clone: the
+second create after a consumed sentinel is denied, and the gate's accept path reads only the live
+sentinel, never its backup. **Which layer found what:** the same-family whole-read leg reported zero
+findings across all 31 files; every accepted finding came from the two cross-vendor diff readers,
+and the verifier's own adversarial sample of the whole-read leg's `clean` rows found four
+low-severity misses among them — the tenth consecutive run in which the diversity leg found what the
+same-family leg did not. The two vendors were themselves decorrelated: DeepSeek dug into the new
+citation ratchet (five claims, two accepted); Gemini never touched it but caught the two
+grooming-doc invariant violations DeepSeek missed. **What was NOT checked:** the procedure this run
+itself executes had no independent leg, by design, same as the prior run; the whole-read leg marked
+the release's most-rewritten file "read whole: yes, seam-focused" — a hedge the verifier's sample,
+not an unqualified whole read, is what covers; and the cross-vendor readers saw a diff, so the eight
+unchanged sentinel-retirement sites were visible only to the whole-read leg and the verifier. Two
+procedure incidents inside the audit are recorded in its run directory rather than smoothed: the
+whole-read leg's report never reached disk until the leg was resumed (a relative path in its final
+line), and splitting the diff by file across the two bundles manufactured three cross-bundle false
+positives in one vendor leg, discarded on that ground. **Induced-defect rate:** 0 of 8 accepted
 findings — a first-wave figure, every finding `original` by construction; the one fix this run made
 (a comment) is in this cut and had its neighbouring claims re-derived rather than paraphrased.
 
@@ -564,46 +867,47 @@ was still owed a ticket that had, in fact, already shipped in this same release;
 fix from the prior cycle (dir #409) that does not hold on bash ≥ 4.0, found only by the audit's blind
 diversity leg and confirmed on both Linux CI legs.
 
-**Verification.** **Scope:** 30 files across 10 merged PRs (#361, #369–#377), range v0.9.0 to the cut.
-**Method:** 8 legs — S1 mechanical baseline; S2/S3/S4/S5 parallel whole-file-read + seam duty; D1 blind
-diversity (a higher-tier model, plus a reconciliation pass); V1 cross-vendor (DeepSeek, scoped to 3
-files, 2 rounds); S-final verifier. Leg count was fixed at plan time at 7 and corrected to 7+V1 before
-the wave started, never grown mid-run. **Coverage:** 30 ledger rows, every row exactly one verdict;
-`mechanical-only` used zero times — all 30 got a whole-file read (29 by an S-leg; `docs/delta-audit.md`
-by D1 alone, single-leg by design since a leg must not certify the procedure it is executing); 0
-waived. CI green on the RC SHA `e0b11a9` across all six platform/check legs (shellcheck, self-check,
-ubuntu-24.04, alpine-busybox, macos-14, secret-scan) — for `tests/test_self_pool_report.sh` and
-`tests/test_self_archive_sweep_check.sh`, "CI green" is materially weaker evidence than it reads (see
-Behavioural defects). **Findings:** 5 fix-before-tag, fixed as one batch before this cut (PR #378) —
-one behavioural defect in shipped code (`tools/keel-impact.sh`) and four seam/prose/test-coverage
-defects. This audit's Part 1 filed **twelve tickets total**; **four are named individually in this
-entry** — two gaps in this project's own gitignored audit-harness tooling, outside the ledger's 30-row
-universe entirely (no shipped surface affected), a test-exemption blind spot in `commands/polish.md`,
-and two disclosed defects — the `pool-report.sh` gate-matching defect (named again below) and the
-wrong-mechanism claim (disclosed in `CHANGELOG.md`'s `[0.9.1]` known-issues paragraph, not repeated
-here) — **the remaining eight are ticket-next dispositions from the ledger, counted without individual
-description**; roughly 4 recorded on the standing no-action list; of 4 cross-vendor findings filed, 3
-refuted (2 with positive controls) and 1 already covered by a standing disclosure, none accepted as
-new; **4** leg verdicts overruled by the verifier — three marked OVERRULED in the ledger's own table
-(`clean` on `tools/keel-impact.sh`; one entry of a `clean` cross-PR seam sweep on `CHANGELOG.md`;
-`clean` on `docs/grooming.md`) plus a fourth the table does not carry at all (an earlier leg's
-dismissal of a missing-`summary`-call finding as a mere formatting quirk). **Behavioural defects:** the
-run's one CONFIRMED release-blocking behavioural defect — `tools/keel-impact.sh`'s
-`_impact_merge_ledger_produce()` (bash ≥ 4.0
-leaves an uninitialized `local` merely declared, not set-to-empty, so the prior cycle's EXIT-trap fix
-leaked its own temp file and clobbered the exit status on both Linux CI legs; reproduced
-independently, positive-controlled) — is fixed before this cut. **Three further behavioural
-shapes are the floor beyond it, disclosed rather than fixed** (full wording in `CHANGELOG.md`'s
-`[0.9.1]` known-issues paragraph): one live, in `docs/keel-ab/seed.sh`, an adopter-facing script; two
-latent, in this project's own self-maintenance tooling (`tools/lib/backlog-blocks.sh`'s closure-tag
-matching and `tools/self/pool-report.sh`'s parked-ticket matching), with no live occurrence on this
-repository's own backlog today. **Which layer found what:** the run's one release-blocking behavioural
-defect came from the blind diversity leg, not any same-family whole-read leg — the ninth consecutive
-run of that pattern. The cross-vendor leg filed 4 findings, all refuted or already covered by a
-standing disclosure; its one real contribution (the `pool-report.sh` defect above) surfaced only in a
-round that returned no answer at all — recovered from that round's own discarded reasoning trace, not
-from anything the leg stated. The verifier overruled 4 leg verdicts and independently re-derived the
-two highest-stakes findings (`tools/keel-impact.sh`'s bash-version defect, and a full-suite `ALL TEST
+**Verification.** **Scope:** 30 files across 10 merged PRs (#361, #369–#377), range v0.9.0 to the
+cut. **Method:** 8 legs — S1 mechanical baseline; S2/S3/S4/S5 parallel whole-file-read + seam duty;
+D1 blind diversity (a higher-tier model, plus a reconciliation pass); V1 cross-vendor (DeepSeek,
+scoped to 3 files, 2 rounds); S-final verifier. Leg count was fixed at plan time at 7 and corrected
+to 7+V1 before the wave started, never grown mid-run. **Coverage:** 30 ledger rows, every row
+exactly one verdict; `mechanical-only` used zero times — all 30 got a whole-file read (29 by an
+S-leg; `docs/delta-audit.md` by D1 alone, single-leg by design since a leg must not certify the
+procedure it is executing); 0 waived. CI green on the RC SHA `e0b11a9` across all six platform/check
+legs (shellcheck, self-check, ubuntu-24.04, alpine-busybox, macos-14, secret-scan) — for
+`tests/test_self_pool_report.sh` and `tests/test_self_archive_sweep_check.sh`, "CI green" is
+materially weaker evidence than it reads (see Behavioural defects). **Findings:** 5 fix-before-tag,
+fixed as one batch before this cut (PR #378) — one behavioural defect in shipped code
+(`tools/keel-impact.sh`) and four seam/prose/test-coverage defects. This audit's Part 1 filed
+**twelve tickets total**; **four are named individually in this entry** — two gaps in this project's
+own gitignored audit-harness tooling, outside the ledger's 30-row universe entirely (no shipped
+surface affected), a test-exemption blind spot in `commands/polish.md`, and two disclosed defects —
+the `pool-report.sh` gate-matching defect (named again below) and the wrong-mechanism claim
+(disclosed in `CHANGELOG.md`'s `[0.9.1]` known-issues paragraph, not repeated here) — **the
+remaining eight are ticket-next dispositions from the ledger, counted without individual
+description**; roughly 4 recorded on the standing no-action list; of 4 cross-vendor findings filed,
+3 refuted (2 with positive controls) and 1 already covered by a standing disclosure, none accepted
+as new; **4** leg verdicts overruled by the verifier — three marked OVERRULED in the ledger's own
+table (`clean` on `tools/keel-impact.sh`; one entry of a `clean` cross-PR seam sweep on
+`CHANGELOG.md`; `clean` on `docs/grooming.md`) plus a fourth the table does not carry at all (an
+earlier leg's dismissal of a missing-`summary`-call finding as a mere formatting quirk).
+**Behavioural defects:** the run's one CONFIRMED release-blocking behavioural defect —
+`tools/keel-impact.sh`'s `_impact_merge_ledger_produce()` (bash ≥ 4.0 leaves an uninitialized
+`local` merely declared, not set-to-empty, so the prior cycle's EXIT-trap fix leaked its own temp
+file and clobbered the exit status on both Linux CI legs; reproduced independently,
+positive-controlled) — is fixed before this cut. **Three further behavioural shapes are the floor
+beyond it, disclosed rather than fixed** (full wording in `CHANGELOG.md`'s `[0.9.1]` known-issues
+paragraph): one live, in `docs/keel-ab/seed.sh`, an adopter-facing script; two latent, in this
+project's own self-maintenance tooling (`tools/lib/backlog-blocks.sh`'s closure-tag matching and
+`tools/self/pool-report.sh`'s parked-ticket matching), with no live occurrence on this repository's
+own backlog today. **Which layer found what:** the run's one release-blocking behavioural defect
+came from the blind diversity leg, not any same-family whole-read leg — the ninth consecutive run of
+that pattern. The cross-vendor leg filed 4 findings, all refuted or already covered by a standing
+disclosure; its one real contribution (the `pool-report.sh` defect above) surfaced only in a round
+that returned no answer at all — recovered from that round's own discarded reasoning trace, not from
+anything the leg stated. The verifier overruled 4 leg verdicts and independently re-derived the two
+highest-stakes findings (`tools/keel-impact.sh`'s bash-version defect, and a full-suite `ALL TEST
 FILES PASSED` reproduction) from scratch rather than relaying them. **What was NOT checked:** the
 procedure `docs/delta-audit.md` this run itself executes had single-leg coverage, by design (a leg
 must not certify the rules it operates under) — its diversity-leg findings have had no independent
@@ -612,41 +916,43 @@ container (the bash-version premise above); a macOS-only-verified refutation of 
 causal claim is not established as platform-general. A pre-existing, untested retry branch in the
 read-trace code (symlinked `$TMPDIR`) was found uncovered by any test and confirmed correct by
 construction, not by a new test — recorded as a standing gap, not a defect. At the pre-tag
-reconciliation above, Clause A's structural limb was not yet satisfied for the fix/release-cut range —
-this file was surface no Part 1 leg had examined, and the orchestrator and that range's verifier had
-read it sequentially rather than in parallel. A further round then satisfied it; see Induced-defect
-rate below for what that round found and corrected. **On the release's own headline numbers:** PR
-#373's four census figures (44 tickets flipped, 220 previously-closed, a 35→36% archive-share shift, a
-pool size of 60) are quoted in that PR's own description and in the release manager's records, but
-`BACKLOG.md` is gitignored with no git history, so the exact snapshot they were measured against no
-longer exists and cannot be re-checked — as of this writing, running the PRE-#373 code against the
-live `BACKLOG.md` reads 233 closed tickets, a 36→37% shift and a pool of 66, none matching the PR's own
-figures, and a fourth source (`POOL-HISTORY.jsonl`) records a pool of 55 for the same release; the
-audit found the file moved 448→451 ticket blocks within the single session that produced those
-numbers. **What can still be checked, and was:** the differential effect of the code change itself,
-reproduced by two audit legs from two different pre-#373 baselines against the same live backlog — 44
-tickets flip from unflagged to flagged either way, 0 regressions either way, the same one-point
-archive-share shift either way, pool size unchanged either way. That reproducible differential result
-is this entry's only claim about those tools' effect; no absolute count above is asserted as a measured
-fact. **Induced-defect rate:** 0 of 27 leg-level marks (as each leg filed them, before consolidation
-into the dispositions above) — a first-wave figure only, describing Part 1's own audit before any fix
-landed. The release's own fix round then proved that risk real: it shipped the false bash-boundary
-claim corrected above (v0.8.0's record set the precedent — half that release's own defects were
-created by its own audit's fix round). **Clause A's structural limb — two independent diverse legs
-reading the same state in parallel — was satisfied** at the fix/release-cut range: a blind whole-read
-leg, barred from opening any private audit record, and an independent cross-vendor leg ran in parallel
-on this state and found no behavioural defect and no new failure class among the nine findings they
-produced, the bash-boundary claim among them; a further review by the verifier itself, separately,
-found this paragraph's own prior tense had been overtaken by that same result. Both are corrected in
-this commit. The release-candidate audit ran in three parts. Part 1 covered the pre-fix range
-(v0.9.0 → `e0b11a9`) and returned **NO-GO**, blocking on the 5 findings above; those fixes landed as
-this cut's parent commit (`486f226`). Part 2 covered the fix and release-cut commits and returned
-**NO-GO** on this block's ticket-provenance and leg-overrule counts, not the code; that reconciliation
-landed as `c1a3637`, merged as `46f8bd8`. Part 3 covered `46f8bd8` and also returned **NO-GO** — again
-not on the code, which it re-proved clean on every bash version tested, but on the bash-boundary claim
-and this paragraph's own tense, both corrected here. What remains before the tag is a bounded re-check
-on the resulting merge commit — the corrected text matching what Part 3 established, the suite green,
-CI green across all six legs — which this entry does not itself assert as complete.
+reconciliation above, Clause A's structural limb was not yet satisfied for the fix/release-cut range
+— this file was surface no Part 1 leg had examined, and the orchestrator and that range's verifier
+had read it sequentially rather than in parallel. A further round then satisfied it; see
+Induced-defect rate below for what that round found and corrected.
+**On the release's own headline numbers:** PR #373's four census figures (44 tickets flipped, 220
+previously-closed, a 35→36% archive-share shift, a pool size of 60) are quoted in that PR's own
+description and in the release manager's records, but `BACKLOG.md` is gitignored with no git
+history, so the exact snapshot they were measured against no longer exists and cannot be re-checked
+— as of this writing, running the PRE-#373 code against the live `BACKLOG.md` reads 233 closed
+tickets, a 36→37% shift and a pool of 66, none matching the PR's own figures, and a fourth source
+(`POOL-HISTORY.jsonl`) records a pool of 55 for the same release; the audit found the file moved
+448→451 ticket blocks within the single session that produced those numbers.
+**What can still be checked, and was:** the differential effect of the code change itself,
+reproduced by two audit legs from two different pre-#373 baselines against the same live backlog —
+44 tickets flip from unflagged to flagged either way, 0 regressions either way, the same one-point
+archive-share shift either way, pool size unchanged either way. That reproducible differential
+result is this entry's only claim about those tools' effect; no absolute count above is asserted as
+a measured fact. **Induced-defect rate:** 0 of 27 leg-level marks (as each leg filed them, before
+consolidation into the dispositions above) — a first-wave figure only, describing Part 1's own audit
+before any fix landed. The release's own fix round then proved that risk real: it shipped the false
+bash-boundary claim corrected above (v0.8.0's record set the precedent — half that release's own
+defects were created by its own audit's fix round). **Clause A's structural limb — two independent
+diverse legs reading the same state in parallel — was satisfied** at the fix/release-cut range: a
+blind whole-read leg, barred from opening any private audit record, and an independent cross-vendor
+leg ran in parallel on this state and found no behavioural defect and no new failure class among the
+nine findings they produced, the bash-boundary claim among them; a further review by the verifier
+itself, separately, found this paragraph's own prior tense had been overtaken by that same result.
+Both are corrected in this commit. The release-candidate audit ran in three parts. Part 1 covered
+the pre-fix range (v0.9.0 → `e0b11a9`) and returned **NO-GO**, blocking on the 5 findings above;
+those fixes landed as this cut's parent commit (`486f226`). Part 2 covered the fix and release-cut
+commits and returned **NO-GO** on this block's ticket-provenance and leg-overrule counts, not the
+code; that reconciliation landed as `c1a3637`, merged as `46f8bd8`. Part 3 covered `46f8bd8` and
+also returned **NO-GO** — again not on the code, which it re-proved clean on every bash version
+tested, but on the bash-boundary claim and this paragraph's own tense, both corrected here. What
+remains before the tag is a bounded re-check on the resulting merge commit — the corrected text
+matching what Part 3 established, the suite green, CI green across all six legs — which this entry
+does not itself assert as complete.
 
 ## v0.9.0 — 2026-09-07
 
@@ -668,29 +974,30 @@ end to end on the manager/audit toolchain v0.8.3 shipped — including a five-ve
 every NO-GO is part of this record.
 
 **Verification.** **Scope:** 59 files across 22 merged PRs (#345–#367, excluding the deliberately
-held #361), range v0.8.3 to the cut. **Method:** 21 legs (17 measured, 4 unmeasured) across five verdicts and three Clause A
-closing rounds — a mechanical baseline, six whole-read/seam legs, a two-axis diversity layer (blind
-and cross-vendor) and a verifier chain; ~3.77M measured subagent tokens, the cross-vendor rounds and
-the orchestrator itself unmeasured. The fifth verdict closed on a single verifier pass with no fifth
-diverse round — a knowingly lowered bar, taken as an explicit informed operator decision and recorded
-with that caveat attached. **Coverage:** 59 ledger rows — 2 removed pre-tag with their
-findings retained, not deleted (the deferred reproduction scripts), 57 live; every row exactly one
-verdict; 0 waived, 0 mechanical-only. **Findings:** 8 fixed before tag (PRs #362, #367); 3 shapes shipped disclosed
-(PRs #363, #366); 7 deferred to 0.9.1 with the scripts they live in; 5 ticketed next; 2 recorded on
-the standing no-action list; 2 refuted with live platform controls. **Behavioural defects:** the
-three disclosed shapes are the floor — all in self-maintenance census tooling, all in the under-count
-direction, zero occurrences on this repository's own backlog at cut time; adopter backlogs are
-unbounded, which is why they are disclosed rather than waved. **Which layer found what:** every
-behavioural finding came from a diversity leg or an arbitrating role, none from a same-family
-whole-read alone — the cross-vendor and blind legs each found what the other missed, the verifier
-chain caught three misses the legs and the orchestrator shared, and the orchestrator's own
-errors were each caught by a leg or an adjudication — including three figure errors in this block's
-first draft, caught by the cut PR's review checking the block against the run record. **What was NOT checked:** the claim-truth
-residual and model-family blindness beyond the one non-Anthropic family used; no diverse round ran
-after the final three fixes (the lowered bar above); residual reachability was measured on this
-repository's own backlog only. **Induced-defect rate:** 1 of 36 leg-level marks (as each
-leg filed them, before consolidation into the dispositions above) — the release's own fix round
-created one defect, disclosed above, caught by its closing round.
+held #361), range v0.8.3 to the cut. **Method:** 21 legs (17 measured, 4 unmeasured) across five
+verdicts and three Clause A closing rounds — a mechanical baseline, six whole-read/seam legs, a
+two-axis diversity layer (blind and cross-vendor) and a verifier chain; ~3.77M measured subagent
+tokens, the cross-vendor rounds and the orchestrator itself unmeasured. The fifth verdict closed on
+a single verifier pass with no fifth diverse round — a knowingly lowered bar, taken as an explicit
+informed operator decision and recorded with that caveat attached. **Coverage:** 59 ledger rows — 2
+removed pre-tag with their findings retained, not deleted (the deferred reproduction scripts), 57
+live; every row exactly one verdict; 0 waived, 0 mechanical-only. **Findings:** 8 fixed before tag
+(PRs #362, #367); 3 shapes shipped disclosed (PRs #363, #366); 7 deferred to 0.9.1 with the scripts
+they live in; 5 ticketed next; 2 recorded on the standing no-action list; 2 refuted with live
+platform controls. **Behavioural defects:** the three disclosed shapes are the floor — all in
+self-maintenance census tooling, all in the under-count direction, zero occurrences on this
+repository's own backlog at cut time; adopter backlogs are unbounded, which is why they are
+disclosed rather than waved. **Which layer found what:** every behavioural finding came from a
+diversity leg or an arbitrating role, none from a same-family whole-read alone — the cross-vendor
+and blind legs each found what the other missed, the verifier chain caught three misses the legs and
+the orchestrator shared, and the orchestrator's own errors were each caught by a leg or an
+adjudication — including three figure errors in this block's first draft, caught by the cut PR's
+review checking the block against the run record. **What was NOT checked:** the claim-truth residual
+and model-family blindness beyond the one non-Anthropic family used; no diverse round ran after the
+final three fixes (the lowered bar above); residual reachability was measured on this repository's
+own backlog only. **Induced-defect rate:** 1 of 36 leg-level marks (as each leg filed them, before
+consolidation into the dispositions above) — the release's own fix round created one defect,
+disclosed above, caught by its closing round.
 
 ## v0.8.3 — 2026-09-06
 

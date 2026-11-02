@@ -1069,6 +1069,12 @@ _semver_gt() {
 
 # _tag_versions — reads `git tag -l 'v*'` output on stdin, echoes the strict-semver ones as bare `x.y.z` (a pure
 # filter: zero matches is a valid empty answer, so the status is normalised). One copy for checks 6 and 7 (dir #766).
+# NOT a duplicate of tests/lib.sh's `release_tag_versions()` — a near-twin that must stay separate:
+#   - shape differs: this returns BARE versions (`0.7.1`, the `v` stripped); the lib.sh one returns
+#     `v`-prefixed tags (`v0.7.1`, the `v` kept). Callers compare against that shape, so "unifying" the
+#     two silently changes what every caller compares.
+#   - neither can consume the other: this file is not sourceable as a library (it runs its own audit on
+#     load), so it cannot source tests/lib.sh's copy, and the test-only consumers cannot source this file.
 _tag_versions() {
   grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' || true
 }

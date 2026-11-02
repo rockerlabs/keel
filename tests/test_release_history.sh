@@ -412,4 +412,51 @@ else
     "$provenance_leak"
 fi
 
+# --- verification-block line length (dir #632) -------------------------------------------------------
+# Each release's verification block is one hand-wrapped paragraph, from its `**Verification.**` opener to
+# the next blank line. A line past the bound makes a one-word correction show as the whole block in review,
+# which is why the v0.10.2 and v0.11.0 blocks were reflowed. The bound counts CHARACTERS: UTF-8 continuation
+# bytes are stripped first, so the em dashes and arrows these paragraphs carry are not overcounted (a byte
+# count would fail a 100-column wrap on its first dash). The pinned `**Label:**` tokens above are matched
+# across the whole block, so a wrap must keep each label on one line; this row bounds only line length.
+# LC_ALL=C keeps awk byte-based on every leg (busybox included), so the gsub range means the same everywhere.
+verification_bound=100
+_verification_long_lines() {
+  LC_ALL=C awk -v max="$2" '
+    /^## / { f = 0 }
+    /^\*\*Verification\.\*\*/ { f = 1 }
+    /^$/ { f = 0 }
+    f { l = $0; gsub(/[\200-\277]/, "", l); if (length(l) > max) print NR ": " length(l) }
+  ' "$1"
+}
+
+# fx_len ID red|green TEXT — one synthetic history file under $SANDBOX, run through the bound check.
+# `red` expects at least one over-bound line; `green` expects none.
+fx_len() {
+  local id="$1" want="$2" text="$3" dir out
+  dir="$(mktemp -d "$SANDBOX/fx-len.XXXXXX")"
+  printf '%s\n' "$text" > "$dir/history.md"
+  out="$(_verification_long_lines "$dir/history.md" "$verification_bound")"
+  if [ "$want" = red ]; then
+    if [ -n "$out" ]; then pass "fixture $id: over-bound verification line is caught"; else fail "fixture $id: over-bound verification line is caught" "no line reported"; fi
+  else
+    if [ -z "$out" ]; then pass "fixture $id: wrapped verification block passes"; else fail "fixture $id: wrapped verification block passes" "reported: $out"; fi
+  fi
+}
+long_run="$(printf 'x%.0s' $(seq 1 120))"
+em_run="$(printf "—%.0s" $(seq 1 60))"
+fx_len L1 red $'## v0.1.0 — 2026-01-01\n\n**Verification.** **Scope:** '"$long_run"$'\n\nDone.'
+fx_len L2 green $'## v0.1.0 — 2026-01-01\n\n**Verification.** **Scope:** short\nwrapped line.\n\nDone.'
+fx_len L3 green $'## v0.1.0 — 2026-01-01\n\n**Verification.** **Scope:** '"$em_run"$'\n\nDone.'
+fx_len L4 green $'## v0.1.0 — 2026-01-01\n\nA digest paragraph '"$long_run"$'\n\n**Verification.** short.'
+
+# The real file: the bound binds to the blocks as committed, not to a fixture.
+long_verification="$(_verification_long_lines "$history" "$verification_bound")"
+if [ -z "$long_verification" ]; then
+  pass "no docs/release-history.md verification-block line exceeds $verification_bound characters"
+else
+  fail "no docs/release-history.md verification-block line exceeds $verification_bound characters" \
+    "over-bound line(s) (number: chars): $long_verification"
+fi
+
 summary
