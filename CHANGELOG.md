@@ -3898,11 +3898,11 @@ v0.9.1 entry.
   it and can fire again on a later function's return once the setting function's own locals are out
   of scope, reproduced live here as well). `status=$?` was reachable in the live script all along,
   and the fix does not close an active leak: `_tr_build_report`'s one call site runs it inside a
-  command substitution, `report="$(_tr_build_report ...)" || exit 1`, and bash disables `set -e`
-  throughout any command substitution (not inherited without `inherit_errexit`). The `||` on that
+  command substitution, `report="$(_tr_build_report ...)" || exit 1`, and with the default
+  `inherit_errexit` off, bash disables `set -e` throughout any command substitution. The `||` on that
   outer assignment handles only the failure status and does not suspend errexit inside the function
   (verified with minimal harnesses, including one reproducing the exact call shape). The fix removes
-  the function's dependency on that incidental call-site shape.
+  the function's dependency on that incidental call-site shape and on that default setting.
 
 ## [0.9.0] — 2026-09-07
 

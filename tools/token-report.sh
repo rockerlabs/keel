@@ -121,14 +121,12 @@ _tr_build_report() {
   # dir #422: the jq call below used to do `out="$(jq ...)"; status=$?; rm -f <4 files>; [ "$status"
   # -eq 0 ] || return "$status"` — a bare assignment failing under `set -e` aborts the function via
   # errexit before `status=$?` is ever reached. In THIS script the failure was caught regardless,
-  # and the reason is the call site's command substitution, not the caller's `||`: bash disables
-  # errexit throughout any command substitution (it is not inherited without `inherit_errexit`).
-  # This function's only call site runs it as `report="$(_tr_build_report ...)" || exit 1`, so the
-  # whole function body runs with errexit off. The `||` on that outer assignment only handles the
-  # failure status; it does not suspend errexit inside the function. The old code was therefore
-  # correct because of how its one caller invokes it, which is an incidental shape, not a guarantee.
-  # The sibling tools/lib/transcript-usage.sh's tu_session_totals() has the same bare-assignment
-  # shape and is also called inside a command substitution; it is not changed here (out of scope).
+  # and the reason is the call site's command substitution, not the caller's `||`: with the default
+  # `inherit_errexit` off, bash disables errexit throughout any command substitution. This function's
+  # only call site runs it as `report="$(_tr_build_report ...)" || exit 1`, so the function body runs
+  # with errexit off. The `||` on that outer assignment only handles the failure status; it does not
+  # suspend errexit inside the function. With `inherit_errexit` on, the old code would abort, so its
+  # correctness depended on the default setting as well as on the call-site shape.
   # Fixed below by testing the assignment via `||` instead, so this function's own correctness no
   # longer depends on how any caller invokes it. A `trap ... RETURN` was
   # tried here first and reverted: a RETURN trap set inside a function is not scoped to it — it is a
