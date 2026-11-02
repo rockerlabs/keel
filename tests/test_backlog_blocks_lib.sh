@@ -147,7 +147,7 @@ check_contains "MUTATION-PROOF: an own-tag ticket citing a sibling with no adjac
 
 # --- MUTATION-PROOF: the citation-verb list must recognise "Superseded by" (past tense) and be
 # case-insensitive on "Duplicate of" — a delta review round found this project's own real
-# BACKLOG.md uses "superseded" far more than "supersedes" (29 vs. 8 occurrences), and that the
+# BACKLOG.md uses "superseded" far more than "supersedes", and that the
 # original fix's "duplicate of" branch, unlike its "Supersedes" branch, had no case alternation. ---
 d4g="$(new_repo)"
 f4g="$d4g/BACKLOG.md"
