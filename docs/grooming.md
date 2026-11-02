@@ -46,6 +46,12 @@ Consume it **by pointing at the tool that produces it**, never by citing its int
 column names, no file path, no output shape — the tool's own doc is where that lives, and it may
 change there without this doc needing an edit.
 
+**Re-check the previous release's deployment before reading its cycle as shipped (dir #534).** The release row's deployment field
+([`docs/release-management.md`](release-management.md) R9) is a claim written at close, and a tag is not a deployment. Read the
+target's head live now (the same command the field names) and compare it with the SHA the row states; a row saying `NOT deployed`,
+or a target head that differs, means the cycle is read as built and tagged but not shipped, and the gap is a G0 output. Where
+the project has no deploy target, the row says so and there is nothing to check.
+
 **Read both signals against what the sensor can actually see, and expect the first cycle to spend
 most of its effort on the instrument rather than on the docs.** Three coverage gaps, all found by one
 groom, all invisible from the output alone: a read trace records read *tool calls*, so any file the
