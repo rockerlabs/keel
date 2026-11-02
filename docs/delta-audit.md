@@ -584,6 +584,12 @@ duty, Protocol rule 4) — check no later PR silently falsified what an earlier 
 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding.
 
+Every live-check block (SQL, shell) you hand the operator carries either a `TESTED on <where>` tag
+(you ran it against a local instance) or an `UNTESTED-SQL` / `UNTESTED-SHELL` tag. Never hand over an
+untagged block: only the operator can run it, and each failing block costs a round-trip. (Hermes 0.4.0
+run: 2 of 9 blocks failed on PG16 — `pg_tables.forcerowsecurity`, `GROUP BY 1` over an aggregate,
+`$POSTGRES_USER` evaluated on the host, not in the container.)
+
 Rails:
 - You are read-only: no writes to the real repository's `.git/` or working tree, by any mechanism —
   not only edits to tracked files, but any plumbing that touches `.git/` without editing one (`git
@@ -709,6 +715,8 @@ separately from that coverage bar, confirm Clause A itself — two independent d
 parallel on the same state, together finding no behavioural findings and no new class — before
 declaring GO; a fully-verdicted ledger is not by itself permission to stop (docs/delta-audit.md §8).
 Append this pass's full record to the verdict record before you issue the verdict.
+Check that every live-check block any leg handed the operator carries a `TESTED on <where>` or an
+`UNTESTED-SQL` / `UNTESTED-SHELL` tag; an untagged block is a finding against its leg.
 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding — including rule 8: only THIS
 session issues a release verdict.
