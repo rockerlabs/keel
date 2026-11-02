@@ -541,8 +541,9 @@ a non-zero exit means the word is not recognised, and the manager either writes 
 widens the constant in the same PR — so the next unlisted word is refused there rather than
 discovered by the next census.
 
-The closing write follows the same rule: before writing a closure marker for an audit finding, apply R9's definition-quote rule (dir #537):
-the marker's text carries the quoted definition and each named part's status, not the PR's retelling.
+The definition-quote rule also governs the closing write: before writing a closure marker for an audit finding,
+apply R9's definition-quote rule (dir #537). The quoted definition and each part's status live in the closure record
+or the ticket body; the marker stays a short tag that points to them, not the PR's retelling.
 
 **A ticket the manager files carries a release tag on its heading, `→ pool` when nothing else fits
 (the 0.17.0 groom).** Seven of the 0.16.0 manager's filings had none. The census lists them as
@@ -605,11 +606,14 @@ the record [`docs/delta-audit.md`](delta-audit.md) names), name the run and row 
 names with its status: closed (with its evidence), still open, or moved to a named ticket. The PR's own description of
 the finding is not the definition: the manager diffs those two texts at approval, and a part present in the
 quoted definition but absent from the closure is open. A closure that re-states the finding in
-narrower words has narrowed it, however reasonable the reason. The worked incident: run №2 defined S5-2 as `list/show`,
+narrower words has narrowed it, however reasonable the reason. The worked incident (a downstream project, hermes 0.4.1; its record is not shipped here): run №2 defined S5-2 as `list/show`,
 the closure record re-defined it as `list` ("show already scoped"), the manager accepted the PR's "show is the narrower
 vector", the release declared S5-2 closed, and run №3 found it half-open, a fix-before-tag. Run №3 named the class:
 a closure record that narrows the finding it closes. So a narrowing is made in the audit's record, by the auditor, before
 the closure, never inside the closing PR; and a named part the closure drops is an open part of the finding, not a narrower closure.
+No definition to quote (the record is absent, or holds none for the finding) means the finding is not closed: the
+auditor writes the definition into the record first. The audit's verifier checks the quote and the part list on every
+closure of an audit finding, as it does the command-and-output pair above.
 
 **An audit-heavy worker reaches `/polish`'s compaction stop at its fix loop (dir #828).** One RC-audit worker stood at
 457k tokens of context at `/polish` step 1 (the threshold then was 250k) after four auditors and a thirteen-commit
