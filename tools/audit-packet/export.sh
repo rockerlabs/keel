@@ -101,6 +101,8 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 . "$script_dir/../lib/nonneg-int.sh"
 # shellcheck source=tools/lib/leak-gate.sh
 . "$script_dir/../lib/leak-gate.sh"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$script_dir/../lib/require-git-repo.sh"
 
 vendor=""
 files_arg=""
@@ -157,7 +159,7 @@ _nonneg_int_valid "$probe_bytes" || die_args "--probe-bytes must be a non-negati
 # code, not exposed as a callable function, and refactoring a shipped, heavily-tested guard into a
 # shared lib is a bigger, separate change this ticket does not need to make (flagged in the PR1
 # checkpoint report as a possible follow-up, not done here).
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+keel_is_git_work_tree . \
   || refuse "not a git repository (run this inside the tree you are exporting from)"
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"

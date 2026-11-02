@@ -67,6 +67,8 @@ _bc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$_bc_dir/lib/nonneg-int.sh"
 # shellcheck source=tools/lib/stat-portable.sh
 . "$_bc_dir/lib/stat-portable.sh"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$_bc_dir/lib/require-git-repo.sh"
 unset _bc_dir
 
 usage() {
@@ -124,7 +126,9 @@ require_nonneg_int() {
 require_nonneg_int --days "$DAYS"
 require_nonneg_int --live-hours "$LIVE_HOURS"
 
-git rev-parse --git-dir >/dev/null 2>&1 || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
+# dir #591: any repository will do (this tool reads branches and worktrees from the git dir), so the shared
+# any-repo predicate, not the work-tree one.
+keel_is_git_repo . || { printf 'branch-cleanup: not a git repository\n' >&2; exit 2; }
 
 # Default branch (dir #814), first match wins:
 #   1. KEEL_DEFAULT_BRANCH -- the operator's explicit word, used EXACTLY as given (no prefix stripping:

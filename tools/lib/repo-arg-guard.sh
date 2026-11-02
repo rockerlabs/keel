@@ -66,9 +66,17 @@ unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY G
 unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
 
 # keel_repo_arg_guard REPO — exit 2 with "not a git repo: REPO" (unchanged wording — the exact message
-# every caller printed before this file existed) if REPO is not a git repository. The env sanitizing
-# that makes this check trustworthy already happened above, at source time, not here.
+# every caller printed before this file existed) if REPO is not a git work tree. The check itself is
+# tools/lib/require-git-repo.sh's (dir #591: the one place that reads git's "true" output, so a bare
+# repository no longer passes on an exit status alone). The env sanitizing that makes it trustworthy
+# already happened above, at source time, not here.
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/require-git-repo.sh"
 keel_repo_arg_guard() {
   local repo="$1"
-  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "not a git repo: $repo" >&2; exit 2; }
+  # A missing, unreadable or 0-byte require-git-repo.sh is sourced silently (see the header): refuse with a
+  # labelled exit 2 here rather than let the caller see "command not found" (127) with or without set -e.
+  type keel_require_git_work_tree >/dev/null 2>&1 \
+    || { echo "repo-arg-guard.sh: tools/lib/require-git-repo.sh is missing or empty — this checkout is incomplete; re-clone or re-download Keel" >&2; exit 2; }
+  keel_require_git_work_tree "$repo" "" "not a git repo: $repo"
 }

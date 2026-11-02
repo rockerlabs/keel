@@ -111,6 +111,8 @@ refuse()   { err "$1" 3; }
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=tools/lib/nonneg-int.sh
 . "$script_dir/../lib/nonneg-int.sh"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$script_dir/../lib/require-git-repo.sh"
 
 out_dir="."
 prev_rev=""
@@ -138,7 +140,7 @@ done
 invocation_cwd="$(pwd)"
 
 # --- the guard --------------------------------------------------------------------------------
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+keel_is_git_work_tree . \
   || refuse "not a git repository (run this inside the repo whose range you are deriving)"
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"

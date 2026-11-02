@@ -379,7 +379,7 @@ for inst in install-read-trace.sh install-pre-pr-gate.sh install-machine-watch.s
   fx="$SANDBOX/incomplete-$inst"
   rm -rf "$fx"; mkdir -p "$fx/tools/lib"
   cp "$REPO_ROOT/tools/$inst" "$fx/tools/$inst"
-  for l in sh-quote.sh repo-arg-guard.sh gate-paths.sh ledger.sh; do
+  for l in sh-quote.sh repo-arg-guard.sh require-git-repo.sh gate-paths.sh ledger.sh; do
     [ -f "$REPO_ROOT/tools/lib/$l" ] && cp "$REPO_ROOT/tools/lib/$l" "$fx/tools/lib/$l"
   done
   mkdir -p "$fx/repo"

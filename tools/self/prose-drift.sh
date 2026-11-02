@@ -60,6 +60,8 @@ unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PA
 self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/fence-blank.sh
 . "$self_dir/../lib/fence-blank.sh"
+# shellcheck source=tools/lib/require-git-repo.sh
+. "$self_dir/../lib/require-git-repo.sh"
 
 QUIET=0
 usage() {
@@ -88,27 +90,11 @@ repo_dir="${REPO_ARG:-.}"
 [ -d "$repo_dir" ] || { echo "prose-drift.sh: not a directory: $repo_dir" >&2; exit 2; }
 # dir #240 item 1: same shape as the -d check just above (a labeled, expected exit-2 for a bad input),
 # not the raw `fatal: not a git repository` git itself would print once md_files's own `git ls-files`
-# below runs uncaught. -C here is deliberate over a plain `cd`: it fails the same "not a git repository"
-# way for a REPO_DIR that exists but was never checked out, without moving this script's own cwd.
-# The OUTPUT is checked, not just the exit status (found live by /code-review medium on this ticket's
-# own diff): `--is-inside-work-tree` exits 0 and prints "false" for a bare repo (verified live), which
-# an exit-status-only check would have let straight through to a silent, empty `git ls-files` scan —
-# this REPO_DIR check exists to reject exactly that kind of REPO_DIR that "isn't what this tool needs,"
-# not only the git-refuses-outright case.
-repo_check_out="$(git -C "$repo_dir" rev-parse --is-inside-work-tree 2>&1)" || true
-if [ "$repo_check_out" != true ]; then
-  case "$repo_check_out" in
-    # A dubious-ownership fatal (this project's own documented Alpine/Docker CI trap, CLAUDE.md's
-    # third trap, dir #191/#230/#249) is a DIFFERENT, already-catalogued failure from "not a git
-    # repository at all" — collapsing it into this script's own generic message would send a session
-    # investigating a real dubious-ownership case down the wrong path (found live by /code-review
-    # medium: this exact regression was in the diff's first version). Let git's own diagnostic through
-    # unmodified instead of overwriting it.
-    *"dubious ownership"*) echo "prose-drift.sh: $repo_check_out" >&2 ;;
-    *) echo "prose-drift.sh: not a git repository: $repo_dir" >&2 ;;
-  esac
-  exit 2
-fi
+# below runs uncaught. dir #591: the check itself is tools/lib/require-git-repo.sh's, shared with every other
+# tool that gates on a checkout — it reads git's "true" output (a bare repo exits 0 printing "false", which an
+# exit-status-only check let through to a silent, empty scan) and lets a "dubious ownership" fatal (this
+# project's documented Alpine/Docker CI trap) through unmodified rather than relabelling it.
+keel_require_git_work_tree "$repo_dir" "prose-drift.sh" "not a git repository: $repo_dir"
 
 exit_code=0
 say()  { [ "$QUIET" = 1 ] || echo "$@"; }
