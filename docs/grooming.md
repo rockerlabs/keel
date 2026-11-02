@@ -70,6 +70,8 @@ future ticket closes: an always-on context file or a slash-command body never pr
 call, and neither does a file opened via `cat`/`sed`/`grep` — the disclosure exists to name that limit,
 not to remove it. Read what the tool prints; it is no longer guidance to remember by hand.
 
+**Re-check the previous release's deployed state against the live target before reading its cycle as shipped (dir #534).** Run the head command the row's deployment field names ([`docs/release-management.md`](release-management.md) R9) and compare it with the SHA the row states; a `NOT deployed` row or a differing head means built and tagged, not shipped, and the gap is a G0 output.
+
 **Read a recorded pain by its provenance (G1).** A row whose pain is `accepted-on-proposal` is weaker
 evidence of felt pain than a `stated` one: the pain may recur only because the previous groom or session
 kept proposing it, so a proposal repeated is not a pain persisting. A live re-check that still fails
