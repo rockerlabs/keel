@@ -509,4 +509,37 @@ else
   fail "SIGTERM mktemp-leak test" "stub date was never reached — could not arm the mid-function pause"
 fi
 
+# --- dir #931: a failing second mktemp must not make the EXIT trap abort under set -u -----------
+# The trap names all four scratch variables, but only the first is assigned when it is armed; the
+# other three must be declared with an empty value, or the trap dies with "unbound variable" before
+# its rm -f runs. A PATH shim lets the first mktemp succeed and fails every later one, so
+# _tr_build_report exits through the chain with three variables still unset.
+fail_stub="$SANDBOX/mktemp-fail-stub"
+mkdir -p "$fail_stub"
+fail_log="$SANDBOX/mktemp-fail.log"
+fail_count="$SANDBOX/mktemp-fail.count"
+fail_err="$SANDBOX/mktemp-fail.err"
+: > "$fail_log"
+printf '0\n' > "$fail_count"
+cat > "$fail_stub/mktemp" <<STUB
+#!/usr/bin/env bash
+n=\$(cat "$fail_count"); n=\$((n + 1)); printf '%s\n' "\$n" > "$fail_count"
+[ "\$n" -le 1 ] || exit 1
+p="\$("$real_mktemp" "\$@")"
+printf '%s\n' "\$p" >> "$fail_log"
+printf '%s\n' "\$p"
+STUB
+chmod +x "$fail_stub/mktemp"
+
+PATH="$fail_stub:$PATH" KEEL_TOKENS_PROJECTS_DIR="$sym_real" bash "$tool" --session "$sym_id" \
+  >/dev/null 2>"$fail_err"
+
+if [ -s "$fail_log" ]; then
+  first_scratch="$(head -n 1 "$fail_log")"
+  check_nofile "dir #931: second mktemp fails -> first scratch file removed" "$first_scratch"
+else
+  fail "dir #931 mktemp-fail test" "stub mktemp never logged a first path — the report never reached _tr_build_report"
+fi
+check_absent "dir #931: failing mktemp chain prints no 'unbound variable' on stderr" "$(cat "$fail_err")" "unbound variable"
+
 summary

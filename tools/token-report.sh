@@ -104,16 +104,21 @@ _tr_resolve_session() {
 # it never re-parses a transcript record itself.
 _tr_build_report() {
   local -a files=("$@")
-  local tmp_totals tmp_turns tmp_calls tmp_sc
+  # Declared with empty values, not bare: the EXIT trap below names all four, and under `set -u` an
+  # unassigned one aborts the trap before its rm -f runs (dir #931). An empty value is a no-op for rm -f.
+  local tmp_totals="" tmp_turns="" tmp_calls="" tmp_sc=""
   # dir #409's own idiom (tools/changelog-section.sh): an EXIT trap, not a RETURN trap — this
   # function's only call site invokes it inside a `$(...)` command substitution, which bash runs in
   # its own subshell, so the trap set here fires once at that subshell's exit and never becomes a
   # global handler that could fire on an unrelated function's return (the hazard the comment below
   # already documents for RETURN traps). Armed right after the first mktemp, so a SIGTERM/SIGINT
   # anywhere after it — including inside the mktemp chain — removes every file created so far; the
-  # still-empty variables are a no-op for rm -f.
+  # still-empty variables are a no-op for rm -f. The trap runs after this function has returned, when
+  # its locals are out of scope, so it reads them with ${var-}: an unset local would otherwise abort
+  # the trap under set -u. The explicit rm -f in each || chain stays for the failure path, because
+  # the trap cannot see the locals there.
   tmp_totals="$(mktemp)" || return 1
-  trap 'rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls" "$tmp_sc"' EXIT
+  trap 'rm -f "${tmp_totals-}" "${tmp_turns-}" "${tmp_calls-}" "${tmp_sc-}"' EXIT
   tmp_turns="$(mktemp)" || { rm -f "$tmp_totals"; return 1; }
   tmp_calls="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns"; return 1; }
   tmp_sc="$(mktemp)" || { rm -f "$tmp_totals" "$tmp_turns" "$tmp_calls"; return 1; }
