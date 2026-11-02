@@ -119,8 +119,13 @@
 # found zero real occurrences of either shape wrapping a ticket citation — same declined-until-real-
 # precedent this file already sets for the prose-interrupted-list hazard (dir #479, above). Re-measure
 # before extending if a real instance ever shows up.
+# shellcheck source=tools/lib/fence-blank.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fence-blank.sh"
+
+# The backtick span is DELETED (the shared blank_inline_code_spans, dir #590), then bold markers are stripped bare.
 extract_dir_tickets() {
-  sed -E 's/`[^`]*`//g; s/(\*\*|__)//g' \
+  blank_inline_code_spans \
+    | sed -E 's/(\*\*|__)//g' \
     | awk '
     { line = $0
       if (line == "") { if (buf != "") { print buf; buf = "" }; next }
