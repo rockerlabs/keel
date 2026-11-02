@@ -24,11 +24,11 @@
 #   KEEL-SELF-MAINTENANCE — read only this repo's own tracked text, never installed (dir #68):
 #     tools/self/accumulate.sh  tools/self/changelog-claims.sh  tools/self/changelog-cut.sh
 #     tools/lib/heading-intro.sh  tools/self/changelog-fragments.sh  tools/self/citation-resolvability.sh
-#     tools/self/cut-sim.sh
+#     tools/self/cut-sim.sh  tools/lib/dir-tickets.sh (blank_inline_code_spans only, dir #590)
 #     tools/self/doctor.sh  tools/self/line-citations.sh  tools/self/pool-report.sh  tools/self/prose-drift.sh
 #     tools/self/value-claim-lint.sh
 #   MENTION ONLY — name the function in a comment, do not call it:
-#     tools/lib/dir-tickets.sh  tools/changelog-section.sh (keeps its own copy ON PURPOSE, copy-portable alone)
+#     tools/changelog-section.sh (keeps its own copy ON PURPOSE, copy-portable alone)
 #
 # NUL CONTRACT (dir #917, superseding dir #568's "no NUL-safety of its own"): awk's handling of a NUL byte differs
 # per implementation — GNU awk and mawk keep it, one-true-awk (macOS) truncates the line at it, and

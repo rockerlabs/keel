@@ -806,7 +806,7 @@ if [ -f "$backlog_file" ] && [ -r "$backlog_file" ]; then
   # real status, so without stripping BOTH forms the check would flag its own ticket.
   stripped_lines=()
   while IFS= read -r ln || [ -n "$ln" ]; do stripped_lines+=("$ln"); done \
-    < <(sed -E 's/`[^`]*`//g' <<< "$fence_blanked")
+    < <(blank_inline_code_spans <<< "$fence_blanked")
   # Derived from the same array the check actually reads, not `wc -l` (which undercounts a file
   # with no trailing newline the same way an unguarded `while read` would).
   total_lines="${#stripped_lines[@]}"

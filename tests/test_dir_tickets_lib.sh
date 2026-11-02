@@ -134,4 +134,24 @@ out="$(printf 'x __dir #700__, __#701__.\n' | extract_dir_tickets)"
 check_contains "an underscore-bold anchor ticket is extracted" "$out" "dir #700"
 check_contains "an underscore-bold bare continuation joins onto the anchor" "$out" "dir #701"
 
+# --- dir #590: inline-code-span stripping is the shared blank_inline_code_spans, not a private sed ----
+# Both this lib and doctor.sh's check 5 once hand-rolled the same backtick-span sed one-liner; the span
+# delete now lives once in tools/lib/fence-blank.sh. Pin the source level (no private copy) ...
+sedcopy='s/`[^`]*`//g'
+check_absent "dir-tickets.sh keeps no private backtick-span sed" "$(cat "$lib")" "$sedcopy"
+check_absent "doctor.sh keeps no private backtick-span sed" "$(cat "$REPO_ROOT/tools/self/doctor.sh")" "$sedcopy"
+check_contains "dir-tickets.sh strips spans via blank_inline_code_spans" "$(cat "$lib")" 'blank_inline_code_spans'
+# ... and the output level: a span DELETES (dir #274), it does not blank, and the text around it survives.
+out="$(printf 'see `dir #1` and dir #2, `x`, #3\n' | extract_dir_tickets)"
+check_absent "a ticket quoted inside a backtick span is not extracted" "$out" "dir #1"
+check_contains "a ticket outside a span is extracted" "$out" "dir #2"
+check_contains "a bare continuation across a deleted span still joins" "$out" "dir #3"
+
+# Edge inputs the sed->awk switch could change: no trailing newline, and a stray NUL (dropped, never a line break).
+out="$(printf 'dir #5, #6' | extract_dir_tickets)"
+check_contains "input without a trailing newline still extracts the anchor" "$out" "dir #5"
+check_contains "input without a trailing newline still joins a bare continuation" "$out" "dir #6"
+out="$(printf 'dir #7, \0#8\n' | extract_dir_tickets)"
+check_contains "a stray NUL does not detach a bare continuation" "$out" "dir #8"
+
 summary
