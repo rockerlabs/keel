@@ -1088,10 +1088,9 @@ not the point. The depth is the operator's decision (the Operator row): the trai
 dialog is that touchpoint, once per train, with the manager's recommendation pre-selected and sized from the
 seam. No seam files and no integration commit means `low`, seam files mean `medium`, and an integration commit
 touching code means `high`. **This is a named carve-out of `/polish` step 4**, which sizes from the diff and
-runs `low`, `medium` or `high` automatically on a diff clearly inside one bucket: a train is borderline by
-definition (seam-sized, not diff-sized), so step 4 ALWAYS opens the dialog, with `<level>` pre-selected. The
-brief carries that sentence verbatim, and it is the carve-out's only channel into a worker whose diff sits
-clearly in one bucket: `/polish`'s own step 4 text is not edited (it sits at its word cap), and the guide's §
+runs `low`, `medium` or `high` automatically: a train is sized from its seam, not its diff, so step 4
+ALWAYS opens the dialog, with `<level>` pre-selected. The brief carries that sentence verbatim, and it is
+the carve-out's only channel into a worker whose diff would size to `low`, `medium` or `high`: `/polish`'s own step 4 text is not edited (it sits at its word cap), and the guide's §
 Step 4 only points here. The body discloses what the review read and what it did not. The manager posts one
 health line when the worker reaches the dialog, `DIALOG train k: depth, in <worker session>`, so the operator
 knows where the question waits (a release once stalled on exactly this: the dialog waits in the worker's session

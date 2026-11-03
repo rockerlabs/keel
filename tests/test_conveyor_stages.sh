@@ -12,6 +12,7 @@ go="$REPO_ROOT/commands/go.md"
 # amended in place, in commands/polish-guide.md — so the pins below, written against the pre-split wording, read the
 # GUIDE. What a normal run needs is pinned on the core itself in tests/test_polish_command.sh.
 guide="$REPO_ROOT/commands/polish-guide.md"
+polish="$REPO_ROOT/commands/polish.md"
 framework="$REPO_ROOT/FRAMEWORK.md"
 
 check_file "commands/go.md exists" "$go"
@@ -171,6 +172,35 @@ else
     pass "polish-guide.md: the old, now-false 'high or above -> always ask' sentence is gone"
   fi
 fi
+
+# (F) dir #308: step 4's "Borderline -> ask" bullet is deleted. It had no measurable predicate, so it
+# silently re-opened the ask threshold dir #254 raised to max/ultra/skip: two same-level tickets, one asked and
+# one did not, both defensible. Two windows, same idiom as (E): new prose present AND old prose gone, in the
+# guide (where the bullet lived) and in the core (which carried a compressed copy).
+if [ -n "$ask_line" ]; then
+  ask_window="$(sed -n "${ask_line},$((ask_line + 14))p" "$guide")"
+  if match "$ask_window" -qE '`low`/`medium`/`high` → run that level automatically'; then
+    pass "polish-guide.md: step 4's low/medium/high always auto-runs once sized (dir #308)"
+  else
+    fail "polish-guide.md: step 4's low/medium/high always auto-runs once sized (dir #308)" \
+      "expected a '\`low\`/\`medium\`/\`high\` -> run that level automatically' bullet with no bucket qualifier"
+  fi
+  dialog_bullets="$(printf '%s\n' "$ask_window" | grep -c 'AskUserQuestion')"
+  if [ "$dialog_bullets" -le 2 ]; then
+    pass "polish-guide.md: step 4's auto-vs-ask block opens a dialog on max/ultra and skip only (dir #308)"
+  else
+    fail "polish-guide.md: step 4's auto-vs-ask block opens a dialog on max/ultra and skip only (dir #308)" \
+      "found $dialog_bullets AskUserQuestion mentions in the block, expected at most 2"
+  fi
+fi
+for f in "$guide" "$polish"; do
+  if grep -qF 'Borderline (near a boundary' "$f"; then
+    fail "$(basename "$f"): the deleted 'Borderline (near a boundary...) -> ask' bullet stays deleted (dir #308)" \
+      "found the unmeasurable borderline-ask clause in $f"
+  else
+    pass "$(basename "$f"): the deleted 'Borderline (near a boundary...) -> ask' bullet stays deleted (dir #308)"
+  fi
+done
 
 review_line="$(grep -n 'one terminal pass, no loop-back' "$guide" | head -1 | cut -d: -f1)"
 if [ -z "$review_line" ]; then
