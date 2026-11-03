@@ -317,7 +317,46 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      <that same string>`, and the killed `<dir>` is never verified. That the remainder covers the suite
      stays your judgment, as before.
 
-   **New-API red (dir #818).** A test written against API the pre-fix code lacks cannot compile or run there,
+   **Fix loop (dir #198).** Reached from step 3's pointer when the run is red. A loop is admissible HERE
+   only: its criterion is a process exit code, not a judgment. Step 5 stays one pass and step 6 one bounded
+   re-run; a loop there would move HEAD after receipts were written. The loop never replaces the gate: a run
+   that does not end green falls back to today's report-and-stop at step 4's entry gate.
+   - **Ceiling 3.** One iteration = fix, amend, re-run in a fresh `<dir>`. Never a fourth.
+   - **Not a convergence round.** The loop runs inside this one step-3 invocation, spans no re-`init`, and
+     writes no `--recover` state.
+   - **Real output every iteration.** Show each re-run's summary; the final report shows all of them, not
+     only the last, and says how many iterations ran.
+   - **Commit boundary.** Fold each iteration's fix into the tip commit with `git commit --amend` (the in-run
+     path of § Step 5, dir #177), never a new commit per iteration, and re-read the message afterwards. Step 3
+     is reached with the work committed, so a tip commit always exists. Write the `polish.3-tests` receipt
+     ONCE, after the loop ends green, chained after `verify` and bound to the post-amend HEAD. A red
+     iteration writes none.
+   - **Exhaustion.** Still red after 3 → report the last real output, name the count, stop. Amended fixes stay
+     (no rollback): the human sees a diff closer to green.
+   - **Weakening guard (the load-bearing one).** The cheapest way to green is to weaken or delete a test.
+     Test files are those under `tests/` (this repo's predicate; for a project whose tests live elsewhere
+     use the directory its `CLAUDE.md` test command runs, unverified for adopters). Any breach STOPS the
+     loop, surfaces the edit separately, and is never counted as a success, even if the suite then goes green.
+     - **`run.sh` leg red at the START of an iteration → ANY edit under `tests/` stops the loop**,
+       whatever shellcheck says about it and whether or not shellcheck is also red. The rule reads leg state
+       and file scope only, never intent. This leg has no flagging tool.
+     - **Shellcheck leg only → a `tests/` edit is allowed only if every changed line is tool-flagged.**
+       Before any fix, capture the flagged set by running `shellcheck -x -f gcc` over the touched `.sh` files
+       (`file:line:col: level: msg [SCxxxx]`), because the default output is human-oriented and line numbers
+       shift as soon as a fix changes the line count. After the fix, read
+       `git diff -U0 -- <file>` and compare OLD-side line numbers against that set. Per hunk, allowed only
+       if (a) every removed or modified old line is in the flagged set AND removed lines do not exceed added
+       lines (a net-shrinking hunk stops the loop even when each removed line was flagged: deleting a
+       flagged assertion would otherwise "resolve" it), or (b) it is a pure addition of ONE
+       `# shellcheck disable=SCxxxx` line placed directly above the flagged line, which is unchanged (`@@ -N,0 +M @@`
+       with line N+1 flagged). Dry-run on a seeded SC1007 fixture: an in-place fix is `@@ -2 +2 @@`, allowed;
+       deleting the flagged line is `@@ -2 +1,0 @@`, stopped.
+       Anything else stops the loop. A hunk byte-identical to `shellcheck -f diff`'s own patch is
+       tool-attributable and exempt from the line checks; most findings (SC1007 among them) have no such
+       patch, so this is a shortcut, never the mechanism.
+     - A fix confined to files outside `tests/` is not touched by this guard.
+   - **Suppression cap.** At most ONE `# shellcheck disable=` addition across the whole loop, in any file,
+     production code included; adding any is reported in the loop's summary like a `tests/` edit. against API the pre-fix code lacks cannot compile or run there,
    so "red on the pre-fix code" is unavailable for it. State the substitute in step 10 instead of skipping red:
    - A probe through the OLD API that shows the defect on the pre-fix code (e.g. 50 points fed, no stop, count 0).
    - Per new test, a targeted mutation of the fixed code that this test turns red; run it in the scratch clone

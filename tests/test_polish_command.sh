@@ -27,7 +27,9 @@ pinfn() { check_absent "$1" "$flat" "$2"; }
 # --- K1 (slice 3): size — the core stays at most POLISH_MD_WORD_BUDGET words ---------------------------------
 # A normal run loads only the core, and a skill's body re-enters every later turn's context, so its size is
 # the cost this split exists to cut. The guide has no budget: it holds rare text verbatim.
-POLISH_MD_WORD_BUDGET=3000
+# Raised 3000 -> 3020 by the operator (2026-11-03) for dir #198: step 3 gains ONE short trigger ("Red → the guide,
+# § Step 3's fix loop."); the whole bounded loop and its guards live in the guide. Leave headroom, do not fill it.
+POLISH_MD_WORD_BUDGET=3020
 # budget_status FILE — "ok", or "over by N" words (the one predicate both checks below run).
 budget_status() {
   local w; w="$(wc -w < "$1" | tr -d ' ')"
@@ -127,6 +129,18 @@ pinf "core: step 3 names its dir (dir #883)" '`<dir>` is a fresh'
 pinf "core: step 3 names its dir as fresh, dir 883" '`<dir>` is a fresh'
 pinf "core: step 3 points a suite over 9 minutes at the guide" '(a suite over 9 minutes: the guide, § Step 3)'
 pinf "core: step 3 still shows output before claiming a pass" 'Show its summary; never claim "passed" without it.'
+# dir #198: a red run routes to the guide's fix loop; the loop and its guards live in the guide.
+pinf "core: step 3 routes a red run to the guide's fix loop (dir #198)" "Red → the guide, § Step 3's fix loop."
+pinfg "guide: the fix loop is ceilinged at 3 iterations (dir #198)" '**Ceiling 3.**'
+pinfg "guide: the fix loop is not a convergence round and writes no --recover state (dir #198)" 'writes no `--recover` state.'
+pinfg "guide: the fix loop folds each fix into the tip commit by amend (dir #198)" 'Fold each iteration'"'"'s fix into the tip commit with `git commit --amend`'
+pinfg "guide: the fix loop writes the tests receipt once, after green (dir #198)" 'Write the `polish.3-tests` receipt ONCE, after the loop ends green'
+pinfg "guide: ceiling exhaustion falls back to report-and-stop, no rollback (dir #198)" 'Still red after 3 → report the last real output, name the count, stop.'
+pinfg "guide: a red run.sh leg at iteration start makes any tests/ edit stop the loop (dir #198)" '**`run.sh` leg red at the START of an iteration → ANY edit under `tests/` stops the loop**'
+pinfg "guide: the shellcheck leg compares old-side diff lines against the pre-fix flagged set (dir #198)" 'compare OLD-side line numbers against that set'
+pinfg "guide: a net-shrinking hunk stops the loop even when flagged (dir #198)" 'a net-shrinking hunk stops the loop even when each removed line was flagged'
+pinfg "guide: one disable directive per loop, any file (dir #198)" 'At most ONE `# shellcheck disable=` addition across the whole loop, in any file'
+pinfg "guide: a guard breach is never counted as a success (dir #198)" 'is never counted as a success, even if the suite then goes green'
 check_contains "core: step 3's receipt is chained after check-run.sh verify" "$(step_text 3)" 'chained after `tools/check-run.sh verify'
 check_contains "core: step 6's receipt is chained after check-run.sh verify" "$(step_text 6)" 'chained after `tools/check-run.sh verify'
 check_contains "core: step 6 re-runs the way step 3 does" "$(step_text 6)" 're-run the test command once, as step 3 does'
