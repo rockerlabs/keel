@@ -131,7 +131,8 @@ scan_line_length() {   # scan_line_length MODE(md|sh)   (reads the file body on 
   LC_ALL=C awk -v WRAP_MAX="$WRAP_MAX" -v MARGIN="$MARGIN" -v MIN_BLOCK="$MIN_BLOCK" -v MODE="$1" '
     function chars(s)      { gsub(/[\200-\277]/, "", s); return length(s) }
     function is_bullet(l)  { return (l ~ /^[-*+][ \t]/) || (l ~ /^[0-9]+\.[ \t]/) }
-    function is_heading(l) { return l ~ /^#{1,6}[ \t]/ }
+    # One to six hashes, spelled out: old mawk (cloud VM) has no interval expressions and cannot compile {1,6}.
+    function is_heading(l) { return l ~ /^#(#)?(#)?(#)?(#)?(#)?[ \t]/ }
     function is_table(l)   { return l ~ /^[ \t]*\|.*\|[ \t]*$/ }
     function is_linkline(l){ return (l ~ /^[ \t]*\[.*\]\(.*\)/) || (l ~ /^[ \t]*\[[^]]*\]:/) }
     function has_url(l)    { return l ~ /https?:\/\// }

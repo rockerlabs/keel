@@ -11,9 +11,11 @@
 doc="$REPO_ROOT/docs/secrets-in-the-working-tree.md"
 
 # fenced_text FILE — only the lines between ``` or ~~~ fences (the fence lines themselves dropped).
+# The awk regexes spell "zero to three leading spaces" as ` ? ? ?` instead of ` {0,3}`: old mawk (1.3.4, the
+# cloud VM's awk) has no interval expressions and panics on compiling one, so an interval here fails the file.
 fenced_text() {
   awk '
-    /^ {0,3}(```|~~~)/ { m = ($0 ~ /^ {0,3}```/) ? "`" : "~"
+    /^ ? ? ?(```|~~~)/ { m = ($0 ~ /^ ? ? ?```/) ? "`" : "~"
                          if (!infence) { infence = 1; fence = m; next }
                          if (m == fence) { infence = 0; next } }
     infence { print }

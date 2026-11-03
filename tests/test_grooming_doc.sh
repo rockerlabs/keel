@@ -300,4 +300,12 @@ pin "dir #538: G6 requires a verification anchor on a finding written into a tic
 pin "dir #538: G6 writes an unread behavioural claim as TO VERIFY" "$doc" \
   'is written as `TO VERIFY: <claim>`' "expected the TO VERIFY marker rule"
 
+# dir #541: G0 checks the opened row for `_` placeholders and the harvest for its OWN dated header.
+pin "dir #541: G0 checks the previous release's opened row carries no placeholder" "$doc" \
+  'carries no `_` placeholder' "expected the G0 opened-row placeholder check"
+pin "dir #541: G0 checks the previous audit run's harvest sits under its own dated header" "$doc" \
+  "sits under its OWN dated header" "expected the G0 harvest-header check"
+pin "dir #541: G4(c) restates the own-header check" "$doc" \
+  'header, never appended to an earlier run'"'"'s block (dir #541)' "expected G4(c) to carry the header duty"
+
 summary
