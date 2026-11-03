@@ -13,7 +13,7 @@ its receipt off the cwd.
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in
 a degraded form `<how>:<reason>`). The gate denies `gh pr create` unless every step id is present for the
-current run — never skip a receipt write; write it alongside the next step's first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8's chain. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
+current run (`skip`'s step 5 excepted: derived) — never skip a receipt write; write it alongside the next step's first calls, never alone, and never in one holding a commit, amend or `gh pr create`, nor a push but step 8's chain. Log receipt-prompt friction: `tools/pre-pr-gate.sh log receipt-friction classifier`.
 
 **Ordering rule 1 — have the implementation committed by step 3**: step 3's receipt binds `git rev-parse HEAD` and step 5's
 review trace binds the HEAD current when the review fires.
@@ -55,8 +55,7 @@ Steps, in order:
    *Rare — a `handoff-check` match, any of the max/ultra/skip/borderline dialogs and their marker rule:*
    the guide, § Step 4.
 
-5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → receipt `tools/pre-pr-gate.sh
-   receipt polish.5-review skip` now, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
+5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → no receipt, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
    from here → guide § Step 5 (b). For `low|medium|high` the first attempt is K2 below; for `max`, and when
    K2's fallbacks send you here, ATTEMPT `Skill(code-review) <level>` directly (never `/review`; availability = the attempt, not the listing). On success resolve its findings, receipt the bare
    `polish.5-review <level>` (a genuine `/code-review` pass, run here or by K2's subagent) and continue to
