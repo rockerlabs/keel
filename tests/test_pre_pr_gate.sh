@@ -3161,7 +3161,7 @@ rm -f "$tf"
 
 # 95b. dir #116 (found by this change's own high review): a SUFFIXED route to outcome_level=skip must
 # not dodge the dialog check via the trusted `*-waived`/`*-operator-run` arms — `skip-waived` used to
-# set trusted=1, leave needs_dialog=0, and unlock an ARMED gate with no dialog ever answered. skip has
+# set trusted=1, leave the dialog tag empty, and unlock an ARMED gate with no dialog ever answered. skip has
 # no review to waive or hand off, so the shape is invented by construction and denies outright — on
 # BOTH arms, and regardless of arming (the deny sits before the dialog check, which stays
 # armed-gated; this one is unconditional).
@@ -3876,9 +3876,9 @@ check_contains "dir #488: denied for the missing review trace" "$OUT" "no trace 
 rm -f "$tf"
 
 # 117. dir #488 Amendment B1 (manager's own review of PR #432): the review-trace exemption above only
-# ever exercised a BARE review outcome (trusted=0, needs_dialog=0 — that case-arm never even reaches
+# ever exercised a BARE review outcome (trusted=0, no dialog tag — that case-arm never even reaches
 # the dialog check). The realistic, adopter-observed shape is `agent:<level>` (dir #488's own body),
-# which sets needs_dialog=1 too — on any installation where the AskUserQuestion leg is ARMED, that
+# which sets a dialog tag too — on any installation where the AskUserQuestion leg is ARMED, that
 # SECOND check used to keep keying strictly on current HEAD with no exemption of its own, denying a
 # review-null fix commit right after the review check had just passed it. POSITIVE: an armed install,
 # a matching `agent:<level>` review trace AND dialog trace both at sha1, a comment-only fix commit to

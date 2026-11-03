@@ -4,7 +4,9 @@
   write, and the forgotten-receipt class it caused, is gone; writing it by hand is still accepted and
   changes nothing. A new intact deny, `skip-stale-commit`, fires when that stamp is not the commit being
   shipped, or when step 4's skip carries no stamp at all. It closes a hole in UNARMED repos, which had no
-  per-commit binding on a skip (a skip decided at commit A, then a fix commit, still unlocked); ARMED repos
-  are unchanged, since they already needed a `dialog:skip` at HEAD. The stamp, and the `--recover`
+  per-commit binding on a skip (a skip decided at commit A, then a fix commit, still unlocked). ARMED repos
+  keep their `dialog:skip` requirement at HEAD and gain the stamp requirement: re-answering step 4's dialog
+  alone no longer covers a new HEAD, and a stale ARMED skip now denies `skip-stale-commit` (it was
+  `skip-dialog-missing`) until step 4's receipt is rewritten at that HEAD. The stamp, and the `--recover`
   narrowing that reads it, stay: recovery withholding is the early signal that sends a convergence round
   back to step 4. To clear the deny, write step 4's receipt fresh for the current HEAD; no `init`.

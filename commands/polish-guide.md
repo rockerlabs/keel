@@ -429,7 +429,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
    it was decided against, and treats it as satisfied only while that commit is still HEAD (dir #277,
    closing the receipt-only write dir #236 documented). A fix commit after a skip needs step 4 re-answered
    for the new HEAD, not a step-5 write; writing `polish.5-review skip` by hand is still accepted and
-   changes nothing. `ultra` you
+   changes nothing, unless this run already recorded a different step-5 outcome, which it then overwrites. `ultra` you
    cannot launch at all (cloud, billed, user-triggered) — always go straight to (b), no automated
    alternative attempted. For `low|medium|high`, the first attempt is K2's review subagent, below; for
    `max` — and for `low|medium|high` once K2's fallbacks send you here — ATTEMPT `Skill(code-review) <level>`
@@ -822,8 +822,9 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      dir #161's warning; see its own paragraph above), and the step-10 disclosure is what has to carry
      every mechanism forward.
    - **The MANDATORY review dialog (dir #88), on that same later-amend trigger** — per-commit too, but
-     only for `agent:*` outcomes (and `skip`, step 4's own dialog): re-answer it for the new HEAD, an
-     earlier round's answer does not carry over. The gate never checks it for a bare `<level>` outcome,
+     only for `agent:*` outcomes (and `skip`, step 4's own dialog: re-run step 4 for the new HEAD, its
+     dialog AND its receipt, since the dialog alone no longer clears a stale skip, dir #277): re-answer it for
+     the new HEAD, an earlier round's answer does not carry over. The gate never checks it for a bare `<level>` outcome,
      so there is nothing to re-answer there. (Whether this SHA-binding should instead survive a clean
      delta round WAS an open design question, dir #180 — since SUPERSEDED by dir #254, which moved the
      dialog off the primary path: it now fires only on the refusal fallback, making the re-fire
@@ -881,7 +882,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      revisit-triggered in-session.
    - `medium-operator-run`, `ultra-operator-run`, `medium-waived` — the hand-off outcomes.
    - `skip` — derived by the gate from step 4's stamped skip, never written by this step; accepted if
-     written (dir #277).
+     written, and then it overwrites any earlier step-5 outcome of this run (dir #277).
    - `medium-waived:trace-broken` — the ONE recognized reason on a waiver, reserved for "the trace
      mechanism itself looks broken" (dir #366). The gate cross-checks it against its own repo-keyed
      trace file and denies if that file already holds lines — see (b)'s waiver bullet above for the
