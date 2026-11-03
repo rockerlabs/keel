@@ -140,6 +140,8 @@ pinfg "guide: a red run.sh leg at iteration start makes any tests/ edit stop the
 pinfg "guide: the shellcheck leg compares old-side diff lines against the pre-fix flagged set (dir #198)" 'compare OLD-side line numbers against that set'
 pinfg "guide: a net-shrinking hunk stops the loop even when flagged (dir #198)" 'a net-shrinking hunk stops the loop even when each removed line was flagged'
 pinfg "guide: one disable directive per loop, any file (dir #198)" 'At most ONE `# shellcheck disable=` addition across the whole loop, in any file'
+pinfg "guide: the New-API red heading survives the fix-loop insertion (dir #198)" '**New-API red (dir #818).** A test written against API'
+pinfg "guide: a second disable addition stops the loop (dir #198)" 'A second addition stops the loop, like any other breach.'
 pinfg "guide: a guard breach is never counted as a success (dir #198)" 'is never counted as a success, even if the suite then goes green'
 check_contains "core: step 3's receipt is chained after check-run.sh verify" "$(step_text 3)" 'chained after `tools/check-run.sh verify'
 check_contains "core: step 6's receipt is chained after check-run.sh verify" "$(step_text 6)" 'chained after `tools/check-run.sh verify'

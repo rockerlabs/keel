@@ -329,7 +329,8 @@ is simplify → tests → review: never skip or reorder the test run after simpl
    - **Commit boundary.** Fold each iteration's fix into the tip commit with `git commit --amend` (the in-run
      path of § Step 5, dir #177), never a new commit per iteration, and re-read the message afterwards. Step 3
      is reached with the work committed, so a tip commit always exists. Write the `polish.3-tests` receipt
-     ONCE, after the loop ends green, chained after `verify` and bound to the post-amend HEAD. A red
+     ONCE, after the loop ends green, chained after `verify` and bound to the post-amend HEAD, in a call
+     that holds no commit or amend (the preamble's receipt rule). A red
      iteration writes none.
    - **Exhaustion.** Still red after 3 → report the last real output, name the count, stop. Amended fixes stay
      (no rollback): the human sees a diff closer to green.
@@ -341,8 +342,9 @@ is simplify → tests → review: never skip or reorder the test run after simpl
        whatever shellcheck says about it and whether or not shellcheck is also red. The rule reads leg state
        and file scope only, never intent. This leg has no flagging tool.
      - **Shellcheck leg only → a `tests/` edit is allowed only if every changed line is tool-flagged.**
-       Before any fix, capture the flagged set by running `shellcheck -x -f gcc` over the touched `.sh` files
-       (`file:line:col: level: msg [SCxxxx]`), because the default output is human-oriented and line numbers
+       Before any fix, capture the flagged set by running `shellcheck -x --severity=warning -f gcc` over the
+       same `.sh` files the failing leg ran on (`file:line:col: level: msg [SCxxxx]`; an empty set means
+       nothing is flagged, so every `tests/` edit stops the loop), because the default output is human-oriented and line numbers
        shift as soon as a fix changes the line count. After the fix, read
        `git diff -U0 -- <file>` and compare OLD-side line numbers against that set. Per hunk, allowed only
        if (a) every removed or modified old line is in the flagged set AND removed lines do not exceed added
@@ -356,7 +358,10 @@ is simplify → tests → review: never skip or reorder the test run after simpl
        patch, so this is a shortcut, never the mechanism.
      - A fix confined to files outside `tests/` is not touched by this guard.
    - **Suppression cap.** At most ONE `# shellcheck disable=` addition across the whole loop, in any file,
-     production code included; adding any is reported in the loop's summary like a `tests/` edit. against API the pre-fix code lacks cannot compile or run there,
+     production code included; adding any is reported in the loop's summary like a `tests/` edit. A second
+     addition stops the loop, like any other breach.
+
+   **New-API red (dir #818).** A test written against API the pre-fix code lacks cannot compile or run there,
    so "red on the pre-fix code" is unavailable for it. State the substitute in step 10 instead of skipping red:
    - A probe through the OLD API that shows the defect on the pre-fix code (e.g. 50 points fed, no stop, count 0).
    - Per new test, a targeted mutation of the fixed code that this test turns red; run it in the scratch clone
