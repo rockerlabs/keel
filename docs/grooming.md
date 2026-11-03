@@ -405,6 +405,12 @@ ticket's release tag: cite the ticket by number and let the reader (or the next 
 current tag live. Never assert a specific release tag in prose — a later re-tag leaves an asserted one
 stale and silently wrong.
 
+The same rule covers a release row's **value claim** (G5), which is prose and so reads as authored
+rather than derived. When a groom edits a row's ticket or stage list, it re-derives the claim from the
+new list in the same edit, and strikes the old claim (~~struck through~~) instead of replacing it
+silently, so a later reader sees the correction happened. An understated claim fails silently: a
+release can satisfy it while a promised stage was never built.
+
 A heading's release tag is the **last** `→` token on the heading that names a release or the pool —
 headings carry prose arrows too ("→ ask", "→ contest with dir #N", "→ a release of its own"), and an
 any-match extractor reports phantom releases: the first run's first census showed six release names
@@ -545,7 +551,7 @@ against the project's own per-release band, and named risks are the baseline fie
 needs. Two more, sized from
 what a project's own cost-measurement work has already put on disk (where that work exists — see
 `dir #313` for keel's own instance): a rough **budget estimate** for the release, and its **value
-claim** stated plainly enough to be wrong in public. Design economics — the cost of the cycle's design
+claim** stated plainly enough to be wrong in public. The claim is derived from the row's current ticket/stage list, not authored (G3). Design economics — the cost of the cycle's design
 sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists. **The design-session flow produces no cost figure yet**,
