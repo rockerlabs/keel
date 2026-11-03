@@ -256,6 +256,12 @@ because a session following this procedure needs the operative rule, not just a 
 The blind-then-reconcile method is the generalized [`docs/delegation.md`](delegation.md) shape this
 leg instantiates — see its "Blind-then-reconcile" section for the two-phase reviewer contract stated
 independently of this application.
+**A post-fix pair is one informed leg plus one leg blind to the verdict and the fix's rationale; the
+verifier reads the blind leg's `NOT checked` list as leads.** An informed leg inherits the framing of the
+fix it re-checks and can return nothing where a blind whole-read finds a real defect, so two informed legs
+do not decorrelate — the same reason the diversity leg above is required. The blind leg is the diversity
+leg's blind-then-reconcile shape, and the run record's `diversity result` row carries the evidence of which
+leg found what.
 
 **The orchestrator's bookkeeping (the table's own "all bookkeeping" cell) includes the run profile's
 other during-the-run field.** [`docs/verification-economics.md`](verification-economics.md)'s
