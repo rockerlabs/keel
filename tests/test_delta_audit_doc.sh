@@ -414,4 +414,22 @@ pin "§9 S2…Sn prompt: every operator live-check block is tagged (dir #532)" "
   "expected the leg prompt to require a TESTED/UNTESTED tag on operator live-check blocks"
 check_contains "S-final prompt: checks the live-check tag (dir #532)" "$sfinal_flat" 'carries a `TESTED on <where>` or an `UNTESTED-SQL`'
 
+# dir #544: the git x non-git seam is a procedural check: the brief lists gitignored inputs, the orchestrator
+# snapshots them at the anchor, one named leg diffs merged prose against the snapshot, the verifier checks it.
+pin "dir #544: section 2 names the snapshot of every gitignored input" "$doc" 'snapshot every gitignored input the release touches (dir #544)' \
+  "expected delta-audit.md section 2 to carry the git x non-git seam check"
+pin "dir #544: section 2 puts the list in the brief's Non-git inputs line" "$doc" 'carries a `Non-git inputs:` line' \
+  "expected section 2 to make the brief list the gitignored inputs"
+pin "dir #544: section 2 snapshots the post-cut state at the anchor" "$doc" 'as it stands then, the **post-cut state**, into `non-git-inputs/`' \
+  "expected section 2 to snapshot the post-cut state"
+pin "dir #544: section 2 names exactly one leg for the diff" "$doc" 'The orchestrator names one S2…Sn leg for it in that leg'"'"'s' \
+  "expected section 2 to give the diff to one named leg"
+pin "dir #544: section 2 names the worked incident" "$doc" 'a compensation for the open gap, not a designed check' \
+  "expected section 2 to carry the hermes 0.6.0 run 5 incident"
+pin "dir #544: section 4 rule 4 extends the seam duty to the snapshot" "$doc" 'The seam also runs between git and a gitignored input' \
+  "expected rule 4 to carry the git x non-git case"
+pin "dir #544: section 9 S2 prompt carries the non-git leg paragraph" "$doc" 'the orchestrator named you the non-git leg' \
+  "expected the S2…Sn prompt to carry the non-git leg assignment"
+check_contains "S-final prompt: checks the non-git leg's section (dir #544)" "$sfinal_flat" 'needs a report holding the non-git leg'
+
 summary

@@ -599,6 +599,22 @@ set is unchanged from [`docs/delegation.md`](delegation.md) — the release itse
 install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
 (keel does).
 
+**The starting brief lists every gitignored input the release touches (dir #544).** A merged PR's premise can live in a
+gitignored, manager-owned file (a project's `CLAUDE.md`, `BACKLOG.md`), and that file's own edit during the release,
+usually the cut's, can invalidate the premise after the merge with no commit to show it: the audit's universe is
+derived from git ([`docs/delta-audit.md`](delta-audit.md) §3), so no leg reads the file unless the brief points it
+there. The brief therefore carries a `Non-git inputs:` line, or `Non-git inputs: none`, naming each such file by
+absolute path and owner: every one the release edits, and every one a slate ticket cites as the premise of its
+change. The manager, who is the file's single writer (R8), takes the pre-cut copy at intake and hands over the list;
+the audit's orchestrator snapshots the post-cut state at the anchor, and one named leg diffs each merged prose claim
+that rests on an input against that snapshot ([`docs/delta-audit.md`](delta-audit.md) §2, the procedure; its §4 rule 4,
+the duty). Intake also names the seam in two places for a ticket whose premise and target straddle git and such a
+file: that ticket's worker brief (R3), and the release row's risk list (R1's named-risk place). The worked incident (a
+downstream project, hermes 0.6.0 run №5): a brief's premise was "two disagreeing DB-schema tables in `CLAUDE.md`", the
+cut removed the table from both files, and the audit found the contradiction only because one leg read the knowledge-base
+snapshot by hand, which its own record called "a compensation for the open gap, not a designed check". A list is only as
+complete as the manager's: an input nobody listed is invisible to every leg.
+
 **The audit's closing records route through the manager (dir #807).** The auditor the brief launches is the audit's orchestrator
 ([`docs/delta-audit.md`](delta-audit.md) §8), and R8 keeps it out of `BACKLOG.md`. Its report therefore carries, inline (R13), the
 `no-action` findings bound for the standing list and the staged-ticket drafts, and the manager writes them under R8 before the GO is
@@ -742,6 +758,12 @@ at its close counts changelog figures and newly sourced libraries. Two shapes it
 and so stay with the manager's read of each merging PR: a prose fact outside the changelog that a later PR
 makes false, and a stale header or list of consumers that omits a new member.
 
+**A seam can sit between git and a gitignored file (dir #544).** A ticket whose premise is in a manager-owned file
+that is not in git (`CLAUDE.md`, `BACKLOG.md`) and whose target is a tracked file has its two halves in
+different diffs, and no per-PR reviewer or audit leg sees the first. The manager's duty is the same as for a pairwise
+seam, ask whether both halves still answer one question after the release's own edit to the file, and the check
+is procedural: R9's `Non-git inputs:` line and R11's sweep step.
+
 **A seam can be cumulative, not pairwise: a release-wide effect no single PR produces.** One release's
 `CHANGELOG.md` grew across ten PRs until the merge commit of one of them crossed a doc-figure floor
 the suite pins — foreseeable from a worker's own report of how much its entry added, and not put in
@@ -784,7 +806,10 @@ a question the operator asks.** The rule above was written and then not practise
 design worker sat idle-looking for about five hours holding a completed report that a transport
 failure never delivered, and the manager noticed only while answering "what's left?". Sweep every
 open row's live state at a fixed point in each loop iteration — before each wave, before each
-merge — and treat "idle with no report received" as a row to probe, not a row still working.
+merge — and treat "idle with no report received" as a row to probe, not a row still working. **The sweep before each
+merge also re-reads the `Non-git inputs:` list (R9, dir #544):** for the PR about to merge, whose ticket cites one
+of those files as its premise, compare the file's current text against the copy taken at intake. A premise the
+file no longer states is a row to probe with the worker before the merge, not a finding left for the audit.
 
 **A turn-end note without its deliverable is a probe trigger (dir #832).** Compare every worker's turn-end note with
 the deliverable that point in the work owes, and probe at once on a gap: a PR open with no checkpoint, a subagent's

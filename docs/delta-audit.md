@@ -66,6 +66,38 @@ operator at the moment it wants to land, as a number: defer, or pay it. This is 
 orchestrator states, not a rule the audit enforces — an operator who pays with the cost in view has decided
 something, which is the whole point of naming it.
 
+**The anchor has a non-git half: snapshot every gitignored input the release touches (dir #544).** §3's
+universe is derived from git, so a gitignored file that is edited by design during a release (a project's
+`CLAUDE.md`, `BACKLOG.md`, a release plan, a spec: typically manager-owned) has half its diff outside every leg's
+view. The failure is not a file nobody read; it is a merged PR whose **premise** lives in such a file and is
+invalidated *after* the merge by that file's own edit, with nothing in git to show it. The worked incident (a
+downstream project, hermes 0.6.0 run №5; its record is not shipped here): a ticket's brief carried the premise "two
+disagreeing DB-schema tables in `CLAUDE.md`", the cut then removed the table from both files, and the audit found it
+(its F1) only because one leg happened to read the knowledge-base snapshot by hand; the run's own record calls that
+"a compensation for the open gap, not a designed check". The designed check:
+
+1. **The brief lists the inputs.** The orchestrator's starting brief (R9 of
+   [`docs/release-management.md`](release-management.md)) carries a `Non-git inputs:` line: every gitignored file
+   the release edits, plus every one a merged PR's description or ticket cites as the premise of its change, each
+   with its absolute path and its owner. None is written `Non-git inputs: none`, so an absence is a decision, not an
+   omission.
+2. **The orchestrator snapshots them at the anchor.** Right after the anchor resolves, it copies each listed file
+   as it stands then, the **post-cut state**, into `non-git-inputs/` beside the run's other §3 outputs, and adds one
+   ledger row per copy (class `non-git`; `derive.sh` emits none, so these rows are the orchestrator's). It keeps the
+   previous copy, if the manager took one at intake, beside it as the pre-cut state, so the diff between them is
+   readable. An edit to a listed input after the snapshot is listed in the run's ledger like a post-anchor commit and
+   re-snapshotted.
+3. **One leg diffs the prose against the snapshot.** The orchestrator names one S2…Sn leg for it in that leg's
+   prompt (§9), never "every leg". For each merged prose claim in its files that rests on a snapshot input, the leg
+   quotes the claim, quotes the snapshot's post-cut text for it, and reports a disagreement as a finding (§4 rule 6).
+   A leg with no snapshot to read writes `non-git inputs: none snapshotted` under `## NOT checked`.
+4. **The verifier checks the check.** A run whose brief lists non-git inputs and has no report holding that leg's
+   section has an open finding, not a pass.
+
+This is the git × non-git case of the seam duty (§4 rule 4; R10 of the release-management doc). It is a manual
+procedure, not a script: no tool can know which gitignored file a premise lives in, so the brief's list is the
+check's only source, and an input the manager did not list is invisible to it.
+
 ## 3. Phase 1 — derive the universe
 
 [`tools/delta-audit/derive.sh`](../tools/delta-audit/derive.sh) does this mechanically. Given
@@ -116,7 +148,9 @@ This is the durable public referent a future run points at instead of re-derivin
    don't re-read it" section — see there for applications beyond auditing that need the same rule.
 4. **Seam duty.** For each of your files with ≥2 PRs in `file-pr-map.tsv`: read the final merged
    state AND each contributing PR's own diff; check no later PR silently falsified what an earlier
-   PR (or the file's own prose) established.
+   PR (or the file's own prose) established. **The seam also runs between git and a gitignored input:** the
+   leg §2 names for it does the same read against the run's `non-git-inputs/` snapshot, whose post-cut state a
+   merged PR's prose can contradict with no commit to show it (dir #544).
 5. **Sandbox every live probe.** Any run of an installer, a doctor script, or anything that writes
    state: from a scratch clone with `HOME`/tmpdir overridden. Never against the real `$HOME` or the
    orchestrator's own main checkout. **A leg whose mandate is to apply
@@ -602,6 +636,12 @@ duty, Protocol rule 4) — check no later PR silently falsified what an earlier 
 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding.
 
+<If the orchestrator named you the non-git leg (docs/delta-audit.md §2, dir #544): the snapshot of the
+run's gitignored inputs is at <ABSOLUTE path to non-git-inputs/>. For each merged prose claim in your
+files that rests on one of them, quote the claim and the snapshot's post-cut text for it, and report a
+disagreement as a finding. Read the snapshot only; never the live file, which may have moved since.
+Otherwise delete this paragraph.>
+
 Every live-check block (SQL, shell) you hand the operator carries either a `TESTED on <where>` tag
 (you ran it against a local instance) or an `UNTESTED-SQL` / `UNTESTED-SHELL` tag. Never hand over an
 untagged block: only the operator can run it, and each failing block costs a round-trip. (Hermes 0.4.0
@@ -726,6 +766,8 @@ file each new survivor as a finding. Merge every session's verdicts into the led
 per docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of
 `clean`/`mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING`
 independently before accepting it.
+Confirm the starting brief's `Non-git inputs:` line (docs/delta-audit.md §2): a list that is not `none`
+needs a report holding the non-git leg's section; without one, file an open finding.
 Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA this run started against
 — and confirm CI is green on that exact SHA, including every platform leg.
 Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout. Then,

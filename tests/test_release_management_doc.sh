@@ -609,4 +609,16 @@ pin "dir #541: R7 finds the opened row by its version token or run number" "$doc
 pin "dir #541: R7 records addressed to one cycle land under that cycle's own header" "$doc" \
   "under that cycle's own header" "expected the R7 own-header rule"
 
+# dir #544: the git x non-git seam: R9's brief lists the gitignored inputs, R10 names the seam, R11's merge sweep re-reads them.
+pin "dir #544: R9 brief lists every gitignored input the release touches" "$doc" \
+  'The starting brief lists every gitignored input the release touches (dir #544)' "expected the R9 brief clause"
+pin "dir #544: R9 brief carries a Non-git inputs line" "$doc" \
+  'The brief therefore carries a `Non-git inputs:` line' "expected the brief's Non-git inputs line"
+pin "dir #544: R9 names the seam in the release row's risk list" "$doc" \
+  "the release row's risk list (R1's named-risk place)" "expected the release-row risk-list duty"
+pin "dir #544: R10 names the git x non-git seam" "$doc" \
+  'A seam can sit between git and a gitignored file (dir #544)' "expected R10 to name the seam"
+pin "dir #544: R11 sweep re-reads the Non-git inputs list before each merge" "$doc" \
+  'also re-reads the `Non-git inputs:` list (R9, dir #544)' "expected the R11 merge-sweep step"
+
 summary
