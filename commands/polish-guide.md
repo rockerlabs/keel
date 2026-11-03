@@ -681,6 +681,9 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      Read it; do not try to reason about what was carried forward from session memory. The step-10
      disclosure is the record that matters anyway, since the receipt now holds one add-on by design.
 
+     **Prefer the session re-invoking `/code-review <level>` over the operator running it by hand (dir #465).**
+     A manual and a model-invoked run are the same pipeline, so quality is identical; only provenance differs — a session-invoked pass is trace-confirmed, an operator-run pass is self-reported. So on a convergence round (a fix moved HEAD and the trace is stale) invoke the review again at the current HEAD yourself, a second and third time if needed, rather than asking the operator to; and when the operator offers a pass, say plainly that asking the session to re-run it would come back trace-confirmed instead of self-reported. This is a default, not a prohibition: the operator-run path and its `-operator-run` receipt stay legitimate. It does not touch the cross-model second opinion, which is self-reported by construction.
+
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — this
      run's own direct attempt above was refused, which is why we're on this fallback branch at all.**
      Wait for them to run it (or report their findings — unchanged,
