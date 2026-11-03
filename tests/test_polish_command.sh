@@ -22,6 +22,7 @@ gflat="$(tr '\n' ' ' < "$guide" | tr -s ' ')"
 pinf() { check_contains "$1" "$flat" "$2"; }
 pinfg() { check_contains "$1" "$gflat" "$2"; }
 pinfgn() { check_absent "$1" "$gflat" "$2"; }
+pinfn() { check_absent "$1" "$flat" "$2"; }
 
 # --- K1 (slice 3): size — the core stays at most POLISH_MD_WORD_BUDGET words ---------------------------------
 # A normal run loads only the core, and a skill's body re-enters every later turn's context, so its size is
@@ -91,7 +92,8 @@ check_contains "step 9's closing pointer also reaches step 10's add-on summary f
 check_contains "step 1's trigger list names a convergence round and --recover" "$(step_text 1)" 'a convergence round'
 check_contains "step 1's trigger list names --recover" "$(step_text 1)" '`--recover`'
 check_contains "step 4's trigger list names a handoff-check match" "$(step_text 4)" 'a `handoff-check` match'
-check_contains "step 4's trigger list names the max/ultra/skip/borderline dialogs" "$(step_text 4)" 'max/ultra/skip/borderline dialogs'
+check_contains "step 4's trigger list names the max/ultra/skip dialogs" "$(step_text 4)" 'max/ultra/skip dialogs'
+check_absent "step 4's trigger list names no borderline dialog (dir #308)" "$(step_text 4)" 'borderline'
 check_contains "step 5's trigger list names a refused attempt or an unavailable Agent tool" "$(step_text 5)" 'the direct attempt refused or the Agent tool unavailable'
 check_contains "step 5's trigger list names a void review" "$(step_text 5)" 'a void review'
 check_contains "step 5's trigger list names an add-on review" "$(step_text 5)" 'an add-on review'
@@ -146,7 +148,8 @@ check_contains "core: step 6 skips the retest under --no-test" "$(step_text 6)" 
 check_contains "core: step 7 sends a fix commit to a convergence round" "$(step_text 7)" "A fix commit for what it flagged → re-invoke \`/polish\`: a convergence round (step 1's pointer)"
 pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every step id is present for the current run'
 pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
-pinf "core: step 4's auto rule" '`low`/`medium`/`high` clearly inside one bucket → run it automatically'
+pinf "core: step 4's auto rule" '`low`/`medium`/`high` → run it automatically, saying which and why. ALWAYS for `skip`, `max` and `ultra`'
+pinfn "core: step 4 has no borderline-ask clause (dir #308)" 'Borderline, and ALWAYS'
 pinf "core: step 4's dialog marker" 'ended by the literal line `KEEL-DEPTH-DIALOG`'
 # dir #721 S3-2 (the audit's #528 finding): the honesty / dialog / step-9 rails a NORMAL run reads ONLY in the
 # core. tests/test_rails_honesty.sh pins the guide's copy of the same paragraphs — a copy a normal run never
@@ -485,7 +488,6 @@ done
 # push line that uses the flag, and polish.md states the denial.
 no_verify_imperative="$(grep -rnE 'always `?git push --no-verify|git push (-[a-zA-Z-]+ )*--no-verify' "$REPO_ROOT/commands" | grep -vE 'denies|deny|never|denied' || true)"
 check_eq "no shipped command tells the agent to push with --no-verify (dir #825)" "" "$no_verify_imperative"
-pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfn "polish.md no longer says the gate 'always' the push (dir #825)" 'and always `git push --no-verify`'
 
 # --- dir #822: four /polish gaps promoted from claude-kb LEARNINGS --------------------------------------------

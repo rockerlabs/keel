@@ -378,18 +378,17 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      the human's money or safety margin directly.) `ultra` is billed and `max` is the heaviest automated
      pass — spend either only on an explicit yes. (A fixed cost rule, not a live budget check: there is no
      token-budget signal.) An operator declining an expensive review all the way down is still choosing
-     `skip` — the marker rule below applies to this dialog exactly as it does to the other two.
+     `skip` — the marker rule below applies to this dialog exactly as it does to the `skip` dialog below.
    - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
      model's own judgement shouldn't be final: one spends the human's money, the other spends their
      safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
      leaving it auto-selectable gives back, in one word, the decision step 5 stops to obtain. Whenever
      the review is expensive or unavailable, sizing the diff down is the cheapest way out of it, and
      this step's sizing is the model's own and unchecked.
-   - **`low`/`medium`/`high` on a diff that sits clearly inside one bucket → run that level automatically**
-     (dir #254: an unasked `high` is now the EXPECTED behaviour here, not a failure), no dialog; state
-     which level and why.
-   - **Borderline (near a boundary, references present, mixed) → open the `AskUserQuestion` dialog** with
-     the recommended level pre-selected and a **skip** option always present; let the human override.
+   - **`low`/`medium`/`high` → run that level automatically** (dir #254: an unasked `high` is now the
+     EXPECTED behaviour here, not a failure; a diff the sizing step judged unclear was already biased up
+     one notch before reaching this decision, so there is no separate borderline case here, dir #308), no
+     dialog; state which level and why.
 
    **A release train always asks.** Its review is seam-sized, not diff-sized, so this step opens the dialog
    for it whatever the bucket, with the manager's level pre-selected (`docs/release-management.md` R14).
@@ -411,7 +410,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
    uniqueness/case-fold rules the trace check applies), so the marker's only job is to flag "this
    question's answer is skip-trackable" — the ANSWER, not the question text, decides whether `dialog:skip`
    gets written, which is also what collapses what used to be a two-dialog ask-then-confirm dance into the
-   ONE ask-dialog the operator already sees on all three paths above. Use the option label `skip` (any
+   ONE ask-dialog the operator already sees on every path above. Use the option label `skip` (any
    case) verbatim for the skip choice in every such dialog. The two stay DIFFERENT tokens, so a sizing dialog
    can never pre-satisfy step 5(a)'s check: the depth leg writes `dialog:skip` only on an answer of `skip`,
    the review leg writes `dialog:review` on any answer (dir #319).

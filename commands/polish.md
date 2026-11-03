@@ -49,10 +49,10 @@ Steps, in order:
    - security- or invariant-sensitive / very large → **max** or **ultra**
 
    Bucket unclear (near a threshold, mixed docs+code, references present) → bias up one notch. **Auto vs
-   ask:** `low`/`medium`/`high` clearly inside one bucket → run it automatically, saying which and why. Borderline, and ALWAYS for `skip`, `max` and `ultra`, → an `AskUserQuestion` dialog with the
+   ask:** `low`/`medium`/`high` → run it automatically, saying which and why. ALWAYS for `skip`, `max` and `ultra` → an `AskUserQuestion` dialog with the
    recommendation pre-selected and a `skip` option, ended by the literal line `KEEL-DEPTH-DIALOG`.
    Receipt: `tools/pre-pr-gate.sh receipt polish.4-depth <level>:<what it was sized from>`.
-   *Rare — a `handoff-check` match, any of the max/ultra/skip/borderline dialogs and their marker rule:*
+   *Rare — a `handoff-check` match, any of the max/ultra/skip dialogs and their marker rule:*
    the guide, § Step 4.
 
 5. **Run the chosen review — one terminal pass, no loop-back.** `skip` → no receipt, no dialog (step 4's dialog was the decision). `ultra` cannot be launched
