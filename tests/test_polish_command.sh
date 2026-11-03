@@ -22,6 +22,7 @@ gflat="$(tr '\n' ' ' < "$guide" | tr -s ' ')"
 pinf() { check_contains "$1" "$flat" "$2"; }
 pinfg() { check_contains "$1" "$gflat" "$2"; }
 pinfgn() { check_absent "$1" "$gflat" "$2"; }
+pinfn() { check_absent "$1" "$flat" "$2"; }
 
 # --- K1 (slice 3): size — the core stays at most POLISH_MD_WORD_BUDGET words ---------------------------------
 # A normal run loads only the core, and a skill's body re-enters every later turn's context, so its size is
@@ -148,7 +149,6 @@ check_contains "core: step 7 sends a fix commit to a convergence round" "$(step_
 pinf "core: the receipt contract" 'The gate denies `gh pr create` unless every step id is present for the current run'
 pinf "core: step 4's bucket table" 'pure docs/wording, no cross-references → **skip**'
 pinf "core: step 4's auto rule" '`low`/`medium`/`high` → run it automatically, saying which and why. ALWAYS for `skip`, `max` and `ultra`'
-pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfn "core: step 4 has no borderline-ask clause (dir #308)" 'Borderline, and ALWAYS'
 pinf "core: step 4's dialog marker" 'ended by the literal line `KEEL-DEPTH-DIALOG`'
 # dir #721 S3-2 (the audit's #528 finding): the honesty / dialog / step-9 rails a NORMAL run reads ONLY in the
@@ -488,7 +488,6 @@ done
 # push line that uses the flag, and polish.md states the denial.
 no_verify_imperative="$(grep -rnE 'always `?git push --no-verify|git push (-[a-zA-Z-]+ )*--no-verify' "$REPO_ROOT/commands" | grep -vE 'denies|deny|never|denied' || true)"
 check_eq "no shipped command tells the agent to push with --no-verify (dir #825)" "" "$no_verify_imperative"
-pinfn() { check_absent "$1" "$flat" "$2"; }
 pinfn "polish.md no longer says the gate 'always' the push (dir #825)" 'and always `git push --no-verify`'
 
 # --- dir #822: four /polish gaps promoted from claude-kb LEARNINGS --------------------------------------------
