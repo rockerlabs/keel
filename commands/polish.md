@@ -9,7 +9,7 @@ The final pass over the diff before a PR — run between implementation and `/wr
 `gh pr create` until this command has run cleanly on the current HEAD, and denies `git push --no-verify`. `tools/…` lives in your **Keel checkout**: when the cwd is another project, spell the
 calls `<keel-checkout>/tools/pre-pr-gate.sh …` and run them **from the repo being polished** — the gate keys
 its receipt off the cwd.
-**Self-referential gate ticket:** the live hook reads the MAIN checkout's `tools/pre-pr-gate.sh`, so when the ticket edits `pre-pr-gate.sh` itself (e.g. its key derivation), run every receipt through `<main-checkout>/tools/pre-pr-gate.sh` explicitly — a worktree copy writes into a different sentinel than the hook reads.
+Editing the gate itself: guide § Preamble.
 
 Each step ends with a **receipt**: `tools/pre-pr-gate.sh receipt <step-id> [outcome]` from the repo root
 (default outcome `done`; a conditional step that didn't apply writes `skipped:<reason>`, one that ran only in

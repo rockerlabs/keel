@@ -16,6 +16,8 @@ The final pass over the diff before a PR — run between implementation and `/wr
 reviewer an already-tidied diff and open the PR. Once `tools/install-pre-pr-gate.sh` has wired the gate
 for this repo, it also blocks `gh pr create` until this command has run cleanly on the current HEAD.
 
+**Self-referential gate ticket:** the live hook reads the MAIN checkout's `tools/pre-pr-gate.sh`, so when the ticket edits `pre-pr-gate.sh` itself (e.g. its key derivation), run every receipt through `<main-checkout>/tools/pre-pr-gate.sh` explicitly — a worktree copy writes into a different sentinel than the hook reads.
+
 Project context (test command, NFRs, conventions) lives in the project's `CLAUDE.md` — re-read only what you
 need, not a full onboarding.
 

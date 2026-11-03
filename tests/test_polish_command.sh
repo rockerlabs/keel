@@ -47,6 +47,7 @@ check_eq "polish-guide.md opens a leading --- block" "---" "$(sed -n 1p "$guide"
 guide_head="$(awk 'NR==1 && /^---$/ {f=1; next} f && /^---$/ {exit} f' "$guide")"
 check_contains "polish-guide.md is hidden from invocation (user-invocable: false)" "$guide_head" "user-invocable: false"
 check_contains "polish-guide.md carries a description: line in its leading block" "$guide_head" "description: "
+pinfg "guide: a gate-editing ticket runs receipts via the main checkout's script" 'a worktree copy writes into a different sentinel than the hook reads'
 pinfg "polish-guide.md says the core wins a disagreement" 'Where this guide and `polish.md` (the core) disagree, the core wins.'
 pinf "polish.md says the core wins a disagreement" 'Where the guide and this file disagree, this file wins.'
 

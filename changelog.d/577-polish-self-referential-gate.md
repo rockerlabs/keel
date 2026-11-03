@@ -1,1 +1,1 @@
-- `commands/polish.md` preamble now warns that a ticket editing `pre-pr-gate.sh` itself must run every receipt through the main checkout's copy, since the live hook reads that one (dir #577).
+- `commands/polish-guide.md` § Preamble now warns that a ticket editing `pre-pr-gate.sh` itself must run every receipt through the main checkout's copy, since the live hook reads that one; `commands/polish.md` carries a six-word pointer (dir #577).
