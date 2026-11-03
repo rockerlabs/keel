@@ -178,19 +178,22 @@ fi
 # one did not, both defensible. Two windows, same idiom as (E): new prose present AND old prose gone, in the
 # guide (where the bullet lived) and in the core (which carried a compressed copy).
 if [ -n "$ask_line" ]; then
-  ask_window="$(sed -n "${ask_line},$((ask_line + 14))p" "$guide")"
-  if match "$ask_window" -qE '`low`/`medium`/`high` → run that level automatically'; then
+  # The window runs from the anchor to the line before the release-train paragraph, so it covers the whole
+  # bullet list however many lines are added above it; an added bullet or clause is caught, not skipped.
+  train_line="$(grep -n 'A release train always asks' "$guide" | head -1 | cut -d: -f1)"
+  ask_window="$(sed -n "${ask_line},$((${train_line:-$((ask_line + 20))} - 1))p" "$guide")"
+  if match "$ask_window" -qE '^   - \*\*`low`/`medium`/`high` → run that level automatically\*\*'; then
     pass "polish-guide.md: step 4's low/medium/high always auto-runs once sized (dir #308)"
   else
     fail "polish-guide.md: step 4's low/medium/high always auto-runs once sized (dir #308)" \
       "expected a '\`low\`/\`medium\`/\`high\` -> run that level automatically' bullet with no bucket qualifier"
   fi
-  dialog_bullets="$(printf '%s\n' "$ask_window" | grep -c 'AskUserQuestion')"
-  if [ "$dialog_bullets" -le 2 ]; then
+  dialog_bullets="$(printf '%s\n' "$ask_window" | grep -c '^   - \*\*')"
+  if [ "$dialog_bullets" -eq 3 ] && ! match "$ask_window" -qi 'borderline.*→'; then
     pass "polish-guide.md: step 4's auto-vs-ask block opens a dialog on max/ultra and skip only (dir #308)"
   else
     fail "polish-guide.md: step 4's auto-vs-ask block opens a dialog on max/ultra and skip only (dir #308)" \
-      "found $dialog_bullets AskUserQuestion mentions in the block, expected at most 2"
+      "found $dialog_bullets bullets (or a borderline arrow clause) in the block, expected exactly 3: max/ultra, skip, low/medium/high"
   fi
 fi
 for f in "$guide" "$polish"; do

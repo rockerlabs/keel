@@ -378,7 +378,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      the human's money or safety margin directly.) `ultra` is billed and `max` is the heaviest automated
      pass — spend either only on an explicit yes. (A fixed cost rule, not a live budget check: there is no
      token-budget signal.) An operator declining an expensive review all the way down is still choosing
-     `skip` — the marker rule below applies to this dialog exactly as it does to the other two.
+     `skip` — the marker rule below applies to this dialog exactly as it does to the `skip` dialog below.
    - **`skip` → also always ask, never auto-select.** The two ends of the scale are exactly where the
      model's own judgement shouldn't be final: one spends the human's money, the other spends their
      safety margin. `skip` is also the only depth that bypasses step 5 outright — hand-off included — so
@@ -410,7 +410,7 @@ is simplify → tests → review: never skip or reorder the test run after simpl
    uniqueness/case-fold rules the trace check applies), so the marker's only job is to flag "this
    question's answer is skip-trackable" — the ANSWER, not the question text, decides whether `dialog:skip`
    gets written, which is also what collapses what used to be a two-dialog ask-then-confirm dance into the
-   ONE ask-dialog the operator already sees on all three paths above. Use the option label `skip` (any
+   ONE ask-dialog the operator already sees on every path above. Use the option label `skip` (any
    case) verbatim for the skip choice in every such dialog. The two stay DIFFERENT tokens, so a sizing dialog
    can never pre-satisfy step 5(a)'s check: the depth leg writes `dialog:skip` only on an answer of `skip`,
    the review leg writes `dialog:review` on any answer (dir #319).
