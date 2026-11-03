@@ -279,7 +279,7 @@ pinfg "guide: a bare level now means a genuine pass run here in-session or by K2
   "(bare — a genuine \`/code-review\` pass, run here in-session or by K2's subagent)"
 pinfg "guide: the receipt catalogue names the subagent-run pass" \
   "run by K2's review subagent, or operator-typed or revisit-triggered in-session"
-pinfg "guide S5: prefer the session re-invoking /code-review over an operator-run pass (dir #465)" 'Prefer the session re-invoking `/code-review <level>` over the operator running it by hand (dir #465).'
+pinfg "guide S5: prefer the session re-invoking /code-review over an operator-run pass (dir #465)" 'prefer the session re-invoking `/code-review <level>` over the operator'
 pinfg "guide: agent:medium is the fallback outcome, not the ordinary one" \
   'the fallback outcome (K2'"'"'s fallbacks, then the direct attempt refused'
 pinfg "guide: (d)'s mechanism list names the subagent-run pass" \
