@@ -681,6 +681,18 @@ is simplify → tests → review: never skip or reorder the test run after simpl
      Read it; do not try to reason about what was carried forward from session memory. The step-10
      disclosure is the record that matters anyway, since the receipt now holds one add-on by design.
 
+     **Where the direct attempt works, prefer the session re-invoking `/code-review <level>` over the operator
+     running it by hand (dir #465).** A manual and a model-invoked run are the same pipeline, so quality is
+     identical; only provenance differs — a session-invoked pass is trace-confirmed, an operator-run pass is
+     self-reported. So when a fix moves HEAD and the trace goes stale, invoke the review again at the current
+     HEAD yourself instead of asking the operator to; the dir #127 round budget still governs how many rounds
+     there are, and the receipt rules above are unchanged. When the operator volunteers a pass on such a run,
+     say plainly that the same review asked of the session comes back trace-confirmed instead of self-reported.
+     On a run where the direct attempt was refused (this branch), the operator-run path below is the only one
+     — do not retry the refused call. This is a default, not a prohibition: the operator-run path and its
+     `-operator-run` receipt stay legitimate, and the cross-model second opinion is self-reported by
+     construction either way.
+
      **On "I'll run `/code-review <level>` too": that command is the OPERATOR's to run, not yours — this
      run's own direct attempt above was refused, which is why we're on this fallback branch at all.**
      Wait for them to run it (or report their findings — unchanged,
