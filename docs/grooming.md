@@ -690,6 +690,18 @@ from a worktree) and flags each value-claim cell with
 none of this rule's forms (a `Subject set:` clause, a `Residue:` clause, `no claim`, or
 `no subject set — <why>`), so the reviewer's budget goes to what a lint cannot see.
 
+**A value claim that sets a SIZE target for a cut is derived as the size, less what moves out, plus
+what the cut writes back, never as the subtraction alone (dir #545).** This is the size-shaped
+instance of the subject-set rule above, a derived field under G3 like the rest of the row. The felt
+case (a downstream project, hermes 0.6.0, 2026-09-18): the claim "the always-loaded file is at most
+27 KB" was set from 37,478 − 10,751 = 26,727 bytes, and the shipped file was 30,429 bytes, a cut of
+18.8% where the claim promised 28.7%. The miss was exactly what the cut itself had to write back, a
+pointer paragraph, an on-ramp and a paragraph the moved section's neighbours needed, and the G6
+round that had moved the target from 24 to 27 KB repeated the subtraction instead of listing them.
+So the row names the add-backs by name, each with its estimated size, and states the target as the
+arithmetic over them, so the residue between the claim and the shipped size is checkable. A rule of
+the procedure, not a compensation.
+
 **Every release row also reports its decay-exposed share (`dir #842`).** Work that hardens a guard or a
 check against an input a model has to produce loses value as models improve, while a felt bug or a
 requested capability does not, so such a ticket carries `[model-decay]` in its heading

@@ -402,4 +402,20 @@ pin "dir #539: G7 narrows the unmeasured default to a part nothing captured" "$d
 pin "dir #539: G7 bars the whole-row default while a source exists" "$doc" \
   'part nothing captured, never the row'"'"'s default while any measured source exists' "expected G7 to bar the row-wide default"
 
+# dir #545: a SIZE target for a cut is size - what moves out + what the cut writes back (G5 value claim; G3 makes it derived).
+pin "dir #545: G5 derives a size target as size less what moves out plus what the cut writes back" "$doc" \
+  'is derived as the size, less what moves out, plus' "expected G5 to give the size-target formula"
+pin "dir #545: G5 forbids the subtraction alone" "$doc" \
+  'never as the subtraction alone (dir #545).**' "expected G5 to forbid size minus the moved section"
+pin "dir #545: G5 ties the size target to the subject-set rule and G3" "$doc" \
+  'instance of the subject-set rule above, a derived field under G3' "expected G5 to cite the sibling rule and G3 rather than restate G3"
+pin "dir #545: G5 records the measured miss" "$doc" \
+  '37,478 − 10,751 = 26,727 bytes' "expected G5 to carry the felt case's arithmetic"
+pin "dir #545: G5 records the shipped size" "$doc" \
+  'the shipped file was 30,429 bytes' "expected G5 to carry the shipped size"
+pin "dir #545: G5 names the add-backs on the row" "$doc" \
+  'the row names the add-backs by name' "expected G5 to require the add-backs listed by name"
+pin "dir #545: G5 makes the residue checkable" "$doc" \
+  'so the residue between the claim and the shipped size is checkable' "expected G5 to give the reason for naming the add-backs"
+
 summary
