@@ -43,12 +43,20 @@ the block was deserved). Each event is stamped with its producer's own worktree 
 so with several worktree sessions live on the repo at once, `add` only ingests events carrying ITS OWN
 key — a fresh event from another worktree is left in the log (printed as `foreign-kept: ...`, not counted)
 for that other session's own `add` to pick up later. **`foreign-kept:` lines are EXPECTED with parallel
-sessions — not a bug.** **Check the printed `ingested: ...` lines against what actually happened this
-session:** a same-directory residual (two sessions sharing one worktree, so the claim key can't tell them
-apart — the case the age cap is still the only guard for; anything older than
-`$KEEL_INGEST_MAX_AGE_HOURS` hours, default 12, is reported as `stale-skipped:` instead) or a false fire
-does NOT stay counted as guard — rerun `add --no-ingest` and pass the corrected flags by hand (a false
-fire this session actually suffered from is `--friction`, not `--guard`).
+sessions — not a bug.** **Check what would be ingested BEFORE the row is written.** `add` appends the ledger row in the same call
+that prints the `ingested: ...` lines, so those lines come too late to correct anything. Run
+`<keel-checkout>/tools/keel-impact.sh add --dry-run` first: it runs the same ingestion as `add`, prints the
+same `ingested:` / `stale-skipped:` / `foreign-kept:` lines, and changes nothing (no ledger row, no evidence
+block, the event log untouched). Read each `ingested:` line against what actually happened this session. A
+same-directory residual (two sessions sharing one worktree, so the claim key can't tell them apart — the case
+the age cap is still the only guard for; anything older than `$KEEL_INGEST_MAX_AGE_HOURS` hours, default 12,
+is reported as `stale-skipped:` instead) or a false fire does NOT stay counted as guard. If every line is
+honest, run the real `add` as in step 3. If one is not, run the real `add --no-ingest` ONCE and pass the
+corrected flags by hand (a false fire this session actually suffered from is `--friction`, not `--guard`;
+a true fire you still want counted is `--guard` by hand). Never run `add` twice for one session: the second
+call writes a second row. `--no-ingest` leaves the log untouched, so a corrected false fire stays pending
+there until the age cap skips it; pass `--since` with a timestamp after it on the next session's first `add`
+to have that `add` skip it as stale rather than count it.
 
 **How the number falls out** (so you can predict it, not target it): `HELP = 4·hold + 3·guard + 2·fire + hit`,
 `COST = 2·miss + 2·friction`, `score = round(100·HELP/(HELP+COST))`. A hold (keel catching the agent) weighs
@@ -63,7 +71,7 @@ measure), not a fake 0. `conf` (none/low/med/high) comes from how many events ba
    result is `—` or a low score — let it be low.
 2. **List the silent rules.** Which always-loaded rules/facts did *not* earn their place this session? Count
    them for `--silent`, and name the top one in `--gap`. Note any `--miss` as a promote candidate too.
-3. **Append the row** — repeat a flag once per cited event; the tool counts, derives, and records.
+3. **Append the row** — after the `add --dry-run` check above. Repeat a flag once per cited event; the tool counts, derives, and records.
    `tools/…` is your **Keel checkout's** copy, so spell it `<keel-checkout>/tools/keel-impact.sh` when
    the session's cwd is the project being scored — and it should be: the store entry resolves from the
    cwd's repo, so a call made from the wrong directory silently scores that repo instead (or, if it was

@@ -236,6 +236,33 @@ run bash "$TOOL" add --fire "manual only" --no-ingest --gap "none"
 check_contains "--no-ingest ignores the log" "$OUT" "from 1 event(s)"
 check_contains "--no-ingest preserves the log" "$(wc -l < "$LOG" | tr -d ' ')" "1"
 
+# dir #271: `add --dry-run` previews the ingestion without consuming it. The log holds one fresh guard (left
+# by the --no-ingest case above) plus a stale one; the preview must print what a real `add` then ingests,
+# and leave the ledger, the evidence file and the log byte-for-byte as they were.
+printf '2000-01-01T00:00:00Z\tguard\tpre-pr-gate\tblocked\n' >> "$LOG"
+before_ledger="$(cat "$LEDGER")"; before_evidence="$(cat "$EVIDENCE")"; before_log="$(cat "$LOG")"
+run bash "$TOOL" add --dry-run --gap "none"
+check_status "dir #271: add --dry-run succeeds" 0 "$STATUS"
+dry_out="$OUT"
+check_contains "dir #271: dry-run prints the ingested line" "$dry_out" "ingested: "
+check_contains "dir #271: dry-run prints the stale-skipped line" "$dry_out" "stale-skipped: 2000-01-01T00:00:00Z guard pre-pr-gate | blocked"
+check_contains "dir #271: dry-run says nothing was written" "$dry_out" "nothing was written"
+check_eq "dir #271: dry-run appends no ledger row" "$before_ledger" "$(cat "$LEDGER")"
+check_eq "dir #271: dry-run appends no evidence block" "$before_evidence" "$(cat "$EVIDENCE")"
+check_eq "dir #271: dry-run consumes no event (log byte-identical)" "$before_log" "$(cat "$LOG")"
+run bash "$TOOL" add --gap "none"
+real_out="$OUT"
+check_eq "dir #271: the dry-run lines are exactly what the real add then ingests" \
+  "$(printf '%s\n' "$dry_out" | grep -E '^(ingested|stale-skipped|foreign-kept): ')" \
+  "$(printf '%s\n' "$real_out" | grep -E '^(ingested|stale-skipped|foreign-kept): ')"
+check_contains "dir #271: the real add after a dry-run counts the previewed event once" "$real_out" "1 auto-ingested"
+pin "dir #271: the keel-score ritual names the dry-run preview" "$REPO_ROOT/commands/keel-score.md" 'tools/keel-impact.sh add --dry-run' "ritual does not name add --dry-run"
+pin "dir #271: the keel-score ritual says the preview changes nothing" "$REPO_ROOT/commands/keel-score.md" 'changes nothing (no ledger row, no evidence' "ritual does not say the dry run is read-only"
+pin "dir #271: the keel-score ritual corrects with add --no-ingest after the preview" "$REPO_ROOT/commands/keel-score.md" 'run the real `add --no-ingest` ONCE' "ritual lost the corrective step"
+pin "dir #271: the usage text lists --dry-run" "$TOOL" 'keel-impact.sh add --dry-run' "usage lacks --dry-run"
+run bash "$TOOL" add --dry-run --bogus-flag
+check_status "dir #271: a dry-run still validates its flags" 2 "$STATUS"
+
 # a final log line with NO trailing newline (a producer appending directly, or a partial write) must still
 # be ingested — otherwise it is dropped and then lost when the log is truncated. This is guarded by the
 # tool's awk pre-pass, which always terminates every record it emits, not by the `read` loop's own
