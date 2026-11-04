@@ -685,4 +685,11 @@ pin "dir #553: R1 records a differing count on the run's row" "$doc" \
 pin "dir #553: R1 hands the operator the recounted step total" "$doc" \
   'the recounted operator-step total goes to the operator, since those steps are theirs.' "expected R1 to tell the operator their step total"
 
+# --- dir #607: R11's token-budget check reads the window before it asks ------------------------------
+pin "dir #607: R11 reads the remaining window where the harness exposes it" "$doc" \
+  'flow (read the live remaining-window percentage where the harness exposes it and ask the operator only' \
+  "expected R11 to describe the session-limit flow as read-first, ask-as-fallback"
+check_absent "dir #607: release-management.md no longer says to ask for the window percentage" \
+  "$(tr '\n' ' ' < "$doc" | tr -s ' ')" '(ask the operator for the live remaining-window percentage'
+
 summary

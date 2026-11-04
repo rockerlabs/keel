@@ -501,8 +501,13 @@ the working directory carries no backup contour.
 
 **The session-limit flow**, ask-then-arithmetic, run before every wave:
 
-1. **Ask the operator for their live remaining-window percentage.** The agent cannot see it — this is a
-   number only the human can supply. **Named override (`dir #385`'s A3 amendment, `docs/delta-audit.md`
+1. **Read the live remaining-window percentage where the harness exposes it; ask the operator only
+   where it does not.** Some harnesses report it (a usage report such as `get_usage` returns the
+   5-hour and the weekly window with percent used and reset time): read it at every wave gate instead
+   of asking, since a quoted figure can be far off the real one. Where the harness exposes nothing,
+   this is a number only the human can supply. The weekly window is shared by every session on the
+   account, so a pilot's delta measured while other work drew on it is inflated (a downstream project
+   measured ×2.4): pilot when little else is running, or discount the delta. **Named override (`dir #385`'s A3 amendment, `docs/delta-audit.md`
    §7):** a delta audit reads the token-SPEND side of this from its own project's on-disk usage data
    where that exists, and asks the operator only for the remaining-WINDOW figure this step still can't
    derive — never a silent contradiction between the two docs, this step's own "ask" stays the fallback

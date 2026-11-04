@@ -385,8 +385,9 @@ scale are not a quality signal.*
 Two sessions is not a floor and eight is not a ceiling — size your own run from your own range's
 file and PR counts, not from either row above as a target.
 
-**Session limits use [`docs/delegation.md`](delegation.md)'s own flow unchanged** (ask the operator
-for their live remaining-window percentage, pilot two sessions spanning the cost envelope, do the
+**Session limits use [`docs/delegation.md`](delegation.md)'s own flow unchanged** (read the live
+remaining-window percentage where the harness exposes it and ask the operator only where it does not,
+pilot two sessions spanning the cost envelope, do the
 arithmetic before spawning a wave, hard-stop planning at ~95%) — not restated here. The one
 application-specific input that flow needs: **no static measure of a cluster predicted its leg's cost.** In
 keel's 0.16.0 and 0.17.0 runs (28 whole-read legs, cost in list-price dollars), file count predicted nothing in
