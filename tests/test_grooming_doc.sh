@@ -318,4 +318,14 @@ pin "dir #467: G3 cites its ticket for the value-claim rule" "$doc" \
 pin "dir #467: G5 points the value claim back at G3" "$doc" \
   "The claim is derived from the row's current" "expected G5's value-claim sentence to point at G3's derivation rule"
 
+# dir #471: every release-row field that states a fact is derived at groom time; the pain stays G1's.
+pin "dir #471: G3 scopes the general rule to row fields that state a fact about the tree or slate" "$doc" \
+  'states a fact about the tree or the slate is' "expected G3's general row rule scoped to fact-stating fields"
+pin "dir #471: G3 leaves the pain to the operator (G1)" "$doc" \
+  "the pain stays the operator's (G1)" "expected G3 to except the pain field, which G1 gives to the operator"
+pin "dir #471: G3 retakes the measurement and keeps the struck old figure dated" "$doc" \
+  'the old figure is struck and kept with its date' "expected G3 to require the size measurement retaken, old figure struck and dated"
+pin "dir #471: G5 points the size measurement back at G3" "$doc" \
+  'size measurement is retaken from the planned-from commit' "expected G5 to name the measurement as derived from the planned-from commit"
+
 summary
