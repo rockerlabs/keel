@@ -567,12 +567,27 @@ what a project's own cost-measurement work has already put on disk (where that w
 claim** stated plainly enough to be wrong in public. The claim is derived from the row's current
 ticket/stage list, and the size measurement is retaken from the planned-from commit; neither is
 authored (G3). Design economics — the cost of the cycle's design
-sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
+sessions against two figures per spec (below) — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists. **The design-session flow produces no cost figure yet**,
 so this field records the absence, per cycle (first adopter data point: *cost unmeasured, spec
 accepted first-submitted, ~30 min prototype wall time*; keel's 2026-09-18 fleet left six specs with
 none) — a compensation whose remover is `dir #561` (dir #560 A3, applied 2026-09-20).
+
+**Design economics carries two figures per spec, because "accepted as first submitted" measures the
+spec's review, not the spec (dir #554).** One adopter's grooms wrote "returned for rework 0 of N" eleven
+times and "too early to judge" each time. Its audit run's own upstream-gate cell then answered what that
+number hides: seven specs of seven were accepted as first submitted, and the run still attributed two
+findings to the design level and a third to the spec and implementation boundary, all three shipped as
+tickets. Zero returns and three design defects in one release are compatible. So the field records, per
+spec: (1) accepted without return, yes or no; (2) the count of release-candidate-audit findings the
+run's cross-run row attributes to that spec's design level, read from the row's
+`design-level findings, per spec` field ([`docs/delta-audit.md`](delta-audit.md) §8), mechanically,
+never from memory. The spec's `Escapes at implementation` line (the last line `/go` appends to the
+spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and
+is read beside the audit's. The judgment about the `/design` mechanism is made on the second figure,
+and is still a later cycle's once more than one data point exists. This stays ONE report field: it
+adds no field to the row.
 
 **Size the budget's input side from the previous comparable release's measured TOTAL, never from a
 per-item build price (the 0.12.0 groom, reading the 0.11.0 row).** That release priced thirty one-file

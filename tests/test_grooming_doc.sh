@@ -446,4 +446,20 @@ pin "dir #553: G5 cross-check, never a second line" "$doc" \
 pin "dir #553: G5 R1 reads the same two counts" "$doc" \
   'R1'"'"'s intake check reads the same two counts.' "expected G5 to point at R1"
 
+# dir #554: G5's design-economics report field carries two figures per spec and stays one field.
+pin "dir #554: G5 carries two figures per spec" "$doc" \
+  '**Design economics carries two figures per spec, because "accepted as first submitted" measures the' "expected G5 to name the two-figure rule"
+pin "dir #554: G5 accepted-without-return and the design-level count" "$doc" \
+  'spec: (1) accepted without return, yes or no; (2) the count of release-candidate-audit findings the' "expected G5 to list both figures"
+pin "dir #554: G5 reads the count from the row's field, never memory" "$doc" \
+  '`design-level findings, per spec` field ([`docs/delta-audit.md`](delta-audit.md) §8), mechanically,' "expected G5 to point at the row field in delta-audit section 8"
+pin "dir #554: G5 reads the Escapes line beside it" "$doc" \
+  'spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and' "expected G5 to read the escapes line beside the audit's"
+pin "dir #554: G5 judges the mechanism on the second figure" "$doc" \
+  'is read beside the audit'"'"'s. The judgment about the `/design` mechanism is made on the second figure,' "expected G5 to move the judgment onto the second figure"
+pin "dir #554: G5 stays one report field" "$doc" \
+  'adds no field to the row.' "expected G5 to keep the field count"
+pin "dir #554: commands/groom.md carries the two figures in its design-economics line" "$cmd" \
+  "against two figures per spec: returned or not, and the audit's design-level findings" "expected the entrypoint to match G5's two figures"
+
 summary
