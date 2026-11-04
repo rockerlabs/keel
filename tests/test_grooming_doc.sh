@@ -328,4 +328,14 @@ pin "dir #471: G3 retakes the measurement and keeps the struck old figure dated"
 pin "dir #471: G5 points the size measurement back at G3" "$doc" \
   'size measurement is retaken from the planned-from commit' "expected G5 to name the measurement as derived from the planned-from commit"
 
+# dir #472: the groom's own run record is drafted BEFORE the G6 round and handed to the reviewer.
+pin "dir #472: G6 puts the run record inside the round's scope" "$doc" \
+  '**The run record is inside the round, not after it (dir #472).**' "expected G6 to scope the run record into the review round"
+pin "dir #472: G6 drafts the record row before the reviewer is handed the material" "$doc" \
+  'is drafted before the reviewer is handed the material' "expected G6 to order the record draft before the hand-off"
+pin "dir #472: G6 has the reviewer check the row's arithmetic against the file" "$doc" \
+  "check the row's arithmetic against the file" "expected G6 to tell the reviewer to recount the record's numbers"
+pin "dir #472: G7 points the row draft back at G6" "$doc" \
+  'drafted before the G6 round (dir #472)' "expected G7 to place the row draft before the G6 round"
+
 summary

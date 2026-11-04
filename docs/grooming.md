@@ -736,6 +736,17 @@ compressed note also described what the hook does, which nobody had read, and it
 the hook found it refuses only one tracked file). This is G3's "derive, don't assert" applied to the groom's own
 writes.
 
+**The run record is inside the round, not after it (dir #472).** The G7 row is the one artifact of the procedure that
+nothing else reviews, and the next G0 reads it as fact. So the row for this groom
+is drafted before the reviewer is handed the material, and it goes into the round with the plan, never after the last
+round. The reviewer is told to check the row's arithmetic against the file, like any other count: every number against
+the list or range printed beside it, every "the Nth" against the values quoted, and every measurement against a
+reading taken after the last write. The one cell that cannot be drafted first, the round's own result, is written
+from the reviewer's return and recounted against it. Hermes' 2026-09-10 groom found three of six second-round
+findings inside its own record (an "8" beside nine ids, "17 tickets" over an eighteen-id range, a curve of six values
+called seven). That costs one reordering, not another round; a rule that says "check your own numbers" does not hold,
+and the same record had already carried a rule against stale measurements.
+
 **Optional second axis, same round: a genuinely different model vendor, not just a fresh context
 window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
 ticket bodies in scope, read by a swappable cross-vendor client. Run twice on a release plan so far
@@ -774,7 +785,8 @@ omitted with a reason. This matters more than bookkeeping: G0 opens by reading "
 records", so a project that never writes one can never run G0, and every groom there is permanently a
 first groom.
 
-**The groom OPENS the row; the release manager completes it at close.** Open it at this step, with this
+**The groom OPENS the row; the release manager completes it at close.** The opening is
+drafted before the G6 round (dir #472), so the round reads it (G6 says why). Write it into the record at this step, with this
 groom's own measured figures and the plan's estimate, and leave the run's own cells explicitly empty —
 the release has not happened yet, and a row that waits for it records the groom's numbers only as
 retold inside the NEXT release's row, if at all. [`docs/release-management.md`](release-management.md)'s
