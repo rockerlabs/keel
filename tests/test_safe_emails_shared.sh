@@ -12,10 +12,10 @@ lib="$REPO_ROOT/tools/lib/safe-emails.sh"
 check_file "tools/lib/safe-emails.sh exists" "$lib"
 
 # --- both known consumers source the shared lib, not a private copy -----------------------------
-check_contains "doctor.sh sources tools/lib/safe-emails.sh" \
-  "$(cat "$REPO_ROOT/tools/doctor.sh")" 'lib/safe-emails.sh'
-check_contains "public-audit.sh sources tools/lib/safe-emails.sh" \
-  "$(cat "$REPO_ROOT/tools/public-audit.sh")" 'lib/safe-emails.sh'
+# check_sources (tests/lib.sh), not a whole-file substring: the `# shellcheck source=` pragma carries the same
+# string, so deleting the real sourcing line used to leave the pin green (dir #292).
+check_sources "doctor.sh sources tools/lib/safe-emails.sh" "$REPO_ROOT/tools/doctor.sh" 'lib/safe-emails.sh'
+check_sources "public-audit.sh sources tools/lib/safe-emails.sh" "$REPO_ROOT/tools/public-audit.sh" 'lib/safe-emails.sh'
 
 # --- no re-duplicated copy of the pattern set anywhere else under tools/ -------------------------
 # A marker substring from the set, unlikely to appear for any other reason. If it shows up outside

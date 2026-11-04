@@ -76,12 +76,12 @@ out="$(sanitize_nonneg_int "$ten_digits" "40")"
 check_contains "sanitize_nonneg_int: overlong value falls back to the default" "$out" "40"
 
 # --- both known consumers source the shared lib, not a private inline copy of the digit-shape guard -
-check_contains "tools/self/doctor.sh sources tools/lib/nonneg-int.sh" \
-  "$(cat "$REPO_ROOT/tools/self/doctor.sh")" 'lib/nonneg-int.sh'
+# check_sources (tests/lib.sh), not a whole-file substring: the `# shellcheck source=` pragma carries the same
+# string, so deleting the real sourcing line used to leave the pin green (dir #292).
+check_sources "tools/self/doctor.sh sources tools/lib/nonneg-int.sh" "$REPO_ROOT/tools/self/doctor.sh" 'lib/nonneg-int.sh'
 check_contains "tools/self/doctor.sh calls sanitize_nonneg_int for pending_max_commits" \
   "$(cat "$REPO_ROOT/tools/self/doctor.sh")" 'sanitize_nonneg_int "$pending_max_commits" 40'
-check_contains "tools/keel-impact.sh sources tools/lib/nonneg-int.sh" \
-  "$(cat "$REPO_ROOT/tools/keel-impact.sh")" 'lib/nonneg-int.sh'
+check_sources "tools/keel-impact.sh sources tools/lib/nonneg-int.sh" "$REPO_ROOT/tools/keel-impact.sh" 'lib/nonneg-int.sh'
 check_contains "tools/keel-impact.sh's require_count calls _nonneg_int_valid" \
   "$(cat "$REPO_ROOT/tools/keel-impact.sh")" '_nonneg_int_valid "$val"'
 

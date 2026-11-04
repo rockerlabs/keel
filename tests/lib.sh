@@ -864,6 +864,20 @@ check_absent()   { case "$2" in *"$3"*) fail "$1" "output should not contain: $3
 check_ne()       { if [ "$2" != "$3" ]; then pass "$1"; else fail "$1" "expected different values, both were '$2'"; fi; }
 check_eq()       { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1" "expected '$2', got '$3'"; fi; }
 check_file()     { if [ -f "$2" ]; then pass "$1"; else fail "$1" "missing file: $2"; fi; }
+# check_sources LABEL FILE LIBPATH — FILE has an executable sourcing command for a library whose path ends in
+# LIBPATH (e.g. lib/nonneg-int.sh): a line that BEGINS (after blanks) with `.` or `source` and names LIBPATH.
+# A whole-file substring check is not enough (dir #292): the `# shellcheck source=tools/lib/<x>.sh` pragma
+# carries the same string, so deleting the real sourcing line left the pin green. A comment line begins with
+# `#` and never matches here. LIBPATH is matched as a fixed string.
+check_sources() {
+  # Two steps, no hand-built regex: keep the sourcing-command lines, then fixed-string match the path in them.
+  local cmds; cmds="$(grep -E '^[[:space:]]*(\.|source)[[:space:]]' "$2" 2>/dev/null)"
+  if match "$cmds" -qF -- "$3"; then
+    pass "$1"
+  else
+    fail "$1" "no executable '. ' or 'source ' line naming $3 in $2 (a '# shellcheck source=' comment does not count)"
+  fi
+}
 check_dir()      { if [ -d "$2" ]; then pass "$1"; else fail "$1" "missing dir: $2"; fi; }
 check_nofile()   { if [ -f "$2" ]; then fail "$1" "file should not exist: $2"; else pass "$1"; fi; }
 check_nodir()    { if [ -d "$2" ]; then fail "$1" "dir should not exist: $2"; else pass "$1"; fi; }
