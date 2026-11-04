@@ -15,6 +15,12 @@ sections real content going forward — see that page for exactly when each one 
 
 ## [Unreleased]
 
+- `docs/release-management.md` now says outright that a build worker's chip is `/go <N>` plus a coordination-only
+  overlay (dir #648). The manager's verified facts and scope corrections go into the ticket as dated `Log:` lines;
+  the overlay carries identity, reporting, deferred `/go` steps, siblings, bounds and the rails by pointer, the
+  live-experiment rail (scratch dir, sandboxed `HOME`, never the real checkout) among them. The merge hand-off adds
+  `do not merge #N yet` the moment a correction is in flight on an open PR. `commands/manage-release.md` points at it.
+
 ## [0.18.0] — 2026-10-21
 
 **Known issues, disclosed at the cut.** Two things from the 0.18.0 delta audit ship known-imperfect. The first, that

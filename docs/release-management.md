@@ -306,6 +306,24 @@ conventions that happen to look similar, it's one convention applied at two poin
    it is not, and the line itself is what keeps R4's two-way critique from reading as ambiguity about
    who owns what.
 
+**A build worker's chip is `/go <N>` plus an overlay, never a re-written brief (dir #648).** A worker that builds a
+ticket IS a `/go` run, and the brief is the overlay on it. The first waves of one release launched workers with "read
+the brief and follow it", so `/go` never ran: the manager re-wrote what `/go` already does (ticket and spec reading,
+readiness, the `CHANGELOG.md` entry, the gates) and made errors in the copy (an unverified cut list, stale stamps). From
+then on the chip ran `/go <N>`, and the first real `/go` runs of that release were clean. So:
+
+- **The manager's verified facts and scope corrections go into the ticket as dated `Log:` lines.** They are durable,
+  and `/go` reads the ticket's whole block (item 1); a fact in the overlay is a fact the next session never sees.
+- **The overlay carries only what `/go` cannot know:** the worker's identity and token, reporting and the freeze, the
+  `/go` steps that defer to the manager (the claim step, [R8](#r8--single-writer-to-backlogmd-during-the-release)), siblings and merge
+  order, stops and bounds, and the rails below, by pointer.
+- **Trimming a long brief to an overlay must not drop a rail the long brief carried.** The overlay carries, by
+  pointer (item 4's wording, never a paraphrase): the keep-alive contract, the CI-wait rule, the same-turn rule, the
+  review-round cap, the R13 `WRAP CENTRALIZED` marker, the one-test-device rule where it applies, and **the
+  live-experiment rail: live experiments only in a scratch dir under a sandboxed `HOME`, never the real checkout.**
+  The rail is the one a trim lost: a fixer then ran a live proof in the real checkout (a real `git worktree add` and
+  eight commits). No residue, but only by luck.
+
 **A fix-round brief carries one more item: a pre-flight convention checklist, not left implicit in
 "the repo's own convention."** dir #427's timed profile of RC Fixer E (PR #367) found that a missing
 `CHANGELOG.md` entry — caught only after the PR was already open, by the manager's own review — cost
@@ -1179,6 +1197,12 @@ manager had said to hold, once because the hold was a separate sentence and the 
 read as the gate that lifted it, so the verdict arrived after the merge. And a merge command handed while the PR that
 had to take it in still owed an amendment put that amendment into a follow-up PR. Where the manager merges, the
 `HELD #N: <why>` line of (e) is the same hold.
+
+**A correction in flight holds the merge (dir #648).** The moment the manager sends a worker a correction on an open PR,
+it tells the operator `do not merge #N yet` (the shape above), and it lifts the hold only when the corrected head is
+pushed, verified and frozen. This applies wherever the operator can merge, a cloud PR included. In one release the
+operator merged a cut PR on green CI while a correction to its worker was in flight, and a follow-up PR had to fix the
+published record before the tag.
 
 **What stays the operator's, unchanged:** the tag, the release publish, the install block, branch-protection
 settings, deletions, and the review depth of a train and of the RC audit. The run record (R7) carries how many
