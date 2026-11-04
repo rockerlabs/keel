@@ -537,4 +537,13 @@ check_contains "guide § Step 2: a session ban receipts inline:agent-tool-banned
 check_contains "guide § Step 2: the prose-only branch is the one proportionality exit" "$g2" \
   "the prose-only branch is the only proportionality exit"
 
+# --- dir #667: step 3's worked example carries no file count that can drift ---------------------------
+pin "dir #667: the guide's mapping example tells the reader to re-run the grep" "$guide" \
+  'test file and qualified, and is now named by many, so re-run the grep every time rather than reusing' \
+  "expected the worked example to be a claim that stays true without a count"
+check_absent "dir #667: the guide no longer says grooming.md maps to exactly one test file" \
+  "$(tr '\n' ' ' < "$guide" | tr -s ' ')" 'maps to exactly `tests/test_grooming_doc.sh`'
+check_absent "dir #667: the guide no longer says CHANGELOG.md maps to eight files" \
+  "$(tr '\n' ' ' < "$guide" | tr -s ' ')" 'maps to eight files'
+
 summary

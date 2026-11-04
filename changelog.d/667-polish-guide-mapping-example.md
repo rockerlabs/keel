@@ -1,0 +1,5 @@
+- `commands/polish-guide.md`'s worked example for scoping step 3 to one test file no longer carries file counts
+  (dir #667). It said the grooming doc maps to exactly one test file and the changelog to eight; both numbers had
+  drifted, and the first claim ("qualifies") had become false because many test files now name the grooming doc.
+  The example now says the mapping moves as tests are added and tells the reader to re-run the grep every time,
+  and the changelog is described as mapping to many files. Pinned in `tests/test_polish_command.sh`.

@@ -382,6 +382,10 @@ check_status "--help -> exit 0" 0 "$STATUS"
 check_contains "--help prints usage" "$OUT" "usage"
 check_nofile "--help runs no accidental derivation (default --out is cwd)" "$r/delta-files.txt"
 check_nofile "...and does not overwrite ledger.md either" "$r/ledger.md"
+# dir #626: --help lists the closure failure among the exit-3 causes, and says it is one-directional.
+check_contains "--help lists the closure check among the exit-3 refusals" "$OUT" "directory is unusable / the closure check fails)"
+check_contains "--help says only_in_delta refuses" "$OUT" "only_in_delta"
+check_contains "--help says only_in_map does not refuse" "$OUT" "(only_in_map) prints \"transient in range\" and does not refuse"
 
 # --- dir #744 B32: a changelog.d/ fragment is history, like CHANGELOG.md ---------------------------------
 # A release's ~30 fragments would otherwise turn into ~30 prose rows in the RC delta audit, derived BEFORE

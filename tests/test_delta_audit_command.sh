@@ -71,4 +71,16 @@ check_contains "A3 pilots on a work-dense unit and names the merge trade (dir #8
   "Pilot on a work-dense unit (§7: no size measure predicted a leg's cost; a merge of clusters trades verification depth for cost and goes into the plan with its price), do the arithmetic before spawning a wave"
 check_absent "the command no longer says seam-dense (dir #872)" "$(flatten_ws < "$skill")" 'seam-dense'
 
+# --- dir #607: A3 reads the window where the harness exposes it --------------------------------------
+pin "dir #607: A3 reads the window where the harness exposes it" "$skill" \
+  'remaining-WINDOW percentage where the harness exposes it (for example `get_usage`), and ask the operator' \
+  "expected A3 to read the window first and ask only as the fallback"
+
+# --- dir #624: the override delegation.md names lives in the command's A3, not in a doc section -------
+pin "dir #624: delegation.md points the named override at commands/delta-audit.md" "$delegation" \
+  'in `commands/delta-audit.md`):** a delta audit reads' \
+  "expected the named-override clause to cite the file that carries the override"
+check_absent "dir #624: delegation.md no longer cites a section of docs/delta-audit.md for the override" \
+  "$(tr '\n' ' ' < "$delegation" | tr -s ' ')" '`docs/delta-audit.md` §7):'
+
 summary

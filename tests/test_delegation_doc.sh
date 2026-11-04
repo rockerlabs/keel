@@ -230,4 +230,19 @@ check_absent "delegation.md no longer says merge bandwidth (either wrapped site)
 pin "delegation.md Mutator paragraph points at the manager's gated merge under R14" "$doc" 'its gated merge under R14' \
   "expected the Mutator paragraph to point at the release manager's gated merge (dir #811)"
 
+# --- dir #607: the session-limit flow's step 1 reads the window where the harness exposes it ----------
+pin "dir #607: delegation.md step 1 reads the window, asks only where unexposed" "$doc" \
+  '1. **Read the live remaining-window percentage where the harness exposes it; ask the operator only' \
+  "expected step 1 of the session-limit flow to read the window first and ask only as the fallback"
+pin "dir #607: delegation.md step 1 names get_usage as an example usage report" "$doc" \
+  'a usage report such as `get_usage` returns the' "expected step 1 to name get_usage as an example"
+pin "dir #607: delegation.md step 1 says the weekly window is shared" "$doc" \
+  'The weekly window is shared by every session on the' "expected step 1 to warn that concurrent sessions inflate a pilot's delta"
+pin "dir #607: delegation.md labels the flow read-then-arithmetic" "$doc" \
+  '**The session-limit flow**, read-then-arithmetic, run before every wave:' "expected the flow's label to match its read-first step 1"
+check_absent "dir #607: delegation.md no longer labels the flow ask-then-arithmetic" \
+  "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'ask-then-arithmetic'
+check_absent "dir #607: delegation.md no longer says the agent cannot see the window" \
+  "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'The agent cannot see it'
+
 summary

@@ -15,7 +15,10 @@
 # Exit codes: 0 derived · 2 bad arguments · 3 refused.
 #
 # Refusals (exit 3): not a git repository; <prev-rev> or <head-rev> does not resolve; the output
-# directory is absent or unwritable. Deliberately NOT a clean-tree / HEAD-equals-baseline refusal —
+# directory is absent or unwritable; the closure check fails (below), in ONE direction only: a path in
+# the range diff that no PR is credited with (only_in_delta) refuses, while a path credited to a PR but
+# absent from the range diff (only_in_map) prints "transient in range" and does not fail (dir #288).
+# Deliberately NOT a clean-tree / HEAD-equals-baseline refusal —
 # tools/drydock/inventory.sh needs that because it MEASURES THE WORKING TREE, whereas this script
 # reads only history (`git diff <a>..<b>`, `git log --merges`), so a dirty tree cannot change its
 # output. TO VERIFY was closed empirically: tests/test_delta_audit_derive.sh's dirty-tree case proves
@@ -96,7 +99,13 @@ Outputs, into <dir>:
   run-record.md     a stub of the cross-run row for private/audit/RUNS.md
 
 Exit codes: 0 derived · 2 bad arguments · 3 refused (not a repo / a rev does not resolve / the output
-directory is unusable). There is no clean-tree or HEAD guard: this script reads only history, so a
+directory is unusable / the closure check fails).
+
+Closure refusal (exit 3): a path in the range diff that no PR is credited with (only_in_delta — usually
+a squash- or rebase-merged PR) refuses. A path credited to a PR but absent from the range diff
+(only_in_map) prints "transient in range" and does not refuse. The four output files are still written.
+
+There is no clean-tree or HEAD guard: this script reads only history, so a
 dirty working tree cannot change its output. Tuning environment variables are documented in this
 file's header.
 EOF

@@ -1104,8 +1104,10 @@ keel-self-maintenance, never installed downstream — makes every `dir #N` cited
 fail. It is also the first release whose RC pass had `tools/delta-audit/derive.sh`, a written stop rule
 and that citation check all available at once, and that pass found behavioural defects in this
 release's own migration code that the parallel whole-read wave did not: four were fixed before the
-tag, and two failure windows in the auto-migration path shipped as-is, ticketed. Two
-further known issues are disclosed in the changelog, each also carrying an open ticket.
+tag. Two known issues shipped unfixed, each with an open ticket and neither changing what the tools
+do: `keel-impact.sh enable` prints the wrong sentence on a project whose only tracking state is a
+pre-0.7.2 in-tree marker (the migration itself is correct), and `doctor`'s changelog-citation check
+verifies that a ticket's number appears in the unreleased section, not that its work is described there.
 
 ## v0.7.1 — 2026-08-21
 

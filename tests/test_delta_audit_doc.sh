@@ -460,4 +460,9 @@ pin "dir #554: section 8 counts from the cell, never memory" "$doc" \
 pin "dir #554: section 8 points at G5's design economics" "$doc" \
   'listed beside it and not added. [`docs/grooming.md`](grooming.md) G5'"'"'s design economics reads that field:' "expected section 8 to name its reader"
 
+# --- dir #607: the session-limit pointer reads the window where the harness exposes it ---------------
+pin "dir #607: delta-audit.md reads the window where the harness exposes it" "$doc" \
+  'remaining-window percentage where the harness exposes it and ask the operator only where it does not,' \
+  "expected the session-limits paragraph to read the window first and ask only as the fallback"
+
 summary

@@ -177,11 +177,13 @@ Steps, in order:
    returns exactly one file from that grep, and it's the SAME file for all of them — run that one file
    directly instead of the project's full test command. A commit whose non-exempt touches don't
    collapse to one shared file gets the full run — a mechanical check, not a judgment call: never scope
-   a multi-file commit down to whichever file looks safest. **Concretely verified in this repo**:
-   `docs/grooming.md` maps to exactly `tests/test_grooming_doc.sh` and qualifies. `CHANGELOG.md` does
-   NOT — despite motivating this rule (its own back-to-back full reruns for a CHANGELOG-only edit are
-   what surfaced the question), it genuinely maps to eight files under `tests/`, several of which read
-   its real content (`test_doc_figures.sh`, `test_changelog_section.sh`, `test_release_history.sh`) —
+   a multi-file commit down to whichever file looks safest. **Concretely, in this repo**: the mapping
+   moves as tests are added, so a remembered one is stale — `docs/grooming.md` once mapped to a single
+   test file and qualified, and is now named by many, so re-run the grep every time rather than reusing
+   a past verdict. `CHANGELOG.md` never qualified — despite motivating this rule (its own back-to-back
+   full reruns for a CHANGELOG-only edit are what surfaced the question), it maps to many files under
+   `tests/`, several of which read its real content (`test_doc_figures.sh`, `test_changelog_section.sh`,
+   `test_release_history.sh`) —
    so a CHANGELOG-only fix commit still needs the full suite under this rule as written. Scoping a
    multi-file mapping down safely is a separate, harder problem this ticket leaves open, not something
    this rule attempts. A `changelog.d/` path takes the full-run branch too (`tools/self/doctor.sh` reads it

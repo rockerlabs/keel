@@ -501,10 +501,12 @@ Four control points where the orchestrator either hands off or takes back:
 
 ## Session limits — the flow that survives a quota
 
-An agent cannot see your usage window; **it has to ask, and you have to answer with a number.** Before
-each wave:
+Where the harness exposes your usage window, the agent reads it; where it does not, **it has to ask, and
+you have to answer with a number.** Before each wave:
 
-1. **Ask for the live remaining-window percentage.** Budget for the wave = remaining − ~5% held back
+1. **Read the live remaining-window percentage where the harness exposes it (for example `get_usage`);
+   ask only where it does not.** The weekly window is shared by every session on the account, so a
+   pilot's delta measured during other work is inflated. Budget for the wave = remaining − ~5% held back
    as the orchestrator's own reserve (it still has to arbitrate and record after the wave lands).
 2. **Pilot two agents spanning the cost envelope — and pilot on a LEADS-DENSE batch, not just on the
    biggest file.** **Felt incident:** run 1's pilot under-predicted the main wave's per-agent cost by
