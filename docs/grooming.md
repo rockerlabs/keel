@@ -750,7 +750,34 @@ and the same record had already carried a rule against stale measurements.
 **Optional second axis, same round: a genuinely different model vendor, not just a fresh context
 window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
 ticket bodies in scope, read by a swappable cross-vendor client. Run twice on a release plan so far
-(2026-09-16, 2026-09-20), it returned findings the same-family round above had not, both times.
+(2026-09-16, 2026-09-20), it did not behave the same way twice: the paragraph on the two-vendor variant below
+records both runs.
+
+**The two-vendor variant is an option, not a default (dir #530).** It runs the whole round above on the
+same-family reviewer over the live files AND on a second vendor over an inline bundle of the same sources. The
+operator asks for it, because a vendor round is vendor-billed and its bundle leaves the machine. The recipe lives
+in the project's cross-vendor harness; three rails hold whatever it is: the bundle fits the vendor's inline cap,
+paths are anonymized, and the leak gate runs over the bundle before it ships
+(`tools/secret-guard/secret-scan.sh -- <bundle>`). **One writer per round directory (dir #520).** The first
+two-vendor attempt relaunched into a directory its first run was still using, and the relaunch
+overwrote the first run's reply mid-flight; every launch gets its own directory, the same shared-scratch class as
+two sessions on one clone.
+
+**The measured split is two data points, and they point opposite ways.** On 2026-09-16 the same-family reviewer
+read the live tree and returned 19 findings, one a blocker, all of them needing a command (a call chain through a
+script, an open ticket hidden in a "closures" count, a sum that did not add up). The second vendor, over a 171 KB
+bundle, returned 6, and the second leg alone found two text-level defects (a wording defect in how a ticket
+number was written, and a misattributed tool); one of its other findings was a census miscount that the bundle's
+own table refuted. On 2026-09-20 the first leg returned 28 findings (2 blockers, 17 should-fix, 9 nits, none
+refuted, 98 tool calls, about 26 minutes) and the second 8 (4, 3, 1), of which one was refuted as an artefact of
+the bundle's truncation; the second leg's accepted findings were a strict subset of the first's, at about a twelfth
+of the size, because that plan's defects were body-versus-heading paraphrases the tree-reading leg also caught. Its
+one wrong call came from what the bundle could not carry: 400-character line caps hid the tails of a standing
+list's entries (the trim rule in `docs/vendor-review.md` forbids exactly that cut). Cost per second-leg run: about
+110k vendor tokens and under four minutes (first run). So the second leg's value depends on the defect class: it reads
+text and cannot run a command, so it earns its cost on wording and census defects and adds little where the first leg
+already reads every body. Two runs do not make a pattern and two runs do not make it a default; the next two-vendor
+groom decides whether the split holds, and this paragraph is the place to record it.
 
 **Run it AFTER the same-family round's fixes are applied, never beside it (dir #823).** The vendor round earns its cost
 on defects in the groom's own fresh edits, the class an earlier reviewer cannot see, having read the file before them.
