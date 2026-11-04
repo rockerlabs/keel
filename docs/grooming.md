@@ -410,9 +410,9 @@ compression from a skip.
 Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
 known body-read commit), G2 applies whole, as written above.
 
-The G0 operator-decisions list is also where a premise only the operator can confirm is asked, in the
-same sitting. A fresh reviewer told to read bodies reads archived bodies too, which is an argument for
-the archive sweep (G4) keeping them verbatim rather than summarised.
+G0's list of operator decisions (second flavour) is also where a premise only the operator can confirm
+is asked, in the same sitting. A fresh reviewer told to read bodies reads archived bodies too, which is
+an argument for keeping archived bodies verbatim rather than summarised.
 
 **The premise check runs before a ticket is offered by name, not after the "yes" (the 0.17.0
 re-cut).** A ticket named in a priced option gets the live check above before the offer goes out; a
@@ -602,13 +602,13 @@ spec's review, not the spec (dir #554).** One adopter's grooms wrote "returned f
 times and "too early to judge" each time. Its audit run's own upstream-gate cell then answered what that
 number hides: seven specs of seven were accepted as first submitted, and the run still attributed two
 findings to the design level and a third to the spec and implementation boundary, all three shipped as
-tickets. Zero returns and three design defects in one release are compatible. So the field records, per
+tickets. Zero returns and design-level defects in one release are compatible. So the field records, per
 spec: (1) accepted without return, yes or no; (2) the count of release-candidate-audit findings the
 run's cross-run row attributes to that spec's design level, read from the row's
 `design-level findings, per spec` field ([`docs/delta-audit.md`](delta-audit.md) §8), mechanically,
 never from memory. The spec's `Escapes at implementation` line (the last line `/go` appends to the
 spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and
-is read beside the audit's. The judgment about the `/design` mechanism is made on the second figure,
+is read beside the audit's. The judgment about the design-session mechanism is made on the second figure,
 and is still a later cycle's once more than one data point exists. This stays ONE report field: it
 adds no field to the row.
 
@@ -639,11 +639,14 @@ window; keel ships no reader for it, it is the harness's own). So the field stat
 unit it was measured in and names its source, for example
 "≈1.2M subagent tokens + 2 waves × +15–30% window". A row never collapses to `unmeasured`
 while any part of it was measured; the word marks only a part nothing captured.
-Units are not converted into each other or summed, and [`docs/release-management.md`](release-management.md)
-R7 makes the estimate-vs-actual comparison within one unit. A subagent token count is the harness's
+Units are not converted into each other or summed (the window-points conversion below is the one
+exception, at its named ratio, and a window figure follows the gauge rule there), and
+[`docs/release-management.md`](release-management.md) R7 makes the estimate-vs-actual comparison
+within one unit. A subagent token count is the harness's
 own figure for a unit of work, not the weighted total the audit-pricing rules above sum (a leg's
 count is its final context, not its spend), so the two are never mixed in one figure. A measured
-figure is never invented: an absent source is `unmeasured`, never a zero or a guess. A rule of the
+figure is never invented: an absent source is `unmeasured`, never a zero or a guess. This governs the
+release row's cost fields; an audit run's per-leg cost keeps the rule of its own record. A rule of the
 procedure, not a compensation.
 
 **Price the audit from the previous audit session's own weighted total (the 0.16.0 groom, reading the
@@ -696,23 +699,27 @@ whole (360.5M), the audit untouched. A rule of the procedure, not a compensation
 **The budget field's two counts, operator steps and the audit universe, are derived by fixed formulas,
 not judged (dir #553, reading an adopter's 0.7.0 row).** They are inputs to the same budget field, not
 new fields: the mixed-unit rule above says how the field states its figures, these formulas say how
-its counts are derived, and both are derived fields under G3. That groom estimated 2 operator steps
-and 15–20 audit files; the release measured 8 steps (the manager's grouped count, 19 by class) and 28
+its counts are derived, and both counts are derived under G3. That groom estimated 2 operator steps
+and 15–20 audit files; the release measured 19 steps by class (8 by the manager's own grouped count) and 28
 files, 37 with the fix batch. Both misses had one cause: the groom counted what it could see as a
 design step and skipped what the slate mechanically implies.
 
 - **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +
   batches), deploy and migrations, one-off commands, prod checks, and the tag. Each term follows from
   the slate's own numbers (N workers, N clicks; N PRs, N merges), so it is counted, never guessed.
-  Design-level steps (an account, a login, a decision) go on a separate line above the sum. A day-0
-  step is counted in its class, and one carried undone is the three-way question below.
+  Design-level steps (an account, a login, a decision) go on a separate line above the sum. The row
+  compares estimate and actual by class, never by a grouped count. A day-0 step is counted once, in
+  its class or on the design line; one carried undone is the three-way question below, and after
+  answer (2) it leaves the day-0 count and re-enters as the gated ticket's own steps, after answer
+  (3) only the operator command counts.
 - **Audit universe** = the code files the spec or the ticket bodies name + one test module per code
   file + the prose files touched + a fix-batch reserve of about 30% of that subtotal. That adopter's
   audit runs №4–№6 show the ratio (run №6: 28 files, 37 with its fix batch, +32%). The universe is
   priced at the per-file cost of the nearest-sized measured run (its audit total over its own universe,
   counted the same way), naming the run and the unit the cost was measured in. That price is a
   cross-check on the line the two-part rule above produces, stated beside it and never a second line;
-  when the two disagree the cell says so.
+  when both are in the same unit and weights and disagree, the cell says so, and otherwise the
+  per-file price is stated without a comparison.
 
 [`docs/release-management.md`](release-management.md) R1's intake check reads the same two counts. A
 rule of the procedure, not a compensation.
@@ -761,8 +768,8 @@ case (a downstream project, hermes 0.6.0, 2026-09-18): the claim "the always-loa
 pointer paragraph, an on-ramp and a paragraph the moved section's neighbours needed, and the G6
 round that had moved the target from 24 to 27 KB repeated the subtraction instead of listing them.
 So the row names the add-backs by name, each with its estimated size, and states the target as the
-arithmetic over them, so the residue between the claim and the shipped size is checkable. A rule of
-the procedure, not a compensation.
+arithmetic over them, so the residue between the claim and the shipped size is checkable; the
+add-backs go in the claim's `Residue:` clause. A rule of the procedure, not a compensation.
 
 **Every release row also reports its decay-exposed share (`dir #842`).** Work that hardens a guard or a
 check against an input a model has to produce loses value as models improve, while a felt bug or a
@@ -795,8 +802,8 @@ meanwhile the step's weight had doubled (two emulated bots instead of one) with 
 The check is one grep over the previous plans' rows for the step's name. A step that the two latest
 plans both list and that is still undone is put to the operator, in the same sitting, as one question
 with three answers: (1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an
-agent half plus an operator command. The groom records the operator's answer on the row and re-sizes
-the step from it; a re-listed line is not a record. A rule of the procedure, not a compensation.
+agent half plus an operator command. The groom records the operator's answer on the row, in the
+budget field's operator-step line, and re-sizes the step from it; a re-listed line is not a record. A rule of the procedure, not a compensation.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that
@@ -986,7 +993,8 @@ time pressure is most tempted to skip.
 This document is subject to its own G0: where a real groom's practice disagrees with what is written
 here, the correction belongs in this doc, applied as part of that groom's own G0 phase — the same
 retro discipline this doc asks of `docs/release-audit.md`, `docs/delta-audit.md` and `docs/drydock.md`,
-applied to itself.
+applied to itself. On an adopter the correction lands as G0's adopter-side rule says: the project half
+locally, the generic half filed at the engine.
 
 ## See also
 

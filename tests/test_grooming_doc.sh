@@ -378,7 +378,7 @@ pin "dir #535: G5 detects the carry with one grep over the previous plans' rows"
 pin "dir #535: G5 offers the three answers" "$doc" \
   '(1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an' "expected G5 to list the three answers"
 pin "dir #535: G5 records the operator's answer and re-sizes the step" "$doc" \
-  "records the operator's answer on the row and re-sizes" "expected G5 to require a recorded answer, not a re-listed line"
+  "records the operator's answer on the row, in the" "expected G5 to require a recorded answer, not a re-listed line"
 pin "dir #535: G1 points at the rule as a question, not a list line" "$doc" \
   'is a question, not a list line (dir #535).' "expected G1 to point the operator-input rule at G5"
 
@@ -426,7 +426,7 @@ pin "dir #553: G5 cites its ticket and incident" "$doc" \
 pin "dir #553: G5 adds no field" "$doc" \
   'new fields: the mixed-unit rule above says how the field states its figures' "expected the counts to read as part of the budget field, not new fields"
 pin "dir #553: G5 derived under G3 without restating it" "$doc" \
-  'its counts are derived, and both are derived fields under G3.' "expected G5 to cite G3 rather than restate it"
+  'its counts are derived, and both counts are derived under G3.' "expected G5 to cite G3 rather than restate it"
 pin "dir #553: G5 operator-step formula" "$doc" \
   '- **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +' "expected the operator-step formula"
 pin "dir #553: G5 each term follows from the slate" "$doc" \
@@ -434,7 +434,7 @@ pin "dir #553: G5 each term follows from the slate" "$doc" \
 pin "dir #553: G5 design-level steps on a separate line" "$doc" \
   'Design-level steps (an account, a login, a decision) go on a separate line above the sum.' "expected design-level steps kept out of the sum"
 pin "dir #553: G5 a carried day-0 step is the three-way question" "$doc" \
-  'step is counted in its class, and one carried undone is the three-way question below.' "expected the dir #535 seam"
+  'its class or on the design line; one carried undone is the three-way question below, and after' "expected the dir #535 seam"
 pin "dir #553: G5 audit-universe formula" "$doc" \
   '- **Audit universe** = the code files the spec or the ticket bodies name + one test module per code' "expected the audit-universe formula"
 pin "dir #553: G5 fix-batch reserve" "$doc" \
@@ -456,7 +456,7 @@ pin "dir #554: G5 reads the count from the row's field, never memory" "$doc" \
 pin "dir #554: G5 reads the Escapes line beside it" "$doc" \
   'spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and' "expected G5 to read the escapes line beside the audit's"
 pin "dir #554: G5 judges the mechanism on the second figure" "$doc" \
-  'is read beside the audit'"'"'s. The judgment about the `/design` mechanism is made on the second figure,' "expected G5 to move the judgment onto the second figure"
+  'is read beside the audit'"'"'s. The judgment about the design-session mechanism is made on the second figure,' "expected G5 to move the judgment onto the second figure"
 pin "dir #554: G5 stays one report field" "$doc" \
   'adds no field to the row.' "expected G5 to keep the field count"
 pin "dir #554: commands/groom.md carries the two figures in its design-economics line" "$cmd" \
@@ -486,9 +486,9 @@ pin "dir #563: G2 records the incident outcome" "$doc" \
 pin "dir #563: G2 says records are not the check" "$doc" \
   'not the check. The plan states the diff'"'"'s numbers and the rule applied, so a reader can tell a' "expected G2 to say a record is not the check"
 pin "dir #563: G2 asks an operator-only premise in the same sitting" "$doc" \
-  'The G0 operator-decisions list is also where a premise only the operator can confirm is asked, in the' "expected G2 to route an operator-only premise to G0's decisions list"
+  "G0's list of operator decisions (second flavour) is also where a premise only the operator can confirm" "expected G2 to route an operator-only premise to G0's decisions list"
 pin "dir #563: G2 keeps archived bodies verbatim" "$doc" \
-  'the archive sweep (G4) keeping them verbatim rather than summarised.' "expected G2 to argue for verbatim archive bodies"
+  'an argument for keeping archived bodies verbatim rather than summarised.' "expected G2 to argue for verbatim archive bodies"
 pin "dir #563: G9 makes the tag namespace a version even without tags" "$doc" \
   'The tag namespace is a version (`0.N.0`), also on a project that has never tagged and runs no release' "expected G9 to keep the tag namespace a version"
 pin "dir #563: G9 calls a sprint label a second convention" "$doc" \

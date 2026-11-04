@@ -467,8 +467,8 @@ does nothing of the kind; a session told to "harvest" can run that script and be
 discharged.)*
 
 **The row also carries the design-level attribution as a field of its own (dir #554).** The
-`run-record.md` stub's upstream gate cell names, per finding, the gate that should have caught it and the
-level that gate sat at: the spec's design, the boundary between spec and implementation, or the
+`run-record.md` stub's upstream gate cell is filled so that it names, per finding, the gate that should
+have caught it and the level that gate sat at: the spec's design, the boundary between spec and implementation, or the
 implementation. Beside it the stub carries `design-level findings, per spec`: the count of findings whose
 cell entry says the design, by spec, counted from that cell and never from memory, with the boundary ones
 listed beside it and not added. [`docs/grooming.md`](grooming.md) G5's design economics reads that field:

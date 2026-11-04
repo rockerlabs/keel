@@ -540,9 +540,11 @@ so the next groom can re-sum it.
 Two are sanctioned beside the weighted session sum: the harness's usage report, read before and after each wave
 (for example `get_usage`, per-session usage as a percent of the 5-hour window;
 the harness's own report, not something keel ships), which gives the window points the run moved;
-and subagent token counts, which give an audit or a reviewer leg's size. Record each figure with its unit, its source and what it covers, in the shape the groom's budget field
-states ([`docs/grooming.md`](grooming.md) G5): an estimate of "≈1.2M subagent tokens + 2 waves × +15–30% window" has an
-actual of the same shape. Compare estimate and actual within one unit, never across units, and write `unmeasured`
+and subagent token counts, which give an audit or a reviewer leg's size (a final-context size, not its
+spend, as [`docs/grooming.md`](grooming.md) G5's audit-pricing rule says, so it sits beside the cost line
+and does not replace it). Record each figure with its unit, its source and what it covers, in the shape
+the groom's budget field states (G5): an estimate of "≈1.2M subagent tokens + 2 waves × +15–30% window"
+has an actual of the same shape. Compare estimate and actual within one unit, never across units, and write `unmeasured`
 only for a part nothing captured, never as the row's default while any of these exists, and never a fabricated figure.
 
 **Find the row by its version token or run number, never by the nearest empty slot (dir #541).** A record

@@ -87,7 +87,7 @@ one of its findings against the live file before accepting it. Do not skip this 
 **G7 — the releases cross-run record.**
 Append this cycle's row to the project's releases cross-run record (keel: `private/releases/RUNS.md`,
 same genre as `private/audit/RUNS.md` — header on comparability, one row per release: slate size, PRs,
-sessions, cost line, findings filed; `unmeasured` where the cost was never captured, never a fabricated
+sessions, cost line, findings filed; `unmeasured` for a part nothing captured, in the unit it was measured in, never a fabricated
 zero).
 
 **G8 — cadence-bound, never a daemon.**
