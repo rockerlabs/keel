@@ -15,10 +15,10 @@ lib="$REPO_ROOT/tools/lib/dir-tickets.sh"
 check_file "tools/lib/dir-tickets.sh exists" "$lib"
 
 # --- both known consumers source the shared lib ---------------------------------------------------
-check_contains "doctor.sh sources tools/lib/dir-tickets.sh" \
-  "$(cat "$REPO_ROOT/tools/self/doctor.sh")" 'lib/dir-tickets.sh'
-check_contains "citation-resolvability.sh sources tools/lib/dir-tickets.sh" \
-  "$(cat "$REPO_ROOT/tools/self/citation-resolvability.sh")" 'lib/dir-tickets.sh'
+# check_sources (tests/lib.sh), not a whole-file substring: the `# shellcheck source=` pragma carries the same
+# string, so deleting the real sourcing line used to leave the pin green (dir #292).
+check_sources "doctor.sh sources tools/lib/dir-tickets.sh" "$REPO_ROOT/tools/self/doctor.sh" 'lib/dir-tickets.sh'
+check_sources "citation-resolvability.sh sources tools/lib/dir-tickets.sh" "$REPO_ROOT/tools/self/citation-resolvability.sh" 'lib/dir-tickets.sh'
 # doctor.sh keeps its old private name as a thin wrapper (no call-site/test churn) — pin that it
 # still DELEGATES to the shared function rather than silently reverting to its own full copy. dir
 # #364/#273 composed a local, doctor.sh-only pre-filter (`_strip_ref_citations`, a `dir #N (ref)`
