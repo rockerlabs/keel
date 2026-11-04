@@ -129,4 +129,64 @@ check_status "hijack: hook still exits 0" 0 "$status10"
 check_contains "hijack: gate resolves the REAL repo's red marker (not the clean decoy's) -> still denies" \
   "$out10" '"permissionDecision":"deny"'
 
+# 11. dir #511: the veto matches the git/gh verb in ANY simple command, not just the literal prefix. The
+# check is red here ($d re-armed above). Each shape below used to slip past the prefix match.
+rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1
+for bypass in \
+  'git -C . commit -m done' \
+  'git -c user.name=x commit -m done' \
+  'true && git commit -m done' \
+  'cd sub; git commit -m done' \
+  'make test | tee log && gh pr create --fill' \
+  'FOO=1 git commit -m done' \
+  '(git commit -m done)' \
+  'gh -R owner/repo pr create --fill' \
+  'gh pr -R owner/repo create --fill' \
+  'gh pr --repo owner/repo create --fill' \
+  'sudo -u root git commit -m done' \
+  $'git \\\n  commit -m done' \
+  'git --no-pager commit -m done'; do
+  gate "$bypass" "$d" 1
+  check_contains "dir #511: bypass shape is denied: $bypass" "$OUT" '"permissionDecision":"deny"'
+done
+
+# Negative fixtures: a command that only MENTIONS the words is none of the gate's business. A broader
+# match that blocks these would be a new bug.
+for benign in \
+  'git log --grep="git commit"' \
+  'echo "gh pr create"' \
+  "echo 'true && git commit'" \
+  'git status' \
+  'git -C . log --oneline' \
+  'grep -rn "git commit" docs/' \
+  'git log --grep=commit'; do
+  gate "$benign" "$d" 1
+  check_absent "dir #511: mention-only command stays allowed: $benign" "$OUT" "deny"
+done
+
+# Structure, not timing: the shell-aware walk (kcg_artifact_cmd) must be the LAST decision, reached only
+# with the veto on AND a red check. A large command with the veto off, or with the veto on but no red
+# check, must never call it. Observed through xtrace of the real hook (no production test seam); the
+# trace goes to the hook's stderr, which works on bash 3.2 (BASH_XTRACEFD needs 4.1).
+walk_calls() {   # walk_calls VETO(1|"") CWD — count calls of the walk for a large command
+  local json xt="$SANDBOX/walk.xtrace" big
+  big="git commit -m $(printf 'create commit %.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20)"
+  json="$(jq -n --arg c "$big" --arg w "$2" '{tool_input:{command:$c}, cwd:$w}')"
+  : > "$xt"
+  if [ -n "$1" ]; then
+    KEEL_CHECK_VETO=1 bash -x "$GATE" 2>"$xt" >/dev/null <<< "$json"
+  else
+    env -u KEEL_CHECK_VETO bash -x "$GATE" 2>"$xt" >/dev/null <<< "$json"
+  fi
+  grep -c '^+* kcg_artifact_cmd ' "$xt" || true
+}
+rm -f "$flag"; run_in "$d" "$CHECK" "$CHK" >/dev/null 2>&1      # red
+check_eq "dir #511: veto off + red check -> the walk is never called" "0" "$(walk_calls "" "$d")"
+check_eq "dir #511: veto on + NO red check -> the walk is never called" "0" "$(walk_calls 1 "$d2")"
+check_eq "dir #511: veto on + red check -> the walk decides (called once)" "1" "$(walk_calls 1 "$d")"
+
+# The header states the residual in general terms (no recipe).
+pin "dir #511: the header names the quoted-substitution residual" "$GATE" 'a command substitution inside double quotes' "residual for quoted substitution missing"
+pin "dir #511: the header states the residual" "$GATE" "RESIDUAL (stated, not closed)" "residual statement missing"
+
 summary

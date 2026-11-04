@@ -27,9 +27,107 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat 2>/dev/null)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
-# Fast-exit: only the artifact-producing commands are the gate's business.
+# dir #511: shell-aware match. The first version compared the command's literal prefix, so `git -C . commit`
+# or `true && git commit` slipped past while the check was red. kcg_artifact_cmd (below) walks the command
+# as a shell would split it: quote-aware, a new simple command after an unquoted `;` `&` `|` `(` `)`
+# backtick or newline, leading `VAR=val` words and common wrappers (`sudo`, `env`, `time`, `command` ...)
+# skipped, `git`'s global options (`-C dir`, `-c k=v`, `--git-dir=...`) tolerated, and the verb read from
+# the first real word. A command that only MENTIONS the words (`git log --grep="git commit"`,
+# `echo "gh pr create"`) is not an artifact command and stays allowed.
+#
+# RESIDUAL (stated, not closed): this is a workflow floor that reads the command TEXT, not a sandbox. A
+# command whose verb is built at run time (a variable, an alias, a git alias, text handed to another
+# interpreter or `eval`) is not recognised. Closing that is the secret boundary's job, not this hook's.
+# Likewise a command substitution inside double quotes (`out="$(git commit -m x)"`) is read as text, not
+# walked, so it is not recognised either.
+# In the other direction the walk errs toward blocking: a line inside a heredoc body that starts with the
+# words reads as a command, because every newline starts a new simple command.
+
+# kcg_artifact_cmd CMD — exit 0 when some simple command in CMD is `git commit` or `gh pr create`.
+kcg_artifact_cmd() {
+  local s="$1" i=0 n c q="" word="" inword=0 w
+  local -a words=()
+  n=${#s}
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"
+    i=$((i + 1))
+    if [ "$q" = "'" ]; then
+      if [ "$c" = "'" ]; then q=""; else word="$word$c"; fi
+      continue
+    elif [ "$q" = '"' ]; then
+      case "$c" in
+        '"') q="" ;;
+        \\) word="$word${s:$i:1}"; i=$((i + 1)) ;;
+        *) word="$word$c" ;;
+      esac
+      continue
+    fi
+    case "$c" in
+      "'") q="'"; inword=1 ;;
+      '"') q='"'; inword=1 ;;
+      \\)
+        if [ "${s:$i:1}" = $'\n' ]; then i=$((i + 1)); else word="$word${s:$i:1}"; inword=1; i=$((i + 1)); fi ;;   # backslash-newline joins lines
+      ' '|'	')
+        if [ "$inword" = 1 ]; then words+=("$word"); word=""; inword=0; fi ;;
+      ';'|'&'|'|'|'('|')'|'`'|'
+')
+        if [ "$inword" = 1 ]; then words+=("$word"); word=""; inword=0; fi
+        if [ "${#words[@]}" -gt 0 ]; then
+          kcg_simple_is_artifact "${words[@]}" && return 0
+          words=()
+        fi ;;
+      *) word="$word$c"; inword=1 ;;
+    esac
+  done
+  if [ "$inword" = 1 ]; then words+=("$word"); fi
+  [ "${#words[@]}" -gt 0 ] && kcg_simple_is_artifact "${words[@]}" && return 0
+  return 1
+}
+
+# kcg_simple_is_artifact WORD... — one simple command, already split into words.
+kcg_simple_is_artifact() {
+  local w tool="" stage=0
+  for w in "$@"; do
+    if [ -z "$tool" ]; then
+      if [ "$stage" = skip ]; then stage=0; continue; fi
+      case "$w" in
+        [A-Za-z_]*=*) continue ;;                                  # VAR=val prefix
+        '{'|'}'|'!'|then|do|else|elif|if|while|until|time|command|builtin|exec|sudo|env|nice|nohup) continue ;;
+        -u|-g|-n|-C|-D|-U|-r|-t|-h|-S) stage=skip; continue ;;     # a wrapper option that takes a value
+        -*) continue ;;                                            # a wrapper's own option
+        git|*/git) tool=git ;;
+        gh|*/gh) tool=gh ;;
+        *) return 1 ;;
+      esac
+      continue
+    fi
+    if [ "$stage" = skip ]; then stage=0; continue; fi            # the value of -C / -c / -R / ...
+    case "$tool:$w" in
+      git:-C|git:-c|git:--git-dir|git:--work-tree|git:--namespace|git:--super-prefix|git:--config-env|git:--exec-path) stage=skip ;;
+      git:-*) ;;                                                   # other global option, incl. --opt=value
+      git:commit) return 0 ;;
+      git:*) return 1 ;;
+      gh:-R|gh:--repo|gh:--hostname) stage=skip ;;
+      gh:-*) ;;
+      gh:pr) tool=ghpr ;;
+      gh:*) return 1 ;;
+      ghpr:-R|ghpr:--repo) stage=skip ;;
+      ghpr:-*) ;;
+      ghpr:create) return 0 ;;
+      ghpr:*) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+# Fast-exit: only the artifact-producing commands are the gate's business. The cheap substring test
+# first (this hook fires on every Bash call). The shell-aware walk is the LAST decision, below: it runs
+# only when the veto is on AND a red check exists, so a wired hook with the veto off (the default) never
+# pays for it. COST of that last case: the walk is a per-character bash loop and quadratic in the
+# command's length (each ${s:$i:1} copies the string) — measured 21-26 s on a 105 KB command containing
+# the words (see the PR for dir #511). Only a very large command with a red check enforced is slow.
 case "$cmd" in
-  "git commit"*|"gh pr create"*) ;;
+  *commit*|*create*) ;;
   *) exit 0 ;;
 esac
 
@@ -37,8 +135,8 @@ esac
 [ -z "${KEEL_CHECK_VETO:-}" ] && exit 0
 
 # Sourced here, not at the top: this hook fires on EVERY Bash call in a wired repo, and the two
-# fast-exits above already dispose of the overwhelming majority of invocations (any non-artifact
-# command, and every artifact command when the opt-in veto is off, its default) — paying for an
+# fast-exits above already dispose of the overwhelming majority of invocations (any command without the
+# words, and every command when the opt-in veto is off, its default) — paying for an
 # extra file read/parse before either of those checks would tax every one of them for a lib only the
 # rare surviving invocation needs (found by this ticket's own /simplify pass, efficiency angle).
 _kcg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -77,6 +175,8 @@ deny() {
 # Any marker under the repo dir => a declared check is still failing => refuse the artifact. Says WHAT to
 # do (make the check pass), never HOW to defeat the gate (FRAMEWORK.md "Enforcement mechanics").
 if [ -d "$repo_dir" ] && [ -n "$(ls -A "$repo_dir" 2>/dev/null)" ]; then
+  # dir #511: only now, with a red check to enforce, decide whether this is an artifact command.
+  kcg_artifact_cmd "$cmd" || exit 0
   deny "keel-check gate: a check you declared for this repo is still failing. Re-run it green through keel-check before committing — repeated failure is a missing cause, not a missing attempt."
 fi
 exit 0
