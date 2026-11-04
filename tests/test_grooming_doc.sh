@@ -418,4 +418,32 @@ pin "dir #545: G5 names the add-backs on the row" "$doc" \
 pin "dir #545: G5 makes the residue checkable" "$doc" \
   'so the residue between the claim and the shipped size is checkable' "expected G5 to give the reason for naming the add-backs"
 
+# dir #553: the budget field's operator-step count and audit universe are derived by formulas (G5); R1's intake reads them.
+pin "dir #553: G5 names the two counts and the formula rule" "$doc" \
+  'The budget field'"'"'s two counts, operator steps and the audit universe, are derived by fixed formulas,' "expected G5 to derive the two counts by formula"
+pin "dir #553: G5 cites its ticket and incident" "$doc" \
+  'not judged (dir #553, reading an adopter'"'"'s 0.7.0 row).**' "expected G5 to cite dir #553"
+pin "dir #553: G5 adds no field" "$doc" \
+  'new fields: the mixed-unit rule above says how the field states its figures' "expected the counts to read as part of the budget field, not new fields"
+pin "dir #553: G5 derived under G3 without restating it" "$doc" \
+  'its counts are derived, and both are derived fields under G3.' "expected G5 to cite G3 rather than restate it"
+pin "dir #553: G5 operator-step formula" "$doc" \
+  '- **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +' "expected the operator-step formula"
+pin "dir #553: G5 each term follows from the slate" "$doc" \
+  'the slate'"'"'s own numbers (N workers, N clicks; N PRs, N merges), so it is counted, never guessed.' "expected the terms derived from the slate's numbers"
+pin "dir #553: G5 design-level steps on a separate line" "$doc" \
+  'Design-level steps (an account, a login, a decision) go on a separate line above the sum.' "expected design-level steps kept out of the sum"
+pin "dir #553: G5 a carried day-0 step is the three-way question" "$doc" \
+  'step is counted in its class, and one carried undone is the three-way question below.' "expected the dir #535 seam"
+pin "dir #553: G5 audit-universe formula" "$doc" \
+  '- **Audit universe** = the code files the spec or the ticket bodies name + one test module per code' "expected the audit-universe formula"
+pin "dir #553: G5 fix-batch reserve" "$doc" \
+  'file + the prose files touched + a fix-batch reserve of about 30% of that subtotal.' "expected the fix-batch reserve"
+pin "dir #553: G5 priced at the nearest-sized run's per-file cost" "$doc" \
+  'priced at the per-file cost of the nearest-sized measured run (its audit total over its own universe,' "expected the per-file pricing"
+pin "dir #553: G5 cross-check, never a second line" "$doc" \
+  'cross-check on the line the two-part rule above produces, stated beside it and never a second line;' "expected the per-file price reconciled with the two-part rule"
+pin "dir #553: G5 R1 reads the same two counts" "$doc" \
+  'R1'"'"'s intake check reads the same two counts.' "expected G5 to point at R1"
+
 summary

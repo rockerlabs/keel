@@ -68,6 +68,13 @@ an intake check, never a cap this doc sets for you — an operator who sees both
 the larger slate has made a real decision, and that choice belongs on the release row as a named risk
 rather than as a surprise mid-run.
 
+**Intake also recounts the release row's two derived counts from the slate it was handed (dir #553).**
+The row's budget field carries an operator-step count and an audit universe, each by the formula in
+[`docs/grooming.md`](grooming.md) G5. Before wave 1 the manager recounts both from the wave plan and the
+ticket bodies (workers and PRs from the plan, code files from the bodies) and says the row's two numbers
+and its own out loud. A count that differs is recorded on the run's row (R7) with the class or file set
+that was missed, and the recounted operator-step total goes to the operator, since those steps are theirs.
+
 **In a cloud-capable project, intake also settles each slate ticket's cloud verdict.** A project whose main
 checkout's `CLAUDE.md` carries a `KEEL-CLOUD` line can run a ticket in a Claude Code cloud session
 ([`docs/cloud.md`](cloud.md)). Intake therefore judges and writes any missing `**Cloud:**` verdict line for a

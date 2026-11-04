@@ -655,6 +655,30 @@ total at 1.0/2.0/0.1 for the three parts together (they overlap, so their separa
 on dir #855's turn cut. That combined figure is about 15% of that release's non-audit total (272.6M) and 11.2% of the
 whole (360.5M), the audit untouched. A rule of the procedure, not a compensation.
 
+**The budget field's two counts, operator steps and the audit universe, are derived by fixed formulas,
+not judged (dir #553, reading an adopter's 0.7.0 row).** They are inputs to the same budget field, not
+new fields: the mixed-unit rule above says how the field states its figures, these formulas say how
+its counts are derived, and both are derived fields under G3. That groom estimated 2 operator steps
+and 15–20 audit files; the release measured 8 steps (the manager's grouped count, 19 by class) and 28
+files, 37 with the fix batch. Both misses had one cause: the groom counted what it could see as a
+design step and skipped what the slate mechanically implies.
+
+- **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +
+  batches), deploy and migrations, one-off commands, prod checks, and the tag. Each term follows from
+  the slate's own numbers (N workers, N clicks; N PRs, N merges), so it is counted, never guessed.
+  Design-level steps (an account, a login, a decision) go on a separate line above the sum. A day-0
+  step is counted in its class, and one carried undone is the three-way question below.
+- **Audit universe** = the code files the spec or the ticket bodies name + one test module per code
+  file + the prose files touched + a fix-batch reserve of about 30% of that subtotal. That adopter's
+  audit runs №4–№6 show the ratio (run №6: 28 files, 37 with its fix batch, +32%). The universe is
+  priced at the per-file cost of the nearest-sized measured run (its audit total over its own universe,
+  counted the same way), naming the run and the unit the cost was measured in. That price is a
+  cross-check on the line the two-part rule above produces, stated beside it and never a second line;
+  when the two disagree the cell says so.
+
+[`docs/release-management.md`](release-management.md) R1's intake check reads the same two counts. A
+rule of the procedure, not a compensation.
+
 **When the operator's binding limit is a subscription window, state the estimate in window points
 too, as the gauge's start and end, and name the ratio it was converted at (the 0.16.0 groom, reading
 the 0.15.0 row; the form, the 0.17.0 re-cut).** A weighted figure alone does not say

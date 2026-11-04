@@ -673,4 +673,16 @@ pin "dir #539: R7 compares within one unit" "$doc" \
 pin "dir #539: R7 writes unmeasured only for a part nothing captured" "$doc" \
   "only for a part nothing captured, never as the row's default while any" "expected R7 to narrow the unmeasured default"
 
+# dir #553: R1's intake check recounts the row's operator-step count and audit universe (formulas in grooming.md G5).
+pin "dir #553: R1 recounts the row's two counts at intake" "$doc" \
+  '**Intake also recounts the release row'"'"'s two derived counts from the slate it was handed (dir #553).**' "expected R1 to read the row's two counts"
+pin "dir #553: R1 names the two counts and the G5 formula" "$doc" \
+  'The row'"'"'s budget field carries an operator-step count and an audit universe, each by the formula in' "expected R1 to name both counts"
+pin "dir #553: R1 recounts from the plan and the bodies" "$doc" \
+  'ticket bodies (workers and PRs from the plan, code files from the bodies) and says the row'"'"'s two numbers' "expected R1 to recount from the plan and the bodies"
+pin "dir #553: R1 records a differing count on the run's row" "$doc" \
+  'A count that differs is recorded on the run'"'"'s row (R7) with the class or file set' "expected R1 to record a difference"
+pin "dir #553: R1 hands the operator the recounted step total" "$doc" \
+  'the recounted operator-step total goes to the operator, since those steps are theirs.' "expected R1 to tell the operator their step total"
+
 summary
