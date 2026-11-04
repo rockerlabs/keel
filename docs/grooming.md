@@ -592,6 +592,22 @@ estimate cell names its weights, the completing half
 row whose actual cannot be re-summed labels each figure with its weighting and does not compare them. A
 rule of the procedure, not a compensation.
 
+**The budget field may mix units, and `unmeasured` labels a part, never a whole row (dir #539,
+reading one adopter's nine consecutive `unmeasured` cycles).** That adopter's budget field read
+`unmeasured` every cycle because token-level session cost was unavailable, while a per-file audit
+cost and a reviewer's measured spend already sat on disk. Its first fully measured release came from
+a harness usage report instead (`get_usage` there: per-session usage as a percent of the 5-hour
+window; keel ships no reader for it, it is the harness's own). So the field states each figure in the
+unit it was measured in and names its source, for example
+"≈1.2M subagent tokens + 2 waves × +15–30% window". A row never collapses to `unmeasured`
+while any part of it was measured; the word marks only a part nothing captured.
+Units are not converted into each other or summed, and [`docs/release-management.md`](release-management.md)
+R7 makes the estimate-vs-actual comparison within one unit. A subagent token count is the harness's
+own figure for a unit of work, not the weighted total the audit-pricing rules above sum (a leg's
+count is its final context, not its spend), so the two are never mixed in one figure. A measured
+figure is never invented: an absent source is `unmeasured`, never a zero or a guess. A rule of the
+procedure, not a compensation.
+
 **Price the audit from the previous audit session's own weighted total (the 0.16.0 groom, reading the
 0.15.0 row).** The 0.15.0 estimate gave the audit about 6M, the raw tokens its Sonnet legs read. At the
 estimate's own weights the audit cost 65.4M — most of that release's miss against its 145–180M estimate —
@@ -811,9 +827,11 @@ Audits already have a cross-run record; releases, until this doc, had none — a
 cost-line requirement said "append it to the run's record" without ever naming one. Keel's instance is
 `private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`: a header stating what is and is
 not comparable across runs of different scale, then one row per release carrying slate size, PR count,
-session count, a cost line, and the count of findings filed. Record the cost as `unmeasured` where the
-data was never captured — never a fabricated zero. A different project names its own per-project
-location here — G9 states the portability rule this follows.
+session count, a cost line, and the count of findings filed.
+Record the cost in the unit it was measured in (G5, R7); `unmeasured` marks only a
+part nothing captured, never the row's default while any measured source exists, and
+never a fabricated zero. A different project names its own per-project location here — G9 states the
+portability rule this follows.
 
 **A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
 This section is written in the unit "one row per

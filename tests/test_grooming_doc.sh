@@ -382,4 +382,24 @@ pin "dir #535: G5 records the operator's answer and re-sizes the step" "$doc" \
 pin "dir #535: G1 points at the rule as a question, not a list line" "$doc" \
   'is a question, not a list line (dir #535).' "expected G1 to point the operator-input rule at G5"
 
+# dir #539: the budget field may mix units; `unmeasured` labels a part, never a whole row (G5, G7; R7 is the completing half).
+pin "dir #539: G5 lets the budget field mix units" "$doc" \
+  '**The budget field may mix units, and `unmeasured` labels a part, never a whole row (dir #539,' "expected G5 to allow mixed units in the budget field"
+pin "dir #539: G5 gives the mixed-unit form" "$doc" \
+  '"≈1.2M subagent tokens + 2 waves × +15–30% window"' "expected G5 to show the mixed-unit form"
+pin "dir #539: G5 names the harness usage report as the harness's own, not shipped" "$doc" \
+  "keel ships no reader for it, it is the harness's own" "expected G5 to name the usage report without claiming keel ships it"
+pin "dir #539: G5 never lets a row collapse to unmeasured while a part was measured" "$doc" \
+  'while any part of it was measured' "expected G5 to forbid the whole-row default"
+pin "dir #539: G5 never converts or sums across units" "$doc" \
+  'Units are not converted into each other or summed' "expected G5 to keep one comparison per unit"
+pin "dir #539: G5 keeps a subagent token count apart from the weighted audit total" "$doc" \
+  'not the weighted total the audit-pricing rules above' "expected G5 to keep the two token notions apart"
+pin "dir #539: G5 keeps the figure measured, never invented" "$doc" \
+  'an absent source is `unmeasured`, never a zero or a guess' "expected G5 to bar a fabricated figure"
+pin "dir #539: G7 narrows the unmeasured default to a part nothing captured" "$doc" \
+  'Record the cost in the unit it was measured in (G5, R7); `unmeasured` marks only a' "expected G7 to narrow the unmeasured default"
+pin "dir #539: G7 bars the whole-row default while a source exists" "$doc" \
+  'part nothing captured, never the row'"'"'s default while any measured source exists' "expected G7 to bar the row-wide default"
+
 summary

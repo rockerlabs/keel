@@ -659,4 +659,18 @@ pin "dir #469: the brief's leads gain defect-class leads beside file leads" "$do
 pin "dir #469: the defect-class lead example is the recompute question" "$doc" \
   'does every dictionary this release changes have a path that recomputes rows already stored?' "expected the worked defect-class lead"
 
+# dir #539: R7 names a usage report and subagent token counts as sanctioned cost sources, in their own units.
+pin "dir #539: R7 says a coarser measured source is still the cost line" "$doc" \
+  "**Where token-level session cost is unavailable, a coarser measured source is still the cost line" "expected R7 to sanction a coarser source"
+pin "dir #539: R7 names the harness usage report as an example, not a shipped tool" "$doc" \
+  "for example \`get_usage\`, per-session usage as a percent of the 5-hour window" "expected R7 to describe the usage report"
+pin "dir #539: R7 says the usage report is the harness's own" "$doc" \
+  "the harness's own report, not something keel ships" "expected R7 not to claim keel ships the report"
+pin "dir #539: R7 names subagent token counts as the second source" "$doc" \
+  "and subagent token counts, which give an audit" "expected R7 to name the second source"
+pin "dir #539: R7 compares within one unit" "$doc" \
+  "Compare estimate and actual within one unit, never across units" "expected R7 to keep the comparison inside a unit"
+pin "dir #539: R7 writes unmeasured only for a part nothing captured" "$doc" \
+  "only for a part nothing captured, never as the row's default while any" "expected R7 to narrow the unmeasured default"
+
 summary

@@ -529,6 +529,15 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
 
+**Where token-level session cost is unavailable, a coarser measured source is still the cost line, in its own unit (dir #539).**
+Two are sanctioned beside the weighted session sum: the harness's usage report, read before and after each wave
+(for example `get_usage`, per-session usage as a percent of the 5-hour window;
+the harness's own report, not something keel ships), which gives the window points the run moved;
+and subagent token counts, which give an audit or a reviewer leg's size. Record each figure with its unit, its source and what it covers, in the shape the groom's budget field
+states ([`docs/grooming.md`](grooming.md) G5): an estimate of "≈1.2M subagent tokens + 2 waves × +15–30% window" has an
+actual of the same shape. Compare estimate and actual within one unit, never across units, and write `unmeasured`
+only for a part nothing captured, never as the row's default while any of these exists, and never a fabricated figure.
+
 **Find the row by its version token or run number, never by the nearest empty slot (dir #541).** A record
 addressed to ONE cycle lands in that cycle's own row: the row opened for the release being closed is the one
 found by its version token or run number, never by the nearest empty slot. On a record kept as one
