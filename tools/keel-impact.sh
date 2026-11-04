@@ -212,6 +212,12 @@ _impact_begin() {
   if ! _impact_override_active && impact_enabled "$dir"; then
     keel_store_record "$IMPACT_STORE_RECORD_KEY" "$(impact_store_dir "$dir" 2>/dev/null || true)" "$(_impact_resolve_top "$dir")"
   fi
+  _impact_resolve_paths "$dir"
+}
+# _impact_resolve_paths [DIR] — resolve $LEDGER/$LOG/$EVIDENCE only; no migration, no store write
+# (what `add --dry-run` calls instead of _impact_begin, dir #271).
+_impact_resolve_paths() {
+  local dir="${1:-.}"
   LEDGER="$(impact_ledger_path "$dir")"
   LOG="$(impact_log_path "$dir")"
   EVIDENCE="$(impact_evidence_path "$dir")"
@@ -226,6 +232,7 @@ Usage:
   keel-impact.sh add [--guard "cite"]... --fire "cite"... --hit "cite"... --miss "cite"... \
                      --friction "cite"... [--silent N] [--since ISO-TS] --gap "..."
   keel-impact.sh add ... --retro [--asof YYYY-MM-DD]   record a quarantined retrospective score (see below)
+  keel-impact.sh add --dry-run                   preview what auto-ingest WOULD take from the log; writes nothing
   keel-impact.sh shape                           print the event kinds and the ONE-event line a checkpoint copies
   keel-impact.sh event TYPE [source] [detail]   append one event to the log (for shell tools/hooks)
   keel-impact.sh enable [dir]                    opt a repo into tracking (creates an external store entry)
@@ -261,7 +268,8 @@ Auto-ingest only counts events younger than $KEEL_INGEST_MAX_AGE_HOURS hours (de
 session left unconsumed (no `add` ran) is stale past that: skipped from the counts, archived to the
 evidence trail with a note instead of a citation, and never re-surfaced. Every counted/skipped event prints
 to stdout (`ingested: ...` / `stale-skipped: ...`) so a false-fire guard DENY can be caught and re-cited
-honestly (see commands/keel-score.md). --since ISO-TS overrides the cutoff explicitly.
+honestly (see commands/keel-score.md). --since ISO-TS overrides the cutoff explicitly. `add --dry-run`
+prints those same lines BEFORE the row exists and writes nothing (no row, no evidence, log untouched).
 
 Cited events (REPEAT a flag once per event; the count is the number of citations, never a bare integer — no
 citation, no count). Each citation is archived to the evidence file so the score is a checkable trail:
@@ -1246,13 +1254,73 @@ add_cite() {
   esac
 }
 
+# _impact_ingest_events — the auto-ingest read-decide loop, shared by `add` and `add --dry-run` (dir #271):
+# one function so the preview can never drift from what a real `add` ingests. It READS $LOG and prints the
+# `ingested:` / `stale-skipped:` / `foreign-kept:` lines, counting into cmd_add's locals (bash locals are
+# dynamically scoped, so the function sees and updates ingested, stale, kept, consumed_raws, stale_lines,
+# cutoff_iso, own_key, max_age_h, since and ingest as declared in cmd_add) — it writes NOTHING: the rewrite
+# that consumes the log is cmd_add's own step, after the ledger row, and is never reached in a dry run.
+_impact_ingest_events() {
+  if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
+    own_key="$(impact_claim_key)"
+    if [ -n "$since" ]; then
+      cutoff_iso="$since"
+    elif ! cutoff_iso="$(_epoch_to_iso "$(( $(date +%s) - max_age_h * 3600 ))")"; then
+      printf 'keel-impact: could not convert the ingest age-cap cutoff on this date implementation — ingesting all pending events uncapped this run\n' >&2
+    fi
+    # \x1f (NOT tab) re-joins the fields first: bash `read` collapses an EMPTY field sitting between two tab
+    # delimiters regardless of IFS (a genuinely reachable shape here — $_det can be empty on a 5-field
+    # line), the same trap fixed elsewhere in pre-pr-gate.sh — awk doesn't have that bug, so it does the split.
+    # Reading via `$(...)` (not `< <(awk ...)`) lets us check awk's own exit status: a bare process
+    # substitution is invisible to both `set -e` and `pipefail`, so a mid-run read failure on this shared,
+    # multi-worktree-written file (permission race, the file replaced, a concurrent rewrite) would
+    # otherwise silently look like "nothing to ingest" instead of the read failure it actually was.
+    # $0 (the untouched original line, appended as a 6th field) is what a KEPT line writes back —
+    # never the 5 split fields reassembled — so a line with more than 5 real tab fields (pre-pr-gate.sh's
+    # receipt-pass rows deliberately embed an extra one, see its own log_event comment) round-trips
+    # byte-for-byte through a rewrite instead of being silently truncated to 5 fields.
+    if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5 SEP $0}' "$LOG")"; then
+      # `|| [ -n "$_ty" ]` is belt-and-braces, not the thing that makes an unterminated final $LOG line work:
+      # the awk pre-pass above always terminates every record it prints (awk's `print` appends a newline
+      # regardless of the input line), and that output round-trips through `$(...)` (strips trailing
+      # newlines) and back through `<<<` (appends exactly one) — so `read` here never actually hits EOF
+      # mid-record on this path. The guard stays as a second line of defense in case that pre-pass ever
+      # changes shape.
+      while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
+        # never consumed — survives the subtractive rewrite by not being in $consumed_raws
+        is_event_type "$_ty" || continue
+        _cite="$_src"
+        if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
+        if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
+          stale=$(( stale + 1 ))
+          stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
+          consumed_raws="${consumed_raws}${_raw}"$'\n'
+          printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+          continue
+        fi
+        if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
+          kept=$(( kept + 1 ))
+          printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+          continue
+        fi
+        add_cite "$_ty" "$_cite"
+        ingested=$(( ingested + 1 ))
+        consumed_raws="${consumed_raws}${_raw}"$'\n'
+        printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
+      done <<< "$_awk_out"
+    else
+      printf 'keel-impact: could not read %s for ingest this run — leaving it untouched (nothing lost, nothing counted)\n' "$LOG" >&2
+    fi
+  fi
+}
+
 cmd_add() {
   # Argument validation comes FIRST — before _impact_begin, and so before anything this run could
   # move or delete (see _impact_begin, top of file). Everything down to the `--since` check is
   # pure: add_cite/require_count/_is_iso_ts only accumulate and inspect shell variables, no file is
   # read or written, so hoisting the block above the enabled checks costs nothing and buys the
   # ordering — `add --guard` with no citation used to migrate a legacy .keel/ and then exit 2.
-  local silent="" gap="" ticket="" session="" ingest=1 retro=0 asof="" since=""
+  local silent="" gap="" ticket="" session="" ingest=1 retro=0 asof="" since="" dry_run=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --hold)      _need_cite "${2:-}" --hold;     add_cite hold     "$2"; shift 2 ;;
@@ -1266,6 +1334,7 @@ cmd_add() {
       --ticket)    ticket="${2:?}";             shift 2 ;;
       --session)   session="${2:?}";            shift 2 ;;
       --no-ingest) ingest=0;                   shift 1 ;;
+      --dry-run)   dry_run=1;                  shift 1 ;;
       --retro)     retro=1;                    shift 1 ;;
       --asof)      asof="${2:?}";              shift 2 ;;
       --since)     since="${2:?}";              shift 2 ;;
@@ -1289,7 +1358,10 @@ cmd_add() {
 
   # Known-valid from here: resolve this project's store (auto-migrating a legacy in-tree marker first),
   # then refuse if it was never enabled at all.
-  _impact_begin
+  # --dry-run (dir #271) is a preview, so it must not run _impact_begin's legacy auto-migration or store
+  # backfill (the same "a preview must stay a preview" rule `migrate --dry-run` follows): it only resolves
+  # the three paths. _IMPACT_BEGUN is left unset, which is safe: the process exits before any later verb.
+  if [ "$dry_run" -eq 1 ]; then _impact_resolve_paths; else _impact_begin; fi
   _impact_require_enabled || exit 2
   # $EVIDENCE can resolve empty independently of $LEDGER (a partial env override — only
   # $KEEL_IMPACT_LEDGER set, not $KEEL_IMPACT_EVIDENCE — on a never-enabled repo), so
@@ -1343,56 +1415,15 @@ cmd_add() {
   # wrong answer (an old event scores as this session's) — reproduced live in
   # tests/test_keel_impact.sh's own dir #196 fixture (20 nines).
   local max_age_h; max_age_h="$(sanitize_nonneg_int "${KEEL_INGEST_MAX_AGE_HOURS:-12}" 12)"
-  if [ "$ingest" -eq 1 ] && [ -f "$LOG" ]; then
-    own_key="$(impact_claim_key)"
-    if [ -n "$since" ]; then
-      cutoff_iso="$since"
-    elif ! cutoff_iso="$(_epoch_to_iso "$(( $(date +%s) - max_age_h * 3600 ))")"; then
-      printf 'keel-impact: could not convert the ingest age-cap cutoff on this date implementation — ingesting all pending events uncapped this run\n' >&2
-    fi
-    # \x1f (NOT tab) re-joins the fields first: bash `read` collapses an EMPTY field sitting between two tab
-    # delimiters regardless of IFS (a genuinely reachable shape here — $_det can be empty on a 5-field
-    # line), the same trap fixed elsewhere in pre-pr-gate.sh — awk doesn't have that bug, so it does the split.
-    # Reading via `$(...)` (not `< <(awk ...)`) lets us check awk's own exit status: a bare process
-    # substitution is invisible to both `set -e` and `pipefail`, so a mid-run read failure on this shared,
-    # multi-worktree-written file (permission race, the file replaced, a concurrent rewrite) would
-    # otherwise silently look like "nothing to ingest" instead of the read failure it actually was.
-    # $0 (the untouched original line, appended as a 6th field) is what a KEPT line writes back —
-    # never the 5 split fields reassembled — so a line with more than 5 real tab fields (pre-pr-gate.sh's
-    # receipt-pass rows deliberately embed an extra one, see its own log_event comment) round-trips
-    # byte-for-byte through a rewrite instead of being silently truncated to 5 fields.
-    if _awk_out="$(awk -F'\t' -v SEP=$'\x1f' '{print $1 SEP $2 SEP $3 SEP $4 SEP $5 SEP $0}' "$LOG")"; then
-      # `|| [ -n "$_ty" ]` is belt-and-braces, not the thing that makes an unterminated final $LOG line work:
-      # the awk pre-pass above always terminates every record it prints (awk's `print` appends a newline
-      # regardless of the input line), and that output round-trips through `$(...)` (strips trailing
-      # newlines) and back through `<<<` (appends exactly one) — so `read` here never actually hits EOF
-      # mid-record on this path. The guard stays as a second line of defense in case that pre-pass ever
-      # changes shape.
-      while IFS=$'\x1f' read -r _ts _ty _src _det _key _raw || [ -n "$_ty" ]; do
-        # never consumed — survives the subtractive rewrite by not being in $consumed_raws
-        is_event_type "$_ty" || continue
-        _cite="$_src"
-        if [ -n "$_det" ]; then _cite="$_src | $_det"; fi
-        if [ -n "$cutoff_iso" ] && { ! _is_iso_ts "$_ts" || [[ "$_ts" < "$cutoff_iso" ]]; }; then
-          stale=$(( stale + 1 ))
-          stale_lines="${stale_lines}- ${_ts}"$'\t'"${_ty}"$'\t'"${_src}"$'\t'"${_det}"$'\n'
-          consumed_raws="${consumed_raws}${_raw}"$'\n'
-          printf 'stale-skipped: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-          continue
-        fi
-        if [ -n "$_key" ] && [ "$_key" != "$own_key" ]; then
-          kept=$(( kept + 1 ))
-          printf 'foreign-kept: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-          continue
-        fi
-        add_cite "$_ty" "$_cite"
-        ingested=$(( ingested + 1 ))
-        consumed_raws="${consumed_raws}${_raw}"$'\n'
-        printf 'ingested: %s %s %s\n' "$_ts" "$_ty" "$_cite"
-      done <<< "$_awk_out"
-    else
-      printf 'keel-impact: could not read %s for ingest this run — leaving it untouched (nothing lost, nothing counted)\n' "$LOG" >&2
-    fi
+  # dir #271: the read-decide loop is _impact_ingest_events (above cmd_add), shared with `--dry-run`.
+  _impact_ingest_events
+
+  # dir #271: a dry run stops here — after the SAME ingestion pass, before any write (no evidence block,
+  # no ledger row, no log rewrite). It reports what a real `add` would take from the log right now.
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'keel-impact: dry-run — would ingest %d event(s), skip %d stale, leave %d foreign; nothing was written\n' \
+      "$ingested" "$stale" "$kept"
+    exit 0
   fi
 
   # --- derive the score from the counted, cited events (computed, never asserted) -----------------

@@ -323,6 +323,22 @@ run_hook wrap-done "$d"
 check_status "wrap-done exits 0" 0 "$STATUS"
 check_contains "wrap-done confirms in its own output" "$OUT" "wrap completion recorded"
 
+# dir #620: wrap-done must not claim a recorded completion when the marker could not be written. TMPDIR
+# names a regular file, so the marker path is impossible on every platform (chmod 000 would not stop
+# root on the alpine leg).
+d="$(mkrepo)"; rt_env wrapdonefail
+wd_notdir="$SANDBOX/wrapdone-not-a-dir"; printf 'x\n' > "$wd_notdir"
+OUT="$(TMPDIR="$wd_notdir" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" wrap-done "$d" 2>&1)"; STATUS=$?
+check_status "dir #620: wrap-done exits 1 when the marker cannot be written" 1 "$STATUS"
+check_absent "dir #620: wrap-done does not claim completion was recorded" "$OUT" "wrap completion recorded"
+check_contains "dir #620: wrap-done reports the failure" "$OUT" "could not record wrap completion"
+# docs-line --wrap prints no completion claim, but must not swallow the failed stamp either.
+OUT="$(TMPDIR="$wd_notdir" KEEL_READ_TRACE_STORE="$RT_STORE" bash "$rt" docs-line --wrap "$d" 2>&1)"; STATUS=$?
+check_absent "dir #620: docs-line --wrap makes no completion claim when the stamp fails" "$OUT" "wrap completion recorded"
+check_contains "dir #620: docs-line --wrap reports the failed stamp" "$OUT" "could not record wrap completion"
+check_contains "dir #620: docs-line --wrap still prints its report line" "$OUT" "docs read:"
+check_status "dir #620: docs-line --wrap keeps exit 0 (report line is its job)" 0 "$STATUS"
+
 # --- session-end: read-only session (no mutate rows) -> no event, no flag -----------------------------
 d="$(mkrepo)"; rt_env readonly
 tp="$SANDBOX/transcript.readonly.jsonl"; printf 'nothing special\n' > "$tp"

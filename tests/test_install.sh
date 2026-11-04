@@ -214,6 +214,25 @@ check_status "KEEL_TARBALL install → exit 0" 0 "$STATUS"
 check_file "tarball install lands the core" "$t1home/CLAUDE.md"
 check_file "tarball install lands the commands" "$t1home/commands/wrap.md"
 
+# T1b (dir #394): a cleanup `rm -rf` that always fails must not change the exit status. A shim `rm` on PATH
+# refuses the bootstrap temp dir (deterministic stand-in for the macOS "Directory not empty" race) and
+# defers to the real rm for everything else.
+real_rm="$(command -v rm)"
+shimbin="$SANDBOX/rm-shim-bin"; mkdir -p "$shimbin" "$SANDBOX/rm-shim-tmp"
+cat > "$shimbin/rm" <<SHIM
+#!/bin/sh
+for a in "\$@"; do case "\$a" in */keel.*) echo "rm: \$a: Directory not empty" >&2; exit 1 ;; esac; done
+exec "$real_rm" "\$@"
+SHIM
+chmod +x "$shimbin/rm"
+t1bhome="$SANDBOX/rmfail-home"
+run env PATH="$shimbin:$PATH" TMPDIR="$SANDBOX/rm-shim-tmp" KEEL_TARBALL="$tb" sh "$boot" --home "$t1bhome" --no-hooks
+check_status "dir #394: successful install stays exit 0 when the cleanup rm fails" 0 "$STATUS"
+check_file "dir #394: the install landed despite the failing cleanup" "$t1bhome/CLAUDE.md"
+run env PATH="$shimbin:$PATH" TMPDIR="$SANDBOX/rm-shim-tmp" KEEL_TARBALL="$SANDBOX/no-such-keel.tar.gz" sh "$boot" --home "$SANDBOX/rmfail-home2" --no-hooks
+if [ "$STATUS" -ne 0 ]; then pass "dir #394: a failed install stays non-zero when the cleanup rm also fails (status $STATUS)"
+else fail "dir #394: a failed install stays non-zero when the cleanup rm also fails" "exit 0: $OUT"; fi
+
 # T2: git hidden via a PATH farm (symlink every tool EXCEPT git) → no-git fallback fires:
 # prose-only announced, --no-hooks auto-forced, install still lands from the tarball.
 farm="$SANDBOX/nogit-bin"; path_farm "$farm" git

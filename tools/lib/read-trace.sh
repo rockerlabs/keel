@@ -81,7 +81,9 @@ _rt_stamp_wrap_done() {
   local dir="${1:-.}" path sha
   path="$(_rt_wrapdone_path "$dir")"
   sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)"
-  mkdir -p "$(dirname "$path")"
+  # dir #620: return the write's own status so a caller that REPORTS the stamp can tell a recorded
+  # marker from one that could not be written.
+  mkdir -p "$(dirname "$path")" || return 1
   printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${sha:-unknown}" > "$path"
 }
 
