@@ -308,4 +308,14 @@ pin "dir #541: G0 checks the previous audit run's harvest sits under its own dat
 pin "dir #541: G4(c) restates the own-header check" "$doc" \
   'header, never appended to an earlier run'"'"'s block (dir #541)' "expected G4(c) to carry the header duty"
 
+# dir #467: G3's derive-don't-assert covers a release row's value claim; G5 points back to it.
+pin "dir #467: G3 re-derives the value claim in the same edit as a ticket/stage-list change" "$doc" \
+  'claim from the new list in the same edit, and strikes the old claim' "expected G3 to require re-deriving the claim from the new list in the same edit"
+pin "dir #467: G3 strikes the old value claim rather than replacing it silently" "$doc" \
+  '(~~struck through~~) instead of' "expected G3 to require the old claim struck, not silently replaced"
+pin "dir #467: G3 cites its ticket for the value-claim rule" "$doc" \
+  'rather than derived (dir #467).' "expected the G3 value-claim paragraph to cite dir #467 like its neighbours"
+pin "dir #467: G5 points the value claim back at G3" "$doc" \
+  "The claim is derived from the row's current" "expected G5's value-claim sentence to point at G3's derivation rule"
+
 summary

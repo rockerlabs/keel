@@ -414,4 +414,40 @@ pin "§9 S2…Sn prompt: every operator live-check block is tagged (dir #532)" "
   "expected the leg prompt to require a TESTED/UNTESTED tag on operator live-check blocks"
 check_contains "S-final prompt: checks the live-check tag (dir #532)" "$sfinal_flat" 'carries a `TESTED on <where>` or an `UNTESTED-SQL`'
 
+# dir #544: the git x non-git seam is a procedural check: the brief lists gitignored inputs, the orchestrator
+# snapshots them at the anchor, one named leg diffs merged prose against the snapshot, the verifier checks it.
+pin "dir #544: section 2 names the snapshot of every gitignored input" "$doc" 'snapshot every gitignored input the release touches (dir #544)' \
+  "expected delta-audit.md section 2 to carry the git x non-git seam check"
+pin "dir #544: section 2 puts the list in the brief's Non-git inputs line" "$doc" 'carries a `Non-git inputs:` line' \
+  "expected section 2 to make the brief list the gitignored inputs"
+pin "dir #544: section 2 snapshots the post-cut state at the anchor" "$doc" 'as it stands then, the **post-cut state**, into `non-git-inputs/`' \
+  "expected section 2 to snapshot the post-cut state"
+pin "dir #544: section 2 names exactly one leg for the diff" "$doc" 'The orchestrator names one S2…Sn leg for it in that leg'"'"'s' \
+  "expected section 2 to give the diff to one named leg"
+pin "dir #544: section 2 names the worked incident" "$doc" 'a compensation for the open gap, not a designed check' \
+  "expected section 2 to carry the hermes 0.6.0 run 5 incident"
+pin "dir #544: section 4 rule 4 extends the seam duty to the snapshot" "$doc" 'The seam also runs between git and a gitignored input' \
+  "expected rule 4 to carry the git x non-git case"
+pin "dir #544: section 9 S2 prompt carries the non-git leg paragraph" "$doc" 'the orchestrator named you the non-git leg' \
+  "expected the S2…Sn prompt to carry the non-git leg assignment"
+check_contains "S-final prompt: checks the non-git leg's section (dir #544)" "$sfinal_flat" 'needs a report holding a `## Non-git inputs` section'
+pin "dir #544: section 2 re-snapshots when the cut lands after the anchor" "$doc" 're-snapshot when it lands, and the named leg re-checks against the new copy' \
+  "expected section 2 to cover a cut that lands after the anchor"
+pin "dir #544: section 2 gives the named leg every file resting on an input" "$doc" 'every tracked file the list names as resting on an input' \
+  "expected section 2 to widen the named leg's file set"
+pin "dir #544: section 2 keeps the copies out of external-vendor bundles" "$doc" 'part of a bundle for an external-vendor leg (§11) without the operator' \
+  "expected section 2 to keep the snapshot out of a vendor bundle"
+pin "dir #544: section 2 copies the brief line into the run record" "$doc" "brief's \`Non-git inputs:\` line into \`run-record.md\`" \
+  "expected section 2 to copy the brief line into the run record"
+
+pin "dir #544: section 2 writes the line and the rows after derive.sh has run" "$doc" "written after §3's \`derive.sh\` has run, never before" \
+  "expected section 2 to order the run-record line and ledger rows after derive.sh"
+pin "dir #544: section 2 re-adds both after a derive.sh re-run" "$doc" 'drops both the line and the rows, so the orchestrator re-adds both' \
+  "expected section 2 to say a derive.sh re-run drops the line as well as the rows"
+pin "dir #544: section 2 has the orchestrator write the line when no R9 brief exists" "$doc" 'the orchestrator writes the line itself, so every run record has one' \
+  "expected section 2 to give a briefless audit its own line"
+pin "dir #544: section 2 item 4 makes a missing line an open finding" "$doc" 'A `run-record.md` with no `Non-git inputs:` line is an open finding' \
+  "expected section 2 item 4 to catch a missing line"
+check_contains "S-final prompt: a run record with no Non-git inputs line is an open finding (dir #544)" "$sfinal_flat" 'a run record with no such line is an open finding'
+
 summary
