@@ -421,6 +421,19 @@ See [a](#--todo-item) for detail.
 run "$pd" "$d" --quiet
 check_status "a leading-hyphen anchor resolves, not misread as a grep flag -> exit 0" 0 "$STATUS"
 
+# dir #239 item 4: the negative companion. The positive case above also passes if validation is simply
+# skipped for any '-'-prefixed anchor (the easy way around grep's option parsing, instead of `grep -xF --`).
+# A leading-hyphen anchor that matches NO heading must still be reported as dead.
+d="$(mk_repo_with doc.md "# doc
+
+See [a](#--no-such-item) for detail.
+
+## - Todo Item
+")"
+run "$pd" "$d" --quiet
+check_status "a leading-hyphen anchor with no matching heading is still a dead anchor -> exit 1" 1 "$STATUS"
+check_contains "...and the report names the dead anchor" "$OUT" "#--no-such-item"
+
 # --- signal 2: a literal '%' in a target that isn't part of a %XX escape is left alone, not corrupted
 # by the percent-decoder (found by the same review) ----------------------------------------------------
 d="$(mk_repo_with doc.md '# doc

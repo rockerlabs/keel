@@ -886,13 +886,14 @@ check_contains "warns naming the threshold" "$OUT" "3+ consecutive"
 # only ever read by `awk -v k=...`'s `streak >= k`, never by a bash `[ -ge/-gt ]` test, so an
 # unsanitized huge K would not crash with "integer expression expected" — awk coerces it to a double
 # with no error, and `streak >= k` simply never fires, silently suppressing the very self-reported-
-# only-streak WARN this sweep exists to raise. `check_absent` below stays as a defensive pin against a
-# FUTURE call site that does route K through a bash comparison, not a description of this one. Same
-# 3-self-reported-row state as #38, so the default-K warn is the expected outcome either way.
+# only-streak WARN this sweep exists to raise. So the two assertions below (exit 1, and the warn
+# naming the default threshold) are what go red when the sanitizer is removed; an absence check on the
+# "integer expression expected" text was dropped (dir #239) because this awk-only path cannot emit it,
+# so it stayed green under that mutation. Same 3-self-reported-row state as #38, so the default-K warn
+# is the expected outcome either way.
 run_in "$d" env -u KEEL_IMPACT_LOG bash "$gate" sweep 99999999999999999999
 check_status "an overflowing K falls back to the default 3 → same warn (exit 1)" 1 "$STATUS"
 check_contains "warns naming the (fallback) default threshold" "$OUT" "3+ consecutive"
-check_absent "no 'integer expression expected' crash leaks through" "$OUT" "integer expression expected"
 
 # 39. The sweep is read-only — the impact log is untouched (unlike `add`'s ingest-and-truncate).
 check_contains "sweep does not truncate the impact log" "$(cat "$ilog" 2>/dev/null)" "receipt-pass"
@@ -3274,7 +3275,7 @@ _gate_marker_alternation() {
   printf '%s' "${COMPOSED_MARKER_NAMES[*]}"
 }
 _composed_marker_sweep() {
-  local dir="${1:-$REPO_ROOT}"
+  local dir="${1:-$REPO_ROOT}" alt out rc
   # dir #118: the `: level=(...)` suffix in this pattern means `KEEL-DEPTH-DIALOG` — a bare marker
   # since dir #118, no longer taking that suffix at all — can never match here. This sweep now only
   # actually protects `KEEL-AGENT-REVIEW` and `KEEL-REVIEW-DIALOG`, the two names that still are
@@ -3282,15 +3283,46 @@ _composed_marker_sweep() {
   # outcome for a tracked file to leak), not a coverage gap — see COMPOSED_MARKER_NAMES' own comment
   # in tools/pre-pr-gate.sh for why the array stays shared even though this sweep no longer covers all
   # of it.
-  (cd "$dir" && git grep -lE "($(_gate_marker_alternation)): level=(skip|low|medium|high|max|ultra)" \
-    -- . ':!tests' 2>/dev/null || true)
+  # dir #239: "git failed" and "no matches" must not look alike. `git grep` exits 0 on a match, 1 on none,
+  # and 2+ when it could not run (a rejected flag, a directory with no .git such as a release tarball).
+  # The old `|| true` turned all of them into an empty result, which the caller reads as a clean sweep.
+  # This function now prints the matches and returns 0 for "ran" (hit or no hit), and returns the failing
+  # status, printing nothing, when the sweep could not run.
+  alt="$(_gate_marker_alternation)" || return 2
+  out="$(git -C "$dir" grep -lE "(${alt}): level=(skip|low|medium|high|max|ultra)" \
+    -- . ':!tests' 2>/dev/null)"
+  rc=$?
+  case "$rc" in
+    0|1) printf '%s' "$out"; return 0 ;;
+    *) return "$rc" ;;
+  esac
 }
-composed="$(_composed_marker_sweep)"
-if [ -z "$composed" ]; then
+composed="$(_composed_marker_sweep)"; composed_rc=$?
+if [ "$composed_rc" -ne 0 ]; then
+  fail "dir #116: no tracked non-test file spells a composed marker" "the sweep could not run (status $composed_rc) — a failed sweep is not a clean one (dir #239)"
+elif [ -z "$composed" ]; then
   pass "dir #116: no tracked non-test file spells a composed marker"
 else
   fail "dir #116: no tracked non-test file spells a composed marker" "composed marker found in: $composed"
 fi
+
+# dir #239: the two controls that make the sweep above falsifiable. (1) A directory the sweep cannot run
+# in (a plain directory with no .git — the shape of a release tarball) must report failure, not an empty
+# clean result. (2) A TRACKED file spelling a composed marker must be found, so an always-empty sweep
+# cannot pass. The #222 block below adds the untracked-file half.
+_d239_nogit="$(mktemp -d "$SANDBOX/nogit.XXXXXX")"
+GIT_CEILING_DIRECTORIES="$SANDBOX" _composed_marker_sweep "$_d239_nogit" >/dev/null; _d239_rc=$?  # ceiling: never find an enclosing repo
+if [ "$_d239_rc" -ne 0 ]; then
+  pass "dir #239: the marker sweep reports failure in a directory with no .git, not an empty clean result"
+else
+  fail "dir #239: the marker sweep reports failure in a directory with no .git, not an empty clean result" "status 0 (a sweep that could not run reads as clean)"
+fi
+_d239_repo="$(mkrepo)"
+printf 'quoting the gate marker: KEEL-REVIEW-DIALOG: level=high\n' > "$_d239_repo/tracked-note.md"
+git -C "$_d239_repo" add tracked-note.md
+_d239_hit="$(_composed_marker_sweep "$_d239_repo")"; _d239_hit_rc=$?
+check_eq "dir #239: a TRACKED file spelling a composed marker is reported by the sweep (status 0)" "0" "$_d239_hit_rc"
+check_eq "dir #239: ...and the sweep names that file" "tracked-note.md" "$_d239_hit"
 
 # dir #222 regression: an UNTRACKED file quoting the composed marker (the felt case — the delta
 # audit's own gitignored BACKLOG.md ticket text tripped the old grep-over-the-working-tree sweep on
@@ -3301,8 +3333,11 @@ fi
 # checkout at all.
 _d222_repo="$(mkrepo)"
 printf '### some ticket\nquoting the gate marker: KEEL-REVIEW-DIALOG: level=high\n' > "$_d222_repo/BACKLOG.md"
-d222_composed="$(_composed_marker_sweep "$_d222_repo")"
-if [ -z "$d222_composed" ]; then
+d222_composed="$(_composed_marker_sweep "$_d222_repo")"; d222_rc=$?
+if [ "$d222_rc" -ne 0 ]; then
+  fail "dir #222: a gitignored file quoting the marker does not trip the tracked-file sweep" \
+    "the sweep could not run (status $d222_rc), so it proves nothing (dir #239)"
+elif [ -z "$d222_composed" ]; then
   pass "dir #222: a gitignored file quoting the marker does not trip the tracked-file sweep"
 else
   fail "dir #222: a gitignored file quoting the marker does not trip the tracked-file sweep" \
