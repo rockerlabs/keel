@@ -12,10 +12,10 @@ lib="$REPO_ROOT/tools/lib/leak-patterns.sh"
 check_file "tools/lib/leak-patterns.sh exists" "$lib"
 
 # --- both known consumers source the shared lib, not a private copy -----------------------------
-check_contains "public-audit.sh sources tools/lib/leak-patterns.sh" \
-  "$(cat "$REPO_ROOT/tools/public-audit.sh")" 'lib/leak-patterns.sh'
-check_contains "self/doctor.sh sources tools/lib/leak-patterns.sh" \
-  "$(cat "$REPO_ROOT/tools/self/doctor.sh")" 'lib/leak-patterns.sh'
+# check_sources (tests/lib.sh), not a whole-file substring: the `# shellcheck source=` pragma carries the same
+# string, so deleting the real sourcing line used to leave the pin green (dir #292).
+check_sources "public-audit.sh sources tools/lib/leak-patterns.sh" "$REPO_ROOT/tools/public-audit.sh" 'lib/leak-patterns.sh'
+check_sources "self/doctor.sh sources tools/lib/leak-patterns.sh" "$REPO_ROOT/tools/self/doctor.sh" 'lib/leak-patterns.sh'
 
 # --- no re-duplicated copy of HOME_RE anywhere else under tools/ --------------------------------
 # The '(Users|home)' alternation is a distinctive enough fragment of HOME_RE that a hand-copy

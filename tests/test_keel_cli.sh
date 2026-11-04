@@ -124,6 +124,43 @@ printf 'keel_manifest_version=1\nmode=codex\n' > "$cxhome/.keel/install-manifest
 run "$cxhome/bin/keel" doctor
 check_contains "a manifested Codex home gets --codex too, via the manifest" "$OUT" "install.sh --codex --home \"$cxhome_p\""
 
+# --- dir #292: `keel sync` behaviour (it was only mentioned in docs, never executed) ----------------------
+# sync = `git pull --ff-only` in the checkout, THEN exec install.sh with the caller's args. No network is
+# involved: the "origin" is a local repository under the sandbox. install.sh is a stub that reports its args
+# and whether the pulled file was already on disk when it ran, so the order (pull first, re-wire second) is
+# observable, and its exit code is configurable to show the pass-through.
+sync_up="$(new_repo)"
+cp "$REPO_ROOT/keel" "$sync_up/keel"
+printf '#!/bin/sh\necho "STUB install.sh args=[$*] release=$([ -f "$(dirname "$0")/RELEASE" ] && echo yes || echo no)"\nexit "${STUB_EXIT:-0}"\n' > "$sync_up/install.sh"
+chmod +x "$sync_up/keel" "$sync_up/install.sh"
+mkdir "$sync_up/tools"; : > "$sync_up/tools/placeholder"   # keel's sanity guard wants a tools/ dir beside install.sh
+git -C "$sync_up" add keel install.sh tools/placeholder
+git -C "$sync_up" commit -qm "initial release"
+sync_co="$SANDBOX/sync-checkout"
+git clone -q "$sync_up" "$sync_co"
+printf 'v2\n' > "$sync_up/RELEASE"
+git -C "$sync_up" add RELEASE
+git -C "$sync_up" commit -qm "a new release lands upstream"
+check_nofile "dir #292: before sync, the checkout does not have the new release" "$sync_co/RELEASE"
+run env STUB_EXIT=5 "$sync_co/keel" sync --home /some/home --force
+check_status "dir #292: sync passes install.sh's exit code through" 5 "$STATUS"
+check_contains "dir #292: sync forwards its args verbatim to install.sh" "$OUT" "STUB install.sh args=[--home /some/home --force]"
+check_file "dir #292: sync pulled the new release into the checkout" "$sync_co/RELEASE"
+check_contains "dir #292: ...and the pull happened BEFORE install.sh ran (it saw the file)" "$OUT" "release=yes"
+check_absent "dir #292: a clean fast-forward prints no fallback warning" "$OUT" "did not fast-forward"
+# A checkout that cannot fast-forward (a local commit upstream does not have, plus a new upstream one) must
+# not abort the refresh: it warns, re-wires from the checkout as-is, and still runs install.sh.
+printf 'local\n' > "$sync_co/LOCAL"
+git -C "$sync_co" add LOCAL
+git -C "$sync_co" commit -qm "a local commit upstream lacks"
+printf 'v3\n' > "$sync_up/RELEASE"
+git -C "$sync_up" commit -qam "another upstream release"
+run "$sync_co/keel" sync --link
+check_status "dir #292: a non-fast-forward pull still re-wires (exit 0)" 0 "$STATUS"
+check_contains "dir #292: ...and says it is re-wiring as-is" "$OUT" "git pull did not fast-forward — re-wiring from the checkout as-is."
+check_contains "dir #292: ...and install.sh still ran with the forwarded args" "$OUT" "STUB install.sh args=[--link]"
+check_eq "dir #292: ...and the diverged checkout kept its own content (no merge or reset)" "v2" "$(cat "$sync_co/RELEASE")"
+
 # --- dir #104: the verb list docs quote must not drift from the dispatcher's own case arms ------
 # The dispatcher's `case "$cmd" in ... esac` block is the one source of truth for what verbs exist
 # (dir #85 found docs/reference.md and README.md each missing 2 of 9 verbs, undetected). Enumerate

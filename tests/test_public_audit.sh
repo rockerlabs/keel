@@ -471,6 +471,34 @@ check_absent "no 'integer expression expected' crash leaks through" "$OUT" "inte
 check_contains "the token is found — the default cap, not the overflow, governs" "$OUT" \
   "binary blob in git history"
 
+# dir #239 item 5: the blob above is tens of bytes, so it only shows "fallback >= tens of bytes" — a fallback
+# of 1GB (or no fallback at all) passes it too. This fixture is larger than the documented 10MB default
+# (10485760 bytes) and carries the token, so it separates the two: with the overflowing cap the 10MB
+# default must govern and the blob is skipped (UN-audited, token not found); with a cap that is valid and
+# larger than the blob, the very same blob IS audited and its token is found (the control — it proves the
+# skip above comes from the cap, not from the fixture being unreadable). Zero padding keeps the blob small
+# on disk (git compresses it) and binary (it holds NULs).
+d="$(repo_by dev@example.com)"
+{ printf '\000\000'; utf16le "token SeekritCorpName over the default cap"; head -c 10600000 /dev/zero; } > "$d/huge.bin"
+commit_in "$d" "add a blob over the default cap"
+run env KEEL_AUDIT_BLOB_MAX=99999999999999999999 bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "an overflowing cap: a blob over the 10MB default is skipped, its token NOT found (exit 0)" 0 "$STATUS"
+check_contains "...and the skip is surfaced as UN-audited, naming the default cap in bytes" "$OUT" "over KEEL_AUDIT_BLOB_MAX (10485760B)"
+check_absent "...and the token inside the over-default blob is not reported" "$OUT" "private token"
+run env KEEL_AUDIT_BLOB_MAX=20000000 bash "$pa" --token 'SeekritCorpName' "$d"
+check_status "control: a valid cap larger than that blob audits it, finds the token (exit 1)" 1 "$STATUS"
+check_contains "control: ...as a binary blob in git history" "$OUT" "binary blob in git history"
+# The working-tree pass sanitizes the same variable at a second site (--no-history scans every tracked file
+# there, so this blob reaches it). Same pair: overflowing cap -> the 10MB default governs and it is skipped;
+# a valid larger cap -> it is audited and the token is found.
+run env KEEL_AUDIT_BLOB_MAX=99999999999999999999 bash "$pa" --no-history --token 'SeekritCorpName' "$d"
+check_status "working tree, overflowing cap: a file over the 10MB default is skipped, token NOT found (exit 0)" 0 "$STATUS"
+check_contains "...and surfaced as UN-audited, naming the default cap in bytes" "$OUT" "binary file(s) over KEEL_AUDIT_BLOB_MAX (10485760B)"
+check_absent "...and the token inside the over-default file is not reported" "$OUT" "private token"
+run env KEEL_AUDIT_BLOB_MAX=20000000 bash "$pa" --no-history --token 'SeekritCorpName' "$d"
+check_status "control: working tree, a valid larger cap audits the file, finds the token (exit 1)" 1 "$STATUS"
+check_contains "control: ...as a binary file in the working tree" "$OUT" "binary file in the working tree"
+
 # --- CLI surface: unknown option, non-directory DIR (dir #101) -----------------------------------
 run bash "$pa" --bogus
 check_status "unknown option → exit 2" 2 "$STATUS"
