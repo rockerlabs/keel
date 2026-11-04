@@ -648,4 +648,15 @@ pin "dir #648: manage-release.md points at the chip rule and the hold" "$cmd" \
 pin "dir #648: manage-release.md points at the Log: lines rule" "$cmd" \
   "go into the ticket as dated \`Log:\` lines" "expected the entrypoint to point at the Log rule"
 
+pin "dir #469: R9 requires a pass against live data when stored data changes meaning" "$doc" \
+  "includes a pass against that data" "expected the R9 live-data pass clause"
+pin "dir #469: R9 records plainly when no live-data pass happened" "$doc" \
+  "records plainly in the close checklist that no such pass happened and why" "expected the no-pass record clause"
+pin "dir #469: R9 asks for a recompute path for every changed field" "$doc" \
+  "whether a path recomputes the rows already stored" "expected the per-field recompute question"
+pin "dir #469: the brief's leads gain defect-class leads beside file leads" "$doc" \
+  "Add defect-class leads beside the file leads" "expected the defect-class lead clause"
+pin "dir #469: the defect-class lead example is the recompute question" "$doc" \
+  'does every dictionary this release changes have a path that recomputes rows already stored?' "expected the worked defect-class lead"
+
 summary
