@@ -3056,6 +3056,17 @@ json="$(jq -n --arg cwd "$d" \
     tool_response:{answers:{"Decoy. KEEL-DEPTH-DIALOG":"skip", "Real. KEEL-DEPTH-DIALOG":"medium"}}}')"
 OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
 check_nofile "dir #118: two marker-ending questions in one event → ambiguous, fails closed" "$tf"
+# dir #332 (b): the fixture above has the decoy "skip" on the FIRST question, so it separates the rule
+# from first-question-wins only — a last-question-wins implementation resolves it to "medium", mints
+# nothing, and passes. This mirror puts the "skip" on the LAST question to cover that end.
+d="$(mkrepo)"
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" \
+  '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"AskUserQuestion",
+    tool_input:{questions:[{question:"First. KEEL-DEPTH-DIALOG"},{question:"Second. KEEL-DEPTH-DIALOG"}]},
+    tool_response:{answers:{"First. KEEL-DEPTH-DIALOG":"medium", "Second. KEEL-DEPTH-DIALOG":"skip"}}}')"
+OUT="$(printf '%s' "$json" | bash "$gate" skill-trace 2>&1)"; STATUS=$?
+check_nofile "dir #332 (b): ...and with the skip on the LAST question, still ambiguous, fails closed (not last-wins)" "$tf"
 # A malformed tool_response.answers (not an object — e.g. an array, a future schema-drift shape) must
 # not crash jq into a silently-swallowed stderr error; the filter is type-guarded so this resolves
 # through the same explicit false path a genuinely missing answer does.

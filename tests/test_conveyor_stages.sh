@@ -234,26 +234,57 @@ fi
 # (F) dir #206: step 9 gains an already-open-PR branch (a review finding corrected the source after the
 # PR opened, and nothing re-derived the body) — named triggers with a concrete check each, not a general
 # re-read; step 1 points at it from the convergence-round sequence sentence.
-if grep -qi 'Already-open-PR branch' "$guide"; then
-  pass "polish-guide.md: step 9 gains an already-open-PR branch"
+# dir #332 (c): these used to be file-wide `grep -qi` calls, which only show that a phrase occurs SOMEWHERE
+# in the guide while their pass messages claimed placement ("step 9 gains...", "step 1's ... sentence
+# points at step 9"). Same line-window idiom as blocks (C)/(D)/(E): find the section's heading lines, then
+# match inside the slice between them, so a phrase moved into the wrong step goes red. The phrases live in
+# the guide (the core, commands/polish.md, does not carry them).
+step1_line="$(grep -n '^## Step 1 ' "$guide" | head -1 | cut -d: -f1)"
+step2_line="$(grep -n '^## Step 2 ' "$guide" | head -1 | cut -d: -f1)"
+step9_line="$(grep -n '^## Step 9 ' "$guide" | head -1 | cut -d: -f1)"
+step10_line="$(grep -n '^## Step 10 ' "$guide" | head -1 | cut -d: -f1)"
+if [ -z "$step1_line" ] || [ -z "$step2_line" ] || [ -z "$step9_line" ] || [ -z "$step10_line" ]; then
+  fail "polish-guide.md: step 1, 2, 9 and 10 headings found (dir #206 placement pins)" \
+    "step headings not found (1='$step1_line' 2='$step2_line' 9='$step9_line' 10='$step10_line'), cannot scope the dir #206 pins"
 else
-  fail "polish-guide.md: step 9 gains an already-open-PR branch" \
-    "expected an 'Already-open-PR branch' heading in step 9"
-fi
-pin "polish-guide.md step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
-  "$guide" '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |' \
-  "expected the trigger table's test/CI-outcome row naming a re-derive-from-current-HEAD check"
-if grep -qi 'every recorded catch of this class came from a cross-session reviewer' "$guide"; then
-  pass "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
-else
-  fail "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
-    "expected a clause naming that every recorded catch came from a cross-session reviewer"
-fi
-if grep -qi "step 9's already-open-PR" "$guide"; then
-  pass "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
-else
-  fail "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
-    "expected step 1's sequence sentence to point at step 9 for an already-open PR"
+  step9_body="$(sed -n "${step9_line},$((step10_line - 1))p" "$guide")"
+  if match "$step9_body" -qE '^   \*\*Already-open-PR branch'; then
+    pass "polish-guide.md: step 9 gains an already-open-PR branch"
+  else
+    fail "polish-guide.md: step 9 gains an already-open-PR branch" \
+      "expected an 'Already-open-PR branch' paragraph between the Step 9 and Step 10 headings"
+  fi
+  if match "$step9_body" -qF '| a test or CI outcome ("suite green", "tests pass") | re-derive it from the run bound to **current HEAD**, not from the round that first wrote the sentence |'; then
+    pass "polish-guide.md: step 9's already-open-PR branch carries the test/CI-outcome trigger row"
+  else
+    fail "polish-guide.md: step 9's already-open-PR branch carries the test/CI-outcome trigger row" \
+      "expected the trigger table's test/CI-outcome row, naming a re-derive-from-current-HEAD check, inside step 9"
+  fi
+  # The weakness clause belongs to the branch's own paragraph: window it from the branch paragraph's first
+  # line to the Step 10 heading, not the whole step.
+  branch_line="$(printf '%s\n' "$step9_body" | grep -n '^   \*\*Already-open-PR branch' | head -1 | cut -d: -f1)"
+  if [ -n "$branch_line" ] && match "$(printf '%s\n' "$step9_body" | sed -n "${branch_line},\$p")" -qi 'every recorded catch of this class came from a cross-session reviewer'; then
+    pass "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch"
+  else
+    fail "polish-guide.md: step 9 states the known cross-session-only weakness of the already-open-PR branch" \
+      "expected the clause naming that every recorded catch came from a cross-session reviewer, at or after the branch paragraph in step 9"
+  fi
+  # Step 1's pointer sits in the convergence-round sequence sentence: anchor on that sentence ("So the round
+  # is 5 (delta)"), and require the pointer within a few lines of it AND before the Step 2 heading.
+  seq_line="$(sed -n "${step1_line},$((step2_line - 1))p" "$guide" | grep -n 'So the round is 5 (delta)' | head -1 | cut -d: -f1)"
+  if [ -z "$seq_line" ]; then
+    fail "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
+      "the convergence-round sequence sentence ('So the round is 5 (delta)') is not inside step 1"
+  else
+    seq_abs=$((step1_line + seq_line - 1))
+    seq_window="$(sed -n "${seq_abs},$((seq_abs + 6))p" "$guide")"
+    if match "$seq_window" -qF "step 9's already-open-PR"; then
+      pass "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch"
+    else
+      fail "polish-guide.md: step 1's convergence-round sequence sentence points at step 9's already-open-PR branch" \
+        "expected step 1's sequence sentence to point at step 9 for an already-open PR, within a few lines of it"
+    fi
+  fi
 fi
 
 summary
