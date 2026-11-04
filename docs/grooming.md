@@ -743,7 +743,7 @@ round. The reviewer is told to check the row's arithmetic against the file, like
 the list or range printed beside it, every "the Nth" against the values quoted, and every measurement against a
 reading taken after the last write. The one cell that cannot be drafted first, the round's own result, is written
 from the reviewer's return and recounted against it. Hermes' 2026-09-10 groom found three of six second-round
-findings inside its own record (a "8" beside nine ids, "17 tickets" over an eighteen-id range, a curve of six values
+findings inside its own record (an "8" beside nine ids, "17 tickets" over an eighteen-id range, a curve of six values
 called seven). That costs one reordering, not another round; a rule that says "check your own numbers" does not hold,
 and the same record had already carried a rule against stale measurements.
 
@@ -786,7 +786,7 @@ records", so a project that never writes one can never run G0, and every groom t
 first groom.
 
 **The groom OPENS the row; the release manager completes it at close.** The opening is
-drafted before the G6 round (dir #472), so the round reads it (G6 says why). Open it at this step, with this
+drafted before the G6 round (dir #472), so the round reads it (G6 says why). Write it into the record at this step, with this
 groom's own measured figures and the plan's estimate, and leave the run's own cells explicitly empty —
 the release has not happened yet, and a row that waits for it records the groom's numbers only as
 retold inside the NEXT release's row, if at all. [`docs/release-management.md`](release-management.md)'s
