@@ -31,7 +31,9 @@ landed in the --meta set. Read-only. The caller passes every repository list; no
 Counting definition (one, fixed): the unique commits per repository reachable from any ref
 (git rev-list --all, less refs/stash and refs/notes/*, which hold no
 work), merge commits excluded (--no-merges), committed on or after the date, or not
-reachable from the ref. The same commit is never counted twice. A merge commit is never counted.
+reachable from the ref. Commits are unique within one repository, and a merge commit is never
+counted. Separate clones of one repository are not detected and each is counted in full, so list each
+repository once.
 A repository given twice (the same repository, in either set, also through a linked worktree or
 its .git directory) refuses.
 

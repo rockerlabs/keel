@@ -36,7 +36,8 @@ round. What follows is the procedure extracted from those two runs, not a specif
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
 the audits' cross-run record rows, the meta-share reading on the previous row (G7; an infrastructure
 project only: the previous row's reading and this groom's own, both above the project's threshold,
-restrict the release this groom plans, so the previous value is read before the plan is cut), the
+restrict the release this groom plans, so this groom reads the previous value and computes its own
+reading here too, before the plan is cut, and writes it into the row when G7 opens the row), the
 release record a manager writes at close (keel's own instance is the FINAL NUMBERS paragraph its
 `dir #367`-style ticket record carries — a project without a ticket record of its own writes the
 equivalent wherever its release-manager procedure lands it), and every ticket filed by the previous
@@ -927,12 +928,14 @@ groom — the percentage of all counted commits that landed in the project's own
 than in the projects it serves — and the ledger colour that share earns against the project's
 threshold: green at or under it, red above it. This is the net-negative ledger of
 [`PRINCIPLES.md`](../PRINCIPLES.md) with a real denominator. Compute it with
-`tools/effort-share.sh --meta <repos> --product <repos> --since <previous groom's ref or date>`: the
-groom passes both repository lists, and the tool hard-codes none. Its `--help` states the one counting
+`tools/effort-share.sh --meta <repos> --product <repos> --since <date>`, the previous groom's date or a
+ref that every listed repository holds (a ref missing from one repository is refused): the groom
+passes both repository lists, and the tool hard-codes none. Its `--help` states the one counting
 definition and the honest limit — commits are a proxy for effort, and commit granularity differs
 across projects — so read the share as a trend counted the same way each groom. A reading with no
 commits at all is `n/a` and takes no colour. A project that is not infrastructure for others leaves
-the field out. The threshold is set by the project, never by this doc. **Two consecutive readings
+the field out. The threshold is set by the project, never by this doc; the threshold and both
+repository lists are stated in the header of the cross-run record. **Two consecutive readings
 above the threshold — the previous row's and this groom's own — restrict the release this groom
 plans:** it takes only rows that meet one of conditions 1 to 4 of the filing bar
 ([`docs/verification-economics.md`](verification-economics.md) §4), so no capability row that clears

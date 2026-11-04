@@ -76,7 +76,7 @@ check_contains "M counts c2 (at the cutoff), s1, w1, c3 and NOT the merge or c1 
 check_contains "P counts p2..p6 and not p1 (one second before the cutoff)" "$OUT" "\"product_commits\":5"
 check_contains "stash and notes commits are not counted (M stays at 4)" "$OUT" "\"meta_commits\":4"
 check_contains "the share is meta over the total, one decimal" "$OUT" "\"meta_share_percent\":44.4"
-check_contains "the JSON names each repo with its count" "$OUT" "{\"repo\":\"$(cd -P "$M" && pwd -P)\",\"commits\":4}"
+check_contains "the JSON names each repo with its count" "$OUT" "{\"repo\":\"$M\",\"commits\":4}"
 
 run bash "$tool" --meta "$M" --product "$P" --since 2026-03-01
 check_status_out "the table run exits 0" 0

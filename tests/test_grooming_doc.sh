@@ -505,15 +505,23 @@ pin "dir #635: G7 names the field and restricts it to an infrastructure project"
 pin "dir #635: G7 names the ledger colour rule and the PRINCIPLES ledger" "$doc" \
   'threshold: green at or under it, red above it. This is the net-negative ledger of' "expected the colour rule tied to the net-negative ledger"
 pin "dir #635: G7 names the tool" "$doc" \
-  '`tools/effort-share.sh --meta <repos> --product <repos> --since <previous groom'"'"'s ref or date>`: the' "expected G7 to name the instrument and its inputs"
+  '`tools/effort-share.sh --meta <repos> --product <repos> --since <date>`, the previous groom'"'"'s date or a' "expected G7 to name the instrument, its inputs and the date-or-shared-ref rule"
 pin "dir #635: G7 says the groom passes the repository lists" "$doc" \
-  'groom passes both repository lists, and the tool hard-codes none.' "expected the groom, not the doc, to supply the repo lists"
+  'passes both repository lists, and the tool hard-codes none.' "expected the groom, not the doc, to supply the repo lists"
 pin "dir #635: G7 leaves the field out of a non-infrastructure project and makes the threshold project-set" "$doc" \
-  'the field out. The threshold is set by the project, never by this doc. **Two consecutive readings' "expected the threshold to be project-set"
+  'the field out. The threshold is set by the project, never by this doc; the threshold and both' "expected the threshold to be project-set"
+pin "dir #635: G7 says where the threshold and the repository lists are stated" "$doc" \
+  'repository lists are stated in the header of the cross-run record. **Two consecutive readings' "expected the header of the cross-run record to be named as the place"
 pin "dir #635: two readings above the threshold restrict the next release to conditions 1 to 4 of the bar" "$doc" \
   '([`docs/verification-economics.md`](verification-economics.md) §4), so no capability row that clears' "expected the restriction to cite the filing bar"
 pin "dir #635: the restriction names which two readings count and cites conditions 1 to 4" "$doc" \
   'plans:** it takes only rows that meet one of conditions 1 to 4 of the filing bar' "expected the two readings and the condition range to be explicit"
+pin "dir #635: G0 computes this groom's own reading before the plan is cut" "$doc" \
+  'reading here too, before the plan is cut, and writes it into the row when G7 opens the row), the' "expected G0 to put this groom's own reading before the plan and into the opened row"
+pin "dir #635: commands/groom.md G0 names the previous meta-share reading" "$cmd" \
+  'and on an infrastructure project the previous row'"'"'s meta-share reading' "expected the checklist's G0 to name the thermostat input"
+pin "dir #635: commands/groom.md G7 names the meta-share field" "$cmd" \
+  'findings filed, and on an infrastructure project the meta-share field' "expected the checklist's G7 field list to name the field"
 pin "dir #635: G0 reads the previous row's meta-share value" "$doc" \
   "project only: the previous row's reading and this groom's own, both above the project's threshold," "expected G0 to read the previous meta-share reading"
 pin "dir #635: the bar numbers condition 4 as Severe (the doc cites conditions 1 to 4)" "$REPO_ROOT/docs/verification-economics.md" \
