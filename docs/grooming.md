@@ -404,7 +404,7 @@ all carry the same misreading of one string and agree with each other perfectly:
 project (2026-09-19) a ticket about which signing team a device build used sat open for 54 days, and
 its body, the operator's registry file, its own diagnostic and the groom's body-read all agreed,
 until reading the last build's code signature and certificate subject showed they had misread one
-identifier. Three records, one artifact, the artifact won. Records tell you where to look; they are
+identifier. Four sources, one artifact, the artifact won. Records tell you where to look; they are
 not the check. The plan states the diff's numbers and the rule applied, so a reader can tell a
 compression from a skip.
 Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
@@ -803,7 +803,8 @@ The check is one grep over the previous plans' rows for the step's name. A step 
 plans both list and that is still undone is put to the operator, in the same sitting, as one question
 with three answers: (1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an
 agent half plus an operator command. The groom records the operator's answer on the row, in the
-budget field's operator-step line, and re-sizes the step from it; a re-listed line is not a record. A rule of the procedure, not a compensation.
+budget field's operator-step line, and re-sizes the step from it; a re-listed line is not a record.
+A rule of the procedure, not a compensation.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that

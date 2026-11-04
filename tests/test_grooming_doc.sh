@@ -482,7 +482,7 @@ pin "dir #563: G2 reads the artifact itself before any record about it" "$doc" \
 pin "dir #563: G2 says records can agree and be wrong together" "$doc" \
   'all carry the same misreading of one string and agree with each other perfectly: in a downstream' "expected G2 to name the shared-misreading failure"
 pin "dir #563: G2 records the incident outcome" "$doc" \
-  'identifier. Three records, one artifact, the artifact won. Records tell you where to look; they are' "expected G2 to carry the incident's outcome"
+  'identifier. Four sources, one artifact, the artifact won. Records tell you where to look; they are' "expected G2 to carry the incident's outcome"
 pin "dir #563: G2 says records are not the check" "$doc" \
   'not the check. The plan states the diff'"'"'s numbers and the rule applied, so a reader can tell a' "expected G2 to say a record is not the check"
 pin "dir #563: G2 asks an operator-only premise in the same sitting" "$doc" \
