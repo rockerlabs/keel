@@ -481,7 +481,7 @@ operator decision after the groom closed; the carried-over thirty-one returned t
 for a later sort. Every keel test file now fails closed without its own sandbox (dir #627);
 the suite cannot write a ref into the real repository it runs from (dir #318); its config
 writes are watched by a tripwire, widened to whole-config coverage in the RC's own fix round
-(dir #630, dir #469); and the tools that resolve a repo path by `git -C` are no longer
+(dir #630, PR #469); and the tools that resolve a repo path by `git -C` are no longer
 redirectable to another repository by an inherited `GIT_DIR` (dir #644) — though the same
 class stays open elsewhere, named at the cut as dir #647's own residue. The pre-PR gate's
 sentinel and trace files left tens of thousands of files stranded in the shared `/tmp` —

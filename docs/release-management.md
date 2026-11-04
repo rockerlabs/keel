@@ -262,6 +262,11 @@ conventions that happen to look similar, it's one convention applied at two poin
    explicit "expect some of these to be wrong." This is R10's seam duty crossing the handoff: it hands
    a *starting read order*, never a conclusion, and a worker that treats a lead as settled has
    defeated the reason it was marked one.
+   **Add defect-class leads beside the file leads (dir #469).** A file-shaped lead ("look at `store.py`") hunts for
+   something wrong in text that exists. What is absent is found only by a lead shaped as a defect class, for example:
+   does every dictionary this release changes have a path that recomputes rows already stored?
+   The brief carries at least one such lead, or says plainly that it has none; a template has places for what its
+   author remembers and none for what the author structurally forgets.
 4. **Rules that bind you — pointers, not paraphrases.** Cite the requirement numbers and one clause
    each; never restate a rule's own reasoning inline, since a paraphrase is exactly what drifts from
    the source the moment either one is edited. **Include the keep-alive contract verbatim**, in
@@ -621,6 +626,18 @@ defect a standing line already names takes that line with it (§4)
 set is unchanged from [`docs/delegation.md`](delegation.md) — the release itself (the tag, the publish), the
 install and deletions stay the operator's; merges are the manager's under R14 where the project's policy allows
 (keel does).
+
+**A release that changes the meaning of already-stored data gets a pass against that data (dir #469).** An RC audit
+reads the tree, and a tree cannot show a defect of absence: a missing backfill, or a recompute path one field got and
+its sibling did not. The worked incident (a downstream project, hermes 0.2.0): a release applied a canonical
+`owner_type` at write time, the 654 rows already stored kept their raw source labels, and the filter comparing against
+the canonical value passed every listing it existed to exclude (186 of the 219 in the operator's queue). 292 tests and
+the RC audit read a correct tree; the production bot found the defect in a minute on live data. So a release that
+changes how already-collected data is interpreted (a dictionary, a normalised field, a filter's comparison value)
+includes a pass against that data, or records plainly in the close checklist that no such pass happened and why (the
+auditor had no access to the data, for one). The pass asks, for every field the release changes,
+whether a path recomputes the rows already stored; a recompute that exists for one field is no answer for its
+sibling.
 
 **The starting brief lists every gitignored input the release touches (dir #544).** A merged PR's premise can live in a
 gitignored, manager-owned file (a project's `CLAUDE.md`, `BACKLOG.md`), and that file's own edit during the release,
