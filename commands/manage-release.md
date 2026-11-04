@@ -47,6 +47,8 @@ explicitly that backlog writes of any kind (a marker, a Log line, a ticket) rout
 through the worker's own `/go` claim step. Every brief carries: state to
 re-derive, the ticket/coupling table, leads-not-findings, rules by pointer not paraphrase, and a
 "handed to you" line.
+A build worker's chip is `/go <N>` plus an overlay; your verified facts go into the ticket as dated `Log:` lines
+([the worker brief](../docs/release-management.md#the-worker-brief--one-shape-whether-launched-or-handed-over)). A correction sent to a worker on an open PR means telling the operator `do not merge #N yet`.
 
 **M5 — two-way critique and verification run throughout (R4, R5).**
 You are not presumed right — evaluate worker pushback on its merits, decide, escalate to the operator
