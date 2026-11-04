@@ -430,6 +430,14 @@ pin "dir #544: section 4 rule 4 extends the seam duty to the snapshot" "$doc" 'T
   "expected rule 4 to carry the git x non-git case"
 pin "dir #544: section 9 S2 prompt carries the non-git leg paragraph" "$doc" 'the orchestrator named you the non-git leg' \
   "expected the S2…Sn prompt to carry the non-git leg assignment"
-check_contains "S-final prompt: checks the non-git leg's section (dir #544)" "$sfinal_flat" 'needs a report holding the non-git leg'
+check_contains "S-final prompt: checks the non-git leg's section (dir #544)" "$sfinal_flat" 'needs a report holding a `## Non-git inputs` section'
+pin "dir #544: section 2 re-snapshots when the cut lands after the anchor" "$doc" 're-snapshot when it lands, and the named leg re-checks against the new copy' \
+  "expected section 2 to cover a cut that lands after the anchor"
+pin "dir #544: section 2 gives the named leg every file resting on an input" "$doc" 'every tracked file the list names as resting on an input' \
+  "expected section 2 to widen the named leg's file set"
+pin "dir #544: section 2 keeps the copies out of external-vendor bundles" "$doc" 'part of a bundle for an external-vendor leg (§11) without the operator' \
+  "expected section 2 to keep the snapshot out of a vendor bundle"
+pin "dir #544: section 2 copies the brief line into the run record" "$doc" "brief's \`Non-git inputs:\` line into \`run-record.md\`" \
+  "expected section 2 to copy the brief line into the run record"
 
 summary

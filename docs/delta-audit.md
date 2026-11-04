@@ -78,21 +78,27 @@ disagreeing DB-schema tables in `CLAUDE.md`", the cut then removed the table fro
 
 1. **The brief lists the inputs.** The orchestrator's starting brief (R9 of
    [`docs/release-management.md`](release-management.md)) carries a `Non-git inputs:` line: every gitignored file
-   the release edits, plus every one a merged PR's description or ticket cites as the premise of its change, each
-   with its absolute path and its owner. None is written `Non-git inputs: none`, so an absence is a decision, not an
+   the release edits, plus every one a slate ticket or a merged PR's description cites as the premise of its change,
+   each with its absolute path, its owner, and the tracked files whose prose rests on it. None is written `Non-git inputs: none`, so an absence is a decision, not an
    omission.
 2. **The orchestrator snapshots them at the anchor.** Right after the anchor resolves, it copies each listed file
-   as it stands then, the **post-cut state**, into `non-git-inputs/` beside the run's other §3 outputs, and adds one
-   ledger row per copy (class `non-git`; `derive.sh` emits none, so these rows are the orchestrator's). It keeps the
-   previous copy, if the manager took one at intake, beside it as the pre-cut state, so the diff between them is
-   readable. An edit to a listed input after the snapshot is listed in the run's ledger like a post-anchor commit and
-   re-snapshotted.
+   as it stands then, the **post-cut state**, into `non-git-inputs/` beside the run's other §3 outputs, and copies the
+   brief's `Non-git inputs:` line into `run-record.md`. A cut that lands after the anchor (R9's cut riding on the
+   last fix PR) is not in that copy: re-snapshot when it lands, and the named leg re-checks against the new copy. It
+   keeps the previous copy, if the manager took one at intake, beside it as the pre-cut state, so the diff between
+   them is readable. An edit to a listed input after a snapshot is listed in the run's ledger like a post-anchor
+   commit and re-snapshotted. The copies are run artifacts of a gitignored working area, never committed, and never
+   part of a bundle for an external-vendor leg (§11) without the operator's say. Each copy also gets one row at the
+   end of `ledger.md` (class `non-git`; `derive.sh` emits none, so a re-run of it, as after an anchor re-cut, drops
+   them and the orchestrator re-adds them); the named leg below gives those rows their verdict.
 3. **One leg diffs the prose against the snapshot.** The orchestrator names one S2…Sn leg for it in that leg's
-   prompt (§9), never "every leg". For each merged prose claim in its files that rests on a snapshot input, the leg
-   quotes the claim, quotes the snapshot's post-cut text for it, and reports a disagreement as a finding (§4 rule 6).
-   A leg with no snapshot to read writes `non-git inputs: none snapshotted` under `## NOT checked`.
-4. **The verifier checks the check.** A run whose brief lists non-git inputs and has no report holding that leg's
-   section has an open finding, not a pass.
+   prompt (§9), never "every leg", and gives that leg every tracked file the list names as resting on an input, on
+   top of its own cluster, so no claim sits in a file the leg never opens. For each merged prose claim in those files
+   that rests on a snapshot input, the leg quotes the claim, quotes the snapshot's post-cut text for it, and reports
+   a disagreement as a finding (§4 rule 6), all under a `## Non-git inputs` section of its report. A leg with no
+   snapshot to read writes `non-git inputs: none snapshotted` under `## NOT checked`.
+4. **The verifier checks the check.** It reads the `Non-git inputs:` line in `run-record.md`. A list that is not
+   `none` with no report holding a `## Non-git inputs` section is an open finding, not a pass.
 
 This is the git × non-git case of the seam duty (§4 rule 4; R10 of the release-management doc). It is a manual
 procedure, not a script: no tool can know which gitignored file a premise lives in, so the brief's list is the
@@ -637,10 +643,11 @@ duty, Protocol rule 4) — check no later PR silently falsified what an earlier 
 Follow the Protocol: docs/delta-audit.md §4, all 8 rules, binding.
 
 <If the orchestrator named you the non-git leg (docs/delta-audit.md §2, dir #544): the snapshot of the
-run's gitignored inputs is at <ABSOLUTE path to non-git-inputs/>. For each merged prose claim in your
-files that rests on one of them, quote the claim and the snapshot's post-cut text for it, and report a
-disagreement as a finding. Read the snapshot only; never the live file, which may have moved since.
-Otherwise delete this paragraph.>
+run's gitignored inputs is at <ABSOLUTE path to non-git-inputs/>, and the tracked files whose prose rests on
+them are <list>, read in addition to your files. For each merged prose claim in them that rests on a
+snapshot input, quote the claim and the snapshot's post-cut text for it, and report a disagreement as a
+finding, under a `## Non-git inputs` section. Read the snapshot only; never the live file, which may have
+moved since. Otherwise delete this paragraph.>
 
 Every live-check block (SQL, shell) you hand the operator carries either a `TESTED on <where>` tag
 (you ran it against a local instance) or an `UNTESTED-SQL` / `UNTESTED-SHELL` tag. Never hand over an
@@ -766,8 +773,8 @@ file each new survivor as a finding. Merge every session's verdicts into the led
 per docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of
 `clean`/`mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING`
 independently before accepting it.
-Confirm the starting brief's `Non-git inputs:` line (docs/delta-audit.md §2): a list that is not `none`
-needs a report holding the non-git leg's section; without one, file an open finding.
+Read the `Non-git inputs:` line in the run record (docs/delta-audit.md §2): a list that is not `none`
+needs a report holding a `## Non-git inputs` section; without one, file an open finding.
 Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA this run started against
 — and confirm CI is green on that exact SHA, including every platform leg.
 Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout. Then,

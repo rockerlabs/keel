@@ -603,10 +603,12 @@ install and deletions stay the operator's; merges are the manager's under R14 wh
 gitignored, manager-owned file (a project's `CLAUDE.md`, `BACKLOG.md`), and that file's own edit during the release,
 usually the cut's, can invalidate the premise after the merge with no commit to show it: the audit's universe is
 derived from git ([`docs/delta-audit.md`](delta-audit.md) §3), so no leg reads the file unless the brief points it
-there. The brief therefore carries a `Non-git inputs:` line, or `Non-git inputs: none`, naming each such file by
-absolute path and owner: every one the release edits, and every one a slate ticket cites as the premise of its
-change. The manager, who is the file's single writer (R8), takes the pre-cut copy at intake and hands over the list;
-the audit's orchestrator snapshots the post-cut state at the anchor, and one named leg diffs each merged prose claim
+there. The brief therefore carries a `Non-git inputs:` line in its State part (item 1 below), or `Non-git inputs: none`,
+naming each such file by absolute path, owner and the tracked files whose prose rests on it: every one the
+release edits, and every one a slate ticket or a merged PR's description cites as the premise of its change. The
+manager takes a dated pre-cut copy of each at intake (a file other sessions also edit, `CLAUDE.md` for one, is
+not R8's single-writer file, so the copy is the baseline, not a promise it stayed unchanged) and hands over the
+list; the audit's orchestrator snapshots the post-cut state at the anchor, and one named leg diffs each merged prose claim
 that rests on an input against that snapshot ([`docs/delta-audit.md`](delta-audit.md) §2, the procedure; its §4 rule 4,
 the duty). Intake also names the seam in two places for a ticket whose premise and target straddle git and such a
 file: that ticket's worker brief (R3), and the release row's risk list (R1's named-risk place). The worked incident (a
@@ -808,8 +810,10 @@ failure never delivered, and the manager noticed only while answering "what's le
 open row's live state at a fixed point in each loop iteration — before each wave, before each
 merge — and treat "idle with no report received" as a row to probe, not a row still working. **The sweep before each
 merge also re-reads the `Non-git inputs:` list (R9, dir #544):** for the PR about to merge, whose ticket cites one
-of those files as its premise, compare the file's current text against the copy taken at intake. A premise the
-file no longer states is a row to probe with the worker before the merge, not a finding left for the audit.
+of those files as its premise, compare the passage the ticket cites against the copy taken at intake, not the whole file: the manager's own
+marker writes (R8) make a whole-file diff noisy. A premise the passage no longer states is a row to probe with the
+worker before the merge, not a finding left for the audit. The sweep cannot see a cut that lands after the last
+merge; that case is the audit leg's ([`docs/delta-audit.md`](delta-audit.md) §2).
 
 **A turn-end note without its deliverable is a probe trigger (dir #832).** Compare every worker's turn-end note with
 the deliverable that point in the work owes, and probe at once on a gap: a PR open with no checkpoint, a subagent's
