@@ -459,7 +459,8 @@ pr_count="$(cut -f3 "$out_dir/file-pr-map.tsv" | tr ' ' '\n' | LC_ALL=C sort -u 
   printf '# Run record — %s..%s\n\n' "$prev_rev" "$head_rev"
   printf 'Stub emitted by `tools/delta-audit/derive.sh`. Fill in at verdict time and append this row\n'
   printf 'to your project'"'"'s audit cross-run record (keel: private/audit/RUNS.md; adopters: beside the grooms record, e.g. AUDITS.md next to GROOMS.md — create it if absent). dir #249 owns the append step; this script owns only the stub.\n\n'
-  printf 'Six of the rows below are the verification-economics run profile; the rest are run identity.\n'
+  printf 'Six of the rows below are the verification-economics run profile and one, the design-level row, is\n'
+  printf 'counted from the upstream gate cell for the groom (dir #554); the rest are run identity.\n'
   printf 'Two of the six predate it — `behavioural defects in shipped code` is its field 1, and\n'
   printf '`diversity result` is its field 3, "which layer found what". The other four are new. Cost may\n'
   printf 'be recorded as `unmeasured`, which is expected and permitted — never a fabricated zero. Raw\n'
@@ -474,6 +475,7 @@ pr_count="$(cut -f3 "$out_dir/file-pr-map.tsv" | tr ' ' '\n' | LC_ALL=C sort -u 
   printf '| diversity result | |\n'
   printf '| new classes vs instances of known ones | |\n'
   printf '| upstream gate that should have caught it | |\n'
+  printf '| design-level findings, per spec (counted from the upstream gate cell) | |\n'
   printf '| cost, per leg (sessions, tier+effort, tokens or `unmeasured`) | |\n'
   printf '| induced defects (induced / total) | |\n'
   printf '| records | |\n'

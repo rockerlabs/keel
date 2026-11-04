@@ -659,4 +659,30 @@ pin "dir #469: the brief's leads gain defect-class leads beside file leads" "$do
 pin "dir #469: the defect-class lead example is the recompute question" "$doc" \
   'does every dictionary this release changes have a path that recomputes rows already stored?' "expected the worked defect-class lead"
 
+# dir #539: R7 names a usage report and subagent token counts as sanctioned cost sources, in their own units.
+pin "dir #539: R7 says a coarser measured source is still the cost line" "$doc" \
+  "**Where token-level session cost is unavailable, a coarser measured source is still the cost line" "expected R7 to sanction a coarser source"
+pin "dir #539: R7 names the harness usage report as an example, not a shipped tool" "$doc" \
+  "for example \`get_usage\`, per-session usage as a percent of the 5-hour window" "expected R7 to describe the usage report"
+pin "dir #539: R7 says the usage report is the harness's own" "$doc" \
+  "the harness's own report, not something keel ships" "expected R7 not to claim keel ships the report"
+pin "dir #539: R7 names subagent token counts as the second source" "$doc" \
+  "and subagent token counts, which give an audit" "expected R7 to name the second source"
+pin "dir #539: R7 compares within one unit" "$doc" \
+  "Compare estimate and actual within one unit, never across units" "expected R7 to keep the comparison inside a unit"
+pin "dir #539: R7 writes unmeasured only for a part nothing captured" "$doc" \
+  "only for a part nothing captured, never as the row's default while any" "expected R7 to narrow the unmeasured default"
+
+# dir #553: R1's intake check recounts the row's operator-step count and audit universe (formulas in grooming.md G5).
+pin "dir #553: R1 recounts the row's two counts at intake" "$doc" \
+  '**Intake also recounts the release row'"'"'s two derived counts from the slate it was handed (dir #553).**' "expected R1 to read the row's two counts"
+pin "dir #553: R1 names the two counts and the G5 formula" "$doc" \
+  'The row'"'"'s budget field carries an operator-step count and an audit universe, each by the formula in' "expected R1 to name both counts"
+pin "dir #553: R1 recounts from the plan and the bodies" "$doc" \
+  'ticket bodies (workers and PRs from the plan, code files from the bodies) and says the row'"'"'s two numbers' "expected R1 to recount from the plan and the bodies"
+pin "dir #553: R1 records a differing count on the run's row" "$doc" \
+  'A count that differs is recorded on the run'"'"'s row (R7) with the class or file set' "expected R1 to record a difference"
+pin "dir #553: R1 hands the operator the recounted step total" "$doc" \
+  'the recounted operator-step total goes to the operator, since those steps are theirs.' "expected R1 to tell the operator their step total"
+
 summary

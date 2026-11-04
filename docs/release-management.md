@@ -68,6 +68,13 @@ an intake check, never a cap this doc sets for you — an operator who sees both
 the larger slate has made a real decision, and that choice belongs on the release row as a named risk
 rather than as a surprise mid-run.
 
+**Intake also recounts the release row's two derived counts from the slate it was handed (dir #553).**
+The row's budget field carries an operator-step count and an audit universe, each by the formula in
+[`docs/grooming.md`](grooming.md) G5. Before wave 1 the manager recounts both from the wave plan and the
+ticket bodies (workers and PRs from the plan, code files from the bodies) and says the row's two numbers
+and its own out loud. A count that differs is recorded on the run's row (R7) with the class or file set
+that was missed, and the recounted operator-step total goes to the operator, since those steps are theirs.
+
 **In a cloud-capable project, intake also settles each slate ticket's cloud verdict.** A project whose main
 checkout's `CLAUDE.md` carries a `KEEL-CLOUD` line can run a ticket in a Claude Code cloud session
 ([`docs/cloud.md`](cloud.md)). Intake therefore judges and writes any missing `**Cloud:**` verdict line for a
@@ -528,6 +535,17 @@ crosses and sum the segments. **Summing at the estimate's weights:** keel's `kee
 `KEEL_TOKENS_WEIGHTS` setting the estimate's own ([`docs/token-economy.md`](token-economy.md)); a release's
 sessions are summed by `tools/self/session-cost.sh weighted`, found by branch as below. Write the weights and the session set beside the figure,
 so the next groom can re-sum it.
+
+**Where token-level session cost is unavailable, a coarser measured source is still the cost line, in its own unit (dir #539).**
+Two are sanctioned beside the weighted session sum: the harness's usage report, read before and after each wave
+(for example `get_usage`, per-session usage as a percent of the 5-hour window;
+the harness's own report, not something keel ships), which gives the window points the run moved;
+and subagent token counts, which give an audit or a reviewer leg's size (a final-context size, not its
+spend, as [`docs/grooming.md`](grooming.md) G5's audit-pricing rule says, so it sits beside the cost line
+and does not replace it). Record each figure with its unit, its source and what it covers, in the shape
+the groom's budget field states (G5): an estimate of "≈1.2M subagent tokens + 2 waves × +15–30% window"
+has an actual of the same shape. Compare estimate and actual within one unit, never across units, and write `unmeasured`
+only for a part nothing captured, never as the row's default while any of these exists, and never a fabricated figure.
 
 **Find the row by its version token or run number, never by the nearest empty slot (dir #541).** A record
 addressed to ONE cycle lands in that cycle's own row: the row opened for the release being closed is the one

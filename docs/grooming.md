@@ -257,6 +257,17 @@ being reusable the moment a second run's lessons don't fit it. A retro that writ
 into a chat message or a ticket body has produced nothing a later cycle can find; the amendment is the
 deliverable, not a description of one.
 
+**On an adopter, the procedure doc an amendment corrects has two readings, and a groom that does both
+has applied its amendment (dir #555).** The procedure docs live in the engine, a checkout of a foreign
+repository with its own PR gate, tests and release cadence, so editing one in place from the adopter's
+session is a cross-repository change the groom is not scoped to open. One practice settled across ten
+grooms on two adopters, and it is the rule: the PROJECT half of an amendment goes into the adopter's own
+convention, the procedure doc that adopter actually reads; the GENERIC half is filed at the engine as a
+ticket citing the project incident. A groom that does both has applied its amendment, and records the
+split as the practice rather than as a deviation to apologise for. A generic half left only in the
+adopter's convention has produced nothing a second adopter can find. Where the engine is the project
+itself, the amendment lands directly, as above.
+
 **The just-closed audit run's harvest confirmation happens here too.** This is G4(c) below, restated in
 this phase because a doc author compressing G0 from a shorter read of this section alone must not drop
 it: confirm that the just-closed delta-audit run's `no-action` leads and findings were harvested onto
@@ -358,6 +369,10 @@ is the meta-pain, the plan must name an explicit, falsifiable ordering principle
 project's own recorded doctrine, state that it is ordering by that and not by pains, and mark each row
 that has no pain behind it.
 
+**An operator day-0 step the plan has carried undone twice is a question, not a list line (dir #535).**
+Only the operator's answer settles it, so it is asked at the groom and not copied forward; G5 carries
+the rule and its three answers.
+
 ## G2 — read ticket bodies, not headings
 
 The 2026-09-03 groom's headline failure was assignment from headings and R-levels with bodies unread,
@@ -382,10 +397,22 @@ and was recorded only in ANOTHER ticket's body (an operator login noted in a lau
 closed a "CLI not authenticated" ticket untouched since August), and a chore whose project list had
 drifted a third time against a live doctor run. So the compressed pass still owes each unchanged
 ticket its live check — the cited file and line, the doctor line, the blocker's tag, the measured
-figure — and the plan
-states the diff's numbers and the rule applied, so a reader can tell a compression from a skip.
+figure — and, where the premise is about an artifact (a build, a certificate, a binary's version
+string, a deployed config), the artifact itself, read with a tool, before any record about it. A
+ticket's body, the operator's instance or registry file and the previous groom's own body-read can
+all carry the same misreading of one string and agree with each other perfectly: in a downstream
+project (2026-09-19) a ticket about which signing team a device build used sat open for 54 days, and
+its body, the operator's registry file, its own diagnostic and the groom's body-read all agreed,
+until reading the last build's code signature and certificate subject showed they had misread one
+identifier. Four sources, one artifact, the artifact won. Records tell you where to look; they are
+not the check. The plan states the diff's numbers and the rule applied, so a reader can tell a
+compression from a skip.
 Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
 known body-read commit), G2 applies whole, as written above.
+
+G0's list of operator decisions (second flavour) is also where a premise only the operator can confirm
+is asked, in the same sitting. A fresh reviewer told to read bodies reads archived bodies too, which is
+an argument for keeping archived bodies verbatim rather than summarised.
 
 **The premise check runs before a ticket is offered by name, not after the "yes" (the 0.17.0
 re-cut).** A ticket named in a priced option gets the live check above before the offer goes out; a
@@ -563,12 +590,27 @@ what a project's own cost-measurement work has already put on disk (where that w
 claim** stated plainly enough to be wrong in public. The claim is derived from the row's current
 ticket/stage list, and the size measurement is retaken from the planned-from commit; neither is
 authored (G3). Design economics — the cost of the cycle's design
-sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
+sessions against two figures per spec (below) — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists. **The design-session flow produces no cost figure yet**,
 so this field records the absence, per cycle (first adopter data point: *cost unmeasured, spec
 accepted first-submitted, ~30 min prototype wall time*; keel's 2026-09-18 fleet left six specs with
 none) — a compensation whose remover is `dir #561` (dir #560 A3, applied 2026-09-20).
+
+**Design economics carries two figures per spec, because "accepted as first submitted" measures the
+spec's review, not the spec (dir #554).** One adopter's grooms wrote "returned for rework 0 of N" eleven
+times and "too early to judge" each time. Its audit run's own upstream-gate cell then answered what that
+number hides: seven specs of seven were accepted as first submitted, and the run still attributed two
+findings to the design level and a third to the spec and implementation boundary, all three shipped as
+tickets. Zero returns and design-level defects in one release are compatible. So the field records, per
+spec: (1) accepted without return, yes or no; (2) the count of release-candidate-audit findings the
+run's cross-run row attributes to that spec's design level, read from the row's
+`design-level findings, per spec` field ([`docs/delta-audit.md`](delta-audit.md) §8), mechanically,
+never from memory. The spec's `Escapes at implementation` line (the last line `/go` appends to the
+spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and
+is read beside the audit's. The judgment about the design-session mechanism is made on the second figure,
+and is still a later cycle's once more than one data point exists. This stays ONE report field: it
+adds no field to the row.
 
 **Size the budget's input side from the previous comparable release's measured TOTAL, never from a
 per-item build price (the 0.12.0 groom, reading the 0.11.0 row).** That release priced thirty one-file
@@ -587,6 +629,25 @@ estimate cell names its weights, the completing half
 ([`docs/release-management.md`](release-management.md) R7) sums the actual at the same weights, and a
 row whose actual cannot be re-summed labels each figure with its weighting and does not compare them. A
 rule of the procedure, not a compensation.
+
+**The budget field may mix units, and `unmeasured` labels a part, never a whole row (dir #539,
+reading one adopter's nine consecutive `unmeasured` cycles).** That adopter's budget field read
+`unmeasured` every cycle because token-level session cost was unavailable, while a per-file audit
+cost and a reviewer's measured spend already sat on disk. Its first fully measured release came from
+a harness usage report instead (`get_usage` there: per-session usage as a percent of the 5-hour
+window; keel ships no reader for it, it is the harness's own). So the field states each figure in the
+unit it was measured in and names its source, for example
+"≈1.2M subagent tokens + 2 waves × +15–30% window". A row never collapses to `unmeasured`
+while any part of it was measured; the word marks only a part nothing captured.
+Units are not converted into each other or summed (the window-points conversion below is the one
+exception, at its named ratio, and a window figure follows the gauge rule there), and
+[`docs/release-management.md`](release-management.md) R7 makes the estimate-vs-actual comparison
+within one unit. A subagent token count is the harness's
+own figure for a unit of work, not the weighted total the audit-pricing rules above sum (a leg's
+count is its final context, not its spend), so the two are never mixed in one figure. A measured
+figure is never invented: an absent source is `unmeasured`, never a zero or a guess. This governs the
+release row's cost fields; an audit run's per-leg cost keeps the rule of its own record. A rule of the
+procedure, not a compensation.
 
 **Price the audit from the previous audit session's own weighted total (the 0.16.0 groom, reading the
 0.15.0 row).** The 0.15.0 estimate gave the audit about 6M, the raw tokens its Sonnet legs read. At the
@@ -635,6 +696,34 @@ total at 1.0/2.0/0.1 for the three parts together (they overlap, so their separa
 on dir #855's turn cut. That combined figure is about 15% of that release's non-audit total (272.6M) and 11.2% of the
 whole (360.5M), the audit untouched. A rule of the procedure, not a compensation.
 
+**The budget field's two counts, operator steps and the audit universe, are derived by fixed formulas,
+not judged (dir #553, reading an adopter's 0.7.0 row).** They are inputs to the same budget field, not
+new fields: the mixed-unit rule above says how the field states its figures, these formulas say how
+its counts are derived, and both counts are derived under G3. That groom estimated 2 operator steps
+and 15–20 audit files; the release measured 19 steps by class (8 by the manager's own grouped count) and 28
+files, 37 with the fix batch. Both misses had one cause: the groom counted what it could see as a
+design step and skipped what the slate mechanically implies.
+
+- **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +
+  batches), deploy and migrations, one-off commands, prod checks, and the tag. Each term follows from
+  the slate's own numbers (N workers, N clicks; N PRs, N merges), so it is counted, never guessed.
+  Design-level steps (an account, a login, a decision) go on a separate line above the sum. The row
+  compares estimate and actual by class, never by a grouped count. A day-0 step is counted once, in
+  its class or on the design line; one carried undone is the three-way question below, and after
+  answer (2) it leaves the day-0 count and re-enters as the gated ticket's own steps, after answer
+  (3) only the operator command counts.
+- **Audit universe** = the code files the spec or the ticket bodies name + one test module per code
+  file + the prose files touched + a fix-batch reserve of about 30% of that subtotal. That adopter's
+  audit runs №4–№6 show the ratio (run №6: 28 files, 37 with its fix batch, +32%). The universe is
+  priced at the per-file cost of the nearest-sized measured run (its audit total over its own universe,
+  counted the same way), naming the run and the unit the cost was measured in. That price is a
+  cross-check on the line the two-part rule above produces, stated beside it and never a second line;
+  when both are in the same unit and weights and disagree, the cell says so, and otherwise the
+  per-file price is stated without a comparison.
+
+[`docs/release-management.md`](release-management.md) R1's intake check reads the same two counts. A
+rule of the procedure, not a compensation.
+
 **When the operator's binding limit is a subscription window, state the estimate in window points
 too, as the gauge's start and end, and name the ratio it was converted at (the 0.16.0 groom, reading
 the 0.15.0 row; the form, the 0.17.0 re-cut).** A weighted figure alone does not say
@@ -670,6 +759,18 @@ from a worktree) and flags each value-claim cell with
 none of this rule's forms (a `Subject set:` clause, a `Residue:` clause, `no claim`, or
 `no subject set — <why>`), so the reviewer's budget goes to what a lint cannot see.
 
+**A value claim that sets a SIZE target for a cut is derived as the size, less what moves out, plus
+what the cut writes back, never as the subtraction alone (dir #545).** This is the size-shaped
+instance of the subject-set rule above, a derived field under G3 like the rest of the row. The felt
+case (a downstream project, hermes 0.6.0, 2026-09-18): the claim "the always-loaded file is at most
+27 KB" was set from 37,478 − 10,751 = 26,727 bytes, and the shipped file was 30,429 bytes, a cut of
+18.8% where the claim promised 28.7%. The miss was exactly what the cut itself had to write back, a
+pointer paragraph, an on-ramp and a paragraph the moved section's neighbours needed, and the G6
+round that had moved the target from 24 to 27 KB repeated the subtraction instead of listing them.
+So the row names the add-backs by name, each with its estimated size, and states the target as the
+arithmetic over them, so the residue between the claim and the shipped size is checkable; the
+add-backs go in the claim's `Residue:` clause. A rule of the procedure, not a compensation.
+
 **Every release row also reports its decay-exposed share (`dir #842`).** Work that hardens a guard or a
 check against an input a model has to produce loses value as models improve, while a felt bug or a
 requested capability does not, so such a ticket carries `[model-decay]` in its heading
@@ -690,6 +791,20 @@ five days after the patch it ran beside tagged, with no plan-shape cause behind 
 item itself: `operator: /go <n> now`, `manager: wave N worker`, or `next groom`. An item that cannot name one is
 either moved into the slate as a worker or not called "parallel". G0's "did the batch's first item start"
 question then has a named party to ask. A rule of the procedure, not a compensation.
+
+**An operator day-0 step carried undone across two consecutive grooms is re-asked as a three-way
+question, never listed a third time (dir #535).** A day-0 step is an operator action the plan puts
+before the release's first worker starts. A list copied forward without a question stops being a
+to-do and becomes plan decoration, and it mis-sizes every release whose readers assume the step is
+done "by start". One adopter's plan (hermes, 2026-09-16) carried a day-0 host setup through three
+grooms and one whole release; when the operator was finally asked, the answer was "not done", and
+meanwhile the step's weight had doubled (two emulated bots instead of one) with nobody re-sizing it.
+The check is one grep over the previous plans' rows for the step's name. A step that the two latest
+plans both list and that is still undone is put to the operator, in the same sitting, as one question
+with three answers: (1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an
+agent half plus an operator command. The groom records the operator's answer on the row, in the
+budget field's operator-step line, and re-sizes the step from it; a re-listed line is not a record.
+A rule of the procedure, not a compensation.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that
@@ -794,9 +909,11 @@ Audits already have a cross-run record; releases, until this doc, had none — a
 cost-line requirement said "append it to the run's record" without ever naming one. Keel's instance is
 `private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`: a header stating what is and is
 not comparable across runs of different scale, then one row per release carrying slate size, PR count,
-session count, a cost line, and the count of findings filed. Record the cost as `unmeasured` where the
-data was never captured — never a fabricated zero. A different project names its own per-project
-location here — G9 states the portability rule this follows.
+session count, a cost line, and the count of findings filed.
+Record the cost in the unit it was measured in (G5, R7); `unmeasured` marks only a
+part nothing captured, never the row's default while any measured source exists, and
+never a fabricated zero. A different project names its own per-project location here — G9 states the
+portability rule this follows.
 
 **A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
 This section is written in the unit "one row per
@@ -839,6 +956,15 @@ shipped conventions:
 - **Backlog** resolved the way a project's own `/go` resolves it.
 - **The slate and the pool** are the `→ <version>` and `→ pool` heading-tag convention a project's own
   `/backlog` already reads — the shipped mechanism, not any one project's enrichment on top of it.
+  The tag namespace is a version (`0.N.0`), also on a project that has never tagged and runs no release
+  manager: a sprint label (`S1`, `S2`) is not a scoped-down version, it is a second convention that the
+  first tag will contradict, so it costs one re-tag cycle and a plan that can never agree with a git tag
+  or a binary, where `0.N.0` costs nothing. Two adopters adopted `0.N.0` on exactly such projects and
+  neither needed a release manager to do it. When the project ships a binary, the first item of the
+  first release is aligning the binary's own version string with the plan, and the groom reads that
+  string before cutting: one adopter's app-bundle version said `1.0.0` with no tag ever cut, another's
+  Mac bundle said `0.3` (set once, never bumped) and its iOS bundle `1.0` (the IDE default). A plan
+  numbered against a binary that disagrees with it is wrong on the first tester-visible screen.
   **Where a backlog mixes heading forms so the tag cannot be applied uniformly** — the adopter
   knowledge-base backlog carries half its tickets as `### KB.N` headings and half as bold bullets
   whose "heading" is a paragraph, and a bulk reformat once mangled that file (its own history says
@@ -868,7 +994,8 @@ time pressure is most tempted to skip.
 This document is subject to its own G0: where a real groom's practice disagrees with what is written
 here, the correction belongs in this doc, applied as part of that groom's own G0 phase — the same
 retro discipline this doc asks of `docs/release-audit.md`, `docs/delta-audit.md` and `docs/drydock.md`,
-applied to itself.
+applied to itself. On an adopter the correction lands as G0's adopter-side rule says: the project half
+locally, the generic half filed at the engine.
 
 ## See also
 

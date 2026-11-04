@@ -223,6 +223,9 @@ check_contains "run-record.md carries the new-classes-vs-instances row" \
   "$run_record" "| new classes vs instances of known ones |"
 check_contains "run-record.md carries the upstream-gate row" \
   "$run_record" "| upstream gate that should have caught it |"
+# dir #554: the stub carries the design-level attribution as a row of its own, counted from the upstream gate cell.
+check_contains "run-record.md carries the design-level findings row, counted per spec" \
+  "$run_record" "| design-level findings, per spec (counted from the upstream gate cell) |"
 check_contains "run-record.md carries the per-leg cost row, permitting an unmeasured value" \
   "$run_record" "cost, per leg (sessions, tier+effort, tokens or \`unmeasured\`)"
 check_contains "run-record.md carries the induced-defects rate row" \

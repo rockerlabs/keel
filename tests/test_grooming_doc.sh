@@ -366,4 +366,137 @@ pin "dir #530: G6 does not promote the variant on two runs" "$doc" \
 check_absent "dir #530: G6 no longer says the vendor round found more both times" "$(flatten_ws < "$doc")" 'had not, both times'
 check_absent "dir #530: the doc cites no gitignored record for the two-vendor split" "$(flatten_ws < "$doc")" 'cut-readiness section'
 
+# dir #535: an operator day-0 step carried undone across two consecutive grooms is re-asked as a three-way question.
+pin "dir #535: G5 names the rule and forbids a third listing" "$doc" \
+  'never listed a third time (dir #535).**' "expected G5 to carry the day-0 re-ask rule"
+pin "dir #535: G5 defines a day-0 step" "$doc" \
+  'A day-0 step is an operator action the plan puts' "expected G5 to define what a day-0 step is"
+pin "dir #535: G5 records the incident's doubled weight" "$doc" \
+  "meanwhile the step's weight had doubled" "expected G5 to name the re-sizing the carried step escaped"
+pin "dir #535: G5 detects the carry with one grep over the previous plans' rows" "$doc" \
+  "The check is one grep over the previous plans' rows for the step's name." "expected G5 to give the one-grep check"
+pin "dir #535: G5 offers the three answers" "$doc" \
+  '(1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an' "expected G5 to list the three answers"
+pin "dir #535: G5 records the operator's answer and re-sizes the step" "$doc" \
+  "records the operator's answer on the row, in the" "expected G5 to require a recorded answer, not a re-listed line"
+pin "dir #535: G1 points at the rule as a question, not a list line" "$doc" \
+  'is a question, not a list line (dir #535).' "expected G1 to point the operator-input rule at G5"
+
+# dir #539: the budget field may mix units; `unmeasured` labels a part, never a whole row (G5, G7; R7 is the completing half).
+pin "dir #539: G5 lets the budget field mix units" "$doc" \
+  '**The budget field may mix units, and `unmeasured` labels a part, never a whole row (dir #539,' "expected G5 to allow mixed units in the budget field"
+pin "dir #539: G5 gives the mixed-unit form" "$doc" \
+  '"≈1.2M subagent tokens + 2 waves × +15–30% window"' "expected G5 to show the mixed-unit form"
+pin "dir #539: G5 names the harness usage report as the harness's own, not shipped" "$doc" \
+  "keel ships no reader for it, it is the harness's own" "expected G5 to name the usage report without claiming keel ships it"
+pin "dir #539: G5 never lets a row collapse to unmeasured while a part was measured" "$doc" \
+  'while any part of it was measured' "expected G5 to forbid the whole-row default"
+pin "dir #539: G5 never converts or sums across units" "$doc" \
+  'Units are not converted into each other or summed' "expected G5 to keep one comparison per unit"
+pin "dir #539: G5 keeps a subagent token count apart from the weighted audit total" "$doc" \
+  'not the weighted total the audit-pricing rules above' "expected G5 to keep the two token notions apart"
+pin "dir #539: G5 keeps the figure measured, never invented" "$doc" \
+  'an absent source is `unmeasured`, never a zero or a guess' "expected G5 to bar a fabricated figure"
+pin "dir #539: G7 narrows the unmeasured default to a part nothing captured" "$doc" \
+  'Record the cost in the unit it was measured in (G5, R7); `unmeasured` marks only a' "expected G7 to narrow the unmeasured default"
+pin "dir #539: G7 bars the whole-row default while a source exists" "$doc" \
+  'part nothing captured, never the row'"'"'s default while any measured source exists' "expected G7 to bar the row-wide default"
+
+# dir #545: a SIZE target for a cut is size - what moves out + what the cut writes back (G5 value claim; G3 makes it derived).
+pin "dir #545: G5 derives a size target as size less what moves out plus what the cut writes back" "$doc" \
+  'is derived as the size, less what moves out, plus' "expected G5 to give the size-target formula"
+pin "dir #545: G5 forbids the subtraction alone" "$doc" \
+  'never as the subtraction alone (dir #545).**' "expected G5 to forbid size minus the moved section"
+pin "dir #545: G5 ties the size target to the subject-set rule and G3" "$doc" \
+  'instance of the subject-set rule above, a derived field under G3' "expected G5 to cite the sibling rule and G3 rather than restate G3"
+pin "dir #545: G5 records the measured miss" "$doc" \
+  '37,478 − 10,751 = 26,727 bytes' "expected G5 to carry the felt case's arithmetic"
+pin "dir #545: G5 records the shipped size" "$doc" \
+  'the shipped file was 30,429 bytes' "expected G5 to carry the shipped size"
+pin "dir #545: G5 names the add-backs on the row" "$doc" \
+  'the row names the add-backs by name' "expected G5 to require the add-backs listed by name"
+pin "dir #545: G5 makes the residue checkable" "$doc" \
+  'so the residue between the claim and the shipped size is checkable' "expected G5 to give the reason for naming the add-backs"
+
+# dir #553: the budget field's operator-step count and audit universe are derived by formulas (G5); R1's intake reads them.
+pin "dir #553: G5 names the two counts and the formula rule" "$doc" \
+  'The budget field'"'"'s two counts, operator steps and the audit universe, are derived by fixed formulas,' "expected G5 to derive the two counts by formula"
+pin "dir #553: G5 cites its ticket and incident" "$doc" \
+  'not judged (dir #553, reading an adopter'"'"'s 0.7.0 row).**' "expected G5 to cite dir #553"
+pin "dir #553: G5 adds no field" "$doc" \
+  'new fields: the mixed-unit rule above says how the field states its figures' "expected the counts to read as part of the budget field, not new fields"
+pin "dir #553: G5 derived under G3 without restating it" "$doc" \
+  'its counts are derived, and both counts are derived under G3.' "expected G5 to cite G3 rather than restate it"
+pin "dir #553: G5 operator-step formula" "$doc" \
+  '- **Operator steps** = the sum over classes of chip clicks (workers + fixer), merges (PRs +' "expected the operator-step formula"
+pin "dir #553: G5 each term follows from the slate" "$doc" \
+  'the slate'"'"'s own numbers (N workers, N clicks; N PRs, N merges), so it is counted, never guessed.' "expected the terms derived from the slate's numbers"
+pin "dir #553: G5 design-level steps on a separate line" "$doc" \
+  'Design-level steps (an account, a login, a decision) go on a separate line above the sum.' "expected design-level steps kept out of the sum"
+pin "dir #553: G5 a carried day-0 step is the three-way question" "$doc" \
+  'its class or on the design line; one carried undone is the three-way question below, and after' "expected the dir #535 seam"
+pin "dir #553: G5 audit-universe formula" "$doc" \
+  '- **Audit universe** = the code files the spec or the ticket bodies name + one test module per code' "expected the audit-universe formula"
+pin "dir #553: G5 fix-batch reserve" "$doc" \
+  'file + the prose files touched + a fix-batch reserve of about 30% of that subtotal.' "expected the fix-batch reserve"
+pin "dir #553: G5 priced at the nearest-sized run's per-file cost" "$doc" \
+  'priced at the per-file cost of the nearest-sized measured run (its audit total over its own universe,' "expected the per-file pricing"
+pin "dir #553: G5 cross-check, never a second line" "$doc" \
+  'cross-check on the line the two-part rule above produces, stated beside it and never a second line;' "expected the per-file price reconciled with the two-part rule"
+pin "dir #553: G5 R1 reads the same two counts" "$doc" \
+  'R1'"'"'s intake check reads the same two counts.' "expected G5 to point at R1"
+
+# dir #554: G5's design-economics report field carries two figures per spec and stays one field.
+pin "dir #554: G5 carries two figures per spec" "$doc" \
+  '**Design economics carries two figures per spec, because "accepted as first submitted" measures the' "expected G5 to name the two-figure rule"
+pin "dir #554: G5 accepted-without-return and the design-level count" "$doc" \
+  'spec: (1) accepted without return, yes or no; (2) the count of release-candidate-audit findings the' "expected G5 to list both figures"
+pin "dir #554: G5 reads the count from the row's field, never memory" "$doc" \
+  '`design-level findings, per spec` field ([`docs/delta-audit.md`](delta-audit.md) §8), mechanically,' "expected G5 to point at the row field in delta-audit section 8"
+pin "dir #554: G5 reads the Escapes line beside it" "$doc" \
+  'spec file, [`commands/go.md`](../commands/go.md)) is the implementation-time count of spec defects and' "expected G5 to read the escapes line beside the audit's"
+pin "dir #554: G5 judges the mechanism on the second figure" "$doc" \
+  'is read beside the audit'"'"'s. The judgment about the design-session mechanism is made on the second figure,' "expected G5 to move the judgment onto the second figure"
+pin "dir #554: G5 stays one report field" "$doc" \
+  'adds no field to the row.' "expected G5 to keep the field count"
+pin "dir #554: commands/groom.md carries the two figures in its design-economics line" "$cmd" \
+  "against two figures per spec: returned or not, and the audit's design-level findings" "expected the entrypoint to match G5's two figures"
+
+# dir #555: G0's adopter-side reading of 'apply amendments directly into the procedure doc'.
+pin "dir #555: G0 names the adopter-side reading and says doing both applies the amendment" "$doc" \
+  'has applied its amendment (dir #555).** The procedure docs live in the engine, a checkout of a foreign' "expected G0 to name the adopter-side reading"
+pin "dir #555: G0 says the practice settled across grooms and adopters" "$doc" \
+  'session is a cross-repository change the groom is not scoped to open. One practice settled across ten' "expected G0 to call nine-plus grooms a practice, not a deviation"
+pin "dir #555: G0 puts the project half in the adopter's own convention" "$doc" \
+  'grooms on two adopters, and it is the rule: the PROJECT half of an amendment goes into the adopter'"'"'s own' "expected G0 to place the project half in the adopter's convention"
+pin "dir #555: G0 files the generic half at the engine" "$doc" \
+  'convention, the procedure doc that adopter actually reads; the GENERIC half is filed at the engine as a' "expected G0 to file the generic half at the engine"
+pin "dir #555: G0 cites the project incident in the engine ticket" "$doc" \
+  'ticket citing the project incident. A groom that does both has applied its amendment, and records the' "expected G0 to require the project incident in the ticket"
+pin "dir #555: G0 keeps the direct landing where the engine is the project" "$doc" \
+  'Where the engine is the project' "expected G0 to keep the direct landing for the engine's own grooms"
+
+# dir #563: G2 reads the artifact before any record about it; G9 keeps the tag namespace a version and aligns a binary's version string.
+pin "dir #563: G2 reads the artifact itself before any record about it" "$doc" \
+  'string, a deployed config), the artifact itself, read with a tool, before any record about it. A' "expected G2 to put the artifact before the records"
+pin "dir #563: G2 says records can agree and be wrong together" "$doc" \
+  'all carry the same misreading of one string and agree with each other perfectly: in a downstream' "expected G2 to name the shared-misreading failure"
+pin "dir #563: G2 records the incident outcome" "$doc" \
+  'identifier. Four sources, one artifact, the artifact won. Records tell you where to look; they are' "expected G2 to carry the incident's outcome"
+pin "dir #563: G2 says records are not the check" "$doc" \
+  'not the check. The plan states the diff'"'"'s numbers and the rule applied, so a reader can tell a' "expected G2 to say a record is not the check"
+pin "dir #563: G2 asks an operator-only premise in the same sitting" "$doc" \
+  "G0's list of operator decisions (second flavour) is also where a premise only the operator can confirm" "expected G2 to route an operator-only premise to G0's decisions list"
+pin "dir #563: G2 keeps archived bodies verbatim" "$doc" \
+  'an argument for keeping archived bodies verbatim rather than summarised.' "expected G2 to argue for verbatim archive bodies"
+pin "dir #563: G9 makes the tag namespace a version even without tags" "$doc" \
+  'The tag namespace is a version (`0.N.0`), also on a project that has never tagged and runs no release' "expected G9 to keep the tag namespace a version"
+pin "dir #563: G9 calls a sprint label a second convention" "$doc" \
+  'manager: a sprint label (`S1`, `S2`) is not a scoped-down version, it is a second convention that the' "expected G9 to refuse sprint labels"
+pin "dir #563: G9 starts a shipped binary's first release at its version string" "$doc" \
+  'first release is aligning the binary'"'"'s own version string with the plan, and the groom reads that' "expected G9 to align the binary's version string first"
+check_absent "dir #563: the doc names no other adopter project by name (sidecast)" "$(flatten_ws < "$doc")" 'sidecast'
+check_absent "dir #563: the doc names no other adopter project by name (traverse)" "$(flatten_ws < "$doc")" 'traverse'
+check_absent "dir #563: the doc cites no other project's ticket id" "$(flatten_ws < "$doc")" 'B.13'
+
 summary

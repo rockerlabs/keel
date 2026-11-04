@@ -450,4 +450,14 @@ pin "dir #544: section 2 item 4 makes a missing line an open finding" "$doc" 'A 
   "expected section 2 item 4 to catch a missing line"
 check_contains "S-final prompt: a run record with no Non-git inputs line is an open finding (dir #544)" "$sfinal_flat" 'a run record with no such line is an open finding'
 
+# dir #554: section 8 names the design-level attribution as a field of the cross-run row, so a groom can extract it.
+pin "dir #554: section 8 names the design-level attribution as a row field" "$doc" \
+  '**The row also carries the design-level attribution as a field of its own (dir #554).** The' "expected section 8 to name the field"
+pin "dir #554: section 8 says what the upstream gate cell names" "$doc" \
+  'level that gate sat at: the spec'"'"'s design, the boundary between spec and implementation, or the' "expected section 8 to give the levels"
+pin "dir #554: section 8 counts from the cell, never memory" "$doc" \
+  'cell entry says the design, by spec, counted from that cell and never from memory, with the boundary ones' "expected section 8 to bar a count from memory"
+pin "dir #554: section 8 points at G5's design economics" "$doc" \
+  'listed beside it and not added. [`docs/grooming.md`](grooming.md) G5'"'"'s design economics reads that field:' "expected section 8 to name its reader"
+
 summary

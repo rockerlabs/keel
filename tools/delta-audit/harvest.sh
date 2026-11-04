@@ -8,7 +8,7 @@
 # result, new classes vs instances, upstream gate) that `docs/verification-economics.md` §9 defines as
 # judgement calls, not facts a script can read off a file.
 #
-# Why only three rows, not all eleven (the ticket's own gate, re-read at implementation time):
+# Why only three rows, not all twelve (the ticket's own gate, re-read at implementation time):
 #   - `scope`        already mechanical — `derive.sh` fills it at emission time from
 #                     delta-files.txt/file-pr-map.tsv. Nothing here to add.
 #   - `records`      a directory listing. Mechanical, filled here.

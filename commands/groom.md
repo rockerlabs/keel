@@ -72,7 +72,8 @@ limit is a subscription window, also in window points quoted as the gauge's live
 the date the window, or the plan that sizes it, ends; the audit line the previous audit's fixed part
 plus its per-ticket part times the slate's tickets), and
 a value claim stated plainly enough to be wrong in public. Design economics (design-session cost
-against spec-return rate) is a report field, not a role — record it, judge it next cycle. Every row also
+against two figures per spec: returned or not, and the audit's design-level findings) is a report
+field, not a role — record it, judge it next cycle. Every row also
 reports its decay-exposed share, the slate's tickets marked `[model-decay]` over the slate's size,
 derived by counting the ticket numbers each census call prints (keel's own: `backlog-census.sh --list <tag> --decay`
 against `backlog-census.sh --list <tag>`; a "skipped" line is no count).
@@ -86,7 +87,7 @@ one of its findings against the live file before accepting it. Do not skip this 
 **G7 — the releases cross-run record.**
 Append this cycle's row to the project's releases cross-run record (keel: `private/releases/RUNS.md`,
 same genre as `private/audit/RUNS.md` — header on comparability, one row per release: slate size, PRs,
-sessions, cost line, findings filed; `unmeasured` where the cost was never captured, never a fabricated
+sessions, cost line, findings filed; `unmeasured` for a part nothing captured, in the unit it was measured in, never a fabricated
 zero).
 
 **G8 — cadence-bound, never a daemon.**
