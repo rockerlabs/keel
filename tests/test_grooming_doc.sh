@@ -338,4 +338,32 @@ pin "dir #472: G6 has the reviewer check the row's arithmetic against the file" 
 pin "dir #472: G7 points the row draft back at G6" "$doc" \
   'drafted before the G6 round (dir #472)' "expected G7 to place the row draft before the G6 round"
 
+# dir #530: G6 records the two-vendor variant as an option, its three rails, the one-writer rule and two opposite data points.
+pin "dir #530: G6 states the two-vendor variant is an option, not a default" "$doc" \
+  'The two-vendor variant is an option, not a default (dir #530).' "expected G6 to keep the second vendor an operator-requested option"
+pin "dir #530: G6 names the vendor-billed cost and the bundle leaving the machine" "$doc" \
+  'a vendor round is vendor-billed and its bundle leaves the machine' "expected G6 to give the reason it is not a default"
+pin "dir #530: G6 points the recipe at the project's cross-vendor harness, not a path" "$doc" \
+  'cross-vendor harness; three rails hold' "expected G6 to name the harness generically"
+pin "dir #530: G6 rail: bundle within the vendor's inline cap" "$doc" \
+  "the bundle fits the vendor's inline cap" "expected the first of the recipe's three rails"
+pin "dir #530: G6 rail: paths anonymized" "$doc" \
+  'paths are anonymized' "expected the second of the recipe's three rails"
+pin "dir #530: G6 rail: the leak gate runs over the bundle before it ships" "$doc" \
+  'tools/secret-guard/secret-scan.sh -- <bundle>' "expected the third rail to name the scan command"
+pin "dir #530: G6 one writer per round directory" "$doc" \
+  '**One writer per round directory (dir #520).**' "expected the one-writer rule and its incident class"
+pin "dir #530: G6 records the overwrite incident" "$doc" \
+  'the relaunch overwrote the first run'"'"'s reply' "expected the incident that taught the rule"
+pin "dir #530: G6 first data point: the second leg found text-level defects" "$doc" \
+  'the second leg alone found two text-level defects' "expected the first data point"
+pin "dir #530: G6 second data point: the second leg's accepted set was a subset" "$doc" \
+  "the second leg's accepted findings were a strict subset of the first's" "expected the second data point"
+pin "dir #530: G6 the second leg's value depends on the defect class" "$doc" \
+  "the second leg's value depends on the defect class" "expected the non-complementarity statement"
+pin "dir #530: G6 does not promote the variant on two runs" "$doc" \
+  'Two runs do not make a pattern' "expected G6 to hold the option an option"
+check_absent "dir #530: G6 no longer says the vendor round found more both times" "$(flatten_ws < "$doc")" 'had not, both times'
+check_absent "dir #530: the doc cites no gitignored record for the two-vendor split" "$(flatten_ws < "$doc")" 'cut-readiness section'
+
 summary
