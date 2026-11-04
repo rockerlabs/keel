@@ -344,7 +344,7 @@ pin "dir #530: G6 states the two-vendor variant is an option, not a default" "$d
 pin "dir #530: G6 names the vendor-billed cost and the bundle leaving the machine" "$doc" \
   'a vendor round is vendor-billed and its bundle leaves the machine' "expected G6 to give the reason it is not a default"
 pin "dir #530: G6 points the recipe at the project's cross-vendor harness, not a path" "$doc" \
-  "the project's cross-vendor harness" "expected G6 to name the harness generically"
+  'cross-vendor harness; three rails hold' "expected G6 to name the harness generically"
 pin "dir #530: G6 rail: bundle within the vendor's inline cap" "$doc" \
   "the bundle fits the vendor's inline cap" "expected the first of the recipe's three rails"
 pin "dir #530: G6 rail: paths anonymized" "$doc" \
@@ -354,7 +354,7 @@ pin "dir #530: G6 rail: the leak gate runs over the bundle before it ships" "$do
 pin "dir #530: G6 one writer per round directory" "$doc" \
   '**One writer per round directory (dir #520).**' "expected the one-writer rule and its incident class"
 pin "dir #530: G6 records the overwrite incident" "$doc" \
-  "overwrote the first run's reply mid-flight" "expected the incident that taught the rule"
+  'the relaunch overwrote the first run'"'"'s reply' "expected the incident that taught the rule"
 pin "dir #530: G6 first data point: the second leg found text-level defects" "$doc" \
   'the second leg alone found two text-level defects' "expected the first data point"
 pin "dir #530: G6 second data point: the second leg's accepted set was a subset" "$doc" \
@@ -362,7 +362,7 @@ pin "dir #530: G6 second data point: the second leg's accepted set was a subset"
 pin "dir #530: G6 the second leg's value depends on the defect class" "$doc" \
   "the second leg's value depends on the defect class" "expected the non-complementarity statement"
 pin "dir #530: G6 does not promote the variant on two runs" "$doc" \
-  'two runs do not make it a default' "expected G6 to hold the option an option"
+  'Two runs do not make a pattern' "expected G6 to hold the option an option"
 check_absent "dir #530: G6 no longer says the vendor round found more both times" "$(flatten_ws < "$doc")" 'had not, both times'
 check_absent "dir #530: the doc cites no gitignored record for the two-vendor split" "$(flatten_ws < "$doc")" 'cut-readiness section'
 
