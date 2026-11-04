@@ -19,7 +19,8 @@ whatever the backlog's open, undecided slate needs next.
 **G0 — retro first.**
 Read the previous cycle's records before touching the plan: the releases cross-run record, the audits'
 cross-run record rows, the previous release manager's own release-record paragraph, and every ticket
-the previous cycle's managers filed. Where the project's read-trace aggregate exists (keel: `dir #387`),
+the previous cycle's managers filed, and on an infrastructure project the previous row's meta-share reading
+([grooming.md](../docs/grooming.md) G7). Where the project's read-trace aggregate exists (keel: `dir #387`),
 it supplies a dead-doc signal and a wrap-loss-scale signal too — consume by pointing at the tool that
 produces it, never by citing its internal format; skip both in one line where the mechanism doesn't
 exist on this project. Produce 2-3 process amendments and APPLY them directly into the procedure doc each corrects
@@ -87,7 +88,8 @@ one of its findings against the live file before accepting it. Do not skip this 
 **G7 — the releases cross-run record.**
 Append this cycle's row to the project's releases cross-run record (keel: `private/releases/RUNS.md`,
 same genre as `private/audit/RUNS.md` — header on comparability, one row per release: slate size, PRs,
-sessions, cost line, findings filed; `unmeasured` for a part nothing captured, in the unit it was measured in, never a fabricated
+sessions, cost line, findings filed, and on an infrastructure project the meta-share field
+([grooming.md](../docs/grooming.md) G7); `unmeasured` for a part nothing captured, in the unit it was measured in, never a fabricated
 zero).
 
 **G8 — cadence-bound, never a daemon.**

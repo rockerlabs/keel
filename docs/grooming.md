@@ -34,10 +34,14 @@ round. What follows is the procedure extracted from those two runs, not a specif
 ## G0 — retro first
 
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
-the audits' cross-run record rows, the release record a manager writes at close (keel's own instance is
-the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries — a project without a ticket
-record of its own writes the equivalent wherever its release-manager procedure lands it), and every
-ticket filed by the previous cycle's managers. A cycle built ticket by ticket with no manager has no
+the audits' cross-run record rows, the meta-share reading on the previous row (G7; an infrastructure
+project only: the previous row's reading and this groom's own, both above the project's threshold,
+restrict the release this groom plans, so this groom reads the previous value and computes its own
+reading here too, before the plan is cut, and writes it into the row when G7 opens the row), the
+release record a manager writes at close (keel's own instance is the FINAL NUMBERS paragraph its
+`dir #367`-style ticket record carries — a project without a ticket record of its own writes the
+equivalent wherever its release-manager procedure lands it), and every ticket filed by the previous
+cycle's managers. A cycle built ticket by ticket with no manager has no
 such record; its records are wherever its closing step wrote them (keel's 0.13.0: the audit
 orchestrator completed the release row at the tag, and its filings are that cycle's filings). Where
 the project's read-trace aggregate exists (keel: `dir #387`), it supplies two more G0 inputs — a
@@ -909,11 +913,33 @@ Audits already have a cross-run record; releases, until this doc, had none — a
 cost-line requirement said "append it to the run's record" without ever naming one. Keel's instance is
 `private/releases/RUNS.md`, the same genre as `private/audit/RUNS.md`: a header stating what is and is
 not comparable across runs of different scale, then one row per release carrying slate size, PR count,
-session count, a cost line, and the count of findings filed.
+session count, a cost line, and the count of findings filed — plus, for a project that is
+infrastructure for other projects and only for such a project, the meta share since the previous
+groom with its ledger colour (the paragraph below).
 Record the cost in the unit it was measured in (G5, R7); `unmeasured` marks only a
 part nothing captured, never the row's default while any measured source exists, and
 never a fabricated zero. A different project names its own per-project location here — G9 states the
 portability rule this follows.
+
+**The meta-share field — for a project that is infrastructure for other projects, and only for it.**
+Such a project's own commits can grow to outweigh the commits of the projects it exists to serve, and
+no other field of the row shows it. Its row carries one more field: the meta share since the previous
+groom — the percentage of all counted commits that landed in the project's own repositories rather
+than in the projects it serves — and the ledger colour that share earns against the project's
+threshold: green at or under it, red above it. This is the net-negative ledger of
+[`PRINCIPLES.md`](../PRINCIPLES.md) with a real denominator. Compute it with
+`tools/effort-share.sh --meta <repos> --product <repos> --since <date>`, the previous groom's date or a
+ref that every listed repository holds (a ref missing from one repository is refused): the groom
+passes both repository lists, and the tool hard-codes none. Its `--help` states the one counting
+definition and the honest limit — commits are a proxy for effort, and commit granularity differs
+across projects — so read the share as a trend counted the same way each groom. A reading with no
+commits at all is `n/a` and takes no colour. A project that is not infrastructure for others leaves
+the field out. The threshold is set by the project, never by this doc; the threshold and both
+repository lists are stated in the header of the cross-run record. **Two consecutive readings
+above the threshold — the previous row's and this groom's own — restrict the release this groom
+plans:** it takes only rows that meet one of conditions 1 to 4 of the filing bar
+([`docs/verification-economics.md`](verification-economics.md) §4), so no capability row that clears
+only condition 5 (requested) enters it.
 
 **A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
 This section is written in the unit "one row per
@@ -922,7 +948,8 @@ adopter commits directly to master, has no tags, no CI and no release event, so 
 produces no record at all — the procedure's one durable output silently skipped on exactly the kind of
 project G9 exists to serve. **The unit is therefore the cycle, not the release: where a project has
 releases, one row per release; where it does not, one row per groom.** The fields survive the
-substitution unchanged (slate size, sessions, cost line, findings filed, the G6 round's result), and
+substitution unchanged (slate size, sessions, cost line, findings filed, the G6 round's result, and
+for an infrastructure project the meta share and ledger colour), and
 the one that does not — PR count — is recorded as whatever the project's own delivery unit is, or
 omitted with a reason. This matters more than bookkeeping: G0 opens by reading "the previous cycle's
 records", so a project that never writes one can never run G0, and every groom there is permanently a
