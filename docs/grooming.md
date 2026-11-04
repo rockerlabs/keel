@@ -739,12 +739,13 @@ writes.
 **The run record is inside the round, not after it (dir #472).** The G7 row is the one artifact of the procedure that
 nothing else reviews, and the next G0 reads it as fact. So the row for this groom
 is drafted before the reviewer is handed the material, and it goes into the round with the plan, never after the last
-round. The reviewer is told to check the row's arithmetic against the file, like any
-other count: every number against the list or range printed beside it, every "the Nth" against the values quoted,
-and every measurement against a reading taken after the last write. Hermes' 2026-09-10 groom found three of six
-second-round findings inside its own record (a "8" beside nine ids, "17 tickets" over an eighteen-id range, a curve
-of six values called seven). That costs one reordering, not another round; a rule that says "check your own
-numbers" does not hold, and the same record had already carried a rule against stale measurements.
+round. The reviewer is told to check the row's arithmetic against the file, like any other count: every number against
+the list or range printed beside it, every "the Nth" against the values quoted, and every measurement against a
+reading taken after the last write. The one cell that cannot be drafted first, the round's own result, is written
+from the reviewer's return and recounted against it. Hermes' 2026-09-10 groom found three of six second-round
+findings inside its own record (a "8" beside nine ids, "17 tickets" over an eighteen-id range, a curve of six values
+called seven). That costs one reordering, not another round; a rule that says "check your own numbers" does not hold,
+and the same record had already carried a rule against stale measurements.
 
 **Optional second axis, same round: a genuinely different model vendor, not just a fresh context
 window.** [`docs/vendor-review.md`](vendor-review.md) ships the tool — a leak-gated bundle of the
