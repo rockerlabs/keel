@@ -417,7 +417,13 @@ case "${1:-}" in
     # --wrap must come FIRST (`docs-line --wrap [dir]`), matching commands/wrap.md's own only call
     # shape (`docs-line --wrap`, no dir) — /simplify found the original either-position parser had no
     # real caller for the flag-last shape, just a test exercising flexibility nothing shipped needs.
-    if [ "${2:-}" = "--wrap" ]; then dl_dir="${3:-.}"; _rt_stamp_wrap_done "$dl_dir"; else dl_dir="${2:-.}"; fi
+    if [ "${2:-}" = "--wrap" ]; then
+      dl_dir="${3:-.}"
+      # dir #620: the report line below stays (and the exit stays 0 — its caller is /wrap's persist step),
+      # but a stamp that could not be written is said on stderr instead of vanishing.
+      _rt_stamp_wrap_done "$dl_dir" || printf 'read-trace: could not record wrap completion for %s (marker not written under %s)\n' \
+        "$(_rt_key "$dl_dir")" "$(_rt_tmpdir)" >&2
+    else dl_dir="${2:-.}"; fi
     dl_slog="$(_rt_session_log "$dl_dir")"
     dl_rows=""
     [ -f "$dl_slog" ] && dl_rows="$(awk -F'\t' '$2=="read"{print $3}' "$dl_slog" 2>/dev/null | LC_ALL=C sort -u)"
@@ -436,9 +442,16 @@ case "${1:-}" in
     # folds the same stamp into `docs-line --wrap`, above), but this subcommand stays for a manual
     # stamp or a composing wrapper that hasn't picked up the fold yet.
     wd_dir="${2:-.}"
-    _rt_stamp_wrap_done "$wd_dir"
-    printf 'read-trace: wrap completion recorded for %s\n' "$(_rt_key "$wd_dir")"
-    exit 0
+    # dir #620: the success line is printed only when the stamp was written. A failed write (an
+    # unwritable or non-directory $TMPDIR) is reported on stderr and exits 1 — this subcommand has no
+    # other non-zero convention, so the generic failure status is used.
+    if _rt_stamp_wrap_done "$wd_dir"; then
+      printf 'read-trace: wrap completion recorded for %s\n' "$(_rt_key "$wd_dir")"
+      exit 0
+    fi
+    printf 'read-trace: could not record wrap completion for %s (marker not written under %s)\n' \
+      "$(_rt_key "$wd_dir")" "$(_rt_tmpdir)" >&2
+    exit 1
     ;;
 
   aggregate)
