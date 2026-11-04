@@ -411,13 +411,14 @@ claim from the new list in the same edit, and strikes the old claim (~~struck th
 replacing it silently, so a later reader sees the correction happened. An understated claim fails silently: a
 release can satisfy it while a promised stage was never built.
 
-The rule is general: **every field of a release row is derived at groom time from the commit being
-planned from** — none is copied forward as a fact wearing the date it was true. The value claim above
-and the row's **size measurement** (lines of code and prose, test count) are the two instances already
-paid for. A measurement is retaken at that commit at every groom; the old figure is struck and kept with
-its date, not replaced silently. A size estimate that a release has invalidated does not look stale, it
-looks measured (dir #471: one release grew a row's measured universe by 48% of code and 26% of prose).
-When a new prose field is found, it falls under this rule; it needs no rule of its own.
+The rule is general: **every field of a release row that states a fact about the tree or the slate is
+derived at groom time from the commit being planned from**, and the pain stays the operator's (G1) —
+none is copied forward as a fact wearing the date it was true. The value claim above and the row's
+**size measurement** (lines of code and prose, test count) are the two instances already paid for.
+A measurement is retaken at that commit at every groom; the old figure is struck and kept with its date,
+not replaced silently. A size estimate that a release has invalidated does not look stale, it looks
+measured (dir #471: one release grew a row's measured universe by 48% of code and 26% of prose). When a
+new prose field that states a fact is found, it falls under this rule and needs no rule of its own.
 
 A heading's release tag is the **last** `→` token on the heading that names a release or the pool —
 headings carry prose arrows too ("→ ask", "→ contest with dir #N", "→ a release of its own"), and an
@@ -560,7 +561,8 @@ needs. Two more, sized from
 what a project's own cost-measurement work has already put on disk (where that work exists — see
 `dir #313` for keel's own instance): a rough **budget estimate** for the release, and its **value
 claim** stated plainly enough to be wrong in public. The claim is derived from the row's current
-ticket/stage list, and the size measurement is retaken at the planned-from commit — not authored (G3). Design economics — the cost of the cycle's design
+ticket/stage list, and the size measurement is retaken from the planned-from commit; neither is
+authored (G3). Design economics — the cost of the cycle's design
 sessions against how often a spec is accepted as first submitted — is a **report field**, not a new
 role of its own: record the data every cycle; the judgment about what it means is a later cycle's to
 make once more than one data point exists. **The design-session flow produces no cost figure yet**,
