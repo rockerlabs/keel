@@ -624,4 +624,28 @@ pin "dir #544: R11 sweep re-reads the Non-git inputs list before each merge" "$d
 pin "dir #544: R9 points at the five-part shape above it, not below" "$doc" \
   '(#the-worker-brief--one-shape-whether-launched-or-handed-over), above this rule' "expected R9 to point back at The worker brief"
 
+# dir #648: a build worker's chip is /go <N> plus an overlay; facts go in the ticket; the live-experiment rail survives the trim.
+pin "dir #648: a build worker's chip is /go <N> plus an overlay" "$doc" \
+  "A build worker's chip is \`/go <N>\` plus an overlay, never a re-written brief (dir #648)." "expected the chip statement"
+pin "dir #648: manager facts and corrections go into the ticket as dated Log: lines" "$doc" \
+  "go into the ticket as dated \`Log:\` lines" "expected the Log-lines clause"
+pin "dir #648: the overlay carries only what /go cannot know" "$doc" \
+  "The overlay carries only what \`/go\` cannot know:" "expected the overlay-contents clause"
+pin "dir #648: the overlay carries the live-experiment rail by pointer" "$doc" \
+  "live experiments only in a scratch clone under a sandboxed tmpdir, never the real checkout" "expected the live-experiment rail"
+pin "dir #648: a correction in flight means do not merge #N yet" "$doc" \
+  "it tells the operator \`do not merge #N yet\`" "expected the R9/merge hand-off clause"
+pin "dir #648: the overlay lists identity, reporting, deferred steps, siblings, bounds" "$doc" \
+  "the worker's identity and token, reporting and the freeze, the" "expected the overlay-contents list"
+pin "dir #648: the overlay carries item 4's rails in item 4's own wording" "$doc" \
+  "in item 4's own wording," "expected the rails clause"
+pin "dir #648: the overlay carries the one-test-device and WRAP CENTRALIZED rails" "$doc" \
+  'the R13 `WRAP CENTRALIZED` marker, and the one-test-device rule where it applies' "expected the rail list"
+pin "dir #648: a hold is lifted only by the manager naming the new head sha" "$doc" \
+  "never by a worker's \"finished\"" "expected the lift clause"
+pin "dir #648: manage-release.md points at the chip rule and the hold" "$cmd" \
+  "A correction sent to a worker on an open PR means telling the operator \`do not merge #N yet\`" "expected the entrypoint to point at the hold"
+pin "dir #648: manage-release.md points at the Log: lines rule" "$cmd" \
+  "go into the ticket as dated \`Log:\` lines" "expected the entrypoint to point at the Log rule"
+
 summary
