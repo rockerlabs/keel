@@ -507,11 +507,10 @@ the working directory carries no backup contour.
    of asking, since a quoted figure can be far off the real one. Where the harness exposes nothing,
    this is a number only the human can supply. The weekly window is shared by every session on the
    account, so a pilot's delta measured while other work drew on it is inflated (a downstream project
-   measured ×2.4): pilot when little else is running, or discount the delta. **Named override (`dir #385`'s A3 amendment, `docs/delta-audit.md`
-   §7):** a delta audit reads the token-SPEND side of this from its own project's on-disk usage data
-   where that exists, and asks the operator only for the remaining-WINDOW figure this step still can't
-   derive — never a silent contradiction between the two docs, this step's own "ask" stays the fallback
-   for what isn't derivable.
+   measured ×2.4): pilot when little else is running, or discount the delta. **Named override (`dir #385`'s A3 amendment, in
+   `commands/delta-audit.md`):** a delta audit reads the token-SPEND side of this from its own
+   project's on-disk usage data where that exists, and takes the remaining-WINDOW figure by this
+   step's own rule above — never a silent contradiction between the two docs.
 2. **Budget the wave** as remaining minus roughly 5%, held back as the orchestrator's own reserve — it
    still has to arbitrate and record after the wave lands.
 3. **Pilot two units spanning the cost envelope, and pilot on a work-dense unit, not just a big one.**
