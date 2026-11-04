@@ -1357,7 +1357,7 @@ do
   check_contains "...naming the retired comma set as the cause, not the depth" "$OUT" "no longer a valid shape"
   check_contains "...and pointing at a stale-copy fix that does not route through install.sh's prompt" "$OUT" "copy the shipped file over your own"
   check_contains "dir #670: ...which names the guide in the same hand-copy" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
-  check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
+  check_contains "...and states a bare install.sh re-run is NOT a reliable refresh, and why (dir #330)" "$OUT" "re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no"
   # Cross-family: this must NOT be the generic depth-mismatch message. Pins the two denies apart, so a
   # future edit that lets one route swallow the other is caught — including the double-`deny`
   # fall-through shape (two JSON objects, last-key-wins) that the gate's own dir #96 rail forbids and
@@ -1989,7 +1989,7 @@ assert_chain_intact "review-dialog-missing" "$d"
 # under the bare-marker leg — and, like that deny, never spells the marker itself.
 check_contains "dir #319: review-dialog-missing names the hand-copy fix" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
 check_contains "dir #319: ...and the guide in the same hand-copy" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
-check_absent "dir #319: ...and never prescribes a bare install.sh re-run" "$OUT" "re-run install.sh"
+check_contains "dir #330: ...and states a bare install.sh re-run is NOT a reliable refresh, and why" "$OUT" "re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no"
 check_absent "dir #319: ...and the deny never spells the marker" "$OUT" "KEEL-REVIEW-DIALOG"
 # 95d's mirror for this deny: feed it through the review leg, ANSWERED — it must mint no dialog:review.
 deny_out="$OUT"    # capture before the trace call below overwrites $OUT
@@ -2590,7 +2590,7 @@ check_contains "dir #96: the deny names the stale-polish.md cause" "$OUT" "an ol
 # the adopter's and is never offered again). Flipped deliberately, not mechanically.
 check_contains "dir #96: ...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
 check_contains "dir #670: ...and names the guide in the same hand-copy (the core points at it)" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
-check_absent "dir #96: ...so it never prescribes a bare install.sh re-run" "$OUT" "re-run install.sh"
+check_contains "dir #330: ...and states a bare install.sh re-run is NOT a reliable refresh, and why" "$OUT" "re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no"
 
 # 86. dir #96: `--recover` must never clobber a receipt this run already wrote. Recovery appends and the
 # parser takes the last write per step id, so before this guard a value the session had deliberately
@@ -3128,7 +3128,7 @@ check_contains "dir #116: ...for the missing step-4 skip dialog" "$OUT" "no step
 check_contains "...and points at the hand-copy fix, not install.sh" "$OUT" "cp <keel-checkout>/commands/polish.md <your-home>/commands/polish.md"
 check_contains "dir #670: ...and names the guide in the same hand-copy (the core points at it)" "$OUT" "cp <keel-checkout>/commands/polish-guide.md <your-home>/commands/polish-guide.md"
 check_contains "dir #670: ...and names the guide section that now holds step 4 in full" "$OUT" "polish-guide.md § Step 4"
-check_absent "...so it never prescribes a bare install.sh re-run, which does not update a drifted file" "$OUT" "re-run install.sh"
+check_contains "...and states a bare install.sh re-run is NOT a reliable refresh, and why (dir #330)" "$OUT" "re-running install.sh is not a reliable refresh: it offers only from a terminal, defaults to no"
 
 # 95. dir #116: ARMED, the reproduction from the ticket must not reach allow. Round 1 sizes a trivial
 # diff `skip` with an answered skip dialog and passes; a substantial commit lands (HEAD moves); the
