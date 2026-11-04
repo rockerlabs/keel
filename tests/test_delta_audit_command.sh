@@ -78,7 +78,7 @@ pin "dir #607: A3 reads the window where the harness exposes it" "$skill" \
 
 # --- dir #624: the override delegation.md names lives in the command's A3, not in a doc section -------
 pin "dir #624: delegation.md points the named override at commands/delta-audit.md" "$delegation" \
-  '   `commands/delta-audit.md`):** a delta audit reads the token-SPEND side of this from its own' \
+  'in `commands/delta-audit.md`):** a delta audit reads' \
   "expected the named-override clause to cite the file that carries the override"
 check_absent "dir #624: delegation.md no longer cites a section of docs/delta-audit.md for the override" \
   "$(tr '\n' ' ' < "$delegation" | tr -s ' ')" '`docs/delta-audit.md` §7):'

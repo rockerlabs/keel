@@ -1,1 +1,7 @@
-- The session-limit flow now reads the remaining-window percentage where the harness exposes it, and asks the operator only where it does not (dir #607). Step 1 of the flow in `docs/delegation.md` said the agent cannot see the window, which is false on a harness with a usage report (`get_usage` is one example) and led a release manager to ask for a figure it could read. The step also says the weekly window is shared by every session on the account, so a pilot's delta measured during other work is inflated. The same wording is fixed in the release-management doc's token-budget check, `docs/drydock.md`, `docs/delta-audit.md` and `commands/delta-audit.md`, and pinned in each doc's test.
+- The session-limit flow now reads the remaining-window percentage where the harness exposes it, and asks the
+  operator only where it does not (dir #607). Step 1 of the flow in `docs/delegation.md` said the agent cannot see
+  the window, which is false on a harness with a usage report (`get_usage` is one example) and led a release
+  manager to ask for a figure it could read. The step also says the weekly window is shared by every session on
+  the account, so a pilot's delta measured during other work is inflated. The same wording is fixed in the
+  release-management doc's token-budget check, `docs/drydock.md`, `docs/delta-audit.md` and
+  `commands/delta-audit.md`, and pinned in each doc's test.

@@ -238,6 +238,10 @@ pin "dir #607: delegation.md step 1 names get_usage as an example usage report" 
   'a usage report such as `get_usage` returns the' "expected step 1 to name get_usage as an example"
 pin "dir #607: delegation.md step 1 says the weekly window is shared" "$doc" \
   'The weekly window is shared by every session on the' "expected step 1 to warn that concurrent sessions inflate a pilot's delta"
+pin "dir #607: delegation.md labels the flow read-then-arithmetic" "$doc" \
+  '**The session-limit flow**, read-then-arithmetic, run before every wave:' "expected the flow's label to match its read-first step 1"
+check_absent "dir #607: delegation.md no longer labels the flow ask-then-arithmetic" \
+  "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'ask-then-arithmetic'
 check_absent "dir #607: delegation.md no longer says the agent cannot see the window" \
   "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'The agent cannot see it'
 
