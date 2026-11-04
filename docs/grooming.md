@@ -257,6 +257,17 @@ being reusable the moment a second run's lessons don't fit it. A retro that writ
 into a chat message or a ticket body has produced nothing a later cycle can find; the amendment is the
 deliverable, not a description of one.
 
+**On an adopter, the procedure doc an amendment corrects has two readings, and a groom that does both
+has applied its amendment (dir #555).** The procedure docs live in the engine, a checkout of a foreign
+repository with its own PR gate, tests and release cadence, so editing one in place from the adopter's
+session is a cross-repository change the groom is not scoped to open. One practice settled across ten
+grooms on two adopters, and it is the rule: the PROJECT half of an amendment goes into the adopter's own
+convention, the procedure doc that adopter actually reads; the GENERIC half is filed at the engine as a
+ticket citing the project incident. A groom that does both has applied its amendment, and records the
+split as the practice rather than as a deviation to apologise for. A generic half left only in the
+adopter's convention has produced nothing a second adopter can find. Where the engine is the project
+itself, the amendment lands directly, as above.
+
 **The just-closed audit run's harvest confirmation happens here too.** This is G4(c) below, restated in
 this phase because a doc author compressing G0 from a shorter read of this section alone must not drop
 it: confirm that the just-closed delta-audit run's `no-action` leads and findings were harvested onto

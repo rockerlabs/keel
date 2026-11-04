@@ -462,4 +462,18 @@ pin "dir #554: G5 stays one report field" "$doc" \
 pin "dir #554: commands/groom.md carries the two figures in its design-economics line" "$cmd" \
   "against two figures per spec: returned or not, and the audit's design-level findings" "expected the entrypoint to match G5's two figures"
 
+# dir #555: G0's adopter-side reading of 'apply amendments directly into the procedure doc'.
+pin "dir #555: G0 names the adopter-side reading and says doing both applies the amendment" "$doc" \
+  'has applied its amendment (dir #555).** The procedure docs live in the engine, a checkout of a foreign' "expected G0 to name the adopter-side reading"
+pin "dir #555: G0 says the practice settled across grooms and adopters" "$doc" \
+  'session is a cross-repository change the groom is not scoped to open. One practice settled across ten' "expected G0 to call nine-plus grooms a practice, not a deviation"
+pin "dir #555: G0 puts the project half in the adopter's own convention" "$doc" \
+  'grooms on two adopters, and it is the rule: the PROJECT half of an amendment goes into the adopter'"'"'s own' "expected G0 to place the project half in the adopter's convention"
+pin "dir #555: G0 files the generic half at the engine" "$doc" \
+  'convention, the procedure doc that adopter actually reads; the GENERIC half is filed at the engine as a' "expected G0 to file the generic half at the engine"
+pin "dir #555: G0 cites the project incident in the engine ticket" "$doc" \
+  'ticket citing the project incident. A groom that does both has applied its amendment, and records the' "expected G0 to require the project incident in the ticket"
+pin "dir #555: G0 keeps the direct landing where the engine is the project" "$doc" \
+  'Where the engine is the project' "expected G0 to keep the direct landing for the engine's own grooms"
+
 summary
