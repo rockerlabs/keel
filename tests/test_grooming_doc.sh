@@ -366,4 +366,20 @@ pin "dir #530: G6 does not promote the variant on two runs" "$doc" \
 check_absent "dir #530: G6 no longer says the vendor round found more both times" "$(flatten_ws < "$doc")" 'had not, both times'
 check_absent "dir #530: the doc cites no gitignored record for the two-vendor split" "$(flatten_ws < "$doc")" 'cut-readiness section'
 
+# dir #535: an operator day-0 step carried undone across two consecutive grooms is re-asked as a three-way question.
+pin "dir #535: G5 names the rule and forbids a third listing" "$doc" \
+  'never listed a third time (dir #535).**' "expected G5 to carry the day-0 re-ask rule"
+pin "dir #535: G5 defines a day-0 step" "$doc" \
+  'A day-0 step is an operator action the plan puts' "expected G5 to define what a day-0 step is"
+pin "dir #535: G5 records the incident's doubled weight" "$doc" \
+  "meanwhile the step's weight had doubled" "expected G5 to name the re-sizing the carried step escaped"
+pin "dir #535: G5 detects the carry with one grep over the previous plans' rows" "$doc" \
+  "The check is one grep over the previous plans' rows for the step's name." "expected G5 to give the one-grep check"
+pin "dir #535: G5 offers the three answers" "$doc" \
+  '(1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an' "expected G5 to list the three answers"
+pin "dir #535: G5 records the operator's answer and re-sizes the step" "$doc" \
+  "records the operator's answer on the row and re-sizes" "expected G5 to require a recorded answer, not a re-listed line"
+pin "dir #535: G1 points at the rule as a question, not a list line" "$doc" \
+  'is a question, not a list line (dir #535).' "expected G1 to point the operator-input rule at G5"
+
 summary

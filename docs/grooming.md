@@ -358,6 +358,10 @@ is the meta-pain, the plan must name an explicit, falsifiable ordering principle
 project's own recorded doctrine, state that it is ordering by that and not by pains, and mark each row
 that has no pain behind it.
 
+**An operator day-0 step the plan has carried undone twice is a question, not a list line (dir #535).**
+Only the operator's answer settles it, so it is asked at the groom and not copied forward; G5 carries
+the rule and its three answers.
+
 ## G2 — read ticket bodies, not headings
 
 The 2026-09-03 groom's headline failure was assignment from headings and R-levels with bodies unread,
@@ -690,6 +694,19 @@ five days after the patch it ran beside tagged, with no plan-shape cause behind 
 item itself: `operator: /go <n> now`, `manager: wave N worker`, or `next groom`. An item that cannot name one is
 either moved into the slate as a worker or not called "parallel". G0's "did the batch's first item start"
 question then has a named party to ask. A rule of the procedure, not a compensation.
+
+**An operator day-0 step carried undone across two consecutive grooms is re-asked as a three-way
+question, never listed a third time (dir #535).** A day-0 step is an operator action the plan puts
+before the release's first worker starts. A list copied forward without a question stops being a
+to-do and becomes plan decoration, and it mis-sizes every release whose readers assume the step is
+done "by start". One adopter's plan (hermes, 2026-09-16) carried a day-0 host setup through three
+grooms and one whole release; when the operator was finally asked, the answer was "not done", and
+meanwhile the step's weight had doubled (two emulated bots instead of one) with nobody re-sizing it.
+The check is one grep over the previous plans' rows for the step's name. A step that the two latest
+plans both list and that is still undone is put to the operator, in the same sitting, as one question
+with three answers: (1) do it now; (2) drop it from day 0 into a gated ticket; (3) re-assign it as an
+agent half plus an operator command. The groom records the operator's answer on the row and re-sizes
+the step from it; a re-listed line is not a record. A rule of the procedure, not a compensation.
 
 **Two sizing rules the same adopter run forced into the open (2026-09-08).** This section says size is
 "measured against the project's own per-release band" — which quietly assumes a band exists and that
