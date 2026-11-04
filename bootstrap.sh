@@ -102,7 +102,10 @@ else
   on_exit() {
     st=$?
     [ -n "$ok" ] || [ "$st" -ne 0 ] || st=1
-    rm -rf "$tmp"
+    # dir #394: cleanup is best-effort. Under `set -eu` a failing `rm -rf` (macOS "Directory not empty"
+    # under concurrent runs) would abort here and replace $st with its own status, so a fully successful
+    # install reported failure. A leftover tmpdir is noise; $st stays the exit status in both directions.
+    rm -rf "$tmp" || true
     exit "$st"
   }
   trap on_exit EXIT
