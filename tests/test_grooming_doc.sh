@@ -495,6 +495,32 @@ pin "dir #563: G9 calls a sprint label a second convention" "$doc" \
   'manager: a sprint label (`S1`, `S2`) is not a scoped-down version, it is a second convention that the' "expected G9 to refuse sprint labels"
 pin "dir #563: G9 starts a shipped binary's first release at its version string" "$doc" \
   'first release is aligning the binary'"'"'s own version string with the plan, and the groom reads that' "expected G9 to align the binary's version string first"
+# dir #635 PR2: G7 carries the meta-share field for an infrastructure project, G0 reads the previous value.
+pin "dir #635: G7's first field list gains the meta share and ledger colour" "$doc" \
+  'groom with its ledger colour (the paragraph below).' "expected G7's row field list to name the meta-share field"
+pin "dir #635: G7's release-less field list gains the meta share and ledger colour" "$doc" \
+  'for an infrastructure project the meta share and ledger colour), and' "expected the release-less field list to carry the field too"
+pin "dir #635: G7 names the field and restricts it to an infrastructure project" "$doc" \
+  '**The meta-share field — for a project that is infrastructure for other projects, and only for it.**' "expected a G7 paragraph scoped to infrastructure projects"
+pin "dir #635: G7 names the ledger colour rule and the PRINCIPLES ledger" "$doc" \
+  'threshold: green at or under it, red above it. This is the net-negative ledger of' "expected the colour rule tied to the net-negative ledger"
+pin "dir #635: G7 names the tool" "$doc" \
+  '`tools/effort-share.sh --meta <repos> --product <repos> --since <previous groom'"'"'s ref or date>`: the' "expected G7 to name the instrument and its inputs"
+pin "dir #635: G7 says the groom passes the repository lists" "$doc" \
+  'groom passes both repository lists, and the tool hard-codes none.' "expected the groom, not the doc, to supply the repo lists"
+pin "dir #635: G7 leaves the field out of a non-infrastructure project and makes the threshold project-set" "$doc" \
+  'the field out. The threshold is set by the project, never by this doc. **Two consecutive readings' "expected the threshold to be project-set"
+pin "dir #635: two readings above the threshold restrict the next release to conditions 1 to 4 of the bar" "$doc" \
+  '4 of the filing bar ([`docs/verification-economics.md`](verification-economics.md) §4), so no' "expected the restriction to cite the filing bar's conditions 1 to 4"
+pin "dir #635: G0 reads the previous row's meta-share value" "$doc" \
+  "project only: two consecutive readings above the project's threshold restrict the release this groom" "expected G0 to read the previous meta-share reading"
+pin "dir #635: the bar numbers condition 4 as Severe (the doc cites conditions 1 to 4)" "$REPO_ROOT/docs/verification-economics.md" \
+  '4. **Severe:**' "expected the filing bar to still number Severe as condition 4"
+pin "dir #635: the bar numbers condition 5 as Requested (excluded by the restriction)" "$REPO_ROOT/docs/verification-economics.md" \
+  '5. **Requested:**' "expected the filing bar to still number Requested as condition 5"
+check_absent "dir #635: the doc cites no personal registry file" "$(flatten_ws < "$doc")" 'INSTANCE.md'
+check_absent "dir #635: the doc cites no personal knowledge-base path" "$(flatten_ws < "$doc")" '.keel/kb'
+
 check_absent "dir #563: the doc names no other adopter project by name (sidecast)" "$(flatten_ws < "$doc")" 'sidecast'
 check_absent "dir #563: the doc names no other adopter project by name (traverse)" "$(flatten_ws < "$doc")" 'traverse'
 check_absent "dir #563: the doc cites no other project's ticket id" "$(flatten_ws < "$doc")" 'B.13'
