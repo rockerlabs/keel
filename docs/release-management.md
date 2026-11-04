@@ -603,7 +603,8 @@ install and deletions stay the operator's; merges are the manager's under R14 wh
 gitignored, manager-owned file (a project's `CLAUDE.md`, `BACKLOG.md`), and that file's own edit during the release,
 usually the cut's, can invalidate the premise after the merge with no commit to show it: the audit's universe is
 derived from git ([`docs/delta-audit.md`](delta-audit.md) §3), so no leg reads the file unless the brief points it
-there. The brief therefore carries a `Non-git inputs:` line in its State part (item 1 below), or `Non-git inputs: none`,
+there. The brief therefore carries a `Non-git inputs:` line in its State part (item 1 of the five-part shape under
+[The worker brief](#the-worker-brief--one-shape-whether-launched-or-handed-over), above this rule), or `Non-git inputs: none`,
 naming each such file by absolute path, owner and the tracked files whose prose rests on it: every one the
 release edits, and every one a slate ticket or a merged PR's description cites as the premise of its change. The
 manager takes a dated pre-cut copy of each at intake (a file other sessions also edit, `CLAUDE.md` for one, is

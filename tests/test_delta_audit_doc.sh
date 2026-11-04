@@ -440,4 +440,14 @@ pin "dir #544: section 2 keeps the copies out of external-vendor bundles" "$doc"
 pin "dir #544: section 2 copies the brief line into the run record" "$doc" "brief's \`Non-git inputs:\` line into \`run-record.md\`" \
   "expected section 2 to copy the brief line into the run record"
 
+pin "dir #544: section 2 writes the line and the rows after derive.sh has run" "$doc" "written after §3's \`derive.sh\` has run, never before" \
+  "expected section 2 to order the run-record line and ledger rows after derive.sh"
+pin "dir #544: section 2 re-adds both after a derive.sh re-run" "$doc" 'drops both the line and the rows, so the orchestrator re-adds both' \
+  "expected section 2 to say a derive.sh re-run drops the line as well as the rows"
+pin "dir #544: section 2 has the orchestrator write the line when no R9 brief exists" "$doc" 'the orchestrator writes the line itself, so every run record has one' \
+  "expected section 2 to give a briefless audit its own line"
+pin "dir #544: section 2 item 4 makes a missing line an open finding" "$doc" 'A `run-record.md` with no `Non-git inputs:` line is an open finding' \
+  "expected section 2 item 4 to catch a missing line"
+check_contains "S-final prompt: a run record with no Non-git inputs line is an open finding (dir #544)" "$sfinal_flat" 'a run record with no such line is an open finding'
+
 summary

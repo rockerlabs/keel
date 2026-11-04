@@ -621,4 +621,7 @@ pin "dir #544: R10 names the git x non-git seam" "$doc" \
 pin "dir #544: R11 sweep re-reads the Non-git inputs list before each merge" "$doc" \
   'also re-reads the `Non-git inputs:` list (R9, dir #544)' "expected the R11 merge-sweep step"
 
+pin "dir #544: R9 points at the five-part shape above it, not below" "$doc" \
+  '(#the-worker-brief--one-shape-whether-launched-or-handed-over), above this rule' "expected R9 to point back at The worker brief"
+
 summary

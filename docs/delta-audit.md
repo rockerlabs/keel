@@ -82,23 +82,27 @@ disagreeing DB-schema tables in `CLAUDE.md`", the cut then removed the table fro
    each with its absolute path, its owner, and the tracked files whose prose rests on it. None is written `Non-git inputs: none`, so an absence is a decision, not an
    omission.
 2. **The orchestrator snapshots them at the anchor.** Right after the anchor resolves, it copies each listed file
-   as it stands then, the **post-cut state**, into `non-git-inputs/` beside the run's other §3 outputs, and copies the
-   brief's `Non-git inputs:` line into `run-record.md`. A cut that lands after the anchor (R9's cut riding on the
+   as it stands then, the **post-cut state**, into `non-git-inputs/` beside the run's other §3 outputs. A cut that lands after the anchor (R9's cut riding on the
    last fix PR) is not in that copy: re-snapshot when it lands, and the named leg re-checks against the new copy. It
    keeps the previous copy, if the manager took one at intake, beside it as the pre-cut state, so the diff between
    them is readable. An edit to a listed input after a snapshot is listed in the run's ledger like a post-anchor
    commit and re-snapshotted. The copies are run artifacts of a gitignored working area, never committed, and never
-   part of a bundle for an external-vendor leg (§11) without the operator's say. Each copy also gets one row at the
-   end of `ledger.md` (class `non-git`; `derive.sh` emits none, so a re-run of it, as after an anchor re-cut, drops
-   them and the orchestrator re-adds them); the named leg below gives those rows their verdict.
+   part of a bundle for an external-vendor leg (§11) without the operator's say.
+   **The line and the rows are written after §3's `derive.sh` has run, never before:** it writes `ledger.md` and
+   `run-record.md` with `>`, and the `non-git-inputs/` copies survive it but nothing appended to those two files
+   does. So, once it has run, the orchestrator copies the brief's `Non-git inputs:` line into `run-record.md` and adds
+   one row per copy at the end of `ledger.md` (class `non-git`; `derive.sh` emits none); the named leg below gives
+   those rows their verdict. Any re-run of `derive.sh`, as after an anchor re-cut,
+   drops both the line and the rows, so the orchestrator re-adds both. An audit run with no R9 brief has no line to
+   copy: the orchestrator writes the line itself, so every run record has one (`Non-git inputs: none`, or its own list).
 3. **One leg diffs the prose against the snapshot.** The orchestrator names one S2…Sn leg for it in that leg's
    prompt (§9), never "every leg", and gives that leg every tracked file the list names as resting on an input, on
    top of its own cluster, so no claim sits in a file the leg never opens. For each merged prose claim in those files
    that rests on a snapshot input, the leg quotes the claim, quotes the snapshot's post-cut text for it, and reports
    a disagreement as a finding (§4 rule 6), all under a `## Non-git inputs` section of its report. A leg with no
    snapshot to read writes `non-git inputs: none snapshotted` under `## NOT checked`.
-4. **The verifier checks the check.** It reads the `Non-git inputs:` line in `run-record.md`. A list that is not
-   `none` with no report holding a `## Non-git inputs` section is an open finding, not a pass.
+4. **The verifier checks the check.** It reads the `Non-git inputs:` line in `run-record.md`. A `run-record.md` with no `Non-git inputs:` line is an open finding, and so is a list that is not
+   `none` with no report holding a `## Non-git inputs` section; neither is a pass.
 
 This is the git × non-git case of the seam duty (§4 rule 4; R10 of the release-management doc). It is a manual
 procedure, not a script: no tool can know which gitignored file a premise lives in, so the brief's list is the
@@ -773,8 +777,9 @@ file each new survivor as a finding. Merge every session's verdicts into the led
 per docs/delta-audit.md §8's verdict contract. Adversarially re-verify a SAMPLE of
 `clean`/`mechanical-only` rows yourself (don't just transcribe), and re-derive every `FINDING`
 independently before accepting it.
-Read the `Non-git inputs:` line in the run record (docs/delta-audit.md §2): a list that is not `none`
-needs a report holding a `## Non-git inputs` section; without one, file an open finding.
+Read the `Non-git inputs:` line in the run record (docs/delta-audit.md §2): a run record with no such line
+is an open finding; a list that is not `none` needs a report holding a `## Non-git inputs` section, and
+without one, file an open finding.
 Resolve the GO SHA LIVE — re-check `origin/main` at verdict time, not the SHA this run started against
 — and confirm CI is green on that exact SHA, including every platform leg.
 Confirm suite evidence came from a clean worktree or CI, never the operator's own main checkout. Then,
