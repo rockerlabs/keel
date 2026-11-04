@@ -20,7 +20,7 @@ landed in the --meta set. Read-only. The caller passes every repository list; no
 
   --meta REPO...     one or more repositories (paths) of the project that is infrastructure
   --product REPO...  one or more repositories of the projects it serves
-  --since X          a date, YYYY-MM-DD (UTC midnight, committer date), or a ref (branch, tag, sha)
+  --since X          a date, YYYY-MM-DD from 1970 on (UTC midnight, committer date), or a ref (branch, tag, sha)
                      resolved in EACH repository: commits not reachable from that ref count. A
                      ref missing from any repository refuses, naming it; a value that is neither a
                      valid date nor a ref there refuses too (git itself would read it as "now" and
@@ -29,9 +29,11 @@ landed in the --meta set. Read-only. The caller passes every repository list; no
   --help             this text
 
 Counting definition (one, fixed): the unique commits per repository reachable from any ref
-(git rev-list --all), merge commits excluded (--no-merges), committed on or after the date, or not
+(git rev-list --all, less refs/stash and refs/notes/*, which hold no
+work), merge commits excluded (--no-merges), committed on or after the date, or not
 reachable from the ref. The same commit is never counted twice. A merge commit is never counted.
-A repository given twice (the same physical path, in either set) refuses.
+A repository given twice (the same repository, in either set, also through a linked worktree or
+its .git directory) refuses.
 
 Share = meta commits / (meta + product commits), one decimal. With zero commits in total the share
 is printed as n/a (JSON: null), never 0%.
@@ -61,6 +63,7 @@ while [ $# -gt 0 ]; do
       [ $# -gt 0 ] && case "$1" in --*) false ;; *) true ;; esac || die "$mode needs at least one repository"
       while [ $# -gt 0 ]; do
         case "$1" in --*) break ;; esac
+        case "$1" in *[[:cntrl:]]*) die "a repository path with a control character (tab, newline) is refused" ;; esac
         if [ "$mode" = --meta ]; then meta_list="${meta_list:+$meta_list
 }$1"; else prod_list="${prod_list:+$prod_list
 }$1"; fi
@@ -80,7 +83,7 @@ case "$since" in
   [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
     cutoff="$(LC_ALL=C awk -v d="$since" 'BEGIN {
       y = substr(d, 1, 4) + 0; m = substr(d, 6, 2) + 0; dd = substr(d, 9, 2) + 0
-      if (m < 1 || m > 12 || dd < 1) { print "bad"; exit }
+      if (y < 1970 || m < 1 || m > 12 || dd < 1) { print "bad"; exit }
       dim = (m == 2) ? ((y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 29 : 28) : ((m == 4 || m == 6 || m == 9 || m == 11) ? 30 : 31)
       if (dd > dim) { print "bad"; exit }
       if (m <= 2) y -= 1
@@ -88,7 +91,7 @@ case "$since" in
       mp = (m + 9) % 12
       doy = int((153 * mp + 2) / 5) + dd - 1
       doe = yoe * 365 + int(yoe / 4) - int(yoe / 100) + doy
-      printf "%d\n", (era * 146097 + doe - 719468) * 86400 }')"
+      printf "%.0f\n", (era * 146097 + doe - 719468) * 86400 }')"
     [ "$cutoff" != bad ] || cutoff="notadate"
     ;;
 esac
@@ -102,7 +105,7 @@ repo_check() { # repo_check PATH -> prints the physical path, or dies
   if [ "$(git -C "$p" rev-parse --is-bare-repository 2>/dev/null)" != true ]; then
     [ -z "$(git -C "$p" rev-parse --show-cdup 2>/dev/null)" ] || die "not the top of a git repository: $p"
   fi
-  phys="$(cd -P "$p" && pwd -P)"
+  phys="$(cd -P "$p" && cd -P "$(git rev-parse --git-common-dir)" && pwd -P)"
   case "
 $seen_paths
 " in *"
@@ -116,12 +119,13 @@ $phys
 count_repo() { # count_repo PATH -> prints the commit count, or dies
   local p="$1" ref
   if [ -n "$cutoff" ]; then
-    git -C "$p" log --all --no-merges --format='%H %ct' | LC_ALL=C sort -u |
-      LC_ALL=C awk -v c="$cutoff" '$2 + 0 >= c + 0 { n++ } END { print n + 0 }'
+    git -C "$p" log --exclude=refs/stash --exclude='refs/notes/*' --all --no-merges --format='%ct' |
+      LC_ALL=C awk -v c="$cutoff" '$1 + 0 >= c + 0 { n++ } END { print n + 0 }'
   else
     ref="$(git -C "$p" rev-parse --verify --quiet "$since^{commit}" 2>/dev/null)" ||
       die "--since '$since' is neither a valid date (YYYY-MM-DD) nor a ref in repository: $p"
-    git -C "$p" rev-list --all --no-merges --not "$ref" | LC_ALL=C sort -u | LC_ALL=C awk 'END { print NR + 0 }'
+    git -C "$p" rev-list --exclude=refs/stash --exclude='refs/notes/*' --all --no-merges --not "$ref" |
+      LC_ALL=C awk 'END { print NR + 0 }'
   fi
 }
 

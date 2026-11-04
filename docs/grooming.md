@@ -35,11 +35,12 @@ round. What follows is the procedure extracted from those two runs, not a specif
 
 Before touching the plan, read the previous cycle's records: the releases cross-run record (G7 below),
 the audits' cross-run record rows, the meta-share reading on the previous row (G7; an infrastructure
-project only: two consecutive readings above the project's threshold restrict the release this groom
-plans, so the previous value is read before the plan is cut), the release record a manager writes at
-close (keel's own instance is the FINAL NUMBERS paragraph its `dir #367`-style ticket record carries —
-a project without a ticket record of its own writes the equivalent wherever its release-manager
-procedure lands it), and every ticket filed by the previous cycle's managers. A cycle built ticket by ticket with no manager has no
+project only: the previous row's reading and this groom's own, both above the project's threshold,
+restrict the release this groom plans, so the previous value is read before the plan is cut), the
+release record a manager writes at close (keel's own instance is the FINAL NUMBERS paragraph its
+`dir #367`-style ticket record carries — a project without a ticket record of its own writes the
+equivalent wherever its release-manager procedure lands it), and every ticket filed by the previous
+cycle's managers. A cycle built ticket by ticket with no manager has no
 such record; its records are wherever its closing step wrote them (keel's 0.13.0: the audit
 orchestrator completed the release row at the tag, and its filings are that cycle's filings). Where
 the project's read-trace aggregate exists (keel: `dir #387`), it supplies two more G0 inputs — a
@@ -932,9 +933,10 @@ definition and the honest limit — commits are a proxy for effort, and commit g
 across projects — so read the share as a trend counted the same way each groom. A reading with no
 commits at all is `n/a` and takes no colour. A project that is not infrastructure for others leaves
 the field out. The threshold is set by the project, never by this doc. **Two consecutive readings
-above the threshold restrict the next release:** it takes only rows that meet one of conditions 1 to
-4 of the filing bar ([`docs/verification-economics.md`](verification-economics.md) §4), so no
-capability row that clears only condition 5 (requested) enters it.
+above the threshold — the previous row's and this groom's own — restrict the release this groom
+plans:** it takes only rows that meet one of conditions 1 to 4 of the filing bar
+([`docs/verification-economics.md`](verification-economics.md) §4), so no capability row that clears
+only condition 5 (requested) enters it.
 
 **A project with no releases at all still owes a cross-run record — of GROOMS (same run, 2026-09-08).**
 This section is written in the unit "one row per

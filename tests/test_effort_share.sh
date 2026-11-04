@@ -41,6 +41,16 @@ commit "$P" 2026-03-05T00:00:00Z p2
 git -C "$P" tag v1
 for d in 06 07 08 09; do commit "$P" "2026-03-${d}T00:00:00Z" "p-$d"; done
 
+# Commits that are not work: a stash entry (refs/stash) and a notes commit (refs/notes/commits) sit outside
+# every branch and tag, yet --all reaches them. The counts below must not move because of them.
+STASHC="$(GIT_AUTHOR_DATE=2026-03-22T00:00:00Z GIT_COMMITTER_DATE=2026-03-22T00:00:00Z \
+  git -C "$M" -c user.name=t -c user.email=t@t.invalid commit-tree "$(git -C "$M" rev-parse 'HEAD^{tree}')" -p "$(git -C "$M" rev-parse HEAD)" -m 'index on main')"
+git -C "$M" update-ref refs/stash "$STASHC"
+GIT_AUTHOR_DATE=2026-03-23T00:00:00Z GIT_COMMITTER_DATE=2026-03-23T00:00:00Z \
+  git -C "$M" -c user.name=t -c user.email=t@t.invalid notes add -m note "$(git -C "$M" rev-parse HEAD)"
+check_eq "fixture: the stash ref and the notes ref exist" 2 \
+  "$(git -C "$M" for-each-ref refs/stash refs/notes | wc -l | tr -d ' ')"
+
 check_eq "fixture: M holds exactly one merge commit" 1 "$(git -C "$M" rev-list --merges --all | wc -l | tr -d ' ')"
 
 # --- usage ---------------------------------------------------------------------------------------
@@ -64,12 +74,21 @@ run bash "$tool" --meta "$M" --product "$P" --since 2026-03-01 --json
 check_status_out "a date run exits 0" 0
 check_contains "M counts c2 (at the cutoff), s1, w1, c3 and NOT the merge or c1 (a merge commit is not counted)" "$OUT" "\"meta_commits\":4"
 check_contains "P counts p2..p6 and not p1 (one second before the cutoff)" "$OUT" "\"product_commits\":5"
+check_contains "stash and notes commits are not counted (M stays at 4)" "$OUT" "\"meta_commits\":4"
 check_contains "the share is meta over the total, one decimal" "$OUT" "\"meta_share_percent\":44.4"
 check_contains "the JSON names each repo with its count" "$OUT" "{\"repo\":\"$(cd -P "$M" && pwd -P)\",\"commits\":4}"
 
 run bash "$tool" --meta "$M" --product "$P" --since 2026-03-01
 check_status_out "the table run exits 0" 0
 check_contains "the table prints the share" "$OUT" "meta share 44.4%"
+
+run bash "$tool" --meta "$M" --product "$P" --since 1969-12-31
+check_status "a date before 1970 refuses" 2 "$STATUS"
+run bash "$tool" --meta "$M" --product "$P" --since 2040-01-01 --json
+check_contains "a far-future date is an empty period, not a clamped one (n/a)" "$OUT" "\"meta_share_percent\":null"
+run bash "$tool" --meta "$M" --product "$P" --since -q
+check_status "a --since starting with a dash refuses" 2 "$STATUS"
+check_contains "... as neither a date nor a ref" "$OUT" "neither a valid date"
 
 # --- refs: resolved per repo ----------------------------------------------------------------------
 run bash "$tool" --meta "$M" --product "$P" --since v1 --json
@@ -116,6 +135,16 @@ run bash "$tool" --meta "$M" --product "$M" --since 2026-03-01
 check_status "the same repo in both sets refuses (it would be counted twice)" 2 "$STATUS"
 run bash "$tool" --meta "$M" "$M" --product "$P" --since 2026-03-01
 check_status "the same repo twice in one set refuses" 2 "$STATUS"
+
+git -C "$M" worktree add -q "$SANDBOX/wt-of-m" -b wtbranch
+run bash "$tool" --meta "$M" --product "$SANDBOX/wt-of-m" --since 2026-03-01
+check_status "a linked worktree of an already-listed repo refuses (it shares the ref set)" 2 "$STATUS"
+run bash "$tool" --meta "$M" --product "$M/.git" --since 2026-03-01
+check_status "the .git directory of an already-listed repo refuses" 2 "$STATUS"
+TABP="$SANDBOX/tab$(printf '\t')repo"
+run bash "$tool" --meta "$M" --product "$TABP" --since 2026-03-01
+check_status "a repository path with a control character refuses" 2 "$STATUS"
+check_contains "... saying so" "$OUT" "control character"
 
 # --- multiple repos per set ----------------------------------------------------------------------
 P2="$(mkrepo)"

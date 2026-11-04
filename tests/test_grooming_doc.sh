@@ -511,9 +511,11 @@ pin "dir #635: G7 says the groom passes the repository lists" "$doc" \
 pin "dir #635: G7 leaves the field out of a non-infrastructure project and makes the threshold project-set" "$doc" \
   'the field out. The threshold is set by the project, never by this doc. **Two consecutive readings' "expected the threshold to be project-set"
 pin "dir #635: two readings above the threshold restrict the next release to conditions 1 to 4 of the bar" "$doc" \
-  '4 of the filing bar ([`docs/verification-economics.md`](verification-economics.md) §4), so no' "expected the restriction to cite the filing bar's conditions 1 to 4"
+  '([`docs/verification-economics.md`](verification-economics.md) §4), so no capability row that clears' "expected the restriction to cite the filing bar"
+pin "dir #635: the restriction names which two readings count and cites conditions 1 to 4" "$doc" \
+  'plans:** it takes only rows that meet one of conditions 1 to 4 of the filing bar' "expected the two readings and the condition range to be explicit"
 pin "dir #635: G0 reads the previous row's meta-share value" "$doc" \
-  "project only: two consecutive readings above the project's threshold restrict the release this groom" "expected G0 to read the previous meta-share reading"
+  "project only: the previous row's reading and this groom's own, both above the project's threshold," "expected G0 to read the previous meta-share reading"
 pin "dir #635: the bar numbers condition 4 as Severe (the doc cites conditions 1 to 4)" "$REPO_ROOT/docs/verification-economics.md" \
   '4. **Severe:**' "expected the filing bar to still number Severe as condition 4"
 pin "dir #635: the bar numbers condition 5 as Requested (excluded by the restriction)" "$REPO_ROOT/docs/verification-economics.md" \
