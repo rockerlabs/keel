@@ -791,7 +791,9 @@ check_contains "worktree-cwd run flags the drift (no accept yet)" "$OUT" "machin
 mkdir -p "$base/.keel"; printf 'W-GUARD-GLOBAL-STALE\n' > "$base/.keel/doctor-accept"
 run_in "$wtg" "$doctor" .
 check_absent "main-checkout accept file suppresses it from the worktree cwd" "$OUT" "machine-global secret-guard"
-check_absent "no worktree-local .keel/ needed to accept it" "$OUT" "coexists with the main checkout"
+# dir #292: the invariant itself — the run created no worktree-local .keel/. This used to be an absence check
+# on the retired "coexists with the main checkout" message, true by construction once dir #251 removed it.
+check_nodir "no worktree-local .keel/ was created just to accept it" "$wtg/.keel"
 git config --global --unset core.hooksPath
 
 # --- map-drift (dir #39 T1): a backtick-spanned path in the LIVE map that no longer exists ------
@@ -906,7 +908,8 @@ check_contains "worktree audit still flags the missing path (no baseline yet)" "
 mkdir -p "$base/.keel"; printf 'scripts/ghost.sh\n' > "$base/.keel/map-drift-baseline"
 run "$doctor" "$wtd"
 check_absent "main-checkout baseline suppresses the WARN from the worktree" "$OUT" "map may be stale"
-check_absent "no worktree-local .keel/ was created just to look up the baseline" "$OUT" "coexists with the main checkout"
+# dir #292: the invariant itself, not the absence of a retired message (see the accept-file case above).
+check_nodir "no worktree-local .keel/ was created just to look up the baseline" "$wtd/.keel"
 
 # a path that exists only at the MAIN checkout (e.g. BACKLOG.md, absent from a worktree by a project's
 # own documented convention) resolves against unit_top before flagging — no baseline entry needed

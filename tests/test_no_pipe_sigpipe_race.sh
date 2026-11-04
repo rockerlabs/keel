@@ -90,6 +90,10 @@ race_lines() {
       '#'*) continue ;;
     esac
     match "$trimmed" -qE "$ALLOW_RE" && continue
+    # dir #292: drop TRAILING whitespace (a CR from a CRLF checkout counts; [:space:] includes it) before the
+    # `|| true` suffix test below, which is an exact end-of-line match. Without this a `... | head -1 || true `
+    # (trailing blank) or `... || true<CR>` line lost the exemption and was reported as a race.
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
     # A `head`-consumer line ending in `|| true` is this codebase's own established idiom for
     # "capture only, exit code discarded, content unaffected by an early consumer close" (e.g.
     # tools/lib/manifest.sh's `manifest_field()`: `sed ... | head -n1 || true`) — `head` must
@@ -165,13 +169,18 @@ fx="$SANDBOX/race-fixture.sh"
   echo "func_prod $P rg --quiet x"
   echo "func_prod $P grep --regexp pat -q"
   echo "func_prod $P grep -A 3 x"
+  # dir #292: the `|| true` head-capture exemption must not depend on the exact end of the line.
+  echo "echo x $P head -1 || true"
+  echo "echo x $P head -1 || true  "
+  printf 'echo x %s head -1 || true\r\n' "$P"
+  printf 'func_prod %s grep -q x || true\r\n' "$P"
 } > "$fx"
 got="$(race_lines "$fx" | cut -d: -f1 | tr '\n' ' ')"
-if [ "$got" = "1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 " ]; then
-  pass "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg"
+if [ "$got" = "1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 27 " ]; then
+  pass "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture (also with a trailing blank or CR after the OR-true suffix), plain grep -c / rg"
 else
-  fail "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture, plain grep -c / rg" \
-    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 ')"
+  fail "guard flags function/awk/git producers and path/command/ggrep/rg/-e-arg consumers; skips allow-comment, OR list, head capture (also with a trailing blank or CR after the OR-true suffix), plain grep -c / rg" \
+    "flagged lines: '$got' (want '1 2 3 7 8 9 10 11 12 13 14 15 16 19 20 21 22 27 ')"
 fi
 
 # dir #837 scope fixture: every file the ticket named is in the scan list.

@@ -845,8 +845,9 @@ Every automated cycle in this pattern carries an explicit numeric bound **and** 
 max launch retries per worker, max review/fix rounds per PR (the release's review-round cap, below),
 sessions-per-wave fixed at wave-plan time and never grown mid-wave,
 and a token-budget check before each wave — [`docs/delegation.md`](delegation.md)'s own session-limit
-flow (ask the operator for the live remaining-window percentage, pilot two units spanning the cost
-envelope, do the arithmetic before spawning) is that check, not a separate one this pattern invents.
+flow (read the live remaining-window percentage where the harness exposes it and ask the operator only
+where it does not, pilot two units spanning the cost envelope, do the arithmetic before spawning) is
+that check, not a separate one this pattern invents.
 **Hitting any bound means stop and escalate to the operator in one line — never silent continuation,
 never a silent retry ladder.**
 

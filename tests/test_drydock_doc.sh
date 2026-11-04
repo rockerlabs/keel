@@ -445,4 +445,13 @@ pin "reference.md lists tools/audit-packet/import.sh" "$reference" \
   '[`tools/audit-packet/import.sh`](../tools/audit-packet/import.sh)' \
   "PR2 item (f): the two new tools get reference.md rows"
 
+# --- dir #607: the session-limits flow reads the window where the harness exposes it -----------------
+pin "dir #607: drydock.md step 1 reads the window where the harness exposes it" "$doc" \
+  '1. **Read the live remaining-window percentage where the harness exposes it (for example `get_usage`);' \
+  "expected the session-limits flow to read the window first and ask only as the fallback"
+pin "dir #607: drydock.md says the weekly window is shared" "$doc" \
+  'The weekly window is shared by every session on the account, so a' "expected the flow to warn about concurrent draws"
+check_absent "dir #607: drydock.md no longer says the agent cannot see the window" \
+  "$(tr '\n' ' ' < "$doc" | tr -s ' ')" 'An agent cannot see your usage window'
+
 summary
