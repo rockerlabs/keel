@@ -476,4 +476,27 @@ pin "dir #555: G0 cites the project incident in the engine ticket" "$doc" \
 pin "dir #555: G0 keeps the direct landing where the engine is the project" "$doc" \
   'Where the engine is the project' "expected G0 to keep the direct landing for the engine's own grooms"
 
+# dir #563: G2 reads the artifact before any record about it; G9 keeps the tag namespace a version and aligns a binary's version string.
+pin "dir #563: G2 reads the artifact itself before any record about it" "$doc" \
+  'string, a deployed config), the artifact itself, read with a tool, before any record about it. A' "expected G2 to put the artifact before the records"
+pin "dir #563: G2 says records can agree and be wrong together" "$doc" \
+  'all carry the same misreading of one string and agree with each other perfectly: in a downstream' "expected G2 to name the shared-misreading failure"
+pin "dir #563: G2 records the incident outcome" "$doc" \
+  'identifier. Three records, one artifact, the artifact won. Records tell you where to look; they are' "expected G2 to carry the incident's outcome"
+pin "dir #563: G2 says records are not the check" "$doc" \
+  'not the check. The plan states the diff'"'"'s numbers and the rule applied, so a reader can tell a' "expected G2 to say a record is not the check"
+pin "dir #563: G2 asks an operator-only premise in the same sitting" "$doc" \
+  'The G0 operator-decisions list is also where a premise only the operator can confirm is asked, in the' "expected G2 to route an operator-only premise to G0's decisions list"
+pin "dir #563: G2 keeps archived bodies verbatim" "$doc" \
+  'the archive sweep (G4) keeping them verbatim rather than summarised.' "expected G2 to argue for verbatim archive bodies"
+pin "dir #563: G9 makes the tag namespace a version even without tags" "$doc" \
+  'The tag namespace is a version (`0.N.0`), also on a project that has never tagged and runs no release' "expected G9 to keep the tag namespace a version"
+pin "dir #563: G9 calls a sprint label a second convention" "$doc" \
+  'manager: a sprint label (`S1`, `S2`) is not a scoped-down version, it is a second convention that the' "expected G9 to refuse sprint labels"
+pin "dir #563: G9 starts a shipped binary's first release at its version string" "$doc" \
+  'first release is aligning the binary'"'"'s own version string with the plan, and the groom reads that' "expected G9 to align the binary's version string first"
+check_absent "dir #563: the doc names no other adopter project by name (sidecast)" "$(flatten_ws < "$doc")" 'sidecast'
+check_absent "dir #563: the doc names no other adopter project by name (traverse)" "$(flatten_ws < "$doc")" 'traverse'
+check_absent "dir #563: the doc cites no other project's ticket id" "$(flatten_ws < "$doc")" 'B.13'
+
 summary

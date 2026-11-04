@@ -397,10 +397,22 @@ and was recorded only in ANOTHER ticket's body (an operator login noted in a lau
 closed a "CLI not authenticated" ticket untouched since August), and a chore whose project list had
 drifted a third time against a live doctor run. So the compressed pass still owes each unchanged
 ticket its live check — the cited file and line, the doctor line, the blocker's tag, the measured
-figure — and the plan
-states the diff's numbers and the rule applied, so a reader can tell a compression from a skip.
+figure — and, where the premise is about an artifact (a build, a certificate, a binary's version
+string, a deployed config), the artifact itself, read with a tool, before any record about it. A
+ticket's body, the operator's instance or registry file and the previous groom's own body-read can
+all carry the same misreading of one string and agree with each other perfectly: in a downstream
+project (2026-09-19) a ticket about which signing team a device build used sat open for 54 days, and
+its body, the operator's registry file, its own diagnostic and the groom's body-read all agreed,
+until reading the last build's code signature and certificate subject showed they had misread one
+identifier. Three records, one artifact, the artifact won. Records tell you where to look; they are
+not the check. The plan states the diff's numbers and the rule applied, so a reader can tell a
+compression from a skip.
 Where the diff is NOT enumerable (a rewrite, a bulk re-tag, a file the groom cannot diff against a
 known body-read commit), G2 applies whole, as written above.
+
+The G0 operator-decisions list is also where a premise only the operator can confirm is asked, in the
+same sitting. A fresh reviewer told to read bodies reads archived bodies too, which is an argument for
+the archive sweep (G4) keeping them verbatim rather than summarised.
 
 **The premise check runs before a ticket is offered by name, not after the "yes" (the 0.17.0
 re-cut).** A ticket named in a priced option gets the live check above before the offer goes out; a
@@ -936,6 +948,15 @@ shipped conventions:
 - **Backlog** resolved the way a project's own `/go` resolves it.
 - **The slate and the pool** are the `→ <version>` and `→ pool` heading-tag convention a project's own
   `/backlog` already reads — the shipped mechanism, not any one project's enrichment on top of it.
+  The tag namespace is a version (`0.N.0`), also on a project that has never tagged and runs no release
+  manager: a sprint label (`S1`, `S2`) is not a scoped-down version, it is a second convention that the
+  first tag will contradict, so it costs one re-tag cycle and a plan that can never agree with a git tag
+  or a binary, where `0.N.0` costs nothing. Two adopters adopted `0.N.0` on exactly such projects and
+  neither needed a release manager to do it. When the project ships a binary, the first item of the
+  first release is aligning the binary's own version string with the plan, and the groom reads that
+  string before cutting: one adopter's app-bundle version said `1.0.0` with no tag ever cut, another's
+  Mac bundle said `0.3` (set once, never bumped) and its iOS bundle `1.0` (the IDE default). A plan
+  numbered against a binary that disagrees with it is wrong on the first tester-visible screen.
   **Where a backlog mixes heading forms so the tag cannot be applied uniformly** — the adopter
   knowledge-base backlog carries half its tickets as `### KB.N` headings and half as bold bullets
   whose "heading" is a paragraph, and a bulk reformat once mangled that file (its own history says
