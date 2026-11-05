@@ -8,7 +8,7 @@
 # `changelog.d/README.md`'s examples — so no second listing of the directory exists to drift from this one.
 #
 # Usage:
-#   tools/self/changelog-fragments.sh [--repo DIR] [--check | --list]
+#   tools/self/changelog-fragments.sh [--repo DIR] [--base REV] [--check | --list]
 #   tools/self/changelog-fragments.sh -h | --help
 #
 # Which entries count: `git -C DIR ls-files -- changelog.d` — the TRACKED files, which is what CI sees, so
@@ -37,6 +37,23 @@
 #     relative target beside the linking file (dead from inside changelog.d/, while the cut moves the text
 #     into CHANGELOG.md verbatim), a bare `#anchor` resolves to the fragment itself, other schemes GAP.
 #
+# --check's second rule (dir #938): a PR's diff against its base must add no non-blank line under
+# CHANGELOG.md's `## [Unreleased]` — the entry belongs in a fragment, and a stray bullet brings back the very
+# collision fragments exist to end (a ticket filed before dir #744 that says "CHANGELOG entry" was read
+# literally and passed this check and CI). Each offender is `CHANGELOG.md:<line>: <reason>`, exit 1. The rule
+# judges the lines the diff adds by where they sit in the CHANGELOG.md on disk, so the release cut
+# (changelog-cut.sh) passes untouched: it leaves `## [Unreleased]` empty and moves the text under the new
+# version's heading. The diff is the merge-base of HEAD and the base, against the work tree. The base is, in
+# order: `--base REV` (one that does not resolve is exit 2 — the caller asked for it by name); the
+# environment's GITHUB_BASE_SHA (CI's pull_request / merge_group base, the one ci.yml hands the secret scan);
+# else the remote's default branch (`origin/HEAD`, then `origin/main`).
+# FAIL-OPEN where no base can be had: no base ref, a base this clone does not hold or share history with (a
+# shallow CI clone), DIR not the top of a git work tree, no CHANGELOG.md, or HEAD on the base itself (main: an
+# empty diff). The rule then adds nothing and says nothing; the fragment rules above are unaffected. Chosen
+# over fail-closed because it must never go red on main, on a PR that touches no changelog, or on a clone
+# that cannot tell: doctor.sh's tag reconciliation takes the same stance on a shallow clone (dir #139),
+# while the secret scan (ci-scan.sh) blocks, which suits a security floor and not a style rule.
+#
 # Known bypasses (1b, docs/verification-economics.md §4): this tool's register — a shape no ordinary run produces, kept
 # here instead of a ticket. The tool is not a guard, so SECURITY.md "Threat model by guard" does not list it. A bypass:
 # a tracked symlink in changelog.d/ named `*.md` is read as a fragment (is_fragment and --check test `-f`, which follows
@@ -56,19 +73,23 @@ self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tools/lib/fence-blank.sh
 . "$self_dir/../lib/fence-blank.sh"
 
-die_args() { echo "changelog-fragments.sh: $1" >&2; echo "usage: changelog-fragments.sh [--repo DIR] [--check | --list]" >&2; exit 2; }
+die_args() { echo "changelog-fragments.sh: $1" >&2; echo "usage: changelog-fragments.sh [--repo DIR] [--base REV] [--check | --list]" >&2; exit 2; }
 
 die_unreadable() { echo "changelog-fragments.sh: could not list changelog.d/ — $1" >&2; exit 2; }
 
 repo_dir="$(cd "$self_dir/../.." && pwd)"
 check=0
 list=0
+base_arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     --repo)
       [ $# -ge 2 ] || die_args "--repo needs a directory"
       repo_dir="$2"; shift 2 ;;
+    --base)
+      [ $# -ge 2 ] || die_args "--base needs a revision"
+      base_arg="$2"; shift 2 ;;
     --check) check=1; shift ;;
     --list) list=1; shift ;;
     *) die_args "unknown argument '$1'" ;;
@@ -233,5 +254,50 @@ while IFS= read -r name; do
     done
   done <<< "$blanked"
 done <<< "$entries"
+
+# --- dir #938: no line added under CHANGELOG.md's `## [Unreleased]` (see the header; fail-open on no base) ---
+# Only in a git work tree whose top is DIR (a `git -C DIR` inside a larger repo would diff THAT repo).
+cl_file="$repo_dir/CHANGELOG.md"
+if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$real_dir" ] && [ -f "$cl_file" ]; then
+  base_ref=""
+  if [ -n "$base_arg" ]; then
+    git -C "$repo_dir" rev-parse --verify -q "$base_arg^{commit}" >/dev/null 2>&1 \
+      || die_args "--base '$base_arg' does not resolve to a commit in $repo_dir"
+    base_ref="$base_arg"
+  else
+    for cand in "${GITHUB_BASE_SHA:-}" "$(git -C "$repo_dir" rev-parse --abbrev-ref origin/HEAD 2>/dev/null || true)" origin/main; do
+      [ -n "$cand" ] || continue
+      if git -C "$repo_dir" rev-parse --verify -q "$cand^{commit}" >/dev/null 2>&1; then base_ref="$cand"; break; fi
+      # GITHUB_BASE_SHA set but not held here (a shallow clone): no base, and no fallback to a different one.
+      [ "$cand" != "${GITHUB_BASE_SHA:-}" ] || break
+    done
+  fi
+  merge_base=""
+  if [ -n "$base_ref" ]; then
+    merge_base="$(git -C "$repo_dir" merge-base "$base_ref" HEAD 2>/dev/null || true)"
+  fi
+  if [ -n "$merge_base" ]; then
+    # The Unreleased section's line range in the file on disk: its heading to the line before the next `## `.
+    range="$(blank_fenced_blocks "$cl_file" | awk '
+      !s && /^## \[Unreleased\]/ { s = NR; next }
+      s && !done && /^## / { print s, NR - 1; done = 1 }
+      END { if (s && !done) print s, NR }')"
+    if [ -n "$range" ]; then
+      u_start="${range% *}"; u_end="${range#* }"
+      # -U0: one `+` line per added line; its new-file line number from the hunk header. The ---/+++ file
+      # header is skipped by waiting for the first hunk.
+      added="$(git -C "$repo_dir" diff -U0 --no-color --no-ext-diff "$merge_base" -- CHANGELOG.md 2>/dev/null | awk '
+        /^@@/ { match($0, /\+[0-9]+/); n = substr($0, RSTART + 1, RLENGTH - 1) + 0; hunk = 1; next }
+        hunk && /^\+/ { print n "\t" substr($0, 2); n++ }' || true)"
+      while IFS="$(printf '\t')" read -r aln atext; do
+        [ -n "$aln" ] || continue
+        [ "$aln" -gt "$u_start" ] && [ "$aln" -le "$u_end" ] || continue
+        case "$atext" in *[![:space:]]*) ;; *) continue ;; esac
+        printf 'CHANGELOG.md:%s: line added under ## [Unreleased] — a PR'"'"'s changelog entry is a new file changelog.d/<ticket>-<slug>.md (see changelog.d/README.md), never a bullet here; a ticket that says "CHANGELOG entry" means that\n' "$aln"
+        bad=1
+      done <<< "$added"
+    fi
+  fi
+fi
 
 exit "$bad"

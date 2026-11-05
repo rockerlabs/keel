@@ -546,7 +546,21 @@ fail() { _fail=$((_fail + 1)); printf '  FAIL  %s\n        %s\n' "$1" "$2"; }
 # (test_release_audit_doc.sh) needed the exact same prose-citation-pin idiom
 # test_rails_honesty.sh had defined for itself — the "second use = promote" signal this file's own
 # earlier comments already apply to run()/fresh_home_env()/etc.
+#
+# A needle holding a newline is refused (dir #937): `grep -F` reads each line of its pattern as an
+# alternative, so a two-line needle passes when EITHER half is present — the pin binds nothing (proved by
+# mutation on a real PR: the guarded text changed and the suite stayed green). Cut the needle to one
+# physical line of the file, keeping the part that carries the claim.
+_needle_one_line() { # LABEL NEEDLE — 0 when NEEDLE has no newline; else fail LABEL with the rule, return 1
+  case "$2" in
+    *"
+"*) fail "$1" "needle holds a newline: grep -F reads each line as an alternative, so the pin passes on either half; use a needle of one physical line (dir #937)"; return 1 ;;
+  esac
+  return 0
+}
+
 pin() {
+  _needle_one_line "$1" "$3" || return 0
   if grep -qF -- "$3" "$2"; then
     pass "$1"
   else
@@ -1132,6 +1146,7 @@ assert_case_turns_red() {
 # by eye whenever a clause's pin must be distinguishing.
 pin_exact() {
   local label="$1" file="$2" needle="$3" hint="$4" count
+  _needle_one_line "$label" "$needle" || return 0
   count="$(grep -cF -- "$needle" "$file")"
   if [ "$count" -eq 1 ]; then
     pass "$label"

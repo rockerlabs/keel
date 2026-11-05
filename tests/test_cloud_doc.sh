@@ -124,6 +124,24 @@ check_contains "(A7) B13: exit 3 names the draft rule (dir #913)" "$doc_flat" '3
 check_contains "(A7) B12: a wave peer keeps a ticket local" "$doc_flat" \
   'A ticket that shares a file with another ticket in the same wave does not go to the cloud in that wave'
 check_contains "(A7) B12: a ticket that names no file counts as sharing" "$doc_flat" 'a ticket that names none counts as sharing'
+
+# --- dir #936: steering, batching, the macOS step (one-line needles; the doc is flattened first) -----------
+check_contains "(dir #936) B9: a non-interactive steer goes through --cloud" "$doc_flat" 'claude -p "<steer>" --cloud <session id>'
+check_contains "(dir #936) B9: the steer prints the CLI's acknowledgement" "$doc_flat" 'prints "Sent to cloud session"'
+check_absent "(dir #936) B9: the stale claim that claude -p ignores --cloud is gone" "$doc_flat" 'A non-interactive `claude -p` ignores `--cloud`'
+check_contains "(dir #936) B9: one session may carry several tickets as a batch" "$doc_flat" '**Batching tickets into one session.**'
+check_contains "(dir #936) B9: the mirror is a backlog-shaped file passed with CLOUD_BACKLOG" "$doc_flat" 'The mirror** is an ordinary backlog-shaped file passed with `CLOUD_BACKLOG`'
+check_contains "(dir #936) B9: the tool reads only the batch heading and its block" "$doc_flat" 'never reads the members as tickets'
+check_contains "(dir #936) B9: a member heading is demoted in the mirror" "$doc_flat" 'a member'"'"'s own heading is demoted or dropped in the mirror'
+check_contains "(dir #936) B9: the mirror carries its own Model rec and verdict" "$doc_flat" 'the mirror carries its own `**Model rec:**`'
+check_contains "(dir #936) B9: a batch is one branch, one row, one PR" "$doc_flat" 'one ledger row and one draft PR for the batch'
+check_contains "(dir #936) B9: one commit per ticket, number last in the subject" "$doc_flat" 'each subject ending with its own ticket'
+check_contains "(dir #936) B9: every ticket keeps its own number and closure" "$doc_flat" 'Every ticket keeps its own number and closure'
+check_contains "(dir #936) B9: one bad ticket can hold back the PR" "$doc_flat" 'one bad ticket can hold back all the others'
+check_contains "(dir #936) B13: a macOS leg gets a local step before the merge" "$doc_flat" '**A project whose CI has a macOS leg** adds one step before the merge'
+check_contains "(dir #936) B13: the VM says nothing about bash 3.2" "$doc_flat" 'says nothing about macOS bash 3.2'
+check_contains "(dir #936) B13: failure kind one, a symlinked temp directory" "$doc_flat" 'a path assertion through a symlinked temp directory'
+check_contains "(dir #936) B13: failure kind two, a shell feature newer than bash 3.2" "$doc_flat" 'a shell feature newer than bash 3.2'
 check_contains "(A7) B12: the plan quotes the cloud-check receipt" "$doc_flat" 'the plan quotes its `cloud-check:` receipt line'
 
 # --- B13: landing and the merge ---------------------------------------------------------------------------------
