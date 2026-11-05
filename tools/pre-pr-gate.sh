@@ -3457,15 +3457,16 @@ case "${1:-}" in
     # `str` coerces every field to a plain string first — an unexpected shape (args as an object/array,
     # say) would otherwise make `join` throw and lose the WHOLE row, including the hook_event_name/skill
     # fields that were perfectly fine, turning one malformed field into total silence from this hook.
-    # dir #811: the session id and the subagent flag (_JQ_IDENTITY) ride BEFORE the args — a multi-line args value
-    # ends `read` at its first newline, which may cost the fields after it.
+    # dir #811: the session id and the subagent flag (_JQ_IDENTITY) ride BEFORE the args. dir #332: the args field
+    # also has its newlines turned into spaces here, in jq — `read` ends at the first newline, so an embedded one
+    # used to cut the args AND lose the field after it (agent_type).
     IFS=$'\x1f' read -r st_event st_cwd st_tool st_skill st_sid st_sub st_level st_agent <<<"$(printf '%s' "$st_input" | jq -r "$_JQ_IDENTITY"'
       def str: if . == null then "" elif type == "string" then . else tostring end;
       [.hook_event_name, (.cwd|str), (.tool_name|str),
        (if .hook_event_name == "PostToolUse" then .tool_input.skill else .command_name end|str),
        (.session_id|sid),
        (if is_sub then "1" else "0" end),
-       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str),
+       (if .hook_event_name == "PostToolUse" then .tool_input.args else .command_args end|str|split("\n")|join(" ")),
        (.agent_type|str)
       ] | join("\u001f")' 2>/dev/null)"
     [ -n "$st_cwd" ] || st_cwd="$PWD"
@@ -3608,14 +3609,10 @@ case "${1:-}" in
     # made `${st_level%% *}` strip the WHOLE string, silently downgrading a genuine level to unparsed.
     # `read` sidesteps both: it trims leading/trailing IFS whitespace and splits on ANY run of it, so
     # `sk_word` is always the real leading token and `sk_rest` tells us whether anything followed.
-    # A SECOND round of this same operator's /code-review high pass caught one more gap live: `read`
-    # treats a newline as a LINE terminator, not a field separator — `read -r sk_word sk_rest <<<"$st_level"`
-    # on an embedded-newline string only ever sees the first line, silently losing everything after the
-    # first `\n` instead of folding it into `sk_rest` the way a space or tab does. Flattening every
-    # embedded newline into a space FIRST makes `read` treat the whole string as one line, so a newline
-    # is a separator like any other whitespace, matching what the comment above already claims.
-    st_level_flat="${st_level//$'\n'/ }"
-    read -r sk_word sk_rest <<<"$st_level_flat"
+    # An embedded newline in args is already a space by here (dir #332): the jq join above flattens it, because
+    # `read` treats a newline as a LINE terminator and would cut the args field (and every field after it) at the
+    # first one. dir #296's earlier flattening step lived below the `read`, where it could never see a newline.
+    read -r sk_word sk_rest <<<"$st_level"
     if [ -z "$sk_word" ]; then
       _append_trace_line "$st_cwd" "unparsed:<none>"
     elif [ -z "$sk_rest" ]; then

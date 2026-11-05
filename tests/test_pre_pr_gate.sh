@@ -671,12 +671,12 @@ check_file "skill-trace(PostToolUse code-review, leading-space args) writes a tr
 check_contains "leading-space single-token args resolve to the trimmed level, not unparsed" "$(cat "$tf" 2>/dev/null)" "$sha	high"
 rm -f "$tf"
 
-# 21h. dir #296 (a SECOND live-reproduced pass on the 21f/21g fix itself): `read` treats a newline as a
-# LINE terminator, not a field separator — an EMBEDDED-NEWLINE args string ("high<NEWLINE>low --fix")
-# used to make `read` see only the first line, silently dropping everything after the newline instead of
-# folding it into the leading-token extraction the way a space or tab does. Flattening embedded newlines
-# into spaces before the `read` closes this: the leading token ("high") still resolves correctly, and
-# nothing after the newline is silently lost.
+# 21h. dir #296 / dir #332: `read` treats a newline as a LINE terminator, so the args field of the jq join
+# was cut at its first embedded newline, and the field after it (agent_type) was lost with it. The jq now
+# turns newlines in args into spaces BEFORE the join. The old fixture ("high<NEWLINE>low --fix") could not
+# tell the two apart: the first line is "high" with or without the fix. The three below can. Mutation:
+# remove the newline flattening from the args field of tools/pre-pr-gate.sh's skill-trace jq expression; each of the
+# three goes red (trace "bogus", "unparsed:<none>", and no agent: line).
 d="$(mkrepo)"
 tf="$(trace_for "$d")"; rm -f "$tf"
 sha="$(git -C "$d" rev-parse HEAD)"
@@ -684,6 +684,34 @@ json="$(jq -n --arg cwd "$d" --arg args "$(printf 'high\nlow --fix')" '{hook_eve
 printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
 check_file "skill-trace(PostToolUse code-review, embedded-newline args) writes a trace file" "$tf"
 check_contains "embedded-newline args still resolve to the leading token's level" "$(cat "$tf" 2>/dev/null)" "$sha	high"
+rm -f "$tf"
+
+# A leading newline: the first LINE is empty, so the cut args used to be empty and traced `unparsed:<none>`
+# although a real level follows. Flattened, the leading whitespace is trimmed and `high` resolves.
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf '\nhigh')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_eq "leading-newline args resolve to the level after it, not unparsed:<none>" "$sha	high" "$(cat "$tf" 2>/dev/null)"
+rm -f "$tf"
+
+# An unresolvable leading token followed by a newline and more text: nothing after the newline may be lost.
+# The unparsed tag is the whole string on ONE line (a newline would corrupt the `sha<TAB>level` schema); the
+# old trace was the bare first line, `bogus`, with the rest silently lost.
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" --arg args "$(printf 'bogus\nhigh --fix')" '{hook_event_name:"PostToolUse", cwd:$cwd, tool_name:"Skill", tool_input:{skill:"code-review", args:$args}}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_eq "newline-bearing unresolved args are kept whole on one line" "$sha	unparsed:bogus high --fix" "$(cat "$tf" 2>/dev/null)"
+check_eq "...and the trace file is still one line (no newline leaked in)" "1" "$(awk 'END{print NR}' "$tf" 2>/dev/null)"
+rm -f "$tf"
+
+# A field AFTER args survives: agent_type is the one the SubagentStop leg consumes (`[ "$st_agent" = ... ] ||
+# exit 0`). A SubagentStop event carrying a newline in command_args used to lose it and write no trace at all;
+# now the keel-polish-reviewer marker still traces as `agent:high`.
+tf="$(trace_for "$d")"; rm -f "$tf"
+json="$(jq -n --arg cwd "$d" --arg ca "$(printf 'x\ny')" --arg msg "$(printf 'Reviewed.\nKEEL-AGENT-REVIEW: level=high\n')" \
+  '{hook_event_name:"SubagentStop", cwd:$cwd, command_args:$ca, agent_type:"keel-polish-reviewer", agent_id:"test-agent-id", last_assistant_message:$msg}')"
+printf '%s' "$json" | bash "$gate" skill-trace >/dev/null 2>&1
+check_eq "a newline in args does not lose the agent_type after it (SubagentStop still traces)" "$sha	agent:high" "$(cat "$tf" 2>/dev/null)"
 rm -f "$tf"
 
 # --- dir #63: hand-off note (its own file, nonce-independent, same-SHA-only) ---------------------
