@@ -206,7 +206,29 @@ other interactive prompt can hang a dispatch.
 - **Failure (exit 5)** prints the CLI's output (stdout and stderr arrive merged), sets the row back to
   `built`, and claims nothing.
 - **Steering a running session**: its web view (the URL the CLI printed), or `claude --cloud <session id>`
-  from a terminal. A non-interactive `claude -p` ignores `--cloud`.
+  from a terminal. A steer also goes non-interactively as `claude -p "<steer>" --cloud <session id>`: it
+  prints "Sent to cloud session" and the session acts on the message, pushing the commit it was asked for.
+
+**Batching tickets into one session.** The rule that a wave peer sharing a file stays local (B12) guards
+against sessions that cannot see each other. One session sees its own edits, so tickets that share files, or
+that are each too small to earn a CI round of their own, may go together as one batch:
+
+- **The mirror** is an ordinary backlog-shaped file passed with `CLOUD_BACKLOG`. It holds one ticket for the
+  batch, with a heading of its own (`### BATCH.<n> — <what> — R3`), its verdict line, and a body that carries
+  the text of each member ticket. The tool reads only that heading and its block: it checks, builds and
+  records that one ticket, and never reads the members as tickets. So there is one brief, one branch
+  `claude/cloud-batch-<n>`, one ledger row and one draft PR for the batch. Every `### ` line ends a block, so
+  a member's own heading is demoted or dropped in the mirror (a member heading left as `###` would cut the
+  brief short and become a ticket of its own). The tool takes the first `Spec:` and `**Model rec:**` line it
+  finds in the block, and a design-pass phrase in any member refuses the whole batch (G8), so the mirror
+  carries its own `**Model rec:**`, `Spec:` where one applies, and verdict line ahead of the members.
+- **One commit per ticket**, in the order the batch lists them, each subject ending with its own ticket
+  number, so any one can be dropped alone.
+- **Every ticket keeps its own number and closure**: its own changelog fragment, its own claim and its own
+  closing in the project's backlog. The batch is a way to carry them, not a new ticket that replaces them.
+- **The cost**: the operator merges the PR whole, so one bad ticket can hold back all the others. That is why
+  each gets its own commit, and why only tickets that would each pass `--check` alone belong in a batch.
+- **The gain**: the update-branch click and the CI round that each separate PR would have cost.
 
 ## The protocol the VM follows (B7, B8)
 
@@ -304,6 +326,14 @@ the operator asks, runs the landing check; the dispatch's final report gives the
 the `--sweep` command. A later `/go <id>` on the claimed ticket stops at its step 4 (a live branch not its
 own); the claim's `cloud` tag is the cue to read this section. `/wrap`'s closing sweep replaces the `⏳` with
 ✅ on merge. Inside a release the manager runs the check and reports its exit.
+
+**A project whose CI has a macOS leg** adds one step before the merge: run the PR's touched test files on
+macOS, since a cloud VM is Linux with bash 5 and its full run says nothing about macOS bash 3.2. Two kinds of
+failure get through the VM and surface only on that leg, each costing a full CI round: a path assertion
+through a symlinked temp directory (macOS keeps its temp directories behind a symlink, so a tool that prints
+the path as given prints a different string than the physical one), and a shell feature newer than bash 3.2
+(`BASH_XTRACEFD`, which arrives in bash 4.1, leaves a positive assertion at 0 there). Fixing either means a
+push, which the pinned merge refuses until the landing check is re-run.
 
 ## The ledger and the sweep (B14)
 
