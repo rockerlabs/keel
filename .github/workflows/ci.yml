@@ -193,6 +193,13 @@ jobs:
       # here even if the underlying checks it wraps still pass individually.
       - name: keel self-check
         run: bash tools/self/doctor.sh
+      # dir #938: a PR adds its changelog entry as a changelog.d/ fragment, never a line under CHANGELOG.md's
+      # `## [Unreleased]`. --check reads the PR's base from GITHUB_BASE_SHA (the same expression the secret scan
+      # above uses; empty on a push to main, where the check reads origin/main == HEAD and finds an empty diff).
+      - name: changelog fragments (no line added under [Unreleased])
+        env:
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: bash tools/self/changelog-fragments.sh --check
 
   # dir #744 slice 4 (B19, dir #722): the suite on the CUT shape of the changelog. NOT a required check — its name
   # is deliberately absent from branch protection; requiring it is the operator's call, recommended after 10 green

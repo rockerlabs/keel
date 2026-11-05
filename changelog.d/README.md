@@ -32,6 +32,10 @@ Lint your fragment before you push; it prints nothing when everything passes:
 tools/self/changelog-fragments.sh --check
 ```
 
+The same check refuses a line your PR adds under `## [Unreleased]` in `CHANGELOG.md`: a ticket that says
+"CHANGELOG entry" means a fragment here. It diffs against the PR's base (`--base REV`, CI's `GITHUB_BASE_SHA`,
+else `origin/main`) and passes quietly when no base can be found.
+
 ## Numbers
 
 A number in changelog text is a claim, and reviewers were the only check on it (dir #810).

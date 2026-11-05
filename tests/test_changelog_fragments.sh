@@ -204,6 +204,93 @@ run "$cf" --repo "$d" --check
 check_contains "failure in one file reported" "$OUT" "changelog.d/15-x.md:1:"
 check_contains "failure in another file reported in the same run" "$OUT" "changelog.d/note.txt:1:"
 
+# --- dir #938: a line added under `## [Unreleased]` on a PR's diff against its base is refused ------------
+# ur_repo — a git repo whose branch `main` holds a CHANGELOG.md with an empty [Unreleased] and one released
+# section, plus changelog.d/README.md; HEAD is then on branch `pr`, so `--base main` is the PR's base.
+cl_text() { printf '# Changelog\n\nintro\n\n## [Unreleased]\n\n%s\n## [1.0.0] — 2025-12-31\n\n- the first release\n' "$1"; }
+ur_git() { local d="$1"; shift; git -C "$d" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+ur_repo() {
+  local d; d="$(new_repo)"
+  mkdir -p "$d/changelog.d"
+  cl_text "" > "$d/CHANGELOG.md"
+  printf '# readme\n' > "$d/changelog.d/README.md"
+  git -C "$d" checkout -q -b main
+  git -C "$d" add -A
+  ur_git "$d" commit -q -m base
+  git -C "$d" checkout -q -b pr
+  printf '%s' "$d"
+}
+d="$(ur_repo)"
+cl_text $'- a stray bullet\n  with a continuation\n' > "$d/CHANGELOG.md"
+run "$cf" --repo "$d" --base main --check
+check_status "938: a bullet added under [Unreleased] -> exit 1" 1 "$STATUS"
+check_contains "938: the offender is named by line" "$OUT" "7: line added under ## [Unreleased]"
+check_contains "938: the continuation line is named too" "$OUT" "8: line added under ## [Unreleased]"
+check_contains "938: the message points at changelog.d/" "$OUT" "a new file changelog.d/<ticket>-<slug>.md"
+ur_git "$d" commit -q -am "stray bullet, committed"
+run "$cf" --repo "$d" --base main --check
+check_status "938: the same bullet once committed -> still exit 1" 1 "$STATUS"
+# The same through the environment, as CI hands it (GITHUB_BASE_SHA), no --base flag and no origin.
+run env GITHUB_BASE_SHA="$(git -C "$d" rev-parse main)" "$cf" --repo "$d" --check
+check_status "938: CI's GITHUB_BASE_SHA is a base too -> exit 1" 1 "$STATUS"
+
+# A PR that touches no changelog, and one that adds only a fragment, pass.
+d="$(ur_repo)"
+printf 'x\n' > "$d/other.txt"; git -C "$d" add -A; ur_git "$d" commit -q -m other
+run "$cf" --repo "$d" --base main --check
+check_status "938: a PR that touches no changelog -> exit 0" 0 "$STATUS"
+frag "$d" 9-x.md $'- dir #9: a fragment\n'
+run "$cf" --repo "$d" --base main --check
+check_status "938: a PR that adds only a fragment -> exit 0" 0 "$STATUS"
+# A bullet under an older released section is not under [Unreleased].
+printf '\n- late fix to the released section\n' >> "$d/CHANGELOG.md"
+run "$cf" --repo "$d" --base main --check
+check_status "938: a line added under a released section -> exit 0" 0 "$STATUS"
+# A blank line added under [Unreleased] is no bullet.
+d="$(ur_repo)"
+cl_text $'\n' > "$d/CHANGELOG.md"
+run "$cf" --repo "$d" --base main --check
+check_status "938: only blank lines added under [Unreleased] -> exit 0" 0 "$STATUS"
+
+# The release cut passes: the real cut moves a stray-free fragment into the new section and leaves [Unreleased]
+# empty, so no added line sits under it.
+d="$(ur_repo)"
+frag "$d" 5-x.md $'- dir #5: a fragment\n'
+ur_git "$d" commit -q -am "fragment"
+run "$REPO_ROOT/tools/self/changelog-cut.sh" --repo "$d" 1.1.0 2026-01-02
+check_status "938: fixture cut runs" 0 "$STATUS"
+git -C "$d" rm -q -f changelog.d/5-x.md
+run "$cf" --repo "$d" --base main --check
+check_status "938: a release cut, [Unreleased] emptied, is not refused" 0 "$STATUS"
+check_eq "938: the cut's check prints nothing" "" "$OUT"
+check_contains "938: premise — the cut did add the fragment text under the new heading" "$(cat "$d/CHANGELOG.md")" "## [1.1.0]"
+
+# Fail-open: no base to be had says nothing and passes.
+d="$(ur_repo)"
+cl_text $'- stray\n' > "$d/CHANGELOG.md"
+run "$cf" --repo "$d" --check
+check_status "938: no base at all (no origin, no env) -> fail-open exit 0" 0 "$STATUS"
+run env GITHUB_BASE_SHA=0123456789abcdef0123456789abcdef01234567 "$cf" --repo "$d" --check
+check_status "938: a GITHUB_BASE_SHA this clone does not hold (shallow) -> fail-open exit 0" 0 "$STATUS"
+check_eq "938: fail-open prints nothing" "" "$OUT"
+git -C "$d" checkout -q -- CHANGELOG.md   # drop the uncommitted stray: this case is HEAD == base, clean tree
+git -C "$d" checkout -q main
+run "$cf" --repo "$d" --base main --check
+check_status "938: HEAD on the base itself (main) -> exit 0" 0 "$STATUS"
+# ...but a base the caller named and that does not exist is exit 2, never a silent pass.
+run "$cf" --repo "$d" --base no-such-ref --check
+check_status "938: --base that does not resolve -> exit 2" 2 "$STATUS"
+run "$cf" --repo "$d" --base
+check_status "938: --base without a value -> exit 2" 2 "$STATUS"
+
+# The CI wiring: the self-check job runs --check with the PR's base, so the rule bites on a PR and not only here.
+pin "938: ci.yml runs the fragment check" "$REPO_ROOT/.github/workflows/ci.yml" 'run: bash tools/self/changelog-fragments.sh --check' \
+  "ci.yml has no step running changelog-fragments.sh --check"
+pin "938: ci.yml hands it the PR's base" "$REPO_ROOT/.github/workflows/ci.yml" 'GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}' \
+  "the changelog step lost its GITHUB_BASE_SHA"
+pin "938: the header states the fail-open choice" "$cf" '# FAIL-OPEN where no base can be had' \
+  "changelog-fragments.sh's header no longer states fail-open"
+
 # --- the live leg: keel's own fragments lint clean ----------------------------------------------
 run "$cf" --repo "$REPO_ROOT" --check
 check_status "keel's own changelog.d/ passes the lint" 0 "$STATUS"
