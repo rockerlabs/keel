@@ -50,6 +50,8 @@ Every list and count in the produced plan is regenerated from live heading tags,
 never carried forward from an earlier cycle. Cite a ticket's release tag by number only — never assert
 a specific tag in prose. Run the census tool where the project's own mechanism exists (keel:
 `tools/self/backlog-census.sh`, dir #496), twice — before the hygiene sweep and after the last heading edit.
+A cycle that landed before its groom has no tag to read: derive its slate from the range instead
+([grooming.md](../docs/grooming.md) G3's landed-cycle paragraph).
 
 **G4 — the hygiene sweep.**
 Call each mechanism another ticket owns, never reimplement it: pool report + drain trigger, where the
