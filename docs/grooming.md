@@ -148,6 +148,13 @@ them and record the move as a G0 output; where the cells are simply empty, the r
 sits under its OWN dated header, found by the run number, not appended to the end of an earlier run's
 block; a harvest without its header is a G0 output (add the header, move the lines), not an acceptable shape.
 
+**Say which sessions a transcript-reading sensor can see (the 0.19.0 groom, 2026-11-10).** The read trace, the wrap
+fuse, `tools/self/bypass-scan.sh` and `tools/self/session-cost.sh` read this machine's transcripts, and a Claude Code
+cloud session ([`docs/cloud.md`](cloud.md)) leaves none here: on 0.19.0 no local transcript was on a cloud worker's
+branch (`claude/cloud-dir-*`, `claude/cloud-batch-*`). On a cycle built partly elsewhere, quote each such figure as
+local-only and never read an empty corner as a quiet cycle. For the first three sensors this is a limit while no cloud
+transcript can reach the machine (TO VERIFY whether one can); for the cost line it is a gap whose remover is `dir #944`.
+
 **Degrade cleanly when the read-trace aggregate does not exist yet**, or on a project that never installed the read trace:
 skip its inputs, proceed on the rest, and say so in one line rather than blocking the retro on a mechanism that
 may not exist on this adopter at all. **"Shipped" and "installed" are different states: an opt-in
@@ -494,6 +501,16 @@ then filed a ticket and run notes that themselves named the marker four times, a
 G6 round checked; a module's line count moved the same way. For three grooms running, the review round's top
 finding there was the groom's own number. Running the census twice (above) is this same discipline for tag counts;
 this extends it to any figure the groom's own text changes.
+
+**A cycle that landed before its groom has no tag to derive from (the 0.19.0 groom, 2026-11-10).** On keel's 0.19.0
+range no heading carried `→ 0.19.0`, and the census excludes closed headings (above), so `--list <version>` prints
+nothing for a slate that has already closed. Derive the slate from the range instead: the union of the tickets the
+range's `changelog.d/` fragments name (by filename prefix) and the headings whose closure note (the date after the
+heading's last closure marker) is on or after the previous tag's day, in both the backlog and its parked file. Persist
+that predicate as the hand-derivation rule above asks, on the release row, with the three counts (fragment-only,
+closure-only, both). Count the decay-exposed share (below) by the `[model-decay]` marker in those headings. Re-tag
+nothing: a closed heading carries its tag only as history. This is a compensation; its remover is `dir #943` (a
+census mode over a landed range).
 
 ## G4 — the hygiene sweep
 
