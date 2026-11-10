@@ -164,3 +164,23 @@ and that's fine.)
   and are not separately tested. Full report:
   `private/audit-harness/jev/runs/20260921T122220Z/REPORT.md`; narrative:
   `private/audit/RUNS.md`'s Jev section.
+- [2026-11-10] **A quiet mode for the test runner: no `ok` lines, keep `FAIL` and each file's summary**
+  — from evaluating reslop (github.com/tshemsedinov/reslop), whose `reslop t -- <cmd>` prints only
+  failures plus a short summary and names the raw log for an agent to read when a detail is missing.
+  Keel's suite is the opposite: `tests/lib.sh` `pass()` prints one `  ok` line per assertion and
+  `tests/run.sh` echoes every file's whole log; the test files hold ~723 `pass` and ~1171
+  assertion-helper call sites (`assert_*`, `pin`, …) across 181 files, so a full run prints on the
+  order of 2k `ok` lines (call sites, not a run count — loops add more). Next step before any
+  ticket: measure whether agent sessions actually take that output in whole (transcript corpus: the
+  size of Bash results from `tests/run.sh` runs, and how often they are already cut by `tail`) — the
+  suite usually runs in the background and is read by its tail, so the saving may be small. If built:
+  `run.sh`'s own scans of each log (the `command not found` backstop, `guard_summary_owed`) must still
+  see what they read. reslop's reducer itself is no fit: a Node dependency, and it parses only
+  eslint, tsc, prettier, jest, TAP and `node --test` output.
+- [2026-11-10] **A read-only worktree overview across every registered project** — from the same
+  evaluation: `reslop <folder>` shows the repositories in a folder as tiles, each with its git
+  worktrees. Keel has the per-repo half: `tools/branch-cleanup.sh` grades one repo's branches and
+  worktrees (AUTO / ASK / FLAG). The idea: one view over every project in `INSTANCE.md`'s Projects
+  table — per project its worktrees, their branch, merged or not, dirty, live — so stale worktrees
+  across the fleet are visible at once. Next step: check whether looping `branch-cleanup.sh`'s
+  report over the registry already gives it, before any new tool.
