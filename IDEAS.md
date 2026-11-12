@@ -184,3 +184,50 @@ and that's fine.)
   table — per project its worktrees, their branch, merged or not, dirty, live — so stale worktrees
   across the fleet are visible at once. Next step: check whether looping `branch-cleanup.sh`'s
   report over the registry already gives it, before any new tool.
+- [2026-11-12] **A value bar for writing tests: four questions before a test is added** — from
+  evaluating bb (getbb.app, github.com/get-bb/bb), an agentic IDE whose repo carries a `test-audit`
+  skill (`.bb/skills/test-audit/SKILL.md`). Before adding a test the agent answers: which behavior or
+  contract it protects; which believable regression makes it fail; why existing coverage misses that
+  regression; and whether it needs a production seam no real caller uses (if so, test at the real
+  boundary instead). The skill also lists junk patterns — an expected value produced by the code under
+  test, a mock that implements the asserted behavior, a negative control that passes for an unrelated
+  reason, a test name that promises more than its input exercises — and allows deleting a test only
+  after a mutation shows a kept test still catches the bug it caught. Keel has the other half:
+  `FRAMEWORK.md` "Code conventions" says no feature ships without tests, and "Contract-first"
+  mutation-tests a guard's negative path; nothing guards against a test that adds run time and no
+  protection. Caveat: keel's `pin()` tests are exact-string greps, a shape bb counts as junk unless it
+  guards a user-facing contract — so a keel version must keep pins on load-bearing prose. Next step:
+  put the four questions to one recent PR's added tests and count the failures; a few → one paragraph
+  in "Code conventions"; many → also a one-off audit of the slowest test files.
+- [2026-11-12] **A bash gate in front of a scheduled agent: wake the model only when there is work**
+  — same evaluation (bb's "Run an agent on a schedule" guide). A scheduled job there can be a plain
+  script that starts an agent only when it finds work (CI went red, a new review comment) and prints
+  nothing otherwise; a silent exit is recorded as `skipped`, an error as `failed`, and three failures
+  in a row pause the job. The shape fits keel's split — `tools/` is plain Bash that calls no model
+  (`ADAPTING.md`; the opt-in vendor review is the one exception), and model time is spent only past
+  the gate. Keel counts consecutive failures for
+  one check (`tools/keel-check.sh`), but no doc describes the scheduled-run shape. Next step: none
+  until a scheduled keel job is wanted (a nightly drift or CI watch); then write the pattern as a
+  short section in `docs/cloud.md` or `docs/delegation.md`.
+- [2026-11-12] **A per-project "verify it live" recipe, a draft until it has been run once** — same
+  evaluation (`.bb/skills/create-verification-skill`). bb generates, per repo, a recipe for driving the
+  real app: launch it in isolation, a read-only check that the right instance is up, how to drive each
+  feature, where evidence goes, cleanup — with each feature marked live-verified, source-only or
+  blocked, and the recipe counted as a draft until a session has followed it end to end. Keel's
+  `templates/project-CLAUDE.md` asks only for build/test commands, and CORE's Verify discipline says
+  not to pass a smoke off as full verification — but a session in a project with a UI or a server
+  re-learns each time how to see a change working. Candidate: an optional "Verify live" section in
+  the project template (launch, ready signal, one drive step, cleanup), written by `/keel-setup` or by
+  the first `/go` that had to work it out, and `/go`'s I8 report saying which of the three states its
+  check reached. Next step: look for adopter projects that already keep such notes in their
+  `CLAUDE.md` — felt demand (P4) before a template section.
+- [2026-11-12] **A committed list of the gitignored files a new worktree needs** — same evaluation
+  (bb's `docs/worktrees.md`). bb reads a `.worktreeinclude` file at the repo root (gitignore syntax)
+  and copies the matching untracked files into each new worktree, then runs optional committed setup
+  and teardown scripts. `docs/parallel-sessions.md` names both failure modes — a file symlinked into
+  every worktree is shared by every session, and a gitignored file never linked is missing or lost —
+  but gives no way to declare which files a worktree needs; keel bridges only `CLAUDE.md`, by symlink.
+  A list makes the choice explicit per file: copy (isolated, but edits strand when the worktree goes)
+  or symlink (live, but concurrent sessions collide). TO VERIFY first: whether Claude Code already
+  honors `.worktreeinclude` for the worktrees it creates — if it does, this is one paragraph in
+  `docs/parallel-sessions.md` pointing at it, not a tool.
