@@ -196,19 +196,36 @@ and that's fine.)
   `FRAMEWORK.md` "Code conventions" says no feature ships without tests, and "Contract-first"
   mutation-tests a guard's negative path; nothing guards against a test that adds run time and no
   protection. Caveat: keel's `pin()` tests are exact-string greps, a shape bb counts as junk unless it
-  guards a user-facing contract — so a keel version must keep pins on load-bearing prose. Next step:
-  put the four questions to one recent PR's added tests and count the failures; a few → one paragraph
-  in "Code conventions"; many → also a one-off audit of the slowest test files.
+  guards a user-facing contract — so a keel version must keep pins on load-bearing prose. **Where it
+  would live (2026-11-12):** bb's three modes map onto three keel homes, never one command. The
+  authoring gate → `commands/go-guide.md` I2, where `/go` writes its tests and which already holds
+  question 2 ("a test that passes before your change tests nothing"); add questions 1, 3 and 4 there,
+  plus the generic sentence in `FRAMEWORK.md` "Code conventions" for sessions outside `/go`. The
+  deletion rule (mutation proof before a test goes) → a one-off audit ticket over keel's own suite,
+  not a command. Not `/polish`: its review receives only the `/code-review` args, so a junk-pattern
+  mandate cannot reach it, and a new step there taxes every PR. Next step: put the four questions to
+  one recent PR's added tests and count the failures; a few → the I2 lines and the sentence; many →
+  the audit ticket too, starting from the slowest test files.
 - [2026-11-12] **A bash gate in front of a scheduled agent: wake the model only when there is work**
   — same evaluation (bb's "Run an agent on a schedule" guide). A scheduled job there can be a plain
   script that starts an agent only when it finds work (CI went red, a new review comment) and prints
   nothing otherwise; a silent exit is recorded as `skipped`, an error as `failed`, and three failures
   in a row pause the job. The shape fits keel's split — `tools/` is plain Bash that calls no model
   (`ADAPTING.md`; the opt-in vendor review is the one exception), and model time is spent only past
-  the gate. Keel counts consecutive failures for
-  one check (`tools/keel-check.sh`), but no doc describes the scheduled-run shape. Next step: none
-  until a scheduled keel job is wanted (a nightly drift or CI watch); then write the pattern as a
-  short section in `docs/cloud.md` or `docs/delegation.md`.
+  the gate. Keel counts consecutive failures for one check (`tools/keel-check.sh`), but no doc
+  describes the scheduled-run shape. **First consumer (operator, 2026-11-12): the release manager's
+  night.** `docs/release-management.md` R11 has the manager sweep on a wall clock because a session
+  killed by a 429 or wedged on a wait sends no event; in practice (the 0.18.0 close's lesson) that
+  wake is a backgrounded `until` loop (~60 min), after which the manager re-reads its whole context
+  and sweeps every row, found something or not. The gate would replace that loop: one background
+  bash watch that exits only on the first event the manager cannot otherwise hear — a watched PR's
+  CI concluded, a live worker's newest transcript line carries `rate_limit` or another
+  API error, an open row's transcript silent past N minutes — or on a long heartbeat cap, and prints
+  that event as its one line. Scope: the gate only decides WHEN the manager wakes; the merge stays
+  the manager's under R14 (freeze line, ACK, head pin, seam review, the pre-PR gate's merge rule),
+  and night launches stay refused (R3), so a wake can merge, sweep and message idle workers, never
+  start a session. Next step: from the last overnight release's manager transcript, count the night
+  wakes that found nothing and what each cost; mostly empty → design the watch as a dir ticket.
 - [2026-11-12] **A per-project "verify it live" recipe, a draft until it has been run once** — same
   evaluation (`.bb/skills/create-verification-skill`). bb generates, per repo, a recipe for driving the
   real app: launch it in isolation, a read-only check that the right instance is up, how to drive each
